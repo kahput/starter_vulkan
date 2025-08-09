@@ -6,22 +6,29 @@
 #include <vulkan/vulkan.h>
 
 #include <stdbool.h>
+#include <vulkan/vulkan_core.h>
+
 
 typedef struct {
 	VkInstance instance;
 
 	VkPhysicalDevice physical_device;
 	VkDevice logical_device;
-	VkQueue graphics_queue;
+	VkQueue graphics_queue, present_queue;
+
+	VkSurfaceKHR surface;
 
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
 #endif
 } VulkanRenderer;
 
+typedef struct platform Platform;
+
 bool vk_create_instance(Arena *arena, VulkanRenderer *renderer);
 void vk_load_extensions(VulkanRenderer *renderer);
-bool vk_select_physical_device(Arena *arena, VulkanRenderer *renderer);
+bool vk_create_surface(Platform *platform, VulkanRenderer *renderer);
+bool vk_create_device(Arena *arena, VulkanRenderer *renderer);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \
