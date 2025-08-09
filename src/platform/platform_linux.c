@@ -1,6 +1,7 @@
 #include "core/logger.h"
 #include "platform.h"
 
+#include <xcb/randr.h>
 #include <xcb/xcb.h>
 
 #include <stdlib.h>
@@ -88,4 +89,10 @@ void *platform_window_handle(Platform *platform) {
 }
 void *platform_instance_handle(Platform *platform) {
 	return platform->connection;
+}
+
+PlatformSize platform_get_size(Platform *platform) {
+	xcb_get_geometry_reply_t *geom = xcb_get_geometry_reply(platform->connection, xcb_get_geometry(platform->connection, platform->window), NULL);
+	// LOG_INFO("Window size is { %d, %d }, in reality { %d, %d }", geom->width, geom->height, (int32_t)(geom->width * 1.6), (int32_t)(geom->height * 1.6));
+	return (PlatformSize){ geom->width, geom->height };
 }
