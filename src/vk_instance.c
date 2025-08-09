@@ -103,7 +103,7 @@ bool vk_create_instance(Arena *arena, VulkanRenderer *renderer) {
 		return false;
 	}
 
-	LOG_DEBUG("Vulkan instance created");
+	LOG_INFO("Vulkan Instance created successfully");
 
 	arena_clear(arena);
 

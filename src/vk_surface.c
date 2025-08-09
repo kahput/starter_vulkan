@@ -3,7 +3,7 @@
 
 #include "platform.h"
 
-bool vk_create_surface( Platform *platform, VulkanRenderer *renderer) {
+bool vk_create_surface(Platform *platform, VulkanRenderer *renderer) {
 	VkXcbSurfaceCreateInfoKHR surface_create_info = {
 		.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
 		.window = *(xcb_window_t *)platform_window_handle(platform),
@@ -14,6 +14,8 @@ bool vk_create_surface( Platform *platform, VulkanRenderer *renderer) {
 		LOG_ERROR("Failed to create xcb surface");
 		return false;
 	}
+
+	LOG_INFO("Vulkan XCB surface created");
 
 	return true;
 }

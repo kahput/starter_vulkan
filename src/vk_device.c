@@ -14,17 +14,10 @@ typedef struct {
 	int32_t present_family;
 } QueueFamilyIndices;
 
-static bool select_physical_device(Arena *arena, VulkanRenderer *renderer);
 static QueueFamilyIndices find_queue_families(Arena *arena, VulkanRenderer *renderer);
 static bool create_logical_device(VulkanRenderer *renderer, QueueFamilyIndices *indices);
 
-bool vk_create_device(Arena *arena, VulkanRenderer *renderer) {
-	if (select_physical_device(arena, renderer) == false) {
-		LOG_ERROR("Failed to find suitable GPU");
-		arena_clear(arena);
-		return false;
-	}
-
+bool vk_create_logical_device(Arena *arena, VulkanRenderer *renderer) {
 	QueueFamilyIndices indices = find_queue_families(arena, renderer);
 
 	if (indices.graphic_family == -1 || indices.present_family == -1) {
@@ -33,69 +26,18 @@ bool vk_create_device(Arena *arena, VulkanRenderer *renderer) {
 		return false;
 	}
 
+	LOG_INFO("Graphic and Present queues found");
+
 	if (create_logical_device(renderer, &indices) == false) {
 		LOG_ERROR("Failed to create logical device");
 		arena_clear(arena);
 		return false;
 	}
 
+	LOG_INFO("Logical device created");
+
 	arena_clear(arena);
 	return true;
-}
-
-bool is_device_suitable(Arena *arena, VkPhysicalDevice device) {
-	VkPhysicalDeviceProperties device_properties = { 0 };
-	vkGetPhysicalDeviceProperties(device, &device_properties);
-
-	bool is_suitable = device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-	LOG_INFO("Card: %s", device_properties.deviceName);
-
-	VkPhysicalDeviceFeatures device_features = { 0 };
-	vkGetPhysicalDeviceFeatures(device, &device_features);
-
-	is_suitable = is_suitable && device_features.geometryShader;
-
-	uint32_t requested_extensions = sizeof(extensions) / sizeof(*extensions), available_extensions = 0;
-	vkEnumerateDeviceExtensionProperties(device, NULL, &available_extensions, NULL);
-
-	VkExtensionProperties *properties = arena_push_array_zero(arena, VkExtensionProperties, available_extensions);
-	vkEnumerateDeviceExtensionProperties(device, NULL, &available_extensions, properties);
-
-	uint32_t extensions_available = 0;
-	for (uint32_t i = 0; i < available_extensions; i++) {
-		for (uint32_t j = 0; j < requested_extensions; j++)
-			if (strcmp(properties[i].extensionName, extensions[j]) == 0) {
-				extensions_available++;
-			}
-	}
-
-	is_suitable = is_suitable && (extensions_available >= requested_extensions);
-
-	return is_suitable;
-}
-
-bool select_physical_device(Arena *arena, VulkanRenderer *renderer) {
-	uint32_t device_count = 0;
-	vkEnumeratePhysicalDevices(renderer->instance, &device_count, NULL);
-
-	if (device_count == 0) {
-		LOG_WARN("No physical devices found");
-		return false;
-	}
-
-	VkPhysicalDevice *physical_devices = arena_push_array_zero(arena, VkPhysicalDevice, device_count);
-	vkEnumeratePhysicalDevices(renderer->instance, &device_count, physical_devices);
-
-	bool found_suitable = false;
-	for (uint32_t index = 0; index < device_count; index++) {
-		if (is_device_suitable(arena, physical_devices[index])) {
-			renderer->physical_device = physical_devices[index];
-			found_suitable = true;
-			break;
-		}
-	}
-
-	return found_suitable;
 }
 
 QueueFamilyIndices find_queue_families(Arena *arena, VulkanRenderer *renderer) {

@@ -8,7 +8,6 @@
 #include <stdbool.h>
 #include <vulkan/vulkan_core.h>
 
-
 typedef struct {
 	VkInstance instance;
 
@@ -27,8 +26,12 @@ typedef struct platform Platform;
 
 bool vk_create_instance(Arena *arena, VulkanRenderer *renderer);
 void vk_load_extensions(VulkanRenderer *renderer);
+
 bool vk_create_surface(Platform *platform, VulkanRenderer *renderer);
-bool vk_create_device(Arena *arena, VulkanRenderer *renderer);
+
+bool vk_select_physical_device(Arena *arena, VulkanRenderer *renderer);
+bool vk_create_logical_device(Arena *arena, VulkanRenderer *renderer);
+bool vk_query_swapchain_support(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \
