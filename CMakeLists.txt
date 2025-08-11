@@ -27,7 +27,7 @@ find_package(Vulkan REQUIRED)
 file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" )
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_include_directories(${PROJECT_NAME} PUBLIC "./src/")
+target_include_directories(${PROJECT_NAME} PUBLIC "src/")
 
 # Modern CMake approach with target_* commands
 target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
@@ -37,7 +37,7 @@ if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 else()
     # Linux-specific configuration
-    target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_XCB_KHR)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_WAYLAND PLATFORM_X11)
 endif()
 
 if(MSVC)
@@ -47,5 +47,5 @@ if(MSVC)
 else()
     # -Wpedantic
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-variable)
-    target_link_libraries( ${PROJECT_NAME} xcb Vulkan::Vulkan cglm m)
+    target_link_libraries( ${PROJECT_NAME} dl Vulkan::Vulkan cglm m)
 endif()
