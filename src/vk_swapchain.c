@@ -16,6 +16,7 @@ bool vk_query_swapchain_support(Arena *arena, VkPhysicalDevice physical_device, 
 	SwapChainSupportDetails details = { 0 };
 
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &details.capabilities);
+	LOG_INFO("The surface current extent is { %d, %d }", details.capabilities.currentExtent.width, details.capabilities.currentExtent.height);
 
 	uint32_t format_count = 0;
 	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, NULL);

@@ -1,7 +1,9 @@
+#include "platform.h"
+
+#define VK_USE_PLATFORM_XCB_KHR
+
 #include "core/logger.h"
 #include "vk_renderer.h"
-
-#include "platform.h"
 
 bool vk_create_surface(Platform *platform, VulkanRenderer *renderer) {
 	VkXcbSurfaceCreateInfoKHR surface_create_info = {

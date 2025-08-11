@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <vulkan/vulkan_core.h>
 
+
 typedef struct {
 	VkInstance instance;
 
