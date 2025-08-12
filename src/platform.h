@@ -22,6 +22,7 @@ bool platform_should_close(Platform *platform);
 void platform_get_window_size(Platform *platform, uint32_t *width, uint32_t *height);
 void platform_get_framebuffer_size(Platform *platform, uint32_t *width, uint32_t *height);
 
-// TODO: Temp solution, make more robust
-void *platform_window_handle(Platform *platform);
-void *platform_instance_handle(Platform *platform);
+struct VkSurfaceKHR_T;
+struct VkInstance_T;
+
+bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);

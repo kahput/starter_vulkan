@@ -26,7 +26,9 @@
 	PLATFORM_WIN32_LIBRARY_STATE
 
 struct platform_internal {
+	uint32_t ID;
 	struct {
+		bool (*startup)(Platform *platform);
 		void (*shutdown)(Platform *platform);
 
 		void (*poll_events)(Platform *);
@@ -37,6 +39,8 @@ struct platform_internal {
 
 		void *(*window_handle)(Platform *);
 		void *(*instance_handle)(Platform *);
+
+		bool (*create_vulkan_surface)(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
 	};
 
 	PLATFORM_LIBRARY_STATE

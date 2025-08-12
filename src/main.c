@@ -19,18 +19,19 @@ int main(void) {
 
 	VulkanRenderer renderer = { 0 };
 	Platform *platform = platform_startup(window_arena, 1280, 720, "Starter Vulkan");
-	if (platform) {
-		LOG_INFO("DLL loaded successfully");
+	if (platform == NULL) {
+		LOG_ERROR("Platform startup failed");
+		return -1;
 	}
-	// vk_create_instance(vk_arena, &renderer);
-	// vk_load_extensions(&renderer);
-	// vk_create_surface(platform, &renderer);
-	// vk_select_physical_device(vk_arena, &renderer);
-	// vk_create_logical_device(vk_arena, &renderer);
-	//
-	// while (platform_should_close(platform) == false) {
-	// 	platform_poll_events(platform);
-	// }
+	vk_create_instance(vk_arena, &renderer);
+	vk_load_extensions(&renderer);
+	vk_create_surface(platform, &renderer);
+	vk_select_physical_device(vk_arena, &renderer);
+	vk_create_logical_device(vk_arena, &renderer);
+
+	while (platform_should_close(platform) == false) {
+		platform_poll_events(platform);
+	}
 
 	return 0;
 }

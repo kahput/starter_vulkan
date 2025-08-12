@@ -67,5 +67,5 @@ VkPresentModeKHR select_swap_present_mode(VkPresentModeKHR *modes, uint32_t coun
 }
 
 VkExtent2D select_swap_extent(const VkSurfaceCapabilitiesKHR *capabilities) {
-	return (VkExtent2D){0};
+	return (VkExtent2D){ 0 };
 }
