@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+
 static const struct {
 	bool (*initialize)(Platform *);
 } supported_platforms[] = {
@@ -41,7 +42,6 @@ Platform *platform_startup(Arena *arena, uint32_t width, uint32_t height, const 
 		}
 	}
 #endif
-	selected = 0;
 
 	if (supported_platforms[selected].initialize(platform) == false) {
 		LOG_ERROR("Failed to initialize platform");

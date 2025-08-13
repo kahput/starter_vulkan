@@ -23,15 +23,16 @@ int main(void) {
 		LOG_ERROR("Platform startup failed");
 		return -1;
 	}
-	vk_create_instance(vk_arena, &renderer);
-	vk_load_extensions(&renderer);
-	vk_create_surface(platform, &renderer);
-	vk_select_physical_device(vk_arena, &renderer);
-	vk_create_logical_device(vk_arena, &renderer);
-
-	while (platform_should_close(platform) == false) {
-		platform_poll_events(platform);
-	}
+	LOG_INFO("Successfully created wayland display");
+	// vk_create_instance(vk_arena, &renderer);
+	// vk_load_extensions(&renderer);
+	// vk_create_surface(platform, &renderer);
+	// vk_select_physical_device(vk_arena, &renderer);
+	// vk_create_logical_device(vk_arena, &renderer);
+	//
+	// while (platform_should_close(platform) == false) {
+	// 	platform_poll_events(platform);
+	// }
 
 	return 0;
 }

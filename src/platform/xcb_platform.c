@@ -9,6 +9,8 @@
 #include <dlfcn.h>
 #include <stdlib.h>
 
+#define FUNC_COUNT sizeof(((WLPlatform *)0)->func) / sizeof(void *)
+
 bool platform_init_x11(Platform *platform) {
 	platform->internal->xcb.handle = dlopen("libxcb.so", RTLD_LAZY);
 	if (platform->internal->xcb.handle == NULL)
@@ -42,7 +44,7 @@ bool platform_init_x11(Platform *platform) {
 	platform->internal->xcb.func.xcb_poll_for_event = (PFN_xcb_poll_for_event)dlsym(handle, "xcb_poll_for_event");
 	platform->internal->xcb.func.xcb_flush = (PFN_xcb_flush)dlsym(handle, "xcb_flush");
 
-	for (uint32_t i = 0; i < 10; i++) {
+	for (uint32_t i = 0; i < FUNC_COUNT; i++) {
 		if (platform->internal->xcb.func_array[i] == NULL) {
 			return false;
 		}
