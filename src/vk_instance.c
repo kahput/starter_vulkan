@@ -7,7 +7,7 @@
 
 static const char *extensions[] = {
 	"VK_KHR_surface",
-	"VK_KHR_xcb_surface"
+	"VK_KHR_wayland_surface"
 };
 
 static const char *layers[] = {

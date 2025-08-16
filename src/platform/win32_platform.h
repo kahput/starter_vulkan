@@ -1,18 +1,22 @@
-#include "win32_platform.h"
-#include "platform.h"
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
 
 #ifdef PLATFORM_WINDOWS
-bool platform_init_win32(struct platform *platform) {
-	return false;
-}
+#include <windows.h>
+typedef struct win32_platform {
+	HWND instance;
+} Win32Platform;
 
+#define PLATFORM_WAYLAND_LIBRARY_STATE Win32Platform win32;
 
-bool win32_platform_startup(struct platform *platform) {
-	return false;
-}
-void win32_platform_shutdown(struct platform *platform) {
-	return false;
-}
+struct platform;
+
+bool platform_init_win32(struct platform *platform);
+
+bool win32_platform_startup(struct platform *platform);
+void win32_platform_shutdown(struct platform *platform);
 
 void win32_platform_poll_events(struct platform *platform);
 bool win32_platform_should_close(struct platform *platform);

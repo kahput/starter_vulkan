@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 static const struct {
 	bool (*initialize)(Platform *);
 } supported_platforms[] = {

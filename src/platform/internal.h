@@ -15,7 +15,7 @@
 #endif
 
 #if defined(PLATFORM_X11)
-#include "platform/xcb_platform.h"
+#include "platform/x11_platform.h"
 #else
 #define PLATFORM_X11_LIBRARY_STATE
 #endif
@@ -27,21 +27,19 @@
 
 struct platform_internal {
 	uint32_t ID;
-	struct {
-		bool (*startup)(Platform *platform);
-		void (*shutdown)(Platform *platform);
+	bool (*startup)(Platform *platform);
+	void (*shutdown)(Platform *platform);
 
-		void (*poll_events)(Platform *);
-		bool (*should_close)(Platform *);
+	void (*poll_events)(Platform *);
+	bool (*should_close)(Platform *);
 
-		void (*window_size)(Platform *, uint32_t *, uint32_t *);
-		void (*framebuffer_size)(Platform *, uint32_t *, uint32_t *);
+	void (*window_size)(Platform *, uint32_t *, uint32_t *);
+	void (*framebuffer_size)(Platform *, uint32_t *, uint32_t *);
 
-		void *(*window_handle)(Platform *);
-		void *(*instance_handle)(Platform *);
+	void *(*window_handle)(Platform *);
+	void *(*instance_handle)(Platform *);
 
-		bool (*create_vulkan_surface)(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
-	};
+	bool (*create_vulkan_surface)(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
 
 	PLATFORM_LIBRARY_STATE
 };
