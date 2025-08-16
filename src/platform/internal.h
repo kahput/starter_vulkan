@@ -40,6 +40,7 @@ struct platform_internal {
 	void *(*instance_handle)(Platform *);
 
 	bool (*create_vulkan_surface)(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
+	const char **(*vulkan_extensions)(Platform *platform, uint32_t *count);
 
 	PLATFORM_LIBRARY_STATE
 };

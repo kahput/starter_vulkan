@@ -11,9 +11,14 @@
 
 #define XCB_COUNT sizeof(((X11Platform *)0)->xcb) / sizeof(void *)
 
+static const char *extensions[] = {
+	"VK_KHR_surface",
+	"VK_KHR_xcb_surface"
+};
+
 bool platform_init_x11(Platform *platform) {
 	void *handle = dlopen("libxcb.so", RTLD_LAZY);
-	if (platform->internal->x11.xcb.handle == NULL)
+	if (handle == NULL)
 		return false;
 
 	X11Platform *x11 = &platform->internal->x11;
@@ -52,21 +57,22 @@ bool platform_init_x11(Platform *platform) {
 		}
 	}
 
-	platform->internal->startup = x11_platform_startup;
-	platform->internal->shutdown = x11_platform_shutdown;
+	platform->internal->startup = x11_startup;
+	platform->internal->shutdown = x11_shutdown;
 
-	platform->internal->poll_events = x11_platform_poll_events;
-	platform->internal->should_close = x11_platform_should_close;
+	platform->internal->poll_events = x11_poll_events;
+	platform->internal->should_close = x11_should_close;
 
-	platform->internal->window_size = x11_platform_get_window_size;
-	platform->internal->framebuffer_size = x11_platform_get_framebuffer_size;
+	platform->internal->window_size = x11_get_window_size;
+	platform->internal->framebuffer_size = x11_get_framebuffer_size;
 
-	platform->internal->create_vulkan_surface = x11_platform_create_vulkan_surface;
+	platform->internal->create_vulkan_surface = x11_create_vulkan_surface;
+	platform->internal->vulkan_extensions = x11_vulkan_extensions;
 
 	return true;
 }
 
-bool x11_platform_startup(Platform *platform) {
+bool x11_startup(Platform *platform) {
 	X11Platform *x11 = &platform->internal->x11;
 	x11->connection = x11->xcb.connect(NULL, NULL);
 
@@ -100,12 +106,12 @@ bool x11_platform_startup(Platform *platform) {
 	return true;
 }
 
-void x11_platform_shutdown(Platform *platform) {
+void x11_shutdown(Platform *platform) {
 	X11Platform *x11 = &platform->internal->x11;
 	x11->xcb.disconnect(x11->connection);
 }
 
-void x11_platform_poll_events(Platform *platform) {
+void x11_poll_events(Platform *platform) {
 	X11Platform *x11 = &platform->internal->x11;
 	xcb_generic_event_t *event = NULL;
 	while ((event = x11->xcb.poll_for_event(x11->connection))) {
@@ -130,11 +136,11 @@ void x11_platform_poll_events(Platform *platform) {
 
 	free(event);
 }
-bool x11_platform_should_close(Platform *platform) {
+bool x11_should_close(Platform *platform) {
 	return platform->should_close;
 }
 
-void x11_platform_get_window_size(Platform *platform, uint32_t *width, uint32_t *height) {
+void x11_get_window_size(Platform *platform, uint32_t *width, uint32_t *height) {
 	X11Platform *x11 = &platform->internal->x11;
 	xcb_connection_t *connection = x11->connection;
 	xcb_window_t *window = &x11->window;
@@ -144,7 +150,7 @@ void x11_platform_get_window_size(Platform *platform, uint32_t *width, uint32_t 
 	*height = geometry->height;
 }
 
-void x11_platform_get_framebuffer_size(Platform *platform, uint32_t *width, uint32_t *height) {
+void x11_get_framebuffer_size(Platform *platform, uint32_t *width, uint32_t *height) {
 	X11Platform *x11 = &platform->internal->x11;
 
 	xcb_get_geometry_reply_t *geometry = x11->xcb.get_geometry_reply(x11->connection, x11->xcb.get_geometry(x11->connection, x11->window), NULL);
@@ -152,7 +158,7 @@ void x11_platform_get_framebuffer_size(Platform *platform, uint32_t *width, uint
 	*height = geometry->height;
 }
 
-bool x11_platform_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
+bool x11_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
 	X11Platform *x11 = &platform->internal->x11;
 	VkXcbSurfaceCreateInfoKHR surface_create_info = {
 		.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
@@ -164,4 +170,9 @@ bool x11_platform_create_vulkan_surface(Platform *platform, VkInstance instance,
 		return false;
 
 	return true;
+}
+
+const char **x11_vulkan_extensions(struct platform *platform, uint32_t *count) {
+	*count = sizeof(extensions) / sizeof(*extensions);
+	return extensions;
 }

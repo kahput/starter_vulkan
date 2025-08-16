@@ -1,14 +1,11 @@
 #include "vk_renderer.h"
 
+#include "platform.h"
+
 #include "core/arena.h"
 #include "core/logger.h"
 
 #include <string.h>
-
-static const char *extensions[] = {
-	"VK_KHR_surface",
-	"VK_KHR_wayland_surface"
-};
 
 static const char *layers[] = {
 	"VK_LAYER_KHRONOS_validation",
@@ -29,7 +26,7 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 };
 void create_debug_messenger(VulkanRenderer *renderer);
 
-bool vk_create_instance(Arena *arena, VulkanRenderer *renderer) {
+bool vk_create_instance(Arena *arena, VulkanRenderer *renderer, struct platform *platform) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",
@@ -39,7 +36,8 @@ bool vk_create_instance(Arena *arena, VulkanRenderer *renderer) {
 		.apiVersion = VK_API_VERSION_1_4
 	};
 
-	uint32_t requested_extensions = sizeof(extensions) / sizeof(*extensions), available_extensions = 0;
+	uint32_t requested_extensions = 0, available_extensions = 0;
+	const char **extensions = platform_vulkan_extensions(platform, &requested_extensions);
 	vkEnumerateInstanceExtensionProperties(NULL, &available_extensions, NULL);
 
 	VkExtensionProperties *properties = arena_push_array_zero(arena, VkExtensionProperties, available_extensions);

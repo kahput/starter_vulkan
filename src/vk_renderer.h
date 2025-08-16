@@ -8,7 +8,6 @@
 #include <stdbool.h>
 #include <vulkan/vulkan_core.h>
 
-
 typedef struct {
 	VkInstance instance;
 
@@ -23,9 +22,9 @@ typedef struct {
 #endif
 } VulkanRenderer;
 
-struct platform ;
+struct platform;
 
-bool vk_create_instance(Arena *arena, VulkanRenderer *renderer);
+bool vk_create_instance(Arena *arena, VulkanRenderer *renderer, struct platform *platform);
 void vk_load_extensions(VulkanRenderer *renderer);
 
 bool vk_create_surface(struct platform *platform, VulkanRenderer *renderer);

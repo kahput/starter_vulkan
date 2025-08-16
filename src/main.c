@@ -24,7 +24,7 @@ int main(void) {
 		return -1;
 	}
 	LOG_INFO("Successfully created wayland display");
-	vk_create_instance(vk_arena, &renderer);
+	vk_create_instance(vk_arena, &renderer, platform);
 	vk_load_extensions(&renderer);
 	vk_create_surface(platform, &renderer);
 	vk_select_physical_device(vk_arena, &renderer);

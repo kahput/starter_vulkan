@@ -75,3 +75,7 @@ void platform_get_framebuffer_size(Platform *platform, uint32_t *width, uint32_t
 bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface) {
 	return platform->internal->create_vulkan_surface(platform, instance, surface);
 }
+
+const char **platform_vulkan_extensions(Platform *platform, uint32_t *count) {
+	return platform->internal->vulkan_extensions(platform, count);
+}
