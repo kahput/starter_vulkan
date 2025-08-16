@@ -28,15 +28,38 @@ file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" )
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PUBLIC "src/")
-
-# Modern CMake approach with target_* commands
-target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${CMAKE_BINARY_DIR})
 
 # Platform-specific configurations
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 else()
-    # Linux-specific configuration
+    find_program(WAYLAND_SCANNER_EXECUTABLE NAMES wayland-scanner)
+    if (NOT WAYLAND_SCANNER_EXECUTABLE)
+        message(FATAL_ERROR "Failed to find wayland-scanner")
+    endif()
+
+    macro(generate_wayland_protocol protocol_file)
+        set(protocol_path "${CMAKE_SOURCE_DIR}/deps/wayland/${protocol_file}")
+
+        string(REGEX REPLACE "\\.xml$" "-client-protocol.h" header_file ${protocol_file})
+        string(REGEX REPLACE "\\.xml$" "-client-protocol-code.h" code_file ${protocol_file})
+
+        add_custom_command(OUTPUT ${header_file}
+            COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" client-header "${protocol_path}" ${header_file}
+            DEPENDS "${protocol_path}"
+            VERBATIM)
+
+        add_custom_command(OUTPUT ${code_file}
+            COMMAND "${WAYLAND_SCANNER_EXECUTABLE}" private-code "${protocol_path}" ${code_file}
+            DEPENDS "${protocol_path}"
+            VERBATIM)
+
+        target_sources(${PROJECT_NAME} PRIVATE ${header_file} ${code_file})
+    endmacro()
+
+    generate_wayland_protocol("wayland.xml")
+    generate_wayland_protocol("xdg-shell.xml")
     target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_WAYLAND PLATFORM_X11)
 endif()
 
@@ -46,6 +69,7 @@ if(MSVC)
     target_link_libraries(${PROJECT_NAME} Vulkan::Vulkan cglm)
 else()
     # -Wpedantic
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-variable)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -pedantic -Wextra -Werror -Wno-unused-parameter -Wno-unused-variable)
     target_link_libraries( ${PROJECT_NAME} dl Vulkan::Vulkan cglm m)
 endif()
+

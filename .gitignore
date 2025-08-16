@@ -11,6 +11,7 @@ cmake_install.cmake
 CMakeLists.txt.user
 CMakeLists.txt.cache
 CMakeLists.txt.local
+compile_commands.json
 
 # Ignore IDE-specific files (common for popular IDEs)
 .vscode/
@@ -22,6 +23,7 @@ CMakeLists.txt.local
 *.user
 *.userprefs
 .clangd
+.cache
 
 # Ignore temporary files created by editors
 *~
