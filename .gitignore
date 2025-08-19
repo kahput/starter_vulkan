@@ -22,8 +22,9 @@ compile_commands.json
 *.qmake.stash
 *.user
 *.userprefs
-.clangd
-.cache
+*.clangd
+*.ignore
+*.cache
 
 # Ignore temporary files created by editors
 *~

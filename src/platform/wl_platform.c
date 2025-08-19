@@ -2,14 +2,20 @@
 #include "platform/internal.h"
 
 #include "core/logger.h"
+#include <wayland-client-core.h>
+#include <wayland-client-protocol.h>
 
 #define VK_USE_PLATFORM_WAYLAND_KHR
 #include <vulkan/vulkan.h>
 #include <wayland-util.h>
 
+#include "fractional-scale-v1-client-protocol.h"
+#include "viewporter-client-protocol.h"
 #include "wayland-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
+#include "fractional-scale-v1-client-protocol-code.h"
+#include "viewporter-client-protocol-code.h"
 #include "wayland-client-protocol-code.h"
 #include "xdg-shell-client-protocol-code.h"
 
@@ -19,7 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <time.h>
 #include <unistd.h>
 
 #define LIBRARY_COUNT sizeof(struct wl_library) / sizeof(void *)
@@ -34,78 +39,30 @@ static void registry_handle_global(void *data, struct wl_registry *registry, uin
 static void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static const struct wl_registry_listener registry_listener = { .global = registry_handle_global, .global_remove = registry_handle_global_remove };
 
-static void xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial);
-static const struct xdg_wm_base_listener xdg_wm_base_listener = { .ping = xdg_wm_base_ping };
+static void wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial);
+static const struct xdg_wm_base_listener wm_base_listener = { .ping = wm_base_ping };
 
-static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial);
-static const struct xdg_surface_listener xdg_surface_listener = { .configure = xdg_surface_configure };
+static void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial);
+static const struct xdg_surface_listener surface_listener = { .configure = surface_configure };
 
-static void xdg_toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states);
-static void xdg_toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel);
-static void xdg_toplevel_configure_bounds(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height);
-static void xdg_toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, struct wl_array *capabilities);
-
-static const struct xdg_toplevel_listener xdg_toplevel_listener = {
-	.configure = xdg_toplevel_configure,
-	.close = xdg_toplevel_close,
-	.configure_bounds = xdg_toplevel_configure_bounds,
-	.wm_capabilities = xdg_toplevel_wm_capabilities,
+static void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states);
+static void toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel);
+static void toplevel_configure_bounds(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height);
+static void toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, struct wl_array *capabilities);
+static const struct xdg_toplevel_listener toplevel_listener = {
+	.configure = toplevel_configure,
+	.close = toplevel_close,
+	.configure_bounds = toplevel_configure_bounds,
+	.wm_capabilities = toplevel_wm_capabilities,
 };
 
-static int create_anonymous_file(off_t size) {
-	char template[] = "/tmp/wayland-shm-XXXXXX";
-	int fd = mkstemp(template);
-	if (fd < 0)
-		return -1;
+static void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_scale_v1, uint32_t scale);
+static const struct wp_fractional_scale_v1_listener fractional_scale_listener = {
+	.preferred_scale = preferred_scale,
+};
 
-	unlink(template); // we don’t need the file on disk
-	if (ftruncate(fd, size) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	return fd;
-}
-
-static struct wl_buffer *create_shm_buffer(struct platform *platform, uint32_t width, uint32_t height) {
-	const int stride = width * 4;
-	const int length = width * height * 4;
-
-	const int fd = create_anonymous_file(length);
-	if (fd < 0) {
-		LOG_ERROR("Wayland: Failed to create buffer file of size %d: %s", strerror(errno));
-		return NULL;
-	}
-
-	void *data = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	if (data == MAP_FAILED) {
-		LOG_ERROR("Wayland: Failed to map file: %s", strerror(errno));
-		close(fd);
-		return NULL;
-	}
-
-	struct wl_shm_pool *pool = wl_shm_create_pool(platform->internal->wl.shm, fd, length);
-
-	close(fd);
-
-	unsigned char *target = data;
-	for (uint32_t i = 0; i < width * height; i++) {
-		*target++ = (unsigned char)0;
-		*target++ = (unsigned char)0;
-		*target++ = (unsigned char)0;
-		*target++ = (unsigned char)255;
-	}
-
-	struct wl_buffer *buffer =
-		wl_shm_pool_create_buffer(pool, 0,
-			width,
-			height,
-			stride, WL_SHM_FORMAT_ARGB8888);
-	munmap(data, length);
-	wl_shm_pool_destroy(pool);
-
-	return buffer;
-}
+static struct wl_buffer *
+create_shm_buffer(struct platform *platform);
 
 bool platform_init_wayland(struct platform *platform) {
 	void *handle = dlopen("libwayland-client.so.0", RTLD_LAZY);
@@ -138,8 +95,8 @@ bool platform_init_wayland(struct platform *platform) {
 	platform->internal->poll_events = wl_poll_events;
 	platform->internal->should_close = wl_should_close;
 
-	platform->internal->window_size = wl_get_window_size;
-	platform->internal->framebuffer_size = wl_get_framebuffer_size;
+	platform->internal->logical_dimensions = wl_get_logical_dimensions;
+	platform->internal->physical_dimensions = wl_get_physical_dimensions;
 
 	platform->internal->create_vulkan_surface = wl_create_vulkan_surface;
 	platform->internal->vulkan_extensions = wl_vulkan_extensions;
@@ -175,16 +132,25 @@ bool wl_startup(struct platform *platform) {
 	}
 
 	wl->xdg.surface = xdg_wm_base_get_xdg_surface(wl->wm_base, wl->surface);
-	xdg_surface_add_listener(wl->xdg.surface, &xdg_surface_listener, wl);
+	xdg_surface_add_listener(wl->xdg.surface, &surface_listener, platform);
 
 	wl->xdg.toplevel = xdg_surface_get_toplevel(wl->xdg.surface);
+	// xdg_toplevel_set_fullscreen(wl->xdg.toplevel, wl->output);
+	// xdg_surface_set_window_geometry(wl->xdg.surface, 0, 0, platform->width, platform->height)
+	xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
 
-	xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->width, platform->height);
-	xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->width, platform->height);
-	xdg_toplevel_add_listener(wl->xdg.toplevel, &xdg_toplevel_listener, platform);
+	xdg_toplevel_add_listener(wl->xdg.toplevel, &toplevel_listener, platform);
 
-	wl_surface_attach(wl->surface, create_shm_buffer(platform, 1, 1), 0, 0);
+	wl->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(wl->fractional_scale_manager, wl->surface);
+	wp_fractional_scale_v1_add_listener(wl->fractional_scale, &fractional_scale_listener, platform);
+
 	wl_surface_commit(wl->surface);
+
+	// Attach buffer in configure callback
+	wl_display_roundtrip(wl->display);
+
+	// Retrived surface fractional scaling from attached buffer
 	wl_display_roundtrip(wl->display);
 
 	return true;
@@ -197,17 +163,14 @@ void wl_shutdown(struct platform *platform) {
 
 void wl_poll_events(struct platform *platform) {
 	WLPlatform *wl = &platform->internal->wl;
-	while (wl_display_dispatch(wl->display) != -1) {
-		// Do events
-	}
+	wl_display_roundtrip(wl->display);
 }
 bool wl_should_close(struct platform *platform) {
-	LOG_INFO("should_close = %b", platform->should_close);
 	return platform->should_close;
 }
 
-void wl_get_window_size(struct platform *platform, uint32_t *width, uint32_t *height) {}
-void wl_get_framebuffer_size(struct platform *platform, uint32_t *width, uint32_t *height) {}
+void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
+void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
 
 bool wl_create_vulkan_surface(struct platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
 	VkWaylandSurfaceCreateInfoKHR surface_create_info = {
@@ -232,41 +195,105 @@ void registry_handle_global(void *data, struct wl_registry *registry, uint32_t n
 
 	if (strcmp(interface, wl_compositor_interface.name) == 0)
 		wl->compositor = wl_registry_bind(wl->registry, name, &wl_compositor_interface, 6);
+	else if (strcmp(interface, wl_output_interface.name) == 0)
+		wl->output = wl_registry_bind(wl->registry, name, &wl_output_interface, 2);
 	else if (strcmp(interface, wl_shm_interface.name) == 0)
 		wl->shm = wl_registry_bind(wl->registry, name, &wl_shm_interface, 1);
 	else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
 		wl->wm_base = wl_registry_bind(wl->registry, name, &xdg_wm_base_interface, 7);
-		xdg_wm_base_add_listener(wl->wm_base, &xdg_wm_base_listener, wl);
-	}
+		xdg_wm_base_add_listener(wl->wm_base, &wm_base_listener, wl);
+	} else if (strcmp(interface, wp_viewporter_interface.name) == 0)
+		wl->viewporter = wl_registry_bind(wl->registry, name, &wp_viewporter_interface, 1);
+	else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0)
+		wl->fractional_scale_manager = wl_registry_bind(wl->registry, name, &wp_fractional_scale_manager_v1_interface, 1);
 }
-
 void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name) {}
-void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
-	WLPlatform *wl = (WLPlatform *)data;
 
-	LOG_INFO("I assume the ack for the resize event would be here?");
+void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
+	struct platform *platform = (struct platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
 	xdg_surface_ack_configure(wl->xdg.surface, serial);
+
+	wl_surface_attach(wl->surface, create_shm_buffer(platform), 0, 0);
+	wl_surface_commit(wl->surface);
 }
+void wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) { xdg_wm_base_pong(xdg_wm_base, serial); }
 
-void xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) { xdg_wm_base_pong(xdg_wm_base, serial); }
-
-static void xdg_toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states) {
+void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states) {
 	struct platform *platform = (struct platform *)data;
-	if (width == 0 || height == 0) {
-		LOG_INFO("We decide size");
+	WLPlatform *wl = &platform->internal->wl;
+
+	if (width && height) {
+		platform->logical_width = width, platform->logical_height = height;
 	}
-
-	platform->width = width, platform->height = height;
-	LOG_INFO("Dimensions { %d, %d }", width, height);
 }
-static void xdg_toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel) {
+void toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel) {
 	struct platform *platform = (struct platform *)data;
-
-	LOG_INFO("We should close");
 	platform->should_close = true;
 }
+void toplevel_configure_bounds(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height) {}
+void toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, struct wl_array *capabilities) {}
 
-static void xdg_toplevel_configure_bounds(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height) {
+void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_scale_v1, uint32_t scale) {
+	struct platform *platform = (struct platform *)data;
+	float fractional_scale = (float)scale / 120.f;
+	platform->physical_width = platform->logical_width * fractional_scale, platform->physical_height = platform->logical_height * fractional_scale;
 }
 
-static void xdg_toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, struct wl_array *capabilities) {}
+static int create_anonymous_file(off_t size) {
+	char template[] = "/tmp/wayland-shm-XXXXXX";
+	int fd = mkstemp(template);
+	if (fd < 0)
+		return -1;
+
+	unlink(template); // we don’t need the file on disk
+	if (ftruncate(fd, size) < 0) {
+		close(fd);
+		return -1;
+	}
+
+	return fd;
+}
+
+struct wl_buffer *create_shm_buffer(struct platform *platform) {
+	const int stride = platform->logical_width * 4;
+	const int length = platform->logical_width * platform->logical_height * 4;
+
+	const int fd = create_anonymous_file(length);
+	if (fd < 0) {
+		LOG_ERROR("Wayland: Failed to create buffer file of size %d: %s", strerror(errno));
+		return NULL;
+	}
+
+	void *data = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (data == MAP_FAILED) {
+		LOG_ERROR("Wayland: Failed to map file: %s", strerror(errno));
+		close(fd);
+		return NULL;
+	}
+
+	struct wl_shm_pool *pool = wl_shm_create_pool(platform->internal->wl.shm, fd, length);
+
+	close(fd);
+
+	unsigned char *target = data;
+
+	/* Draw checkerboxed background */
+	for (uint32_t i = 0; i < platform->logical_width * platform->logical_height; i++) {
+		*target++ = (unsigned char)0;
+		*target++ = (unsigned char)0;
+		*target++ = (unsigned char)0;
+		*target++ = (unsigned char)255;
+	}
+
+	struct wl_buffer *buffer =
+		wl_shm_pool_create_buffer(pool, 0,
+			platform->logical_width,
+			platform->logical_height,
+			stride, WL_SHM_FORMAT_ARGB8888);
+	munmap(data, length);
+	wl_shm_pool_destroy(pool);
+
+	return buffer;
+}

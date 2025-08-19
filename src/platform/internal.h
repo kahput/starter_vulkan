@@ -33,8 +33,8 @@ struct platform_internal {
 	void (*poll_events)(Platform *);
 	bool (*should_close)(Platform *);
 
-	void (*window_size)(Platform *, uint32_t *, uint32_t *);
-	void (*framebuffer_size)(Platform *, uint32_t *, uint32_t *);
+	void (*logical_dimensions)(Platform *, uint32_t *, uint32_t *);
+	void (*physical_dimensions)(Platform *, uint32_t *, uint32_t *);
 
 	void *(*window_handle)(Platform *);
 	void *(*instance_handle)(Platform *);

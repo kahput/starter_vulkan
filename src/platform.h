@@ -7,7 +7,8 @@
 typedef struct platform_internal PlatformInternal;
 
 typedef struct platform {
-	uint32_t width, height;
+	uint32_t logical_width, logical_height;
+	uint32_t physical_width, physical_height;
 	bool should_close;
 
 	PlatformInternal *internal;
@@ -19,8 +20,8 @@ void platform_shutdown(Platform *platform);
 void platform_poll_events(Platform *platform);
 bool platform_should_close(Platform *platform);
 
-void platform_get_window_size(Platform *platform, uint32_t *width, uint32_t *height);
-void platform_get_framebuffer_size(Platform *platform, uint32_t *width, uint32_t *height);
+void platform_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
+void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;

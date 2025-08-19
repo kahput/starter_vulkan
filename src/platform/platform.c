@@ -48,7 +48,8 @@ Platform *platform_startup(Arena *arena, uint32_t width, uint32_t height, const 
 	}
 
 	platform->internal->ID = selected;
-	platform->width = width, platform->height = height;
+	platform->logical_width = width, platform->logical_height = height;
+	platform->physical_width = width, platform->physical_height = height;
 	platform->internal->startup(platform);
 
 	return platform;
@@ -65,11 +66,11 @@ bool platform_should_close(Platform *platform) {
 	return platform->internal->should_close(platform);
 }
 
-void platform_get_window_size(Platform *platform, uint32_t *width, uint32_t *height) {
-	platform->internal->window_size(platform, width, height);
+void platform_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
+	platform->internal->logical_dimensions(platform, width, height);
 }
-void platform_get_framebuffer_size(Platform *platform, uint32_t *width, uint32_t *height) {
-	platform->internal->framebuffer_size(platform, width, height);
+void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
+	platform->internal->physical_dimensions(platform, width, height);
 }
 
 bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface) {

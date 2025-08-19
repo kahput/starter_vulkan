@@ -63,8 +63,8 @@ bool platform_init_x11(Platform *platform) {
 	platform->internal->poll_events = x11_poll_events;
 	platform->internal->should_close = x11_should_close;
 
-	platform->internal->window_size = x11_get_window_size;
-	platform->internal->framebuffer_size = x11_get_framebuffer_size;
+	platform->internal->logical_dimensions = x11_get_logical_dimensions;
+	platform->internal->physical_dimensions = x11_get_physical_dimensions;
 
 	platform->internal->create_vulkan_surface = x11_create_vulkan_surface;
 	platform->internal->vulkan_extensions = x11_vulkan_extensions;
@@ -95,7 +95,7 @@ bool x11_startup(Platform *platform) {
 	uint32_t values[1] = {
 		event_mask
 	};
-	x11->xcb.create_window(x11->connection, XCB_COPY_FROM_PARENT, x11->window, screen->root, 0, 0, platform->width, platform->height, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, XCB_CW_EVENT_MASK, values);
+	x11->xcb.create_window(x11->connection, XCB_COPY_FROM_PARENT, x11->window, screen->root, 0, 0, platform->logical_width, platform->logical_height, 1, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, XCB_CW_EVENT_MASK, values);
 
 	x11->xcb.map_window(x11->connection, x11->window);
 
@@ -140,7 +140,7 @@ bool x11_should_close(Platform *platform) {
 	return platform->should_close;
 }
 
-void x11_get_window_size(Platform *platform, uint32_t *width, uint32_t *height) {
+void x11_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
 	X11Platform *x11 = &platform->internal->x11;
 	xcb_connection_t *connection = x11->connection;
 	xcb_window_t *window = &x11->window;
@@ -150,7 +150,7 @@ void x11_get_window_size(Platform *platform, uint32_t *width, uint32_t *height) 
 	*height = geometry->height;
 }
 
-void x11_get_framebuffer_size(Platform *platform, uint32_t *width, uint32_t *height) {
+void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
 	X11Platform *x11 = &platform->internal->x11;
 
 	xcb_get_geometry_reply_t *geometry = x11->xcb.get_geometry_reply(x11->connection, x11->xcb.get_geometry(x11->connection, x11->window), NULL);

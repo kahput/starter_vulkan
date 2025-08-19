@@ -67,8 +67,8 @@ void x11_shutdown(struct platform *platform);
 void x11_poll_events(struct platform *platform);
 bool x11_should_close(struct platform *platform);
 
-void x11_get_window_size(struct platform *platform, uint32_t *width, uint32_t *height);
-void x11_get_framebuffer_size(struct platform *platform, uint32_t *width, uint32_t *height);
+void x11_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
+void x11_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;

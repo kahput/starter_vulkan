@@ -48,11 +48,16 @@ typedef struct wl_platform {
 	struct wl_display *display;
 	struct wl_registry *registry;
 	struct wl_compositor *compositor;
+	struct wl_output *output;
 	struct wl_shm *shm;
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
 	struct wl_surface *surface;
 	struct xdg_wm_base *wm_base;
+
+	struct wp_viewporter *viewporter;
+	struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
+	struct wp_fractional_scale_v1 *fractional_scale;
 
 	struct {
 		struct xdg_surface *surface;
@@ -72,8 +77,8 @@ void wl_shutdown(struct platform *platform);
 void wl_poll_events(struct platform *platform);
 bool wl_should_close(struct platform *platform);
 
-void wl_get_window_size(struct platform *platform, uint32_t *width, uint32_t *height);
-void wl_get_framebuffer_size(struct platform *platform, uint32_t *width, uint32_t *height);
+void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
+void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;
