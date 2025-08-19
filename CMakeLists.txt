@@ -3,7 +3,7 @@ project(game)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS OFF)
+# set(CMAKE_C_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -59,7 +59,9 @@ else()
     endmacro()
 
     generate_wayland_protocol("wayland.xml")
+    generate_wayland_protocol("viewporter.xml")
     generate_wayland_protocol("xdg-shell.xml")
+    generate_wayland_protocol("fractional-scale-v1.xml")
     target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_WAYLAND PLATFORM_X11)
 endif()
 
