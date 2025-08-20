@@ -2,6 +2,8 @@
 #include "platform/internal.h"
 
 #include "core/logger.h"
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_wayland.h>
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
 
@@ -31,8 +33,8 @@
 WLLibrary _wl_library = { 0 };
 
 static const char *extensions[] = {
-	"VK_KHR_surface",
-	"VK_KHR_wayland_surface"
+	VK_KHR_SURFACE_EXTENSION_NAME,
+	VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME
 };
 
 static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
@@ -88,6 +90,7 @@ bool platform_init_wayland(struct platform *platform) {
 		if (array[i] == NULL)
 			return false;
 	}
+	platform->internal->wl = (WLPlatform){ 0 };
 
 	platform->internal->startup = wl_startup;
 	platform->internal->shutdown = wl_shutdown;
@@ -173,6 +176,11 @@ void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint3
 void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
 
 bool wl_create_vulkan_surface(struct platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
+	WLPlatform *wl = &platform->internal->wl;
+	wl->use_vulkan = true;
+
+	LOG_INFO("Using vulkan for presentation now");
+
 	VkWaylandSurfaceCreateInfoKHR surface_create_info = {
 		.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
 		.display = platform->internal->wl.display,
@@ -213,10 +221,15 @@ void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t ser
 	struct platform *platform = (struct platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 
+	LOG_INFO("Configuration event");
 	xdg_surface_ack_configure(wl->xdg.surface, serial);
 
-	wl_surface_attach(wl->surface, create_shm_buffer(platform), 0, 0);
-	wl_surface_commit(wl->surface);
+	if (wl->use_vulkan == false) {
+		wl_surface_attach(wl->surface, create_shm_buffer(platform), 0, 0);
+		wl_surface_commit(wl->surface);
+		LOG_INFO("Software buffer created");
+	} else
+		LOG_INFO("No software buffer created");
 }
 void wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) { xdg_wm_base_pong(xdg_wm_base, serial); }
 

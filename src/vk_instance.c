@@ -24,9 +24,9 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 	.pfnUserCallback = vk_debug_callback,
 	.pUserData = NULL
 };
-void create_debug_messenger(VulkanRenderer *renderer);
+void create_debug_messenger(VKRenderer *renderer);
 
-bool vk_create_instance(Arena *arena, VulkanRenderer *renderer, struct platform *platform) {
+bool vk_create_instance(Arena *arena, VKRenderer *renderer, struct platform *platform) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",
@@ -136,6 +136,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
 	}
 }
 
-void create_debug_messenger(VulkanRenderer *renderer) {
+void create_debug_messenger(VKRenderer *renderer) {
 	vkCreateDebugUtilsMessenger(renderer->instance, &debug_utils_create_info, NULL, &renderer->debug_messenger);
 }

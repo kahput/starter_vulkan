@@ -17,20 +17,23 @@ int main(void) {
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	VulkanRenderer renderer = { 0 };
+	VKRenderer renderer = { 0 };
 	Platform *platform = platform_startup(window_arena, 1280, 720, "Starter Vulkan");
 	if (platform == NULL) {
 		LOG_ERROR("Platform startup failed");
 		return -1;
 	}
 	LOG_INFO("Successfully created wayland display");
-		LOG_INFO("Logical pixel dimensions { %d, %d }", platform->logical_width, platform->logical_height);
-		LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
-	// vk_create_instance(vk_arena, &renderer, platform);
-	// vk_load_extensions(&renderer);
-	// vk_create_surface(platform, &renderer);
-	// vk_select_physical_device(vk_arena, &renderer);
-	// vk_create_logical_device(vk_arena, &renderer);
+	LOG_INFO("Logical pixel dimensions { %d, %d }", platform->logical_width, platform->logical_height);
+	LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
+	vk_create_instance(vk_arena, &renderer, platform);
+	vk_load_extensions(&renderer);
+	vk_create_surface(platform, &renderer);
+	vk_select_physical_device(vk_arena, &renderer);
+	vk_create_logical_device(vk_arena, &renderer);
+	if (vk_create_swapchain(vk_arena, &renderer, platform) == false) {
+		LOG_INFO("Failed to create swapchain");
+	}
 
 	while (platform_should_close(platform) == false) {
 		platform_poll_events(platform);

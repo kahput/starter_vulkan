@@ -1,5 +1,8 @@
 #include "vk_renderer.h"
 
+#include "core/arena.h"
+#include "core/logger.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -11,7 +14,7 @@ static char physical_device_name[256];
 
 bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
-bool vk_select_physical_device(Arena *arena, VulkanRenderer *renderer) {
+bool vk_select_physical_device(Arena *arena, VKRenderer *renderer) {
 	uint32_t device_count = 0;
 	vkEnumeratePhysicalDevices(renderer->instance, &device_count, NULL);
 
@@ -37,6 +40,7 @@ bool vk_select_physical_device(Arena *arena, VulkanRenderer *renderer) {
 		arena_clear(arena);
 	}
 
+	arena_clear(arena);
 	LOG_INFO("Physical Device: %s", physical_device_name);
 
 	return found_suitable;
@@ -68,8 +72,11 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 			}
 	}
 
-	is_suitable = is_suitable && (extensions_available >= requested_extensions);
-	is_suitable = is_suitable && vk_query_swapchain_support(arena, physical_device, surface);
+	bool extensions_supported = extensions_available >= requested_extensions;
+	is_suitable = is_suitable && extensions_supported;
+
+	if (extensions_supported)
+		is_suitable = is_suitable && query_swapchain_support(arena, physical_device, surface);
 
 	return is_suitable;
 }

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "core/arena.h"
-#include "core/logger.h"
-
 #include <vulkan/vulkan.h>
 
 #include <stdbool.h>
 #include <vulkan/vulkan_core.h>
+
+struct platform;
+struct arena;
 
 typedef struct {
 	VkInstance instance;
@@ -17,21 +17,34 @@ typedef struct {
 
 	VkSurfaceKHR surface;
 
+	VkSwapchainKHR swapchain;
+	VkImage *swapchain_images;
+	uint32_t swapchain_image_count;
+	VkSurfaceFormatKHR swapchain_format ;
+	VkPresentModeKHR swapchain_present_mode ;
+	VkExtent2D swapchain_extent ;
+
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
 #endif
-} VulkanRenderer;
+} VKRenderer;
 
-struct platform;
+typedef struct {
+	int32_t graphic_family;
+	int32_t present_family;
+} QueueFamilyIndices;
 
-bool vk_create_instance(Arena *arena, VulkanRenderer *renderer, struct platform *platform);
-void vk_load_extensions(VulkanRenderer *renderer);
+QueueFamilyIndices find_queue_families(struct arena *arena, VKRenderer *renderer);
+bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
-bool vk_create_surface(struct platform *platform, VulkanRenderer *renderer);
+bool vk_create_instance(struct arena *arena, VKRenderer *renderer, struct platform *platform);
+void vk_load_extensions(VKRenderer *renderer);
 
-bool vk_select_physical_device(Arena *arena, VulkanRenderer *renderer);
-bool vk_create_logical_device(Arena *arena, VulkanRenderer *renderer);
-bool vk_query_swapchain_support(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+bool vk_create_surface(struct platform *platform, VKRenderer *renderer);
+
+bool vk_select_physical_device(struct arena *arena, VKRenderer *renderer);
+bool vk_create_logical_device(struct arena *arena, VKRenderer *renderer);
+bool vk_create_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \

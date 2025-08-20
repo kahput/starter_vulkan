@@ -2,6 +2,7 @@
 
 #include "core/arena.h"
 #include "core/logger.h"
+
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -9,15 +10,9 @@ static const char *extensions[] = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
-typedef struct {
-	int32_t graphic_family;
-	int32_t present_family;
-} QueueFamilyIndices;
+static bool create_logical_device(VKRenderer *renderer, QueueFamilyIndices *indices);
 
-static QueueFamilyIndices find_queue_families(Arena *arena, VulkanRenderer *renderer);
-static bool create_logical_device(VulkanRenderer *renderer, QueueFamilyIndices *indices);
-
-bool vk_create_logical_device(Arena *arena, VulkanRenderer *renderer) {
+bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
 	QueueFamilyIndices indices = find_queue_families(arena, renderer);
 
 	if (indices.graphic_family == -1 || indices.present_family == -1) {
@@ -40,7 +35,7 @@ bool vk_create_logical_device(Arena *arena, VulkanRenderer *renderer) {
 	return true;
 }
 
-QueueFamilyIndices find_queue_families(Arena *arena, VulkanRenderer *renderer) {
+QueueFamilyIndices find_queue_families(Arena *arena, VKRenderer *renderer) {
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_count, NULL);
 
@@ -61,7 +56,7 @@ QueueFamilyIndices find_queue_families(Arena *arena, VulkanRenderer *renderer) {
 	return indices;
 }
 
-bool create_logical_device(VulkanRenderer *renderer, QueueFamilyIndices *indices) {
+bool create_logical_device(VKRenderer *renderer, QueueFamilyIndices *indices) {
 	float queue_priority = 1.0f;
 
 	uint32_t unique_queue_families[2] = { indices->graphic_family, indices->present_family };

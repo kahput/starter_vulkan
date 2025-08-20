@@ -63,6 +63,8 @@ typedef struct wl_platform {
 		struct xdg_surface *surface;
 		struct xdg_toplevel *toplevel;
 	} xdg;
+
+	bool use_vulkan;
 } WLPlatform;
 
 struct platform;
