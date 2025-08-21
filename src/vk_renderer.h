@@ -18,11 +18,16 @@ typedef struct {
 	VkSurfaceKHR surface;
 
 	VkSwapchainKHR swapchain;
+
 	VkImage *swapchain_images;
-	uint32_t swapchain_image_count;
-	VkSurfaceFormatKHR swapchain_format ;
-	VkPresentModeKHR swapchain_present_mode ;
-	VkExtent2D swapchain_extent ;
+	uint32_t swapchain_images_count;
+
+	VkSurfaceFormatKHR swapchain_format;
+	VkPresentModeKHR swapchain_present_mode;
+	VkExtent2D swapchain_extent;
+
+	VkImageView *image_views;
+	uint32_t image_views_count;
 
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
@@ -45,6 +50,7 @@ bool vk_create_surface(struct platform *platform, VKRenderer *renderer);
 bool vk_select_physical_device(struct arena *arena, VKRenderer *renderer);
 bool vk_create_logical_device(struct arena *arena, VKRenderer *renderer);
 bool vk_create_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
+bool vk_create_image_views(struct arena *arena, VKRenderer *renderer);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \

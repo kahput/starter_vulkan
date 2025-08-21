@@ -92,9 +92,9 @@ bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *pl
 		return false;
 	}
 
-	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain, &renderer->swapchain_image_count, NULL);
-	renderer->swapchain_images = arena_push_array_zero(arena, VkImage, renderer->swapchain_image_count);
-	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain, &renderer->swapchain_image_count, renderer->swapchain_images);
+	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain, &renderer->swapchain_images_count, NULL);
+	renderer->swapchain_images = arena_push_array_zero(arena, VkImage, renderer->swapchain_images_count);
+	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain, &renderer->swapchain_images_count, renderer->swapchain_images);
 
 	LOG_INFO("Swapchain created successfully");
 

@@ -31,9 +31,8 @@ int main(void) {
 	vk_create_surface(platform, &renderer);
 	vk_select_physical_device(vk_arena, &renderer);
 	vk_create_logical_device(vk_arena, &renderer);
-	if (vk_create_swapchain(vk_arena, &renderer, platform) == false) {
-		LOG_INFO("Failed to create swapchain");
-	}
+	vk_create_swapchain(vk_arena, &renderer, platform);
+	vk_create_image_views(vk_arena, &renderer);
 
 	while (platform_should_close(platform) == false) {
 		platform_poll_events(platform);
