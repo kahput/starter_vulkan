@@ -33,6 +33,7 @@ int main(void) {
 	vk_create_logical_device(vk_arena, &renderer);
 	vk_create_swapchain(vk_arena, &renderer, platform);
 	vk_create_image_views(vk_arena, &renderer);
+	vk_create_render_pass(&renderer);
 	vk_create_graphics_pipline(vk_arena, &renderer);
 
 	while (platform_should_close(platform) == false) {

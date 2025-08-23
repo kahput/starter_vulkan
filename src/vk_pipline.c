@@ -137,8 +137,34 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 		return false;
 	}
 
+	VkGraphicsPipelineCreateInfo gp_create_info = {
+		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		.stageCount = array_count(shader_stages),
+		.pStages = shader_stages,
+		.pVertexInputState = &vis_create_info,
+		.pInputAssemblyState = &ias_create_info,
+		.pViewportState = &vps_create_info,
+		.pRasterizationState = &rs_create_info,
+		.pMultisampleState = &mss_create_info,
+		.pDepthStencilState = NULL,
+		.pColorBlendState = &cbs_create_info,
+		.pDynamicState = &ds_create_info,
+		.layout = renderer->pipeline_layout,
+		.renderPass = renderer->render_pass,
+		.subpass = 0,
+	};
+
+	if (vkCreateGraphicsPipelines(renderer->logical_device, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &renderer->graphics_pipeline) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create graphics pipeline");
+		vkDestroyShaderModule(renderer->logical_device, vertex_shader, NULL);
+		vkDestroyShaderModule(renderer->logical_device, fragment_shader, NULL);
+		return false;
+	}
+
 	vkDestroyShaderModule(renderer->logical_device, vertex_shader, NULL);
 	vkDestroyShaderModule(renderer->logical_device, fragment_shader, NULL);
+
+	LOG_INFO("Graphics pipeline created");
 
 	return true;
 }

@@ -29,7 +29,9 @@ typedef struct {
 	VkImageView *image_views;
 	uint32_t image_views_count;
 
+	VkRenderPass render_pass;
 	VkPipelineLayout pipeline_layout;
+	VkPipeline graphics_pipeline;
 
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
@@ -53,6 +55,7 @@ bool vk_select_physical_device(struct arena *arena, VKRenderer *renderer);
 bool vk_create_logical_device(struct arena *arena, VKRenderer *renderer);
 bool vk_create_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 bool vk_create_image_views(struct arena *arena, VKRenderer *renderer);
+bool vk_create_render_pass(VKRenderer *renderer);
 bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer);
 
 // EXTENSIONS
