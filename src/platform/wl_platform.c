@@ -140,8 +140,8 @@ bool wl_startup(struct platform *platform) {
 	wl->xdg.toplevel = xdg_surface_get_toplevel(wl->xdg.surface);
 	// xdg_toplevel_set_fullscreen(wl->xdg.toplevel, wl->output);
 	// xdg_surface_set_window_geometry(wl->xdg.surface, 0, 0, platform->width, platform->height)
-	xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
-	xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	// xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	// xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
 
 	xdg_toplevel_add_listener(wl->xdg.toplevel, &toplevel_listener, platform);
 
@@ -221,15 +221,12 @@ void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t ser
 	struct platform *platform = (struct platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 
-	LOG_INFO("Configuration event");
 	xdg_surface_ack_configure(wl->xdg.surface, serial);
 
 	if (wl->use_vulkan == false) {
 		wl_surface_attach(wl->surface, create_shm_buffer(platform), 0, 0);
 		wl_surface_commit(wl->surface);
-		LOG_INFO("Software buffer created");
-	} else
-		LOG_INFO("No software buffer created");
+	}
 }
 void wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) { xdg_wm_base_pong(xdg_wm_base, serial); }
 
