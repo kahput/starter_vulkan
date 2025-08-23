@@ -75,3 +75,46 @@ else()
     target_link_libraries( ${PROJECT_NAME} dl Vulkan::Vulkan cglm m)
 endif()
 
+if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
+    # Set source and destination directories
+    set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
+
+    # Get all files in the assets directory
+    file(GLOB_RECURSE ASSET_FILES "${ASSETS_DIR}/*.*")
+
+    # Create custom command to copy each asset file
+    foreach(ASSET_FILE ${ASSET_FILES})
+        # Get relative path to preserve folder structure
+        file(RELATIVE_PATH REL_PATH "${ASSETS_DIR}" "${ASSET_FILE}")
+        set(DEST_FILE "${CMAKE_BINARY_DIR}/bin/${CONFIG}/assets/${REL_PATH}")
+
+        get_filename_component(FILE_EXTENSION "${ASSET_FILE}" EXT)
+        if (${FILE_EXTENSION} STREQUAL ".glsl") 
+            get_filename_component(DEST_DIR ${DEST_FILE} DIRECTORY)
+            get_filename_component(DEST_NAME ${DEST_FILE} NAME_WE)
+            set(SPV_FILE ${DEST_DIR}/${DEST_NAME}.spv)
+            add_custom_command(
+                OUTPUT "${SPV_FILE}"
+                COMMAND glslc "${ASSET_FILE}" -o "${SPV_FILE}"
+                DEPENDS "${ASSET_FILE}"
+                COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_PATH}.spv"
+                VERBATIM
+            )
+
+            list(APPEND ASSET_OUTPUTS "${SPV_FILE}")
+        else()
+        add_custom_command(
+            OUTPUT "${DEST_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASSET_FILE}" "${DEST_FILE}"
+            DEPENDS "${ASSET_FILE}"
+            COMMENT "Copying asset: ${REL_PATH}"
+            VERBATIM
+        )
+
+        list(APPEND ASSET_OUTPUTS "${DEST_FILE}")
+        endif()
+    endforeach()
+
+    # Create a custom target that depends on all copied assets
+    add_custom_target(copy_assets ALL DEPENDS ${ASSET_OUTPUTS})
+endif()
