@@ -6,9 +6,6 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
-
-#define array_count(array) sizeof(array) / sizeof(*array)
 
 struct shader_file {
 	uint32_t size;
