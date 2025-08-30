@@ -9,6 +9,6 @@ bool vk_create_surface(Platform *platform, VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Vulkan surface created");
+	LOG_INFO("Vulkan surface created successfully");
 	return true;
 }

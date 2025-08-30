@@ -161,7 +161,7 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 	vkDestroyShaderModule(renderer->logical_device, vertex_shader, NULL);
 	vkDestroyShaderModule(renderer->logical_device, fragment_shader, NULL);
 
-	LOG_INFO("Graphics pipeline created");
+	LOG_INFO("Graphics pipeline created successfully");
 
 	return true;
 }

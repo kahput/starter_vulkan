@@ -5,7 +5,7 @@
 #include <vulkan/vulkan_core.h>
 
 bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer) {
-		uint32_t offset = arena_size(arena);
+	uint32_t offset = arena_size(arena);
 	renderer->framebuffer_count = renderer->swapchain_images_count;
 	renderer->framebuffers = arena_push_array_zero(arena, VkFramebuffer, renderer->framebuffer_count);
 
@@ -30,6 +30,8 @@ bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer) {
 			return false;
 		}
 	}
+
+	LOG_INFO("Framebuffers created successfully");
 
 	return true;
 }

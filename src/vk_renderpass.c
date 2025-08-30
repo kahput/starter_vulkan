@@ -27,12 +27,22 @@ bool vk_create_render_pass(VKRenderer *renderer) {
 		.pColorAttachments = &color_attachment_ref
 	};
 
+	VkSubpassDependency dependency = {
+		.srcSubpass = VK_SUBPASS_EXTERNAL,
+		.dstSubpass = 0,
+		.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+	};
+
 	VkRenderPassCreateInfo rp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
 		.attachmentCount = 1,
 		.pAttachments = &color_attachment,
 		.subpassCount = 1,
-		.pSubpasses = &subpass
+		.pSubpasses = &subpass,
+		.dependencyCount = 1,
+		.pDependencies = &dependency
 	};
 
 	if (vkCreateRenderPass(renderer->logical_device, &rp_create_info, NULL, &renderer->render_pass) != VK_SUCCESS) {
@@ -40,7 +50,7 @@ bool vk_create_render_pass(VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Render Pass created");
+	LOG_INFO("Render Pass created successfully");
 
 	return true;
 }

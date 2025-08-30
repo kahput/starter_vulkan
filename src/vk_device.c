@@ -29,13 +29,15 @@ bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Logical device created");
+	LOG_INFO("Logical device created successfully");
 
 	arena_clear(arena);
 	return true;
 }
 
 QueueFamilyIndices find_queue_families(Arena *arena, VKRenderer *renderer) {
+	uint32_t offset = arena_size(arena);
+
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_count, NULL);
 
@@ -44,15 +46,16 @@ QueueFamilyIndices find_queue_families(Arena *arena, VKRenderer *renderer) {
 
 	QueueFamilyIndices indices = { -1, -1 };
 	for (uint32_t index = 0; index < queue_family_count; ++index) {
-		if (queue_family_properties->queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		if ((queue_family_properties->queueFlags & VK_QUEUE_GRAPHICS_BIT) && indices.graphic_family == -1)
 			indices.graphic_family = index;
 
 		VkBool32 present_support = false;
 		vkGetPhysicalDeviceSurfaceSupportKHR(renderer->physical_device, index, renderer->surface, &present_support);
-		if (present_support)
+		if (present_support && indices.present_family == -1)
 			indices.present_family = index;
 	}
 
+	arena_set(arena, offset);
 	return indices;
 }
 

@@ -38,6 +38,13 @@ typedef struct {
 	VkPipelineLayout pipeline_layout;
 	VkPipeline graphics_pipeline;
 
+	VkCommandPool command_pool;
+	VkCommandBuffer command_buffer;
+
+	VkSemaphore image_available_semaphore;
+	VkSemaphore render_finished_semaphore;
+	VkFence in_flight_fence;
+
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
 #endif
@@ -63,6 +70,11 @@ bool vk_create_image_views(struct arena *arena, VKRenderer *renderer);
 bool vk_create_render_pass(VKRenderer *renderer);
 bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer);
 bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
+bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
+bool vk_create_command_buffer(VKRenderer *renderer);
+bool vk_create_sync_objects(VKRenderer *renderer);
+
+bool vk_record_command_buffer( uint32_t image_index, VKRenderer *renderer);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \
