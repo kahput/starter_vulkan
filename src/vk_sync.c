@@ -14,14 +14,16 @@ bool vk_create_sync_objects(VKRenderer *renderer) {
 		.flags = VK_FENCE_CREATE_SIGNALED_BIT
 	};
 
-	if (vkCreateSemaphore(renderer->logical_device, &s_create_info, NULL, &renderer->image_available_semaphore) != VK_SUCCESS ||
-		vkCreateSemaphore(renderer->logical_device, &s_create_info, NULL, &renderer->render_finished_semaphore) != VK_SUCCESS ||
-		vkCreateFence(renderer->logical_device, &f_create_info, NULL, &renderer->in_flight_fence) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create synchronization objects");
-		return false;
+	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		if (vkCreateSemaphore(renderer->logical_device, &s_create_info, NULL, renderer->image_available_semaphores + i) != VK_SUCCESS ||
+			vkCreateSemaphore(renderer->logical_device, &s_create_info, NULL, renderer->render_finished_semaphores + i) != VK_SUCCESS ||
+			vkCreateFence(renderer->logical_device, &f_create_info, NULL, renderer->in_flight_fences + i) != VK_SUCCESS) {
+			LOG_ERROR("Failed to create synchronization objects");
+			return false;
+		}
 	}
 
-	LOG_INFO("Vulkan Synchronization Ojbects Created Successfully");
+	LOG_INFO("Vulkan Synchronization Objects Created Successfully");
 
 	return true;
 }

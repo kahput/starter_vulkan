@@ -58,17 +58,18 @@ int main(void) {
 }
 
 void draw_frame(struct arena *arena, VKRenderer *renderer) {
-	vkWaitForFences(renderer->logical_device, 1, &renderer->in_flight_fence, VK_TRUE, UINT64_MAX);
-	vkResetFences(renderer->logical_device, 1, &renderer->in_flight_fence);
+	vkWaitForFences(renderer->logical_device, 1, &renderer->in_flight_fences[renderer->current_frame], VK_TRUE, UINT64_MAX);
 
 	uint32_t image_index = 0;
-	vkAcquireNextImageKHR(renderer->logical_device, renderer->swapchain, UINT64_MAX, renderer->image_available_semaphore, VK_NULL_HANDLE, &image_index);
+	vkAcquireNextImageKHR(renderer->logical_device, renderer->swapchain, UINT64_MAX, renderer->image_available_semaphores[renderer->current_frame], VK_NULL_HANDLE, &image_index);
 
-	vkResetCommandBuffer(renderer->command_buffer, 0);
-	vk_record_command_buffer(image_index, renderer);
+	vkResetFences(renderer->logical_device, 1, &renderer->in_flight_fences[renderer->current_frame]);
 
-	VkSemaphore wait_semaphores[] = { renderer->image_available_semaphore };
-	VkSemaphore signal_semaphores[] = { renderer->render_finished_semaphore };
+	vkResetCommandBuffer(renderer->command_buffers[renderer->current_frame], 0);
+	vk_record_command_buffers(renderer, image_index);
+
+	VkSemaphore wait_semaphores[] = { renderer->image_available_semaphores[renderer->current_frame] };
+	VkSemaphore signal_semaphores[] = { renderer->render_finished_semaphores[renderer->current_frame] };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info = {
@@ -77,12 +78,12 @@ void draw_frame(struct arena *arena, VKRenderer *renderer) {
 		.pWaitSemaphores = wait_semaphores,
 		.pWaitDstStageMask = wait_stages,
 		.commandBufferCount = 1,
-		.pCommandBuffers = &renderer->command_buffer,
+		.pCommandBuffers = &renderer->command_buffers[renderer->current_frame],
 		.signalSemaphoreCount = array_count(signal_semaphores),
 		.pSignalSemaphores = signal_semaphores
 	};
 
-	if (vkQueueSubmit(renderer->graphics_queue, 1, &submit_info, renderer->in_flight_fence) != VK_SUCCESS) {
+	if (vkQueueSubmit(renderer->graphics_queue, 1, &submit_info, renderer->in_flight_fences[renderer->current_frame]) != VK_SUCCESS) {
 		LOG_ERROR("Failed to submit draw command buffer");
 		return;
 	}
@@ -96,6 +97,8 @@ void draw_frame(struct arena *arena, VKRenderer *renderer) {
 		.pSwapchains = swapchains,
 		.pImageIndices = &image_index,
 	};
+
+	renderer->current_frame = (renderer->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 
 	if (vkQueuePresentKHR(renderer->present_queue, &present_info) != VK_SUCCESS) {
 		return;

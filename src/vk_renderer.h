@@ -6,10 +6,10 @@
 #include <vulkan/vulkan_core.h>
 
 #define array_count(array) sizeof(array) / sizeof(*array)
+#define MAX_FRAMES_IN_FLIGHT 2
 
 struct platform;
 struct arena;
-
 
 typedef struct {
 	VkInstance instance;
@@ -39,12 +39,14 @@ typedef struct {
 	VkPipelineLayout pipeline_layout;
 	VkPipeline graphics_pipeline;
 
-	VkCommandPool command_pool;
-	VkCommandBuffer command_buffer;
+	uint32_t current_frame;
 
-	VkSemaphore image_available_semaphore;
-	VkSemaphore render_finished_semaphore;
-	VkFence in_flight_fence;
+	VkCommandPool command_pool;
+	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
+
+	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
+	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
+	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
 
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
@@ -75,7 +77,7 @@ bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
 bool vk_create_command_buffer(VKRenderer *renderer);
 bool vk_create_sync_objects(VKRenderer *renderer);
 
-bool vk_record_command_buffer( uint32_t image_index, VKRenderer *renderer);
+bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \

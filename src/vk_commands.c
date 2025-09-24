@@ -28,10 +28,10 @@ bool vk_create_command_buffer(VKRenderer *renderer) {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandPool = renderer->command_pool,
 		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		.commandBufferCount = 1
+		.commandBufferCount = array_count(renderer->command_buffers)
 	};
 
-	if (vkAllocateCommandBuffers(renderer->logical_device, &cb_allocate_info, &renderer->command_buffer) != VK_SUCCESS) {
+	if (vkAllocateCommandBuffers(renderer->logical_device, &cb_allocate_info, renderer->command_buffers) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create command buffer");
 		return false;
 	}
@@ -40,12 +40,12 @@ bool vk_create_command_buffer(VKRenderer *renderer) {
 	return true;
 }
 
-bool vk_record_command_buffer(uint32_t image_index, VKRenderer *renderer) {
+bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 	VkCommandBufferBeginInfo cb_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	};
 
-	if (vkBeginCommandBuffer(renderer->command_buffer, &cb_begin_info) != VK_SUCCESS) {
+	if (vkBeginCommandBuffer(renderer->command_buffers[renderer->current_frame], &cb_begin_info) != VK_SUCCESS) {
 		LOG_ERROR("Failed to begin command buffer recording");
 		return false;
 	}
@@ -61,8 +61,8 @@ bool vk_record_command_buffer(uint32_t image_index, VKRenderer *renderer) {
 		.pClearValues = &clear_color
 	};
 
-	vkCmdBeginRenderPass(renderer->command_buffer, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(renderer->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->graphics_pipeline);
+	vkCmdBeginRenderPass(renderer->command_buffers[renderer->current_frame], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(renderer->command_buffers[renderer->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->graphics_pipeline);
 
 	VkViewport viewport = {
 		.x = 0,
@@ -72,18 +72,18 @@ bool vk_record_command_buffer(uint32_t image_index, VKRenderer *renderer) {
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
-	vkCmdSetViewport(renderer->command_buffer, 0, 1, &viewport);
+	vkCmdSetViewport(renderer->command_buffers[renderer->current_frame], 0, 1, &viewport);
 
 	VkRect2D scissor = {
 		.offset = { 0.0f, 0.0f },
 		.extent = renderer->swapchain_extent
 	};
-	vkCmdSetScissor(renderer->command_buffer, 0, 1, &scissor);
+	vkCmdSetScissor(renderer->command_buffers[renderer->current_frame], 0, 1, &scissor);
 
-	vkCmdDraw(renderer->command_buffer, 6, 1, 0, 0);
+	vkCmdDraw(renderer->command_buffers[renderer->current_frame], 6, 1, 0, 0);
 
-	vkCmdEndRenderPass(renderer->command_buffer);
-	if (vkEndCommandBuffer(renderer->command_buffer) != VK_SUCCESS) {
+	vkCmdEndRenderPass(renderer->command_buffers[renderer->current_frame]);
+	if (vkEndCommandBuffer(renderer->command_buffers[renderer->current_frame]) != VK_SUCCESS) {
 		LOG_ERROR("Failed to record command buffer");
 		return false;
 	}
