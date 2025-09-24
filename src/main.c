@@ -69,7 +69,7 @@ void draw_frame(struct arena *arena, VKRenderer *renderer) {
 	vk_record_command_buffers(renderer, image_index);
 
 	VkSemaphore wait_semaphores[] = { renderer->image_available_semaphores[renderer->current_frame] };
-	VkSemaphore signal_semaphores[] = { renderer->render_finished_semaphores[renderer->current_frame] };
+	VkSemaphore signal_semaphores[] = { renderer->render_finished_semaphores[image_index] };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info = {

@@ -6,7 +6,7 @@
 #include <vulkan/vulkan_core.h>
 
 #define array_count(array) sizeof(array) / sizeof(*array)
-#define MAX_FRAMES_IN_FLIGHT 2
+#define MAX_FRAMES_IN_FLIGHT 3
 
 struct platform;
 struct arena;
