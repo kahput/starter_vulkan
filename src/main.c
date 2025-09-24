@@ -30,16 +30,19 @@ int main(void) {
 	LOG_INFO("Successfully created wayland display");
 	LOG_INFO("Logical pixel dimensions { %d, %d }", platform->logical_width, platform->logical_height);
 	LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
+
 	vk_create_instance(vk_arena, &renderer, platform);
-	vk_load_extensions(&renderer);
 	vk_create_surface(platform, &renderer);
+
 	vk_select_physical_device(vk_arena, &renderer);
 	vk_create_logical_device(vk_arena, &renderer);
+
 	vk_create_swapchain(vk_arena, &renderer, platform);
 	vk_create_image_views(vk_arena, &renderer);
 	vk_create_render_pass(&renderer);
-	vk_create_graphics_pipline(vk_arena, &renderer);
 	vk_create_framebuffers(vk_arena, &renderer);
+	vk_create_graphics_pipline(vk_arena, &renderer);
+
 	vk_create_command_pool(vk_arena, &renderer);
 	vk_create_command_buffer(&renderer);
 	vk_create_sync_objects(&renderer);
@@ -48,6 +51,8 @@ int main(void) {
 		platform_poll_events(platform);
 		draw_frame(frame_arena, &renderer);
 	}
+
+	vkDeviceWaitIdle(renderer.logical_device);
 
 	return 0;
 }
@@ -89,7 +94,7 @@ void draw_frame(struct arena *arena, VKRenderer *renderer) {
 		.pWaitSemaphores = signal_semaphores,
 		.swapchainCount = 1,
 		.pSwapchains = swapchains,
-		.pImageIndices = &image_index
+		.pImageIndices = &image_index,
 	};
 
 	if (vkQueuePresentKHR(renderer->present_queue, &present_info) != VK_SUCCESS) {

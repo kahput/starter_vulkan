@@ -10,6 +10,7 @@
 struct platform;
 struct arena;
 
+
 typedef struct {
 	VkInstance instance;
 

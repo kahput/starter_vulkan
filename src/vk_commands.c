@@ -80,7 +80,7 @@ bool vk_record_command_buffer(uint32_t image_index, VKRenderer *renderer) {
 	};
 	vkCmdSetScissor(renderer->command_buffer, 0, 1, &scissor);
 
-	vkCmdDraw(renderer->command_buffer, 3, 1, 0, 0);
+	vkCmdDraw(renderer->command_buffer, 6, 1, 0, 0);
 
 	vkCmdEndRenderPass(renderer->command_buffer);
 	if (vkEndCommandBuffer(renderer->command_buffer) != VK_SUCCESS) {

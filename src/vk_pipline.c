@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 struct shader_file {
 	uint32_t size;
@@ -35,20 +36,20 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 
 	arena_set(arena, offset);
 
-	VkPipelineShaderStageCreateInfo vst_create_info = {
+	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_VERTEX_BIT,
 		.module = vertex_shader,
 		.pName = "main"
 	};
-	VkPipelineShaderStageCreateInfo fst_create_info = {
+	VkPipelineShaderStageCreateInfo fss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
 		.module = fragment_shader,
 		.pName = "main"
 	};
 
-	VkPipelineShaderStageCreateInfo shader_stages[] = { vst_create_info, fst_create_info };
+	VkPipelineShaderStageCreateInfo shader_stages[] = { vss_create_info, fss_create_info };
 
 	VkDynamicState dynamic_states[] = {
 		VK_DYNAMIC_STATE_VIEWPORT,
