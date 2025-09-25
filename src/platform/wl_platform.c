@@ -2,8 +2,6 @@
 #include "platform/internal.h"
 
 #include "core/logger.h"
-#include <vulkan/vulkan_core.h>
-#include <vulkan/vulkan_wayland.h>
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
 
@@ -134,6 +132,7 @@ bool wl_startup(struct platform *platform) {
 		return false;
 	}
 
+	wl->viewport = wp_viewporter_get_viewport(wl->viewporter, wl->surface);
 	wl->xdg.surface = xdg_wm_base_get_xdg_surface(wl->wm_base, wl->surface);
 	xdg_surface_add_listener(wl->xdg.surface, &surface_listener, platform);
 
@@ -236,6 +235,10 @@ void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t w
 
 	if (width && height) {
 		platform->logical_width = width, platform->logical_height = height;
+	}
+
+	if (wl->viewport) {
+		wp_viewport_set_destination(wl->viewport, platform->logical_width, platform->logical_height);
 	}
 }
 void toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel) {

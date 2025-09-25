@@ -56,6 +56,7 @@ typedef struct wl_platform {
 	struct xdg_wm_base *wm_base;
 
 	struct wp_viewporter *viewporter;
+	struct wp_viewport *viewport;
 	struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
 	struct wp_fractional_scale_v1 *fractional_scale;
 
