@@ -20,14 +20,16 @@ typedef struct {
 
 	VkSurfaceKHR surface;
 
-	VkSwapchainKHR swapchain;
+	struct {
+		VkSwapchainKHR handle;
 
-	VkImage *swapchain_images;
-	uint32_t swapchain_images_count;
+		uint32_t image_count;
+		VkImage *images;
 
-	VkSurfaceFormatKHR swapchain_format;
-	VkPresentModeKHR swapchain_present_mode;
-	VkExtent2D swapchain_extent;
+		VkSurfaceFormatKHR format;
+		VkPresentModeKHR present_mode;
+		VkExtent2D extent;
+	} swapchain;
 
 	VkImageView *image_views;
 	uint32_t image_views_count;
@@ -61,22 +63,25 @@ typedef struct {
 QueueFamilyIndices find_queue_families(struct arena *arena, VKRenderer *renderer);
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
-bool vk_create_instance(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 void vk_load_extensions(VKRenderer *renderer);
 
+bool vk_create_instance(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 bool vk_create_surface(struct platform *platform, VKRenderer *renderer);
 
 bool vk_select_physical_device(struct arena *arena, VKRenderer *renderer);
 bool vk_create_logical_device(struct arena *arena, VKRenderer *renderer);
+
 bool vk_create_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 bool vk_create_image_views(struct arena *arena, VKRenderer *renderer);
 bool vk_create_render_pass(VKRenderer *renderer);
 bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer);
 bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
+
+bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
+
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
 bool vk_create_command_buffer(VKRenderer *renderer);
 bool vk_create_sync_objects(VKRenderer *renderer);
-
 bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index);
 
 // EXTENSIONS

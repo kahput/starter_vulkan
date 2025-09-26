@@ -6,15 +6,17 @@
 #include <vulkan/vulkan_core.h>
 
 bool vk_create_image_views(struct arena *arena, VKRenderer *renderer) {
-	renderer->image_views_count = renderer->swapchain_images_count;
+	uint32_t offset = arena_size(arena);
+
+	renderer->image_views_count = renderer->swapchain.image_count;
 	renderer->image_views = arena_push_array_zero(arena, VkImageView, renderer->image_views_count);
 
 	for (uint32_t i = 0; i < renderer->image_views_count; ++i) {
 		VkImageViewCreateInfo image_view_create_info = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.image = renderer->swapchain_images[i],
+			.image = renderer->swapchain.images[i],
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
-			.format = renderer->swapchain_format.format,
+			.format = renderer->swapchain.format.format,
 			.components = {
 			  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
 			  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -32,7 +34,7 @@ bool vk_create_image_views(struct arena *arena, VKRenderer *renderer) {
 
 		if (vkCreateImageView(renderer->logical_device, &image_view_create_info, NULL, &renderer->image_views[i]) != VK_SUCCESS) {
 			LOG_ERROR("Failed to create swapchain image view");
-			arena_clear(arena);
+			arena_pop(arena, offset);
 			return false;
 		}
 	}

@@ -26,10 +26,12 @@ VkExtent2D swapchain_select_extent(struct platform *platform, const VkSurfaceCap
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &details.capabilities);
 
+	uint32_t offset = arena_size(arena);
+
 	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &details.formats_count, NULL);
 	if (details.formats_count == 0) {
 		LOG_ERROR("No surface formats available");
-		arena_clear(arena);
+		arena_pop(arena, offset);
 		return false;
 	}
 
@@ -39,7 +41,7 @@ bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_devi
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &details.modes_count, NULL);
 	if (details.modes_count == 0) {
 		LOG_ERROR("No surface modes available");
-		arena_clear(arena);
+		arena_pop(arena, offset);
 		return false;
 	}
 
@@ -52,11 +54,14 @@ bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_devi
 }
 
 bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *platform) {
+	uint32_t offset = arena_size(arena);
 	query_swapchain_support(arena, renderer->physical_device, renderer->surface);
 
-	renderer->swapchain_format = swapchain_select_surface_format(details.formats, details.formats_count);
-	renderer->swapchain_present_mode = swapchain_select_present_mode(details.present_modes, details.modes_count);
-	renderer->swapchain_extent = swapchain_select_extent(platform, &details.capabilities);
+	renderer->swapchain.format = swapchain_select_surface_format(details.formats, details.formats_count);
+	renderer->swapchain.present_mode = swapchain_select_present_mode(details.present_modes, details.modes_count);
+	renderer->swapchain.extent = swapchain_select_extent(platform, &details.capabilities);
+
+	arena_pop(arena, offset);
 
 	QueueFamilyIndices indices = find_queue_families(arena, renderer);
 	uint32_t queue_family_indices[] = { indices.graphic_family, indices.present_family };
@@ -69,14 +74,14 @@ bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *pl
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 		.surface = renderer->surface,
 		.minImageCount = image_count,
-		.imageFormat = renderer->swapchain_format.format,
-		.imageColorSpace = renderer->swapchain_format.colorSpace,
-		.imageExtent = renderer->swapchain_extent,
+		.imageFormat = renderer->swapchain.format.format,
+		.imageColorSpace = renderer->swapchain.format.colorSpace,
+		.imageExtent = renderer->swapchain.extent,
 		.imageArrayLayers = 1,
 		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 		.preTransform = details.capabilities.currentTransform,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		.presentMode = renderer->swapchain_present_mode,
+		.presentMode = renderer->swapchain.present_mode,
 		.clipped = VK_TRUE,
 	};
 	if (queue_family_indices[0] != queue_family_indices[1]) {
@@ -86,17 +91,39 @@ bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *pl
 	} else
 		swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	if (vkCreateSwapchainKHR(renderer->logical_device, &swapchain_create_info, NULL, &renderer->swapchain) != VK_SUCCESS) {
+	if (vkCreateSwapchainKHR(renderer->logical_device, &swapchain_create_info, NULL, &renderer->swapchain.handle) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create swapchain");
-		arena_clear(arena);
+		arena_pop(arena, offset);
 		return false;
 	}
 
-	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain, &renderer->swapchain_images_count, NULL);
-	renderer->swapchain_images = arena_push_array_zero(arena, VkImage, renderer->swapchain_images_count);
-	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain, &renderer->swapchain_images_count, renderer->swapchain_images);
+	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain.handle, &renderer->swapchain.image_count, NULL);
+	renderer->swapchain.images = arena_push_array_zero(arena, VkImage, renderer->swapchain.image_count);
+	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain.handle, &renderer->swapchain.image_count, renderer->swapchain.images);
 
 	LOG_INFO("Swapchain created successfully");
+
+	return true;
+}
+
+bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform) {
+	vkDeviceWaitIdle(renderer->logical_device);
+
+	for (uint32_t i = 0; i < renderer->framebuffer_count; ++i) {
+		vkDestroyFramebuffer(renderer->logical_device, renderer->framebuffers[i], NULL);
+	}
+	for (uint32_t i = 0; i < renderer->image_views_count; ++i) {
+		vkDestroyImageView(renderer->logical_device, renderer->image_views[i], NULL);
+	}
+	vkDestroySwapchainKHR(renderer->logical_device, renderer->swapchain.handle, NULL);
+	arena_clear(arena);
+
+	if (vk_create_swapchain(arena, renderer, platform) == false)
+		return false;
+	if (vk_create_image_views(arena, renderer) == false)
+		return false;
+	if (vk_create_framebuffers(arena, renderer) == false)
+		return false;
 
 	return true;
 }

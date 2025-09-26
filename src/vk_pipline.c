@@ -75,15 +75,15 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 	VkViewport viewport = {
 		.x = 0,
 		.y = 0,
-		.width = renderer->swapchain_extent.width,
-		.height = renderer->swapchain_extent.height,
+		.width = renderer->swapchain.extent.width,
+		.height = renderer->swapchain.extent.height,
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
 
 	VkRect2D scissor = {
 		.offset = { 0.0f, 0.0f },
-		.extent = renderer->swapchain_extent
+		.extent = renderer->swapchain.extent
 	};
 
 	VkPipelineViewportStateCreateInfo vps_create_info = {

@@ -44,6 +44,9 @@ extern WLLibrary _wl_library;
 
 #define wl_display_dispatch _wl_library.display_dispatch
 
+struct platform;
+typedef void (*fn_dimensions)(struct platform *platform, uint32_t width, uint32_t height);
+
 typedef struct wl_platform {
 	struct wl_display *display;
 	struct wl_registry *registry;
@@ -59,16 +62,20 @@ typedef struct wl_platform {
 	struct wp_viewport *viewport;
 	struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
 	struct wp_fractional_scale_v1 *fractional_scale;
+	float scale_factor;
 
 	struct {
 		struct xdg_surface *surface;
 		struct xdg_toplevel *toplevel;
 	} xdg;
 
+	struct {
+		fn_dimensions logical_size;
+		fn_dimensions physical_size;
+	} callback;
+
 	bool use_vulkan;
 } WLPlatform;
-
-struct platform;
 
 #define PLATFORM_WAYLAND_LIBRARY_STATE WLPlatform wl;
 
@@ -82,6 +89,9 @@ bool wl_should_close(struct platform *platform);
 
 void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
 void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
+
+void wl_set_logical_dimensions_callback(struct platform *platform, fn_dimensions callback);
+void wl_set_physical_dimensions_callback(struct platform *platform, fn_dimensions callback);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;

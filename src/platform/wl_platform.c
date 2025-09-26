@@ -99,6 +99,9 @@ bool platform_init_wayland(struct platform *platform) {
 	platform->internal->logical_dimensions = wl_get_logical_dimensions;
 	platform->internal->physical_dimensions = wl_get_physical_dimensions;
 
+	platform->internal->set_logical_dimensions_callback = wl_set_logical_dimensions_callback;
+	platform->internal->set_physical_dimensions_callback = wl_set_physical_dimensions_callback;
+
 	platform->internal->create_vulkan_surface = wl_create_vulkan_surface;
 	platform->internal->vulkan_extensions = wl_vulkan_extensions;
 
@@ -139,8 +142,8 @@ bool wl_startup(struct platform *platform) {
 	wl->xdg.toplevel = xdg_surface_get_toplevel(wl->xdg.surface);
 	// xdg_toplevel_set_fullscreen(wl->xdg.toplevel, wl->output);
 	// xdg_surface_set_window_geometry(wl->xdg.surface, 0, 0, platform->width, platform->height)
-	xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
-	xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	// xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	// xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
 
 	xdg_toplevel_add_listener(wl->xdg.toplevel, &toplevel_listener, platform);
 
@@ -173,6 +176,18 @@ bool wl_should_close(struct platform *platform) {
 
 void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
 void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
+
+void wl_set_logical_dimensions_callback(struct platform *platform, fn_dimensions callback) {
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->callback.logical_size = callback;
+}
+
+void wl_set_physical_dimensions_callback(struct platform *platform, fn_dimensions callback) {
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->callback.physical_size = callback;
+}
 
 bool wl_create_vulkan_surface(struct platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
 	WLPlatform *wl = &platform->internal->wl;
@@ -233,12 +248,15 @@ void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t w
 	struct platform *platform = (struct platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 
-	if (width && height) {
+	if ((width && height) && ((uint32_t)width != platform->logical_width || (uint32_t)height != platform->logical_height)) {
 		platform->logical_width = width, platform->logical_height = height;
-	}
-
-	if (wl->viewport) {
+		platform->physical_width = platform->logical_width * wl->scale_factor, platform->physical_height = platform->logical_height * wl->scale_factor;
 		wp_viewport_set_destination(wl->viewport, platform->logical_width, platform->logical_height);
+
+		if (wl->callback.logical_size)
+			wl->callback.logical_size(platform, platform->logical_width, platform->logical_height);
+		if (wl->callback.physical_size)
+			wl->callback.physical_size(platform, platform->physical_width, platform->physical_height);
 	}
 }
 void toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel) {
@@ -250,8 +268,8 @@ void toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, str
 
 void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_scale_v1, uint32_t scale) {
 	struct platform *platform = (struct platform *)data;
-	float fractional_scale = (float)scale / 120.f;
-	platform->physical_width = platform->logical_width * fractional_scale, platform->physical_height = platform->logical_height * fractional_scale;
+	WLPlatform *wl = &platform->internal->wl;
+	wl->scale_factor = (float)scale / 120.f;
 }
 
 static int create_anonymous_file(off_t size) {

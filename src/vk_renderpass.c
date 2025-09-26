@@ -6,7 +6,7 @@
 
 bool vk_create_render_pass(VKRenderer *renderer) {
 	VkAttachmentDescription color_attachment = {
-		.format = renderer->swapchain_format.format,
+		.format = renderer->swapchain.format.format,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
 		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,

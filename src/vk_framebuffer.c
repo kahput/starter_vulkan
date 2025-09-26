@@ -6,7 +6,7 @@
 
 bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer) {
 	uint32_t offset = arena_size(arena);
-	renderer->framebuffer_count = renderer->swapchain_images_count;
+	renderer->framebuffer_count = renderer->swapchain.image_count;
 	renderer->framebuffers = arena_push_array_zero(arena, VkFramebuffer, renderer->framebuffer_count);
 
 	for (uint32_t i = 0; i < renderer->framebuffer_count; ++i) {
@@ -19,8 +19,8 @@ bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer) {
 			.renderPass = renderer->render_pass,
 			.attachmentCount = array_count(attachments),
 			.pAttachments = attachments,
-			.width = renderer->swapchain_extent.width,
-			.height = renderer->swapchain_extent.height,
+			.width = renderer->swapchain.extent.width,
+			.height = renderer->swapchain.extent.height,
 			.layers = 1
 		};
 

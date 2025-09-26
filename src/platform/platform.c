@@ -73,6 +73,13 @@ void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint3
 	platform->internal->physical_dimensions(platform, width, height);
 }
 
+void platform_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions) {
+	platform->internal->set_logical_dimensions_callback(platform, dimensions);
+}
+void platform_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions) {
+	platform->internal->set_physical_dimensions_callback(platform, dimensions);
+}
+
 bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface) {
 	return platform->internal->create_vulkan_surface(platform, instance, surface);
 }

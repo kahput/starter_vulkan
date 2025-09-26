@@ -56,7 +56,7 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 		.renderPass = renderer->render_pass,
 		.framebuffer = renderer->framebuffers[image_index],
 		.renderArea.offset = { 0, 0 },
-		.renderArea.extent = renderer->swapchain_extent,
+		.renderArea.extent = renderer->swapchain.extent,
 		.clearValueCount = 1,
 		.pClearValues = &clear_color
 	};
@@ -67,8 +67,8 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 	VkViewport viewport = {
 		.x = 0,
 		.y = 0,
-		.width = renderer->swapchain_extent.width,
-		.height = renderer->swapchain_extent.height,
+		.width = renderer->swapchain.extent.width,
+		.height = renderer->swapchain.extent.height,
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
@@ -76,7 +76,7 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 
 	VkRect2D scissor = {
 		.offset = { 0.0f, 0.0f },
-		.extent = renderer->swapchain_extent
+		.extent = renderer->swapchain.extent
 	};
 	vkCmdSetScissor(renderer->command_buffers[renderer->current_frame], 0, 1, &scissor);
 
