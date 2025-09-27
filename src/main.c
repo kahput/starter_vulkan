@@ -50,6 +50,7 @@ int main(void) {
 	// vk_recreate_swapchain();
 
 	vk_create_command_pool(vk_arena, &renderer);
+	vk_create_vertex_buffer( &renderer);
 	vk_create_command_buffer(&renderer);
 	vk_create_sync_objects(&renderer);
 

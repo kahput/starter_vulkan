@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cglm/cglm.h>
 #include <vulkan/vulkan.h>
 
 #include <stdbool.h>
@@ -10,6 +11,27 @@
 
 struct platform;
 struct arena;
+
+typedef struct {
+	vec2 position;
+	vec3 color;
+} Vertex;
+
+extern const Vertex vertices[6];
+
+typedef enum {
+	FORMAT_FLOAT,
+	FORMAT_FLOAT2,
+	FORMAT_FLOAT3,
+	FORMAT_FLOAT4,
+
+	FORMAT_COUNT
+} VertexAttributeFormat;
+
+typedef struct {
+	const char *name;
+	VertexAttributeFormat format;
+} VertexAttribute;
 
 typedef struct {
 	VkInstance instance;
@@ -46,6 +68,9 @@ typedef struct {
 	VkCommandPool command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
+	VkBuffer vertex_buffer;
+	VkDeviceMemory vertex_buffer_memory;
+
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
@@ -80,6 +105,7 @@ bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
 bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
+bool vk_create_vertex_buffer(VKRenderer *renderer);
 bool vk_create_command_buffer(VKRenderer *renderer);
 bool vk_create_sync_objects(VKRenderer *renderer);
 bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index);

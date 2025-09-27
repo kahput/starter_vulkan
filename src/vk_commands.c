@@ -80,7 +80,11 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 	};
 	vkCmdSetScissor(renderer->command_buffers[renderer->current_frame], 0, 1, &scissor);
 
-	vkCmdDraw(renderer->command_buffers[renderer->current_frame], 6, 1, 0, 0);
+	VkBuffer vertex_buffers[] = { renderer->vertex_buffer };
+	VkDeviceSize offsets[] = { 0 };
+	vkCmdBindVertexBuffers(renderer->command_buffers[renderer->current_frame], 1, 1, vertex_buffers, offsets);
+
+	vkCmdDraw(renderer->command_buffers[renderer->current_frame], array_count(vertices), 1, 0, 0);
 
 	vkCmdEndRenderPass(renderer->command_buffers[renderer->current_frame]);
 	if (vkEndCommandBuffer(renderer->command_buffers[renderer->current_frame]) != VK_SUCCESS) {

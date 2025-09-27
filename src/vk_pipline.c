@@ -13,6 +13,19 @@ struct shader_file {
 	uint8_t *content;
 };
 
+const Vertex vertices[6] = {
+	{ .position = { -0.5f, -0.5f }, .color = { 1.0, 0.0, 0.0 } },
+	{ .position = { 0.5f, -0.5f }, .color = { 0.0, 1.0, 0.0 } },
+	{ .position = { -0.5f, 0.5f }, .color = { 0.0, 0.0, 1.0 } },
+
+	{ .position = { 0.5f, -0.5f }, .color = { 0.0, 1.0, 0.0 } },
+	{ .position = { 0.5f, 0.5f }, .color = { 1.0, 0.0, 0.0 } },
+	{ .position = { -0.5f, 0.5f }, .color = { 0.0, 0.0, 1.0 } },
+};
+
+static inline int32_t vaf_to_vulkan_format(VertexAttributeFormat format);
+static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
+
 struct shader_file read_file(struct arena *arena, const char *path);
 bool create_shader_module(VKRenderer *renderer, VkShaderModule *module, struct shader_file code);
 
@@ -62,8 +75,39 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 		.pDynamicStates = dynamic_states
 	};
 
+	VertexAttribute attributes[] = {
+		{ .name = "a_position", FORMAT_FLOAT2 },
+		{ .name = "a_color", FORMAT_FLOAT3 }
+	};
+
+	VkVertexInputBindingDescription binding_description = { 0 };
+	VkVertexInputAttributeDescription attribute_descriptions[array_count(attributes)] = { 0 };
+
+	uint32_t byte_offset = 0;
+	for (uint32_t i = 0; i < array_count(attributes); ++i) {
+		VertexAttribute attribute = attributes[i];
+		attribute_descriptions[i] = (VkVertexInputAttributeDescription){
+			.binding = 1,
+			.location = i,
+			.format = vaf_to_vulkan_format(attribute.format),
+			.offset = byte_offset
+		};
+
+		byte_offset += vaf_to_byte_size(attribute.format);
+	}
+
+	binding_description = (VkVertexInputBindingDescription){
+		.binding = 1,
+		.stride = byte_offset,
+		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+	};
+
 	VkPipelineVertexInputStateCreateInfo vis_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &binding_description,
+		.vertexAttributeDescriptionCount = array_count(attributes),
+		.pVertexAttributeDescriptions = attribute_descriptions
 	};
 
 	VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
@@ -199,4 +243,38 @@ bool create_shader_module(VKRenderer *renderer, VkShaderModule *module, struct s
 	}
 
 	return true;
+}
+
+int32_t vaf_to_vulkan_format(VertexAttributeFormat format) {
+	switch (format) {
+		case FORMAT_FLOAT:
+			return VK_FORMAT_R32_SFLOAT;
+		case FORMAT_FLOAT2:
+			return VK_FORMAT_R32G32_SFLOAT;
+		case FORMAT_FLOAT3:
+			return VK_FORMAT_R32G32B32_SFLOAT;
+		case FORMAT_FLOAT4:
+			return VK_FORMAT_R32G32B32A32_SFLOAT;
+		default: {
+			LOG_ERROR("Unkown attribute format type provided!");
+			return 0;
+		} break;
+	}
+}
+
+uint32_t vaf_to_byte_size(VertexAttributeFormat format) {
+	switch (format) {
+		case FORMAT_FLOAT:
+			return sizeof(float);
+		case FORMAT_FLOAT2:
+			return sizeof(float) * 2;
+		case FORMAT_FLOAT3:
+			return sizeof(float) * 3;
+		case FORMAT_FLOAT4:
+			return sizeof(float) * 4;
+		default: {
+			LOG_ERROR("Unkown attribute format type provided!");
+			return 0;
+		} break;
+	}
 }
