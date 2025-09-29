@@ -13,15 +13,6 @@ struct shader_file {
 	uint8_t *content;
 };
 
-const Vertex vertices[6] = {
-	{ .position = { -0.5f, -0.5f }, .color = { 1.0, 0.0, 0.0 } },
-	{ .position = { 0.5f, -0.5f }, .color = { 0.0, 1.0, 0.0 } },
-	{ .position = { -0.5f, 0.5f }, .color = { 0.0, 0.0, 1.0 } },
-
-	{ .position = { 0.5f, -0.5f }, .color = { 0.0, 1.0, 0.0 } },
-	{ .position = { 0.5f, 0.5f }, .color = { 1.0, 0.0, 0.0 } },
-	{ .position = { -0.5f, 0.5f }, .color = { 0.0, 0.0, 1.0 } },
-};
 
 static inline int32_t vaf_to_vulkan_format(VertexAttributeFormat format);
 static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);

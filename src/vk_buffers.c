@@ -6,8 +6,19 @@
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
+const Vertex vertices[4] = {
+	{ .position = { -0.5f, -0.5f }, .color = { 1.0, 0.0, 0.0 } },
+	{ .position = { 0.5f, -0.5f }, .color = { 0.0, 1.0, 0.0 } },
+	{ .position = { 0.5f, 0.5f }, .color = { 1.0, 0.0, 0.0 } },
+	{ .position = { -0.5f, 0.5f }, .color = { 0.0, 0.0, 1.0 } },
+};
+
+const uint16_t indices[6] = {
+	0, 1, 2, 2, 3, 0
+};
+
 bool vk_create_vertex_buffer(struct arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices indices = find_queue_families(arena, renderer);
+	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
 
 	VkDeviceSize size = sizeof(vertices);
 
@@ -20,16 +31,46 @@ bool vk_create_vertex_buffer(struct arena *arena, VKRenderer *renderer) {
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	vk_create_buffer(renderer, indices, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vk_create_buffer(renderer, family_indices, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
 	vkMapMemory(renderer->logical_device, staging_buffer_memory, 0, size, 0, &data);
 	memcpy(data, vertices, sizeof(vertices));
 	vkUnmapMemory(renderer->logical_device, staging_buffer_memory);
 
-	vk_create_buffer(renderer, indices, size, usage, properties, &renderer->vertex_buffer, &renderer->vertex_buffer_memory);
+	vk_create_buffer(renderer, family_indices, size, usage, properties, &renderer->vertex_buffer, &renderer->vertex_buffer_memory);
 
 	vk_copy_buffer(renderer, staging_buffer, renderer->vertex_buffer, size);
+	vkDestroyBuffer(renderer->logical_device, staging_buffer, NULL);
+	vkFreeMemory(renderer->logical_device, staging_buffer_memory, NULL);
+
+	return true;
+}
+
+bool vk_create_index_buffer(struct arena *arena, VKRenderer *renderer) {
+	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
+
+	VkDeviceSize size = sizeof(indices);
+
+	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+	VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+
+	vk_create_buffer(renderer, family_indices, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+
+	void *data;
+	vkMapMemory(renderer->logical_device, staging_buffer_memory, 0, size, 0, &data);
+	memcpy(data, indices, sizeof(indices));
+	vkUnmapMemory(renderer->logical_device, staging_buffer_memory);
+
+	vk_create_buffer(renderer, family_indices, size, usage, properties, &renderer->index_buffer, &renderer->index_buffer_memory);
+
+	vk_copy_buffer(renderer, staging_buffer, renderer->index_buffer, size);
 	vkDestroyBuffer(renderer->logical_device, staging_buffer, NULL);
 	vkFreeMemory(renderer->logical_device, staging_buffer_memory, NULL);
 
@@ -55,15 +96,15 @@ bool vk_create_buffer(
 	QueueFamilyIndices queue_familes,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkBuffer *buffer, VkDeviceMemory *buffer_memory) {
-	uint32_t indices[] = { queue_familes.graphic_family, queue_familes.transfer_family };
+	uint32_t family_indices[] = { queue_familes.graphics, queue_familes.transfer };
 
 	VkBufferCreateInfo vb_create_info = {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.size = size,
 		.usage = usage,
 		.sharingMode = VK_SHARING_MODE_CONCURRENT,
-		.queueFamilyIndexCount = array_count(indices),
-		.pQueueFamilyIndices = indices
+		.queueFamilyIndexCount = array_count(family_indices),
+		.pQueueFamilyIndices = family_indices
 	};
 
 	if (vkCreateBuffer(renderer->logical_device, &vb_create_info, NULL, buffer) != VK_SUCCESS) {

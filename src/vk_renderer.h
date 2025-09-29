@@ -17,7 +17,8 @@ typedef struct {
 	vec3 color;
 } Vertex;
 
-extern const Vertex vertices[6];
+extern const Vertex vertices[4];
+extern const uint16_t indices[6];
 
 typedef enum {
 	FORMAT_FLOAT,
@@ -71,6 +72,9 @@ typedef struct {
 	VkBuffer vertex_buffer;
 	VkDeviceMemory vertex_buffer_memory;
 
+	VkBuffer index_buffer;
+	VkDeviceMemory index_buffer_memory;
+
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
@@ -81,9 +85,9 @@ typedef struct {
 } VKRenderer;
 
 typedef struct {
-	int32_t graphic_family;
-	int32_t transfer_family;
-	int32_t present_family;
+	int32_t graphics;
+	int32_t transfer;
+	int32_t present;
 } QueueFamilyIndices;
 
 QueueFamilyIndices find_queue_families(struct arena *arena, VKRenderer *renderer);
@@ -109,6 +113,7 @@ bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct pla
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
 bool vk_create_vertex_buffer(struct arena *arena, VKRenderer *renderer);
+bool vk_create_index_buffer(struct arena *arena, VKRenderer *renderer);
 bool vk_create_command_buffer(VKRenderer *renderer);
 bool vk_create_sync_objects(VKRenderer *renderer);
 bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index);

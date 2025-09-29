@@ -5,12 +5,12 @@
 #include <vulkan/vulkan_core.h>
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices indices = find_queue_families(arena, renderer);
+	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
 
 	VkCommandPoolCreateInfo cp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-		.queueFamilyIndex = indices.graphic_family
+		.queueFamilyIndex = family_indices.graphics
 	};
 
 	if (vkCreateCommandPool(renderer->logical_device, &cp_create_info, NULL, &renderer->graphics_command_pool) != VK_SUCCESS) {
@@ -18,9 +18,8 @@ bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
 		return false;
 	}
 
-
 	cp_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	cp_create_info.queueFamilyIndex = indices.transfer_family;
+	cp_create_info.queueFamilyIndex = family_indices.transfer;
 	if (vkCreateCommandPool(renderer->logical_device, &cp_create_info, NULL, &renderer->transfer_command_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create command pool");
 		return false;
@@ -91,8 +90,9 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 	VkBuffer vertex_buffers[] = { renderer->vertex_buffer };
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(renderer->command_buffers[renderer->current_frame], 1, 1, vertex_buffers, offsets);
+	vkCmdBindIndexBuffer(renderer->command_buffers[renderer->current_frame], renderer->index_buffer, 0, VK_INDEX_TYPE_UINT16);
 
-	vkCmdDraw(renderer->command_buffers[renderer->current_frame], array_count(vertices), 1, 0, 0);
+	vkCmdDrawIndexed(renderer->command_buffers[renderer->current_frame], array_count(indices), 1, 0, 0, 0);
 
 	vkCmdEndRenderPass(renderer->command_buffers[renderer->current_frame]);
 	if (vkEndCommandBuffer(renderer->command_buffers[renderer->current_frame]) != VK_SUCCESS) {
