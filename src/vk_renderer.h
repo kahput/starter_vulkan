@@ -38,7 +38,7 @@ typedef struct {
 
 	VkPhysicalDevice physical_device;
 	VkDevice logical_device;
-	VkQueue graphics_queue, present_queue;
+	VkQueue graphics_queue, transfer_queue, present_queue;
 
 	VkSurfaceKHR surface;
 
@@ -65,7 +65,7 @@ typedef struct {
 
 	uint32_t current_frame;
 
-	VkCommandPool command_pool;
+	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
 	VkBuffer vertex_buffer;
@@ -82,11 +82,14 @@ typedef struct {
 
 typedef struct {
 	int32_t graphic_family;
+	int32_t transfer_family;
 	int32_t present_family;
 } QueueFamilyIndices;
 
 QueueFamilyIndices find_queue_families(struct arena *arena, VKRenderer *renderer);
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
+bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size);
 
 void vk_load_extensions(VKRenderer *renderer);
 
@@ -105,7 +108,7 @@ bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
 bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
-bool vk_create_vertex_buffer(VKRenderer *renderer);
+bool vk_create_vertex_buffer(struct arena *arena, VKRenderer *renderer);
 bool vk_create_command_buffer(VKRenderer *renderer);
 bool vk_create_sync_objects(VKRenderer *renderer);
 bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index);

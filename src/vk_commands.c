@@ -13,7 +13,15 @@ bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
 		.queueFamilyIndex = indices.graphic_family
 	};
 
-	if (vkCreateCommandPool(renderer->logical_device, &cp_create_info, NULL, &renderer->command_pool) != VK_SUCCESS) {
+	if (vkCreateCommandPool(renderer->logical_device, &cp_create_info, NULL, &renderer->graphics_command_pool) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create command pool");
+		return false;
+	}
+
+
+	cp_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	cp_create_info.queueFamilyIndex = indices.transfer_family;
+	if (vkCreateCommandPool(renderer->logical_device, &cp_create_info, NULL, &renderer->transfer_command_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create command pool");
 		return false;
 	}
@@ -26,7 +34,7 @@ bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
 bool vk_create_command_buffer(VKRenderer *renderer) {
 	VkCommandBufferAllocateInfo cb_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		.commandPool = renderer->command_pool,
+		.commandPool = renderer->graphics_command_pool,
 		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 		.commandBufferCount = array_count(renderer->command_buffers)
 	};
