@@ -4,13 +4,21 @@
 #include "platform.h"
 #include "vk_renderer.h"
 
+#include <cglm/affine-pre.h>
+#include <cglm/cam.h>
+#include <cglm/mat4.h>
+#include <cglm/project.h>
+#include <cglm/util.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 void resize_callback(struct platform *platform, uint32_t width, uint32_t height);
+void update_uniforms(VKRenderer *renderer, Platform *platform);
 
 static bool resized = false;
+static uint64_t start_time = 0;
 
 int main(void) {
 	Arena *vk_arena = arena_alloc();
@@ -30,6 +38,8 @@ int main(void) {
 		return -1;
 	}
 
+	start_time = platform_time_ms(platform);
+
 	LOG_INFO("Successfully created wayland display");
 	LOG_INFO("Logical pixel dimensions { %d, %d }", platform->logical_width, platform->logical_height);
 	LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
@@ -45,6 +55,8 @@ int main(void) {
 	vk_create_image_views(vk_arena, &renderer);
 	vk_create_render_pass(&renderer);
 	vk_create_framebuffers(vk_arena, &renderer);
+
+	vk_create_descriptor_set_layout(&renderer);
 	vk_create_graphics_pipline(vk_arena, &renderer);
 
 	// vk_recreate_swapchain();
@@ -52,6 +64,7 @@ int main(void) {
 	vk_create_command_pool(vk_arena, &renderer);
 	vk_create_vertex_buffer(vk_arena, &renderer);
 	vk_create_index_buffer(vk_arena, &renderer);
+	vk_create_uniform_buffers(vk_arena, &renderer);
 	vk_create_command_buffer(&renderer);
 	vk_create_sync_objects(&renderer);
 
@@ -83,6 +96,8 @@ void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *plat
 
 	vkResetCommandBuffer(renderer->command_buffers[renderer->current_frame], 0);
 	vk_record_command_buffers(renderer, image_index);
+
+	update_uniforms(renderer, platform);
 
 	VkSemaphore wait_semaphores[] = { renderer->image_available_semaphores[renderer->current_frame] };
 	VkSemaphore signal_semaphores[] = { renderer->render_finished_semaphores[image_index] };
@@ -126,6 +141,27 @@ void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *plat
 		LOG_ERROR("Failed to acquire swapchain image!");
 		return;
 	}
+}
+
+void update_uniforms(VKRenderer *renderer, Platform *platform) {
+	uint64_t current_time = platform_time_ms(platform);
+	double time = (double)(current_time - start_time) / 1000.;
+
+	vec3 axis = { 0.0f, 0.0f, 1.0f };
+
+	MVPObject mvp = { 0 };
+	glm_mat4_identity(mvp.model);
+	glm_rotate(mvp.model, time, axis);
+
+	vec3 eye = { 2.0f, 2.0f, 2.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
+	glm_mat4_identity(mvp.view);
+	glm_lookat(eye, center, up, mvp.view);
+
+	glm_mat4_identity(mvp.projection);
+	glm_perspective(glm_rad(45.f), (float)renderer->swapchain.extent.width / (float)renderer->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
+	mvp.projection[1][1] *= -1;
+
+	mempcpy(renderer->uniform_buffers_mapped[renderer->current_frame], &mvp, sizeof(MVPObject));
 }
 
 void resize_callback(struct platform *platform, uint32_t width, uint32_t height) {

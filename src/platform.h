@@ -25,6 +25,8 @@ bool platform_should_close(Platform *platform);
 void platform_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
 void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
 
+uint64_t platform_time_ms(Platform *platform);
+
 void platform_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
 void platform_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
 

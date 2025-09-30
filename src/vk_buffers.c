@@ -17,8 +17,8 @@ const uint16_t indices[6] = {
 	0, 1, 2, 2, 3, 0
 };
 
-bool vk_create_vertex_buffer(struct arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
+bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
+	QueueFamilyIndices family_indices = find_queue_families(scratch_arena, renderer);
 
 	VkDeviceSize size = sizeof(vertices);
 
@@ -47,8 +47,8 @@ bool vk_create_vertex_buffer(struct arena *arena, VKRenderer *renderer) {
 	return true;
 }
 
-bool vk_create_index_buffer(struct arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
+bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
+	QueueFamilyIndices family_indices = find_queue_families(scratch_arena, renderer);
 
 	VkDeviceSize size = sizeof(indices);
 
@@ -73,6 +73,23 @@ bool vk_create_index_buffer(struct arena *arena, VKRenderer *renderer) {
 	vk_copy_buffer(renderer, staging_buffer, renderer->index_buffer, size);
 	vkDestroyBuffer(renderer->logical_device, staging_buffer, NULL);
 	vkFreeMemory(renderer->logical_device, staging_buffer_memory, NULL);
+
+	return true;
+}
+
+bool vk_create_uniform_buffers(struct arena *scratch_arena, VKRenderer *renderer) {
+	QueueFamilyIndices family_indices = find_queue_families(scratch_arena, renderer);
+
+	VkDeviceSize size = sizeof(MVPObject);
+
+	VkBufferUsageFlags usage = VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT;
+	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		vk_create_buffer(renderer, family_indices, size, usage, properties, renderer->uniform_buffers + i, renderer->uniform_buffers_memory + i);
+
+		vkMapMemory(renderer->logical_device, renderer->uniform_buffers_memory[i], 0, size, 0, &renderer->uniform_buffers_mapped[i]);
+	}
 
 	return true;
 }

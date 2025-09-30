@@ -90,6 +90,8 @@ bool wl_should_close(struct platform *platform);
 void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
 void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
 
+uint64_t wl_time_ms(struct platform *platform);
+
 void wl_set_logical_dimensions_callback(struct platform *platform, fn_dimensions callback);
 void wl_set_physical_dimensions_callback(struct platform *platform, fn_dimensions callback);
 

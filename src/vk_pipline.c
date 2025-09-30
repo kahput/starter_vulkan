@@ -13,7 +13,6 @@ struct shader_file {
 	uint8_t *content;
 };
 
-
 static inline int32_t vaf_to_vulkan_format(VertexAttributeFormat format);
 static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 
@@ -159,8 +158,9 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 
 	VkPipelineLayoutCreateInfo pl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		.setLayoutCount = 0,
-		.pushConstantRangeCount = 0
+		.setLayoutCount = 1,
+		.pSetLayouts = &renderer->descriptor_set_layout,
+			.pushConstantRangeCount = 0,
 	};
 
 	if (vkCreatePipelineLayout(renderer->logical_device, &pl_create_info, NULL, &renderer->pipeline_layout) != VK_SUCCESS) {

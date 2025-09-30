@@ -35,13 +35,13 @@ bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
 	return true;
 }
 
-QueueFamilyIndices find_queue_families(Arena *arena, VKRenderer *renderer) {
-	uint32_t offset = arena_size(arena);
+QueueFamilyIndices find_queue_families(Arena *scratch_arena, VKRenderer *renderer) {
+	uint32_t offset = arena_size(scratch_arena);
 
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_count, NULL);
 
-	VkQueueFamilyProperties *queue_family_properties = arena_push_array_zero(arena, VkQueueFamilyProperties, queue_family_count);
+	VkQueueFamilyProperties *queue_family_properties = arena_push_array_zero(scratch_arena, VkQueueFamilyProperties, queue_family_count);
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_count, queue_family_properties);
 
 	QueueFamilyIndices family_indices = { -1, -1, -1 };
@@ -62,7 +62,7 @@ QueueFamilyIndices find_queue_families(Arena *arena, VKRenderer *renderer) {
 
 	LOG_INFO("QUEUE_FAMILY = { graphic_family = %d, transfer_family = %d, present_family = %d }", family_indices.graphics, family_indices.transfer, family_indices.present);
 
-	arena_set(arena, offset);
+	arena_set(scratch_arena, offset);
 	return family_indices;
 }
 

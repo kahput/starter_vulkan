@@ -73,6 +73,10 @@ void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint3
 	platform->internal->physical_dimensions(platform, width, height);
 }
 
+uint64_t platform_time_ms(Platform *platform) {
+	return platform->internal->time_ms(platform);
+}
+
 void platform_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions) {
 	platform->internal->set_logical_dimensions_callback(platform, dimensions);
 }

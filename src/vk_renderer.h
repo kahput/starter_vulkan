@@ -35,6 +35,12 @@ typedef struct {
 } VertexAttribute;
 
 typedef struct {
+	mat4 model;
+	mat4 view;
+	mat4 projection;
+} MVPObject;
+
+typedef struct {
 	VkInstance instance;
 
 	VkPhysicalDevice physical_device;
@@ -61,6 +67,7 @@ typedef struct {
 	uint32_t framebuffer_count;
 
 	VkRenderPass render_pass;
+	VkDescriptorSetLayout descriptor_set_layout;
 	VkPipelineLayout pipeline_layout;
 	VkPipeline graphics_pipeline;
 
@@ -74,6 +81,10 @@ typedef struct {
 
 	VkBuffer index_buffer;
 	VkDeviceMemory index_buffer_memory;
+
+	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
+	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];
+	void *uniform_buffers_mapped[MAX_FRAMES_IN_FLIGHT];
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
@@ -90,7 +101,7 @@ typedef struct {
 	int32_t present;
 } QueueFamilyIndices;
 
-QueueFamilyIndices find_queue_families(struct arena *arena, VKRenderer *renderer);
+QueueFamilyIndices find_queue_families(struct arena *scratch_arena, VKRenderer *renderer);
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size);
@@ -106,16 +117,19 @@ bool vk_create_logical_device(struct arena *arena, VKRenderer *renderer);
 bool vk_create_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 bool vk_create_image_views(struct arena *arena, VKRenderer *renderer);
 bool vk_create_render_pass(VKRenderer *renderer);
+bool vk_create_descriptor_set_layout(VKRenderer *renderer);
 bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer);
 bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
 
 bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
-bool vk_create_vertex_buffer(struct arena *arena, VKRenderer *renderer);
-bool vk_create_index_buffer(struct arena *arena, VKRenderer *renderer);
+bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer);
+bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer);
+bool vk_create_uniform_buffers(struct arena *scratch_arena, VKRenderer *renderer);
 bool vk_create_command_buffer(VKRenderer *renderer);
 bool vk_create_sync_objects(VKRenderer *renderer);
+
 bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index);
 
 // EXTENSIONS

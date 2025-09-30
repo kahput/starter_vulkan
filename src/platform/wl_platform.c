@@ -99,6 +99,8 @@ bool platform_init_wayland(struct platform *platform) {
 	platform->internal->logical_dimensions = wl_get_logical_dimensions;
 	platform->internal->physical_dimensions = wl_get_physical_dimensions;
 
+	platform->internal->time_ms = wl_time_ms;
+
 	platform->internal->set_logical_dimensions_callback = wl_set_logical_dimensions_callback;
 	platform->internal->set_physical_dimensions_callback = wl_set_physical_dimensions_callback;
 
@@ -176,6 +178,12 @@ bool wl_should_close(struct platform *platform) {
 
 void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
 void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
+
+uint64_t wl_time_ms(struct platform *platform) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
+}
 
 void wl_set_logical_dimensions_callback(struct platform *platform, fn_dimensions callback) {
 	WLPlatform *wl = &platform->internal->wl;

@@ -36,6 +36,8 @@ struct platform_internal {
 	void (*logical_dimensions)(Platform *, uint32_t *, uint32_t *);
 	void (*physical_dimensions)(Platform *, uint32_t *, uint32_t *);
 
+	uint64_t (*time_ms)(Platform *);
+
 	void (*set_logical_dimensions_callback)(Platform *, fn_platform_dimensions);
 	void (*set_physical_dimensions_callback)(Platform *, fn_platform_dimensions);
 
