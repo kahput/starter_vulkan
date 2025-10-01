@@ -66,8 +66,8 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 	};
 
 	VertexAttribute attributes[] = {
-		{ .name = "a_position", FORMAT_FLOAT2 },
-		{ .name = "a_color", FORMAT_FLOAT3 }
+		{ .name = "in_position", FORMAT_FLOAT3 },
+		{ .name = "in_uv", FORMAT_FLOAT2 }
 	};
 
 	VkVertexInputBindingDescription binding_description = { 0 };
@@ -160,7 +160,7 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount = 1,
 		.pSetLayouts = &renderer->descriptor_set_layout,
-			.pushConstantRangeCount = 0,
+		.pushConstantRangeCount = 0,
 	};
 
 	if (vkCreatePipelineLayout(renderer->logical_device, &pl_create_info, NULL, &renderer->pipeline_layout) != VK_SUCCESS) {

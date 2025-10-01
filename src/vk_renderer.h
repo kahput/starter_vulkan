@@ -13,11 +13,11 @@ struct platform;
 struct arena;
 
 typedef struct {
-	vec2 position;
-	vec3 color;
+	vec3 position;
+	vec2 uv;
 } Vertex;
 
-extern const Vertex vertices[4];
+extern const Vertex vertices[36];
 extern const uint16_t indices[6];
 
 typedef enum {

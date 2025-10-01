@@ -63,7 +63,7 @@ int main(void) {
 
 	vk_create_command_pool(vk_arena, &renderer);
 	vk_create_vertex_buffer(vk_arena, &renderer);
-	vk_create_index_buffer(vk_arena, &renderer);
+	// vk_create_index_buffer(vk_arena, &renderer);
 
 	vk_create_uniform_buffers(vk_arena, &renderer);
 	vk_create_descriptor_pool(&renderer);
@@ -157,7 +157,7 @@ void update_uniforms(VKRenderer *renderer, Platform *platform) {
 	glm_mat4_identity(mvp.model);
 	glm_rotate(mvp.model, time, axis);
 
-	vec3 eye = { 0.0f, -2.0f, 1.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
+	vec3 eye = { 0.0f, -1.0f, 3.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
 	glm_mat4_identity(mvp.view);
 	glm_lookat(eye, center, up, mvp.view);
 
