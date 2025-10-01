@@ -89,8 +89,14 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 
 	VkBuffer vertex_buffers[] = { renderer->vertex_buffer };
 	VkDeviceSize offsets[] = { 0 };
+
 	vkCmdBindVertexBuffers(renderer->command_buffers[renderer->current_frame], 1, 1, vertex_buffers, offsets);
 	vkCmdBindIndexBuffer(renderer->command_buffers[renderer->current_frame], renderer->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+
+	vkCmdBindDescriptorSets(
+		renderer->command_buffers[renderer->current_frame],
+		VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline_layout,
+		0, 1, &renderer->descriptor_sets[renderer->current_frame], 0, NULL);
 
 	vkCmdDrawIndexed(renderer->command_buffers[renderer->current_frame], array_count(indices), 1, 0, 0, 0);
 

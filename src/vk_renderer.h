@@ -86,6 +86,9 @@ typedef struct {
 	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];
 	void *uniform_buffers_mapped[MAX_FRAMES_IN_FLIGHT];
 
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
+
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
@@ -126,7 +129,11 @@ bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct pla
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
 bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer);
 bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer);
+
 bool vk_create_uniform_buffers(struct arena *scratch_arena, VKRenderer *renderer);
+bool vk_create_descriptor_pool(VKRenderer *renderer);
+bool vk_create_descriptor_set(VKRenderer *renderer);
+
 bool vk_create_command_buffer(VKRenderer *renderer);
 bool vk_create_sync_objects(VKRenderer *renderer);
 
