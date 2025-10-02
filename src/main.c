@@ -40,7 +40,7 @@ int main(void) {
 
 	start_time = platform_time_ms(platform);
 
-	LOG_INFO("Successfully created wayland display");
+	LOG_INFO("Wayland Display created");
 	LOG_INFO("Logical pixel dimensions { %d, %d }", platform->logical_width, platform->logical_height);
 	LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
 	platform_set_physical_dimensions_callback(platform, resize_callback);
@@ -62,6 +62,7 @@ int main(void) {
 	// vk_recreate_swapchain();
 
 	vk_create_command_pool(vk_arena, &renderer);
+	vk_create_texture_image(vk_arena, &renderer);
 	vk_create_vertex_buffer(vk_arena, &renderer);
 	// vk_create_index_buffer(vk_arena, &renderer);
 

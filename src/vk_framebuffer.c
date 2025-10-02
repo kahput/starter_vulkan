@@ -31,7 +31,7 @@ bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer) {
 		}
 	}
 
-	LOG_INFO("Framebuffers created successfully");
+	LOG_INFO("Vulkan Framebuffers created");
 
 	return true;
 }

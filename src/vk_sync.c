@@ -23,7 +23,7 @@ bool vk_create_sync_objects(VKRenderer *renderer) {
 		}
 	}
 
-	LOG_INFO("Vulkan Synchronization Objects Created Successfully");
+	LOG_INFO("Vulkan Synchronization Objects created");
 
 	return true;
 }

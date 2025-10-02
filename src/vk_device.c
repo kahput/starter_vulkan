@@ -29,7 +29,7 @@ bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Logical device created successfully");
+	LOG_INFO("Logical device created");
 
 	arena_clear(arena);
 	return true;
@@ -60,7 +60,7 @@ QueueFamilyIndices find_queue_families(Arena *scratch_arena, VKRenderer *rendere
 			family_indices.present = index;
 	}
 
-	LOG_INFO("QUEUE_FAMILY = { graphic_family = %d, transfer_family = %d, present_family = %d }", family_indices.graphics, family_indices.transfer, family_indices.present);
+	// LOG_INFO("QUEUE_FAMILY = { graphic_family = %d, transfer_family = %d, present_family = %d }", family_indices.graphics, family_indices.transfer, family_indices.present);
 
 	arena_set(scratch_arena, offset);
 	return family_indices;

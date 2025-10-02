@@ -25,7 +25,7 @@ bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Vulkan Command Pool created successfully");
+	LOG_INFO("Vulkan Command Pool created");
 
 	return true;
 }
@@ -43,7 +43,7 @@ bool vk_create_command_buffer(VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Vulkan Command Buffer created successfully");
+	LOG_INFO("Vulkan Command Buffer created");
 	return true;
 }
 

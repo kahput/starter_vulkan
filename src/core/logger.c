@@ -73,8 +73,10 @@ void logger_log(LogLevel level, const char *file, int line, const char *format, 
 		basename(file), // Source file name
 		line // Line number in source file
 	);
+	if (level >= LOG_LEVEL_ERROR)
+		printf("%s", g_log_level_colors[level]);
 	vprintf(format, arg_ptr);
-	printf("\n");
+	printf("\x1b[0m\n");
 	fflush(stdout);
 	va_end(arg_ptr);
 }

@@ -101,7 +101,7 @@ bool vk_create_instance(Arena *arena, VKRenderer *renderer, struct platform *pla
 		return false;
 	}
 
-	LOG_INFO("Vulkan Instance created successfully");
+	LOG_INFO("Vulkan Instance created");
 
 	arena_clear(arena);
 

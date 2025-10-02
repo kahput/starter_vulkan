@@ -24,11 +24,11 @@ FetchContent_Declare(
 
 find_package(Vulkan REQUIRED)
 
-file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" )
+file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "deps/stb/*.c" "deps/stb/*.h")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_include_directories(${PROJECT_NAME} PUBLIC "src/")
-target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${CMAKE_BINARY_DIR})
+target_include_directories(${PROJECT_NAME} PUBLIC "src/" "deps/")
+target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${CMAKE_BINARY_DIR} )
 
 # Platform-specific configurations
 if(WIN32)

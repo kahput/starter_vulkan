@@ -201,7 +201,7 @@ bool wl_create_vulkan_surface(struct platform *platform, VkInstance instance, Vk
 	WLPlatform *wl = &platform->internal->wl;
 	wl->use_vulkan = true;
 
-	LOG_INFO("Using vulkan for presentation now");
+	LOG_INFO("Using Vulkan for presentation");
 
 	VkWaylandSurfaceCreateInfoKHR surface_create_info = {
 		.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,

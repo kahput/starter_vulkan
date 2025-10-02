@@ -82,6 +82,9 @@ typedef struct {
 	VkBuffer index_buffer;
 	VkDeviceMemory index_buffer_memory;
 
+	VkImage texture_image;
+	VkDeviceMemory texture_image_memory;
+
 	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];
 	void *uniform_buffers_mapped[MAX_FRAMES_IN_FLIGHT];
@@ -106,6 +109,8 @@ typedef struct {
 
 QueueFamilyIndices find_queue_families(struct arena *scratch_arena, VKRenderer *renderer);
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+
+uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size);
 
@@ -127,6 +132,7 @@ bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
 bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
+bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer);
 bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer);
 bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer);
 

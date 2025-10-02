@@ -50,7 +50,7 @@ bool vk_create_render_pass(VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Render Pass created successfully");
+	LOG_INFO("Render Pass created");
 
 	return true;
 }

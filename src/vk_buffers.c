@@ -4,8 +4,6 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
-
 // clang-format off
 const Vertex vertices[] = {
 	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
@@ -174,7 +172,7 @@ bool vk_create_buffer(
 	VkMemoryAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 		.allocationSize = memory_requirements.size,
-		.memoryTypeIndex = find_memory_type(renderer->physical_device, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+		.memoryTypeIndex = find_memory_type(renderer->physical_device, memory_requirements.memoryTypeBits, properties),
 	};
 
 	if (vkAllocateMemory(renderer->logical_device, &allocate_info, NULL, buffer_memory) != VK_SUCCESS) {
