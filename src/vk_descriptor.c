@@ -42,7 +42,7 @@ bool vk_create_descriptor_pool(VKRenderer *renderer) {
 		return false;
 	}
 
-	LOG_INFO("Vulkan DescriptorPool created");
+	LOG_INFO("VkDescriptorPool created");
 	return true;
 }
 

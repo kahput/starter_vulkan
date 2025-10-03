@@ -156,9 +156,11 @@ bool vk_create_buffer(
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.size = size,
 		.usage = usage,
-		.sharingMode = VK_SHARING_MODE_CONCURRENT,
-		.queueFamilyIndexCount = array_count(family_indices),
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		.queueFamilyIndexCount = 1,
 		.pQueueFamilyIndices = family_indices
+		// .queueFamilyIndexCount = array_count(family_indices),
+		// .pQueueFamilyIndices = family_indices
 	};
 
 	if (vkCreateBuffer(renderer->logical_device, &vb_create_info, NULL, buffer) != VK_SUCCESS) {
@@ -182,41 +184,18 @@ bool vk_create_buffer(
 
 	vkBindBufferMemory(renderer->logical_device, *buffer, *buffer_memory, 0);
 
+	LOG_INFO("VkBuffer created");
+
 	return true;
 }
 
 bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
-	VkCommandBufferAllocateInfo allocate_info = {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		.commandPool = renderer->transfer_command_pool,
-		.commandBufferCount = 1
-	};
-
 	VkCommandBuffer command_buffer;
-	vkAllocateCommandBuffers(renderer->logical_device, &allocate_info, &command_buffer);
-
-	VkCommandBufferBeginInfo begin_info = {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-	};
-
-	vkBeginCommandBuffer(command_buffer, &begin_info);
+	vk_begin_single_time_commands(renderer, renderer->transfer_command_pool, &command_buffer);
 
 	VkBufferCopy copy_region = { .size = size };
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
-	vkEndCommandBuffer(command_buffer);
 
-	VkSubmitInfo submit_info = {
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.commandBufferCount = 1,
-		.pCommandBuffers = &command_buffer
-	};
-
-	vkQueueSubmit(renderer->transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(renderer->transfer_queue);
-
-	vkFreeCommandBuffers(renderer->logical_device, renderer->transfer_command_pool, 1, &command_buffer);
-
+	vk_end_single_time_commands(renderer, renderer->transfer_queue, renderer->transfer_command_pool, &command_buffer);
 	return true;
 }

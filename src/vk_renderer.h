@@ -111,8 +111,16 @@ QueueFamilyIndices find_queue_families(struct arena *scratch_arena, VKRenderer *
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
+
 bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size);
+
+bool vk_create_image(VKRenderer *, QueueFamilyIndices, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VkImage *, VkDeviceMemory *);
+bool vk_transition_image_layout(VKRenderer *renderer, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+bool vk_copy_buffer_to_image(VKRenderer* renderer, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
+
+bool vk_begin_single_time_commands(VKRenderer *renderer, VkCommandPool pool, VkCommandBuffer *buffer);
+bool vk_end_single_time_commands(VKRenderer *renderer, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer);
 
 void vk_load_extensions(VKRenderer *renderer);
 

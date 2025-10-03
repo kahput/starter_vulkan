@@ -109,3 +109,43 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 
 	return true;
 }
+
+bool vk_begin_single_time_commands(VKRenderer *renderer, VkCommandPool pool, VkCommandBuffer *buffer) {
+	VkCommandBufferAllocateInfo allocate_info = {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandPool = pool,
+		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		.commandBufferCount = 1,
+	};
+
+	if (vkAllocateCommandBuffers(renderer->logical_device, &allocate_info, buffer) != VK_SUCCESS) {
+		LOG_ERROR("Failed to allocate VkCommandBuffer");
+		return false;
+	}
+
+	VkCommandBufferBeginInfo begin_info = {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+	};
+
+	vkBeginCommandBuffer(*buffer, &begin_info);
+
+	return true;
+}
+
+bool vk_end_single_time_commands(VKRenderer *renderer, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
+	vkEndCommandBuffer(*buffer);
+
+	VkSubmitInfo submit_info = {
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.commandBufferCount = 1,
+		.pCommandBuffers = buffer
+	};
+
+	vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue);
+
+	vkFreeCommandBuffers(renderer->logical_device, pool, 1, buffer);
+
+	return true;
+}
