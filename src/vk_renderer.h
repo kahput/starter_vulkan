@@ -84,6 +84,7 @@ typedef struct {
 
 	VkImage texture_image;
 	VkDeviceMemory texture_image_memory;
+	VkImageView texture_image_view;
 
 	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];
@@ -116,8 +117,9 @@ bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUs
 bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size);
 
 bool vk_create_image(VKRenderer *, QueueFamilyIndices, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VkImage *, VkDeviceMemory *);
+bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, VkImageView *view);
 bool vk_transition_image_layout(VKRenderer *renderer, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
-bool vk_copy_buffer_to_image(VKRenderer* renderer, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
+bool vk_copy_buffer_to_image(VKRenderer *renderer, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 
 bool vk_begin_single_time_commands(VKRenderer *renderer, VkCommandPool pool, VkCommandBuffer *buffer);
 bool vk_end_single_time_commands(VKRenderer *renderer, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer);
@@ -131,16 +133,18 @@ bool vk_select_physical_device(struct arena *arena, VKRenderer *renderer);
 bool vk_create_logical_device(struct arena *arena, VKRenderer *renderer);
 
 bool vk_create_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
-bool vk_create_image_views(struct arena *arena, VKRenderer *renderer);
+bool vk_create_swapchain_image_views(struct arena *arena, VKRenderer *renderer);
 bool vk_create_render_pass(VKRenderer *renderer);
 bool vk_create_descriptor_set_layout(VKRenderer *renderer);
 bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer);
 bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
-
 bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
+
 bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer);
+bool vk_create_texture_image_view(struct arena *arena, VKRenderer *renderer);
+
 bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer);
 bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer);
 

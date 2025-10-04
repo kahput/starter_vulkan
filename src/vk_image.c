@@ -5,35 +5,98 @@
 #include <stdbool.h>
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_image_views(struct arena *arena, VKRenderer *renderer) {
+bool vk_create_image(
+	VKRenderer *renderer, QueueFamilyIndices queue_families,
+	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+	VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+	VkImage *image, VkDeviceMemory *memory) {
+	uint32_t family_indices[] = { queue_families.graphics, queue_families.transfer };
+
+	VkImageCreateInfo image_info = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.imageType = VK_IMAGE_TYPE_2D,
+		.format = format,
+		.extent = {
+		  .width = width,
+		  .height = height,
+		  .depth = 1,
+		},
+		.mipLevels = 1,
+		.arrayLayers = 1,
+		.samples = VK_SAMPLE_COUNT_1_BIT,
+		.tiling = tiling,
+		.usage = usage,
+		.sharingMode = VK_SHARING_MODE_CONCURRENT,
+		.queueFamilyIndexCount = array_count(family_indices),
+		.pQueueFamilyIndices = family_indices,
+		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+	};
+
+	if (vkCreateImage(renderer->logical_device, &image_info, NULL, image) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create Vulkan Texture");
+		return false;
+	}
+
+	LOG_INFO("VkImage created");
+
+	VkMemoryRequirements memory_requirements;
+	vkGetImageMemoryRequirements(renderer->logical_device, *image, &memory_requirements);
+
+	VkMemoryAllocateInfo allocate_info = {
+		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		.allocationSize = memory_requirements.size,
+		.memoryTypeIndex = find_memory_type(renderer->physical_device, memory_requirements.memoryTypeBits, properties),
+	};
+
+	if (vkAllocateMemory(renderer->logical_device, &allocate_info, NULL, memory) != VK_SUCCESS) {
+		LOG_ERROR("Failed to allocate VkDeviceMemory for VkImage");
+		return false;
+	}
+
+	vkBindImageMemory(renderer->logical_device, renderer->texture_image, renderer->texture_image_memory, 0);
+
+	LOG_INFO("VkDeviceMemory[%d] allocated for VkImage", memory_requirements.size);
+
+	return true;
+}
+
+bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, VkImageView *view) {
+	VkImageViewCreateInfo iv_create_info = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = image,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format = format,
+		.components = {
+		  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+		  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+		  .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+		  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+		},
+		.subresourceRange = {
+		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		  .baseMipLevel = 0,
+		  .levelCount = 1,
+		  .baseArrayLayer = 0,
+		  .layerCount = 1,
+		}
+	};
+
+	if (vkCreateImageView(renderer->logical_device, &iv_create_info, NULL, view) != VK_SUCCESS) {
+		return false;
+	}
+
+	return true;
+}
+
+bool vk_create_swapchain_image_views(struct arena *arena, VKRenderer *renderer) {
 	uint32_t offset = arena_size(arena);
 
 	renderer->image_views_count = renderer->swapchain.image_count;
 	renderer->image_views = arena_push_array_zero(arena, VkImageView, renderer->image_views_count);
 
 	for (uint32_t i = 0; i < renderer->image_views_count; ++i) {
-		VkImageViewCreateInfo image_view_create_info = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.image = renderer->swapchain.images[i],
-			.viewType = VK_IMAGE_VIEW_TYPE_2D,
-			.format = renderer->swapchain.format.format,
-			.components = {
-			  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-			  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-			  .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-			  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-			},
-			.subresourceRange = {
-			  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			  .baseMipLevel = 0,
-			  .levelCount = 1,
-			  .baseArrayLayer = 0,
-			  .layerCount = 1,
-			}
-		};
-
-		if (vkCreateImageView(renderer->logical_device, &image_view_create_info, NULL, &renderer->image_views[i]) != VK_SUCCESS) {
-			LOG_ERROR("Failed to create swapchain image view");
+		if (vk_create_image_view(renderer, renderer->swapchain.images[i], renderer->swapchain.format.format, &renderer->image_views[i]) == false) {
+			LOG_ERROR("Failed to create Swapchain VkImageView");
 			arena_pop(arena, offset);
 			return false;
 		}

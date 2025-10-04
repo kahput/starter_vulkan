@@ -52,17 +52,18 @@ int main(void) {
 	vk_create_logical_device(vk_arena, &renderer);
 
 	vk_create_swapchain(vk_arena, &renderer, platform);
-	vk_create_image_views(vk_arena, &renderer);
+	vk_create_swapchain_image_views(vk_arena, &renderer);
 	vk_create_render_pass(&renderer);
 	vk_create_framebuffers(vk_arena, &renderer);
 
 	vk_create_descriptor_set_layout(&renderer);
 	vk_create_graphics_pipline(vk_arena, &renderer);
 
-	// vk_recreate_swapchain();
-
 	vk_create_command_pool(vk_arena, &renderer);
+
 	vk_create_texture_image(vk_arena, &renderer);
+	vk_create_texture_image_view(vk_arena, &renderer);
+
 	vk_create_vertex_buffer(vk_arena, &renderer);
 	// vk_create_index_buffer(vk_arena, &renderer);
 
