@@ -85,6 +85,7 @@ typedef struct {
 	VkImage texture_image;
 	VkDeviceMemory texture_image_memory;
 	VkImageView texture_image_view;
+	VkSampler texture_sampler;
 
 	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];
@@ -144,6 +145,7 @@ bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
 
 bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer);
 bool vk_create_texture_image_view(struct arena *arena, VKRenderer *renderer);
+bool vk_create_texture_sampler(VKRenderer *renderer);
 
 bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer);
 bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer);

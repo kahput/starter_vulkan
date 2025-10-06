@@ -10,10 +10,19 @@ bool vk_create_descriptor_set_layout(VKRenderer *renderer) {
 		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT
 	};
 
+	VkDescriptorSetLayoutBinding sampler_layout_binding = {
+		.binding = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+	};
+
+	VkDescriptorSetLayoutBinding bindings[] = { mvp_layout_binding, sampler_layout_binding };
+
 	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 1,
-		.pBindings = &mvp_layout_binding,
+		.bindingCount = array_count(bindings),
+		.pBindings = bindings,
 	};
 
 	if (vkCreateDescriptorSetLayout(renderer->logical_device, &dsl_create_info, NULL, &renderer->descriptor_set_layout) != VK_SUCCESS) {
@@ -25,16 +34,23 @@ bool vk_create_descriptor_set_layout(VKRenderer *renderer) {
 }
 
 bool vk_create_descriptor_pool(VKRenderer *renderer) {
-	VkDescriptorPoolSize pool_size = {
-		.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-		.descriptorCount = MAX_FRAMES_IN_FLIGHT
+	VkDescriptorPoolSize sizes[] = {
+		{
+		  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		  .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+		},
+		{
+		  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		  .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+		},
+
 	};
 
 	VkDescriptorPoolCreateInfo dp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		.poolSizeCount = 1,
-		.pPoolSizes = &pool_size,
-		.maxSets = MAX_FRAMES_IN_FLIGHT
+		.poolSizeCount = array_count(sizes),
+		.pPoolSizes = sizes,
+		.maxSets = MAX_FRAMES_IN_FLIGHT,
 	};
 
 	if (vkCreateDescriptorPool(renderer->logical_device, &dp_create_info, NULL, &renderer->descriptor_pool) != VK_SUCCESS) {
@@ -71,17 +87,35 @@ bool vk_create_descriptor_set(VKRenderer *renderer) {
 			.range = sizeof(MVPObject),
 		};
 
-		VkWriteDescriptorSet descriptor_write = {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = renderer->descriptor_sets[i],
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			.descriptorCount = 1,
-			.pBufferInfo = &buffer_info
+		VkDescriptorImageInfo image_info = {
+			.sampler = renderer->texture_sampler,
+			.imageView = renderer->texture_image_view,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
 
-		vkUpdateDescriptorSets(renderer->logical_device, 1, &descriptor_write, 0, NULL);
+		VkWriteDescriptorSet descriptor_writes[] = {
+			{
+			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			  .dstSet = renderer->descriptor_sets[i],
+			  .dstBinding = 0,
+			  .dstArrayElement = 0,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			  .descriptorCount = 1,
+			  .pBufferInfo = &buffer_info,
+			},
+			{
+			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			  .dstSet = renderer->descriptor_sets[i],
+			  .dstBinding = 1,
+			  .dstArrayElement = 0,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			  .descriptorCount = 1,
+			  .pImageInfo = &image_info,
+			},
+
+		};
+
+		vkUpdateDescriptorSets(renderer->logical_device, array_count(descriptor_writes), descriptor_writes, 0, NULL);
 	}
 
 	LOG_INFO("Vulkan DescriptorSets created");

@@ -97,3 +97,35 @@ bool vk_create_texture_image_view(struct arena *arena, VKRenderer *renderer) {
 	LOG_INFO("VkImageView created");
 	return true;
 }
+
+bool vk_create_texture_sampler(VKRenderer *renderer) {
+	VkPhysicalDeviceProperties properties = { 0 };
+	vkGetPhysicalDeviceProperties(renderer->physical_device, &properties);
+
+	VkSamplerCreateInfo sampler_info = {
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.magFilter = VK_FILTER_NEAREST,
+		.minFilter = VK_FILTER_NEAREST,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.mipLodBias = 0.0f,
+		.anisotropyEnable = true,
+		.maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+		.compareEnable = VK_FALSE,
+		.compareOp = VK_COMPARE_OP_ALWAYS,
+		.minLod = 0.0f,
+		.maxLod = 0.0f,
+		.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+		.unnormalizedCoordinates = VK_FALSE
+	};
+
+	if (vkCreateSampler(renderer->logical_device, &sampler_info, NULL, &renderer->texture_sampler) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create VkSampler");
+		return false;
+	}
+
+	LOG_INFO("VkSampler created");
+	return true;
+}

@@ -63,6 +63,7 @@ int main(void) {
 
 	vk_create_texture_image(vk_arena, &renderer);
 	vk_create_texture_image_view(vk_arena, &renderer);
+	vk_create_texture_sampler(&renderer);
 
 	vk_create_vertex_buffer(vk_arena, &renderer);
 	// vk_create_index_buffer(vk_arena, &renderer);

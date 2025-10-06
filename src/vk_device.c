@@ -91,7 +91,7 @@ bool create_logical_device(VKRenderer *renderer, QueueFamilyIndices *family_indi
 		};
 	}
 
-	VkPhysicalDeviceFeatures features = { 0 };
+	VkPhysicalDeviceFeatures features = { .samplerAnisotropy = true };
 
 	VkDeviceCreateInfo device_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,

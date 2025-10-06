@@ -56,7 +56,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	VkPhysicalDeviceFeatures device_features = { 0 };
 	vkGetPhysicalDeviceFeatures(physical_device, &device_features);
 
-	is_suitable = is_suitable && device_features.geometryShader;
+	is_suitable = is_suitable && device_features.geometryShader && device_features.samplerAnisotropy;
 
 	uint32_t requested_extensions = sizeof(extensions) / sizeof(*extensions), available_extensions = 0;
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, NULL);
