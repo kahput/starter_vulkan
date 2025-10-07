@@ -132,8 +132,8 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 		.rasterizerDiscardEnable = VK_FALSE,
 		.polygonMode = VK_POLYGON_MODE_FILL,
 		.lineWidth = 1.0f,
-		.cullMode = VK_CULL_MODE_FRONT_BIT,
-		.frontFace = VK_FRONT_FACE_CLOCKWISE,
+		.cullMode = VK_CULL_MODE_BACK_BIT,
+		.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		.depthBiasEnable = VK_FALSE,
 	};
 
@@ -170,6 +170,16 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 		return false;
 	}
 
+	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		.depthTestEnable = VK_TRUE,
+		.depthWriteEnable = VK_TRUE,
+		.depthCompareOp = VK_COMPARE_OP_LESS,
+		.depthBoundsTestEnable = VK_FALSE,
+		.minDepthBounds = 0.0f,
+		.maxDepthBounds = 1.0f
+	};
+
 	VkGraphicsPipelineCreateInfo gp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
 		.stageCount = array_count(shader_stages),
@@ -179,7 +189,7 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 		.pViewportState = &vps_create_info,
 		.pRasterizationState = &rs_create_info,
 		.pMultisampleState = &mss_create_info,
-		.pDepthStencilState = NULL,
+		.pDepthStencilState = &depth_stencil_create_info,
 		.pColorBlendState = &cbs_create_info,
 		.pDynamicState = &ds_create_info,
 		.layout = renderer->pipeline_layout,

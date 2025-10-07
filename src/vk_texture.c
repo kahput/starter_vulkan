@@ -42,6 +42,7 @@ bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer) {
 	VkDeviceMemory staging_buffer_memory;
 
 	QueueFamilyIndices queue_families = find_queue_families(arena, renderer);
+	uint32_t indices[] = { queue_families.graphics, queue_families.transfer };
 	vk_create_buffer(renderer, queue_families, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
@@ -52,7 +53,7 @@ bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer) {
 	stbi_image_free(pixels);
 
 	vk_create_image(
-		renderer, queue_families,
+		renderer, indices, array_count(indices),
 		width, height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		&renderer->texture_image, &renderer->texture_image_memory);
@@ -89,7 +90,7 @@ bool vk_create_texture_image_view(struct arena *arena, VKRenderer *renderer) {
 		}
 	};
 
-	if (vk_create_image_view(renderer, renderer->texture_image, VK_FORMAT_R8G8B8A8_SRGB, &renderer->texture_image_view) == false) {
+	if (vk_create_image_view(renderer, renderer->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, &renderer->texture_image_view) == false) {
 		LOG_ERROR("Failed to create VkImageView");
 		return false;
 	}

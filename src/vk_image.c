@@ -6,12 +6,10 @@
 #include <vulkan/vulkan_core.h>
 
 bool vk_create_image(
-	VKRenderer *renderer, QueueFamilyIndices queue_families,
+	VKRenderer *renderer, uint32_t *family_indices, uint32_t family_count,
 	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
 	VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkImage *image, VkDeviceMemory *memory) {
-	uint32_t family_indices[] = { queue_families.graphics, queue_families.transfer };
-
 	VkImageCreateInfo image_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType = VK_IMAGE_TYPE_2D,
@@ -26,8 +24,8 @@ bool vk_create_image(
 		.samples = VK_SAMPLE_COUNT_1_BIT,
 		.tiling = tiling,
 		.usage = usage,
-		.sharingMode = VK_SHARING_MODE_CONCURRENT,
-		.queueFamilyIndexCount = array_count(family_indices),
+		.sharingMode = family_count > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+		.queueFamilyIndexCount = family_count,
 		.pQueueFamilyIndices = family_indices,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
@@ -53,14 +51,14 @@ bool vk_create_image(
 		return false;
 	}
 
-	vkBindImageMemory(renderer->logical_device, renderer->texture_image, renderer->texture_image_memory, 0);
+	vkBindImageMemory(renderer->logical_device, *image, *memory, 0);
 
 	LOG_INFO("VkDeviceMemory[%d] allocated for VkImage", memory_requirements.size);
 
 	return true;
 }
 
-bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, VkImageView *view) {
+bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view) {
 	VkImageViewCreateInfo iv_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		.image = image,
@@ -73,7 +71,7 @@ bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, 
 		  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
 		},
 		.subresourceRange = {
-		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		  .aspectMask = aspect_flags,
 		  .baseMipLevel = 0,
 		  .levelCount = 1,
 		  .baseArrayLayer = 0,
@@ -95,7 +93,7 @@ bool vk_create_swapchain_image_views(struct arena *arena, VKRenderer *renderer) 
 	renderer->image_views = arena_push_array_zero(arena, VkImageView, renderer->image_views_count);
 
 	for (uint32_t i = 0; i < renderer->image_views_count; ++i) {
-		if (vk_create_image_view(renderer, renderer->swapchain.images[i], renderer->swapchain.format.format, &renderer->image_views[i]) == false) {
+		if (vk_create_image_view(renderer, renderer->swapchain.images[i], renderer->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &renderer->image_views[i]) == false) {
 			LOG_ERROR("Failed to create Swapchain VkImageView");
 			arena_pop(arena, offset);
 			return false;
@@ -174,5 +172,20 @@ bool vk_copy_buffer_to_image(VKRenderer *renderer, VkBuffer src, VkImage dst, ui
 	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
 	vk_end_single_time_commands(renderer, renderer->transfer_queue, renderer->transfer_command_pool, &command_buffer);
+	return true;
+}
+
+bool vk_create_depth_resources(struct arena *arena, VKRenderer *renderer) {
+	uint32_t index = find_queue_families(arena, renderer).graphics;
+
+	vk_create_image(
+		renderer, &index, 1,
+		renderer->swapchain.extent.width, renderer->swapchain.extent.height,
+		VK_FORMAT_D32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		&renderer->depth_image, &renderer->depth_image_memory);
+
+	vk_create_image_view(renderer, renderer->depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &renderer->depth_image_view);
+
 	return true;
 }

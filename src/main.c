@@ -54,6 +54,7 @@ int main(void) {
 	vk_create_swapchain(vk_arena, &renderer, platform);
 	vk_create_swapchain_image_views(vk_arena, &renderer);
 	vk_create_render_pass(&renderer);
+	vk_create_depth_resources(vk_arena, &renderer);
 	vk_create_framebuffers(vk_arena, &renderer);
 
 	vk_create_descriptor_set_layout(&renderer);
@@ -154,13 +155,13 @@ void update_uniforms(VKRenderer *renderer, Platform *platform) {
 	uint64_t current_time = platform_time_ms(platform);
 	double time = (double)(current_time - start_time) / 1000.;
 
-	vec3 axis = { 0.0f, 0.0f, 1.0f };
+	vec3 axis = { 1.0f, 1.0f, 0.0f };
 
 	MVPObject mvp = { 0 };
 	glm_mat4_identity(mvp.model);
 	glm_rotate(mvp.model, time, axis);
 
-	vec3 eye = { 0.0f, -1.0f, 3.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
+	vec3 eye = { 0.0f, 0.0f, 3.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
 	glm_mat4_identity(mvp.view);
 	glm_lookat(eye, center, up, mvp.view);
 

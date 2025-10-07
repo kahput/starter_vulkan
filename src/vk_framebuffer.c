@@ -11,7 +11,8 @@ bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer) {
 
 	for (uint32_t i = 0; i < renderer->framebuffer_count; ++i) {
 		VkImageView attachments[] = {
-			renderer->image_views[i]
+			renderer->image_views[i],
+			renderer->depth_image_view
 		};
 
 		VkFramebufferCreateInfo fb_create_info = {

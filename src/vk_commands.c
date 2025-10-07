@@ -57,15 +57,19 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 		return false;
 	}
 
-	VkClearValue clear_color = { { { 1.0f, 1.0f, 1.0f, 1.0f } } };
+	VkClearValue clear_color = { .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } };
+	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
+
+	VkClearValue clear_values[] = { clear_color, clear_depth };
+
 	VkRenderPassBeginInfo rp_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 		.renderPass = renderer->render_pass,
 		.framebuffer = renderer->framebuffers[image_index],
 		.renderArea.offset = { 0, 0 },
 		.renderArea.extent = renderer->swapchain.extent,
-		.clearValueCount = 1,
-		.pClearValues = &clear_color
+		.clearValueCount = array_count(clear_values),
+		.pClearValues = clear_values
 	};
 
 	vkCmdBeginRenderPass(renderer->command_buffers[renderer->current_frame], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -98,7 +102,7 @@ bool vk_record_command_buffers(VKRenderer *renderer, uint32_t image_index) {
 		VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline_layout,
 		0, 1, &renderer->descriptor_sets[renderer->current_frame], 0, NULL);
 
-	vkCmdDraw(renderer->command_buffers[renderer->current_frame], 6, 1, 6, 0);
+	vkCmdDraw(renderer->command_buffers[renderer->current_frame], array_count(vertices), 1, 0, 0);
 	// vkCmdDrawIndexed(renderer->command_buffers[renderer->current_frame], array_count(indices), 1, 0, 0, 0);
 
 	vkCmdEndRenderPass(renderer->command_buffers[renderer->current_frame]);

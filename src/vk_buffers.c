@@ -5,48 +5,55 @@
 #include <vulkan/vulkan_core.h>
 
 // clang-format off
+// clang-format off
 const Vertex vertices[] = {
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
+    // Front (+Z)
+    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-left
+    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-right
+    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }}, // Top-right
+    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
+    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
 
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+    // Back (-Z)
+    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-right
+    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-left
+    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }}, // Top-left
+    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
 
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }} ,
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+    // Left (-X)
+    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
+    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
 
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+    // Right (+X)
+    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }},
+    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
+    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
 
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+    // Bottom (-Y)
+    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
 
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }}
+    // Top (+Y)
+    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}
 };
 // clang-format on
 

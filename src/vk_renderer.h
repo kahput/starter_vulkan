@@ -1,5 +1,6 @@
 #pragma once
 
+#define CGLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <cglm/cglm.h>
 #include <vulkan/vulkan.h>
 
@@ -60,6 +61,10 @@ typedef struct {
 		VkExtent2D extent;
 	} swapchain;
 
+	VkImage depth_image;
+	VkDeviceMemory depth_image_memory;
+	VkImageView depth_image_view;
+
 	VkImageView *image_views;
 	uint32_t image_views_count;
 
@@ -117,8 +122,8 @@ uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter
 bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size);
 
-bool vk_create_image(VKRenderer *, QueueFamilyIndices, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VkImage *, VkDeviceMemory *);
-bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, VkImageView *view);
+bool vk_create_image(VKRenderer *, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VkImage *, VkDeviceMemory *);
+bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
 bool vk_transition_image_layout(VKRenderer *renderer, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
 bool vk_copy_buffer_to_image(VKRenderer *renderer, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 
@@ -140,6 +145,8 @@ bool vk_create_descriptor_set_layout(VKRenderer *renderer);
 bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer);
 bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
 bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
+
+bool vk_create_depth_resources(struct arena *arena, VKRenderer *renderer);
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
 
