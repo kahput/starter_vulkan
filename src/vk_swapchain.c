@@ -116,11 +116,16 @@ bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct pla
 		vkDestroyImageView(renderer->logical_device, renderer->image_views[i], NULL);
 	}
 	vkDestroySwapchainKHR(renderer->logical_device, renderer->swapchain.handle, NULL);
+	vkDestroyImageView(renderer->logical_device, renderer->depth_image_view, NULL);
+	vkDestroyImage(renderer->logical_device, renderer->depth_image, NULL);
+	vkFreeMemory(renderer->logical_device, renderer->depth_image_memory, NULL);
 	arena_clear(arena);
 
 	if (vk_create_swapchain(arena, renderer, platform) == false)
 		return false;
 	if (vk_create_swapchain_image_views(arena, renderer) == false)
+		return false;
+	if (vk_create_depth_resources(arena, renderer) == false)
 		return false;
 	if (vk_create_framebuffers(arena, renderer) == false)
 		return false;
