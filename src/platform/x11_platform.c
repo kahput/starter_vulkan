@@ -1,4 +1,3 @@
-#include "platform/x11_platform.h"
 #include "platform/internal.h"
 
 #include "core/logger.h"
@@ -63,8 +62,13 @@ bool platform_init_x11(Platform *platform) {
 	platform->internal->poll_events = x11_poll_events;
 	platform->internal->should_close = x11_should_close;
 
+	platform->internal->time_ms = x11_time_ms;
+
 	platform->internal->logical_dimensions = x11_get_logical_dimensions;
 	platform->internal->physical_dimensions = x11_get_physical_dimensions;
+
+	platform->internal->set_logical_dimensions_callback = x11_set_logical_dimensions_callback;
+	platform->internal->set_physical_dimensions_callback = x11_set_physical_dimensions_callback;
 
 	platform->internal->create_vulkan_surface = x11_create_vulkan_surface;
 	platform->internal->vulkan_extensions = x11_vulkan_extensions;
@@ -90,7 +94,8 @@ bool x11_startup(Platform *platform) {
 		XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE |
 		XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
 		XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_BUTTON_MOTION |
-		XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW;
+		XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW |
+		XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
 
 	uint32_t values[1] = {
 		event_mask
@@ -116,6 +121,16 @@ void x11_poll_events(Platform *platform) {
 	xcb_generic_event_t *event = NULL;
 	while ((event = x11->xcb.poll_for_event(x11->connection))) {
 		switch (event->response_type & ~0x80) {
+			case XCB_CONFIGURE_NOTIFY: {
+				xcb_configure_notify_event_t *cfg_event = (xcb_configure_notify_event_t *)event;
+
+				uint16_t new_width = cfg_event->width, new_height = cfg_event->height;
+				if (x11->callback.logical_size)
+					x11->callback.logical_size(platform, new_width, new_height);
+				if (x11->callback.physical_size)
+					x11->callback.physical_size(platform, new_width, new_height);
+
+			} break;
 			case XCB_CLIENT_MESSAGE: {
 				platform->should_close = true;
 			} break;
@@ -140,6 +155,12 @@ bool x11_should_close(Platform *platform) {
 	return platform->should_close;
 }
 
+uint64_t x11_time_ms(struct platform *platform) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
+}
+
 void x11_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
 	X11Platform *x11 = &platform->internal->x11;
 	xcb_connection_t *connection = x11->connection;
@@ -156,6 +177,17 @@ void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *
 	xcb_get_geometry_reply_t *geometry = x11->xcb.get_geometry_reply(x11->connection, x11->xcb.get_geometry(x11->connection, x11->window), NULL);
 	*width = geometry->width;
 	*height = geometry->height;
+}
+
+void x11_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback_fn) {
+	X11Platform *x11 = &platform->internal->x11;
+
+	x11->callback.logical_size = callback_fn;
+}
+void x11_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback_fn) {
+	X11Platform *x11 = &platform->internal->x11;
+
+	x11->callback.physical_size = callback_fn;
 }
 
 bool x11_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {

@@ -26,6 +26,8 @@ typedef xcb_generic_event_t *(*PFN_xcb_poll_for_event)(xcb_connection_t *c);
 typedef xcb_get_geometry_cookie_t (*PFN_xcb_get_geometry)(xcb_connection_t *c, xcb_drawable_t drawable);
 typedef xcb_get_geometry_reply_t *(*PFN_xcb_get_geometry_reply)(xcb_connection_t *c, xcb_get_geometry_cookie_t cookie, xcb_generic_error_t **e);
 
+struct platform;
+
 typedef struct x11_platform {
 	xcb_connection_t *connection;
 	xcb_window_t window;
@@ -53,9 +55,12 @@ typedef struct x11_platform {
 		PFN_xcb_flush flush;
 	} xcb;
 
-} X11Platform;
+	struct {
+		fn_platform_dimensions logical_size;
+		fn_platform_dimensions physical_size;
+	} callback;
 
-struct platform;
+} X11Platform;
 
 #define PLATFORM_X11_LIBRARY_STATE X11Platform x11;
 
@@ -67,8 +72,13 @@ void x11_shutdown(struct platform *platform);
 void x11_poll_events(struct platform *platform);
 bool x11_should_close(struct platform *platform);
 
+uint64_t x11_time_ms(struct platform *platform);
+
 void x11_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
 void x11_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
+
+void x11_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
+void x11_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;

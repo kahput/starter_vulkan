@@ -4,11 +4,6 @@
 #include "platform.h"
 #include "vk_renderer.h"
 
-#include <cglm/affine-pre.h>
-#include <cglm/cam.h>
-#include <cglm/mat4.h>
-#include <cglm/project.h>
-#include <cglm/util.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -40,7 +35,6 @@ int main(void) {
 
 	start_time = platform_time_ms(platform);
 
-	LOG_INFO("Wayland Display created");
 	LOG_INFO("Logical pixel dimensions { %d, %d }", platform->logical_width, platform->logical_height);
 	LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
 	platform_set_physical_dimensions_callback(platform, resize_callback);

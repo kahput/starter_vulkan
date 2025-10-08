@@ -1,4 +1,3 @@
-#include "platform/wl_platform.h"
 #include "platform/internal.h"
 
 #include "core/logger.h"
@@ -185,13 +184,13 @@ uint64_t wl_time_ms(struct platform *platform) {
 	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
 }
 
-void wl_set_logical_dimensions_callback(struct platform *platform, fn_dimensions callback) {
+void wl_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback) {
 	WLPlatform *wl = &platform->internal->wl;
 
 	wl->callback.logical_size = callback;
 }
 
-void wl_set_physical_dimensions_callback(struct platform *platform, fn_dimensions callback) {
+void wl_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback) {
 	WLPlatform *wl = &platform->internal->wl;
 
 	wl->callback.physical_size = callback;
