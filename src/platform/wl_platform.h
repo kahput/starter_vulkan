@@ -52,6 +52,7 @@ typedef struct wl_platform {
 	struct wl_compositor *compositor;
 	struct wl_output *output;
 	struct wl_shm *shm;
+	struct wl_seat *seat;
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
 	struct wl_surface *surface;
@@ -69,8 +70,8 @@ typedef struct wl_platform {
 	} xdg;
 
 	struct {
-		fn_platform_dimensions logical_size;
-		fn_platform_dimensions physical_size;
+		PFN_platform_dimensions logical_size;
+		PFN_platform_dimensions physical_size;
 	} callback;
 
 	bool use_vulkan;
@@ -91,8 +92,8 @@ void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint
 
 uint64_t wl_time_ms(struct platform *platform);
 
-void wl_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback);
-void wl_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback);
+void wl_set_logical_dimensions_callback(struct platform *platform, PFN_platform_dimensions callback);
+void wl_set_physical_dimensions_callback(struct platform *platform, PFN_platform_dimensions callback);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;

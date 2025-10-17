@@ -21,6 +21,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/input-event-codes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -60,6 +61,21 @@ static const struct wp_fractional_scale_v1_listener fractional_scale_listener = 
 	.preferred_scale = preferred_scale,
 };
 
+static void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y);
+static void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface);
+static void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y);
+static void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
+static void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
+static void pointer_frame(void *data, struct wl_pointer *wl_pointer);
+static const struct wl_pointer_listener pointer_listener = {
+	.enter = pointer_enter,
+	.leave = pointer_leave,
+	.motion = pointer_motion,
+	.button = pointer_button,
+	.axis = pointer_axis,
+	.frame = pointer_frame
+};
+
 static struct wl_buffer *
 create_shm_buffer(struct platform *platform);
 
@@ -68,7 +84,8 @@ bool platform_init_wayland(struct platform *platform) {
 	if (handle == NULL)
 		return false;
 
-	WLPlatform *wl_platform = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl_platform = &internal->wl;
 	_wl_library.handle = handle;
 
 	*(void **)(&_wl_library.display_connect) = dlsym(handle, "wl_display_connect");
@@ -87,33 +104,34 @@ bool platform_init_wayland(struct platform *platform) {
 		if (array[i] == NULL)
 			return false;
 	}
-	platform->internal->wl = (WLPlatform){ 0 };
+	internal->wl = (WLPlatform){ 0 };
 
-	platform->internal->startup = wl_startup;
-	platform->internal->shutdown = wl_shutdown;
+	internal->startup = wl_startup;
+	internal->shutdown = wl_shutdown;
 
-	platform->internal->poll_events = wl_poll_events;
-	platform->internal->should_close = wl_should_close;
+	internal->poll_events = wl_poll_events;
+	internal->should_close = wl_should_close;
 
-	platform->internal->logical_dimensions = wl_get_logical_dimensions;
-	platform->internal->physical_dimensions = wl_get_physical_dimensions;
+	internal->logical_dimensions = wl_get_logical_dimensions;
+	internal->physical_dimensions = wl_get_physical_dimensions;
 
-	platform->internal->time_ms = wl_time_ms;
+	internal->time_ms = wl_time_ms;
 
-	platform->internal->set_logical_dimensions_callback = wl_set_logical_dimensions_callback;
-	platform->internal->set_physical_dimensions_callback = wl_set_physical_dimensions_callback;
+	internal->set_logical_dimensions_callback = wl_set_logical_dimensions_callback;
+	internal->set_physical_dimensions_callback = wl_set_physical_dimensions_callback;
 
-	platform->internal->create_vulkan_surface = wl_create_vulkan_surface;
-	platform->internal->vulkan_extensions = wl_vulkan_extensions;
+	internal->create_vulkan_surface = wl_create_vulkan_surface;
+	internal->vulkan_extensions = wl_vulkan_extensions;
 
 	return true;
 }
 
 bool wl_startup(struct platform *platform) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 	wl->display = _wl_library.display_connect(NULL);
 
-	struct wl_display *display = platform->internal->wl.display;
+	struct wl_display *display = wl->display;
 	if (display == NULL) {
 		LOG_ERROR("Failed to create wayland display");
 		return false;
@@ -159,16 +177,21 @@ bool wl_startup(struct platform *platform) {
 	// Retrived surface fractional scaling from attached buffer
 	wl_display_roundtrip(wl->display);
 
+	wl->pointer = wl_seat_get_pointer(wl->seat);
+	wl_pointer_add_listener(wl->pointer, &pointer_listener, platform);
+
 	return true;
 }
 
 void wl_shutdown(struct platform *platform) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 	wl_display_disconnect(wl->display);
 }
 
 void wl_poll_events(struct platform *platform) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 	wl_display_roundtrip(wl->display);
 }
 bool wl_should_close(struct platform *platform) {
@@ -184,28 +207,31 @@ uint64_t wl_time_ms(struct platform *platform) {
 	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
 }
 
-void wl_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback) {
-	WLPlatform *wl = &platform->internal->wl;
+void wl_set_logical_dimensions_callback(struct platform *platform, PFN_platform_dimensions callback) {
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 
 	wl->callback.logical_size = callback;
 }
 
-void wl_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback) {
-	WLPlatform *wl = &platform->internal->wl;
+void wl_set_physical_dimensions_callback(struct platform *platform, PFN_platform_dimensions callback) {
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 
 	wl->callback.physical_size = callback;
 }
 
 bool wl_create_vulkan_surface(struct platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 	wl->use_vulkan = true;
 
 	LOG_INFO("Using Vulkan for presentation");
 
 	VkWaylandSurfaceCreateInfoKHR surface_create_info = {
 		.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
-		.display = platform->internal->wl.display,
-		.surface = platform->internal->wl.surface,
+		.display = wl->display,
+		.surface = wl->surface,
 	};
 
 	if (vkCreateWaylandSurfaceKHR(instance, &surface_create_info, NULL, surface) != VK_SUCCESS)
@@ -228,6 +254,8 @@ void registry_handle_global(void *data, struct wl_registry *registry, uint32_t n
 		wl->output = wl_registry_bind(wl->registry, name, &wl_output_interface, 2);
 	else if (strcmp(interface, wl_shm_interface.name) == 0)
 		wl->shm = wl_registry_bind(wl->registry, name, &wl_shm_interface, 1);
+	else if (strcmp(interface, wl_seat_interface.name) == 0)
+		wl->seat = wl_registry_bind(wl->registry, name, &wl_seat_interface, 7);
 	else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
 		wl->wm_base = wl_registry_bind(wl->registry, name, &xdg_wm_base_interface, 7);
 		xdg_wm_base_add_listener(wl->wm_base, &wm_base_listener, wl);
@@ -240,7 +268,8 @@ void registry_handle_global_remove(void *data, struct wl_registry *registry, uin
 
 void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
 	struct platform *platform = (struct platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 
 	xdg_surface_ack_configure(wl->xdg.surface, serial);
 
@@ -253,7 +282,8 @@ void wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) 
 
 void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states) {
 	struct platform *platform = (struct platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 
 	if ((width && height) && ((uint32_t)width != platform->logical_width || (uint32_t)height != platform->logical_height)) {
 		platform->logical_width = width, platform->logical_height = height;
@@ -275,8 +305,63 @@ void toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, str
 
 void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_scale_v1, uint32_t scale) {
 	struct platform *platform = (struct platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 	wl->scale_factor = (float)scale / 120.f;
+}
+
+void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+	struct platform *platform = (struct platform *)data;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
+	LOG_INFO("MouseEnterEvent: [ %d, %d ]", wl_fixed_to_int(surface_x), wl_fixed_to_int(surface_y));
+}
+void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface) {
+	struct platform *platform = (struct platform *)data;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
+	LOG_INFO("MouseLeaveEvent");
+}
+void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+	struct platform *platform = (struct platform *)data;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
+	LOG_INFO("MouseMotionEvent: [ %d, %d ]", wl_fixed_to_int(surface_x), wl_fixed_to_int(surface_y));
+}
+void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
+	struct platform *platform = (struct platform *)data;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
+	if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+		if (button == BTN_LEFT)
+			LOG_INFO("ButtonPressEvent: Left");
+		if (button == BTN_MIDDLE)
+			LOG_INFO("ButtonPressEvent: Middle");
+		if (button == BTN_RIGHT)
+			LOG_INFO("ButtonPressEvent: Right");
+	}
+	if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
+		if (button == BTN_LEFT)
+			LOG_INFO("ButtonReleaseEvent: Left");
+		if (button == BTN_MIDDLE)
+			LOG_INFO("ButtonReleaseEvent: Middle");
+		if (button == BTN_RIGHT)
+			LOG_INFO("ButtonReleaseEvent: Right");
+	}
+}
+void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {
+	struct platform *platform = (struct platform *)data;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+}
+void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
+	struct platform *platform = (struct platform *)data;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 }
 
 static int create_anonymous_file(off_t size) {
@@ -311,7 +396,7 @@ struct wl_buffer *create_shm_buffer(struct platform *platform) {
 		return NULL;
 	}
 
-	struct wl_shm_pool *pool = wl_shm_create_pool(platform->internal->wl.shm, fd, length);
+	struct wl_shm_pool *pool = wl_shm_create_pool(((struct platform_internal*)platform->internal)->wl.shm, fd, length);
 
 	close(fd);
 
