@@ -15,19 +15,19 @@ struct arena;
 
 typedef struct {
 	vec3 position;
-	vec2 uv;
+	vec3 normal;
+	vec2 texture_coordinate;
 } Vertex;
 
-extern const Vertex vertices[36];
-extern const uint16_t indices[6];
-
 typedef enum {
-	FORMAT_FLOAT,
-	FORMAT_FLOAT2,
-	FORMAT_FLOAT3,
-	FORMAT_FLOAT4,
+	ATTRIBUTE_FORMAT_INVALID,
 
-	FORMAT_COUNT
+	ATTRIBUTE_FORMAT_FLOAT,
+	ATTRIBUTE_FORMAT_FLOAT2,
+	ATTRIBUTE_FORMAT_FLOAT3,
+	ATTRIBUTE_FORMAT_FLOAT4,
+
+	ATTRIBUTE_FORMAT_MAX
 } VertexAttributeFormat;
 
 typedef struct {
@@ -40,6 +40,23 @@ typedef struct {
 	mat4 view;
 	mat4 projection;
 } MVPObject;
+
+typedef struct Primitive {
+	uint32_t vertex_count, vertex_capcity;
+	Vertex *vertices;
+
+	uint32_t index_count, index_capacity;
+	uint32_t *indices;
+} Primitive;
+
+typedef struct Mesh {
+	Primitive *primitves;
+} Mesh;
+
+typedef struct Model {
+	uint32_t mesh_count, mesh_capacity;
+	Mesh *meshes;
+} Model;
 
 typedef struct {
 	VkInstance instance;
@@ -77,6 +94,8 @@ typedef struct {
 	VkPipeline graphics_pipeline;
 
 	uint32_t current_frame;
+
+	Mesh mesh;
 
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
@@ -117,6 +136,7 @@ typedef struct {
 QueueFamilyIndices find_queue_families(struct arena *scratch_arena, VKRenderer *renderer);
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
+uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
 bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);

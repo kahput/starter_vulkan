@@ -23,7 +23,7 @@ void get_filename(const char *src, char *dst) {
 }
 
 bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer) {
-	const char *file_path = "assets/textures/container.jpg";
+	const char *file_path = "assets/models/modular_dungeon/textures/colormap.png";
 	char file_name[256];
 	get_filename(file_path, file_name);
 	LOG_INFO("Filepath: %s, Filename: %s", file_path, file_name);

@@ -5,15 +5,6 @@
 #include <time.h>
 
 typedef struct {
-	va_list arguments;
-	const char *format;
-	const char *file;
-	struct tm *time;
-	uint32_t line;
-	LogLevel level;
-} LogInfo;
-
-typedef struct {
 	LogLevel level;
 	bool quiet;
 } Logger;

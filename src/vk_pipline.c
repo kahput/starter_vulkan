@@ -14,7 +14,6 @@ struct shader_file {
 };
 
 static inline int32_t vaf_to_vulkan_format(VertexAttributeFormat format);
-static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 
 struct shader_file read_file(struct arena *arena, const char *path);
 bool create_shader_module(VKRenderer *renderer, VkShaderModule *module, struct shader_file code);
@@ -66,8 +65,9 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 	};
 
 	VertexAttribute attributes[] = {
-		{ .name = "in_position", FORMAT_FLOAT3 },
-		{ .name = "in_uv", FORMAT_FLOAT2 }
+		{ .name = "in_position", ATTRIBUTE_FORMAT_FLOAT3 },
+		{ .name = "in_normal", ATTRIBUTE_FORMAT_FLOAT3 },
+		{ .name = "in_uv", ATTRIBUTE_FORMAT_FLOAT2 },
 	};
 
 	VkVertexInputBindingDescription binding_description = { 0 };
@@ -132,7 +132,7 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 		.rasterizerDiscardEnable = VK_FALSE,
 		.polygonMode = VK_POLYGON_MODE_FILL,
 		.lineWidth = 1.0f,
-		.cullMode = VK_CULL_MODE_BACK_BIT,
+		.cullMode = VK_CULL_MODE_NONE,
 		.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		.depthBiasEnable = VK_FALSE,
 	};
@@ -248,13 +248,13 @@ bool create_shader_module(VKRenderer *renderer, VkShaderModule *module, struct s
 
 int32_t vaf_to_vulkan_format(VertexAttributeFormat format) {
 	switch (format) {
-		case FORMAT_FLOAT:
+		case ATTRIBUTE_FORMAT_FLOAT:
 			return VK_FORMAT_R32_SFLOAT;
-		case FORMAT_FLOAT2:
+		case ATTRIBUTE_FORMAT_FLOAT2:
 			return VK_FORMAT_R32G32_SFLOAT;
-		case FORMAT_FLOAT3:
+		case ATTRIBUTE_FORMAT_FLOAT3:
 			return VK_FORMAT_R32G32B32_SFLOAT;
-		case FORMAT_FLOAT4:
+		case ATTRIBUTE_FORMAT_FLOAT4:
 			return VK_FORMAT_R32G32B32A32_SFLOAT;
 		default: {
 			LOG_ERROR("Unkown attribute format type provided!");
@@ -265,13 +265,13 @@ int32_t vaf_to_vulkan_format(VertexAttributeFormat format) {
 
 uint32_t vaf_to_byte_size(VertexAttributeFormat format) {
 	switch (format) {
-		case FORMAT_FLOAT:
+		case ATTRIBUTE_FORMAT_FLOAT:
 			return sizeof(float);
-		case FORMAT_FLOAT2:
+		case ATTRIBUTE_FORMAT_FLOAT2:
 			return sizeof(float) * 2;
-		case FORMAT_FLOAT3:
+		case ATTRIBUTE_FORMAT_FLOAT3:
 			return sizeof(float) * 3;
-		case FORMAT_FLOAT4:
+		case ATTRIBUTE_FORMAT_FLOAT4:
 			return sizeof(float) * 4;
 		default: {
 			LOG_ERROR("Unkown attribute format type provided!");

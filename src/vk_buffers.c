@@ -4,67 +4,11 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-// clang-format off
-// clang-format off
-const Vertex vertices[] = {
-    // Front (+Z)
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-left
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-right
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }}, // Top-right
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-
-    // Back (-Z)
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-right
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-left
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }}, // Top-left
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-
-    // Left (-X)
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-
-    // Right (+X)
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-
-    // Bottom (-Y)
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-
-    // Top (+Y)
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}
-};
-// clang-format on
-
-const uint16_t indices[6] = {
-	0, 1, 2, 2, 3, 0
-};
-
 bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
 	QueueFamilyIndices family_indices = find_queue_families(scratch_arena, renderer);
 
-	VkDeviceSize size = sizeof(vertices);
+	VkDeviceSize size = renderer->mesh.primitves->vertex_count * sizeof(*renderer->mesh.primitves->vertices);
+	LOG_INFO("Creating VkBuffer of size %d (count = %d)", size, renderer->mesh.primitves->vertex_count);
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -79,7 +23,7 @@ bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer) 
 
 	void *data;
 	vkMapMemory(renderer->logical_device, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, vertices, sizeof(vertices));
+	memcpy(data, renderer->mesh.primitves->vertices, size);
 	vkUnmapMemory(renderer->logical_device, staging_buffer_memory);
 
 	vk_create_buffer(renderer, family_indices, size, usage, properties, &renderer->vertex_buffer, &renderer->vertex_buffer_memory);
@@ -94,7 +38,7 @@ bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer) 
 bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
 	QueueFamilyIndices family_indices = find_queue_families(scratch_arena, renderer);
 
-	VkDeviceSize size = sizeof(indices);
+	VkDeviceSize size = renderer->mesh.primitves->index_count * sizeof(*renderer->mesh.primitves->indices);
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -109,7 +53,7 @@ bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
 
 	void *data;
 	vkMapMemory(renderer->logical_device, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, indices, sizeof(indices));
+	memcpy(data, renderer->mesh.primitves->indices, size);
 	vkUnmapMemory(renderer->logical_device, staging_buffer_memory);
 
 	vk_create_buffer(renderer, family_indices, size, usage, properties, &renderer->index_buffer, &renderer->index_buffer_memory);
