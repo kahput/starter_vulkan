@@ -24,7 +24,7 @@ FetchContent_Declare(
 
 find_package(Vulkan REQUIRED)
 
-file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "deps/stb/*.c" "deps/stb/*.h")
+file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "deps/*/*.c" "deps/*/*.h")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PUBLIC "src/" "deps/")
