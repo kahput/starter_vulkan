@@ -5,9 +5,9 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
-	VkDeviceSize size = renderer->mesh.primitves->vertex_count * sizeof(*renderer->mesh.primitves->vertices);
-	LOG_INFO("Creating VkBuffer of size %d (count = %d)", size, renderer->mesh.primitves->vertex_count);
+bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer, Mesh *mesh) {
+	VkDeviceSize size = mesh->primitves->vertex_count * sizeof(*mesh->primitves->vertices);
+	LOG_INFO("Creating VkBuffer of size %d (count = %d)", size, mesh->primitves->vertex_count);
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -22,7 +22,7 @@ bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer) 
 
 	void *data;
 	vkMapMemory(renderer->logical_device, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, renderer->mesh.primitves->vertices, size);
+	memcpy(data, mesh->primitves->vertices, size);
 	vkUnmapMemory(renderer->logical_device, staging_buffer_memory);
 
 	vk_create_buffer(renderer, size, usage, properties, &renderer->vertex_buffer, &renderer->vertex_buffer_memory);
@@ -34,8 +34,8 @@ bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer) 
 	return true;
 }
 
-bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
-	VkDeviceSize size = renderer->mesh.primitves->index_count * sizeof(*renderer->mesh.primitves->indices);
+bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer, Mesh *mesh) {
+	VkDeviceSize size = mesh->primitves->index_count * sizeof(*mesh->primitves->indices);
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -50,7 +50,7 @@ bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer) {
 
 	void *data;
 	vkMapMemory(renderer->logical_device, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, renderer->mesh.primitves->indices, size);
+	memcpy(data, mesh->primitves->indices, size);
 	vkUnmapMemory(renderer->logical_device, staging_buffer_memory);
 
 	vk_create_buffer(renderer, size, usage, properties, &renderer->index_buffer, &renderer->index_buffer_memory);

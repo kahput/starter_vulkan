@@ -51,9 +51,12 @@ typedef struct Primitive {
 
 	uint32_t index_count, index_capacity;
 	uint32_t *indices;
+
+	Material material;
 } Primitive;
 
 typedef struct Mesh {
+	uint32_t primitive_count;
 	Primitive *primitves;
 } Mesh;
 
@@ -106,8 +109,6 @@ typedef struct {
 	VkPipeline graphics_pipeline;
 
 	uint32_t current_frame;
-
-	Mesh mesh;
 
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
@@ -184,8 +185,8 @@ bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer);
 bool vk_create_texture_image_view(struct arena *arena, VKRenderer *renderer);
 bool vk_create_texture_sampler(VKRenderer *renderer);
 
-bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer);
-bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer);
+bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer, Mesh *mesh);
+bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer, Mesh *mesh);
 
 bool vk_create_uniform_buffers(struct arena *scratch_arena, VKRenderer *renderer);
 bool vk_create_descriptor_pool(VKRenderer *renderer);

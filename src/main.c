@@ -14,14 +14,14 @@ void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *plat
 void resize_callback(struct platform *platform, uint32_t width, uint32_t height);
 void update_uniforms(VKRenderer *renderer, Platform *platform);
 
-void load_model(Arena *arena, VKRenderer *renderer);
+void load_model(Arena *arena, VKRenderer *renderer, Mesh *mesh);
 
 static bool resized = false;
 static uint64_t start_time = 0;
 
 int main(void) {
 	Arena *vk_arena = arena_alloc();
-	Arena *model_arena = arena_alloc();
+	Arena *asset_arena = arena_alloc();
 	Arena *window_arena = arena_alloc();
 	Arena *frame_arena = arena_alloc();
 
@@ -66,9 +66,10 @@ int main(void) {
 	vk_create_texture_sampler(&renderer);
 
 	vk_create_uniform_buffers(vk_arena, &renderer);
-	load_model(model_arena, &renderer);
-	vk_create_vertex_buffer(vk_arena, &renderer);
-	vk_create_index_buffer(vk_arena, &renderer);
+	Mesh mesh;
+	load_model(asset_arena, &renderer, &mesh);
+	vk_create_vertex_buffer(vk_arena, &renderer, &mesh);
+	vk_create_index_buffer(vk_arena, &renderer, &mesh);
 
 	vk_create_descriptor_pool(&renderer);
 	vk_create_descriptor_set(&renderer);
@@ -211,39 +212,38 @@ static const char *cgltf_type_to_string[] = {
 	"cgltf_type_max_enum"
 };
 
-void gltf_load_file(Arena *arena, VKRenderer *renderer, cgltf_node *node) {
-	if (node->mesh != NULL && renderer->mesh.primitves == NULL) {
+void gltf_load_file(Arena *arena, VKRenderer *renderer, cgltf_node *node, Mesh *mesh) {
+	if (node->mesh != NULL && mesh->primitves == NULL) {
 		// TODO: Make Vulkan Buffers
-		cgltf_mesh *mesh = node->mesh;
+		cgltf_mesh *load_mesh = node->mesh;
 
-		Mesh *upload_mesh = &renderer->mesh;
-		upload_mesh->primitves = arena_push_array(arena, Primitive, mesh->primitives_count);
-		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
-			cgltf_primitive primitive = mesh->primitives[primitive_index];
-			Primitive *upload_primitive = &upload_mesh->primitves[primitive_index];
+		mesh->primitves = arena_push_array(arena, Primitive, load_mesh->primitives_count);
+		for (uint32_t primitive_index = 0; primitive_index < load_mesh->primitives_count; ++primitive_index) {
+			cgltf_primitive load_primitive = load_mesh->primitives[primitive_index];
+			Primitive *primitive = &mesh->primitves[primitive_index];
 
 			// INDEX
 			{
-				upload_primitive->index_count = primitive.indices->count;
-				upload_primitive->indices = arena_push_array(arena, uint32_t, upload_primitive->index_count);
+				primitive->index_count = load_primitive.indices->count;
+				primitive->indices = arena_push_array(arena, uint32_t, primitive->index_count);
 
-				cgltf_accessor *indices = primitive.indices;
+				cgltf_accessor *indices = load_primitive.indices;
 				uint8_t *data = indices->buffer_view->buffer->data;
 				uint8_t *index_buffer = data + (indices->offset + indices->buffer_view->offset);
 				for (uint32_t index = 0; index < indices->count; ++index) {
 					uint8_t *value = index_buffer + (index * indices->stride);
 
-					memcpy(upload_primitive->indices + index, value, indices->stride);
+					memcpy(primitive->indices + index, value, indices->stride);
 				}
 			}
 
 			// VERTEX
 			{
-				upload_primitive->vertex_count = primitive.attributes->data->count;
-				upload_primitive->vertices = arena_push_array(arena, Vertex, upload_primitive->vertex_count);
+				primitive->vertex_count = load_primitive.attributes->data->count;
+				primitive->vertices = arena_push_array(arena, Vertex, primitive->vertex_count);
 
-				for (uint32_t attribute_index = 0; attribute_index < primitive.attributes_count; ++attribute_index) {
-					cgltf_attribute attribute = primitive.attributes[attribute_index];
+				for (uint32_t attribute_index = 0; attribute_index < load_primitive.attributes_count; ++attribute_index) {
+					cgltf_attribute attribute = load_primitive.attributes[attribute_index];
 					cgltf_accessor *accessor = attribute.data;
 					cgltf_buffer_view *buffer_view = accessor->buffer_view;
 
@@ -251,9 +251,9 @@ void gltf_load_file(Arena *arena, VKRenderer *renderer, cgltf_node *node) {
 						attribute.type == cgltf_attribute_type_position ||
 						attribute.type == cgltf_attribute_type_normal ||
 						attribute.type == cgltf_attribute_type_texcoord) {
-						for (uint32_t index = 0; index < upload_primitive->vertex_count; ++index) {
+						for (uint32_t index = 0; index < primitive->vertex_count; ++index) {
 							uint32_t stride = accessor->stride;
-							Vertex *vertex = &upload_primitive->vertices[index];
+							Vertex *vertex = &primitive->vertices[index];
 							uint8_t *data = (uint8_t *)buffer_view->buffer->data;
 							uint8_t *vertex_buffer = data + (buffer_view->offset + accessor->offset);
 							float *value = (float *)(vertex_buffer + (stride * index));
@@ -271,11 +271,10 @@ void gltf_load_file(Arena *arena, VKRenderer *renderer, cgltf_node *node) {
 
 			// MATERIAL
 			{
-				cgltf_material *material = primitive.material;
+				cgltf_material *material = load_primitive.material;
 				if (material->has_pbr_metallic_roughness) {
 					cgltf_pbr_metallic_roughness pbr = material->pbr_metallic_roughness;
-					Material material;
-					memcpy(material.base_color_factor, pbr.base_color_factor, sizeof(material.base_color_factor));
+					memcpy(primitive->material.base_color_factor, pbr.base_color_factor, sizeof(primitive->material.base_color_factor));
 					cgltf_float *base_color = pbr.base_color_factor;
 
 					LOG_INFO("Material color = { %.2f, %.2f, %.2f, %.2f }", base_color[0], base_color[1], base_color[2], base_color[3]);
@@ -288,11 +287,11 @@ void gltf_load_file(Arena *arena, VKRenderer *renderer, cgltf_node *node) {
 	for (uint32_t child_index = 0; child_index < node->children_count; ++child_index) {
 		cgltf_node *child = node->children[child_index];
 
-		gltf_load_file(arena, renderer, child);
+		gltf_load_file(arena, renderer, child, mesh);
 	}
 }
 
-void load_model(Arena *arena, VKRenderer *renderer) {
+void load_model(Arena *arena, VKRenderer *renderer, Mesh *mesh) {
 	const char file[] = "assets/models/test/box_interleaved.gltf";
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
@@ -318,7 +317,7 @@ void load_model(Arena *arena, VKRenderer *renderer) {
 			cgltf_node *root = scene.nodes[root_index];
 			LOG_INFO("======SCENE_NODE[%d]======", root_index);
 
-			gltf_load_file(arena, renderer, root);
+			gltf_load_file(arena, renderer, root, mesh);
 		}
 	}
 
