@@ -41,6 +41,10 @@ typedef struct {
 	mat4 projection;
 } MVPObject;
 
+typedef struct Material {
+	float base_color_factor[4];
+} Material;
+
 typedef struct Primitive {
 	uint32_t vertex_count, vertex_capcity;
 	Vertex *vertices;
@@ -59,7 +63,15 @@ typedef struct Model {
 } Model;
 
 typedef struct {
+	int32_t graphics;
+	int32_t transfer;
+	int32_t present;
+} QueueFamilyIndices;
+
+typedef struct {
 	VkInstance instance;
+
+	QueueFamilyIndices family_indices;
 
 	VkPhysicalDevice physical_device;
 	VkDevice logical_device;
@@ -115,6 +127,10 @@ typedef struct {
 	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];
 	void *uniform_buffers_mapped[MAX_FRAMES_IN_FLIGHT];
 
+	VkBuffer material_uniform_bufffer;
+	VkDeviceMemory material_uniform_buffer_memory;
+	void *material_uniform_buffer_mapped;
+
 	VkDescriptorPool descriptor_pool;
 	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
 
@@ -127,19 +143,13 @@ typedef struct {
 #endif
 } VKRenderer;
 
-typedef struct {
-	int32_t graphics;
-	int32_t transfer;
-	int32_t present;
-} QueueFamilyIndices;
-
 QueueFamilyIndices find_queue_families(struct arena *scratch_arena, VKRenderer *renderer);
 bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
 uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
-bool vk_create_buffer(VKRenderer *, QueueFamilyIndices, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
+bool vk_create_buffer(VKRenderer *, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 bool vk_copy_buffer(VKRenderer *renderer, VkBuffer src, VkBuffer dst, VkDeviceSize size);
 
 bool vk_create_image(VKRenderer *, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VkImage *, VkDeviceMemory *);

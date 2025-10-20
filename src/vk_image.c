@@ -176,7 +176,7 @@ bool vk_copy_buffer_to_image(VKRenderer *renderer, VkBuffer src, VkImage dst, ui
 }
 
 bool vk_create_depth_resources(struct arena *arena, VKRenderer *renderer) {
-	uint32_t index = find_queue_families(arena, renderer).graphics;
+	uint32_t index = renderer->family_indices.graphics;
 
 	vk_create_image(
 		renderer, &index, 1,

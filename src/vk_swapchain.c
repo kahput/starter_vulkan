@@ -63,8 +63,7 @@ bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *pl
 
 	arena_pop(arena, offset);
 
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
-	uint32_t queue_family_indices[] = { family_indices.graphics, family_indices.present };
+	uint32_t queue_family_indices[] = { renderer->family_indices.graphics, renderer->family_indices.present };
 
 	uint32_t image_count = details.capabilities.minImageCount + 1;
 	if (details.capabilities.maxImageCount > 0 && image_count > details.capabilities.maxImageCount)

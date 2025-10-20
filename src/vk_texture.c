@@ -41,9 +41,8 @@ bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer) {
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	QueueFamilyIndices queue_families = find_queue_families(arena, renderer);
-	uint32_t indices[] = { queue_families.graphics, queue_families.transfer };
-	vk_create_buffer(renderer, queue_families, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	uint32_t indices[] = { renderer->family_indices.graphics, renderer->family_indices.transfer };
+	vk_create_buffer(renderer, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
 	vkMapMemory(renderer->logical_device, staging_buffer_memory, 0, size, 0, &data);

@@ -17,7 +17,14 @@ bool vk_create_descriptor_set_layout(VKRenderer *renderer) {
 		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
 	};
 
-	VkDescriptorSetLayoutBinding bindings[] = { mvp_layout_binding, sampler_layout_binding };
+	VkDescriptorSetLayoutBinding material_layout_binding = {
+		.binding = 2,
+		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		.descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+	};
+
+	VkDescriptorSetLayoutBinding bindings[] = { mvp_layout_binding, sampler_layout_binding, material_layout_binding };
 
 	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -43,7 +50,10 @@ bool vk_create_descriptor_pool(VKRenderer *renderer) {
 		  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		  .descriptorCount = MAX_FRAMES_IN_FLIGHT,
 		},
-
+		{
+		  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		  .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+		},
 	};
 
 	VkDescriptorPoolCreateInfo dp_create_info = {
@@ -81,10 +91,16 @@ bool vk_create_descriptor_set(VKRenderer *renderer) {
 	}
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		VkDescriptorBufferInfo buffer_info = {
+		VkDescriptorBufferInfo mvp_buffer = {
 			.buffer = renderer->uniform_buffers[i],
 			.offset = 0,
 			.range = sizeof(MVPObject),
+		};
+
+		VkDescriptorBufferInfo material_buffer = {
+			.buffer = renderer->material_uniform_bufffer,
+			.offset = 0,
+			.range = sizeof(Material),
 		};
 
 		VkDescriptorImageInfo image_info = {
@@ -101,7 +117,7 @@ bool vk_create_descriptor_set(VKRenderer *renderer) {
 			  .dstArrayElement = 0,
 			  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 			  .descriptorCount = 1,
-			  .pBufferInfo = &buffer_info,
+			  .pBufferInfo = &mvp_buffer,
 			},
 			{
 			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -111,6 +127,15 @@ bool vk_create_descriptor_set(VKRenderer *renderer) {
 			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			  .descriptorCount = 1,
 			  .pImageInfo = &image_info,
+			},
+			{
+			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			  .dstSet = renderer->descriptor_sets[i],
+			  .dstBinding = 2,
+			  .dstArrayElement = 0,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			  .descriptorCount = 1,
+			  .pBufferInfo = &material_buffer,
 			},
 
 		};

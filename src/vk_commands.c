@@ -5,12 +5,10 @@
 #include <vulkan/vulkan_core.h>
 
 bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
-
 	VkCommandPoolCreateInfo cp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-		.queueFamilyIndex = family_indices.graphics
+		.queueFamilyIndex = renderer->family_indices.graphics
 	};
 
 	if (vkCreateCommandPool(renderer->logical_device, &cp_create_info, NULL, &renderer->graphics_command_pool) != VK_SUCCESS) {
@@ -19,7 +17,7 @@ bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
 	}
 
 	cp_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	cp_create_info.queueFamilyIndex = family_indices.transfer;
+	cp_create_info.queueFamilyIndex = renderer->family_indices.transfer;
 	if (vkCreateCommandPool(renderer->logical_device, &cp_create_info, NULL, &renderer->transfer_command_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create command pool");
 		return false;

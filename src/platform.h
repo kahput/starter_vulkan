@@ -12,7 +12,6 @@ typedef struct platform {
 	void *internal;
 } Platform;
 
-
 typedef void (*PFN_platform_dimensions)(struct platform *platform, uint32_t width, uint32_t height);
 
 Platform *platform_startup(Arena *arena, uint32_t width, uint32_t height, const char *title);

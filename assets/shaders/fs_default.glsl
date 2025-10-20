@@ -7,7 +7,11 @@ layout(location = 0) in vec2 uv;
 
 layout(location = 0) out vec4 out_color;
 
+layout(binding = 2) uniform Material {
+    vec4 base_color_factor;
+} material;
+
 void main() {
-    out_color = vec4(0.01f, 0.01f, 0.01f, 1.0f);
+    out_color = material.base_color_factor;
     // out_color = texture(texture_sampler, uv * 2.f);
 }

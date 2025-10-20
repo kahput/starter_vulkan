@@ -13,9 +13,9 @@ static const char *extensions[] = {
 static bool create_logical_device(VKRenderer *renderer, QueueFamilyIndices *indices);
 
 bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
+	renderer->family_indices = find_queue_families(arena, renderer);
 
-	if (family_indices.graphics == -1 || family_indices.present == -1) {
+	if (renderer->family_indices.graphics == -1 || renderer->family_indices.present == -1) {
 		LOG_ERROR("Failed to find suitable GPU");
 		arena_clear(arena);
 		return false;
@@ -23,7 +23,7 @@ bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
 
 	LOG_INFO("Graphic and Present queues found");
 
-	if (create_logical_device(renderer, &family_indices) == false) {
+	if (create_logical_device(renderer, &renderer->family_indices) == false) {
 		LOG_ERROR("Failed to create logical device");
 		arena_clear(arena);
 		return false;
