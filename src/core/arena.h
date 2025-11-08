@@ -4,6 +4,10 @@
 #include <stdint.h>
 
 typedef struct arena Arena;
+typedef struct {
+	struct arena *arena;
+	uint32_t position;
+} ArenaTemp;
 
 struct arena *arena_alloc(void);
 void arena_clear(struct arena *arena);
@@ -18,5 +22,11 @@ void *arena_push_zero(struct arena *arena, size_t size);
 
 void arena_pop(struct arena *arena, size_t size);
 void arena_set(struct arena *arena, size_t position);
+
+ArenaTemp arena_begin_temp(struct arena *arena);
+void arena_end_temp(ArenaTemp temp);
+
+ArenaTemp arena_get_scratch(Arena **arena);
+#define arena_reset_scratch(t) arena_end_temp(t)
 
 size_t arena_size(struct arena *arena);

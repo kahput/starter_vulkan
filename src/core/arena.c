@@ -9,6 +9,8 @@ struct arena {
 	void *data;
 };
 
+static Arena *scratch_arenas[2] = { NULL, NULL };
+
 Arena *arena_alloc(void) {
 	Arena *arena = malloc(sizeof(Arena));
 	arena->offset = 0;
@@ -50,6 +52,27 @@ void *arena_push_zero(Arena *arena, size_t size) {
 	arena->offset += size;
 
 	return result;
+}
+
+ArenaTemp arena_begin_temp(struct arena *arena) {
+	return (ArenaTemp){ .arena = arena, .position = arena_size(arena) };
+}
+void arena_end_temp(ArenaTemp temp) {
+	arena_set(temp.arena, temp.position);
+}
+
+ArenaTemp arena_get_scratch(Arena **arena) {
+	if (!scratch_arenas[0])
+		scratch_arenas[0] = arena_alloc();
+	if (!scratch_arenas[1])
+		scratch_arenas[1] = arena_alloc();
+
+	ArenaTemp scratch_arena = {
+		.arena = arena == scratch_arenas ? scratch_arenas[1] : scratch_arenas[0]
+	};
+	scratch_arena.position = arena_size(scratch_arena.arena);
+
+	return scratch_arena;
 }
 
 void arena_pop(Arena *arena, size_t size) {
