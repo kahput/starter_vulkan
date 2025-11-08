@@ -8,10 +8,11 @@
 #include <vulkan/vulkan_core.h>
 
 #define array_count(array) sizeof(array) / sizeof(*array)
+
 #define MAX_FRAMES_IN_FLIGHT 3
+#define MAX_SWAPCHAIN_IMAGES 3
 
 struct platform;
-struct arena;
 
 typedef struct {
 	vec3 position;
@@ -54,7 +55,7 @@ typedef struct {
 		VkSwapchainKHR handle;
 
 		uint32_t image_count;
-		VkImage *images;
+		VkImage images[MAX_SWAPCHAIN_IMAGES];
 
 		VkSurfaceFormatKHR format;
 		VkPresentModeKHR present_mode;
@@ -68,7 +69,7 @@ typedef struct {
 	VkImageView *image_views;
 	uint32_t image_views_count;
 
-	VkFramebuffer *framebuffers;
+	VkFramebuffer framebuffers[MAX_SWAPCHAIN_IMAGES];
 	uint32_t framebuffer_count;
 
 	VkRenderPass render_pass;
@@ -114,8 +115,8 @@ typedef struct {
 	int32_t present;
 } QueueFamilyIndices;
 
-QueueFamilyIndices find_queue_families(struct arena *scratch_arena, VKRenderer *renderer);
-bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+QueueFamilyIndices find_queue_families(VKRenderer *renderer);
+bool query_swapchain_support(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
@@ -132,32 +133,32 @@ bool vk_end_single_time_commands(VKRenderer *renderer, VkQueue queue, VkCommandP
 
 void vk_load_extensions(VKRenderer *renderer);
 
-bool vk_create_instance(struct arena *arena, VKRenderer *renderer, struct platform *platform);
+bool vk_create_instance(VKRenderer *renderer, struct platform *platform);
 bool vk_create_surface(struct platform *platform, VKRenderer *renderer);
 
-bool vk_select_physical_device(struct arena *arena, VKRenderer *renderer);
-bool vk_create_logical_device(struct arena *arena, VKRenderer *renderer);
+bool vk_select_physical_device(VKRenderer *renderer);
+bool vk_create_logical_device(VKRenderer *renderer);
 
-bool vk_create_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
-bool vk_create_swapchain_image_views(struct arena *arena, VKRenderer *renderer);
+bool vk_create_swapchain(VKRenderer *renderer, struct platform *platform);
+bool vk_create_swapchain_image_views(VKRenderer *renderer);
 bool vk_create_render_pass(VKRenderer *renderer);
 bool vk_create_descriptor_set_layout(VKRenderer *renderer);
-bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer);
-bool vk_create_framebuffers(struct arena *arena, VKRenderer *renderer);
-bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform);
+bool vk_create_graphics_pipline(VKRenderer *renderer);
+bool vk_create_framebuffers(VKRenderer *renderer);
+bool vk_recreate_swapchain(VKRenderer *renderer, struct platform *platform);
 
-bool vk_create_depth_resources(struct arena *arena, VKRenderer *renderer);
+bool vk_create_depth_resources(VKRenderer *renderer);
 
-bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer);
+bool vk_create_command_pool(VKRenderer *renderer);
 
-bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer);
-bool vk_create_texture_image_view(struct arena *arena, VKRenderer *renderer);
+bool vk_create_texture_image(VKRenderer *renderer);
+bool vk_create_texture_image_view(VKRenderer *renderer);
 bool vk_create_texture_sampler(VKRenderer *renderer);
 
-bool vk_create_vertex_buffer(struct arena *scratch_arena, VKRenderer *renderer);
-bool vk_create_index_buffer(struct arena *scratch_arena, VKRenderer *renderer);
+bool vk_create_vertex_buffer(VKRenderer *renderer);
+bool vk_create_index_buffer(VKRenderer *renderer);
 
-bool vk_create_uniform_buffers(struct arena *scratch_arena, VKRenderer *renderer);
+bool vk_create_uniform_buffers(VKRenderer *renderer);
 bool vk_create_descriptor_pool(VKRenderer *renderer);
 bool vk_create_descriptor_set(VKRenderer *renderer);
 

@@ -4,8 +4,8 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_command_pool(struct arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
+bool vk_create_command_pool(VKRenderer *renderer) {
+	QueueFamilyIndices family_indices = find_queue_families(renderer);
 
 	VkCommandPoolCreateInfo cp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,

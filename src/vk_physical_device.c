@@ -12,9 +12,9 @@ static const char *extensions[] = {
 
 static char physical_device_name[256];
 
-bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+bool is_device_suitable(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
 
-bool vk_select_physical_device(Arena *arena, VKRenderer *renderer) {
+bool vk_select_physical_device(VKRenderer *renderer) {
 	uint32_t device_count = 0;
 	vkEnumeratePhysicalDevices(renderer->instance, &device_count, NULL);
 
@@ -23,12 +23,13 @@ bool vk_select_physical_device(Arena *arena, VKRenderer *renderer) {
 		return false;
 	}
 
-	VkPhysicalDevice *physical_devices = arena_push_array_zero(arena, VkPhysicalDevice, device_count);
+	ArenaTemp temp = arena_get_scratch(NULL);
+	VkPhysicalDevice *physical_devices = arena_push_array_zero(temp.arena, VkPhysicalDevice, device_count);
 	vkEnumeratePhysicalDevices(renderer->instance, &device_count, physical_devices);
 
 	bool found_suitable = false;
 	for (uint32_t index = 0; index < device_count; index++) {
-		if (is_device_suitable(arena, physical_devices[index], renderer->surface)) {
+		if (is_device_suitable(physical_devices[index], renderer->surface)) {
 			renderer->physical_device = physical_devices[index];
 			found_suitable = true;
 			break;
@@ -37,16 +38,16 @@ bool vk_select_physical_device(Arena *arena, VKRenderer *renderer) {
 
 	if (found_suitable == false) {
 		LOG_ERROR("Failed to find suitable GPU");
-		arena_clear(arena);
+		arena_reset_scratch(temp);
 	}
 
-	arena_clear(arena);
+	arena_reset_scratch(temp);
 	LOG_INFO("Physical Device: %s", physical_device_name);
 
 	return found_suitable;
 }
 
-bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
+bool is_device_suitable(VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
 	VkPhysicalDeviceProperties device_properties = { 0 };
 	vkGetPhysicalDeviceProperties(physical_device, &device_properties);
 
@@ -61,7 +62,8 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	uint32_t requested_extensions = sizeof(extensions) / sizeof(*extensions), available_extensions = 0;
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, NULL);
 
-	VkExtensionProperties *properties = arena_push_array_zero(arena, VkExtensionProperties, available_extensions);
+	ArenaTemp temp = arena_get_scratch(NULL);
+	VkExtensionProperties *properties = arena_push_array_zero(temp.arena, VkExtensionProperties, available_extensions);
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, properties);
 
 	uint32_t extensions_available = 0;
@@ -76,7 +78,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	is_suitable = is_suitable && extensions_supported;
 
 	if (extensions_supported)
-		is_suitable = is_suitable && query_swapchain_support(arena, physical_device, surface);
+		is_suitable = is_suitable && query_swapchain_support(physical_device, surface);
 
 	return is_suitable;
 }

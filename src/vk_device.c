@@ -12,12 +12,11 @@ static const char *extensions[] = {
 
 static bool create_logical_device(VKRenderer *renderer, QueueFamilyIndices *indices);
 
-bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
+bool vk_create_logical_device(VKRenderer *renderer) {
+	QueueFamilyIndices family_indices = find_queue_families(renderer);
 
 	if (family_indices.graphics == -1 || family_indices.present == -1) {
 		LOG_ERROR("Failed to find suitable GPU");
-		arena_clear(arena);
 		return false;
 	}
 
@@ -25,23 +24,20 @@ bool vk_create_logical_device(Arena *arena, VKRenderer *renderer) {
 
 	if (create_logical_device(renderer, &family_indices) == false) {
 		LOG_ERROR("Failed to create logical device");
-		arena_clear(arena);
 		return false;
 	}
 
 	LOG_INFO("Logical device created");
 
-	arena_clear(arena);
 	return true;
 }
 
-QueueFamilyIndices find_queue_families(Arena *scratch_arena, VKRenderer *renderer) {
-	uint32_t offset = arena_size(scratch_arena);
-
+QueueFamilyIndices find_queue_families(VKRenderer *renderer) {
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_count, NULL);
 
-	VkQueueFamilyProperties *queue_family_properties = arena_push_array_zero(scratch_arena, VkQueueFamilyProperties, queue_family_count);
+	ArenaTemp temp = arena_get_scratch(NULL);
+	VkQueueFamilyProperties *queue_family_properties = arena_push_array_zero(temp.arena, VkQueueFamilyProperties, queue_family_count);
 	vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_count, queue_family_properties);
 
 	QueueFamilyIndices family_indices = { -1, -1, -1 };
@@ -62,7 +58,7 @@ QueueFamilyIndices find_queue_families(Arena *scratch_arena, VKRenderer *rendere
 
 	// LOG_INFO("QUEUE_FAMILY = { graphic_family = %d, transfer_family = %d, present_family = %d }", family_indices.graphics, family_indices.transfer, family_indices.present);
 
-	arena_set(scratch_arena, offset);
+	arena_reset_scratch(temp);
 	return family_indices;
 }
 

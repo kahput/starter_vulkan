@@ -19,15 +19,14 @@ static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 struct shader_file read_file(struct arena *arena, const char *path);
 bool create_shader_module(VKRenderer *renderer, VkShaderModule *module, struct shader_file code);
 
-bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
-	uint32_t offset = arena_size(arena);
-
-	struct shader_file vertex_shader_code = read_file(arena, "./assets/shaders/vs_default.spv");
-	struct shader_file fragment_shader_code = read_file(arena, "./assets/shaders/fs_default.spv");
+bool vk_create_graphics_pipline(VKRenderer *renderer) {
+	ArenaTemp temp = arena_get_scratch(NULL);
+	struct shader_file vertex_shader_code = read_file(temp.arena, "./assets/shaders/vs_default.spv");
+	struct shader_file fragment_shader_code = read_file(temp.arena, "./assets/shaders/fs_default.spv");
 
 	if (vertex_shader_code.size <= 0 && fragment_shader_code.size <= 0) {
 		LOG_ERROR("Failed to load files");
-		arena_set(arena, offset);
+		arena_reset_scratch(temp);
 		return false;
 	}
 
@@ -37,7 +36,7 @@ bool vk_create_graphics_pipline(struct arena *arena, VKRenderer *renderer) {
 	VkShaderModule fragment_shader;
 	create_shader_module(renderer, &fragment_shader, fragment_shader_code);
 
-	arena_set(arena, offset);
+	arena_reset_scratch(temp);
 
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,

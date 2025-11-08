@@ -23,47 +23,43 @@ VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, 
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count);
 VkExtent2D swapchain_select_extent(struct platform *platform, const VkSurfaceCapabilitiesKHR *capabilities);
 
-bool query_swapchain_support(struct arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
+bool query_swapchain_support(VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &details.capabilities);
-
-	uint32_t offset = arena_size(arena);
 
 	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &details.formats_count, NULL);
 	if (details.formats_count == 0) {
 		LOG_ERROR("No surface formats available");
-		arena_pop(arena, offset);
 		return false;
 	}
 
-	details.formats = arena_push_array_zero(arena, VkSurfaceFormatKHR, details.formats_count);
+	ArenaTemp temp = arena_get_scratch(NULL);
+	details.formats = arena_push_array_zero(temp.arena, VkSurfaceFormatKHR, details.formats_count);
 	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &details.formats_count, details.formats);
 
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &details.modes_count, NULL);
 	if (details.modes_count == 0) {
 		LOG_ERROR("No surface modes available");
-		arena_pop(arena, offset);
+		arena_reset_scratch(temp);
 		return false;
 	}
 
-	details.present_modes = arena_push_array_zero(arena, VkPresentModeKHR, details.modes_count);
+	details.present_modes = arena_push_array_zero(temp.arena, VkPresentModeKHR, details.modes_count);
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &details.modes_count, details.present_modes);
 
 	LOG_INFO("Swapchain available");
+	arena_reset_scratch(temp);
 
 	return true;
 }
 
-bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *platform) {
-	uint32_t offset = arena_size(arena);
-	query_swapchain_support(arena, renderer->physical_device, renderer->surface);
+bool vk_create_swapchain(VKRenderer *renderer, struct platform *platform) {
+	query_swapchain_support(renderer->physical_device, renderer->surface);
 
 	renderer->swapchain.format = swapchain_select_surface_format(details.formats, details.formats_count);
 	renderer->swapchain.present_mode = swapchain_select_present_mode(details.present_modes, details.modes_count);
 	renderer->swapchain.extent = swapchain_select_extent(platform, &details.capabilities);
 
-	arena_pop(arena, offset);
-
-	QueueFamilyIndices family_indices = find_queue_families(arena, renderer);
+	QueueFamilyIndices family_indices = find_queue_families(renderer);
 	uint32_t queue_family_indices[] = { family_indices.graphics, family_indices.present };
 
 	uint32_t image_count = details.capabilities.minImageCount + 1;
@@ -93,12 +89,10 @@ bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *pl
 
 	if (vkCreateSwapchainKHR(renderer->logical_device, &swapchain_create_info, NULL, &renderer->swapchain.handle) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create swapchain");
-		arena_pop(arena, offset);
 		return false;
 	}
 
 	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain.handle, &renderer->swapchain.image_count, NULL);
-	renderer->swapchain.images = arena_push_array_zero(arena, VkImage, renderer->swapchain.image_count);
 	vkGetSwapchainImagesKHR(renderer->logical_device, renderer->swapchain.handle, &renderer->swapchain.image_count, renderer->swapchain.images);
 
 	LOG_INFO("Swapchain created");
@@ -106,7 +100,7 @@ bool vk_create_swapchain(Arena *arena, VKRenderer *renderer, struct platform *pl
 	return true;
 }
 
-bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct platform *platform) {
+bool vk_recreate_swapchain(VKRenderer *renderer, struct platform *platform) {
 	vkDeviceWaitIdle(renderer->logical_device);
 
 	for (uint32_t i = 0; i < renderer->framebuffer_count; ++i) {
@@ -119,15 +113,14 @@ bool vk_recreate_swapchain(struct arena *arena, VKRenderer *renderer, struct pla
 	vkDestroyImageView(renderer->logical_device, renderer->depth_image_view, NULL);
 	vkDestroyImage(renderer->logical_device, renderer->depth_image, NULL);
 	vkFreeMemory(renderer->logical_device, renderer->depth_image_memory, NULL);
-	arena_clear(arena);
 
-	if (vk_create_swapchain(arena, renderer, platform) == false)
+	if (vk_create_swapchain(renderer, platform) == false)
 		return false;
-	if (vk_create_swapchain_image_views(arena, renderer) == false)
+	if (vk_create_swapchain_image_views(renderer) == false)
 		return false;
-	if (vk_create_depth_resources(arena, renderer) == false)
+	if (vk_create_depth_resources(renderer) == false)
 		return false;
-	if (vk_create_framebuffers(arena, renderer) == false)
+	if (vk_create_framebuffers(renderer) == false)
 		return false;
 
 	return true;

@@ -22,7 +22,7 @@ void get_filename(const char *src, char *dst) {
 	memcpy(dst, src + start, length - start);
 }
 
-bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer) {
+bool vk_create_texture_image(VKRenderer *renderer) {
 	const char *file_path = "assets/textures/container.jpg";
 	char file_name[256];
 	get_filename(file_path, file_name);
@@ -41,7 +41,7 @@ bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer) {
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	QueueFamilyIndices queue_families = find_queue_families(arena, renderer);
+	QueueFamilyIndices queue_families = find_queue_families(renderer);
 	uint32_t indices[] = { queue_families.graphics, queue_families.transfer };
 	vk_create_buffer(renderer, queue_families, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
@@ -69,7 +69,7 @@ bool vk_create_texture_image(struct arena *arena, VKRenderer *renderer) {
 	return true;
 }
 
-bool vk_create_texture_image_view(struct arena *arena, VKRenderer *renderer) {
+bool vk_create_texture_image_view(VKRenderer *renderer) {
 	VkImageViewCreateInfo image_view_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		.image = renderer->texture_image,

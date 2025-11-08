@@ -86,16 +86,15 @@ bool vk_create_image_view(VKRenderer *renderer, VkImage image, VkFormat format, 
 	return true;
 }
 
-bool vk_create_swapchain_image_views(struct arena *arena, VKRenderer *renderer) {
-	uint32_t offset = arena_size(arena);
-
+bool vk_create_swapchain_image_views(VKRenderer *renderer) {
+	ArenaTemp temp = arena_get_scratch(NULL);
 	renderer->image_views_count = renderer->swapchain.image_count;
-	renderer->image_views = arena_push_array_zero(arena, VkImageView, renderer->image_views_count);
+	renderer->image_views = arena_push_array_zero(temp.arena, VkImageView, renderer->image_views_count);
 
 	for (uint32_t i = 0; i < renderer->image_views_count; ++i) {
 		if (vk_create_image_view(renderer, renderer->swapchain.images[i], renderer->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &renderer->image_views[i]) == false) {
 			LOG_ERROR("Failed to create Swapchain VkImageView");
-			arena_pop(arena, offset);
+			arena_reset_scratch(temp);
 			return false;
 		}
 	}
@@ -175,8 +174,8 @@ bool vk_copy_buffer_to_image(VKRenderer *renderer, VkBuffer src, VkImage dst, ui
 	return true;
 }
 
-bool vk_create_depth_resources(struct arena *arena, VKRenderer *renderer) {
-	uint32_t index = find_queue_families(arena, renderer).graphics;
+bool vk_create_depth_resources(VKRenderer *renderer) {
+	uint32_t index = find_queue_families(renderer).graphics;
 
 	vk_create_image(
 		renderer, &index, 1,
