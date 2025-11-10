@@ -1,8 +1,10 @@
 #include "logger.h"
 
-#include <stdio.h>
+#include "common.h"
+
 #include <string.h>
 #include <time.h>
+#include <stdio.h>
 
 typedef struct {
 	va_list arguments;

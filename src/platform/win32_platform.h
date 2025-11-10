@@ -1,7 +1,6 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "common.h"
 
 #ifdef PLATFORM_WINDOWS
 #include <windows.h>

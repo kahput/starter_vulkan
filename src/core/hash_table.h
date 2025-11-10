@@ -1,7 +1,6 @@
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include "common.h"
 
 #define HT_MAX_KEY_SIZE 255
 #define HT_CAPACITY 509

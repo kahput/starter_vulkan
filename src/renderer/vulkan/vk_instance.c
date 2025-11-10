@@ -1,4 +1,4 @@
-#include "vk_renderer.h"
+#include "renderer/vk_renderer.h"
 
 #include "platform.h"
 
@@ -24,9 +24,9 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 	.pfnUserCallback = vk_debug_callback,
 	.pUserData = NULL
 };
-void create_debug_messenger(VKRenderer *renderer);
+void create_debug_messenger(VulkanState *vk_state);
 
-bool vk_create_instance(VKRenderer *renderer, struct platform *platform) {
+bool vk_create_instance(VulkanState *vk_state, struct platform *platform) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",
@@ -96,7 +96,7 @@ bool vk_create_instance(VKRenderer *renderer, struct platform *platform) {
 	create_info.pNext = &debug_utils_create_info;
 #endif
 
-	VkResult result = vkCreateInstance(&create_info, NULL, &renderer->instance);
+	VkResult result = vkCreateInstance(&create_info, NULL, &vk_state->instance);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Vulkan instance creation failed");
 		return false;
@@ -137,6 +137,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
 	}
 }
 
-void create_debug_messenger(VKRenderer *renderer) {
-	vkCreateDebugUtilsMessenger(renderer->instance, &debug_utils_create_info, NULL, &renderer->debug_messenger);
+void create_debug_messenger(VulkanState *vk_state) {
+	vkCreateDebugUtilsMessenger(vk_state->instance, &debug_utils_create_info, NULL, &vk_state->debug_messenger);
 }

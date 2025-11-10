@@ -1,8 +1,8 @@
 #pragma once
 
+#include "common.h"
 #include "core/arena.h"
 
-#include <stdbool.h>
 
 typedef struct platform_internal PlatformInternal;
 

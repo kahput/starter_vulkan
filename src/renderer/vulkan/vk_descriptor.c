@@ -1,8 +1,8 @@
 #include "core/logger.h"
-#include "vk_renderer.h"
+#include "renderer/vk_renderer.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_descriptor_set_layout(VKRenderer *renderer) {
+bool vk_create_descriptor_set_layout(VulkanState *vk_state) {
 	VkDescriptorSetLayoutBinding mvp_layout_binding = {
 		.binding = 0,
 		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -25,7 +25,7 @@ bool vk_create_descriptor_set_layout(VKRenderer *renderer) {
 		.pBindings = bindings,
 	};
 
-	if (vkCreateDescriptorSetLayout(renderer->logical_device, &dsl_create_info, NULL, &renderer->descriptor_set_layout) != VK_SUCCESS) {
+	if (vkCreateDescriptorSetLayout(vk_state->device.logical, &dsl_create_info, NULL, &vk_state->descriptor_set_layout) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create descriptor set layout");
 		return false;
 	}
@@ -33,7 +33,7 @@ bool vk_create_descriptor_set_layout(VKRenderer *renderer) {
 	return true;
 }
 
-bool vk_create_descriptor_pool(VKRenderer *renderer) {
+bool vk_create_descriptor_pool(VulkanState *vk_state) {
 	VkDescriptorPoolSize sizes[] = {
 		{
 		  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -53,7 +53,7 @@ bool vk_create_descriptor_pool(VKRenderer *renderer) {
 		.maxSets = MAX_FRAMES_IN_FLIGHT,
 	};
 
-	if (vkCreateDescriptorPool(renderer->logical_device, &dp_create_info, NULL, &renderer->descriptor_pool) != VK_SUCCESS) {
+	if (vkCreateDescriptorPool(vk_state->device.logical, &dp_create_info, NULL, &vk_state->descriptor_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan DescriptorPool");
 		return false;
 	}
@@ -62,41 +62,41 @@ bool vk_create_descriptor_pool(VKRenderer *renderer) {
 	return true;
 }
 
-bool vk_create_descriptor_set(VKRenderer *renderer) {
+bool vk_create_descriptor_set(VulkanState *vk_state) {
 	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		layouts[i] = renderer->descriptor_set_layout;
+		layouts[i] = vk_state->descriptor_set_layout;
 	}
 
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = renderer->descriptor_pool,
+		.descriptorPool = vk_state->descriptor_pool,
 		.descriptorSetCount = MAX_FRAMES_IN_FLIGHT,
 		.pSetLayouts = layouts
 	};
 
-	if (vkAllocateDescriptorSets(renderer->logical_device, &ds_allocate_info, renderer->descriptor_sets) != VK_SUCCESS) {
+	if (vkAllocateDescriptorSets(vk_state->device.logical, &ds_allocate_info, vk_state->descriptor_sets) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan DescriptorSets");
 		return false;
 	}
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 		VkDescriptorBufferInfo buffer_info = {
-			.buffer = renderer->uniform_buffers[i],
+			.buffer = vk_state->uniform_buffers[i],
 			.offset = 0,
 			.range = sizeof(MVPObject),
 		};
 
 		VkDescriptorImageInfo image_info = {
-			.sampler = renderer->texture_sampler,
-			.imageView = renderer->texture_image_view,
+			.sampler = vk_state->texture_sampler,
+			.imageView = vk_state->texture_image_view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
 
 		VkWriteDescriptorSet descriptor_writes[] = {
 			{
 			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = renderer->descriptor_sets[i],
+			  .dstSet = vk_state->descriptor_sets[i],
 			  .dstBinding = 0,
 			  .dstArrayElement = 0,
 			  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -105,7 +105,7 @@ bool vk_create_descriptor_set(VKRenderer *renderer) {
 			},
 			{
 			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = renderer->descriptor_sets[i],
+			  .dstSet = vk_state->descriptor_sets[i],
 			  .dstBinding = 1,
 			  .dstArrayElement = 0,
 			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -115,7 +115,7 @@ bool vk_create_descriptor_set(VKRenderer *renderer) {
 
 		};
 
-		vkUpdateDescriptorSets(renderer->logical_device, array_count(descriptor_writes), descriptor_writes, 0, NULL);
+		vkUpdateDescriptorSets(vk_state->device.logical, array_count(descriptor_writes), descriptor_writes, 0, NULL);
 	}
 
 	LOG_INFO("Vulkan DescriptorSets created");

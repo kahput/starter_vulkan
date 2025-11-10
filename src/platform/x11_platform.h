@@ -3,8 +3,7 @@
 #include <xcb/randr.h>
 #include <xcb/xcb.h>
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "common.h"
 
 typedef xcb_connection_t *(*PFN_xcb_connect)(const char *displayname, int *screenp);
 typedef void (*PFN_xcb_disconnect)(xcb_connection_t *c);

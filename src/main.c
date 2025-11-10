@@ -2,22 +2,25 @@
 #include "core/logger.h"
 
 #include "platform.h"
-#include "vk_renderer.h"
+#include "renderer/vk_renderer.h"
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "common.h"
 #include <string.h>
 
-void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *platform);
+void draw_frame(struct arena *arena, VulkanState *vk_state, struct platform *platform);
 void resize_callback(struct platform *platform, uint32_t width, uint32_t height);
-void update_uniforms(VKRenderer *renderer, Platform *platform);
+void update_uniforms(VulkanState *vk_state, Platform *platform);
 
-static bool resized = false;
-static uint64_t start_time = 0;
+static struct State {
+	bool resized;
+	uint64_t start_time;
+
+	Arena *permanent, *frame;
+} state;
 
 int main(void) {
-	Arena *window_arena = arena_alloc();
-	Arena *frame_arena = arena_alloc();
+	state.permanent = arena_alloc();
+	state.frame = arena_alloc();
 
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
@@ -25,83 +28,81 @@ int main(void) {
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	VKRenderer renderer = { 0 };
-	Platform *platform = platform_startup(window_arena, 1280, 720, "Starter Vulkan");
+	VulkanState vk_state = { 0 };
+	Platform *platform = platform_startup(state.permanent, 1280, 720, "Starter Vulkan");
 	if (platform == NULL) {
 		LOG_ERROR("Platform startup failed");
 		return -1;
 	}
 
-	start_time = platform_time_ms(platform);
+	state.start_time = platform_time_ms(platform);
 
 	LOG_INFO("Logical pixel dimensions { %d, %d }", platform->logical_width, platform->logical_height);
 	LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
 	platform_set_physical_dimensions_callback(platform, resize_callback);
 
-	vk_create_instance(&renderer, platform);
-	vk_create_surface(platform, &renderer);
+	vk_create_instance(&vk_state, platform);
+	vk_create_surface(platform, &vk_state);
 
-	vk_select_physical_device(&renderer);
-	vk_create_logical_device(&renderer);
+	vk_create_device(&vk_state);
 
-	vk_create_swapchain(&renderer, platform);
-	vk_create_swapchain_image_views(&renderer);
-	vk_create_render_pass(&renderer);
-	vk_create_depth_resources(&renderer);
-	vk_create_framebuffers(&renderer);
+	vk_create_swapchain(&vk_state, platform);
+	vk_create_render_pass(&vk_state);
+	vk_create_depth_resources(&vk_state);
+	vk_create_framebuffers(&vk_state);
 
-	vk_create_descriptor_set_layout(&renderer);
-	vk_create_graphics_pipline(&renderer);
+	vk_create_descriptor_set_layout(&vk_state);
+	vk_create_graphics_pipline(&vk_state);
 
-	vk_create_command_pool(&renderer);
+	vk_create_command_pool(&vk_state);
 
-	vk_create_texture_image(&renderer);
-	vk_create_texture_image_view(&renderer);
-	vk_create_texture_sampler(&renderer);
+	vk_create_texture_image(&vk_state);
+	vk_create_texture_image_view(&vk_state);
+	vk_create_texture_sampler(&vk_state);
 
-	vk_create_vertex_buffer(&renderer);
-	// vk_create_index_buffer(vk_arena, &renderer);
+	vk_create_vertex_buffer(&vk_state);
+	// vk_create_index_buffer(vk_arena, &vk_state);
 
-	vk_create_uniform_buffers(&renderer);
-	vk_create_descriptor_pool(&renderer);
-	vk_create_descriptor_set(&renderer);
+	vk_create_uniform_buffers(&vk_state);
+	vk_create_descriptor_pool(&vk_state);
+	vk_create_descriptor_set(&vk_state);
 
-	vk_create_command_buffer(&renderer);
-	vk_create_sync_objects(&renderer);
+	vk_create_command_buffer(&vk_state);
+	vk_create_sync_objects(&vk_state);
 
 	while (platform_should_close(platform) == false) {
 		platform_poll_events(platform);
-		draw_frame(frame_arena, &renderer, platform);
+		draw_frame(state.frame, &vk_state, platform);
 	}
 
-	vkDeviceWaitIdle(renderer.logical_device);
+	vkDeviceWaitIdle(vk_state.device.logical);
 
 	return 0;
 }
 
-void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *platform) {
-	vkWaitForFences(renderer->logical_device, 1, &renderer->in_flight_fences[renderer->current_frame], VK_TRUE, UINT64_MAX);
+void draw_frame(struct arena *arena, VulkanState *vk_state, struct platform *platform) {
+	vkWaitForFences(vk_state->device.logical, 1, &vk_state->in_flight_fences[vk_state->current_frame], VK_TRUE, UINT64_MAX);
 
 	uint32_t image_index = 0;
-	VkResult result = vkAcquireNextImageKHR(renderer->logical_device, renderer->swapchain.handle, UINT64_MAX, renderer->image_available_semaphores[renderer->current_frame], VK_NULL_HANDLE, &image_index);
+	VkResult result = vkAcquireNextImageKHR(vk_state->device.logical, vk_state->swapchain.handle, UINT64_MAX, vk_state->image_available_semaphores[vk_state->current_frame], VK_NULL_HANDLE, &image_index);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		vk_recreate_swapchain(renderer, platform);
+		vk_recreate_swapchain(vk_state, platform);
 		LOG_INFO("Recreating Swapchain");
 		return;
 	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		LOG_ERROR("Failed to acquire swapchain image!");
 	}
 
-	vkResetFences(renderer->logical_device, 1, &renderer->in_flight_fences[renderer->current_frame]);
+	vkResetFences(vk_state->device.logical, 1, &vk_state->in_flight_fences[vk_state->current_frame]);
 
-	vkResetCommandBuffer(renderer->command_buffers[renderer->current_frame], 0);
-	vk_record_command_buffers(renderer, image_index);
+	vkResetCommandBuffer(vk_state->command_buffers[vk_state->current_frame], 0);
+	vk_record_command_buffers(vk_state, image_index);
 
-	update_uniforms(renderer, platform);
+	update_uniforms(vk_state, platform);
 
-	VkSemaphore wait_semaphores[] = { renderer->image_available_semaphores[renderer->current_frame] };
-	VkSemaphore signal_semaphores[] = { renderer->render_finished_semaphores[image_index] };
+	VkSemaphore wait_semaphores[] = { vk_state->image_available_semaphores[vk_state->current_frame] };
+	VkSemaphore signal_semaphores[] = { vk_state->render_finished_semaphores[image_index] };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info = {
@@ -110,17 +111,17 @@ void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *plat
 		.pWaitSemaphores = wait_semaphores,
 		.pWaitDstStageMask = wait_stages,
 		.commandBufferCount = 1,
-		.pCommandBuffers = &renderer->command_buffers[renderer->current_frame],
+		.pCommandBuffers = &vk_state->command_buffers[vk_state->current_frame],
 		.signalSemaphoreCount = array_count(signal_semaphores),
 		.pSignalSemaphores = signal_semaphores
 	};
 
-	if (vkQueueSubmit(renderer->graphics_queue, 1, &submit_info, renderer->in_flight_fences[renderer->current_frame]) != VK_SUCCESS) {
+	if (vkQueueSubmit(vk_state->device.graphics_queue, 1, &submit_info, vk_state->in_flight_fences[vk_state->current_frame]) != VK_SUCCESS) {
 		LOG_ERROR("Failed to submit draw command buffer");
 		return;
 	}
 
-	VkSwapchainKHR swapchains[] = { renderer->swapchain.handle };
+	VkSwapchainKHR swapchains[] = { vk_state->swapchain.handle };
 	VkPresentInfoKHR present_info = {
 		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
 		.waitSemaphoreCount = 1,
@@ -130,13 +131,13 @@ void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *plat
 		.pImageIndices = &image_index,
 	};
 
-	renderer->current_frame = (renderer->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-	result = vkQueuePresentKHR(renderer->present_queue, &present_info);
+	vk_state->current_frame = (vk_state->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+	result = vkQueuePresentKHR(vk_state->device.present_queue, &present_info);
 
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || resized) {
-		vk_recreate_swapchain(renderer, platform);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || state.resized) {
+		vk_recreate_swapchain(vk_state, platform);
 		LOG_INFO("Recreating Swapchain");
-		resized = false;
+		state.resized = false;
 		return;
 	} else if (result != VK_SUCCESS) {
 		LOG_ERROR("Failed to acquire swapchain image!");
@@ -144,9 +145,9 @@ void draw_frame(struct arena *arena, VKRenderer *renderer, struct platform *plat
 	}
 }
 
-void update_uniforms(VKRenderer *renderer, Platform *platform) {
+void update_uniforms(VulkanState *vk_state, Platform *platform) {
 	uint64_t current_time = platform_time_ms(platform);
-	double time = (double)(current_time - start_time) / 1000.;
+	double time = (double)(current_time - state.start_time) / 1000.;
 
 	vec3 axis = { 1.0f, 1.0f, 0.0f };
 
@@ -159,12 +160,12 @@ void update_uniforms(VKRenderer *renderer, Platform *platform) {
 	glm_lookat(eye, center, up, mvp.view);
 
 	glm_mat4_identity(mvp.projection);
-	glm_perspective(glm_rad(45.f), (float)renderer->swapchain.extent.width / (float)renderer->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
+	glm_perspective(glm_rad(45.f), (float)vk_state->swapchain.extent.width / (float)vk_state->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
-	mempcpy(renderer->uniform_buffers_mapped[renderer->current_frame], &mvp, sizeof(MVPObject));
+	mempcpy(vk_state->uniform_buffers_mapped[vk_state->current_frame], &mvp, sizeof(MVPObject));
 }
 
 void resize_callback(struct platform *platform, uint32_t width, uint32_t height) {
-	resized = true;
+	state.resized = true;
 }

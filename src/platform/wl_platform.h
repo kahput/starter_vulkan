@@ -1,7 +1,6 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "common.h"
 
 #include <wayland-client-core.h>
 

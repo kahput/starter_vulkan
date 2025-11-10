@@ -6,7 +6,7 @@
 #include <vulkan/vulkan.h>
 
 #include <dlfcn.h>
-#include <stdlib.h>
+#include "common.h"
 
 #define XCB_COUNT sizeof(((X11Platform *)0)->xcb) / sizeof(void *)
 

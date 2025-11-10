@@ -18,10 +18,10 @@
 #include "wayland-client-protocol-code.h"
 #include "xdg-shell-client-protocol-code.h"
 
+#include "common.h"
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
