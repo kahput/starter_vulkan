@@ -29,4 +29,7 @@ const char *logger_level_to_string(LogLevel level);
 void logger_set_level(LogLevel level);
 void logger_set_quiet(bool enable);
 
+void logger_indent(void);
+void logger_dedent(void);
+
 void logger_log(LogLevel level, const char *file, int line, const char *fmt, ...);

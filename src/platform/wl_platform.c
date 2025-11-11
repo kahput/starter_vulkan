@@ -1,12 +1,10 @@
 #include "platform/internal.h"
 
+#include "common.h"
 #include "core/logger.h"
+
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
-
-#define VK_USE_PLATFORM_WAYLAND_KHR
-#include <vulkan/vulkan.h>
-#include <wayland-util.h>
 
 #include "fractional-scale-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
@@ -18,7 +16,9 @@
 #include "wayland-client-protocol-code.h"
 #include "xdg-shell-client-protocol-code.h"
 
-#include "common.h"
+#define VK_USE_PLATFORM_WAYLAND_KHR
+#include <vulkan/vulkan.h>
+
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -61,9 +61,9 @@ static const struct wp_fractional_scale_v1_listener fractional_scale_listener = 
 };
 
 static struct wl_buffer *
-create_shm_buffer(struct platform *platform);
+create_shm_buffer(Platform *platform);
 
-bool platform_init_wayland(struct platform *platform) {
+bool platform_init_wayland(Platform *platform) {
 	void *handle = dlopen("libwayland-client.so.0", RTLD_LAZY);
 	if (handle == NULL)
 		return false;
@@ -109,7 +109,7 @@ bool platform_init_wayland(struct platform *platform) {
 	return true;
 }
 
-bool wl_startup(struct platform *platform) {
+bool wl_startup(Platform *platform) {
 	WLPlatform *wl = &platform->internal->wl;
 	wl->display = _wl_library.display_connect(NULL);
 
@@ -162,41 +162,41 @@ bool wl_startup(struct platform *platform) {
 	return true;
 }
 
-void wl_shutdown(struct platform *platform) {
+void wl_shutdown(Platform *platform) {
 	WLPlatform *wl = &platform->internal->wl;
 	wl_display_disconnect(wl->display);
 }
 
-void wl_poll_events(struct platform *platform) {
+void wl_poll_events(Platform *platform) {
 	WLPlatform *wl = &platform->internal->wl;
 	wl_display_roundtrip(wl->display);
 }
-bool wl_should_close(struct platform *platform) {
+bool wl_should_close(Platform *platform) {
 	return platform->should_close;
 }
 
-void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
-void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height) {}
+void wl_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {}
+void wl_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {}
 
-uint64_t wl_time_ms(struct platform *platform) {
+uint64_t wl_time_ms(Platform *platform) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
 }
 
-void wl_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback) {
+void wl_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions callback) {
 	WLPlatform *wl = &platform->internal->wl;
 
 	wl->callback.logical_size = callback;
 }
 
-void wl_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback) {
+void wl_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions callback) {
 	WLPlatform *wl = &platform->internal->wl;
 
 	wl->callback.physical_size = callback;
 }
 
-bool wl_create_vulkan_surface(struct platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
+bool wl_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
 	WLPlatform *wl = &platform->internal->wl;
 	wl->use_vulkan = true;
 
@@ -214,7 +214,7 @@ bool wl_create_vulkan_surface(struct platform *platform, VkInstance instance, Vk
 	return true;
 }
 
-const char **wl_vulkan_extensions(struct platform *platform, uint32_t *count) {
+const char **wl_vulkan_extensions(Platform *platform, uint32_t *count) {
 	*count = sizeof(extensions) / sizeof(*extensions);
 	return extensions;
 }
@@ -239,7 +239,7 @@ void registry_handle_global(void *data, struct wl_registry *registry, uint32_t n
 void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name) {}
 
 void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
-	struct platform *platform = (struct platform *)data;
+	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 
 	xdg_surface_ack_configure(wl->xdg.surface, serial);
@@ -252,7 +252,7 @@ void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t ser
 void wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) { xdg_wm_base_pong(xdg_wm_base, serial); }
 
 void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states) {
-	struct platform *platform = (struct platform *)data;
+	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 
 	if ((width && height) && ((uint32_t)width != platform->logical_width || (uint32_t)height != platform->logical_height)) {
@@ -267,14 +267,14 @@ void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t w
 	}
 }
 void toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel) {
-	struct platform *platform = (struct platform *)data;
+	Platform *platform = (Platform *)data;
 	platform->should_close = true;
 }
 void toplevel_configure_bounds(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height) {}
 void toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, struct wl_array *capabilities) {}
 
 void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_scale_v1, uint32_t scale) {
-	struct platform *platform = (struct platform *)data;
+	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 	wl->scale_factor = (float)scale / 120.f;
 }
@@ -294,7 +294,7 @@ static int create_anonymous_file(off_t size) {
 	return fd;
 }
 
-struct wl_buffer *create_shm_buffer(struct platform *platform) {
+struct wl_buffer *create_shm_buffer(Platform *platform) {
 	const int stride = platform->logical_width * 4;
 	const int length = platform->logical_width * platform->logical_height * 4;
 

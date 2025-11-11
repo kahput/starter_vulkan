@@ -2,7 +2,7 @@
 #include "renderer/vk_renderer.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_descriptor_set_layout(VulkanState *vk_state) {
+bool vk_create_descriptor_set_layout(VulkanContext *ctx) {
 	VkDescriptorSetLayoutBinding mvp_layout_binding = {
 		.binding = 0,
 		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -25,7 +25,7 @@ bool vk_create_descriptor_set_layout(VulkanState *vk_state) {
 		.pBindings = bindings,
 	};
 
-	if (vkCreateDescriptorSetLayout(vk_state->device.logical, &dsl_create_info, NULL, &vk_state->descriptor_set_layout) != VK_SUCCESS) {
+	if (vkCreateDescriptorSetLayout(ctx->device.logical, &dsl_create_info, NULL, &ctx->descriptor_set_layout) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create descriptor set layout");
 		return false;
 	}
@@ -33,7 +33,7 @@ bool vk_create_descriptor_set_layout(VulkanState *vk_state) {
 	return true;
 }
 
-bool vk_create_descriptor_pool(VulkanState *vk_state) {
+bool vk_create_descriptor_pool(VulkanContext *ctx) {
 	VkDescriptorPoolSize sizes[] = {
 		{
 		  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -53,7 +53,7 @@ bool vk_create_descriptor_pool(VulkanState *vk_state) {
 		.maxSets = MAX_FRAMES_IN_FLIGHT,
 	};
 
-	if (vkCreateDescriptorPool(vk_state->device.logical, &dp_create_info, NULL, &vk_state->descriptor_pool) != VK_SUCCESS) {
+	if (vkCreateDescriptorPool(ctx->device.logical, &dp_create_info, NULL, &ctx->descriptor_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan DescriptorPool");
 		return false;
 	}
@@ -62,41 +62,41 @@ bool vk_create_descriptor_pool(VulkanState *vk_state) {
 	return true;
 }
 
-bool vk_create_descriptor_set(VulkanState *vk_state) {
+bool vk_create_descriptor_set(VulkanContext *ctx) {
 	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		layouts[i] = vk_state->descriptor_set_layout;
+		layouts[i] = ctx->descriptor_set_layout;
 	}
 
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = vk_state->descriptor_pool,
+		.descriptorPool = ctx->descriptor_pool,
 		.descriptorSetCount = MAX_FRAMES_IN_FLIGHT,
 		.pSetLayouts = layouts
 	};
 
-	if (vkAllocateDescriptorSets(vk_state->device.logical, &ds_allocate_info, vk_state->descriptor_sets) != VK_SUCCESS) {
+	if (vkAllocateDescriptorSets(ctx->device.logical, &ds_allocate_info, ctx->descriptor_sets) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan DescriptorSets");
 		return false;
 	}
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 		VkDescriptorBufferInfo buffer_info = {
-			.buffer = vk_state->uniform_buffers[i],
+			.buffer = ctx->uniform_buffers[i],
 			.offset = 0,
 			.range = sizeof(MVPObject),
 		};
 
 		VkDescriptorImageInfo image_info = {
-			.sampler = vk_state->texture_sampler,
-			.imageView = vk_state->texture_image_view,
+			.sampler = ctx->texture_sampler,
+			.imageView = ctx->texture_image_view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
 
 		VkWriteDescriptorSet descriptor_writes[] = {
 			{
 			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = vk_state->descriptor_sets[i],
+			  .dstSet = ctx->descriptor_sets[i],
 			  .dstBinding = 0,
 			  .dstArrayElement = 0,
 			  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -105,7 +105,7 @@ bool vk_create_descriptor_set(VulkanState *vk_state) {
 			},
 			{
 			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = vk_state->descriptor_sets[i],
+			  .dstSet = ctx->descriptor_sets[i],
 			  .dstBinding = 1,
 			  .dstArrayElement = 0,
 			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -115,7 +115,7 @@ bool vk_create_descriptor_set(VulkanState *vk_state) {
 
 		};
 
-		vkUpdateDescriptorSets(vk_state->device.logical, array_count(descriptor_writes), descriptor_writes, 0, NULL);
+		vkUpdateDescriptorSets(ctx->device.logical, array_count(descriptor_writes), descriptor_writes, 0, NULL);
 	}
 
 	LOG_INFO("Vulkan DescriptorSets created");

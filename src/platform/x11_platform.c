@@ -155,7 +155,7 @@ bool x11_should_close(Platform *platform) {
 	return platform->should_close;
 }
 
-uint64_t x11_time_ms(struct platform *platform) {
+uint64_t x11_time_ms(Platform *platform) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
@@ -179,12 +179,12 @@ void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *
 	*height = geometry->height;
 }
 
-void x11_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback_fn) {
+void x11_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions callback_fn) {
 	X11Platform *x11 = &platform->internal->x11;
 
 	x11->callback.logical_size = callback_fn;
 }
-void x11_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback_fn) {
+void x11_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions callback_fn) {
 	X11Platform *x11 = &platform->internal->x11;
 
 	x11->callback.physical_size = callback_fn;
@@ -204,7 +204,7 @@ bool x11_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfac
 	return true;
 }
 
-const char **x11_vulkan_extensions(struct platform *platform, uint32_t *count) {
+const char **x11_vulkan_extensions(Platform *platform, uint32_t *count) {
 	*count = sizeof(extensions) / sizeof(*extensions);
 	return extensions;
 }

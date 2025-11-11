@@ -22,7 +22,7 @@ void get_filename(const char *src, char *dst) {
 	memcpy(dst, src + start, length - start);
 }
 
-bool vk_create_texture_image(VulkanState *vk_state) {
+bool vk_create_texture_image(VulkanContext *ctx) {
 	const char *file_path = "assets/textures/container.jpg";
 	char file_name[256];
 	get_filename(file_path, file_name);
@@ -41,37 +41,37 @@ bool vk_create_texture_image(VulkanState *vk_state) {
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	uint32_t indices[] = { vk_state->device.queue_indices.graphics, vk_state->device.queue_indices.transfer };
-	vk_create_buffer(vk_state, vk_state->device.queue_indices, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	uint32_t indices[] = { ctx->device.graphics_index, ctx->device.transfer_index };
+	vk_create_buffer(ctx, ctx->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
-	vkMapMemory(vk_state->device.logical, staging_buffer_memory, 0, size, 0, &data);
+	vkMapMemory(ctx->device.logical, staging_buffer_memory, 0, size, 0, &data);
 	memcpy(data, pixels, (size_t)size);
-	vkUnmapMemory(vk_state->device.logical, staging_buffer_memory);
+	vkUnmapMemory(ctx->device.logical, staging_buffer_memory);
 
 	stbi_image_free(pixels);
 
 	vk_image_create(
-		vk_state, indices, array_count(indices),
+		ctx, indices, array_count(indices),
 		width, height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&vk_state->texture_image, &vk_state->texture_image_memory);
+		&ctx->texture_image, &ctx->texture_image_memory);
 
-	vk_image_layout_transition(vk_state, vk_state->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-	vk_buffer_to_image(vk_state, staging_buffer, vk_state->texture_image, width, height);
-	vk_image_layout_transition(vk_state, vk_state->texture_image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	vk_image_layout_transition(ctx, ctx->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	vk_buffer_to_image(ctx, staging_buffer, ctx->texture_image, width, height);
+	vk_image_layout_transition(ctx, ctx->texture_image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	vkDestroyBuffer(vk_state->device.logical, staging_buffer, NULL);
-	vkFreeMemory(vk_state->device.logical, staging_buffer_memory, NULL);
+	vkDestroyBuffer(ctx->device.logical, staging_buffer, NULL);
+	vkFreeMemory(ctx->device.logical, staging_buffer_memory, NULL);
 
 	LOG_INFO("Vulkan Texture created");
 	return true;
 }
 
-bool vk_create_texture_image_view(VulkanState *vk_state) {
+bool vk_create_texture_image_view(VulkanContext *ctx) {
 	VkImageViewCreateInfo image_view_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = vk_state->texture_image,
+		.image = ctx->texture_image,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
 		.format = VK_FORMAT_R8G8B8A8_SRGB,
 		.components = {
@@ -89,7 +89,7 @@ bool vk_create_texture_image_view(VulkanState *vk_state) {
 		}
 	};
 
-	if (vk_image_view_create(vk_state, vk_state->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, &vk_state->texture_image_view) == false) {
+	if (vk_image_view_create(ctx, ctx->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, &ctx->texture_image_view) == false) {
 		LOG_ERROR("Failed to create VkImageView");
 		return false;
 	}
@@ -98,10 +98,7 @@ bool vk_create_texture_image_view(VulkanState *vk_state) {
 	return true;
 }
 
-bool vk_create_texture_sampler(VulkanState *vk_state) {
-	VkPhysicalDeviceProperties properties = { 0 };
-	vkGetPhysicalDeviceProperties(vk_state->device.physical, &properties);
-
+bool vk_create_texture_sampler(VulkanContext *ctx) {
 	VkSamplerCreateInfo sampler_info = {
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.magFilter = VK_FILTER_NEAREST,
@@ -112,7 +109,7 @@ bool vk_create_texture_sampler(VulkanState *vk_state) {
 		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		.mipLodBias = 0.0f,
 		.anisotropyEnable = true,
-		.maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+		.maxAnisotropy = ctx->device.properties.limits.maxSamplerAnisotropy,
 		.compareEnable = VK_FALSE,
 		.compareOp = VK_COMPARE_OP_ALWAYS,
 		.minLod = 0.0f,
@@ -121,7 +118,7 @@ bool vk_create_texture_sampler(VulkanState *vk_state) {
 		.unnormalizedCoordinates = VK_FALSE
 	};
 
-	if (vkCreateSampler(vk_state->device.logical, &sampler_info, NULL, &vk_state->texture_sampler) != VK_SUCCESS) {
+	if (vkCreateSampler(ctx->device.logical, &sampler_info, NULL, &ctx->texture_sampler) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create VkSampler");
 		return false;
 	}

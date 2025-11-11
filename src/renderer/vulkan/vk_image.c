@@ -6,7 +6,7 @@
 #include <vulkan/vulkan_core.h>
 
 bool vk_image_create(
-	VulkanState *vk_state, uint32_t *family_indices, uint32_t family_count,
+	VulkanContext *ctx, uint32_t *family_indices, uint32_t family_count,
 	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
 	VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkImage *image, VkDeviceMemory *memory) {
@@ -30,7 +30,7 @@ bool vk_image_create(
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
 
-	if (vkCreateImage(vk_state->device.logical, &image_info, NULL, image) != VK_SUCCESS) {
+	if (vkCreateImage(ctx->device.logical, &image_info, NULL, image) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan Texture");
 		return false;
 	}
@@ -38,27 +38,27 @@ bool vk_image_create(
 	LOG_INFO("VkImage created");
 
 	VkMemoryRequirements memory_requirements;
-	vkGetImageMemoryRequirements(vk_state->device.logical, *image, &memory_requirements);
+	vkGetImageMemoryRequirements(ctx->device.logical, *image, &memory_requirements);
 
 	VkMemoryAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 		.allocationSize = memory_requirements.size,
-		.memoryTypeIndex = find_memory_type(vk_state->device.physical, memory_requirements.memoryTypeBits, properties),
+		.memoryTypeIndex = find_memory_type(ctx->device.physical, memory_requirements.memoryTypeBits, properties),
 	};
 
-	if (vkAllocateMemory(vk_state->device.logical, &allocate_info, NULL, memory) != VK_SUCCESS) {
+	if (vkAllocateMemory(ctx->device.logical, &allocate_info, NULL, memory) != VK_SUCCESS) {
 		LOG_ERROR("Failed to allocate VkDeviceMemory for VkImage");
 		return false;
 	}
 
-	vkBindImageMemory(vk_state->device.logical, *image, *memory, 0);
+	vkBindImageMemory(ctx->device.logical, *image, *memory, 0);
 
 	LOG_INFO("VkDeviceMemory[%d] allocated for VkImage", memory_requirements.size);
 
 	return true;
 }
 
-bool vk_image_view_create(VulkanState *vk_state, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view) {
+bool vk_image_view_create(VulkanContext *ctx, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view) {
 	VkImageViewCreateInfo iv_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		.image = image,
@@ -79,17 +79,16 @@ bool vk_image_view_create(VulkanState *vk_state, VkImage image, VkFormat format,
 		}
 	};
 
-	if (vkCreateImageView(vk_state->device.logical, &iv_create_info, NULL, view) != VK_SUCCESS) {
+	if (vkCreateImageView(ctx->device.logical, &iv_create_info, NULL, view) != VK_SUCCESS) {
 		return false;
 	}
 
 	return true;
 }
 
-
-bool vk_image_layout_transition(VulkanState *vk_state, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout) {
+bool vk_image_layout_transition(VulkanContext *ctx, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout) {
 	VkCommandBuffer command_buffer;
-	vk_begin_single_time_commands(vk_state, vk_state->graphics_command_pool, &command_buffer);
+	vk_begin_single_time_commands(ctx, ctx->graphics_command_pool, &command_buffer);
 
 	VkImageMemoryBarrier image_barrier = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -130,14 +129,14 @@ bool vk_image_layout_transition(VulkanState *vk_state, VkImage image, VkFormat f
 		0, NULL,
 		1, &image_barrier);
 
-	vk_end_single_time_commands(vk_state, vk_state->device.graphics_queue, vk_state->graphics_command_pool, &command_buffer);
+	vk_end_single_time_commands(ctx, ctx->device.graphics_queue, ctx->graphics_command_pool, &command_buffer);
 
 	return true;
 }
 
-bool vk_buffer_to_image(VulkanState *vk_state, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
+bool vk_buffer_to_image(VulkanContext *ctx, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
 	VkCommandBuffer command_buffer;
-	vk_begin_single_time_commands(vk_state, vk_state->transfer_command_pool, &command_buffer);
+	vk_begin_single_time_commands(ctx, ctx->transfer_command_pool, &command_buffer);
 
 	VkBufferImageCopy region = {
 		.bufferOffset = 0,
@@ -155,21 +154,21 @@ bool vk_buffer_to_image(VulkanState *vk_state, VkBuffer src, VkImage dst, uint32
 
 	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-	vk_end_single_time_commands(vk_state, vk_state->device.transfer_queue, vk_state->transfer_command_pool, &command_buffer);
+	vk_end_single_time_commands(ctx, ctx->device.transfer_queue, ctx->transfer_command_pool, &command_buffer);
 	return true;
 }
 
-bool vk_create_depth_resources(VulkanState *vk_state) {
-	uint32_t index = vk_state->device.queue_indices.graphics;
+bool vk_create_depth_resources(VulkanContext *ctx) {
+	uint32_t index = ctx->device.graphics_index;
 
 	vk_image_create(
-		vk_state, &index, 1,
-		vk_state->swapchain.extent.width, vk_state->swapchain.extent.height,
+		ctx, &index, 1,
+		ctx->swapchain.extent.width, ctx->swapchain.extent.height,
 		VK_FORMAT_D32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&vk_state->depth_image, &vk_state->depth_image_memory);
+		&ctx->depth_image, &ctx->depth_image_memory);
 
-	vk_image_view_create(vk_state, vk_state->depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &vk_state->depth_image_view);
+	vk_image_view_create(ctx, ctx->depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &ctx->depth_image_view);
 
 	return true;
 }

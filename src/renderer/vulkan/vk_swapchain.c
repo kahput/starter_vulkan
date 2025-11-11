@@ -9,31 +9,31 @@
 
 VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, uint32_t count);
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count);
-VkExtent2D swapchain_select_extent(struct platform *platform, const VkSurfaceCapabilitiesKHR *capabilities);
+VkExtent2D swapchain_select_extent(Platform *platform, const VkSurfaceCapabilitiesKHR *capabilities);
 
-bool vk_create_swapchain(VulkanState *vk_state, struct platform *platform) {
-	vk_state->swapchain.format = swapchain_select_surface_format(vk_state->device.details.formats, vk_state->device.details.format_count);
-	vk_state->swapchain.present_mode = swapchain_select_present_mode(vk_state->device.details.present_modes, vk_state->device.details.present_mode_count);
-	vk_state->swapchain.extent = swapchain_select_extent(platform, &vk_state->device.details.capabilities);
+bool vk_create_swapchain(VulkanContext *ctx, Platform *platform) {
+	ctx->swapchain.format = swapchain_select_surface_format(ctx->device.details.formats, ctx->device.details.format_count);
+	ctx->swapchain.present_mode = swapchain_select_present_mode(ctx->device.details.present_modes, ctx->device.details.present_mode_count);
+	ctx->swapchain.extent = swapchain_select_extent(platform, &ctx->device.details.capabilities);
 
-	uint32_t queue_family_indices[] = { vk_state->device.queue_indices.graphics, vk_state->device.queue_indices.present };
+	uint32_t queue_family_indices[] = { ctx->device.graphics_index, ctx->device.present_index };
 
-	uint32_t image_count = vk_state->device.details.capabilities.minImageCount + 1;
-	if (vk_state->device.details.capabilities.maxImageCount > 0 && image_count > vk_state->device.details.capabilities.maxImageCount)
-		image_count = vk_state->device.details.capabilities.maxImageCount;
+	uint32_t image_count = ctx->device.details.capabilities.minImageCount + 1;
+	if (ctx->device.details.capabilities.maxImageCount > 0 && image_count > ctx->device.details.capabilities.maxImageCount)
+		image_count = ctx->device.details.capabilities.maxImageCount;
 
 	VkSwapchainCreateInfoKHR swapchain_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-		.surface = vk_state->surface,
+		.surface = ctx->surface,
 		.minImageCount = image_count,
-		.imageFormat = vk_state->swapchain.format.format,
-		.imageColorSpace = vk_state->swapchain.format.colorSpace,
-		.imageExtent = vk_state->swapchain.extent,
+		.imageFormat = ctx->swapchain.format.format,
+		.imageColorSpace = ctx->swapchain.format.colorSpace,
+		.imageExtent = ctx->swapchain.extent,
 		.imageArrayLayers = 1,
 		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		.preTransform = vk_state->device.details.capabilities.currentTransform,
+		.preTransform = ctx->device.details.capabilities.currentTransform,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		.presentMode = vk_state->swapchain.present_mode,
+		.presentMode = ctx->swapchain.present_mode,
 		.clipped = VK_TRUE,
 	};
 	if (queue_family_indices[0] != queue_family_indices[1]) {
@@ -43,18 +43,18 @@ bool vk_create_swapchain(VulkanState *vk_state, struct platform *platform) {
 	} else
 		swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	if (vkCreateSwapchainKHR(vk_state->device.logical, &swapchain_create_info, NULL, &vk_state->swapchain.handle) != VK_SUCCESS) {
+	if (vkCreateSwapchainKHR(ctx->device.logical, &swapchain_create_info, NULL, &ctx->swapchain.handle) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create swapchain");
 		return false;
 	}
 
-	vkGetSwapchainImagesKHR(vk_state->device.logical, vk_state->swapchain.handle, &vk_state->swapchain.image_count, NULL);
-	vkGetSwapchainImagesKHR(vk_state->device.logical, vk_state->swapchain.handle, &vk_state->swapchain.image_count, vk_state->swapchain.images);
+	vkGetSwapchainImagesKHR(ctx->device.logical, ctx->swapchain.handle, &ctx->swapchain.image_count, NULL);
+	vkGetSwapchainImagesKHR(ctx->device.logical, ctx->swapchain.handle, &ctx->swapchain.image_count, ctx->swapchain.images);
 
-	vk_state->swapchain.image_views_count = vk_state->swapchain.image_count;
+	ctx->swapchain.image_views_count = ctx->swapchain.image_count;
 
-	for (uint32_t i = 0; i < vk_state->swapchain.image_views_count; ++i) {
-		if (vk_image_view_create(vk_state, vk_state->swapchain.images[i], vk_state->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &vk_state->swapchain.image_views[i]) == false) {
+	for (uint32_t i = 0; i < ctx->swapchain.image_views_count; ++i) {
+		if (vk_image_view_create(ctx, ctx->swapchain.images[i], ctx->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &ctx->swapchain.image_views[i]) == false) {
 			LOG_ERROR("Failed to create Swapchain VkImageView");
 			return false;
 		}
@@ -65,25 +65,25 @@ bool vk_create_swapchain(VulkanState *vk_state, struct platform *platform) {
 	return true;
 }
 
-bool vk_recreate_swapchain(VulkanState *vk_state, struct platform *platform) {
-	vkDeviceWaitIdle(vk_state->device.logical);
+bool vk_recreate_swapchain(VulkanContext *ctx, Platform *platform) {
+	vkDeviceWaitIdle(ctx->device.logical);
 
-	for (uint32_t i = 0; i < vk_state->swapchain.framebuffer_count; ++i) {
-		vkDestroyFramebuffer(vk_state->device.logical, vk_state->swapchain.framebuffers[i], NULL);
+	for (uint32_t i = 0; i < ctx->swapchain.framebuffer_count; ++i) {
+		vkDestroyFramebuffer(ctx->device.logical, ctx->swapchain.framebuffers[i], NULL);
 	}
-	for (uint32_t i = 0; i < vk_state->swapchain.image_views_count; ++i) {
-		vkDestroyImageView(vk_state->device.logical, vk_state->swapchain.image_views[i], NULL);
+	for (uint32_t i = 0; i < ctx->swapchain.image_views_count; ++i) {
+		vkDestroyImageView(ctx->device.logical, ctx->swapchain.image_views[i], NULL);
 	}
-	vkDestroySwapchainKHR(vk_state->device.logical, vk_state->swapchain.handle, NULL);
-	vkDestroyImageView(vk_state->device.logical, vk_state->depth_image_view, NULL);
-	vkDestroyImage(vk_state->device.logical, vk_state->depth_image, NULL);
-	vkFreeMemory(vk_state->device.logical, vk_state->depth_image_memory, NULL);
+	vkDestroySwapchainKHR(ctx->device.logical, ctx->swapchain.handle, NULL);
+	vkDestroyImageView(ctx->device.logical, ctx->depth_image_view, NULL);
+	vkDestroyImage(ctx->device.logical, ctx->depth_image, NULL);
+	vkFreeMemory(ctx->device.logical, ctx->depth_image_memory, NULL);
 
-	if (vk_create_swapchain(vk_state, platform) == false)
+	if (vk_create_swapchain(ctx, platform) == false)
 		return false;
-	if (vk_create_depth_resources(vk_state) == false)
+	if (vk_create_depth_resources(ctx) == false)
 		return false;
-	if (vk_create_framebuffers(vk_state) == false)
+	if (vk_create_framebuffers(ctx) == false)
 		return false;
 
 	return true;
@@ -108,7 +108,7 @@ VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D swapchain_select_extent(struct platform *platform, const VkSurfaceCapabilitiesKHR *capabilities) {
+VkExtent2D swapchain_select_extent(Platform *platform, const VkSurfaceCapabilitiesKHR *capabilities) {
 	if (capabilities->currentExtent.width != UINT32_MAX)
 		return capabilities->currentExtent;
 	else

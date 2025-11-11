@@ -77,24 +77,24 @@ typedef struct wl_platform {
 
 #define PLATFORM_WAYLAND_LIBRARY_STATE WLPlatform wl;
 
-bool platform_init_wayland(struct platform *platform);
+bool platform_init_wayland(Platform *platform);
 
-bool wl_startup(struct platform *platform);
-void wl_shutdown(struct platform *platform);
+bool wl_startup(Platform *platform);
+void wl_shutdown(Platform *platform);
 
-void wl_poll_events(struct platform *platform);
-bool wl_should_close(struct platform *platform);
+void wl_poll_events(Platform *platform);
+bool wl_should_close(Platform *platform);
 
-void wl_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
-void wl_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
+void wl_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
+void wl_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
 
-uint64_t wl_time_ms(struct platform *platform);
+uint64_t wl_time_ms(Platform *platform);
 
-void wl_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback);
-void wl_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions callback);
+void wl_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions callback);
+void wl_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions callback);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;
 
-bool wl_create_vulkan_surface(struct platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
-const char **wl_vulkan_extensions(struct platform *platform, uint32_t *count);
+bool wl_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
+const char **wl_vulkan_extensions(Platform *platform, uint32_t *count);
