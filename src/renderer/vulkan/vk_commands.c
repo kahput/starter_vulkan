@@ -45,7 +45,7 @@ bool vk_create_command_buffer(VulkanContext *context) {
 	return true;
 }
 
-bool vk_record_command_buffers(VulkanContext *context, uint32_t image_index) {
+bool vk_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint32_t image_index) {
 	VkCommandBufferBeginInfo cb_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	};
@@ -89,7 +89,7 @@ bool vk_record_command_buffers(VulkanContext *context, uint32_t image_index) {
 	};
 	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
 
-	VkBuffer vertex_buffers[] = { context->vertex_buffer };
+	VkBuffer vertex_buffers[] = { ((VulkanBuffer *)vertex_buffer->internal)->handle };
 	VkDeviceSize offsets[] = { 0 };
 
 	vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 1, 1, vertex_buffers, offsets);
@@ -100,7 +100,7 @@ bool vk_record_command_buffers(VulkanContext *context, uint32_t image_index) {
 		VK_PIPELINE_BIND_POINT_GRAPHICS, context->pipeline_layout,
 		0, 1, &context->descriptor_sets[context->current_frame], 0, NULL);
 
-	vkCmdDraw(context->command_buffers[context->current_frame], array_count(vertices), 1, 0, 0);
+	vkCmdDraw(context->command_buffers[context->current_frame], vertex_buffer->vertex_count, 1, 0, 0);
 	// vkCmdDrawIndexed(context->command_buffers[context->current_frame], array_count(indices), 1, 0, 0, 0);
 
 	vkCmdEndRenderPass(context->command_buffers[context->current_frame]);

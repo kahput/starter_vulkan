@@ -1,130 +1,53 @@
+#include "core/arena.h"
 #include "renderer/vk_renderer.h"
 
 #include "core/logger.h"
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-// clang-format off
-// clang-format off
-const Vertex vertices[] = {
-    // Front (+Z)
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-left
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-right
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }}, // Top-right
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+// static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 
-    // Back (-Z)
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-right
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-left
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }}, // Top-left
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
+int32_t to_vulkan_usage(BufferType type);
 
-    // Left (-X)
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
+Buffer *vk_create_buffer(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
+	Buffer *buffer = arena_push_type(arena, Buffer);
+	VulkanBuffer *internal = arena_push_type(arena, VulkanBuffer);
+	buffer->internal = internal;
 
-    // Right (+X)
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-
-    // Bottom (-Y)
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-
-    // Top (+Y)
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-    { .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-    { .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}
-};
-// clang-format on
-
-const uint16_t indices[6] = {
-	0, 1, 2, 2, 3, 0
-};
-
-bool vk_create_vertex_buffer(VulkanContext *context) {
-	VkDeviceSize size = sizeof(vertices);
+	internal->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);
+	internal->memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-	VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	vk_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
-	void *data;
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, vertices, sizeof(vertices));
+	void *mapped_data;
+	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &mapped_data);
+	memcpy(mapped_data, data, size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
-	vk_create_buffer(context, context->device.graphics_index, size, usage, properties, &context->vertex_buffer, &context->vertex_buffer_memory);
+	create_buffer(context, context->device.graphics_index, size, internal->usage, internal->memory_property_flags, &internal->handle, &internal->memory);
 
-	vk_copy_buffer(context, staging_buffer, context->vertex_buffer, size);
+	vk_copy_buffer(context, staging_buffer, internal->handle, size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
-	return true;
+	return buffer;
 }
 
-bool vk_create_index_buffer(VulkanContext *context) {
-	VkDeviceSize size = sizeof(indices);
-
-	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-	VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-	VkBuffer staging_buffer;
-	VkDeviceMemory staging_buffer_memory;
-
-	vk_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
-
-	void *data;
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, indices, sizeof(indices));
-	vkUnmapMemory(context->device.logical, staging_buffer_memory);
-
-	vk_create_buffer(context, context->device.graphics_index, size, usage, properties, &context->index_buffer, &context->index_buffer_memory);
-
-	vk_copy_buffer(context, staging_buffer, context->index_buffer, size);
-	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
-	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
-
-	return true;
-}
 
 bool vk_create_uniform_buffers(VulkanContext *context) {
 	VkDeviceSize size = sizeof(MVPObject);
 
-	VkBufferUsageFlags usage = VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT;
+	VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		vk_create_buffer(context, context->device.graphics_index, size, usage, properties, context->uniform_buffers + i, context->uniform_buffers_memory + i);
+		create_buffer(context, context->device.graphics_index, size, usage, properties, context->uniform_buffers + i, context->uniform_buffers_memory + i);
 
 		vkMapMemory(context->device.logical, context->uniform_buffers_memory[i], 0, size, 0, &context->uniform_buffers_mapped[i]);
 	}
@@ -146,12 +69,12 @@ uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter
 	return 0;
 }
 
-bool vk_create_buffer(
+bool create_buffer(
 	VulkanContext *context,
-	uint32_t index,
+	uint32_t queue_family_index,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkBuffer *buffer, VkDeviceMemory *buffer_memory) {
-	uint32_t family_indices[] = { index };
+	uint32_t family_indices[] = { queue_family_index };
 
 	VkBufferCreateInfo vb_create_info = {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -199,4 +122,18 @@ bool vk_copy_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDevice
 
 	vk_end_single_time_commands(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
 	return true;
+}
+
+int32_t to_vulkan_usage(BufferType type) {
+	switch (type) {
+		case BUFFER_TYPE_VERTEX:
+			return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		case BUFFER_TYPE_INDEX:
+			return VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		case BUFFER_TYPE_UNIFORM:
+			return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+			break;
+		default:
+			return -1;
+	}
 }

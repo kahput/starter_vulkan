@@ -10,7 +10,7 @@ bool vk_create_framebuffers(VulkanContext *context) {
 	for (uint32_t i = 0; i < context->swapchain.framebuffer_count; ++i) {
 		VkImageView attachments[] = {
 			context->swapchain.image_views[i],
-			context->depth_image_view
+			context->depth_attachment.view
 		};
 
 		VkFramebufferCreateInfo fb_create_info = {

@@ -7,9 +7,65 @@
 #include "common.h"
 #include <string.h>
 
-void draw_frame(Arena *arena, VulkanContext *context, Platform *platform);
+void draw_frame(Arena *arena, VulkanContext *context, Platform *platform, Buffer *vertex_buffer);
 void resize_callback(Platform *platform, uint32_t width, uint32_t height);
 void update_uniforms(VulkanContext *context, Platform *platform);
+
+// clang-format off
+const Vertex vertices[] = {
+	// Front (+Z)
+	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-left
+	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-right
+	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }}, // Top-right
+	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
+	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+
+	// Back (-Z)
+	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-right
+	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-left
+	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }}, // Top-left
+	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
+
+	// Left (-X)
+	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
+	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
+
+	// Right (+X)
+	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }},
+	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
+	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+
+	// Bottom (-Y)
+	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+
+	// Top (+Y)
+	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
+	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
+	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
+	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
+	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}
+	};
+// clang-format on 
+
+const uint16_t indices[6] = {
+	0, 1, 2, 2, 3, 0
+};
 
 static struct State {
 	bool resized;
@@ -60,7 +116,8 @@ int main(void) {
 	vk_create_texture_image_view(&context);
 	vk_create_texture_sampler(&context);
 
-	vk_create_vertex_buffer(&context);
+	Buffer* vertex_buffer = vk_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, sizeof(vertices), (void*)vertices);
+	vertex_buffer->vertex_count = array_count(vertices);
 	// vk_create_index_buffer(vk_arena, &context);
 
 	vk_create_uniform_buffers(&context);
@@ -72,7 +129,7 @@ int main(void) {
 
 	while (platform_should_close(platform) == false) {
 		platform_poll_events(platform);
-		draw_frame(state.frame, &context, platform);
+		draw_frame(state.frame, &context, platform, vertex_buffer);
 	}
 
 	vkDeviceWaitIdle(context.device.logical);
@@ -80,7 +137,7 @@ int main(void) {
 	return 0;
 }
 
-void draw_frame(struct arena *arena, VulkanContext *context, Platform *platform) {
+void draw_frame(Arena *arena, VulkanContext *context, Platform *platform, Buffer *vertex_buffer) {
 	vkWaitForFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame], VK_TRUE, UINT64_MAX);
 
 	uint32_t image_index = 0;
@@ -97,7 +154,7 @@ void draw_frame(struct arena *arena, VulkanContext *context, Platform *platform)
 	vkResetFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame]);
 
 	vkResetCommandBuffer(context->command_buffers[context->current_frame], 0);
-	vk_record_command_buffers(context, image_index);
+	vk_command_buffer_draw(context, vertex_buffer, image_index);
 
 	update_uniforms(context, platform);
 

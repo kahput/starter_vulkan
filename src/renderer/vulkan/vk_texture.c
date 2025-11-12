@@ -42,7 +42,7 @@ bool vk_create_texture_image(VulkanContext *context) {
 	VkDeviceMemory staging_buffer_memory;
 
 	uint32_t indices[] = { context->device.graphics_index, context->device.transfer_index };
-	vk_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);

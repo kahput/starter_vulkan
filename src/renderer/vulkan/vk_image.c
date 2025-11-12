@@ -166,9 +166,9 @@ bool vk_create_depth_resources(VulkanContext *context) {
 		context->swapchain.extent.width, context->swapchain.extent.height,
 		VK_FORMAT_D32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&context->depth_image, &context->depth_image_memory);
+		&context->depth_attachment.handle, &context->depth_attachment.memory);
 
-	vk_image_view_create(context, context->depth_image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &context->depth_image_view);
+	vk_image_view_create(context, context->depth_attachment.handle, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &context->depth_attachment.view);
 
 	return true;
 }

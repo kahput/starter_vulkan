@@ -14,10 +14,19 @@ typedef struct {
 	vec2 uv;
 } Vertex;
 
-extern const Vertex vertices[36];
-extern const uint16_t indices[6];
+typedef struct buffer {
+	uint32_t vertex_count, index_count;
 
-typedef enum {
+	void *internal;
+} Buffer;
+
+typedef enum buffer_type {
+	BUFFER_TYPE_VERTEX,
+	BUFFER_TYPE_INDEX,
+	BUFFER_TYPE_UNIFORM,
+} BufferType;
+
+typedef enum vertex_attribute_format {
 	FORMAT_FLOAT,
 	FORMAT_FLOAT2,
 	FORMAT_FLOAT3,
@@ -26,7 +35,7 @@ typedef enum {
 	FORMAT_COUNT
 } VertexAttributeFormat;
 
-typedef struct {
+typedef struct vertex_attribute {
 	const char *name;
 	VertexAttributeFormat format;
 } VertexAttribute;
@@ -39,50 +48,53 @@ typedef struct {
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
-bool vk_create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
-bool vk_copy_buffer(VulkanContext *vk_state, VkBuffer src, VkBuffer dst, VkDeviceSize size);
+Buffer *vk_create_buffer(struct arena *arena, VulkanContext *context, BufferType type, size_t size, void *data);
+bool create_buffer(
+	VulkanContext *context,
+	uint32_t queue_family_index,
+	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+	VkBuffer *buffer, VkDeviceMemory *buffer_memory);
+bool vk_copy_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDeviceSize size);
 
 bool vk_image_create(VulkanContext *, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VkImage *, VkDeviceMemory *);
-bool vk_image_view_create(VulkanContext *vk_state, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
-bool vk_image_layout_transition(VulkanContext *vk_state, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
-bool vk_buffer_to_image(VulkanContext *vk_state, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
+bool vk_image_view_create(VulkanContext *context, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
+bool vk_image_layout_transition(VulkanContext *context, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+bool vk_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 
-bool vk_begin_single_time_commands(VulkanContext *vk_state, VkCommandPool pool, VkCommandBuffer *buffer);
-bool vk_end_single_time_commands(VulkanContext *vk_state, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer);
+bool vk_begin_single_time_commands(VulkanContext *context, VkCommandPool pool, VkCommandBuffer *buffer);
+bool vk_end_single_time_commands(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer);
 
-void vk_load_extensions(VulkanContext *vk_state);
+void vk_load_extensions(VulkanContext *context);
 
-bool vk_create_instance(VulkanContext *vk_state, struct platform *platform);
-bool vk_create_surface(struct platform *platform, VulkanContext *vk_state);
+bool vk_create_instance(VulkanContext *context, struct platform *platform);
+bool vk_create_surface(struct platform *platform, VulkanContext *context);
 
-bool vk_create_device(struct arena *arena, VulkanContext *vk_state);
+bool vk_create_device(struct arena *arena, VulkanContext *context);
 
-bool vk_create_swapchain(VulkanContext *vk_state, struct platform *platform);
-bool vk_create_render_pass(VulkanContext *vk_state);
-bool vk_create_descriptor_set_layout(VulkanContext *vk_state);
-bool vk_create_graphics_pipline(VulkanContext *vk_state);
-bool vk_create_framebuffers(VulkanContext *vk_state);
-bool vk_recreate_swapchain(VulkanContext *vk_state, struct platform *platform);
+bool vk_create_swapchain(VulkanContext *context, struct platform *platform);
+bool vk_create_render_pass(VulkanContext *context);
+bool vk_create_descriptor_set_layout(VulkanContext *context);
+bool vk_create_graphics_pipline(VulkanContext *context);
+bool vk_create_framebuffers(VulkanContext *context);
+bool vk_recreate_swapchain(VulkanContext *context, struct platform *platform);
 
-bool vk_create_depth_resources(VulkanContext *vk_state);
+bool vk_create_depth_resources(VulkanContext *context);
 
-bool vk_create_command_pool(VulkanContext *vk_state);
+bool vk_create_command_pool(VulkanContext *context);
 
-bool vk_create_texture_image(VulkanContext *vk_state);
-bool vk_create_texture_image_view(VulkanContext *vk_state);
-bool vk_create_texture_sampler(VulkanContext *vk_state);
+bool vk_create_texture_image(VulkanContext *context);
+bool vk_create_texture_image_view(VulkanContext *context);
+bool vk_create_texture_sampler(VulkanContext *context);
 
-bool vk_create_vertex_buffer(VulkanContext *vk_state);
-bool vk_create_index_buffer(VulkanContext *vk_state);
 
-bool vk_create_uniform_buffers(VulkanContext *vk_state);
-bool vk_create_descriptor_pool(VulkanContext *vk_state);
-bool vk_create_descriptor_set(VulkanContext *vk_state);
+bool vk_create_uniform_buffers(VulkanContext *context);
+bool vk_create_descriptor_pool(VulkanContext *context);
+bool vk_create_descriptor_set(VulkanContext *context);
 
-bool vk_create_command_buffer(VulkanContext *vk_state);
-bool vk_create_sync_objects(VulkanContext *vk_state);
+bool vk_create_command_buffer(VulkanContext *context);
+bool vk_create_sync_objects(VulkanContext *context);
 
-bool vk_record_command_buffers(VulkanContext *vk_state, uint32_t image_index);
+bool vk_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint32_t image_index);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \

@@ -1,11 +1,9 @@
 #include "platform.h"
 #include "renderer/vk_renderer.h"
 
+#include "common.h"
 #include "core/arena.h"
 #include "core/logger.h"
-
-#include "common.h"
-#include <vulkan/vulkan_core.h>
 
 VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, uint32_t count);
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count);
@@ -18,9 +16,11 @@ bool vk_create_swapchain(VulkanContext *context, Platform *platform) {
 
 	uint32_t queue_family_indices[] = { context->device.graphics_index, context->device.present_index };
 
-	uint32_t image_count = context->device.swapchain_details.capabilities.minImageCount + 1;
-	if (context->device.swapchain_details.capabilities.maxImageCount > 0 && image_count > context->device.swapchain_details.capabilities.maxImageCount)
-		image_count = context->device.swapchain_details.capabilities.maxImageCount;
+	VkSurfaceCapabilitiesKHR capabilities = context->device.swapchain_details.capabilities;
+
+	uint32_t image_count = capabilities.minImageCount + 1;
+	if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount)
+		image_count = capabilities.maxImageCount;
 
 	VkSwapchainCreateInfoKHR swapchain_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -31,11 +31,12 @@ bool vk_create_swapchain(VulkanContext *context, Platform *platform) {
 		.imageExtent = context->swapchain.extent,
 		.imageArrayLayers = 1,
 		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		.preTransform = context->device.swapchain_details.capabilities.currentTransform,
+		.preTransform = capabilities.currentTransform,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 		.presentMode = context->swapchain.present_mode,
-		.clipped = VK_TRUE,
+		.clipped = VK_TRUE, // If clipped is VK_TRUE, pixels in the presentable images that correspond to regions of the target surface obscured will have undefined content when read back.
 	};
+
 	if (queue_family_indices[0] != queue_family_indices[1]) {
 		swapchain_create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 		swapchain_create_info.queueFamilyIndexCount = 2;
@@ -75,9 +76,9 @@ bool vk_recreate_swapchain(VulkanContext *context, Platform *platform) {
 		vkDestroyImageView(context->device.logical, context->swapchain.image_views[i], NULL);
 	}
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
-	vkDestroyImageView(context->device.logical, context->depth_image_view, NULL);
-	vkDestroyImage(context->device.logical, context->depth_image, NULL);
-	vkFreeMemory(context->device.logical, context->depth_image_memory, NULL);
+	vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
+	vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
+	vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
 
 	if (vk_create_swapchain(context, platform) == false)
 		return false;
