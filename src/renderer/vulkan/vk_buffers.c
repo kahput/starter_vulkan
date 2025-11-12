@@ -61,7 +61,7 @@ const uint16_t indices[6] = {
 	0, 1, 2, 2, 3, 0
 };
 
-bool vk_create_vertex_buffer(VulkanContext *ctx) {
+bool vk_create_vertex_buffer(VulkanContext *context) {
 	VkDeviceSize size = sizeof(vertices);
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -73,23 +73,23 @@ bool vk_create_vertex_buffer(VulkanContext *ctx) {
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	vk_create_buffer(ctx, ctx->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vk_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
-	vkMapMemory(ctx->device.logical, staging_buffer_memory, 0, size, 0, &data);
+	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
 	memcpy(data, vertices, sizeof(vertices));
-	vkUnmapMemory(ctx->device.logical, staging_buffer_memory);
+	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
-	vk_create_buffer(ctx, ctx->device.graphics_index, size, usage, properties, &ctx->vertex_buffer, &ctx->vertex_buffer_memory);
+	vk_create_buffer(context, context->device.graphics_index, size, usage, properties, &context->vertex_buffer, &context->vertex_buffer_memory);
 
-	vk_copy_buffer(ctx, staging_buffer, ctx->vertex_buffer, size);
-	vkDestroyBuffer(ctx->device.logical, staging_buffer, NULL);
-	vkFreeMemory(ctx->device.logical, staging_buffer_memory, NULL);
+	vk_copy_buffer(context, staging_buffer, context->vertex_buffer, size);
+	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
+	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
 	return true;
 }
 
-bool vk_create_index_buffer(VulkanContext *ctx) {
+bool vk_create_index_buffer(VulkanContext *context) {
 	VkDeviceSize size = sizeof(indices);
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -101,32 +101,32 @@ bool vk_create_index_buffer(VulkanContext *ctx) {
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	vk_create_buffer(ctx, ctx->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vk_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
-	vkMapMemory(ctx->device.logical, staging_buffer_memory, 0, size, 0, &data);
+	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
 	memcpy(data, indices, sizeof(indices));
-	vkUnmapMemory(ctx->device.logical, staging_buffer_memory);
+	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
-	vk_create_buffer(ctx, ctx->device.graphics_index, size, usage, properties, &ctx->index_buffer, &ctx->index_buffer_memory);
+	vk_create_buffer(context, context->device.graphics_index, size, usage, properties, &context->index_buffer, &context->index_buffer_memory);
 
-	vk_copy_buffer(ctx, staging_buffer, ctx->index_buffer, size);
-	vkDestroyBuffer(ctx->device.logical, staging_buffer, NULL);
-	vkFreeMemory(ctx->device.logical, staging_buffer_memory, NULL);
+	vk_copy_buffer(context, staging_buffer, context->index_buffer, size);
+	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
+	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
 	return true;
 }
 
-bool vk_create_uniform_buffers(VulkanContext *ctx) {
+bool vk_create_uniform_buffers(VulkanContext *context) {
 	VkDeviceSize size = sizeof(MVPObject);
 
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT;
 	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		vk_create_buffer(ctx, ctx->device.graphics_index, size, usage, properties, ctx->uniform_buffers + i, ctx->uniform_buffers_memory + i);
+		vk_create_buffer(context, context->device.graphics_index, size, usage, properties, context->uniform_buffers + i, context->uniform_buffers_memory + i);
 
-		vkMapMemory(ctx->device.logical, ctx->uniform_buffers_memory[i], 0, size, 0, &ctx->uniform_buffers_mapped[i]);
+		vkMapMemory(context->device.logical, context->uniform_buffers_memory[i], 0, size, 0, &context->uniform_buffers_mapped[i]);
 	}
 
 	return true;
@@ -147,7 +147,7 @@ uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter
 }
 
 bool vk_create_buffer(
-	VulkanContext *ctx,
+	VulkanContext *context,
 	uint32_t index,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkBuffer *buffer, VkDeviceMemory *buffer_memory) {
@@ -164,39 +164,39 @@ bool vk_create_buffer(
 		// .pQueueFamilyIndices = family_indices
 	};
 
-	if (vkCreateBuffer(ctx->device.logical, &vb_create_info, NULL, buffer) != VK_SUCCESS) {
+	if (vkCreateBuffer(context->device.logical, &vb_create_info, NULL, buffer) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create vertex buffer");
 		return false;
 	}
 
 	VkMemoryRequirements memory_requirements;
-	vkGetBufferMemoryRequirements(ctx->device.logical, *buffer, &memory_requirements);
+	vkGetBufferMemoryRequirements(context->device.logical, *buffer, &memory_requirements);
 
 	VkMemoryAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 		.allocationSize = memory_requirements.size,
-		.memoryTypeIndex = find_memory_type(ctx->device.physical, memory_requirements.memoryTypeBits, properties),
+		.memoryTypeIndex = find_memory_type(context->device.physical, memory_requirements.memoryTypeBits, properties),
 	};
 
-	if (vkAllocateMemory(ctx->device.logical, &allocate_info, NULL, buffer_memory) != VK_SUCCESS) {
+	if (vkAllocateMemory(context->device.logical, &allocate_info, NULL, buffer_memory) != VK_SUCCESS) {
 		LOG_ERROR("Failed to allocate vertex buffer memory");
 		return false;
 	}
 
-	vkBindBufferMemory(ctx->device.logical, *buffer, *buffer_memory, 0);
+	vkBindBufferMemory(context->device.logical, *buffer, *buffer_memory, 0);
 
 	LOG_INFO("VkBuffer created");
 
 	return true;
 }
 
-bool vk_copy_buffer(VulkanContext *ctx, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
+bool vk_copy_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
 	VkCommandBuffer command_buffer;
-	vk_begin_single_time_commands(ctx, ctx->transfer_command_pool, &command_buffer);
+	vk_begin_single_time_commands(context, context->transfer_command_pool, &command_buffer);
 
 	VkBufferCopy copy_region = { .size = size };
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
 
-	vk_end_single_time_commands(ctx, ctx->device.transfer_queue, ctx->transfer_command_pool, &command_buffer);
+	vk_end_single_time_commands(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
 	return true;
 }

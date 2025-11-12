@@ -4,7 +4,7 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_sync_objects(VulkanContext *ctx) {
+bool vk_create_sync_objects(VulkanContext *context) {
 	VkSemaphoreCreateInfo s_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 	};
@@ -15,9 +15,9 @@ bool vk_create_sync_objects(VulkanContext *ctx) {
 	};
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		if (vkCreateSemaphore(ctx->device.logical, &s_create_info, NULL, ctx->image_available_semaphores + i) != VK_SUCCESS ||
-			vkCreateSemaphore(ctx->device.logical, &s_create_info, NULL, ctx->render_finished_semaphores + i) != VK_SUCCESS ||
-			vkCreateFence(ctx->device.logical, &f_create_info, NULL, ctx->in_flight_fences + i) != VK_SUCCESS) {
+		if (vkCreateSemaphore(context->device.logical, &s_create_info, NULL, context->image_available_semaphores + i) != VK_SUCCESS ||
+			vkCreateSemaphore(context->device.logical, &s_create_info, NULL, context->render_finished_semaphores + i) != VK_SUCCESS ||
+			vkCreateFence(context->device.logical, &f_create_info, NULL, context->in_flight_fences + i) != VK_SUCCESS) {
 			LOG_ERROR("Failed to create synchronization objects");
 			return false;
 		}

@@ -4,9 +4,9 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_render_pass(VulkanContext *ctx) {
+bool vk_create_render_pass(VulkanContext *context) {
 	VkAttachmentDescription color_attachment = {
-		.format = ctx->swapchain.format.format,
+		.format = context->swapchain.format.format,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
 		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -65,7 +65,7 @@ bool vk_create_render_pass(VulkanContext *ctx) {
 		.pDependencies = &dependency
 	};
 
-	if (vkCreateRenderPass(ctx->device.logical, &rp_create_info, NULL, &ctx->render_pass) != VK_SUCCESS) {
+	if (vkCreateRenderPass(context->device.logical, &rp_create_info, NULL, &context->render_pass) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create render pass");
 		return false;
 	}

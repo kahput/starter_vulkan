@@ -20,7 +20,7 @@ typedef struct swapchain_support_details {
 typedef struct vulkan_device {
 	VkPhysicalDevice physical;
 	VkDevice logical;
-	SwapChainSupportDetails details;
+	SwapChainSupportDetails swapchain_details;
 
 	int32_t graphics_index, transfer_index, present_index;
 	VkQueue graphics_queue, transfer_queue, present_queue;

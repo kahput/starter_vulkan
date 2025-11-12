@@ -11,15 +11,15 @@ static const char *extensions[] = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
-static bool select_physical_device(Arena *arena, VulkanContext *ctx);
+static bool select_physical_device(Arena *arena, VulkanContext *context);
 static bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface, VulkanDevice *device);
 
-bool vk_create_device(Arena *arena, VulkanContext *ctx) {
-	if (select_physical_device(arena, ctx) == false)
+bool vk_create_device(Arena *arena, VulkanContext *context) {
+	if (select_physical_device(arena, context) == false)
 		return false;
 
 	float queue_priority = 1.0f;
-	uint32_t queue_families[] = { ctx->device.graphics_index, ctx->device.transfer_index, ctx->device.present_index };
+	uint32_t queue_families[] = { context->device.graphics_index, context->device.transfer_index, context->device.present_index };
 	uint32_t unique_count = 0;
 
 	VkDeviceQueueCreateInfo queue_create_infos[array_count(queue_families)];
@@ -55,27 +55,23 @@ bool vk_create_device(Arena *arena, VulkanContext *ctx) {
 		.ppEnabledLayerNames = NULL
 	};
 
-	if (vkCreateDevice(ctx->device.physical, &device_create_info, NULL, &ctx->device.logical) != VK_SUCCESS) {
+	if (vkCreateDevice(context->device.physical, &device_create_info, NULL, &context->device.logical) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create logical device");
 		return false;
 	}
 
-	vkGetDeviceQueue(ctx->device.logical, ctx->device.graphics_index, 0, &ctx->device.graphics_queue);
-	vkGetDeviceQueue(ctx->device.logical, ctx->device.transfer_index, 0, &ctx->device.transfer_queue);
-	vkGetDeviceQueue(ctx->device.logical, ctx->device.present_index, 0, &ctx->device.present_queue);
+	vkGetDeviceQueue(context->device.logical, context->device.graphics_index, 0, &context->device.graphics_queue);
+	vkGetDeviceQueue(context->device.logical, context->device.transfer_index, 0, &context->device.transfer_queue);
+	vkGetDeviceQueue(context->device.logical, context->device.present_index, 0, &context->device.present_queue);
 
 	LOG_INFO("Logical device created");
 
 	return true;
 }
 
-bool find_queue_families(VulkanContext *ctx) {
-	return false;
-}
-
-bool select_physical_device(Arena *arena, VulkanContext *ctx) {
+bool select_physical_device(Arena *arena, VulkanContext *context) {
 	uint32_t device_count = 0;
-	vkEnumeratePhysicalDevices(ctx->instance, &device_count, NULL);
+	vkEnumeratePhysicalDevices(context->instance, &device_count, NULL);
 
 	if (device_count == 0) {
 		LOG_WARN("Failed to find GPUs with Vulkan support");
@@ -84,13 +80,13 @@ bool select_physical_device(Arena *arena, VulkanContext *ctx) {
 
 	ArenaTemp temp = arena_get_scratch(NULL);
 	VkPhysicalDevice *physical_devices = arena_push_array_zero(temp.arena, VkPhysicalDevice, device_count);
-	vkEnumeratePhysicalDevices(ctx->instance, &device_count, physical_devices);
+	vkEnumeratePhysicalDevices(context->instance, &device_count, physical_devices);
 
 	LOG_INFO("Selecting suitable device...");
 	bool found_suitable = false;
 	for (uint32_t index = 0; index < device_count; index++) {
-		if (is_device_suitable(arena, physical_devices[index], ctx->surface, &ctx->device)) {
-			ctx->device.physical = physical_devices[index];
+		if (is_device_suitable(arena, physical_devices[index], context->surface, &context->device)) {
+			context->device.physical = physical_devices[index];
 			found_suitable = true;
 			break;
 		}
@@ -131,27 +127,27 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 		}
 	}
 
-	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &device->details.capabilities);
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &device->swapchain_details.capabilities);
 
-	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &device->details.format_count, NULL);
-	if (device->details.format_count == 0) {
+	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &device->swapchain_details.format_count, NULL);
+	if (device->swapchain_details.format_count == 0) {
 		LOG_ERROR("No surface formats available");
 		arena_reset_scratch(temp);
 		return false;
 	}
 
-	device->details.formats = arena_push_array_zero(arena, VkSurfaceFormatKHR, device->details.format_count);
-	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &device->details.format_count, device->details.formats);
+	device->swapchain_details.formats = arena_push_array_zero(arena, VkSurfaceFormatKHR, device->swapchain_details.format_count);
+	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &device->swapchain_details.format_count, device->swapchain_details.formats);
 
-	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->details.present_mode_count, NULL);
-	if (device->details.present_mode_count == 0) {
+	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->swapchain_details.present_mode_count, NULL);
+	if (device->swapchain_details.present_mode_count == 0) {
 		LOG_ERROR("No surface modes available");
 		arena_reset_scratch(temp);
 		return false;
 	}
 
-	device->details.present_modes = arena_push_array_zero(arena, VkPresentModeKHR, device->details.present_mode_count);
-	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->details.present_mode_count, device->details.present_modes);
+	device->swapchain_details.present_modes = arena_push_array_zero(arena, VkPresentModeKHR, device->swapchain_details.present_mode_count);
+	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->swapchain_details.present_mode_count, device->swapchain_details.present_modes);
 
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, NULL);

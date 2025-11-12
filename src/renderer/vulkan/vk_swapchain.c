@@ -11,29 +11,29 @@ VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, 
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count);
 VkExtent2D swapchain_select_extent(Platform *platform, const VkSurfaceCapabilitiesKHR *capabilities);
 
-bool vk_create_swapchain(VulkanContext *ctx, Platform *platform) {
-	ctx->swapchain.format = swapchain_select_surface_format(ctx->device.details.formats, ctx->device.details.format_count);
-	ctx->swapchain.present_mode = swapchain_select_present_mode(ctx->device.details.present_modes, ctx->device.details.present_mode_count);
-	ctx->swapchain.extent = swapchain_select_extent(platform, &ctx->device.details.capabilities);
+bool vk_create_swapchain(VulkanContext *context, Platform *platform) {
+	context->swapchain.format = swapchain_select_surface_format(context->device.swapchain_details.formats, context->device.swapchain_details.format_count);
+	context->swapchain.present_mode = swapchain_select_present_mode(context->device.swapchain_details.present_modes, context->device.swapchain_details.present_mode_count);
+	context->swapchain.extent = swapchain_select_extent(platform, &context->device.swapchain_details.capabilities);
 
-	uint32_t queue_family_indices[] = { ctx->device.graphics_index, ctx->device.present_index };
+	uint32_t queue_family_indices[] = { context->device.graphics_index, context->device.present_index };
 
-	uint32_t image_count = ctx->device.details.capabilities.minImageCount + 1;
-	if (ctx->device.details.capabilities.maxImageCount > 0 && image_count > ctx->device.details.capabilities.maxImageCount)
-		image_count = ctx->device.details.capabilities.maxImageCount;
+	uint32_t image_count = context->device.swapchain_details.capabilities.minImageCount + 1;
+	if (context->device.swapchain_details.capabilities.maxImageCount > 0 && image_count > context->device.swapchain_details.capabilities.maxImageCount)
+		image_count = context->device.swapchain_details.capabilities.maxImageCount;
 
 	VkSwapchainCreateInfoKHR swapchain_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-		.surface = ctx->surface,
+		.surface = context->surface,
 		.minImageCount = image_count,
-		.imageFormat = ctx->swapchain.format.format,
-		.imageColorSpace = ctx->swapchain.format.colorSpace,
-		.imageExtent = ctx->swapchain.extent,
+		.imageFormat = context->swapchain.format.format,
+		.imageColorSpace = context->swapchain.format.colorSpace,
+		.imageExtent = context->swapchain.extent,
 		.imageArrayLayers = 1,
 		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		.preTransform = ctx->device.details.capabilities.currentTransform,
+		.preTransform = context->device.swapchain_details.capabilities.currentTransform,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		.presentMode = ctx->swapchain.present_mode,
+		.presentMode = context->swapchain.present_mode,
 		.clipped = VK_TRUE,
 	};
 	if (queue_family_indices[0] != queue_family_indices[1]) {
@@ -43,18 +43,18 @@ bool vk_create_swapchain(VulkanContext *ctx, Platform *platform) {
 	} else
 		swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	if (vkCreateSwapchainKHR(ctx->device.logical, &swapchain_create_info, NULL, &ctx->swapchain.handle) != VK_SUCCESS) {
+	if (vkCreateSwapchainKHR(context->device.logical, &swapchain_create_info, NULL, &context->swapchain.handle) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create swapchain");
 		return false;
 	}
 
-	vkGetSwapchainImagesKHR(ctx->device.logical, ctx->swapchain.handle, &ctx->swapchain.image_count, NULL);
-	vkGetSwapchainImagesKHR(ctx->device.logical, ctx->swapchain.handle, &ctx->swapchain.image_count, ctx->swapchain.images);
+	vkGetSwapchainImagesKHR(context->device.logical, context->swapchain.handle, &context->swapchain.image_count, NULL);
+	vkGetSwapchainImagesKHR(context->device.logical, context->swapchain.handle, &context->swapchain.image_count, context->swapchain.images);
 
-	ctx->swapchain.image_views_count = ctx->swapchain.image_count;
+	context->swapchain.image_views_count = context->swapchain.image_count;
 
-	for (uint32_t i = 0; i < ctx->swapchain.image_views_count; ++i) {
-		if (vk_image_view_create(ctx, ctx->swapchain.images[i], ctx->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &ctx->swapchain.image_views[i]) == false) {
+	for (uint32_t i = 0; i < context->swapchain.image_views_count; ++i) {
+		if (vk_image_view_create(context, context->swapchain.images[i], context->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &context->swapchain.image_views[i]) == false) {
 			LOG_ERROR("Failed to create Swapchain VkImageView");
 			return false;
 		}
@@ -65,25 +65,25 @@ bool vk_create_swapchain(VulkanContext *ctx, Platform *platform) {
 	return true;
 }
 
-bool vk_recreate_swapchain(VulkanContext *ctx, Platform *platform) {
-	vkDeviceWaitIdle(ctx->device.logical);
+bool vk_recreate_swapchain(VulkanContext *context, Platform *platform) {
+	vkDeviceWaitIdle(context->device.logical);
 
-	for (uint32_t i = 0; i < ctx->swapchain.framebuffer_count; ++i) {
-		vkDestroyFramebuffer(ctx->device.logical, ctx->swapchain.framebuffers[i], NULL);
+	for (uint32_t i = 0; i < context->swapchain.framebuffer_count; ++i) {
+		vkDestroyFramebuffer(context->device.logical, context->swapchain.framebuffers[i], NULL);
 	}
-	for (uint32_t i = 0; i < ctx->swapchain.image_views_count; ++i) {
-		vkDestroyImageView(ctx->device.logical, ctx->swapchain.image_views[i], NULL);
+	for (uint32_t i = 0; i < context->swapchain.image_views_count; ++i) {
+		vkDestroyImageView(context->device.logical, context->swapchain.image_views[i], NULL);
 	}
-	vkDestroySwapchainKHR(ctx->device.logical, ctx->swapchain.handle, NULL);
-	vkDestroyImageView(ctx->device.logical, ctx->depth_image_view, NULL);
-	vkDestroyImage(ctx->device.logical, ctx->depth_image, NULL);
-	vkFreeMemory(ctx->device.logical, ctx->depth_image_memory, NULL);
+	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
+	vkDestroyImageView(context->device.logical, context->depth_image_view, NULL);
+	vkDestroyImage(context->device.logical, context->depth_image, NULL);
+	vkFreeMemory(context->device.logical, context->depth_image_memory, NULL);
 
-	if (vk_create_swapchain(ctx, platform) == false)
+	if (vk_create_swapchain(context, platform) == false)
 		return false;
-	if (vk_create_depth_resources(ctx) == false)
+	if (vk_create_depth_resources(context) == false)
 		return false;
-	if (vk_create_framebuffers(ctx) == false)
+	if (vk_create_framebuffers(context) == false)
 		return false;
 
 	return true;

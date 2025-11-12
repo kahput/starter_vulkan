@@ -4,21 +4,21 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_command_pool(VulkanContext *ctx) {
+bool vk_create_command_pool(VulkanContext *context) {
 	VkCommandPoolCreateInfo cp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-		.queueFamilyIndex = ctx->device.graphics_index
+		.queueFamilyIndex = context->device.graphics_index
 	};
 
-	if (vkCreateCommandPool(ctx->device.logical, &cp_create_info, NULL, &ctx->graphics_command_pool) != VK_SUCCESS) {
+	if (vkCreateCommandPool(context->device.logical, &cp_create_info, NULL, &context->graphics_command_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create command pool");
 		return false;
 	}
 
 	cp_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	cp_create_info.queueFamilyIndex = ctx->device.transfer_index;
-	if (vkCreateCommandPool(ctx->device.logical, &cp_create_info, NULL, &ctx->transfer_command_pool) != VK_SUCCESS) {
+	cp_create_info.queueFamilyIndex = context->device.transfer_index;
+	if (vkCreateCommandPool(context->device.logical, &cp_create_info, NULL, &context->transfer_command_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create command pool");
 		return false;
 	}
@@ -28,15 +28,15 @@ bool vk_create_command_pool(VulkanContext *ctx) {
 	return true;
 }
 
-bool vk_create_command_buffer(VulkanContext *ctx) {
+bool vk_create_command_buffer(VulkanContext *context) {
 	VkCommandBufferAllocateInfo cb_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		.commandPool = ctx->graphics_command_pool,
+		.commandPool = context->graphics_command_pool,
 		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		.commandBufferCount = array_count(ctx->command_buffers)
+		.commandBufferCount = array_count(context->command_buffers)
 	};
 
-	if (vkAllocateCommandBuffers(ctx->device.logical, &cb_allocate_info, ctx->command_buffers) != VK_SUCCESS) {
+	if (vkAllocateCommandBuffers(context->device.logical, &cb_allocate_info, context->command_buffers) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create command buffer");
 		return false;
 	}
@@ -45,12 +45,12 @@ bool vk_create_command_buffer(VulkanContext *ctx) {
 	return true;
 }
 
-bool vk_record_command_buffers(VulkanContext *ctx, uint32_t image_index) {
+bool vk_record_command_buffers(VulkanContext *context, uint32_t image_index) {
 	VkCommandBufferBeginInfo cb_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	};
 
-	if (vkBeginCommandBuffer(ctx->command_buffers[ctx->current_frame], &cb_begin_info) != VK_SUCCESS) {
+	if (vkBeginCommandBuffer(context->command_buffers[context->current_frame], &cb_begin_info) != VK_SUCCESS) {
 		LOG_ERROR("Failed to begin command buffer recording");
 		return false;
 	}
@@ -62,49 +62,49 @@ bool vk_record_command_buffers(VulkanContext *ctx, uint32_t image_index) {
 
 	VkRenderPassBeginInfo rp_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-		.renderPass = ctx->render_pass,
-		.framebuffer = ctx->swapchain.framebuffers[image_index],
+		.renderPass = context->render_pass,
+		.framebuffer = context->swapchain.framebuffers[image_index],
 		.renderArea.offset = { 0, 0 },
-		.renderArea.extent = ctx->swapchain.extent,
+		.renderArea.extent = context->swapchain.extent,
 		.clearValueCount = array_count(clear_values),
 		.pClearValues = clear_values
 	};
 
-	vkCmdBeginRenderPass(ctx->command_buffers[ctx->current_frame], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(ctx->command_buffers[ctx->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->graphics_pipeline);
+	vkCmdBeginRenderPass(context->command_buffers[context->current_frame], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, context->graphics_pipeline);
 
 	VkViewport viewport = {
 		.x = 0,
 		.y = 0,
-		.width = ctx->swapchain.extent.width,
-		.height = ctx->swapchain.extent.height,
+		.width = context->swapchain.extent.width,
+		.height = context->swapchain.extent.height,
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
-	vkCmdSetViewport(ctx->command_buffers[ctx->current_frame], 0, 1, &viewport);
+	vkCmdSetViewport(context->command_buffers[context->current_frame], 0, 1, &viewport);
 
 	VkRect2D scissor = {
 		.offset = { 0.0f, 0.0f },
-		.extent = ctx->swapchain.extent
+		.extent = context->swapchain.extent
 	};
-	vkCmdSetScissor(ctx->command_buffers[ctx->current_frame], 0, 1, &scissor);
+	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
 
-	VkBuffer vertex_buffers[] = { ctx->vertex_buffer };
+	VkBuffer vertex_buffers[] = { context->vertex_buffer };
 	VkDeviceSize offsets[] = { 0 };
 
-	vkCmdBindVertexBuffers(ctx->command_buffers[ctx->current_frame], 1, 1, vertex_buffers, offsets);
-	// vkCmdBindIndexBuffer(ctx->command_buffers[ctx->current_frame], ctx->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 1, 1, vertex_buffers, offsets);
+	// vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], context->index_buffer, 0, VK_INDEX_TYPE_UINT16);
 
 	vkCmdBindDescriptorSets(
-		ctx->command_buffers[ctx->current_frame],
-		VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->pipeline_layout,
-		0, 1, &ctx->descriptor_sets[ctx->current_frame], 0, NULL);
+		context->command_buffers[context->current_frame],
+		VK_PIPELINE_BIND_POINT_GRAPHICS, context->pipeline_layout,
+		0, 1, &context->descriptor_sets[context->current_frame], 0, NULL);
 
-	vkCmdDraw(ctx->command_buffers[ctx->current_frame], array_count(vertices), 1, 0, 0);
-	// vkCmdDrawIndexed(ctx->command_buffers[ctx->current_frame], array_count(indices), 1, 0, 0, 0);
+	vkCmdDraw(context->command_buffers[context->current_frame], array_count(vertices), 1, 0, 0);
+	// vkCmdDrawIndexed(context->command_buffers[context->current_frame], array_count(indices), 1, 0, 0, 0);
 
-	vkCmdEndRenderPass(ctx->command_buffers[ctx->current_frame]);
-	if (vkEndCommandBuffer(ctx->command_buffers[ctx->current_frame]) != VK_SUCCESS) {
+	vkCmdEndRenderPass(context->command_buffers[context->current_frame]);
+	if (vkEndCommandBuffer(context->command_buffers[context->current_frame]) != VK_SUCCESS) {
 		LOG_ERROR("Failed to record command buffer");
 		return false;
 	}
@@ -112,7 +112,7 @@ bool vk_record_command_buffers(VulkanContext *ctx, uint32_t image_index) {
 	return true;
 }
 
-bool vk_begin_single_time_commands(VulkanContext *ctx, VkCommandPool pool, VkCommandBuffer *buffer) {
+bool vk_begin_single_time_commands(VulkanContext *context, VkCommandPool pool, VkCommandBuffer *buffer) {
 	VkCommandBufferAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandPool = pool,
@@ -120,7 +120,7 @@ bool vk_begin_single_time_commands(VulkanContext *ctx, VkCommandPool pool, VkCom
 		.commandBufferCount = 1,
 	};
 
-	if (vkAllocateCommandBuffers(ctx->device.logical, &allocate_info, buffer) != VK_SUCCESS) {
+	if (vkAllocateCommandBuffers(context->device.logical, &allocate_info, buffer) != VK_SUCCESS) {
 		LOG_ERROR("Failed to allocate VkCommandBuffer");
 		return false;
 	}
@@ -135,7 +135,7 @@ bool vk_begin_single_time_commands(VulkanContext *ctx, VkCommandPool pool, VkCom
 	return true;
 }
 
-bool vk_end_single_time_commands(VulkanContext *ctx, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
+bool vk_end_single_time_commands(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
 	vkEndCommandBuffer(*buffer);
 
 	VkSubmitInfo submit_info = {
@@ -147,7 +147,7 @@ bool vk_end_single_time_commands(VulkanContext *ctx, VkQueue queue, VkCommandPoo
 	vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
 	vkQueueWaitIdle(queue);
 
-	vkFreeCommandBuffers(ctx->device.logical, pool, 1, buffer);
+	vkFreeCommandBuffers(context->device.logical, pool, 1, buffer);
 
 	return true;
 }

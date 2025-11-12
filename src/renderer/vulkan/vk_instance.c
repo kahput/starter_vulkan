@@ -24,9 +24,9 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 	.pfnUserCallback = vk_debug_callback,
 	.pUserData = NULL
 };
-void create_debug_messenger(VulkanContext *ctx);
+void create_debug_messenger(VulkanContext *context);
 
-bool vk_create_instance(VulkanContext *ctx, Platform *platform) {
+bool vk_create_instance(VulkanContext *context, Platform *platform) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",
@@ -96,7 +96,7 @@ bool vk_create_instance(VulkanContext *ctx, Platform *platform) {
 	create_info.pNext = &debug_utils_create_info;
 #endif
 
-	VkResult result = vkCreateInstance(&create_info, NULL, &ctx->instance);
+	VkResult result = vkCreateInstance(&create_info, NULL, &context->instance);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Vulkan instance creation failed");
 		return false;
@@ -137,6 +137,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
 	}
 }
 
-void create_debug_messenger(VulkanContext *ctx) {
-	vkCreateDebugUtilsMessenger(ctx->instance, &debug_utils_create_info, NULL, &ctx->debug_messenger);
+void create_debug_messenger(VulkanContext *context) {
+	vkCreateDebugUtilsMessenger(context->instance, &debug_utils_create_info, NULL, &context->debug_messenger);
 }

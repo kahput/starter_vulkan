@@ -17,9 +17,9 @@ static inline int32_t vaf_to_vulkan_format(VertexAttributeFormat format);
 static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 
 struct shader_file read_file(struct arena *arena, const char *path);
-bool create_shader_module(VulkanContext *ctx, VkShaderModule *module, struct shader_file code);
+bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code);
 
-bool vk_create_graphics_pipline(VulkanContext *ctx) {
+bool vk_create_graphics_pipline(VulkanContext *context) {
 	ArenaTemp temp = arena_get_scratch(NULL);
 	struct shader_file vertex_shader_code = read_file(temp.arena, "./assets/shaders/vs_default.spv");
 	struct shader_file fragment_shader_code = read_file(temp.arena, "./assets/shaders/fs_default.spv");
@@ -31,10 +31,10 @@ bool vk_create_graphics_pipline(VulkanContext *ctx) {
 	}
 
 	VkShaderModule vertex_shader;
-	create_shader_module(ctx, &vertex_shader, vertex_shader_code);
+	create_shader_module(context, &vertex_shader, vertex_shader_code);
 
 	VkShaderModule fragment_shader;
-	create_shader_module(ctx, &fragment_shader, fragment_shader_code);
+	create_shader_module(context, &fragment_shader, fragment_shader_code);
 
 	arena_reset_scratch(temp);
 
@@ -108,15 +108,15 @@ bool vk_create_graphics_pipline(VulkanContext *ctx) {
 	VkViewport viewport = {
 		.x = 0,
 		.y = 0,
-		.width = ctx->swapchain.extent.width,
-		.height = ctx->swapchain.extent.height,
+		.width = context->swapchain.extent.width,
+		.height = context->swapchain.extent.height,
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
 
 	VkRect2D scissor = {
 		.offset = { 0.0f, 0.0f },
-		.extent = ctx->swapchain.extent
+		.extent = context->swapchain.extent
 	};
 
 	VkPipelineViewportStateCreateInfo vps_create_info = {
@@ -158,14 +158,14 @@ bool vk_create_graphics_pipline(VulkanContext *ctx) {
 	VkPipelineLayoutCreateInfo pl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount = 1,
-		.pSetLayouts = &ctx->descriptor_set_layout,
+		.pSetLayouts = &context->descriptor_set_layout,
 		.pushConstantRangeCount = 0,
 	};
 
-	if (vkCreatePipelineLayout(ctx->device.logical, &pl_create_info, NULL, &ctx->pipeline_layout) != VK_SUCCESS) {
+	if (vkCreatePipelineLayout(context->device.logical, &pl_create_info, NULL, &context->pipeline_layout) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create graphcis pipeline layout");
-		vkDestroyShaderModule(ctx->device.logical, vertex_shader, NULL);
-		vkDestroyShaderModule(ctx->device.logical, fragment_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, vertex_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, fragment_shader, NULL);
 		return false;
 	}
 
@@ -191,20 +191,20 @@ bool vk_create_graphics_pipline(VulkanContext *ctx) {
 		.pDepthStencilState = &depth_stencil_create_info,
 		.pColorBlendState = &cbs_create_info,
 		.pDynamicState = &ds_create_info,
-		.layout = ctx->pipeline_layout,
-		.renderPass = ctx->render_pass,
+		.layout = context->pipeline_layout,
+		.renderPass = context->render_pass,
 		.subpass = 0,
 	};
 
-	if (vkCreateGraphicsPipelines(ctx->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &ctx->graphics_pipeline) != VK_SUCCESS) {
+	if (vkCreateGraphicsPipelines(context->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &context->graphics_pipeline) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create graphics pipeline");
-		vkDestroyShaderModule(ctx->device.logical, vertex_shader, NULL);
-		vkDestroyShaderModule(ctx->device.logical, fragment_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, vertex_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, fragment_shader, NULL);
 		return false;
 	}
 
-	vkDestroyShaderModule(ctx->device.logical, vertex_shader, NULL);
-	vkDestroyShaderModule(ctx->device.logical, fragment_shader, NULL);
+	vkDestroyShaderModule(context->device.logical, vertex_shader, NULL);
+	vkDestroyShaderModule(context->device.logical, fragment_shader, NULL);
 
 	LOG_INFO("Graphics pipeline created");
 
@@ -230,14 +230,14 @@ struct shader_file read_file(struct arena *arena, const char *path) {
 	return (struct shader_file){ .size = size, .content = byte_content };
 }
 
-bool create_shader_module(VulkanContext *ctx, VkShaderModule *module, struct shader_file code) {
+bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code) {
 	VkShaderModuleCreateInfo sm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 		.codeSize = code.size,
 		.pCode = (uint32_t *)code.content,
 	};
 
-	if (vkCreateShaderModule(ctx->device.logical, &sm_create_info, NULL, module) != VK_SUCCESS) {
+	if (vkCreateShaderModule(context->device.logical, &sm_create_info, NULL, module) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create shader module");
 		return false;
 	}
