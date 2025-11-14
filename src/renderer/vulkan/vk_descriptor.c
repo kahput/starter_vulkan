@@ -2,7 +2,7 @@
 #include "renderer/vk_renderer.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_descriptor_set_layout(VulkanContext *context) {
+bool vulkan_create_descriptor_set_layout(VulkanContext *context) {
 	VkDescriptorSetLayoutBinding mvp_layout_binding = {
 		.binding = 0,
 		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -33,7 +33,7 @@ bool vk_create_descriptor_set_layout(VulkanContext *context) {
 	return true;
 }
 
-bool vk_create_descriptor_pool(VulkanContext *context) {
+bool vulkan_create_descriptor_pool(VulkanContext *context) {
 	VkDescriptorPoolSize sizes[] = {
 		{
 		  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -62,7 +62,7 @@ bool vk_create_descriptor_pool(VulkanContext *context) {
 	return true;
 }
 
-bool vk_create_descriptor_set(VulkanContext *context) {
+bool vulkan_create_descriptor_set(VulkanContext *context) {
 	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 		layouts[i] = context->descriptor_set_layout;
@@ -89,7 +89,7 @@ bool vk_create_descriptor_set(VulkanContext *context) {
 
 		VkDescriptorImageInfo image_info = {
 			.sampler = context->texture_sampler,
-			.imageView = context->texture_image_view,
+			.imageView = context->texture_image.view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
 

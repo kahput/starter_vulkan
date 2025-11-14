@@ -3,8 +3,8 @@
 #include "core/arena.h"
 #include "core/logger.h"
 
-#include <errno.h>
 #include "common.h"
+#include <errno.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -19,7 +19,7 @@ static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 struct shader_file read_file(struct arena *arena, const char *path);
 bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code);
 
-bool vk_create_graphics_pipline(VulkanContext *context) {
+bool vulkan_create_graphics_pipline(VulkanContext *context) {
 	ArenaTemp temp = arena_get_scratch(NULL);
 	struct shader_file vertex_shader_code = read_file(temp.arena, "./assets/shaders/vs_default.spv");
 	struct shader_file fragment_shader_code = read_file(temp.arena, "./assets/shaders/fs_default.spv");
@@ -105,20 +105,6 @@ bool vk_create_graphics_pipline(VulkanContext *context) {
 		.primitiveRestartEnable = VK_FALSE
 	};
 
-	VkViewport viewport = {
-		.x = 0,
-		.y = 0,
-		.width = context->swapchain.extent.width,
-		.height = context->swapchain.extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f
-	};
-
-	VkRect2D scissor = {
-		.offset = { 0.0f, 0.0f },
-		.extent = context->swapchain.extent
-	};
-
 	VkPipelineViewportStateCreateInfo vps_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
 		.viewportCount = 1,
@@ -179,8 +165,16 @@ bool vk_create_graphics_pipline(VulkanContext *context) {
 		.maxDepthBounds = 1.0f
 	};
 
+	VkPipelineRenderingCreateInfo r_create_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+		.colorAttachmentCount = 1,
+		.pColorAttachmentFormats = &context->swapchain.format.format,
+		.depthAttachmentFormat = context->depth_attachment.format
+	};
+
 	VkGraphicsPipelineCreateInfo gp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		.pNext = &r_create_info,
 		.stageCount = array_count(shader_stages),
 		.pStages = shader_stages,
 		.pVertexInputState = &vis_create_info,
@@ -192,8 +186,6 @@ bool vk_create_graphics_pipline(VulkanContext *context) {
 		.pColorBlendState = &cbs_create_info,
 		.pDynamicState = &ds_create_info,
 		.layout = context->pipeline_layout,
-		.renderPass = context->render_pass,
-		.subpass = 0,
 	};
 
 	if (vkCreateGraphicsPipelines(context->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &context->graphics_pipeline) != VK_SUCCESS) {

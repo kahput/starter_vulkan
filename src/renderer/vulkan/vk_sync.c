@@ -4,7 +4,7 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_sync_objects(VulkanContext *context) {
+bool vulkan_create_sync_objects(VulkanContext *context) {
 	VkSemaphoreCreateInfo s_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 	};

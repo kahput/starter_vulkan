@@ -4,7 +4,7 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vk_create_command_pool(VulkanContext *context) {
+bool vulkan_create_command_pool(VulkanContext *context) {
 	VkCommandPoolCreateInfo cp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -28,7 +28,7 @@ bool vk_create_command_pool(VulkanContext *context) {
 	return true;
 }
 
-bool vk_create_command_buffer(VulkanContext *context) {
+bool vulkan_create_command_buffer(VulkanContext *context) {
 	VkCommandBufferAllocateInfo cb_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandPool = context->graphics_command_pool,
@@ -45,7 +45,7 @@ bool vk_create_command_buffer(VulkanContext *context) {
 	return true;
 }
 
-bool vk_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint32_t image_index) {
+bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint32_t image_index) {
 	VkCommandBufferBeginInfo cb_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	};
@@ -58,19 +58,43 @@ bool vk_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint3
 	VkClearValue clear_color = { .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } };
 	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
 
-	VkClearValue clear_values[] = { clear_color, clear_depth };
+	vulkan_image_transition(
+		context, context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
 
-	VkRenderPassBeginInfo rp_begin_info = {
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-		.renderPass = context->render_pass,
-		.framebuffer = context->swapchain.framebuffers[image_index],
-		.renderArea.offset = { 0, 0 },
-		.renderArea.extent = context->swapchain.extent,
-		.clearValueCount = array_count(clear_values),
-		.pClearValues = clear_values
+	VkClearValue clear_values[] = { clear_color, clear_depth };
+	VkRenderingAttachmentInfo color_attachment = {
+		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.imageView = context->swapchain.images.views[image_index],
+		.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+		.clearValue = clear_color,
+	};
+	VkRenderingAttachmentInfo depth_attachment = {
+		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.imageView = context->depth_attachment.view,
+		.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+		.clearValue = clear_depth,
+	};
+	VkRenderingInfo r_info = {
+		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+		.renderArea = {
+		  .offset = { 0, 0 },
+		  .extent = context->swapchain.extent,
+		},
+		.layerCount = 1,
+		.colorAttachmentCount = 1,
+		.pColorAttachments = &color_attachment,
+		.pDepthAttachment = &depth_attachment,
 	};
 
-	vkCmdBeginRenderPass(context->command_buffers[context->current_frame], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRendering(context->command_buffers[context->current_frame], &r_info);
+	// vkCmdBeginRenderPass(context->command_buffers[context->current_frame], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, context->graphics_pipeline);
 
 	VkViewport viewport = {
@@ -103,7 +127,15 @@ bool vk_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint3
 	vkCmdDraw(context->command_buffers[context->current_frame], vertex_buffer->vertex_count, 1, 0, 0);
 	// vkCmdDrawIndexed(context->command_buffers[context->current_frame], array_count(indices), 1, 0, 0, 0);
 
-	vkCmdEndRenderPass(context->command_buffers[context->current_frame]);
+	vkCmdEndRendering(context->command_buffers[context->current_frame]);
+
+	vulkan_image_transition(
+		context, context->swapchain.images.handles[image_index],VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0);
+
+	// vkCmdEndRenderPass(context->command_buffers[context->current_frame]);
 	if (vkEndCommandBuffer(context->command_buffers[context->current_frame]) != VK_SUCCESS) {
 		LOG_ERROR("Failed to record command buffer");
 		return false;
@@ -112,7 +144,7 @@ bool vk_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint3
 	return true;
 }
 
-bool vk_begin_single_time_commands(VulkanContext *context, VkCommandPool pool, VkCommandBuffer *buffer) {
+bool vulkan_begin_single_time_commands(VulkanContext *context, VkCommandPool pool, VkCommandBuffer *buffer) {
 	VkCommandBufferAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandPool = pool,
@@ -135,7 +167,7 @@ bool vk_begin_single_time_commands(VulkanContext *context, VkCommandPool pool, V
 	return true;
 }
 
-bool vk_end_single_time_commands(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
+bool vulkan_end_single_time_commands(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
 	vkEndCommandBuffer(*buffer);
 
 	VkSubmitInfo submit_info = {

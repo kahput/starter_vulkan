@@ -1,7 +1,9 @@
-#include "core/logger.h"
 #include "renderer/vk_renderer.h"
 
-#include "stb/image.h"
+#include <stb/image.h>
+
+#include "core/logger.h"
+
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -22,7 +24,7 @@ void get_filename(const char *src, char *dst) {
 	memcpy(dst, src + start, length - start);
 }
 
-bool vk_create_texture_image(VulkanContext *context) {
+bool vulkan_create_texture_image(VulkanContext *context) {
 	const char *file_path = "assets/textures/container.jpg";
 	char file_name[256];
 	get_filename(file_path, file_name);
@@ -51,15 +53,23 @@ bool vk_create_texture_image(VulkanContext *context) {
 
 	stbi_image_free(pixels);
 
-	vk_image_create(
+	vulkan_image_create(
 		context, indices, array_count(indices),
 		width, height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&context->texture_image, &context->texture_image_memory);
+		&context->texture_image);
 
-	vk_image_layout_transition(context, context->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-	vk_buffer_to_image(context, staging_buffer, context->texture_image, width, height);
-	vk_image_layout_transition(context, context->texture_image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	vulkan_image_transition(
+		context, context->texture_image.handle,VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0, VK_ACCESS_TRANSFER_WRITE_BIT);
+	vulkan_buffer_to_image(context, staging_buffer, context->texture_image.handle, width, height);
+	vulkan_image_transition(
+		context, context->texture_image.handle, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
@@ -68,10 +78,10 @@ bool vk_create_texture_image(VulkanContext *context) {
 	return true;
 }
 
-bool vk_create_texture_image_view(VulkanContext *context) {
+bool vulkan_create_texture_image_view(VulkanContext *context) {
 	VkImageViewCreateInfo image_view_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = context->texture_image,
+		.image = context->texture_image.handle,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
 		.format = VK_FORMAT_R8G8B8A8_SRGB,
 		.components = {
@@ -89,7 +99,7 @@ bool vk_create_texture_image_view(VulkanContext *context) {
 		}
 	};
 
-	if (vk_image_view_create(context, context->texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, &context->texture_image_view) == false) {
+	if (vulkan_image_view_create(context, context->texture_image.handle, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, &context->texture_image.view) == false) {
 		LOG_ERROR("Failed to create VkImageView");
 		return false;
 	}
@@ -98,7 +108,7 @@ bool vk_create_texture_image_view(VulkanContext *context) {
 	return true;
 }
 
-bool vk_create_texture_sampler(VulkanContext *context) {
+bool vulkan_create_texture_sampler(VulkanContext *context) {
 	VkSamplerCreateInfo sampler_info = {
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.magFilter = VK_FILTER_NEAREST,

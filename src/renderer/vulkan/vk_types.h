@@ -18,7 +18,10 @@ typedef struct vulkan_buffer {
 
 typedef struct vulkan_image {
 	VkImage handle;
+	VkFormat format;
+
 	VkDeviceMemory memory;
+
 	VkImageView view;
 } VulkanImage;
 
@@ -48,14 +51,11 @@ typedef struct vulkan_device {
 typedef struct VulkanSwapchain {
 	VkSwapchainKHR handle;
 
-	uint32_t image_count;
-	VkImage images[MAX_SWAPCHAIN_IMAGES];
-
-	VkImageView image_views[MAX_SWAPCHAIN_IMAGES];
-	uint32_t image_views_count;
-
-	VkFramebuffer framebuffers[MAX_SWAPCHAIN_IMAGES];
-	uint32_t framebuffer_count;
+	struct {
+		VkImage handles[MAX_SWAPCHAIN_IMAGES];
+		VkImageView views[MAX_SWAPCHAIN_IMAGES];
+		uint32_t count;
+	} images;
 
 	VkSurfaceFormatKHR format;
 	VkPresentModeKHR present_mode;
@@ -71,7 +71,6 @@ typedef struct {
 	VulkanSwapchain swapchain;
 	VulkanImage depth_attachment;
 
-	VkRenderPass render_pass;
 	VkDescriptorSetLayout descriptor_set_layout;
 	VkPipelineLayout pipeline_layout;
 	VkPipeline graphics_pipeline;
@@ -81,10 +80,7 @@ typedef struct {
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
-
-	VkImage texture_image;
-	VkDeviceMemory texture_image_memory;
-	VkImageView texture_image_view;
+	VulkanImage texture_image;
 	VkSampler texture_sampler;
 
 	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];

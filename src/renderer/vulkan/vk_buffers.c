@@ -9,7 +9,7 @@
 
 int32_t to_vulkan_usage(BufferType type);
 
-Buffer *vk_create_buffer(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
+Buffer *vulkan_create_buffer(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
 	Buffer *buffer = arena_push_type(arena, Buffer);
 	VulkanBuffer *internal = arena_push_type(arena, VulkanBuffer);
 	buffer->internal = internal;
@@ -32,15 +32,14 @@ Buffer *vk_create_buffer(Arena *arena, VulkanContext *context, BufferType type, 
 
 	create_buffer(context, context->device.graphics_index, size, internal->usage, internal->memory_property_flags, &internal->handle, &internal->memory);
 
-	vk_copy_buffer(context, staging_buffer, internal->handle, size);
+	vulkan_copy_buffer(context, staging_buffer, internal->handle, size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
 	return buffer;
 }
 
-
-bool vk_create_uniform_buffers(VulkanContext *context) {
+bool vulkan_create_uniform_buffers(VulkanContext *context) {
 	VkDeviceSize size = sizeof(MVPObject);
 
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
@@ -113,14 +112,14 @@ bool create_buffer(
 	return true;
 }
 
-bool vk_copy_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
+bool vulkan_copy_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
 	VkCommandBuffer command_buffer;
-	vk_begin_single_time_commands(context, context->transfer_command_pool, &command_buffer);
+	vulkan_begin_single_time_commands(context, context->transfer_command_pool, &command_buffer);
 
 	VkBufferCopy copy_region = { .size = size };
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
 
-	vk_end_single_time_commands(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
+	vulkan_end_single_time_commands(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
 	return true;
 }
 

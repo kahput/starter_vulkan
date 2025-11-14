@@ -1,11 +1,11 @@
-#include "common.h"
 #include "renderer/vk_renderer.h"
 
+#include "common.h"
 #include "core/arena.h"
 #include "core/logger.h"
-#include "renderer/vulkan/vk_types.h"
 
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 static const char *extensions[] = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -14,7 +14,7 @@ static const char *extensions[] = {
 static bool select_physical_device(Arena *arena, VulkanContext *context);
 static bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface, VulkanDevice *device);
 
-bool vk_create_device(Arena *arena, VulkanContext *context) {
+bool vulkan_create_device(Arena *arena, VulkanContext *context) {
 	if (select_physical_device(arena, context) == false)
 		return false;
 
@@ -41,18 +41,22 @@ bool vk_create_device(Arena *arena, VulkanContext *context) {
 		};
 	}
 
-	VkPhysicalDeviceFeatures features = { .samplerAnisotropy = true };
+	VkPhysicalDeviceVulkan13Features vk13_features = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+		.dynamicRendering = true
+	};
+	VkPhysicalDeviceFeatures2 features = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &vk13_features, .features = { .samplerAnisotropy = true } };
 
 	VkDeviceCreateInfo device_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+		.pNext = &features,
 		.pQueueCreateInfos = queue_create_infos,
 		.queueCreateInfoCount = unique_count,
-		.pEnabledFeatures = &features,
 		.ppEnabledExtensionNames = extensions,
 		.enabledExtensionCount = sizeof(extensions) / sizeof(*extensions),
 		// TODO: Set  this for compatibility
 		.enabledLayerCount = 0,
-		.ppEnabledLayerNames = NULL
+		.ppEnabledLayerNames = NULL,
 	};
 
 	if (vkCreateDevice(context->device.physical, &device_create_info, NULL, &context->device.logical) != VK_SUCCESS) {

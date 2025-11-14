@@ -97,35 +97,24 @@ int main(void) {
 	LOG_INFO("Physical pixel dimensions { %d, %d }", platform->physical_width, platform->physical_height);
 	platform_set_physical_dimensions_callback(platform, resize_callback);
 
-	vk_create_instance(&context, platform);
-	vk_create_surface(platform, &context);
+	vulkan_renderer_create(state.permanent, platform, &context);
 
-	vk_create_device(state.permanent, &context);
+	// ================== DYNAMIC ==================
+	vulkan_create_descriptor_set_layout(&context);
+	vulkan_create_graphics_pipline(&context);
 
-	vk_create_swapchain(&context, platform);
-	vk_create_render_pass(&context);
-	vk_create_depth_resources(&context);
-	vk_create_framebuffers(&context);
+	vulkan_create_texture_image(&context);
+	vulkan_create_texture_image_view(&context);
+	vulkan_create_texture_sampler(&context);
 
-	vk_create_descriptor_set_layout(&context);
-	vk_create_graphics_pipline(&context);
-
-	vk_create_command_pool(&context);
-
-	vk_create_texture_image(&context);
-	vk_create_texture_image_view(&context);
-	vk_create_texture_sampler(&context);
-
-	Buffer* vertex_buffer = vk_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, sizeof(vertices), (void*)vertices);
+	Buffer* vertex_buffer = vulkan_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, sizeof(vertices), (void*)vertices);
 	vertex_buffer->vertex_count = array_count(vertices);
-	// vk_create_index_buffer(vk_arena, &context);
+	// vulkan_create_index_buffer(vulkan_arena, &context);
 
-	vk_create_uniform_buffers(&context);
-	vk_create_descriptor_pool(&context);
-	vk_create_descriptor_set(&context);
+	vulkan_create_uniform_buffers(&context);
+	vulkan_create_descriptor_pool(&context);
+	vulkan_create_descriptor_set(&context);
 
-	vk_create_command_buffer(&context);
-	vk_create_sync_objects(&context);
 
 	while (platform_should_close(platform) == false) {
 		platform_poll_events(platform);
@@ -144,7 +133,7 @@ void draw_frame(Arena *arena, VulkanContext *context, Platform *platform, Buffer
 	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		vk_recreate_swapchain(context, platform);
+		vulkan_recreate_swapchain(context, platform);
 		LOG_INFO("Recreating Swapchain");
 		return;
 	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -154,7 +143,7 @@ void draw_frame(Arena *arena, VulkanContext *context, Platform *platform, Buffer
 	vkResetFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame]);
 
 	vkResetCommandBuffer(context->command_buffers[context->current_frame], 0);
-	vk_command_buffer_draw(context, vertex_buffer, image_index);
+	vulkan_command_buffer_draw(context, vertex_buffer, image_index);
 
 	update_uniforms(context, platform);
 
@@ -192,7 +181,7 @@ void draw_frame(Arena *arena, VulkanContext *context, Platform *platform, Buffer
 	result = vkQueuePresentKHR(context->device.present_queue, &present_info);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || state.resized) {
-		vk_recreate_swapchain(context, platform);
+		vulkan_recreate_swapchain(context, platform);
 		LOG_INFO("Recreating Swapchain");
 		state.resized = false;
 		return;
