@@ -9,11 +9,6 @@
 struct arena;
 struct platform;
 
-typedef struct {
-	vec3 position;
-	vec2 uv;
-} Vertex;
-
 typedef struct buffer {
 	uint32_t vertex_count, index_count;
 
@@ -82,7 +77,7 @@ bool vulkan_recreate_swapchain(VulkanContext *context, struct platform *platform
 bool vulkan_create_renderpass(VulkanContext *context);
 
 bool vulkan_create_descriptor_set_layout(VulkanContext *context);
-bool vulkan_create_graphics_pipline(VulkanContext *context);
+bool vulkan_create_pipline(VulkanContext *context, VertexAttribute *attributes, uint32_t attribute_count);
 
 bool vulkan_create_command_pool(VulkanContext *context);
 
@@ -97,7 +92,7 @@ bool vulkan_create_descriptor_set(VulkanContext *context);
 bool vulkan_create_command_buffer(VulkanContext *context);
 bool vulkan_create_sync_objects(VulkanContext *context);
 
-bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint32_t image_index);
+bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer, uint32_t image_index);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \

@@ -45,7 +45,10 @@ bool vulkan_create_command_buffer(VulkanContext *context) {
 	return true;
 }
 
-bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, uint32_t image_index) {
+bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer, uint32_t image_index) {
+	VulkanBuffer *vk_vertex_buffer = (VulkanBuffer *)vertex_buffer->internal;
+	VulkanBuffer *vk_index_buffer = (VulkanBuffer *)index_buffer->internal;
+
 	VkCommandBufferBeginInfo cb_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	};
@@ -94,7 +97,6 @@ bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, u
 	};
 
 	vkCmdBeginRendering(context->command_buffers[context->current_frame], &r_info);
-	// vkCmdBeginRenderPass(context->command_buffers[context->current_frame], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, context->graphics_pipeline);
 
 	VkViewport viewport = {
@@ -113,24 +115,24 @@ bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, u
 	};
 	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
 
-	VkBuffer vertex_buffers[] = { ((VulkanBuffer *)vertex_buffer->internal)->handle };
+	VkBuffer vertex_buffers[] = { vk_vertex_buffer->handle };
 	VkDeviceSize offsets[] = { 0 };
 
-	vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 1, 1, vertex_buffers, offsets);
-	// vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], context->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, vertex_buffers, offsets);
+	vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], vk_index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
 
 	vkCmdBindDescriptorSets(
 		context->command_buffers[context->current_frame],
 		VK_PIPELINE_BIND_POINT_GRAPHICS, context->pipeline_layout,
 		0, 1, &context->descriptor_sets[context->current_frame], 0, NULL);
 
-	vkCmdDraw(context->command_buffers[context->current_frame], vertex_buffer->vertex_count, 1, 0, 0);
-	// vkCmdDrawIndexed(context->command_buffers[context->current_frame], array_count(indices), 1, 0, 0, 0);
+	// vkCmdDraw(context->command_buffers[context->current_frame], vertex_buffer->vertex_count, 1, 0, 0);
+	vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_buffer->index_count, 1, 0, 0, 0);
 
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
 
 	vulkan_image_transition(
-		context, context->swapchain.images.handles[image_index],VK_IMAGE_ASPECT_COLOR_BIT,
+		context, context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0);

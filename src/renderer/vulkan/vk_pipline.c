@@ -19,7 +19,7 @@ static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 struct shader_file read_file(struct arena *arena, const char *path);
 bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code);
 
-bool vulkan_create_graphics_pipline(VulkanContext *context) {
+bool vulkan_create_pipline(VulkanContext *context, VertexAttribute *attributes, uint32_t attribute_count) {
 	ArenaTemp temp = arena_get_scratch(NULL);
 	struct shader_file vertex_shader_code = read_file(temp.arena, "./assets/shaders/vs_default.spv");
 	struct shader_file fragment_shader_code = read_file(temp.arena, "./assets/shaders/fs_default.spv");
@@ -35,8 +35,6 @@ bool vulkan_create_graphics_pipline(VulkanContext *context) {
 
 	VkShaderModule fragment_shader;
 	create_shader_module(context, &fragment_shader, fragment_shader_code);
-
-	arena_reset_scratch(temp);
 
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -64,29 +62,25 @@ bool vulkan_create_graphics_pipline(VulkanContext *context) {
 		.pDynamicStates = dynamic_states
 	};
 
-	VertexAttribute attributes[] = {
-		{ .name = "in_position", FORMAT_FLOAT3 },
-		{ .name = "in_uv", FORMAT_FLOAT2 }
-	};
-
 	VkVertexInputBindingDescription binding_description = { 0 };
-	VkVertexInputAttributeDescription attribute_descriptions[array_count(attributes)] = { 0 };
+	VkVertexInputAttributeDescription *attribute_descriptions = arena_push_array(temp.arena, VkVertexInputAttributeDescription, attribute_count);
 
 	uint32_t byte_offset = 0;
-	for (uint32_t i = 0; i < array_count(attributes); ++i) {
+	for (uint32_t i = 0; i < attribute_count; ++i) {
 		VertexAttribute attribute = attributes[i];
-		attribute_descriptions[i] = (VkVertexInputAttributeDescription){
-			.binding = 1,
+		VkVertexInputAttributeDescription attribute_description = {
+			.binding = 0,
 			.location = i,
 			.format = vaf_to_vulkan_format(attribute.format),
 			.offset = byte_offset
 		};
 
+		attribute_descriptions[i] = attribute_description;
 		byte_offset += vaf_to_byte_size(attribute.format);
 	}
 
 	binding_description = (VkVertexInputBindingDescription){
-		.binding = 1,
+		.binding = 0,
 		.stride = byte_offset,
 		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
 	};
@@ -95,7 +89,7 @@ bool vulkan_create_graphics_pipline(VulkanContext *context) {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 		.vertexBindingDescriptionCount = 1,
 		.pVertexBindingDescriptions = &binding_description,
-		.vertexAttributeDescriptionCount = array_count(attributes),
+		.vertexAttributeDescriptionCount = attribute_count,
 		.pVertexAttributeDescriptions = attribute_descriptions
 	};
 
@@ -197,6 +191,7 @@ bool vulkan_create_graphics_pipline(VulkanContext *context) {
 
 	vkDestroyShaderModule(context->device.logical, vertex_shader, NULL);
 	vkDestroyShaderModule(context->device.logical, fragment_shader, NULL);
+	arena_reset_scratch(temp);
 
 	LOG_INFO("Graphics pipeline created");
 
