@@ -62,33 +62,40 @@ bool vulkan_create_pipline(VulkanContext *context, VertexAttribute *attributes, 
 		.pDynamicStates = dynamic_states
 	};
 
-	VkVertexInputBindingDescription binding_description = { 0 };
+	VkVertexInputBindingDescription *binding_descriptions = arena_push_array_zero(temp.arena, VkVertexInputBindingDescription, attribute_count);
 	VkVertexInputAttributeDescription *attribute_descriptions = arena_push_array(temp.arena, VkVertexInputAttributeDescription, attribute_count);
 
-	uint32_t byte_offset = 0;
-	for (uint32_t i = 0; i < attribute_count; ++i) {
-		VertexAttribute attribute = attributes[i];
+	uint32_t unique_bindings = 0;
+	for (uint32_t attribute_index = 0; attribute_index < attribute_count; ++attribute_index) {
+		VertexAttribute attribute = attributes[attribute_index];
+		uint32_t byte_offset = 0;
+		for (uint32_t binding_index = 0; binding_index < attribute_count; ++binding_index) {
+			VkVertexInputBindingDescription *binding_description = &binding_descriptions[binding_index];
+			unique_bindings += binding_description->stride == 0;
+
+			if (binding_description->binding == attribute.binding || binding_description->stride == 0) {
+				binding_description->binding = attribute.binding;
+				binding_description->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+				byte_offset = binding_description->stride;
+				binding_description->stride += vaf_to_byte_size(attribute.format);
+				break;
+			}
+		}
+
 		VkVertexInputAttributeDescription attribute_description = {
-			.binding = 0,
-			.location = i,
+			.binding = attribute.binding,
+			.location = attribute_index,
 			.format = vaf_to_vulkan_format(attribute.format),
 			.offset = byte_offset
 		};
 
-		attribute_descriptions[i] = attribute_description;
-		byte_offset += vaf_to_byte_size(attribute.format);
+		attribute_descriptions[attribute_index] = attribute_description;
 	}
-
-	binding_description = (VkVertexInputBindingDescription){
-		.binding = 0,
-		.stride = byte_offset,
-		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
-	};
 
 	VkPipelineVertexInputStateCreateInfo vis_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		.vertexBindingDescriptionCount = 1,
-		.pVertexBindingDescriptions = &binding_description,
+		.vertexBindingDescriptionCount = unique_bindings,
+		.pVertexBindingDescriptions = binding_descriptions,
 		.vertexAttributeDescriptionCount = attribute_count,
 		.pVertexAttributeDescriptions = attribute_descriptions
 	};
@@ -194,7 +201,6 @@ bool vulkan_create_pipline(VulkanContext *context, VertexAttribute *attributes, 
 	arena_reset_scratch(temp);
 
 	LOG_INFO("Graphics pipeline created");
-
 	return true;
 }
 

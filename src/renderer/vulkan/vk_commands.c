@@ -1,3 +1,4 @@
+#include "common.h"
 #include "renderer/vk_renderer.h"
 
 #include "core/arena.h"
@@ -115,10 +116,15 @@ bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, B
 	};
 	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
 
-	VkBuffer vertex_buffers[] = { vk_vertex_buffer->handle };
-	VkDeviceSize offsets[] = { 0 };
+	VkBuffer vertex_buffers[] = { vk_vertex_buffer->handle, vk_vertex_buffer->handle, vk_vertex_buffer->handle, vk_vertex_buffer->handle };
+	VkDeviceSize offsets[] = {
+		0,
+		vertex_buffer->vertex_count * member_size(Vertex, position),
+		vertex_buffer->vertex_count * (member_size(Vertex, position) + member_size(Vertex, normal)),
+		vertex_buffer->vertex_count * (member_size(Vertex, position) + member_size(Vertex, normal) + member_size(Vertex, tangent)),
+	};
 
-	vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, vertex_buffers, offsets);
+	vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, array_count(offsets), vertex_buffers, offsets);
 	vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], vk_index_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
 
 	vkCmdBindDescriptorSets(

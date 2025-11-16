@@ -13,7 +13,6 @@ typedef struct vulkan_buffer {
 
 	VkDeviceMemory memory;
 	VkMemoryPropertyFlags memory_property_flags;
-
 } VulkanBuffer;
 
 typedef struct vulkan_image {

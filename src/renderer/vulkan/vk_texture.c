@@ -24,8 +24,7 @@ void get_filename(const char *src, char *dst) {
 	memcpy(dst, src + start, length - start);
 }
 
-bool vulkan_create_texture_image(VulkanContext *context) {
-	const char *file_path = "assets/textures/container.jpg";
+bool vulkan_create_texture_image(VulkanContext *context, const char *file_path) {
 	char file_name[256];
 	get_filename(file_path, file_name);
 	LOG_INFO("Filepath: %s, Filename: %s", file_path, file_name);
@@ -60,7 +59,7 @@ bool vulkan_create_texture_image(VulkanContext *context) {
 		&context->texture_image);
 
 	vulkan_image_transition(
-		context, context->texture_image.handle,VK_IMAGE_ASPECT_COLOR_BIT,
+		context, context->texture_image.handle, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, VK_ACCESS_TRANSFER_WRITE_BIT);

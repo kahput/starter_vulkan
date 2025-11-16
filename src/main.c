@@ -13,13 +13,6 @@
 #define BOT_FILE_PATH "assets/models/characters/gdbot.glb"
 #define MAGE_FILE_PATH "assets/models/characters/mage.glb"
 
-typedef struct {
-	vec3 position;
-	vec3 normal;
-	vec2 uv;
-	vec4 tangent;
-} Vertex;
-
 typedef struct Mesh {
 	vec3 *positions;
 	vec3 *normals;
@@ -126,16 +119,16 @@ int main(void) {
 	// ================== DYNAMIC ==================
 
 	VertexAttribute attributes[] = {
-		{ .name = "in_position", FORMAT_FLOAT3 },
-		// { .name = "in_normal", FORMAT_FLOAT3 },
-		// { .name = "in_uv", FORMAT_FLOAT2 },
-		// { .name = "in_tangent", FORMAT_FLOAT4 },
+		{ .name = "in_position", FORMAT_FLOAT3, 0 },
+		{ .name = "in_normal", FORMAT_FLOAT3, 1 },
+		{ .name = "in_tangent", FORMAT_FLOAT4, 2 },
+		{ .name = "in_uv", FORMAT_FLOAT2, 3 },
 	};
 
 	vulkan_create_descriptor_set_layout(&context);
 	vulkan_create_pipline(&context, attributes, array_count(attributes));
 
-	vulkan_create_texture_image(&context);
+	vulkan_create_texture_image(&context, "assets/models/modular_dungeon/textures/colormap.png");
 	vulkan_create_texture_image_view(&context);
 	vulkan_create_texture_sampler(&context);
 
@@ -143,7 +136,7 @@ int main(void) {
 	// Mesh *mesh = load_gltf_model(state.assets, BOT_FILE_PATH);
 	// Mesh *mesh = load_gltf_model(state.assets, MAGE_FILE_PATH);
 
-	Buffer *vertex_buffer = vulkan_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, sizeof(*(((Mesh *)0)->positions)) * mesh->vertices_count, mesh->positions);
+	Buffer *vertex_buffer = vulkan_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, mesh->vertices_count * (12 + 16 + 12 + 8), mesh->positions);
 	vertex_buffer->vertex_count = mesh->vertices_count;
 	Buffer *index_buffer = vulkan_create_buffer(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(mesh->indices) * mesh->indices_count, (void *)mesh->indices);
 	index_buffer->index_count = mesh->indices_count;
@@ -253,7 +246,7 @@ void resize_callback(Platform *platform, uint32_t width, uint32_t height) {
 }
 
 void load_nodes(Arena *arena, cgltf_node *node, Mesh *out_mesh) {
-	if (node->mesh) {
+	if (node->mesh && !out_mesh->vertices_count) {
 		cgltf_mesh *mesh = node->mesh;
 		LOG_DEBUG("Node[%s] has Mesh '%s' with %d primitives", node->name, mesh->name, mesh->primitives_count);
 		logger_indent();
@@ -309,6 +302,7 @@ void load_nodes(Arena *arena, cgltf_node *node, Mesh *out_mesh) {
 					case cgltf_attribute_type_weights:
 					case cgltf_attribute_type_custom:
 					case cgltf_attribute_type_max_enum: {
+						logger_dedent();
 						continue;
 					}
 				}
@@ -351,7 +345,7 @@ Mesh *load_gltf_model(Arena *arena, const char *path) {
 		LOG_INFO("Loading %s...", path);
 		cgltf_scene *scene = data->scene;
 		logger_indent();
-		Mesh *mesh = arena_push_type(arena, Mesh);
+		Mesh *mesh = arena_push_type_zero(arena, Mesh);
 		for (uint32_t node_index = 0; node_index < scene->nodes_count; ++node_index) {
 			load_nodes(arena, scene->nodes[node_index], mesh);
 			break;

@@ -9,11 +9,12 @@
 struct arena;
 struct platform;
 
-typedef struct buffer {
-	uint32_t vertex_count, index_count;
-
-	void *internal;
-} Buffer;
+typedef struct {
+	vec3 position;
+	vec3 normal;
+	vec2 uv;
+	vec4 tangent;
+} Vertex;
 
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
@@ -33,7 +34,14 @@ typedef enum vertex_attribute_format {
 typedef struct vertex_attribute {
 	const char *name;
 	VertexAttributeFormat format;
+	uint8_t binding;
 } VertexAttribute;
+
+typedef struct buffer {
+	uint32_t vertex_count, index_count;
+
+	void *internal;
+} Buffer;
 
 typedef struct {
 	mat4 model;
@@ -81,7 +89,7 @@ bool vulkan_create_pipline(VulkanContext *context, VertexAttribute *attributes, 
 
 bool vulkan_create_command_pool(VulkanContext *context);
 
-bool vulkan_create_texture_image(VulkanContext *context);
+bool vulkan_create_texture_image(VulkanContext *context, const char *file_path);
 bool vulkan_create_texture_image_view(VulkanContext *context);
 bool vulkan_create_texture_sampler(VulkanContext *context);
 
