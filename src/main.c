@@ -126,7 +126,7 @@ int main(void) {
 	};
 
 	vulkan_create_descriptor_set_layout(&context);
-	vulkan_create_pipline(&context, attributes, array_count(attributes));
+	vulkan_create_pipline(&context, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv", attributes, array_count(attributes));
 
 	vulkan_create_texture_image(&context, "assets/models/modular_dungeon/textures/colormap.png");
 	vulkan_create_texture_image_view(&context);

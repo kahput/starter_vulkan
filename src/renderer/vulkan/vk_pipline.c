@@ -19,10 +19,10 @@ static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
 struct shader_file read_file(struct arena *arena, const char *path);
 bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code);
 
-bool vulkan_create_pipline(VulkanContext *context, VertexAttribute *attributes, uint32_t attribute_count) {
+bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, VertexAttribute *attributes, uint32_t attribute_count) {
 	ArenaTemp temp = arena_get_scratch(NULL);
-	struct shader_file vertex_shader_code = read_file(temp.arena, "./assets/shaders/vs_default.spv");
-	struct shader_file fragment_shader_code = read_file(temp.arena, "./assets/shaders/fs_default.spv");
+	struct shader_file vertex_shader_code = read_file(temp.arena, vertex_shader_path);
+	struct shader_file fragment_shader_code = read_file(temp.arena, fragment_shader_path);
 
 	if (vertex_shader_code.size <= 0 && fragment_shader_code.size <= 0) {
 		LOG_ERROR("Failed to load files");

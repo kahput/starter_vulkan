@@ -85,7 +85,7 @@ bool vulkan_recreate_swapchain(VulkanContext *context, struct platform *platform
 bool vulkan_create_renderpass(VulkanContext *context);
 
 bool vulkan_create_descriptor_set_layout(VulkanContext *context);
-bool vulkan_create_pipline(VulkanContext *context, VertexAttribute *attributes, uint32_t attribute_count);
+bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, VertexAttribute *attributes, uint32_t attribute_count);
 
 bool vulkan_create_command_pool(VulkanContext *context);
 
