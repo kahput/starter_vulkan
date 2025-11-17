@@ -59,7 +59,7 @@ bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, B
 		return false;
 	}
 
-	VkClearValue clear_color = { .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } };
+	VkClearValue clear_color = { .color = { .float32 = { 0.01f, 0.01f, 0.01f, 1.0f } } };
 	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
 
 	vulkan_image_transition(
