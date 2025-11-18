@@ -3,7 +3,10 @@
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
-#include <loaders/cgltf.h>
+#include <cgltf/cgltf.h>
+
+#include <stb/stb_image.h>
+#include <stb/stb_image_write.h>
 
 #include "common.h"
 #include "core/arena.h"
@@ -19,6 +22,8 @@
 Model *load_gltf_model(Arena *arena, const char *path);
 void resize_callback(Platform *platform, uint32_t width, uint32_t height);
 void update_uniforms(VulkanContext *context, Platform *platform);
+void get_filename(const char *src, char *dst);
+void get_path(const char *src, char *dst);
 
 // clang-format off
 static const Vertex vertices[36] = {
@@ -117,14 +122,33 @@ int main(void) {
 	vulkan_create_descriptor_set_layout(&context);
 	vulkan_create_pipline(&context, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv", attributes, array_count(attributes));
 
-	// Mesh *mesh = load_gltf_model(state.assets, GATE_FILE_PATH);
-	Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
-	// Mesh *mesh = load_gltf_model(state.assets, BOT_FILE_PATH);
-	// Mesh *mesh = load_gltf_model(state.assets, MAGE_FILE_PATH);
+	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
+	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
+	Model *model = load_gltf_model(state.assets, BOT_FILE_PATH);
+	// Model *model = load_gltf_model(state.assets, MAGE_FILE_PATH);
 
-	vulkan_create_texture_image(&context, "assets/models/modular_dungeon/textures/colormap.png");
+	LOG_DEBUG("Model path to diffuse color is: '%s'", model->primitives->material.base_color_texture.path);
+	const char *file_path = model->primitives->material.base_color_texture.path;
+	char file_name[256];
+	get_filename(file_path, file_name);
+	LOG_INFO("Loading %s...", file_name);
+	logger_indent();
+	int32_t width, height, channels;
+	uint8_t *pixels = stbi_load(file_path, &width, &height, &channels, STBI_rgb_alpha);
+
+	if (pixels == NULL) {
+		LOG_ERROR("Failed to load image [ %s ]", file_path);
+	}
+
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", file_name, width, height, channels);
+	LOG_INFO("%s loaded", file_name);
+	logger_dedent();
+
+	vulkan_create_texture_image(&context, width, height, channels, pixels);
 	vulkan_create_texture_image_view(&context);
 	vulkan_create_texture_sampler(&context);
+
+	stbi_image_free(pixels);
 
 	Buffer *vertex_buffers[model->primitive_count];
 	Buffer *index_buffers[model->primitive_count];
@@ -175,7 +199,7 @@ void update_uniforms(VulkanContext *context, Platform *platform) {
 	glm_mat4_identity(mvp.model);
 	// glm_rotate(mvp.model, time, axis);
 
-	vec3 eye = { 0.0f, 0.0f, -20.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
+	vec3 eye = { 0.0f, 0.0f, -10.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
 	glm_mat4_identity(mvp.view);
 	glm_lookat(eye, center, up, mvp.view);
 
@@ -204,11 +228,11 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 			RenderPrimitive *out_primitive = &out_model->primitives[out_model->primitive_count++];
 
 			// ATTRIBUTES
-			LOG_DEBUG("Primitive[%d] has %d attributes", primitive_index, primitive->attributes_count);
+			LOG_DEBUG("---PRIMITIVE[%d]---", primitive_index, primitive->attributes_count);
 			logger_indent();
 			for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
 				cgltf_attribute *attribute = &primitive->attributes[attribute_index];
-				LOG_DEBUG("- %s", attribute->name);
+				LOG_DEBUG("Attribute[%d]- %s", attribute_index, attribute->name);
 				logger_indent();
 
 				cgltf_accessor *accessor = attribute->data;
@@ -251,8 +275,6 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 					case cgltf_attribute_type_weights:
 					case cgltf_attribute_type_custom:
 					case cgltf_attribute_type_max_enum: {
-						logger_dedent();
-						continue;
 					}
 				}
 				logger_dedent();
@@ -278,17 +300,84 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 
 			cgltf_material *material = primitive->material;
 			if (material->has_pbr_metallic_roughness) {
-				LOG_DEBUG("Material is PBR Metallic Roughness based");
+				Material *out_material = &out_primitive->material;
+				LOG_DEBUG("Material is Metallic Roughness PBR based");
+				logger_indent();
 
 				cgltf_pbr_metallic_roughness *pbr_material = &material->pbr_metallic_roughness;
 
-				cgltf_texture_view base_color_view = pbr_material->base_color_texture;
-				cgltf_texture *base_color_texture = base_color_view.texture;
-				cgltf_image *base_color = base_color_texture->image;
+				if (pbr_material->base_color_texture.texture) {
+					cgltf_texture_view base_color_view = pbr_material->base_color_texture;
+					cgltf_texture *base_color_texture = base_color_view.texture;
+					cgltf_image *base_color = base_color_texture->image;
 
-				LOG_DEBUG("BaseColorTexture: '%s'[%s]", base_color_texture->name, base_color->uri);
+					Texture *out_texture = &out_material->base_color_texture;
+
+					if (base_color->buffer_view) {
+						cgltf_buffer_view *view = base_color->buffer_view;
+						cgltf_buffer *buffer = view->buffer;
+
+						LOG_DEBUG("%s BufferView { offset = %d, size = %d, stride = %d }", base_color->name, view->offset, view->size, view->stride);
+						LOG_DEBUG("%s Buffer { size = %d }", base_color->name, buffer->size);
+
+						uint32_t length = 0;
+						char c;
+
+						uint8_t *src = (uint8_t *)buffer->data + view->offset;
+
+						while ((c = base_color->mime_type[length++]) != '\0') {
+							if (c == '/' || c == '\\') {
+								if (strcmp(&base_color->mime_type[length], "png") == 0) {
+									LOG_DEBUG("MimeType should be png (it is '%s')", base_color->mime_type);
+									char file_name[MAX_FILE_NAME_LENGTH];
+									strncpy(file_name, node->name, MAX_FILE_NAME_LENGTH);
+									file_name[strnlen(file_name, MAX_FILE_NAME_LENGTH)] = '_';
+									file_name[strnlen(file_name, MAX_FILE_NAME_LENGTH) + 1] = '\0';
+									strncat(file_name, base_color->name, 256);
+									strncat(file_name, ".png", 256);
+
+									uint8_t *pixels = stbi_load_from_memory(src, view->size, (int32_t *)&out_texture->width, (int32_t *)&out_texture->height, (int32_t *)&out_texture->channels, 4);
+									stbi_write_png(file_name, out_texture->width, out_texture->height, out_texture->channels, pixels, out_texture->width);
+									out_texture->path = arena_push_array_zero(arena, char, MAX_FILE_PATH_LENGTH);
+									memcpy(out_texture->path, file_name, strnlen(file_name, MAX_FILE_NAME_LENGTH) + 1);
+								}
+								if (strcmp(&base_color->mime_type[length], "jpeg") == 0) {
+									LOG_DEBUG("MimeType should be jpeg (it is '%s')", base_color->mime_type);
+								}
+							}
+						}
+					} else {
+						LOG_DEBUG("URI '%s'[%s]", base_color->name, base_color->uri);
+						out_texture->path = arena_push_array_zero(arena, char, MAX_FILE_PATH_LENGTH);
+						memcpy(out_texture->path, base_color->uri, strnlen(base_color->uri, MAX_FILE_NAME_LENGTH) + 1);
+					}
+				}
+
+				if (pbr_material->metallic_roughness_texture.texture) {
+					cgltf_texture_view metallic_roughness_view = pbr_material->metallic_roughness_texture;
+					cgltf_texture *metallic_roughness_texture = metallic_roughness_view.texture;
+					cgltf_image *metallic_roughness = metallic_roughness_texture->image;
+
+					if (metallic_roughness->buffer_view) {
+						cgltf_buffer_view *view = metallic_roughness->buffer_view;
+						cgltf_buffer *buffer = view->buffer;
+
+						LOG_DEBUG("%s BufferView { offset = %d, size = %d, stride = %d }", metallic_roughness->name, view->offset, view->size, view->stride);
+						LOG_DEBUG("%s Buffer { size = %d }", metallic_roughness->name, buffer->size);
+
+						LOG_INFO("MimeType: %s", metallic_roughness->mime_type);
+					} else {
+						LOG_DEBUG("URI '%s'[%s]", metallic_roughness->name, metallic_roughness->uri);
+					}
+				}
+				logger_dedent();
+
+				if (material->emissive_texture.texture) {
+					LOG_DEBUG("Has emission texture");
+				}
+			} else {
+				LOG_WARN("Non Metallic Roughness PBR material, loading skipped");
 			}
-
 			logger_dedent();
 		}
 		logger_dedent();
@@ -305,7 +394,13 @@ Model *load_gltf_model(Arena *arena, const char *path) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
 	cgltf_result result = cgltf_parse_file(&options, path, &data);
-	cgltf_load_buffers(&options, data, path);
+
+	if (result == cgltf_result_success)
+		result = cgltf_load_buffers(&options, data, path);
+
+	if (result == cgltf_result_success)
+		result = cgltf_validate(data);
+
 	if (result == cgltf_result_success) {
 		LOG_INFO("Loading %s...", path);
 		cgltf_scene *scene = data->scene;
@@ -316,6 +411,11 @@ Model *load_gltf_model(Arena *arena, const char *path) {
 			load_nodes(arena, scene->nodes[node_index], &primitive_count, model);
 			model->primitives = arena_push_array_zero(arena, RenderPrimitive, primitive_count);
 			load_nodes(arena, scene->nodes[node_index], &primitive_count, model);
+
+			char directory[MAX_FILE_PATH_LENGTH];
+			get_path(path, directory);
+			strncat(directory, model->primitives->material.base_color_texture.path, 1024);
+			memcpy(model->primitives->material.base_color_texture.path, directory, strnlen(directory, MAX_FILE_PATH_LENGTH) + 1);
 			break;
 		}
 		logger_dedent();
@@ -324,4 +424,35 @@ Model *load_gltf_model(Arena *arena, const char *path) {
 	}
 	LOG_ERROR("Failed to load model");
 	return NULL;
+}
+
+void get_filename(const char *src, char *dst) {
+	uint32_t start = 0, length = 0;
+	char c;
+
+	while ((c = src[length++]) != '\0') {
+		if (c == '/' || c == '\\') {
+			if (src[length] == '\0') {
+				LOG_INFO("'%s' is not a file");
+				return;
+			}
+			start = length;
+		}
+	}
+
+	memcpy(dst, src + start, length - start);
+}
+
+void get_path(const char *src, char *dst) {
+	uint32_t final = 0, length = 0;
+	char c;
+
+	while ((c = src[length++]) != '\0') {
+		if (c == '/' || c == '\\') {
+			final = length;
+		}
+	}
+
+	memcpy(dst, src, final);
+	dst[final] = '\0';
 }

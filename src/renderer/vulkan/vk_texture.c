@@ -1,40 +1,13 @@
 #include "renderer/vk_renderer.h"
 
-#include <stb/image.h>
-
 #include "core/logger.h"
 
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-void get_filename(const char *src, char *dst) {
-	uint32_t start = 0, length = 0;
-	char c;
+static VkFormat channels_to_vulkan_format(uint32_t channels);
 
-	while ((c = src[length++]) != '\0') {
-		if (c == '/' || c == '\\') {
-			if (src[length] == '\0') {
-				LOG_INFO("'%s' is not a file");
-				return;
-			}
-			start = length;
-		}
-	}
-
-	memcpy(dst, src + start, length - start);
-}
-
-bool vulkan_create_texture_image(VulkanContext *context, const char *file_path) {
-	char file_name[256];
-	get_filename(file_path, file_name);
-	LOG_INFO("Filepath: %s, Filename: %s", file_path, file_name);
-	int32_t width, height, channels;
-	uint8_t *pixels = stbi_load(file_path, &width, &height, &channels, STBI_rgb_alpha);
-
-	if (pixels == NULL) {
-		LOG_ERROR("Failed to load image [ %s ]", file_name);
-	}
-
+bool vulkan_create_texture_image(VulkanContext *context, uint32_t width, uint32_t height, uint32_t channels, const void *pixels) {
 	VkDeviceSize size = width * height * 4;
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -43,18 +16,16 @@ bool vulkan_create_texture_image(VulkanContext *context, const char *file_path) 
 	VkDeviceMemory staging_buffer_memory;
 
 	uint32_t indices[] = { context->device.graphics_index, context->device.transfer_index };
-	create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vulkan_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
 	memcpy(data, pixels, (size_t)size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
-	stbi_image_free(pixels);
-
 	vulkan_image_create(
 		context, indices, array_count(indices),
-		width, height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
+		width, height, channels_to_vulkan_format(channels), VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		&context->texture_image);
 
@@ -78,27 +49,7 @@ bool vulkan_create_texture_image(VulkanContext *context, const char *file_path) 
 }
 
 bool vulkan_create_texture_image_view(VulkanContext *context) {
-	VkImageViewCreateInfo image_view_create_info = {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = context->texture_image.handle,
-		.viewType = VK_IMAGE_VIEW_TYPE_2D,
-		.format = VK_FORMAT_R8G8B8A8_SRGB,
-		.components = {
-		  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-		  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-		  .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-		  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-		},
-		.subresourceRange = {
-		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-		  .baseMipLevel = 0,
-		  .levelCount = 1,
-		  .baseArrayLayer = 0,
-		  .layerCount = 1,
-		}
-	};
-
-	if (vulkan_image_view_create(context, context->texture_image.handle, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, &context->texture_image.view) == false) {
+	if (vulkan_image_view_create(context, context->texture_image.handle, context->texture_image.format, VK_IMAGE_ASPECT_COLOR_BIT, &context->texture_image.view) == false) {
 		LOG_ERROR("Failed to create VkImageView");
 		return false;
 	}
@@ -134,4 +85,21 @@ bool vulkan_create_texture_sampler(VulkanContext *context) {
 
 	LOG_INFO("VkSampler created");
 	return true;
+}
+
+static VkFormat channels_to_vulkan_format(uint32_t channels) {
+	switch (channels) {
+		case 1:
+			return VK_FORMAT_R8_SRGB;
+		case 2:
+			return VK_FORMAT_R8G8_SRGB;
+		case 3:
+			return VK_FORMAT_R8G8B8_SRGB;
+		case 4:
+			return VK_FORMAT_R8G8B8A8_SRGB;
+		default: {
+			LOG_WARN("Image channels must be in 1-4 range, defaulting to 3");
+			return VK_FORMAT_R8G8B8A8_SRGB;
+		} break;
+	}
 }

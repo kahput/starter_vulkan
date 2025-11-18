@@ -23,14 +23,14 @@ Buffer *vulkan_buffer_create(Arena *arena, VulkanContext *context, BufferType ty
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vulkan_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *mapped_data;
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &mapped_data);
 	memcpy(mapped_data, data, size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
-	create_buffer(context, context->device.graphics_index, size, internal->usage, internal->memory_property_flags, &internal->handle, &internal->memory);
+	vulkan_create_buffer(context, context->device.graphics_index, size, internal->usage, internal->memory_property_flags, &internal->handle, &internal->memory);
 
 	vulkan_copy_buffer(context, staging_buffer, internal->handle, size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
@@ -46,7 +46,7 @@ bool vulkan_create_uniform_buffers(VulkanContext *context) {
 	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		create_buffer(context, context->device.graphics_index, size, usage, properties, context->uniform_buffers + i, context->uniform_buffers_memory + i);
+		vulkan_create_buffer(context, context->device.graphics_index, size, usage, properties, context->uniform_buffers + i, context->uniform_buffers_memory + i);
 
 		vkMapMemory(context->device.logical, context->uniform_buffers_memory[i], 0, size, 0, &context->uniform_buffers_mapped[i]);
 	}
@@ -68,7 +68,7 @@ uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter
 	return 0;
 }
 
-bool create_buffer(
+bool vulkan_create_buffer(
 	VulkanContext *context,
 	uint32_t queue_family_index,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,

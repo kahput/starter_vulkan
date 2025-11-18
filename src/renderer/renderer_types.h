@@ -8,15 +8,15 @@
 typedef void *Shader;
 
 typedef struct {
-	const char *path;
+	char *path;
 	uint32_t width, height, channels;
 
 	void *internal;
-} Texture2D;
+} Texture;
 
 typedef struct material {
-	Texture2D base_color_texture;
-	Texture2D metallic_roughness_texture;
+	Texture base_color_texture;
+	Texture metallic_roughness_texture;
 
 	float base_color_factor[4];
 	float metallic_factor;
@@ -32,6 +32,8 @@ typedef struct primitive {
 	uint32_t *indices;
 
 	uint32_t vertex_count, index_count;
+
+	Material material;
 } RenderPrimitive;
 
 typedef struct model {

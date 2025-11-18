@@ -63,7 +63,7 @@ bool vulkan_buffer_bind(VulkanContext *context, Buffer *buffer);
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
-bool create_buffer(
+bool vulkan_create_buffer(
 	VulkanContext *context,
 	uint32_t queue_family_index,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
@@ -97,7 +97,7 @@ bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_pat
 
 bool vulkan_create_command_pool(VulkanContext *context);
 
-bool vulkan_create_texture_image(VulkanContext *context, const char *file_path);
+bool vulkan_create_texture_image(VulkanContext *context, uint32_t width, uint32_t height, uint32_t channels, const void *pixels);
 bool vulkan_create_texture_image_view(VulkanContext *context);
 bool vulkan_create_texture_sampler(VulkanContext *context);
 
