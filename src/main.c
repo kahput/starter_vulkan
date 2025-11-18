@@ -17,7 +17,6 @@
 #define MAGE_FILE_PATH "assets/models/characters/mage.glb"
 
 Model *load_gltf_model(Arena *arena, const char *path);
-void draw_frame(Arena *arena, VulkanContext *context, Platform *platform, uint32_t buffer_count, Buffer **vertex_buffer, Buffer **index_buffer);
 void resize_callback(Platform *platform, uint32_t width, uint32_t height);
 void update_uniforms(VulkanContext *context, Platform *platform);
 
@@ -131,10 +130,10 @@ int main(void) {
 	Buffer *index_buffers[model->primitive_count];
 
 	for (uint32_t index = 0; index < model->primitive_count; ++index) {
-		vertex_buffers[index] = vulkan_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * (12 + 16 + 12 + 8), model->primitives[index].positions);
+		vertex_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * (12 + 16 + 12 + 8), model->primitives[index].positions);
 		vertex_buffers[index]->vertex_count = model->primitives[index].vertex_count;
 
-		index_buffers[index] = vulkan_create_buffer(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(model->primitives[index].indices) * model->primitives->index_count, (void *)model->primitives[index].indices);
+		index_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(model->primitives[index].indices) * model->primitives->index_count, (void *)model->primitives[index].indices);
 		index_buffers[index]->index_count = model->primitives[index].index_count;
 	}
 
@@ -144,77 +143,26 @@ int main(void) {
 
 	while (platform_should_close(platform) == false) {
 		platform_poll_events(platform);
-		draw_frame(state.frame, &context, platform, model->primitive_count, vertex_buffers, index_buffers);
+		vulkan_renderer_begin_frame(&context, platform);
+
+		for (uint32_t index = 0; index < model->primitive_count; ++index) {
+			vulkan_renderer_draw_indexed(&context, vertex_buffers[index], index_buffers[index]);
+		}
+
+		Vulkan_renderer_end_frame(&context);
+
+		update_uniforms(&context, platform);
+
+		if (state.resized) {
+			vulkan_recreate_swapchain(&context, platform);
+			LOG_INFO("Recreating Swapchain");
+			state.resized = false;
+		}
 	}
 
 	vkDeviceWaitIdle(context.device.logical);
 
 	return 0;
-}
-
-void draw_frame(Arena *arena, VulkanContext *context, Platform *platform, uint32_t buffer_count, Buffer **vertex_buffer, Buffer **index_buffer) {
-	vkWaitForFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame], VK_TRUE, UINT64_MAX);
-
-	uint32_t image_index = 0;
-	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		vulkan_recreate_swapchain(context, platform);
-		LOG_INFO("Recreating Swapchain");
-		return;
-	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		LOG_ERROR("Failed to acquire swapchain image!");
-	}
-
-	vkResetFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame]);
-
-	vkResetCommandBuffer(context->command_buffers[context->current_frame], 0);
-	vulkan_command_buffer_draw(context, vertex_buffer[0], index_buffer[0], image_index);
-
-	update_uniforms(context, platform);
-
-	VkSemaphore wait_semaphores[] = { context->image_available_semaphores[context->current_frame] };
-	VkSemaphore signal_semaphores[] = { context->render_finished_semaphores[image_index] };
-	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-
-	VkSubmitInfo submit_info = {
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.waitSemaphoreCount = array_count(wait_semaphores),
-		.pWaitSemaphores = wait_semaphores,
-		.pWaitDstStageMask = wait_stages,
-		.commandBufferCount = 1,
-		.pCommandBuffers = &context->command_buffers[context->current_frame],
-		.signalSemaphoreCount = array_count(signal_semaphores),
-		.pSignalSemaphores = signal_semaphores
-	};
-
-	if (vkQueueSubmit(context->device.graphics_queue, 1, &submit_info, context->in_flight_fences[context->current_frame]) != VK_SUCCESS) {
-		LOG_ERROR("Failed to submit draw command buffer");
-		return;
-	}
-
-	VkSwapchainKHR swapchains[] = { context->swapchain.handle };
-	VkPresentInfoKHR present_info = {
-		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-		.waitSemaphoreCount = 1,
-		.pWaitSemaphores = signal_semaphores,
-		.swapchainCount = 1,
-		.pSwapchains = swapchains,
-		.pImageIndices = &image_index,
-	};
-
-	context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-	result = vkQueuePresentKHR(context->device.present_queue, &present_info);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || state.resized) {
-		vulkan_recreate_swapchain(context, platform);
-		LOG_INFO("Recreating Swapchain");
-		state.resized = false;
-		return;
-	} else if (result != VK_SUCCESS) {
-		LOG_ERROR("Failed to acquire swapchain image!");
-		return;
-	}
 }
 
 void update_uniforms(VulkanContext *context, Platform *platform) {

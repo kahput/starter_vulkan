@@ -9,7 +9,7 @@
 
 int32_t to_vulkan_usage(BufferType type);
 
-Buffer *vulkan_create_buffer(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
+Buffer *vulkan_buffer_create(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
 	Buffer *buffer = arena_push_type(arena, Buffer);
 	VulkanBuffer *internal = arena_push_type(arena, VulkanBuffer);
 	buffer->internal = internal;
@@ -135,4 +135,30 @@ int32_t to_vulkan_usage(BufferType type) {
 		default:
 			return -1;
 	}
+}
+
+bool vulkan_buffer_bind(VulkanContext *context, Buffer *buffer) {
+	VulkanBuffer *vulkan_buffer = (VulkanBuffer *)buffer->internal;
+
+	if (vulkan_buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
+		VkBuffer vertex_buffers[] = { vulkan_buffer->handle, vulkan_buffer->handle, vulkan_buffer->handle, vulkan_buffer->handle };
+		VkDeviceSize offsets[] = {
+			0,
+			buffer->vertex_count * member_size(Vertex, position),
+			buffer->vertex_count * (member_size(Vertex, position) + member_size(Vertex, normal)),
+			buffer->vertex_count * (member_size(Vertex, position) + member_size(Vertex, normal) + member_size(Vertex, tangent)),
+		};
+
+		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, array_count(offsets), vertex_buffers, offsets);
+		return true;
+	}
+
+	if (vulkan_buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], vulkan_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
+		return true;
+	}
+
+	LOG_WARN("Buffer failed to bind: Unsupported buffer type");
+
+	return false;
 }

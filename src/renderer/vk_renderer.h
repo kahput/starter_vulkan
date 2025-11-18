@@ -52,9 +52,17 @@ typedef struct {
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context);
 void vulkan_renderer_destroy(VulkanContext *context);
 
+bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platform);
+bool Vulkan_renderer_end_frame(VulkanContext *context);
+
+bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer);
+bool vulkan_renderer_draw_indexed(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer);
+
+Buffer *vulkan_buffer_create(struct arena *arena, VulkanContext *context, BufferType type, size_t size, void *data);
+bool vulkan_buffer_bind(VulkanContext *context, Buffer *buffer);
+
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
-Buffer *vulkan_create_buffer(struct arena *arena, VulkanContext *context, BufferType type, size_t size, void *data);
 bool create_buffer(
 	VulkanContext *context,
 	uint32_t queue_family_index,
@@ -99,8 +107,6 @@ bool vulkan_create_descriptor_set(VulkanContext *context);
 
 bool vulkan_create_command_buffer(VulkanContext *context);
 bool vulkan_create_sync_objects(VulkanContext *context);
-
-bool vulkan_command_buffer_draw(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer, uint32_t image_index);
 
 // EXTENSIONS
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \
