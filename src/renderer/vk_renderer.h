@@ -1,5 +1,6 @@
 #pragma once
 
+#include "renderer_types.h"
 #include "vulkan/vk_types.h"
 
 #define CGLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -8,40 +9,6 @@
 
 struct arena;
 struct platform;
-
-typedef struct {
-	vec3 position;
-	vec3 normal;
-	vec2 uv;
-	vec4 tangent;
-} Vertex;
-
-typedef enum buffer_type {
-	BUFFER_TYPE_VERTEX,
-	BUFFER_TYPE_INDEX,
-	BUFFER_TYPE_UNIFORM,
-} BufferType;
-
-typedef enum vertex_attribute_format {
-	FORMAT_FLOAT,
-	FORMAT_FLOAT2,
-	FORMAT_FLOAT3,
-	FORMAT_FLOAT4,
-
-	FORMAT_COUNT
-} VertexAttributeFormat;
-
-typedef struct vertex_attribute {
-	const char *name;
-	VertexAttributeFormat format;
-	uint8_t binding;
-} VertexAttribute;
-
-typedef struct buffer {
-	uint32_t vertex_count, index_count;
-
-	void *internal;
-} Buffer;
 
 typedef struct {
 	mat4 model;

@@ -8,6 +8,12 @@
 typedef void *Shader;
 
 typedef struct {
+	vec3 position;
+	vec2 uv;
+	vec3 normal;
+} Vertex;
+
+typedef struct {
 	char *path;
 	uint32_t width, height, channels;
 
@@ -24,11 +30,7 @@ typedef struct material {
 } Material;
 
 typedef struct primitive {
-	vec3 *positions;
-	vec3 *normals;
-	vec4 *tangets;
-	vec2 *uvs;
-
+	Vertex *vertices;
 	uint32_t *indices;
 
 	uint32_t vertex_count, index_count;
@@ -40,3 +42,30 @@ typedef struct model {
 	RenderPrimitive *primitives;
 	uint32_t primitive_count;
 } Model;
+
+typedef enum buffer_type {
+	BUFFER_TYPE_VERTEX,
+	BUFFER_TYPE_INDEX,
+	BUFFER_TYPE_UNIFORM,
+} BufferType;
+
+typedef enum vertex_attribute_format {
+	FORMAT_FLOAT,
+	FORMAT_FLOAT2,
+	FORMAT_FLOAT3,
+	FORMAT_FLOAT4,
+
+	FORMAT_COUNT
+} VertexAttributeFormat;
+
+typedef struct vertex_attribute {
+	const char *name;
+	VertexAttributeFormat format;
+	uint8_t binding;
+} VertexAttribute;
+
+typedef struct buffer {
+	uint32_t vertex_count, index_count;
+
+	void *internal;
+} Buffer;

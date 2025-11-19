@@ -141,13 +141,8 @@ bool vulkan_buffer_bind(VulkanContext *context, Buffer *buffer) {
 	VulkanBuffer *vulkan_buffer = (VulkanBuffer *)buffer->internal;
 
 	if (vulkan_buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-		VkBuffer vertex_buffers[] = { vulkan_buffer->handle, vulkan_buffer->handle, vulkan_buffer->handle, vulkan_buffer->handle };
-		VkDeviceSize offsets[] = {
-			0,
-			buffer->vertex_count * member_size(Vertex, position),
-			buffer->vertex_count * (member_size(Vertex, position) + member_size(Vertex, normal)),
-			buffer->vertex_count * (member_size(Vertex, position) + member_size(Vertex, normal) + member_size(Vertex, tangent)),
-		};
+		VkBuffer vertex_buffers[] = { vulkan_buffer->handle };
+		VkDeviceSize offsets[] = { 0 };
 
 		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, array_count(offsets), vertex_buffers, offsets);
 		return true;

@@ -114,9 +114,8 @@ int main(void) {
 
 	VertexAttribute attributes[] = {
 		{ .name = "in_position", FORMAT_FLOAT3, 0 },
-		{ .name = "in_normal", FORMAT_FLOAT3, 1 },
-		{ .name = "in_tangent", FORMAT_FLOAT4, 2 },
-		{ .name = "in_uv", FORMAT_FLOAT2, 3 },
+		{ .name = "in_uv", FORMAT_FLOAT2, 0 },
+		{ .name = "in_normal", FORMAT_FLOAT3, 0 },
 	};
 
 	vulkan_create_descriptor_set_layout(&context);
@@ -154,7 +153,7 @@ int main(void) {
 	Buffer *index_buffers[model->primitive_count];
 
 	for (uint32_t index = 0; index < model->primitive_count; ++index) {
-		vertex_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * (12 + 16 + 12 + 8), model->primitives[index].positions);
+		vertex_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
 		vertex_buffers[index]->vertex_count = model->primitives[index].vertex_count;
 
 		index_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(model->primitives[index].indices) * model->primitives->index_count, (void *)model->primitives[index].indices);
@@ -232,6 +231,8 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 			logger_indent();
 			for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
 				cgltf_attribute *attribute = &primitive->attributes[attribute_index];
+				if (out_primitive->vertices == NULL)
+					out_primitive->vertices = arena_push_array_zero(arena, Vertex, attribute->data->count);
 				LOG_DEBUG("Attribute[%d]- %s", attribute_index, attribute->name);
 				logger_indent();
 
@@ -246,36 +247,39 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 
 				switch (attribute->type) {
 					case cgltf_attribute_type_position: {
-						out_primitive->positions = arena_push_array(arena, vec3, accessor->count);
-						void *src = (uint8_t *)buffer->data + view->offset;
+						float *src = (float *)((uint8_t *)buffer->data + view->offset);
 
-						memcpy(out_primitive->positions, src, view->size);
+						for (uint32_t index = 0; index < accessor->count; ++index) {
+							out_primitive->vertices[index].position[0] = src[index * 3 + 0];
+							out_primitive->vertices[index].position[1] = src[index * 3 + 1];
+							out_primitive->vertices[index].position[2] = src[index * 3 + 2];
+						}
 					} break;
 					case cgltf_attribute_type_normal: {
-						out_primitive->normals = arena_push_array(arena, vec3, accessor->count);
-						void *src = (uint8_t *)buffer->data + view->offset;
+						float *src = (float *)((uint8_t *)buffer->data + view->offset);
 
-						memcpy(out_primitive->normals, src, view->size);
-					} break;
-					case cgltf_attribute_type_tangent: {
-						out_primitive->tangets = arena_push_array(arena, vec4, accessor->count);
-						void *src = (uint8_t *)buffer->data + view->offset;
-
-						memcpy(out_primitive->tangets, src, view->size);
+						for (uint32_t index = 0; index < accessor->count; ++index) {
+							out_primitive->vertices[index].normal[0] = src[index * 3 + 0];
+							out_primitive->vertices[index].normal[1] = src[index * 3 + 1];
+							out_primitive->vertices[index].normal[2] = src[index * 3 + 2];
+						}
 					} break;
 					case cgltf_attribute_type_texcoord: {
-						out_primitive->uvs = arena_push_array(arena, vec2, accessor->count);
-						void *src = (uint8_t *)buffer->data + view->offset;
+						float *src = (float *)((uint8_t *)buffer->data + view->offset);
 
-						memcpy(out_primitive->uvs, src, view->size);
+						for (uint32_t index = 0; index < accessor->count; ++index) {
+							out_primitive->vertices[index].uv[0] = src[index * 2 + 0];
+							out_primitive->vertices[index].uv[1] = src[index * 2 + 1];
+						}
 					} break;
 					case cgltf_attribute_type_invalid:
+					case cgltf_attribute_type_tangent:
 					case cgltf_attribute_type_color:
 					case cgltf_attribute_type_joints:
 					case cgltf_attribute_type_weights:
 					case cgltf_attribute_type_custom:
-					case cgltf_attribute_type_max_enum: {
-					}
+					case cgltf_attribute_type_max_enum:
+						break;
 				}
 				logger_dedent();
 
