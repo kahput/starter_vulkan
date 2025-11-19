@@ -5,6 +5,7 @@
 
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
+#include <wayland-util.h>
 
 #include "fractional-scale-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
@@ -18,6 +19,8 @@
 
 #define VK_USE_PLATFORM_WAYLAND_KHR
 #include <vulkan/vulkan.h>
+
+#include <linux/input-event-codes.h>
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -58,6 +61,38 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 static void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_scale_v1, uint32_t scale);
 static const struct wp_fractional_scale_v1_listener fractional_scale_listener = {
 	.preferred_scale = preferred_scale,
+};
+
+void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y);
+void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface);
+void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y);
+void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
+void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
+void pointer_frame(void *data, struct wl_pointer *wl_pointer);
+void pointer_axis_source(void *data, struct wl_pointer *wl_pointer, uint32_t axis_source);
+void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis);
+void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete);
+void pointer_axis_value120(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t value120);
+void pointer_axis_relative_direction(void *data, struct wl_pointer *wl_pointer, uint32_t axis, uint32_t direction);
+static const struct wl_pointer_listener pointer_listener = {
+	.enter = pointer_enter,
+	.leave = pointer_leave,
+	.motion = pointer_motion,
+	.button = pointer_button,
+	.axis = pointer_axis,
+	.frame = pointer_frame,
+	.axis_source = pointer_axis_source,
+	.axis_stop = pointer_axis_stop,
+	.axis_discrete = pointer_axis_discrete,
+	.axis_value120 = pointer_axis_value120,
+	.axis_relative_direction = pointer_axis_relative_direction
+};
+
+struct pointer_frame {
+	int32_t x, y;
+
+	bool pressed;
+	bool released;
 };
 
 static struct wl_buffer *
@@ -151,6 +186,11 @@ bool wl_startup(Platform *platform) {
 	wl->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(wl->fractional_scale_manager, wl->surface);
 	wp_fractional_scale_v1_add_listener(wl->fractional_scale, &fractional_scale_listener, platform);
 
+	wl->pointer = wl_seat_get_pointer(wl->seat);
+	wl->keyboard = wl_seat_get_keyboard(wl->seat);
+
+	wl_pointer_add_listener(wl->pointer, &pointer_listener, platform);
+
 	wl_surface_commit(wl->surface);
 
 	// Attach buffer in configure callback
@@ -235,6 +275,8 @@ void registry_handle_global(void *data, struct wl_registry *registry, uint32_t n
 		wl->viewporter = wl_registry_bind(wl->registry, name, &wp_viewporter_interface, 1);
 	else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0)
 		wl->fractional_scale_manager = wl_registry_bind(wl->registry, name, &wp_fractional_scale_manager_v1_interface, 1);
+	else if (strcmp(interface, wl_seat_interface.name) == 0)
+		wl->seat = wl_registry_bind(wl->registry, name, &wl_seat_interface, 7);
 }
 void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name) {}
 
@@ -278,6 +320,36 @@ void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_sc
 	WLPlatform *wl = &platform->internal->wl;
 	wl->scale_factor = (float)scale / 120.f;
 }
+
+void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+	LOG_TRACE("Pointer entered window");
+}
+void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface) {
+	LOG_TRACE("Pointer left window");
+}
+void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+	LOG_TRACE("Pointer { x = %d, y = %d }", wl_fixed_to_int(surface_x), wl_fixed_to_int(surface_y));
+}
+void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
+	const char *btn_to_str[3] = { "Left", "Right", "Middle" };
+
+	switch (state) {
+		case WL_POINTER_BUTTON_STATE_PRESSED: {
+			LOG_TRACE("%s Mouse Button Pressed", btn_to_str[button - BTN_LEFT]);
+		} break;
+		case WL_POINTER_BUTTON_STATE_RELEASED: {
+			LOG_TRACE("%s Mouse Button Released", btn_to_str[button - BTN_LEFT]);
+		} break;
+	}
+}
+void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {}
+void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
+}
+void pointer_axis_source(void *data, struct wl_pointer *wl_pointer, uint32_t axis_source) {}
+void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis) {}
+void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete) {}
+void pointer_axis_value120(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t value120) {}
+void pointer_axis_relative_direction(void *data, struct wl_pointer *wl_pointer, uint32_t axis, uint32_t direction) {}
 
 static int create_anonymous_file(off_t size) {
 	char template[] = "/tmp/wayland-shm-XXXXXX";

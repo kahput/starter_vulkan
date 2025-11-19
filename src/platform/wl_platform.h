@@ -52,6 +52,7 @@ typedef struct wl_platform {
 	struct wl_compositor *compositor;
 	struct wl_output *output;
 	struct wl_shm *shm;
+	struct wl_seat *seat;
 	struct wl_pointer *pointer;
 	struct wl_keyboard *keyboard;
 	struct wl_surface *surface;
