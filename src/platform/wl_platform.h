@@ -4,6 +4,7 @@
 #include "platform.h"
 
 #include <wayland-client-core.h>
+#include <xkbcommon/xkbcommon.h>
 
 typedef struct wl_display *(*PFN_wl_display_connect)(const char *);
 typedef void (*PFN_wl_display_disconnect)(struct wl_display *);
@@ -15,6 +16,26 @@ typedef int (*PFN_wl_proxy_add_listener)(struct wl_proxy *, void (**)(void), voi
 typedef int (*PFN_wl_display_roundtrip)(struct wl_display *);
 
 typedef int (*PFN_wl_display_dispatch)(struct wl_display *);
+
+typedef struct xkb_context *(*PFN_xkb_context_new)(enum xkb_context_flags);
+typedef void (*PFN_xkb_context_unref)(struct xkb_context *);
+
+typedef struct xkb_keymap *(*PFN_xkb_keymap_new_from_string)(struct xkb_context *, const char *, enum xkb_keymap_format, enum xkb_keymap_compile_flags);
+typedef void (*PFN_xkb_keymap_unref)(struct xkb_keymap *);
+
+typedef struct xkb_state *(*PFN_xkb_state_new)(struct xkb_keymap *);
+typedef void (*PFN_xkb_state_unref)(struct xkb_state *);
+
+// typedef xkb_mod_index_t (*PFN_xkb_keymap_mod_get_index)(struct xkb_keymap *, const char *);
+// typedef int (*PFN_xkb_keymap_key_repeats)(struct xkb_keymap *, xkb_keycode_t);
+// typedef int (*PFN_xkb_keymap_key_get_syms_by_level)(struct xkb_keymap *, xkb_keycode_t, xkb_layout_index_t, xkb_level_index_t, const xkb_keysym_t **);
+
+// typedef int (*PFN_xkb_state_key_get_syms)(struct xkb_state *, xkb_keycode_t, const xkb_keysym_t **);
+// typedef enum xkb_state_component (*PFN_xkb_state_update_mask)(struct xkb_state *, xkb_mod_mask_t, xkb_mod_mask_t, xkb_mod_mask_t, xkb_layout_index_t, xkb_layout_index_t, xkb_layout_index_t);
+// typedef xkb_layout_index_t (*PFN_xkb_state_key_get_layout)(struct xkb_state *, xkb_keycode_t);
+// typedef int (*PFN_xkb_state_mod_index_is_active)(struct xkb_state *, xkb_mod_index_t, enum xkb_state_component);
+// typedef uint32_t (*PFN_xkb_keysym_to_utf32)(xkb_keysym_t);
+// typedef int (*PFN_xkb_keysym_to_utf8)(xkb_keysym_t, char *, size_t);
 
 typedef struct wl_library {
 	void *handle;
@@ -30,6 +51,19 @@ typedef struct wl_library {
 
 	PFN_wl_display_dispatch display_dispatch;
 
+	struct {
+		void *handle;
+
+		PFN_xkb_context_new context_new;
+		PFN_xkb_context_unref context_unref;
+
+		PFN_xkb_keymap_new_from_string keymap_new_from_string;
+		PFN_xkb_keymap_unref keymap_unref;
+
+		PFN_xkb_state_new state_new;
+		PFN_xkb_state_unref state_unref;
+	} xkb;
+
 } WLLibrary;
 extern WLLibrary _wl_library;
 
@@ -44,7 +78,52 @@ extern WLLibrary _wl_library;
 
 #define wl_display_dispatch _wl_library.display_dispatch
 
+#define xkb_context_new _wl_library.xkb.context_new
+#define xkb_context_unref _wl_library.xkb.context_unref
+
+#define xkb_keymap_new_from_string _wl_library.xkb.keymap_new_from_string
+#define xkb_keymap_unref _wl_library.xkb.keymap_unref
+
+#define xkb_state_new _wl_library.xkb.state_new
+#define xkb_state_unref _wl_library.xkb.state_unref
+
+// #define xkb_keymap_mod_get_index _glfw.wl.xkb.keymap_mod_get_index
+// #define xkb_keymap_key_repeats _glfw.wl.xkb.keymap_key_repeats
+// #define xkb_keymap_key_get_syms_by_level _glfw.wl.xkb.keymap_key_get_syms_by_level
+// #define xkb_state_key_get_syms _glfw.wl.xkb.state_key_get_syms
+// #define xkb_state_update_mask _glfw.wl.xkb.state_update_mask
+// #define xkb_state_key_get_layout _glfw.wl.xkb.state_key_get_layout
+// #define xkb_state_mod_index_is_active _glfw.wl.xkb.state_mod_index_is_active
+// #define xkb_keysym_to_utf32 _glfw.wl.xkb.keysym_to_utf32
+// #define xkb_keysym_to_utf8 _glfw.wl.xkb.keysym_to_utf8
+
 struct platform;
+
+enum pointer_event_mask {
+	POINTER_EVENT_ENTER = 1 << 0,
+	POINTER_EVENT_LEAVE = 1 << 1,
+	POINTER_EVENT_MOTION = 1 << 2,
+	POINTER_EVENT_BUTTON = 1 << 3,
+	POINTER_EVENT_AXIS = 1 << 4,
+	POINTER_EVENT_AXIS_SOURCE = 1 << 5,
+	POINTER_EVENT_AXIS_STOP = 1 << 6,
+	POINTER_EVENT_AXIS_DISCRETE = 1 << 7,
+};
+typedef uint32_t PointerEventMask;
+
+typedef struct pointer_event {
+	PointerEventMask event_mask;
+	wl_fixed_t surface_x, surface_y;
+	uint32_t button, state;
+	uint32_t time;
+	uint32_t serial;
+	struct {
+		bool valid;
+		wl_fixed_t value;
+		uint32_t discrete;
+	} axes[2];
+	uint32_t axis_source;
+} PointerEvent;
 
 typedef struct wl_platform {
 	struct wl_display *display;
@@ -70,9 +149,17 @@ typedef struct wl_platform {
 	} xdg;
 
 	struct {
+		struct xkb_context *context;
+		struct xkb_keymap *keymap;
+		struct xkb_state *state;
+	} xkb;
+
+	struct {
 		fn_platform_dimensions logical_size;
 		fn_platform_dimensions physical_size;
 	} callback;
+
+	PointerEvent current_pointer_frame;
 
 	bool use_vulkan;
 } WLPlatform;

@@ -1,3 +1,4 @@
+#include "platform/wl_platform.h"
 #include "platform/internal.h"
 
 #include "common.h"
@@ -6,6 +7,7 @@
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
 #include <wayland-util.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "fractional-scale-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
@@ -63,6 +65,13 @@ static const struct wp_fractional_scale_v1_listener fractional_scale_listener = 
 	.preferred_scale = preferred_scale,
 };
 
+void seat_capabilities(void *data, struct wl_seat *wl_seat, uint32_t capabilities);
+void seat_name(void *data, struct wl_seat *wl_seat, const char *name);
+static const struct wl_seat_listener seat_listener = {
+	.capabilities = seat_capabilities,
+	.name = seat_name,
+};
+
 void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y);
 void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface);
 void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y);
@@ -72,8 +81,8 @@ void pointer_frame(void *data, struct wl_pointer *wl_pointer);
 void pointer_axis_source(void *data, struct wl_pointer *wl_pointer, uint32_t axis_source);
 void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis);
 void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete);
-void pointer_axis_value120(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t value120);
-void pointer_axis_relative_direction(void *data, struct wl_pointer *wl_pointer, uint32_t axis, uint32_t direction);
+// void pointer_axis_value120(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t value120);
+// void pointer_axis_relative_direction(void *data, struct wl_pointer *wl_pointer, uint32_t axis, uint32_t direction);
 static const struct wl_pointer_listener pointer_listener = {
 	.enter = pointer_enter,
 	.leave = pointer_leave,
@@ -84,8 +93,23 @@ static const struct wl_pointer_listener pointer_listener = {
 	.axis_source = pointer_axis_source,
 	.axis_stop = pointer_axis_stop,
 	.axis_discrete = pointer_axis_discrete,
-	.axis_value120 = pointer_axis_value120,
-	.axis_relative_direction = pointer_axis_relative_direction
+	// .axis_value120 = pointer_axis_value120,
+	// .axis_relative_direction = pointer_axis_relative_direction
+};
+
+void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard, uint32_t format, int32_t fd, uint32_t size);
+void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys);
+void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface);
+void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state);
+void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group);
+void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay);
+static const struct wl_keyboard_listener keyboard_listener = {
+	.keymap = keyboard_keymap,
+	.enter = keyboard_enter,
+	.leave = keyboard_leave,
+	.key = keyboard_key,
+	.modifiers = keyboard_modifiers,
+	.repeat_info = keyboard_repeat_info,
 };
 
 struct pointer_frame {
@@ -99,7 +123,7 @@ static struct wl_buffer *
 create_shm_buffer(Platform *platform);
 
 bool platform_init_wayland(Platform *platform) {
-	void *handle = dlopen("libwayland-client.so.0", RTLD_LAZY);
+	void *handle = dlopen("libwayland-client.so", RTLD_LAZY);
 	if (handle == NULL)
 		return false;
 
@@ -116,6 +140,21 @@ bool platform_init_wayland(Platform *platform) {
 	*(void **)(&_wl_library.display_roundtrip) = dlsym(handle, "wl_display_roundtrip");
 
 	*(void **)(&_wl_library.display_dispatch) = dlsym(handle, "wl_display_dispatch");
+
+	handle = dlopen("libxkbcommon.so", RTLD_LAZY);
+	if (handle == NULL)
+		return false;
+
+	_wl_library.xkb.handle = handle;
+
+	*(void **)(&_wl_library.xkb.context_new) = dlsym(handle, "xkb_context_new");
+	*(void **)(&_wl_library.xkb.context_unref) = dlsym(handle, "xkb_context_unref");
+
+	*(void **)(&_wl_library.xkb.keymap_new_from_string) = dlsym(handle, "xkb_keymap_new_from_string");
+	*(void **)(&_wl_library.xkb.keymap_unref) = dlsym(handle, "xkb_keymap_unref");
+
+	*(void **)(&_wl_library.xkb.state_new) = dlsym(handle, "xkb_state_new");
+	*(void **)(&_wl_library.xkb.state_unref) = dlsym(handle, "xkb_state_unref");
 
 	void **array = &_wl_library.handle;
 	for (uint32_t i = 0; i < LIBRARY_COUNT; i++) {
@@ -186,10 +225,14 @@ bool wl_startup(Platform *platform) {
 	wl->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(wl->fractional_scale_manager, wl->surface);
 	wp_fractional_scale_v1_add_listener(wl->fractional_scale, &fractional_scale_listener, platform);
 
-	wl->pointer = wl_seat_get_pointer(wl->seat);
-	wl->keyboard = wl_seat_get_keyboard(wl->seat);
-
-	wl_pointer_add_listener(wl->pointer, &pointer_listener, platform);
+	wl_seat_add_listener(wl->seat, &seat_listener, platform);
+	// wl->pointer = wl_seat_get_pointer(wl->seat);
+	// wl->keyboard = wl_seat_get_keyboard(wl->seat);
+	//
+	// wl_pointer_add_listener(wl->pointer, &pointer_listener, platform);
+	// wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, platform);
+	//
+	// wl->xkb.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
 	wl_surface_commit(wl->surface);
 
@@ -321,35 +364,188 @@ void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_sc
 	wl->scale_factor = (float)scale / 120.f;
 }
 
-void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
-	LOG_TRACE("Pointer entered window");
-}
-void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface) {
-	LOG_TRACE("Pointer left window");
-}
-void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
-	LOG_TRACE("Pointer { x = %d, y = %d }", wl_fixed_to_int(surface_x), wl_fixed_to_int(surface_y));
-}
-void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
-	const char *btn_to_str[3] = { "Left", "Right", "Middle" };
+void seat_capabilities(void *data, struct wl_seat *wl_seat, uint32_t capabilities) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
 
-	switch (state) {
-		case WL_POINTER_BUTTON_STATE_PRESSED: {
-			LOG_TRACE("%s Mouse Button Pressed", btn_to_str[button - BTN_LEFT]);
-		} break;
-		case WL_POINTER_BUTTON_STATE_RELEASED: {
-			LOG_TRACE("%s Mouse Button Released", btn_to_str[button - BTN_LEFT]);
-		} break;
+	bool have_pointer = capabilities & WL_SEAT_CAPABILITY_POINTER;
+	if (have_pointer && wl->pointer == NULL) {
+		wl->pointer = wl_seat_get_pointer(wl->seat);
+		wl_pointer_add_listener(wl->pointer, &pointer_listener, platform);
+	} else if (have_pointer == false && wl->pointer != NULL) {
+		wl_pointer_release(wl->pointer);
+		wl->pointer = NULL;
+	}
+
+	bool have_keyboard = capabilities & WL_SEAT_CAPABILITY_KEYBOARD;
+	if (have_keyboard && wl->keyboard == NULL) {
+		wl->keyboard = wl_seat_get_keyboard(wl->seat);
+		// wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, platform);
+	} else if (have_keyboard == false && wl->keyboard != NULL) {
+		wl_keyboard_release(wl->keyboard);
+		wl->keyboard = NULL;
 	}
 }
-void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {}
-void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
+void seat_name(void *data, struct wl_seat *wl_seat, const char *name) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+	LOG_TRACE("Seat name: %s", name);
 }
-void pointer_axis_source(void *data, struct wl_pointer *wl_pointer, uint32_t axis_source) {}
-void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis) {}
-void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete) {}
-void pointer_axis_value120(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t value120) {}
-void pointer_axis_relative_direction(void *data, struct wl_pointer *wl_pointer, uint32_t axis, uint32_t direction) {}
+
+void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+	struct pointer_event *event = &wl->current_pointer_frame;
+
+	// LOG_TRACE("pointer frame @ %d: ", event->time);
+	if (event->event_mask & POINTER_EVENT_ENTER) {
+		LOG_TRACE("entered %d, %d ",
+			wl_fixed_to_int(event->surface_x),
+			wl_fixed_to_int(event->surface_y));
+	}
+	if (event->event_mask & POINTER_EVENT_LEAVE) {
+		LOG_TRACE("leave");
+	}
+	if (event->event_mask & POINTER_EVENT_MOTION) {
+		LOG_TRACE("motion %d, %d ",
+			wl_fixed_to_int(event->surface_x),
+			wl_fixed_to_int(event->surface_y));
+	}
+	if (event->event_mask & POINTER_EVENT_BUTTON) {
+		char *state = event->state == WL_POINTER_BUTTON_STATE_RELEASED ? "released" : "pressed";
+		LOG_TRACE("button %d %s ", event->button, state);
+	}
+	uint32_t axis_events = POINTER_EVENT_AXIS | POINTER_EVENT_AXIS_SOURCE | POINTER_EVENT_AXIS_STOP | POINTER_EVENT_AXIS_DISCRETE;
+	char *axis_name[2] = {
+		[WL_POINTER_AXIS_VERTICAL_SCROLL] = "vertical",
+		[WL_POINTER_AXIS_HORIZONTAL_SCROLL] = "horizontal",
+
+	};
+	char *axis_source[4] = {
+		[WL_POINTER_AXIS_SOURCE_WHEEL] = "wheel",
+		[WL_POINTER_AXIS_SOURCE_FINGER] = "finger",
+		[WL_POINTER_AXIS_SOURCE_CONTINUOUS] = "continuous",
+		[WL_POINTER_AXIS_SOURCE_WHEEL_TILT] = "wheel tilt",
+
+	};
+	if (event->event_mask & axis_events) {
+		for (size_t i = 0; i < 2; ++i) {
+			if (!event->axes[i].valid) {
+				continue;
+			}
+			LOG_TRACE("%s axis ", axis_name[i]);
+			if (event->event_mask & POINTER_EVENT_AXIS) {
+				LOG_TRACE("value %.2f ", wl_fixed_to_double(event->axes[i].value));
+			}
+			if (event->event_mask & POINTER_EVENT_AXIS_DISCRETE) {
+				LOG_TRACE("discrete %d ",
+					event->axes[i].discrete);
+			}
+			if (event->event_mask & POINTER_EVENT_AXIS_SOURCE) {
+				LOG_TRACE("via %s ",
+					axis_source[event->axis_source]);
+			}
+			if (event->event_mask & POINTER_EVENT_AXIS_STOP) {
+				LOG_TRACE("(stopped) ");
+			}
+		}
+	}
+	memset(event, 0, sizeof(*event));
+}
+
+void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_ENTER;
+	wl->current_pointer_frame.serial = serial;
+	wl->current_pointer_frame.surface_x = surface_x;
+	wl->current_pointer_frame.surface_y = surface_y;
+}
+void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_LEAVE;
+	wl->current_pointer_frame.serial = serial;
+}
+void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_MOTION;
+	wl->current_pointer_frame.time = time;
+	wl->current_pointer_frame.surface_x = surface_x;
+	wl->current_pointer_frame.surface_y = surface_y;
+}
+void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_BUTTON;
+	wl->current_pointer_frame.serial = serial;
+	wl->current_pointer_frame.time = time;
+	wl->current_pointer_frame.button = button;
+	wl->current_pointer_frame.state = state;
+}
+
+void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS;
+	wl->current_pointer_frame.time = time;
+	wl->current_pointer_frame.axes[axis].valid = true;
+	wl->current_pointer_frame.axes[axis].value = value;
+}
+void pointer_axis_source(void *data, struct wl_pointer *wl_pointer, uint32_t axis_source) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS_SOURCE;
+	wl->current_pointer_frame.axis_source = axis_source;
+}
+void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS_STOP;
+	wl->current_pointer_frame.time = time;
+	wl->current_pointer_frame.axes[axis].valid = true;
+}
+void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS_DISCRETE;
+	wl->current_pointer_frame.axes[axis].valid = true;
+	wl->current_pointer_frame.axes[axis].discrete = discrete;
+}
+
+void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard, uint32_t format, int32_t fd, uint32_t size) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+	assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
+
+	char *map_shm = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+	assert(map_shm != NULL);
+
+	struct xkb_keymap *keymap = xkb_keymap_new_from_string(wl->xkb.context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	munmap(map_shm, size);
+	close(fd);
+
+	struct xkb_state *state = xkb_state_new(keymap);
+	xkb_keymap_unref(wl->xkb.keymap);
+	xkb_state_unref(wl->xkb.state);
+	wl->xkb.keymap = keymap;
+	wl->xkb.state = state;
+}
+
+void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {}
+void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface) {}
+void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {}
+void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {}
+void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay) {}
 
 static int create_anonymous_file(off_t size) {
 	char template[] = "/tmp/wayland-shm-XXXXXX";
