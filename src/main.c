@@ -137,6 +137,7 @@ int main(void) {
 
 	if (pixels == NULL) {
 		LOG_ERROR("Failed to load image [ %s ]", file_path);
+		return -1;
 	}
 
 	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", file_name, width, height, channels);
@@ -213,7 +214,7 @@ void resize_callback(Platform *platform, uint32_t width, uint32_t height) {
 	state.resized = true;
 }
 
-void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Model *out_model) {
+void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Model *out_model, const char *relative_path) {
 	if (node->mesh) {
 		cgltf_mesh *mesh = node->mesh;
 		*total_primitives += mesh->primitives_count;
@@ -316,6 +317,7 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 					cgltf_image *base_color = base_color_texture->image;
 
 					Texture *out_texture = &out_material->base_color_texture;
+					out_texture->path = arena_push_array_zero(arena, char, MAX_FILE_PATH_LENGTH);
 
 					if (base_color->buffer_view) {
 						cgltf_buffer_view *view = base_color->buffer_view;
@@ -333,17 +335,16 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 							if (c == '/' || c == '\\') {
 								if (strcmp(&base_color->mime_type[length], "png") == 0) {
 									LOG_DEBUG("MimeType should be png (it is '%s')", base_color->mime_type);
-									char file_name[MAX_FILE_NAME_LENGTH];
-									strncpy(file_name, node->name, MAX_FILE_NAME_LENGTH);
-									file_name[strnlen(file_name, MAX_FILE_NAME_LENGTH)] = '_';
-									file_name[strnlen(file_name, MAX_FILE_NAME_LENGTH) + 1] = '\0';
-									strncat(file_name, base_color->name, 256);
-									strncat(file_name, ".png", 256);
+
+									strncpy(out_texture->path, relative_path, MAX_FILE_PATH_LENGTH);
+									strncat(out_texture->path, node->name, MAX_FILE_NAME_LENGTH);
+									out_texture->path[strnlen(out_texture->path, MAX_FILE_PATH_LENGTH)] = '_';
+									out_texture->path[strnlen(out_texture->path, MAX_FILE_PATH_LENGTH) + 1] = '\0';
+									strncat(out_texture->path, base_color->name, MAX_FILE_PATH_LENGTH);
+									strncat(out_texture->path, ".png", MAX_FILE_PATH_LENGTH);
 
 									uint8_t *pixels = stbi_load_from_memory(src, view->size, (int32_t *)&out_texture->width, (int32_t *)&out_texture->height, (int32_t *)&out_texture->channels, 4);
-									stbi_write_png(file_name, out_texture->width, out_texture->height, out_texture->channels, pixels, out_texture->width);
-									out_texture->path = arena_push_array_zero(arena, char, MAX_FILE_PATH_LENGTH);
-									memcpy(out_texture->path, file_name, strnlen(file_name, MAX_FILE_NAME_LENGTH) + 1);
+									stbi_write_png(out_texture->path, out_texture->width, out_texture->height, out_texture->channels, pixels, out_texture->width);
 								}
 								if (strcmp(&base_color->mime_type[length], "jpeg") == 0) {
 									LOG_DEBUG("MimeType should be jpeg (it is '%s')", base_color->mime_type);
@@ -352,8 +353,8 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 						}
 					} else {
 						LOG_DEBUG("URI '%s'[%s]", base_color->name, base_color->uri);
-						out_texture->path = arena_push_array_zero(arena, char, MAX_FILE_PATH_LENGTH);
-						memcpy(out_texture->path, base_color->uri, strnlen(base_color->uri, MAX_FILE_NAME_LENGTH) + 1);
+						strncpy(out_texture->path, relative_path, MAX_FILE_PATH_LENGTH);
+						strncat(out_texture->path, base_color->uri, MAX_FILE_NAME_LENGTH);
 					}
 				}
 
@@ -390,7 +391,7 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 skip_loading:
 
 	for (uint32_t node_index = 0; node_index < node->children_count; ++node_index) {
-		load_nodes(arena, node->children[node_index], total_primitives, out_model);
+		load_nodes(arena, node->children[node_index], total_primitives, out_model, relative_path);
 	}
 }
 
@@ -412,14 +413,11 @@ Model *load_gltf_model(Arena *arena, const char *path) {
 		Model *model = arena_push_type_zero(arena, Model);
 		for (uint32_t node_index = 0; node_index < scene->nodes_count; ++node_index) {
 			uint32_t primitive_count = 0;
-			load_nodes(arena, scene->nodes[node_index], &primitive_count, model);
+			load_nodes(arena, scene->nodes[node_index], &primitive_count, model, NULL);
 			model->primitives = arena_push_array_zero(arena, RenderPrimitive, primitive_count);
-			load_nodes(arena, scene->nodes[node_index], &primitive_count, model);
-
 			char directory[MAX_FILE_PATH_LENGTH];
 			get_path(path, directory);
-			strncat(directory, model->primitives->material.base_color_texture.path, 1024);
-			memcpy(model->primitives->material.base_color_texture.path, directory, strnlen(directory, MAX_FILE_PATH_LENGTH) + 1);
+			load_nodes(arena, scene->nodes[node_index], &primitive_count, model, directory);
 			break;
 		}
 		logger_dedent();
