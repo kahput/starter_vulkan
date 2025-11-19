@@ -39,6 +39,8 @@ static const char *extensions[] = {
 	VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME
 };
 
+#define XKB_KEY_OFFSET 8
+
 static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static const struct wl_registry_listener registry_listener = { .global = registry_handle_global, .global_remove = registry_handle_global_remove };
@@ -156,6 +158,10 @@ bool platform_init_wayland(Platform *platform) {
 	*(void **)(&_wl_library.xkb.state_new) = dlsym(handle, "xkb_state_new");
 	*(void **)(&_wl_library.xkb.state_unref) = dlsym(handle, "xkb_state_unref");
 
+	*(void **)(&_wl_library.xkb.state_key_get_syms) = dlsym(handle, "xkb_state_key_get_syms");
+	*(void **)(&_wl_library.xkb.keysym_to_utf32) = dlsym(handle, "xkb_keysym_to_utf32");
+	*(void **)(&_wl_library.xkb.keysym_to_utf8) = dlsym(handle, "xkb_keysym_to_utf8");
+
 	void **array = &_wl_library.handle;
 	for (uint32_t i = 0; i < LIBRARY_COUNT; i++) {
 		if (array[i] == NULL)
@@ -185,7 +191,7 @@ bool platform_init_wayland(Platform *platform) {
 
 bool wl_startup(Platform *platform) {
 	WLPlatform *wl = &platform->internal->wl;
-	wl->display = _wl_library.display_connect(NULL);
+	wl->display = wl_display_connect(NULL);
 
 	struct wl_display *display = platform->internal->wl.display;
 	if (display == NULL) {
@@ -204,6 +210,7 @@ bool wl_startup(Platform *platform) {
 	wl_display_roundtrip(wl->display);
 
 	wl->surface = wl_compositor_create_surface(wl->compositor);
+	wl->xkb.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
 	if (wl->surface == NULL) {
 		LOG_ERROR("Failed to create surface");
@@ -380,7 +387,7 @@ void seat_capabilities(void *data, struct wl_seat *wl_seat, uint32_t capabilitie
 	bool have_keyboard = capabilities & WL_SEAT_CAPABILITY_KEYBOARD;
 	if (have_keyboard && wl->keyboard == NULL) {
 		wl->keyboard = wl_seat_get_keyboard(wl->seat);
-		// wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, platform);
+		wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, platform);
 	} else if (have_keyboard == false && wl->keyboard != NULL) {
 		wl_keyboard_release(wl->keyboard);
 		wl->keyboard = NULL;
@@ -528,7 +535,7 @@ void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard, uint32_t forma
 	assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
 
 	char *map_shm = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-	assert(map_shm != NULL);
+	assert(map_shm != MAP_FAILED);
 
 	struct xkb_keymap *keymap = xkb_keymap_new_from_string(wl->xkb.context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	munmap(map_shm, size);
@@ -541,11 +548,51 @@ void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard, uint32_t forma
 	wl->xkb.state = state;
 }
 
-void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {}
-void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface) {}
-void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {}
-void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {}
-void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay) {}
+void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	uint32_t *key;
+	wl_array_for_each(key, keys) {
+		char buf[128];
+
+		const xkb_keysym_t *array;
+		xkb_state_key_get_syms(wl->xkb.state, *key + XKB_KEY_OFFSET, &array);
+
+		// xkb_keysym_get_name(sym, buf, sizeof(buf));
+		// LOG_TRACE("sym: %-12s (%d), ", buf, sym);
+
+		xkb_keysym_to_utf8(*array, buf, sizeof(buf));
+		// xkb_state_key_get_utf8(wl->xkb.state, *key + XKB_KEY_OFFSET, buf, sizeof(buf));
+		LOG_TRACE(": '%s'", buf);
+	}
+}
+void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+}
+void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+
+	char buf[128];
+	const xkb_keysym_t *array;
+
+	uint32_t keycode = key + XKB_KEY_OFFSET;
+	xkb_state_key_get_syms(wl->xkb.state, keycode, &array);
+
+	xkb_keysym_to_utf8(*array, buf, sizeof(buf));
+	const char *action = state == WL_KEYBOARD_KEY_STATE_PRESSED ? "pressed" : "released";
+	LOG_TRACE("Key %s: utf: '%s'(%d)", action, buf, *array);
+}
+void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+}
+void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay) {
+	Platform *platform = (Platform *)data;
+	WLPlatform *wl = &platform->internal->wl;
+}
 
 static int create_anonymous_file(off_t size) {
 	char template[] = "/tmp/wayland-shm-XXXXXX";

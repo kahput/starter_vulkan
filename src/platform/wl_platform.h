@@ -26,16 +26,17 @@ typedef void (*PFN_xkb_keymap_unref)(struct xkb_keymap *);
 typedef struct xkb_state *(*PFN_xkb_state_new)(struct xkb_keymap *);
 typedef void (*PFN_xkb_state_unref)(struct xkb_state *);
 
+typedef int (*PFN_xkb_state_key_get_syms)(struct xkb_state *, xkb_keycode_t, const xkb_keysym_t **);
+typedef uint32_t (*PFN_xkb_keysym_to_utf32)(xkb_keysym_t);
+typedef int (*PFN_xkb_keysym_to_utf8)(xkb_keysym_t, char *, size_t);
+
 // typedef xkb_mod_index_t (*PFN_xkb_keymap_mod_get_index)(struct xkb_keymap *, const char *);
 // typedef int (*PFN_xkb_keymap_key_repeats)(struct xkb_keymap *, xkb_keycode_t);
 // typedef int (*PFN_xkb_keymap_key_get_syms_by_level)(struct xkb_keymap *, xkb_keycode_t, xkb_layout_index_t, xkb_level_index_t, const xkb_keysym_t **);
 
-// typedef int (*PFN_xkb_state_key_get_syms)(struct xkb_state *, xkb_keycode_t, const xkb_keysym_t **);
 // typedef enum xkb_state_component (*PFN_xkb_state_update_mask)(struct xkb_state *, xkb_mod_mask_t, xkb_mod_mask_t, xkb_mod_mask_t, xkb_layout_index_t, xkb_layout_index_t, xkb_layout_index_t);
 // typedef xkb_layout_index_t (*PFN_xkb_state_key_get_layout)(struct xkb_state *, xkb_keycode_t);
 // typedef int (*PFN_xkb_state_mod_index_is_active)(struct xkb_state *, xkb_mod_index_t, enum xkb_state_component);
-// typedef uint32_t (*PFN_xkb_keysym_to_utf32)(xkb_keysym_t);
-// typedef int (*PFN_xkb_keysym_to_utf8)(xkb_keysym_t, char *, size_t);
 
 typedef struct wl_library {
 	void *handle;
@@ -62,6 +63,10 @@ typedef struct wl_library {
 
 		PFN_xkb_state_new state_new;
 		PFN_xkb_state_unref state_unref;
+
+		PFN_xkb_state_key_get_syms state_key_get_syms;
+		PFN_xkb_keysym_to_utf32 keysym_to_utf32;
+		PFN_xkb_keysym_to_utf8 keysym_to_utf8;
 	} xkb;
 
 } WLLibrary;
@@ -87,15 +92,16 @@ extern WLLibrary _wl_library;
 #define xkb_state_new _wl_library.xkb.state_new
 #define xkb_state_unref _wl_library.xkb.state_unref
 
+#define xkb_state_key_get_syms _wl_library.xkb.state_key_get_syms
+#define xkb_keysym_to_utf8 _wl_library.xkb.keysym_to_utf8
+#define xkb_keysym_to_utf32 _wl_library.xkb.keysym_to_utf32
+
 // #define xkb_keymap_mod_get_index _glfw.wl.xkb.keymap_mod_get_index
 // #define xkb_keymap_key_repeats _glfw.wl.xkb.keymap_key_repeats
 // #define xkb_keymap_key_get_syms_by_level _glfw.wl.xkb.keymap_key_get_syms_by_level
-// #define xkb_state_key_get_syms _glfw.wl.xkb.state_key_get_syms
 // #define xkb_state_update_mask _glfw.wl.xkb.state_update_mask
 // #define xkb_state_key_get_layout _glfw.wl.xkb.state_key_get_layout
 // #define xkb_state_mod_index_is_active _glfw.wl.xkb.state_mod_index_is_active
-// #define xkb_keysym_to_utf32 _glfw.wl.xkb.keysym_to_utf32
-// #define xkb_keysym_to_utf8 _glfw.wl.xkb.keysym_to_utf8
 
 struct platform;
 
