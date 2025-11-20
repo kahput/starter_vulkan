@@ -3,8 +3,7 @@
 #include <xcb/randr.h>
 #include <xcb/xcb.h>
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "common.h"
 
 typedef xcb_connection_t *(*PFN_xcb_connect)(const char *displayname, int *screenp);
 typedef void (*PFN_xcb_disconnect)(xcb_connection_t *c);
@@ -64,24 +63,24 @@ typedef struct x11_platform {
 
 #define PLATFORM_X11_LIBRARY_STATE X11Platform x11;
 
-bool platform_init_x11(struct platform *platform);
+bool platform_init_x11(Platform *platform);
 
-bool x11_startup(struct platform *platform);
-void x11_shutdown(struct platform *platform);
+bool x11_startup(Platform *platform);
+void x11_shutdown(Platform *platform);
 
-void x11_poll_events(struct platform *platform);
-bool x11_should_close(struct platform *platform);
+void x11_poll_events(Platform *platform);
+bool x11_should_close(Platform *platform);
 
-uint64_t x11_time_ms(struct platform *platform);
+uint64_t x11_time_ms(Platform *platform);
 
-void x11_get_logical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
-void x11_get_physical_dimensions(struct platform *platform, uint32_t *width, uint32_t *height);
+void x11_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
+void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
 
-void x11_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
-void x11_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
+void x11_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions dimensions);
+void x11_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions dimensions);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;
 
-bool x11_create_vulkan_surface(struct platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
-const char **x11_vulkan_extensions(struct platform *platform, uint32_t *count);
+bool x11_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
+const char **x11_vulkan_extensions(Platform *platform, uint32_t *count);

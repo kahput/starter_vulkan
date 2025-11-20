@@ -1,24 +1,18 @@
 #include "logger.h"
 
+#include "common.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 
 typedef struct {
-	va_list arguments;
-	const char *format;
-	const char *file;
-	struct tm *time;
-	uint32_t line;
-	LogLevel level;
-} LogInfo;
-
-typedef struct {
 	LogLevel level;
 	bool quiet;
+	uint32_t indent;
 } Logger;
 
-static Logger g_logger = { LOG_LEVEL_TRACE, false };
+static Logger g_logger = { LOG_LEVEL_TRACE, false, 0 };
 static const char *g_level_strings[] = {
 	"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"
 };
@@ -52,6 +46,14 @@ static const char *basename(const char *path) {
 	return basename;
 }
 
+void logger_indent(void) {
+	g_logger.indent++;
+}
+void logger_dedent(void) {
+	if (g_logger.indent > 0)
+		g_logger.indent--;
+}
+
 void logger_log(LogLevel level, const char *file, int line, const char *format, ...) {
 	if (level < g_logger.level) {
 		return;
@@ -63,12 +65,18 @@ void logger_log(LogLevel level, const char *file, int line, const char *format, 
 	char time_buffer[16];
 	strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
 
+	char indent_buffer[32];
+	memset(indent_buffer, ' ', sizeof(indent_buffer));
+	int32_t indent_space = min(g_logger.indent, 15) * 2;
+	indent_buffer[indent_space] = '\0';
+
 	va_list arg_ptr;
 	va_start(arg_ptr, format);
 	printf(
-		"%s %s%-5s\x1b[0m \x1b[37m%s:%d:\x1b[0m ",
+		"%s %s%s%-5s\x1b[0m \x1b[37m%s:%d:\x1b[0m ",
 		time_buffer, // Timestamp
 		g_log_level_colors[level], // Start color for the level
+		indent_buffer,
 		g_level_strings[level], // Log level string
 		basename(file), // Source file name
 		line // Line number in source file

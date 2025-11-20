@@ -1,7 +1,6 @@
 #include "arena.h"
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "common.h"
+#include "core/logger.h"
 #include <string.h>
 
 struct arena {
@@ -29,7 +28,7 @@ void arena_free(Arena *arena) {
 
 void *arena_push(Arena *arena, size_t size) {
 	if (arena->offset + size >= arena->capacity) {
-		fprintf(stderr, "ARENA_OUT_OF_MEMORY\n");
+		LOG_ERROR("ARENA_OUT_OF_MEMORY");
 		exit(1);
 		// return NULL;
 	}
@@ -42,7 +41,7 @@ void *arena_push(Arena *arena, size_t size) {
 
 void *arena_push_zero(Arena *arena, size_t size) {
 	if (arena->offset + size >= arena->capacity) {
-		fprintf(stderr, "ARENA_OUT_OF_MEMORY\n");
+		LOG_ERROR("ARENA_OUT_OF_MEMORY");
 		exit(1);
 		// return NULL;
 	}

@@ -1,4 +1,4 @@
-#include "vk_renderer.h"
+#include "renderer/vk_renderer.h"
 
 #include "platform.h"
 
@@ -11,7 +11,7 @@ static const char *layers[] = {
 	"VK_LAYER_KHRONOS_validation",
 };
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
+static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
 	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
@@ -21,19 +21,19 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 	.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
 	.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
 	.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-	.pfnUserCallback = vk_debug_callback,
+	.pfnUserCallback = vulkan_debug_callback,
 	.pUserData = NULL
 };
-void create_debug_messenger(VKRenderer *renderer);
+void create_debug_messenger(VulkanContext *context);
 
-bool vk_create_instance(VKRenderer *renderer, struct platform *platform) {
+bool vulkan_create_instance(VulkanContext *context, Platform *platform) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",
 		.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
 		.pEngineName = "No engine",
 		.engineVersion = VK_MAKE_VERSION(1, 0, 0),
-		.apiVersion = VK_API_VERSION_1_4
+		.apiVersion = VK_API_VERSION_1_3
 	};
 
 	uint32_t requested_extensions = 0, available_extensions = 0;
@@ -96,7 +96,7 @@ bool vk_create_instance(VKRenderer *renderer, struct platform *platform) {
 	create_info.pNext = &debug_utils_create_info;
 #endif
 
-	VkResult result = vkCreateInstance(&create_info, NULL, &renderer->instance);
+	VkResult result = vkCreateInstance(&create_info, NULL, &context->instance);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Vulkan instance creation failed");
 		return false;
@@ -109,7 +109,7 @@ bool vk_create_instance(VKRenderer *renderer, struct platform *platform) {
 	return true;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
+VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 	VkDebugUtilsMessageTypeFlagsEXT message_type,
 	const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
@@ -137,6 +137,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
 	}
 }
 
-void create_debug_messenger(VKRenderer *renderer) {
-	vkCreateDebugUtilsMessenger(renderer->instance, &debug_utils_create_info, NULL, &renderer->debug_messenger);
+void create_debug_messenger(VulkanContext *context) {
+	vkCreateDebugUtilsMessenger(context->instance, &debug_utils_create_info, NULL, &context->debug_messenger);
 }
