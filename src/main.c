@@ -122,8 +122,8 @@ int main(void) {
 	vulkan_create_pipline(&context, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv", attributes, array_count(attributes));
 
 	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
-	Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
-	// Model *model = load_gltf_model(state.assets, BOT_FILE_PATH);
+	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
+	Model *model = load_gltf_model(state.assets, BOT_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, MAGE_FILE_PATH);
 
 	LOG_DEBUG("Model path to diffuse color is: '%s'", model->primitives->material.base_color_texture.path);

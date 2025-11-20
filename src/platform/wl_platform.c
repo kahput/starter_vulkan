@@ -39,7 +39,7 @@ static const char *extensions[] = {
 	VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME
 };
 
-#define XKB_KEY_OFFSET 8
+#define XKB_KEYCODE_OFFSET 8
 
 static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name);
@@ -158,9 +158,14 @@ bool platform_init_wayland(Platform *platform) {
 	*(void **)(&_wl_library.xkb.state_new) = dlsym(handle, "xkb_state_new");
 	*(void **)(&_wl_library.xkb.state_unref) = dlsym(handle, "xkb_state_unref");
 
+	*(void **)(&_wl_library.xkb.state_key_get_one_sym) = dlsym(handle, "xkb_state_key_get_one_sym");
 	*(void **)(&_wl_library.xkb.state_key_get_syms) = dlsym(handle, "xkb_state_key_get_syms");
 	*(void **)(&_wl_library.xkb.keysym_to_utf32) = dlsym(handle, "xkb_keysym_to_utf32");
 	*(void **)(&_wl_library.xkb.keysym_to_utf8) = dlsym(handle, "xkb_keysym_to_utf8");
+
+	*(void **)(&_wl_library.xkb.keysym_get_name) = dlsym(handle, "xkb_keysym_get_name");
+
+	*(void **)(&_wl_library.xkb.state_update_mask) = dlsym(handle, "xkb_state_update_mask");
 
 	void **array = &_wl_library.handle;
 	for (uint32_t i = 0; i < LIBRARY_COUNT; i++) {
@@ -532,66 +537,83 @@ void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t a
 void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard, uint32_t format, int32_t fd, uint32_t size) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
-	assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
+
+	if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
+		close(fd);
+		return;
+	}
 
 	char *map_shm = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-	assert(map_shm != MAP_FAILED);
+	if (map_shm == MAP_FAILED) {
+		close(fd);
+		return;
+	}
 
 	struct xkb_keymap *keymap = xkb_keymap_new_from_string(wl->xkb.context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	munmap(map_shm, size);
 	close(fd);
 
 	struct xkb_state *state = xkb_state_new(keymap);
+
 	xkb_keymap_unref(wl->xkb.keymap);
 	xkb_state_unref(wl->xkb.state);
 	wl->xkb.keymap = keymap;
 	wl->xkb.state = state;
 }
 
-void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {
+void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *scancodes) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 
-	uint32_t *key;
-	wl_array_for_each(key, keys) {
+	uint32_t *scancode;
+	wl_array_for_each(scancode, scancodes) {
 		char buf[128];
 
+		const xkb_keycode_t keycode = *scancode + XKB_KEYCODE_OFFSET;
+
 		const xkb_keysym_t *array;
-		xkb_state_key_get_syms(wl->xkb.state, *key + XKB_KEY_OFFSET, &array);
+		const xkb_keysym_t key_symbol = xkb_state_key_get_one_sym(wl->xkb.state, keycode);
 
-		// xkb_keysym_get_name(sym, buf, sizeof(buf));
-		// LOG_TRACE("sym: %-12s (%d), ", buf, sym);
+		xkb_keysym_get_name(key_symbol, buf, sizeof(buf));
+		LOG_TRACE("sym: %-12s (%d), ", buf, key_symbol);
 
-		xkb_keysym_to_utf8(*array, buf, sizeof(buf));
-		// xkb_state_key_get_utf8(wl->xkb.state, *key + XKB_KEY_OFFSET, buf, sizeof(buf));
-		LOG_TRACE(": '%s'", buf);
+		xkb_keysym_to_utf8(key_symbol, buf, sizeof(buf));
+		LOG_TRACE("utf8: '%s'", buf);
 	}
 }
 void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 }
-void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
+void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t scancode, uint32_t state) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
 
-	char buf[128];
-	const xkb_keysym_t *array;
+	char name_buffer[128], utf8_buffer[128];
 
-	uint32_t keycode = key + XKB_KEY_OFFSET;
-	xkb_state_key_get_syms(wl->xkb.state, keycode, &array);
-
-	xkb_keysym_to_utf8(*array, buf, sizeof(buf));
+	const xkb_keycode_t keycode = scancode + XKB_KEYCODE_OFFSET;
 	const char *action = state == WL_KEYBOARD_KEY_STATE_PRESSED ? "pressed" : "released";
-	LOG_TRACE("Key %s: utf: '%s'(%d)", action, buf, *array);
+
+	const xkb_keysym_t key_symbol = xkb_state_key_get_one_sym(wl->xkb.state, keycode);
+
+	xkb_keysym_get_name(key_symbol, name_buffer, sizeof(name_buffer));
+	xkb_keysym_to_utf8(key_symbol, utf8_buffer, sizeof(utf8_buffer));
+
+	LOG_TRACE("Scancode: %d, Symbol: %-12s (%d), utf8: '%s'", scancode, name_buffer, key_symbol, utf8_buffer);
+	LOG_TRACE("Key %-8s", action);
 }
 void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
+
+	xkb_state_update_mask(wl->xkb.state, mods_depressed, mods_latched, mods_locked, 0, 0, group);
 }
 void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &platform->internal->wl;
+
+	wl->key_repeat_rate = rate;
+	wl->key_repeat_delay = delay;
 }
 
 static int create_anonymous_file(off_t size) {
