@@ -1,3 +1,7 @@
+
+#include "core/input_types.h"
+
+#include "input.h"
 #include "platform.h"
 
 #include "renderer/renderer_types.h"
@@ -25,58 +29,6 @@ void update_uniforms(VulkanContext *context, Platform *platform);
 void get_filename(const char *src, char *dst);
 void get_path(const char *src, char *dst);
 
-// clang-format off
-static const Vertex vertices[36] = {
-	// Front (+Z)
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-left
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-right
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }}, // Top-right
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-
-	// Back (-Z)
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }}, // Bottom-right
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }}, // Bottom-left
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }}, // Top-left
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-
-	// Left (-X)
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 0.0f }},
-
-	// Right (+X)
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-
-	// Bottom (-Y)
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f, -0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = { -0.5f, -0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = { -0.5f, -0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-
-	// Top (+Y)
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f,  0.5f }, .uv = { 1.0f, 0.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = {  0.5f,  0.5f, -0.5f }, .uv = { 1.0f, 1.0f }},
-	{ .position = { -0.5f,  0.5f, -0.5f }, .uv = { 0.0f, 1.0f }},
-	{ .position = { -0.5f,  0.5f,  0.5f }, .uv = { 0.0f, 0.0f }}
-	};
-// clang-format on
-
 static struct State {
 	bool resized;
 	uint64_t start_time;
@@ -94,6 +46,8 @@ int main(void) {
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
 	logger_set_level(LOG_LEVEL_TRACE);
+
+	input_system_startup();
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 

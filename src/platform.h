@@ -1,17 +1,15 @@
 #pragma once
 
 #include "common.h"
+
 #include "core/arena.h"
-
-
-typedef struct platform_internal PlatformInternal;
 
 typedef struct platform {
 	uint32_t logical_width, logical_height;
 	uint32_t physical_width, physical_height;
 	bool should_close;
 
-	PlatformInternal *internal;
+	void *internal;
 } Platform;
 
 typedef void (*fn_platform_dimensions)(struct platform *platform, uint32_t width, uint32_t height);

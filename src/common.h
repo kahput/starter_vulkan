@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <assert.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -15,6 +14,8 @@
 
 #define MAX_FILE_NAME_LENGTH 512
 #define MAX_FILE_PATH_LENGTH 2048
+
+#define STATIC_ASSERT(COND, MSG) typedef char static_assertion[(!!(COND)) * 2 - 1]
 
 typedef struct file {
 	uint32_t width, height, channels;

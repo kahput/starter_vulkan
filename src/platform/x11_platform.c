@@ -1,12 +1,13 @@
 #include "platform/internal.h"
 
 #include "core/logger.h"
+#include <xcb/xproto.h>
 
 #define VK_USE_PLATFORM_XCB_KHR
 #include <vulkan/vulkan.h>
 
-#include <dlfcn.h>
 #include "common.h"
+#include <dlfcn.h>
 
 #define XCB_COUNT sizeof(((X11Platform *)0)->xcb) / sizeof(void *)
 
@@ -20,7 +21,9 @@ bool platform_init_x11(Platform *platform) {
 	if (handle == NULL)
 		return false;
 
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
+
 	x11->xcb.handle = handle;
 
 	// CONNECTION
@@ -56,28 +59,30 @@ bool platform_init_x11(Platform *platform) {
 		}
 	}
 
-	platform->internal->startup = x11_startup;
-	platform->internal->shutdown = x11_shutdown;
+	internal->startup = x11_startup;
+	internal->shutdown = x11_shutdown;
 
-	platform->internal->poll_events = x11_poll_events;
-	platform->internal->should_close = x11_should_close;
+	internal->poll_events = x11_poll_events;
+	internal->should_close = x11_should_close;
 
-	platform->internal->time_ms = x11_time_ms;
+	internal->time_ms = x11_time_ms;
 
-	platform->internal->logical_dimensions = x11_get_logical_dimensions;
-	platform->internal->physical_dimensions = x11_get_physical_dimensions;
+	internal->logical_dimensions = x11_get_logical_dimensions;
+	internal->physical_dimensions = x11_get_physical_dimensions;
 
-	platform->internal->set_logical_dimensions_callback = x11_set_logical_dimensions_callback;
-	platform->internal->set_physical_dimensions_callback = x11_set_physical_dimensions_callback;
+	internal->set_logical_dimensions_callback = x11_set_logical_dimensions_callback;
+	internal->set_physical_dimensions_callback = x11_set_physical_dimensions_callback;
 
-	platform->internal->create_vulkan_surface = x11_create_vulkan_surface;
-	platform->internal->vulkan_extensions = x11_vulkan_extensions;
+	internal->create_vulkan_surface = x11_create_vulkan_surface;
+	internal->vulkan_extensions = x11_vulkan_extensions;
 
 	return true;
 }
 
 bool x11_startup(Platform *platform) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
+
 	x11->connection = x11->xcb.connect(NULL, NULL);
 
 	x11->window = x11->xcb.generate_id(x11->connection);
@@ -112,12 +117,16 @@ bool x11_startup(Platform *platform) {
 }
 
 void x11_shutdown(Platform *platform) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
+
 	x11->xcb.disconnect(x11->connection);
 }
 
 void x11_poll_events(Platform *platform) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
+
 	xcb_generic_event_t *event = NULL;
 	while ((event = x11->xcb.poll_for_event(x11->connection))) {
 		switch (event->response_type & ~0x80) {
@@ -135,9 +144,13 @@ void x11_poll_events(Platform *platform) {
 				platform->should_close = true;
 			} break;
 
-			case XCB_KEY_PRESS:
+			case XCB_KEY_PRESS: {
+				xcb_key_press_event_t *key_press_event = (xcb_key_press_event_t *)event;
+				LOG_TRACE("Key %d pressed", key_press_event->detail);
+			} break;
 			case XCB_KEY_RELEASE: {
-				LOG_INFO("Key pressed/released");
+				xcb_key_release_event_t *key_release_event = (xcb_key_press_event_t *)event;
+				LOG_TRACE("Key %d released", key_release_event->detail);
 			} break;
 			case XCB_BUTTON_PRESS:
 			case XCB_BUTTON_RELEASE: {
@@ -162,7 +175,9 @@ uint64_t x11_time_ms(Platform *platform) {
 }
 
 void x11_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
+
 	xcb_connection_t *connection = x11->connection;
 	xcb_window_t *window = &x11->window;
 
@@ -172,7 +187,8 @@ void x11_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *h
 }
 
 void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
 
 	xcb_get_geometry_reply_t *geometry = x11->xcb.get_geometry_reply(x11->connection, x11->xcb.get_geometry(x11->connection, x11->window), NULL);
 	*width = geometry->width;
@@ -180,18 +196,22 @@ void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *
 }
 
 void x11_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions callback_fn) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
 
 	x11->callback.logical_size = callback_fn;
 }
 void x11_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions callback_fn) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
 
 	x11->callback.physical_size = callback_fn;
 }
 
 bool x11_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
-	X11Platform *x11 = &platform->internal->x11;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	X11Platform *x11 = &internal->x11;
+
 	VkXcbSurfaceCreateInfoKHR surface_create_info = {
 		.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
 		.window = x11->window,

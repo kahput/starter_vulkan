@@ -2,7 +2,11 @@
 #include "platform/internal.h"
 
 #include "common.h"
+#include "core/input_types.h"
 #include "core/logger.h"
+
+#include "event.h"
+#include "events/input_events.h"
 
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
@@ -121,15 +125,16 @@ struct pointer_frame {
 	bool released;
 };
 
-static struct wl_buffer *
-create_shm_buffer(Platform *platform);
+static struct wl_buffer *create_shm_buffer(Platform *platform);
+static void create_key_table(WLPlatform *platform);
 
 bool platform_init_wayland(Platform *platform) {
 	void *handle = dlopen("libwayland-client.so", RTLD_LAZY);
 	if (handle == NULL)
 		return false;
 
-	WLPlatform *wl_platform = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+
 	_wl_library.handle = handle;
 
 	*(void **)(&_wl_library.display_connect) = dlsym(handle, "wl_display_connect");
@@ -154,9 +159,11 @@ bool platform_init_wayland(Platform *platform) {
 
 	*(void **)(&_wl_library.xkb.keymap_new_from_string) = dlsym(handle, "xkb_keymap_new_from_string");
 	*(void **)(&_wl_library.xkb.keymap_unref) = dlsym(handle, "xkb_keymap_unref");
+	*(void **)(&_wl_library.xkb.keymap_mod_get_index) = dlsym(handle, "xkb_keymap_mod_get_index");
 
 	*(void **)(&_wl_library.xkb.state_new) = dlsym(handle, "xkb_state_new");
 	*(void **)(&_wl_library.xkb.state_unref) = dlsym(handle, "xkb_state_unref");
+	*(void **)(&_wl_library.xkb.state_mod_index_is_active) = dlsym(handle, "xkb_state_mod_index_is_active");
 
 	*(void **)(&_wl_library.xkb.state_key_get_one_sym) = dlsym(handle, "xkb_state_key_get_one_sym");
 	*(void **)(&_wl_library.xkb.state_key_get_syms) = dlsym(handle, "xkb_state_key_get_syms");
@@ -172,33 +179,34 @@ bool platform_init_wayland(Platform *platform) {
 		if (array[i] == NULL)
 			return false;
 	}
-	platform->internal->wl = (WLPlatform){ 0 };
 
-	platform->internal->startup = wl_startup;
-	platform->internal->shutdown = wl_shutdown;
+	internal->startup = wl_startup;
+	internal->shutdown = wl_shutdown;
 
-	platform->internal->poll_events = wl_poll_events;
-	platform->internal->should_close = wl_should_close;
+	internal->poll_events = wl_poll_events;
+	internal->should_close = wl_should_close;
 
-	platform->internal->logical_dimensions = wl_get_logical_dimensions;
-	platform->internal->physical_dimensions = wl_get_physical_dimensions;
+	internal->logical_dimensions = wl_get_logical_dimensions;
+	internal->physical_dimensions = wl_get_physical_dimensions;
 
-	platform->internal->time_ms = wl_time_ms;
+	internal->time_ms = wl_time_ms;
 
-	platform->internal->set_logical_dimensions_callback = wl_set_logical_dimensions_callback;
-	platform->internal->set_physical_dimensions_callback = wl_set_physical_dimensions_callback;
+	internal->set_logical_dimensions_callback = wl_set_logical_dimensions_callback;
+	internal->set_physical_dimensions_callback = wl_set_physical_dimensions_callback;
 
-	platform->internal->create_vulkan_surface = wl_create_vulkan_surface;
-	platform->internal->vulkan_extensions = wl_vulkan_extensions;
+	internal->create_vulkan_surface = wl_create_vulkan_surface;
+	internal->vulkan_extensions = wl_vulkan_extensions;
 
 	return true;
 }
 
 bool wl_startup(Platform *platform) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
 	wl->display = wl_display_connect(NULL);
 
-	struct wl_display *display = platform->internal->wl.display;
+	struct wl_display *display = wl->display;
 	if (display == NULL) {
 		LOG_ERROR("Failed to create wayland display");
 		return false;
@@ -213,6 +221,8 @@ bool wl_startup(Platform *platform) {
 
 	wl_registry_add_listener(wl->registry, &registry_listener, wl);
 	wl_display_roundtrip(wl->display);
+
+	create_key_table(wl);
 
 	wl->surface = wl_compositor_create_surface(wl->compositor);
 	wl->xkb.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
@@ -238,13 +248,6 @@ bool wl_startup(Platform *platform) {
 	wp_fractional_scale_v1_add_listener(wl->fractional_scale, &fractional_scale_listener, platform);
 
 	wl_seat_add_listener(wl->seat, &seat_listener, platform);
-	// wl->pointer = wl_seat_get_pointer(wl->seat);
-	// wl->keyboard = wl_seat_get_keyboard(wl->seat);
-	//
-	// wl_pointer_add_listener(wl->pointer, &pointer_listener, platform);
-	// wl_keyboard_add_listener(wl->keyboard, &keyboard_listener, platform);
-	//
-	// wl->xkb.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 
 	wl_surface_commit(wl->surface);
 
@@ -258,12 +261,16 @@ bool wl_startup(Platform *platform) {
 }
 
 void wl_shutdown(Platform *platform) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
 	wl_display_disconnect(wl->display);
 }
 
 void wl_poll_events(Platform *platform) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
 	wl_display_roundtrip(wl->display);
 }
 bool wl_should_close(Platform *platform) {
@@ -280,27 +287,31 @@ uint64_t wl_time_ms(Platform *platform) {
 }
 
 void wl_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions callback) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 
 	wl->callback.logical_size = callback;
 }
 
 void wl_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions callback) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
 
 	wl->callback.physical_size = callback;
 }
 
 bool wl_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
-	WLPlatform *wl = &platform->internal->wl;
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
 	wl->use_vulkan = true;
 
 	LOG_INFO("Using Vulkan for presentation");
 
 	VkWaylandSurfaceCreateInfoKHR surface_create_info = {
 		.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
-		.display = platform->internal->wl.display,
-		.surface = platform->internal->wl.surface,
+		.display = wl->display,
+		.surface = wl->surface,
 	};
 
 	if (vkCreateWaylandSurfaceKHR(instance, &surface_create_info, NULL, surface) != VK_SUCCESS)
@@ -337,7 +348,7 @@ void registry_handle_global_remove(void *data, struct wl_registry *registry, uin
 
 void surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	xdg_surface_ack_configure(wl->xdg.surface, serial);
 
@@ -350,7 +361,7 @@ void wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) 
 
 void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, struct wl_array *states) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	if ((width && height) && ((uint32_t)width != platform->logical_width || (uint32_t)height != platform->logical_height)) {
 		platform->logical_width = width, platform->logical_height = height;
@@ -372,13 +383,14 @@ void toplevel_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel, str
 
 void preferred_scale(void *data, struct wp_fractional_scale_v1 *wp_fractional_scale_v1, uint32_t scale) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
+
 	wl->scale_factor = (float)scale / 120.f;
 }
 
 void seat_capabilities(void *data, struct wl_seat *wl_seat, uint32_t capabilities) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	bool have_pointer = capabilities & WL_SEAT_CAPABILITY_POINTER;
 	if (have_pointer && wl->pointer == NULL) {
@@ -400,13 +412,15 @@ void seat_capabilities(void *data, struct wl_seat *wl_seat, uint32_t capabilitie
 }
 void seat_name(void *data, struct wl_seat *wl_seat, const char *name) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
+
 	LOG_TRACE("Seat name: %s", name);
 }
 
 void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
+
 	struct pointer_event *event = &wl->current_pointer_frame;
 
 	// LOG_TRACE("pointer frame @ %d: ", event->time);
@@ -467,7 +481,7 @@ void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 
 void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_ENTER;
 	wl->current_pointer_frame.serial = serial;
@@ -476,14 +490,14 @@ void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, s
 }
 void pointer_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_LEAVE;
 	wl->current_pointer_frame.serial = serial;
 }
 void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_MOTION;
 	wl->current_pointer_frame.time = time;
@@ -492,7 +506,7 @@ void pointer_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl
 }
 void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_BUTTON;
 	wl->current_pointer_frame.serial = serial;
@@ -503,7 +517,7 @@ void pointer_button(void *data, struct wl_pointer *wl_pointer, uint32_t serial, 
 
 void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS;
 	wl->current_pointer_frame.time = time;
@@ -512,14 +526,14 @@ void pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint
 }
 void pointer_axis_source(void *data, struct wl_pointer *wl_pointer, uint32_t axis_source) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS_SOURCE;
 	wl->current_pointer_frame.axis_source = axis_source;
 }
 void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS_STOP;
 	wl->current_pointer_frame.time = time;
@@ -527,7 +541,7 @@ void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer, uint32_t time,
 }
 void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->current_pointer_frame.event_mask |= POINTER_EVENT_AXIS_DISCRETE;
 	wl->current_pointer_frame.axes[axis].valid = true;
@@ -536,7 +550,7 @@ void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer, uint32_t a
 
 void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard, uint32_t format, int32_t fd, uint32_t size) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
 		close(fd);
@@ -563,7 +577,7 @@ void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard, uint32_t forma
 
 void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface, struct wl_array *scancodes) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	uint32_t *scancode;
 	wl_array_for_each(scancode, scancodes) {
@@ -575,42 +589,71 @@ void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial
 		const xkb_keysym_t key_symbol = xkb_state_key_get_one_sym(wl->xkb.state, keycode);
 
 		xkb_keysym_get_name(key_symbol, buf, sizeof(buf));
-		LOG_TRACE("sym: %-12s (%d), ", buf, key_symbol);
+		// LOG_TRACE("sym: %-12s (%d), ", buf, key_symbol);
 
 		xkb_keysym_to_utf8(key_symbol, buf, sizeof(buf));
-		LOG_TRACE("utf8: '%s'", buf);
+		// LOG_TRACE("utf8: '%s'", buf);
 	}
 }
 void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 }
 void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t scancode, uint32_t state) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	char name_buffer[128], utf8_buffer[128];
 
 	const xkb_keycode_t keycode = scancode + XKB_KEYCODE_OFFSET;
 	const char *action = state == WL_KEYBOARD_KEY_STATE_PRESSED ? "pressed" : "released";
 
+	KeyEvent event = {
+		.header = { .type = WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED, .size = sizeof(KeyEvent), .timestamp = -1 },
+		.key = scancode < array_count(wl->keycodes) ? wl->keycodes[scancode] : SV_KEY_UNKOWN,
+		.action = KEY_ACTION_PRESS,
+		.mods = wl->xkb.modifiers,
+	};
+
+	event_emit((Event *)&event);
+
 	const xkb_keysym_t key_symbol = xkb_state_key_get_one_sym(wl->xkb.state, keycode);
 
 	xkb_keysym_get_name(key_symbol, name_buffer, sizeof(name_buffer));
 	xkb_keysym_to_utf8(key_symbol, utf8_buffer, sizeof(utf8_buffer));
 
-	LOG_TRACE("Scancode: %d, Symbol: %-12s (%d), utf8: '%s'", scancode, name_buffer, key_symbol, utf8_buffer);
-	LOG_TRACE("Key %-8s", action);
+	// LOG_TRACE("Scancode: %d, Symbol: %-12s (%d), utf8: '%s'", scancode, name_buffer, key_symbol, utf8_buffer);
+	// LOG_TRACE("Key %-8s", action);
 }
 void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	xkb_state_update_mask(wl->xkb.state, mods_depressed, mods_latched, mods_locked, 0, 0, group);
+
+	struct {
+		xkb_mod_index_t index;
+		unsigned int bit;
+	} modifiers[] = {
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Control"), SV_MOD_KEY_CONTROL },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod1"), SV_MOD_KEY_ALT },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Shift"), SV_MOD_KEY_SHIFT },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod4"), SV_MOD_KEY_SUPER },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Lock"), SV_MOD_KEY_CAPSLOCK },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod2"), SV_MOD_KEY_NUMLOCK }
+	};
+
+	for (size_t index = 0; index < array_count(modifiers); ++index) {
+		if (xkb_state_mod_index_is_active(wl->xkb.state,
+				modifiers[index].index,
+				XKB_STATE_MODS_EFFECTIVE) == 1) {
+			wl->xkb.modifiers |= modifiers[index].bit;
+		}
+	}
 }
 void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay) {
 	Platform *platform = (Platform *)data;
-	WLPlatform *wl = &platform->internal->wl;
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	wl->key_repeat_rate = rate;
 	wl->key_repeat_delay = delay;
@@ -632,6 +675,8 @@ static int create_anonymous_file(off_t size) {
 }
 
 struct wl_buffer *create_shm_buffer(Platform *platform) {
+	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
+
 	const int stride = platform->logical_width * 4;
 	const int length = platform->logical_width * platform->logical_height * 4;
 
@@ -648,7 +693,7 @@ struct wl_buffer *create_shm_buffer(Platform *platform) {
 		return NULL;
 	}
 
-	struct wl_shm_pool *pool = wl_shm_create_pool(platform->internal->wl.shm, fd, length);
+	struct wl_shm_pool *pool = wl_shm_create_pool(wl->shm, fd, length);
 
 	close(fd);
 
@@ -671,4 +716,127 @@ struct wl_buffer *create_shm_buffer(Platform *platform) {
 	wl_shm_pool_destroy(pool);
 
 	return buffer;
+}
+
+void create_key_table(WLPlatform *wl) {
+	memset(wl->keycodes, -1, sizeof(wl->keycodes));
+
+	wl->keycodes[KEY_GRAVE] = SV_KEY_GRAVE;
+	wl->keycodes[KEY_1] = SV_KEY_1;
+	wl->keycodes[KEY_2] = SV_KEY_2;
+	wl->keycodes[KEY_3] = SV_KEY_3;
+	wl->keycodes[KEY_4] = SV_KEY_4;
+	wl->keycodes[KEY_5] = SV_KEY_5;
+	wl->keycodes[KEY_6] = SV_KEY_6;
+	wl->keycodes[KEY_7] = SV_KEY_7;
+	wl->keycodes[KEY_8] = SV_KEY_8;
+	wl->keycodes[KEY_9] = SV_KEY_9;
+	wl->keycodes[KEY_0] = SV_KEY_0;
+	wl->keycodes[KEY_SPACE] = SV_KEY_SPACE;
+	wl->keycodes[KEY_MINUS] = SV_KEY_MINUS;
+	wl->keycodes[KEY_EQUAL] = SV_KEY_EQUAL;
+	wl->keycodes[KEY_Q] = SV_KEY_Q;
+	wl->keycodes[KEY_W] = SV_KEY_W;
+	wl->keycodes[KEY_E] = SV_KEY_E;
+	wl->keycodes[KEY_R] = SV_KEY_R;
+	wl->keycodes[KEY_T] = SV_KEY_T;
+	wl->keycodes[KEY_Y] = SV_KEY_Y;
+	wl->keycodes[KEY_U] = SV_KEY_U;
+	wl->keycodes[KEY_I] = SV_KEY_I;
+	wl->keycodes[KEY_O] = SV_KEY_O;
+	wl->keycodes[KEY_P] = SV_KEY_P;
+	wl->keycodes[KEY_LEFTBRACE] = SV_KEY_LEFTBRACKET;
+	wl->keycodes[KEY_RIGHTBRACE] = SV_KEY_RIGHTBRACKET;
+	wl->keycodes[KEY_A] = SV_KEY_A;
+	wl->keycodes[KEY_S] = SV_KEY_S;
+	wl->keycodes[KEY_D] = SV_KEY_D;
+	wl->keycodes[KEY_F] = SV_KEY_F;
+	wl->keycodes[KEY_G] = SV_KEY_G;
+	wl->keycodes[KEY_H] = SV_KEY_H;
+	wl->keycodes[KEY_J] = SV_KEY_J;
+	wl->keycodes[KEY_K] = SV_KEY_K;
+	wl->keycodes[KEY_L] = SV_KEY_L;
+	wl->keycodes[KEY_SEMICOLON] = SV_KEY_SEMICOLON;
+	wl->keycodes[KEY_APOSTROPHE] = SV_KEY_APOSTROPHE;
+	wl->keycodes[KEY_Z] = SV_KEY_Z;
+	wl->keycodes[KEY_X] = SV_KEY_X;
+	wl->keycodes[KEY_C] = SV_KEY_C;
+	wl->keycodes[KEY_V] = SV_KEY_V;
+	wl->keycodes[KEY_B] = SV_KEY_B;
+	wl->keycodes[KEY_N] = SV_KEY_N;
+	wl->keycodes[KEY_M] = SV_KEY_M;
+	wl->keycodes[KEY_COMMA] = SV_KEY_COMMA;
+	wl->keycodes[KEY_DOT] = SV_KEY_PERIOD;
+	wl->keycodes[KEY_SLASH] = SV_KEY_SLASH;
+	wl->keycodes[KEY_BACKSLASH] = SV_KEY_BACKSLASH;
+	wl->keycodes[KEY_ESC] = SV_KEY_ESCAPE;
+	wl->keycodes[KEY_TAB] = SV_KEY_TAB;
+	wl->keycodes[KEY_LEFTSHIFT] = SV_KEY_LEFTSHIFT;
+	wl->keycodes[KEY_RIGHTSHIFT] = SV_KEY_RIGHTSHIFT;
+	wl->keycodes[KEY_LEFTCTRL] = SV_KEY_LEFTCTRL;
+	wl->keycodes[KEY_RIGHTCTRL] = SV_KEY_RIGHTCTRL;
+	wl->keycodes[KEY_LEFTALT] = SV_KEY_LEFTALT;
+	wl->keycodes[KEY_RIGHTALT] = SV_KEY_RIGHTALT;
+	wl->keycodes[KEY_LEFTMETA] = SV_KEY_LEFTMETA;
+	wl->keycodes[KEY_RIGHTMETA] = SV_KEY_RIGHTMETA;
+	wl->keycodes[KEY_COMPOSE] = SV_KEY_MENU;
+	wl->keycodes[KEY_NUMLOCK] = SV_KEY_NUMLOCK;
+	wl->keycodes[KEY_CAPSLOCK] = SV_KEY_CAPSLOCK;
+	wl->keycodes[KEY_PRINT] = SV_KEY_PRINT;
+	wl->keycodes[KEY_SCROLLLOCK] = SV_KEY_SCROLLLOCK;
+	wl->keycodes[KEY_PAUSE] = SV_KEY_PAUSE;
+	wl->keycodes[KEY_DELETE] = SV_KEY_DELETE;
+	wl->keycodes[KEY_BACKSPACE] = SV_KEY_BACKSPACE;
+	wl->keycodes[KEY_ENTER] = SV_KEY_ENTER;
+	wl->keycodes[KEY_HOME] = SV_KEY_HOME;
+	wl->keycodes[KEY_END] = SV_KEY_END;
+	wl->keycodes[KEY_PAGEUP] = SV_KEY_PAGEUP;
+	wl->keycodes[KEY_PAGEDOWN] = SV_KEY_PAGEDOWN;
+	wl->keycodes[KEY_INSERT] = SV_KEY_INSERT;
+	wl->keycodes[KEY_LEFT] = SV_KEY_LEFT;
+	wl->keycodes[KEY_RIGHT] = SV_KEY_RIGHT;
+	wl->keycodes[KEY_DOWN] = SV_KEY_DOWN;
+	wl->keycodes[KEY_UP] = SV_KEY_UP;
+	wl->keycodes[KEY_F1] = SV_KEY_F1;
+	wl->keycodes[KEY_F2] = SV_KEY_F2;
+	wl->keycodes[KEY_F3] = SV_KEY_F3;
+	wl->keycodes[KEY_F4] = SV_KEY_F4;
+	wl->keycodes[KEY_F5] = SV_KEY_F5;
+	wl->keycodes[KEY_F6] = SV_KEY_F6;
+	wl->keycodes[KEY_F7] = SV_KEY_F7;
+	wl->keycodes[KEY_F8] = SV_KEY_F8;
+	wl->keycodes[KEY_F9] = SV_KEY_F9;
+	wl->keycodes[KEY_F10] = SV_KEY_F10;
+	wl->keycodes[KEY_F11] = SV_KEY_F11;
+	wl->keycodes[KEY_F12] = SV_KEY_F12;
+	wl->keycodes[KEY_F13] = SV_KEY_F13;
+	wl->keycodes[KEY_F14] = SV_KEY_F14;
+	wl->keycodes[KEY_F15] = SV_KEY_F15;
+	wl->keycodes[KEY_F16] = SV_KEY_F16;
+	wl->keycodes[KEY_F17] = SV_KEY_F17;
+	wl->keycodes[KEY_F18] = SV_KEY_F18;
+	wl->keycodes[KEY_F19] = SV_KEY_F19;
+	wl->keycodes[KEY_F20] = SV_KEY_F20;
+	wl->keycodes[KEY_F21] = SV_KEY_F21;
+	wl->keycodes[KEY_F22] = SV_KEY_F22;
+	wl->keycodes[KEY_F23] = SV_KEY_F23;
+	wl->keycodes[KEY_F24] = SV_KEY_F24;
+	wl->keycodes[KEY_KPSLASH] = SV_KEY_KPSLASH;
+	wl->keycodes[KEY_KPASTERISK] = SV_KEY_KPASTERISK;
+	wl->keycodes[KEY_KPMINUS] = SV_KEY_KPMINUS;
+	wl->keycodes[KEY_KPPLUS] = SV_KEY_KPPLUS;
+	wl->keycodes[KEY_KP0] = SV_KEY_KP0;
+	wl->keycodes[KEY_KP1] = SV_KEY_KP1;
+	wl->keycodes[KEY_KP2] = SV_KEY_KP2;
+	wl->keycodes[KEY_KP3] = SV_KEY_KP3;
+	wl->keycodes[KEY_KP4] = SV_KEY_KP4;
+	wl->keycodes[KEY_KP5] = SV_KEY_KP5;
+	wl->keycodes[KEY_KP6] = SV_KEY_KP6;
+	wl->keycodes[KEY_KP7] = SV_KEY_KP7;
+	wl->keycodes[KEY_KP8] = SV_KEY_KP8;
+	wl->keycodes[KEY_KP9] = SV_KEY_KP9;
+	wl->keycodes[KEY_KPDOT] = SV_KEY_KPDOT;
+	wl->keycodes[KEY_KPEQUAL] = SV_KEY_KPEQUAL;
+	wl->keycodes[KEY_KPENTER] = SV_KEY_KPENTER;
+	wl->keycodes[KEY_102ND] = SV_KEY_WORLD;
 }
