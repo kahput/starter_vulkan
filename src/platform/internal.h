@@ -38,12 +38,6 @@ struct platform_internal {
 
 	uint64_t (*time_ms)(Platform *);
 
-	void (*set_logical_dimensions_callback)(Platform *, fn_platform_dimensions);
-	void (*set_physical_dimensions_callback)(Platform *, fn_platform_dimensions);
-
-	void *(*window_handle)(Platform *);
-	void *(*instance_handle)(Platform *);
-
 	bool (*create_vulkan_surface)(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
 	const char **(*vulkan_extensions)(Platform *platform, uint32_t *count);
 

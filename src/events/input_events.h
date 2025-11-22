@@ -2,17 +2,32 @@
 
 #include "event.h"
 
-
 typedef struct {
-	EventHeader header;
+	EventCommon header;
 
-	uint32_t key, action, mods;
+	uint32_t key, mods;
+	bool is_repeat;
 } KeyEvent;
 
-EVENT_DEFINE(KeyEvent);
+typedef struct {
+	EventCommon header;
+	int32_t x, y; 
+	int32_t dx, dy; 
+} MouseMotionEvent;
 
-// typedef struct {
-// 	EventHeader header;
-//
-// 	uint32_t
-// }
+typedef struct {
+	EventCommon header;
+	uint32_t button; 
+	int32_t x, y;
+	uint32_t mods;
+} MouseButtonEvent;
+
+typedef struct {
+	EventCommon header;
+	uint32_t width, height;
+} WindowResizeEvent;
+
+EVENT_DEFINE(KeyEvent);
+EVENT_DEFINE(MouseMotionEvent);
+EVENT_DEFINE(MouseButtonEvent);
+EVENT_DEFINE(WindowResizeEvent);

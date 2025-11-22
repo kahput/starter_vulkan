@@ -25,9 +25,6 @@ void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint3
 
 uint64_t platform_time_ms(Platform *platform);
 
-void platform_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
-void platform_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions);
-
 struct VkSurfaceKHR_T;
 struct VkInstance_T;
 

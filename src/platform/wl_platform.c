@@ -191,9 +191,6 @@ bool platform_init_wayland(Platform *platform) {
 
 	internal->time_ms = wl_time_ms;
 
-	internal->set_logical_dimensions_callback = wl_set_logical_dimensions_callback;
-	internal->set_physical_dimensions_callback = wl_set_physical_dimensions_callback;
-
 	internal->create_vulkan_surface = wl_create_vulkan_surface;
 	internal->vulkan_extensions = wl_vulkan_extensions;
 
@@ -286,19 +283,6 @@ uint64_t wl_time_ms(Platform *platform) {
 	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
 }
 
-void wl_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions callback) {
-	struct platform_internal *internal = (struct platform_internal *)platform->internal;
-	WLPlatform *wl = &internal->wl;
-
-	wl->callback.logical_size = callback;
-}
-
-void wl_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions callback) {
-	struct platform_internal *internal = (struct platform_internal *)platform->internal;
-	WLPlatform *wl = &internal->wl;
-
-	wl->callback.physical_size = callback;
-}
 
 bool wl_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
 	struct platform_internal *internal = (struct platform_internal *)platform->internal;
@@ -368,10 +352,10 @@ void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t w
 		platform->physical_width = platform->logical_width * wl->scale_factor, platform->physical_height = platform->logical_height * wl->scale_factor;
 		wp_viewport_set_destination(wl->viewport, platform->logical_width, platform->logical_height);
 
-		if (wl->callback.logical_size)
-			wl->callback.logical_size(platform, platform->logical_width, platform->logical_height);
-		if (wl->callback.physical_size)
-			wl->callback.physical_size(platform, platform->physical_width, platform->physical_height);
+		WindowResizeEvent event = event_create(WindowResizeEvent, SV_EVENT_WINDOW_RESIZED);
+		event.width = width, event.height = height;
+
+		event_emit((Event *)&event);
 	}
 }
 void toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel) {
@@ -421,25 +405,38 @@ void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
-	struct pointer_event *event = &wl->current_pointer_frame;
+	struct pointer_event *pointer_event = &wl->current_pointer_frame;
 
 	// LOG_TRACE("pointer frame @ %d: ", event->time);
-	if (event->event_mask & POINTER_EVENT_ENTER) {
+	if (pointer_event->event_mask & POINTER_EVENT_ENTER) {
 		LOG_TRACE("entered %d, %d ",
-			wl_fixed_to_int(event->surface_x),
-			wl_fixed_to_int(event->surface_y));
+			wl_fixed_to_int(pointer_event->surface_x),
+			wl_fixed_to_int(pointer_event->surface_y));
 	}
-	if (event->event_mask & POINTER_EVENT_LEAVE) {
+	if (pointer_event->event_mask & POINTER_EVENT_LEAVE) {
 		LOG_TRACE("leave");
 	}
-	if (event->event_mask & POINTER_EVENT_MOTION) {
-		LOG_TRACE("motion %d, %d ",
-			wl_fixed_to_int(event->surface_x),
-			wl_fixed_to_int(event->surface_y));
+	if (pointer_event->event_mask & POINTER_EVENT_MOTION) {
+		MouseMotionEvent event = event_create(MouseMotionEvent, SV_EVENT_MOUSE_MOTION);
+		event.x = wl_fixed_to_int(pointer_event->surface_x);
+		event.y = wl_fixed_to_int(pointer_event->surface_y);
+
+		event_emit((Event *)&event);
+		// LOG_TRACE("motion %d, %d ",
+		// 	wl_fixed_to_int(pointer_event->surface_x),
+		// 	wl_fixed_to_int(pointer_event->surface_y));
 	}
-	if (event->event_mask & POINTER_EVENT_BUTTON) {
-		char *state = event->state == WL_POINTER_BUTTON_STATE_RELEASED ? "released" : "pressed";
-		LOG_TRACE("button %d %s ", event->button, state);
+	if (pointer_event->event_mask & POINTER_EVENT_BUTTON) {
+		char *state = pointer_event->state == WL_POINTER_BUTTON_STATE_RELEASED ? "released" : "pressed";
+
+		MouseButtonEvent event = event_create(MouseButtonEvent, pointer_event->state == WL_POINTER_BUTTON_STATE_PRESSED ? SV_EVENT_MOUSE_BUTTON_PRESSED : SV_EVENT_MOUSE_BUTTON_RELEASED);
+		event.mods = wl->xkb.modifiers;
+		event.button = pointer_event->button - BTN_LEFT;
+		event.x = wl_fixed_to_int(pointer_event->surface_x);
+		event.y = wl_fixed_to_int(pointer_event->surface_y);
+
+		event_emit((Event *)&event);
+		// LOG_TRACE("button %d %s ", pointer_event->button, state);
 	}
 	uint32_t axis_events = POINTER_EVENT_AXIS | POINTER_EVENT_AXIS_SOURCE | POINTER_EVENT_AXIS_STOP | POINTER_EVENT_AXIS_DISCRETE;
 	char *axis_name[2] = {
@@ -454,29 +451,29 @@ void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 		[WL_POINTER_AXIS_SOURCE_WHEEL_TILT] = "wheel tilt",
 
 	};
-	if (event->event_mask & axis_events) {
+	if (pointer_event->event_mask & axis_events) {
 		for (size_t i = 0; i < 2; ++i) {
-			if (!event->axes[i].valid) {
+			if (!pointer_event->axes[i].valid) {
 				continue;
 			}
 			LOG_TRACE("%s axis ", axis_name[i]);
-			if (event->event_mask & POINTER_EVENT_AXIS) {
-				LOG_TRACE("value %.2f ", wl_fixed_to_double(event->axes[i].value));
+			if (pointer_event->event_mask & POINTER_EVENT_AXIS) {
+				LOG_TRACE("value %.2f ", wl_fixed_to_double(pointer_event->axes[i].value));
 			}
-			if (event->event_mask & POINTER_EVENT_AXIS_DISCRETE) {
+			if (pointer_event->event_mask & POINTER_EVENT_AXIS_DISCRETE) {
 				LOG_TRACE("discrete %d ",
-					event->axes[i].discrete);
+					pointer_event->axes[i].discrete);
 			}
-			if (event->event_mask & POINTER_EVENT_AXIS_SOURCE) {
+			if (pointer_event->event_mask & POINTER_EVENT_AXIS_SOURCE) {
 				LOG_TRACE("via %s ",
-					axis_source[event->axis_source]);
+					axis_source[pointer_event->axis_source]);
 			}
-			if (event->event_mask & POINTER_EVENT_AXIS_STOP) {
+			if (pointer_event->event_mask & POINTER_EVENT_AXIS_STOP) {
 				LOG_TRACE("(stopped) ");
 			}
 		}
 	}
-	memset(event, 0, sizeof(*event));
+	memset(pointer_event, 0, sizeof(*pointer_event));
 }
 
 void pointer_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
@@ -608,12 +605,14 @@ void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, 
 	const xkb_keycode_t keycode = scancode + XKB_KEYCODE_OFFSET;
 	const char *action = state == WL_KEYBOARD_KEY_STATE_PRESSED ? "pressed" : "released";
 
-	KeyEvent event = {
-		.header = { .type = WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED, .size = sizeof(KeyEvent), .timestamp = -1 },
-		.key = scancode < array_count(wl->keycodes) ? wl->keycodes[scancode] : SV_KEY_UNKOWN,
-		.action = KEY_ACTION_PRESS,
-		.mods = wl->xkb.modifiers,
-	};
+	// Event event = {
+	// 	.header = { .type = WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED, .size = sizeof(KeyEvent) },
+	// };
+
+	KeyEvent event = event_create(KeyEvent, state == WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED);
+	event.key = scancode < array_count(wl->keycodes) ? wl->keycodes[scancode] : SV_KEY_UNKOWN;
+	event.mods = wl->xkb.modifiers;
+	event.is_repeat = false;
 
 	event_emit((Event *)&event);
 
@@ -630,6 +629,7 @@ void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t se
 	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
 	xkb_state_update_mask(wl->xkb.state, mods_depressed, mods_latched, mods_locked, 0, 0, group);
+	wl->xkb.modifiers = 0;
 
 	struct {
 		xkb_mod_index_t index;
@@ -838,5 +838,5 @@ void create_key_table(WLPlatform *wl) {
 	wl->keycodes[KEY_KPDOT] = SV_KEY_KPDOT;
 	wl->keycodes[KEY_KPEQUAL] = SV_KEY_KPEQUAL;
 	wl->keycodes[KEY_KPENTER] = SV_KEY_KPENTER;
-	wl->keycodes[KEY_102ND] = SV_KEY_WORLD;
+	wl->keycodes[KEY_102ND] = SV_KEY_WORLD_1;
 }

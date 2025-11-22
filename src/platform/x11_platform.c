@@ -70,9 +70,6 @@ bool platform_init_x11(Platform *platform) {
 	internal->logical_dimensions = x11_get_logical_dimensions;
 	internal->physical_dimensions = x11_get_physical_dimensions;
 
-	internal->set_logical_dimensions_callback = x11_set_logical_dimensions_callback;
-	internal->set_physical_dimensions_callback = x11_set_physical_dimensions_callback;
-
 	internal->create_vulkan_surface = x11_create_vulkan_surface;
 	internal->vulkan_extensions = x11_vulkan_extensions;
 
@@ -134,10 +131,11 @@ void x11_poll_events(Platform *platform) {
 				xcb_configure_notify_event_t *cfg_event = (xcb_configure_notify_event_t *)event;
 
 				uint16_t new_width = cfg_event->width, new_height = cfg_event->height;
-				if (x11->callback.logical_size)
-					x11->callback.logical_size(platform, new_width, new_height);
-				if (x11->callback.physical_size)
-					x11->callback.physical_size(platform, new_width, new_height);
+
+				// if (x11->callback.logical_size)
+				// 	x11->callback.logical_size(platform, new_width, new_height);
+				// if (x11->callback.physical_size)
+				// 	x11->callback.physical_size(platform, new_width, new_height);
 
 			} break;
 			case XCB_CLIENT_MESSAGE: {
@@ -193,19 +191,6 @@ void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *
 	xcb_get_geometry_reply_t *geometry = x11->xcb.get_geometry_reply(x11->connection, x11->xcb.get_geometry(x11->connection, x11->window), NULL);
 	*width = geometry->width;
 	*height = geometry->height;
-}
-
-void x11_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions callback_fn) {
-	struct platform_internal *internal = (struct platform_internal *)platform->internal;
-	X11Platform *x11 = &internal->x11;
-
-	x11->callback.logical_size = callback_fn;
-}
-void x11_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions callback_fn) {
-	struct platform_internal *internal = (struct platform_internal *)platform->internal;
-	X11Platform *x11 = &internal->x11;
-
-	x11->callback.physical_size = callback_fn;
 }
 
 bool x11_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {

@@ -2,17 +2,18 @@
 
 #include "common.h"
 
+#define MAX_EVENT_SIZE 128
+
 typedef struct {
-	uint64_t type;
-	uint32_t size, timestamp;
-} EventHeader;
+	uint32_t type, size;
+} EventCommon;
 
-typedef union {
-	EventHeader header;
-	int64_t payload[8];
+typedef struct {
+	EventCommon header;
+
+	uint8_t padding[MAX_EVENT_SIZE - sizeof(EventCommon)];
 } Event;
-
-#define EVENT_DEFINE(name) STATIC_ASSERT(sizeof(name) <= sizeof(Event), __FILE__)
+#define EVENT_DEFINE(name) STATIC_ASSERT(sizeof(name) <= sizeof(Event), __LINE__)
 
 typedef bool (*PFN_on_event)(Event *event);
 
@@ -22,6 +23,7 @@ bool event_system_shutdown(void);
 void event_register(uint16_t event_type, PFN_on_event on_event);
 void event_unregister(uint16_t event_type, PFN_on_event on_event);
 
+#define event_create(T, type_id) ((T){ .header = { .type = type_id, .size = sizeof(T) } })
 void event_emit(Event *event);
 
 typedef enum {

@@ -54,11 +54,6 @@ typedef struct x11_platform {
 		PFN_xcb_flush flush;
 	} xcb;
 
-	struct {
-		fn_platform_dimensions logical_size;
-		fn_platform_dimensions physical_size;
-	} callback;
-
 } X11Platform;
 
 #define PLATFORM_X11_LIBRARY_STATE X11Platform x11;
@@ -75,9 +70,6 @@ uint64_t x11_time_ms(Platform *platform);
 
 void x11_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
 void x11_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
-
-void x11_set_logical_dimensions_callback(Platform *platform, fn_platform_dimensions dimensions);
-void x11_set_physical_dimensions_callback(Platform *platform, fn_platform_dimensions dimensions);
 
 struct VkSurfaceKHR_T;
 struct VkInstance_T;

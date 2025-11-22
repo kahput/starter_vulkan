@@ -86,15 +86,6 @@ uint64_t platform_time_ms(Platform *platform) {
 	return internal->time_ms(platform);
 }
 
-void platform_set_logical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions) {
-	struct platform_internal *internal = (struct platform_internal *)platform->internal;
-	internal->set_logical_dimensions_callback(platform, dimensions);
-}
-void platform_set_physical_dimensions_callback(struct platform *platform, fn_platform_dimensions dimensions) {
-	struct platform_internal *internal = (struct platform_internal *)platform->internal;
-	internal->set_physical_dimensions_callback(platform, dimensions);
-}
-
 bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface) {
 	struct platform_internal *internal = (struct platform_internal *)platform->internal;
 	return internal->create_vulkan_surface(platform, instance, surface);

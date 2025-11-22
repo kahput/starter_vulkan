@@ -25,8 +25,9 @@ void event_unregister(uint16_t event_type, PFN_on_event on_event) {
 }
 
 void event_emit(Event *event) {
-	if (event->header.type == 0)
+	if (event->header.type == SV_EVENT_NULL || event->header.size >= MAX_EVENT_SIZE)
 		return;
+
 	for (uint32_t index = 0; index < array_count(event_pair); ++index) {
 		if (event_pair[index].event_type == event->header.type)
 			event_pair[index].slot(event);

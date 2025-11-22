@@ -1,6 +1,6 @@
-
 #include "core/input_types.h"
 
+#include "event.h"
 #include "input.h"
 #include "platform.h"
 
@@ -24,6 +24,7 @@
 #define MAGE_FILE_PATH "assets/models/characters/mage.glb"
 
 Model *load_gltf_model(Arena *arena, const char *path);
+bool resize_event(Event *event);
 void resize_callback(Platform *platform, uint32_t width, uint32_t height);
 void update_uniforms(VulkanContext *context, Platform *platform);
 void get_filename(const char *src, char *dst);
@@ -59,8 +60,7 @@ int main(void) {
 	}
 
 	state.start_time = platform_time_ms(platform);
-
-	platform_set_physical_dimensions_callback(platform, resize_callback);
+	event_register(SV_EVENT_WINDOW_RESIZED, resize_event);
 
 	vulkan_renderer_create(state.permanent, platform, &context);
 
@@ -132,10 +132,19 @@ int main(void) {
 		update_uniforms(&context, platform);
 
 		if (state.resized) {
-			vulkan_recreate_swapchain(&context, platform);
-			LOG_INFO("Recreating Swapchain");
+			LOG_INFO("Recreating Swapchain...");
+			logger_indent();
+			if (vulkan_recreate_swapchain(&context, platform) == true) {
+				LOG_INFO("Swapchain successfully recreated");
+			} else {
+				LOG_WARN("Failed to recreate swapchain");
+			}
+
+			logger_dedent();
 			state.resized = false;
 		}
+
+		input_system_update();
 	}
 
 	vkDeviceWaitIdle(context.device.logical);
@@ -164,8 +173,9 @@ void update_uniforms(VulkanContext *context, Platform *platform) {
 	mempcpy(context->uniform_buffers_mapped[context->current_frame], &mvp, sizeof(MVPObject));
 }
 
-void resize_callback(Platform *platform, uint32_t width, uint32_t height) {
+bool resize_event(Event *event) {
 	state.resized = true;
+	return true;
 }
 
 void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Model *out_model, const char *relative_path) {
