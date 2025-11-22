@@ -68,15 +68,16 @@ bool on_key_event(Event *event) {
 	}
 
 	if (event->header.type == SV_EVENT_KEY_PRESSED) {
+		input_state.keys[key_event->key].current = true;
 		if (key_event->key <= 100) {
-			input_state.keys[key_event->key].current = true;
 			LOG_DEBUG("Printable key %c pressed", key_event->key);
 		}
-	} else if (event->header.type == SV_EVENT_KEY_RELEASED)
+	} else if (event->header.type == SV_EVENT_KEY_RELEASED) {
+		input_state.keys[key_event->key].current = false;
 		if (key_event->key <= 100) {
-			input_state.keys[key_event->key].current = false;
 			LOG_DEBUG("Printable key %c released", key_event->key);
 		}
+	}
 
 	return true;
 }
