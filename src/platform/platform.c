@@ -81,6 +81,11 @@ void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint3
 	internal->physical_dimensions(platform, width, height);
 }
 
+bool platform_pointer_mode(Platform *platform, PointerMode mode) {
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	return internal->pointer_mode(platform, mode);
+}
+
 uint64_t platform_time_ms(Platform *platform) {
 	struct platform_internal *internal = (struct platform_internal *)platform->internal;
 	return internal->time_ms(platform);

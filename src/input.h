@@ -13,11 +13,14 @@ bool input_key_released(int key);
 bool input_key_down(int key);
 bool input_key_up(int key);
 
-bool input_mouse_pressed(int button); 
-bool input_mouse_released(int button); 
+bool input_mouse_pressed(int button);
+bool input_mouse_released(int button);
 
-bool input_mouse_down(int button); 
-bool input_mouse_up(int button); 
+bool input_mouse_down(int button);
+bool input_mouse_up(int button);
 
-int32_t input_mouse_x(void); 
-int32_t input_mouse_y(void); 
+double input_mouse_x(void);
+double input_mouse_y(void);
+
+double input_mouse_delta_x(void);
+double input_mouse_delta_y(void);

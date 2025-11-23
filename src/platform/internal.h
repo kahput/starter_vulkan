@@ -36,6 +36,8 @@ struct platform_internal {
 	void (*logical_dimensions)(Platform *, uint32_t *, uint32_t *);
 	void (*physical_dimensions)(Platform *, uint32_t *, uint32_t *);
 
+	bool (*pointer_mode)(Platform *, PointerMode);
+
 	uint64_t (*time_ms)(Platform *);
 
 	bool (*create_vulkan_surface)(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);

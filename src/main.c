@@ -61,6 +61,8 @@ int main(void) {
 		return -1;
 	}
 
+	platform_pointer_mode(platform, PLATFORM_POINTER_DISABLED);
+
 	state.start_time = platform_time_ms(platform);
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
@@ -132,6 +134,13 @@ int main(void) {
 		Vulkan_renderer_end_frame(&context);
 
 		update_uniforms(&context, platform);
+
+		LOG_INFO("MouseMotion { x = %.2f, y = %.2f, dx = %.2f, dy = %.2f}", input_mouse_x(), input_mouse_y(), input_mouse_delta_x(), input_mouse_delta_y());
+
+		if (input_mouse_pressed(SV_MOUSE_BUTTON_LEFT))
+			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
+		if (input_mouse_pressed(SV_MOUSE_BUTTON_RIGHT))
+			platform_pointer_mode(platform, PLATFORM_POINTER_DISABLED);
 
 		if (state.resized) {
 			LOG_INFO("Recreating Swapchain...");

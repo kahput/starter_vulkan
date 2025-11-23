@@ -16,7 +16,10 @@ static struct {
 	} buttons[SV_MOUSE_BUTTON_LAST];
 
 	struct {
-		int32_t x, y;
+		double x, y;
+		double last_x, last_y;
+
+		double dx, dy;
 	} motion;
 
 } state;
@@ -56,6 +59,12 @@ bool input_system_update(void) {
 		button->last = button->state;
 	}
 
+	state.motion.dx = state.motion.x - state.motion.last_x;
+	state.motion.dy = state.motion.y - state.motion.last_y;
+
+	state.motion.last_x = state.motion.x;
+	state.motion.last_y = state.motion.y;
+
 	return true;
 }
 
@@ -87,11 +96,18 @@ bool input_mouse_up(int button) {
 	return state.buttons[button].state == false;
 }
 
-int32_t input_mouse_x(void) {
+double input_mouse_x(void) {
 	return state.motion.x;
 }
-int32_t input_mouse_y(void) {
+double input_mouse_y(void) {
 	return state.motion.y;
+}
+
+double input_mouse_delta_x(void) {
+	return state.motion.dx;
+}
+double input_mouse_delta_y(void) {
+	return state.motion.dy;
 }
 
 bool on_key_event(Event *event) {
@@ -149,6 +165,6 @@ bool on_mouse_motion_event(Event *event) {
 	state.motion.x = motion_event->x;
 	state.motion.y = motion_event->y;
 
-	LOG_TRACE("MouseMotion { x = %d, y = %d }", motion_event->x, motion_event->y);
+	// LOG_TRACE("MouseMotion { x = %d, y = %d }", motion_event->x, motion_event->y);
 	return true;
 }

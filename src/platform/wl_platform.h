@@ -140,6 +140,7 @@ typedef uint32_t PointerEventMask;
 typedef struct pointer_event {
 	PointerEventMask event_mask;
 	wl_fixed_t surface_x, surface_y;
+	wl_fixed_t delta_surface_x, delta_surface_y;
 	uint32_t button, state;
 	uint32_t time;
 	uint32_t serial;
@@ -167,7 +168,15 @@ typedef struct wl_platform {
 	struct wp_viewport *viewport;
 	struct wp_fractional_scale_manager_v1 *fractional_scale_manager;
 	struct wp_fractional_scale_v1 *fractional_scale;
+	struct wp_cursor_shape_manager_v1 *cursor_shape_manager;
 	float scale_factor;
+
+	struct zwp_pointer_constraints_v1 *pointer_constraints;
+	struct zwp_relative_pointer_manager_v1 *relative_pointer_manager;
+
+	struct zwp_relative_pointer_v1 *relative_pointer;
+	struct zwp_locked_pointer_v1 *locked_pointer;
+	struct wp_cursor_shape_device_v1 *cursor_shape_device;
 
 	struct {
 		struct xdg_surface *surface;
@@ -189,6 +198,11 @@ typedef struct wl_platform {
 
 	int16_t keycodes[256];
 
+	PointerMode pointer_mode;
+
+	double virtual_pointer_x, virtual_pointer_y;
+	double pointer_x, pointer_y;
+
 	bool use_vulkan;
 } WLPlatform;
 
@@ -204,6 +218,8 @@ bool wl_should_close(Platform *platform);
 
 void wl_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
 void wl_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
+
+bool wl_pointer_mode(Platform *platform, PointerMode mode);
 
 uint64_t wl_time_ms(Platform *platform);
 
