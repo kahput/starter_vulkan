@@ -294,14 +294,14 @@ bool wl_pointer_mode(Platform *platform, PointerMode mode) {
 		wl->cursor_shape_device = wp_cursor_shape_manager_v1_get_pointer(wl->cursor_shape_manager, wl->pointer);
 		wl_pointer_set_cursor(wl->pointer, wl->current_pointer_frame.serial, NULL, 0, 0);
 
+		wl->virtual_pointer_x = platform->physical_width / 2.f;
+		wl->virtual_pointer_y = platform->physical_height / 2.f;
+
 		wl->relative_pointer = zwp_relative_pointer_manager_v1_get_relative_pointer(wl->relative_pointer_manager, wl->pointer);
-
-		wl->virtual_pointer_x = 0;
-		wl->virtual_pointer_y = 0;
-
 		zwp_relative_pointer_v1_add_listener(wl->relative_pointer, &relative_pointer_listener, wl);
 
 		wl->locked_pointer = zwp_pointer_constraints_v1_lock_pointer(wl->pointer_constraints, wl->surface, wl->pointer, NULL, ZWP_POINTER_CONSTRAINTS_V1_LIFETIME_PERSISTENT);
+		zwp_locked_pointer_v1_set_cursor_position_hint(wl->locked_pointer, wl_fixed_from_double(wl->virtual_pointer_x), wl_fixed_from_double(wl->virtual_pointer_y));
 	}
 	if (mode != PLATFORM_POINTER_DISABLED && previous == PLATFORM_POINTER_DISABLED) {
 		wp_cursor_shape_device_v1_set_shape(wl->cursor_shape_device, wl->current_pointer_frame.serial, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
