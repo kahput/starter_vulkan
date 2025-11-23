@@ -302,6 +302,7 @@ bool wl_pointer_mode(Platform *platform, PointerMode mode) {
 
 		wl->locked_pointer = zwp_pointer_constraints_v1_lock_pointer(wl->pointer_constraints, wl->surface, wl->pointer, NULL, ZWP_POINTER_CONSTRAINTS_V1_LIFETIME_PERSISTENT);
 		zwp_locked_pointer_v1_set_cursor_position_hint(wl->locked_pointer, wl_fixed_from_double(wl->virtual_pointer_x), wl_fixed_from_double(wl->virtual_pointer_y));
+		return true;
 	}
 	if (mode != PLATFORM_POINTER_DISABLED && previous == PLATFORM_POINTER_DISABLED) {
 		wp_cursor_shape_device_v1_set_shape(wl->cursor_shape_device, wl->current_pointer_frame.serial, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT);
@@ -310,8 +311,9 @@ bool wl_pointer_mode(Platform *platform, PointerMode mode) {
 
 		zwp_locked_pointer_v1_destroy(wl->locked_pointer);
 		wl->locked_pointer = NULL;
+		return true;
 	}
-	return true;
+	return false;
 }
 
 uint64_t wl_time_ms(Platform *platform) {
