@@ -50,7 +50,7 @@ bool vulkan_create_swapchain(VulkanContext *context, Platform *platform) {
 		swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	if (vkCreateSwapchainKHR(context->device.logical, &swapchain_create_info, NULL, &context->swapchain.handle) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create swapchain");
+		LOG_ERROR("Failed to create SwapchainKHR handle");
 		return false;
 	}
 
@@ -59,7 +59,6 @@ bool vulkan_create_swapchain(VulkanContext *context, Platform *platform) {
 
 	create_swapchain_image_views(context);
 
-	LOG_INFO("Swapchain created");
 
 	return true;
 }

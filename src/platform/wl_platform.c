@@ -2,11 +2,10 @@
 #include "platform/internal.h"
 
 #include "common.h"
-#include "core/input_types.h"
 #include "core/logger.h"
 
 #include "event.h"
-#include "events/input_events.h"
+#include "events/platform_events.h"
 
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
@@ -283,7 +282,6 @@ uint64_t wl_time_ms(Platform *platform) {
 	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
 }
 
-
 bool wl_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {
 	struct platform_internal *internal = (struct platform_internal *)platform->internal;
 	WLPlatform *wl = &internal->wl;
@@ -409,12 +407,16 @@ void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 
 	// LOG_TRACE("pointer frame @ %d: ", event->time);
 	if (pointer_event->event_mask & POINTER_EVENT_ENTER) {
-		LOG_TRACE("entered %d, %d ",
-			wl_fixed_to_int(pointer_event->surface_x),
-			wl_fixed_to_int(pointer_event->surface_y));
+		MouseMotionEvent event = event_create(MouseMotionEvent, SV_EVENT_MOUSE_MOTION);
+		event.x = wl_fixed_to_int(pointer_event->surface_x);
+		event.y = wl_fixed_to_int(pointer_event->surface_y);
+		event_emit((Event *)&event);
+		// LOG_TRACE("entered %d, %d ",
+		// 	wl_fixed_to_int(pointer_event->surface_x),
+		// 	wl_fixed_to_int(pointer_event->surface_y));
 	}
 	if (pointer_event->event_mask & POINTER_EVENT_LEAVE) {
-		LOG_TRACE("leave");
+		// LOG_TRACE("leave");
 	}
 	if (pointer_event->event_mask & POINTER_EVENT_MOTION) {
 		MouseMotionEvent event = event_create(MouseMotionEvent, SV_EVENT_MOUSE_MOTION);

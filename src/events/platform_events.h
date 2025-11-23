@@ -11,13 +11,13 @@ typedef struct {
 
 typedef struct {
 	EventCommon header;
-	int32_t x, y; 
-	int32_t dx, dy; 
+	int32_t x, y;
+	int32_t dx, dy;
 } MouseMotionEvent;
 
 typedef struct {
 	EventCommon header;
-	uint32_t button; 
+	uint32_t button;
 	int32_t x, y;
 	uint32_t mods;
 } MouseButtonEvent;

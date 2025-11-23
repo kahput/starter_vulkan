@@ -3,6 +3,7 @@
 #include "common.h"
 
 #define MAX_EVENT_SIZE 128
+#define MAX_EVENT_TYPES 1024
 
 typedef struct {
 	uint32_t type, size;
@@ -20,11 +21,14 @@ typedef bool (*PFN_on_event)(Event *event);
 bool event_system_startup(void);
 bool event_system_shutdown(void);
 
-void event_register(uint16_t event_type, PFN_on_event on_event);
-void event_unregister(uint16_t event_type, PFN_on_event on_event);
+// TODO: Implement event queue
+// bool event_system_update(void);
+
+bool event_subscribe(uint16_t event_type, PFN_on_event on_event);
+bool event_unsubscribe(uint16_t event_type, PFN_on_event on_event);
 
 #define event_create(T, type_id) ((T){ .header = { .type = type_id, .size = sizeof(T) } })
-void event_emit(Event *event);
+bool event_emit(Event *event);
 
 typedef enum {
 	SV_EVENT_NULL = 0,

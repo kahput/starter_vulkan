@@ -1,8 +1,9 @@
 #pragma once
 
-#include "common.h"
-#include "core/input_types.h"
 #include "platform.h"
+
+#include "common.h"
+#include "input/input_types.h"
 
 #include <wayland-client-core.h>
 

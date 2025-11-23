@@ -1,8 +1,9 @@
-#include "core/input_types.h"
+#include "platform.h"
 
 #include "event.h"
+
 #include "input.h"
-#include "platform.h"
+#include "input/input_types.h"
 
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
@@ -46,8 +47,9 @@ int main(void) {
 
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
-	logger_set_level(LOG_LEVEL_TRACE);
+	logger_set_level(LOG_LEVEL_DEBUG);
 
+	event_system_startup();
 	input_system_startup();
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
@@ -60,7 +62,7 @@ int main(void) {
 	}
 
 	state.start_time = platform_time_ms(platform);
-	event_register(SV_EVENT_WINDOW_RESIZED, resize_event);
+	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
 	vulkan_renderer_create(state.permanent, platform, &context);
 
@@ -146,6 +148,9 @@ int main(void) {
 
 		input_system_update();
 	}
+
+	input_system_shutdown();
+	event_system_shutdown();
 
 	vkDeviceWaitIdle(context.device.logical);
 
