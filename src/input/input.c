@@ -68,17 +68,17 @@ bool input_system_update(void) {
 	return true;
 }
 
-bool input_is_key_pressed(int key) {
+bool input_key_released(int key) {
 	return state.keys[key].state == true && state.keys[key].last == false;
 }
-bool input_is_key_released(int key) {
+bool input_key_pressed(int key) {
 	return state.keys[key].state == false && state.keys[key].last == true;
 }
 
-bool input_is_key_down(int key) {
+bool input_key_down(int key) {
 	return state.keys[key].state == true;
 }
-bool input_is_key_up(int key) {
+bool input_key_up(int key) {
 	return state.keys[key].state == false;
 }
 
