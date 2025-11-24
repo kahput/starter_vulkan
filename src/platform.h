@@ -16,9 +16,7 @@ typedef void (*fn_platform_dimensions)(struct platform *platform, uint32_t width
 
 typedef enum {
 	PLATFORM_POINTER_NORMAL,
-	PLATFORM_POINTER_HIDDEN,
 	PLATFORM_POINTER_DISABLED,
-	PLATFORM_POINTER_CAPTURED,
 } PointerMode;
 
 Platform *platform_startup(Arena *arena, uint32_t width, uint32_t height, const char *title);

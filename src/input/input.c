@@ -1,4 +1,5 @@
 #include "input.h"
+#include "common.h"
 #include "input_types.h"
 
 #include "event.h"
@@ -19,7 +20,7 @@ static struct {
 		double x, y;
 		double last_x, last_y;
 
-		double dx, dy;
+		bool initialized, virtual_cursor;
 	} motion;
 
 } state;
@@ -58,9 +59,6 @@ bool input_system_update(void) {
 		struct Button *button = &state.buttons[index];
 		button->last = button->state;
 	}
-
-	state.motion.dx = state.motion.x - state.motion.last_x;
-	state.motion.dy = state.motion.y - state.motion.last_y;
 
 	state.motion.last_x = state.motion.x;
 	state.motion.last_y = state.motion.y;
@@ -104,14 +102,23 @@ double input_mouse_y(void) {
 }
 
 double input_mouse_delta_x(void) {
-	return state.motion.dx;
+	return state.motion.x - state.motion.last_x;
 }
 double input_mouse_delta_y(void) {
-	return state.motion.dy;
+	return state.motion.y - state.motion.last_y;
 }
 
 bool on_key_event(Event *event) {
 	KeyEvent *key_event = (KeyEvent *)event;
+
+	if (key_event->leave) {
+		for (uint32_t index = 0; index < array_count(state.keys); ++index) {
+			state.keys[index].state = false;
+			state.keys[index].last = false;
+		}
+
+		return true;
+	}
 
 	if (key_event->mods & SV_MOD_KEY_SHIFT) {
 		LOG_TRACE("Mod Key SHIFT held");
@@ -165,6 +172,19 @@ bool on_mouse_motion_event(Event *event) {
 	state.motion.x = motion_event->x;
 	state.motion.y = motion_event->y;
 
-	// LOG_TRACE("MouseMotion { x = %d, y = %d }", motion_event->x, motion_event->y);
+	if (motion_event->virtual_cursor != state.motion.virtual_cursor) {
+		state.motion.virtual_cursor = motion_event->virtual_cursor;
+
+		state.motion.last_x = state.motion.x;
+		state.motion.last_y = state.motion.y;
+	}
+
+	if (state.motion.initialized == false) {
+		state.motion.initialized = true;
+
+		state.motion.last_x = state.motion.x;
+		state.motion.last_y = state.motion.y;
+	}
+
 	return true;
 }

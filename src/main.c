@@ -8,6 +8,7 @@
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
+#include <cglm/util.h>
 #include <cglm/vec3.h>
 #include <cgltf/cgltf.h>
 
@@ -33,9 +34,19 @@ void get_path(const char *src, char *dst);
 
 static const float camera_speed = 1.0f;
 
+typedef struct camera {
+	float speed, sensitivity;
+
+	float yaw, pitch;
+
+	vec3 position, up;
+} Camera;
+
 static struct State {
 	bool resized;
 	uint64_t start_time;
+
+	Camera camera;
 
 	Arena *permanent, *frame, *assets;
 } state;
@@ -125,11 +136,20 @@ int main(void) {
 	vulkan_create_descriptor_pool(&context);
 	vulkan_create_descriptor_set(&context);
 
+	state.camera = (Camera){
+		.speed = 3.0f,
+		.sensitivity = 2.5f,
+		.pitch = 0.0f,
+		.yaw = 90.f,
+		.position = { 0.0f, 1.0f, 5.0f },
+		.up = { 0.0f, 1.0f, 0.0f },
+	};
+
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
 	while (platform_should_close(platform) == false) {
-		float current_frame = (double)(platform_time_ms(platform) - state.start_time) / 1000.f;
+		float current_frame = (double)(platform_time_ms(platform) - state.start_time) / 1000.0f;
 		delta_time = current_frame - last_frame;
 		last_frame = current_frame;
 
@@ -143,8 +163,6 @@ int main(void) {
 		Vulkan_renderer_end_frame(&context);
 
 		update_uniforms(&context, platform, delta_time);
-
-		// LOG_INFO("MouseMotion { x = %.2f, y = %.2f, dx = %.2f, dy = %.2f}", input_mouse_x(), input_mouse_y(), input_mouse_delta_x(), input_mouse_delta_y());
 
 		if (input_mouse_pressed(SV_MOUSE_BUTTON_LEFT))
 			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
@@ -179,26 +197,56 @@ void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 	MVPObject mvp = { 0 };
 	glm_mat4_identity(mvp.model);
 
-	static vec3 camera_position = { 0.0f, 1.0f, 5.0f };
+	static bool use_keys = true;
 
-	vec3 move_vector = {
-		(input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * camera_speed * dt,
-		0.0f,
-		(input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * camera_speed * dt,
+	if (input_key_pressed(SV_KEY_TAB))
+		use_keys = !use_keys;
+
+	state.camera.yaw += input_mouse_delta_x() * state.camera.sensitivity * 0.01f;
+	state.camera.pitch += input_mouse_delta_y() * state.camera.sensitivity * 0.01f;
+
+	if (state.camera.pitch > 89.0f)
+		state.camera.pitch = 89.0f;
+	if (state.camera.pitch < -89.0f)
+		state.camera.pitch = -89.0f;
+
+	vec3 camera_forward = {
+		cos(glm_rad(state.camera.yaw)) * cos(glm_rad(state.camera.pitch)),
+		sin(glm_rad(state.camera.pitch)),
+		sin(glm_rad(state.camera.yaw)) * cos(glm_rad(state.camera.pitch)),
 	};
-	glm_vec3_add(move_vector, camera_position, camera_position);
+	glm_vec3_normalize(camera_forward);
 
-	vec3 camera_front = { 0.0f, 0.0f, -1.0f }, world_up = { 0.0f, 1.0f, 0.0f };
+	vec3 camera_right;
+	glm_vec3_cross(state.camera.up, camera_forward, camera_right);
+	glm_vec3_normalize(camera_right);
+
+	vec3 camera_up;
+	glm_vec3_cross(camera_forward, camera_right, camera_up);
+
+	vec3 move;
+	glm_vec3_zero(move);
+
+	if (use_keys) {
+		glm_vec3_muladds(camera_right, (input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * state.camera.speed * dt, move);
+		glm_vec3_muladds(state.camera.up, (input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_LEFTCTRL)) * state.camera.speed * dt, move);
+		glm_vec3_muladds(camera_forward, (input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * state.camera.speed * dt, move);
+	}
+
+	// glm_vec3_normalize(move);
+	glm_vec3_add(move, state.camera.position, state.camera.position);
+
 	vec3 camera_target;
-	glm_vec3_add(camera_position, camera_front, camera_target);
+	glm_vec3_sub(state.camera.position, camera_forward, camera_target);
+
 	glm_mat4_identity(mvp.view);
-	glm_lookat(camera_position, camera_target, world_up, mvp.view);
+	glm_lookat(state.camera.position, camera_target, camera_up, mvp.view);
 
 	glm_mat4_identity(mvp.projection);
 	glm_perspective(glm_rad(45.f), (float)context->swapchain.extent.width / (float)context->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
-	mempcpy(context->uniform_buffers_mapped[context->current_frame], &mvp, sizeof(MVPObject));
+	memcpy(context->uniform_buffers_mapped[context->current_frame], &mvp, sizeof(MVPObject));
 }
 
 bool resize_event(Event *event) {

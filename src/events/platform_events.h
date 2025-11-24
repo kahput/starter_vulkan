@@ -6,13 +6,15 @@ typedef struct {
 	EventCommon header;
 
 	uint32_t key, mods;
-	bool is_repeat;
+	bool leave;
 } KeyEvent;
 
 typedef struct {
 	EventCommon header;
 	double x, y;
 	double dx, dy;
+
+	bool virtual_cursor;
 } MouseMotionEvent;
 
 typedef struct {

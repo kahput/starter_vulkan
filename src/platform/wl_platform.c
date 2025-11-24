@@ -645,6 +645,11 @@ void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial
 void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface) {
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
+
+	KeyEvent event = event_create(KeyEvent, SV_EVENT_KEY_RELEASED);
+	event.leave = true;
+
+	event_emit((Event *)&event);
 }
 void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t scancode, uint32_t state) {
 	Platform *platform = (Platform *)data;
@@ -662,7 +667,7 @@ void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, 
 	KeyEvent event = event_create(KeyEvent, state == WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED);
 	event.key = scancode < array_count(wl->keycodes) ? wl->keycodes[scancode] : SV_KEY_UNKOWN;
 	event.mods = wl->xkb.modifiers;
-	event.is_repeat = false;
+	// event.is_repeat = false;
 
 	event_emit((Event *)&event);
 
@@ -735,6 +740,7 @@ void relative_pointer_relative_motion(void *data, struct zwp_relative_pointer_v1
 
 	event.x = wl->virtual_pointer_x;
 	event.y = wl->virtual_pointer_y;
+	event.virtual_cursor = true;
 
 	event_emit((Event *)&event);
 
