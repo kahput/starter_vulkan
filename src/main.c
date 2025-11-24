@@ -8,6 +8,7 @@
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
+#include <cglm/vec3.h>
 #include <cgltf/cgltf.h>
 
 #include <stb/stb_image.h>
@@ -26,10 +27,11 @@
 
 Model *load_gltf_model(Arena *arena, const char *path);
 bool resize_event(Event *event);
-void resize_callback(Platform *platform, uint32_t width, uint32_t height);
-void update_uniforms(VulkanContext *context, Platform *platform);
+void update_uniforms(VulkanContext *context, Platform *platform, float dt);
 void get_filename(const char *src, char *dst);
 void get_path(const char *src, char *dst);
+
+static const float camera_speed = 1.0f;
 
 static struct State {
 	bool resized;
@@ -123,7 +125,14 @@ int main(void) {
 	vulkan_create_descriptor_pool(&context);
 	vulkan_create_descriptor_set(&context);
 
+	float delta_time = 0.0f;
+	float last_frame = 0.0f;
+
 	while (platform_should_close(platform) == false) {
+		float current_frame = (double)(platform_time_ms(platform) - state.start_time) / 1000.f;
+		delta_time = current_frame - last_frame;
+		last_frame = current_frame;
+
 		platform_poll_events(platform);
 		vulkan_renderer_begin_frame(&context, platform);
 
@@ -133,9 +142,9 @@ int main(void) {
 
 		Vulkan_renderer_end_frame(&context);
 
-		update_uniforms(&context, platform);
+		update_uniforms(&context, platform, delta_time);
 
-		LOG_INFO("MouseMotion { x = %.2f, y = %.2f, dx = %.2f, dy = %.2f}", input_mouse_x(), input_mouse_y(), input_mouse_delta_x(), input_mouse_delta_y());
+		// LOG_INFO("MouseMotion { x = %.2f, y = %.2f, dx = %.2f, dy = %.2f}", input_mouse_x(), input_mouse_y(), input_mouse_delta_x(), input_mouse_delta_y());
 
 		if (input_mouse_pressed(SV_MOUSE_BUTTON_LEFT))
 			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
@@ -166,19 +175,24 @@ int main(void) {
 	return 0;
 }
 
-void update_uniforms(VulkanContext *context, Platform *platform) {
-	uint64_t current_time = platform_time_ms(platform);
-	double time = (double)(current_time - state.start_time) / 1000.;
-
-	vec3 axis = { 1.0f, 1.0f, 0.0f };
-
+void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 	MVPObject mvp = { 0 };
 	glm_mat4_identity(mvp.model);
-	// glm_rotate(mvp.model, time, axis);
 
-	vec3 eye = { 0.0f, 0.0f, -10.0f }, center = { 0.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
+	static vec3 camera_position = { 0.0f, 1.0f, 5.0f };
+
+	vec3 move_vector = {
+		(input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * camera_speed * dt,
+		0.0f,
+		(input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * camera_speed * dt,
+	};
+	glm_vec3_add(move_vector, camera_position, camera_position);
+
+	vec3 camera_front = { 0.0f, 0.0f, -1.0f }, world_up = { 0.0f, 1.0f, 0.0f };
+	vec3 camera_target;
+	glm_vec3_add(camera_position, camera_front, camera_target);
 	glm_mat4_identity(mvp.view);
-	glm_lookat(eye, center, up, mvp.view);
+	glm_lookat(camera_position, camera_target, world_up, mvp.view);
 
 	glm_mat4_identity(mvp.projection);
 	glm_perspective(glm_rad(45.f), (float)context->swapchain.extent.width / (float)context->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
