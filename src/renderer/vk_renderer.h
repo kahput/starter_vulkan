@@ -10,12 +10,6 @@
 struct arena;
 struct platform;
 
-typedef struct {
-	mat4 model;
-	mat4 view;
-	mat4 projection;
-} MVPObject;
-
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context);
 void vulkan_renderer_destroy(VulkanContext *context);
 

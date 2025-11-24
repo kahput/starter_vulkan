@@ -4,8 +4,11 @@
 
 #include <cglm/cglm.h>
 
-// Shader
-typedef void *Shader;
+typedef struct {
+	mat4 model;
+	mat4 view;
+	mat4 projection;
+} MVPObject;
 
 typedef struct {
 	vec3 position;
