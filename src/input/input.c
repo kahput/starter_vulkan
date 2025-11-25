@@ -39,6 +39,7 @@ bool input_system_startup(void) {
 
 	return true;
 }
+
 bool input_system_shutdown(void) {
 	event_unsubscribe(SV_EVENT_KEY_PRESSED, on_key_event);
 	event_unsubscribe(SV_EVENT_KEY_RELEASED, on_key_event);

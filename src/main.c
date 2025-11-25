@@ -29,6 +29,7 @@
 Model *load_gltf_model(Arena *arena, const char *path);
 bool resize_event(Event *event);
 void update_uniforms(VulkanContext *context, Platform *platform, float dt);
+
 void get_filename(const char *src, char *dst);
 void get_path(const char *src, char *dst);
 
@@ -84,9 +85,9 @@ int main(void) {
 	// ================== DYNAMIC ==================
 
 	VertexAttribute attributes[] = {
-		{ .name = "in_position", FORMAT_FLOAT3, 0 },
-		{ .name = "in_uv", FORMAT_FLOAT2, 0 },
-		{ .name = "in_normal", FORMAT_FLOAT3, 0 },
+		{ .name = "in_position", .format = FORMAT_FLOAT3, .binding = 0 },
+		{ .name = "in_uv", .format = FORMAT_FLOAT2, .binding = 0 },
+		{ .name = "in_normal", .format = FORMAT_FLOAT3, .binding = 0 },
 	};
 
 	vulkan_create_descriptor_set_layout(&context);
@@ -104,7 +105,7 @@ int main(void) {
 	LOG_INFO("Loading %s...", file_name);
 	logger_indent();
 	int32_t width, height, channels;
-	uint8_t *pixels = stbi_load(file_path, &width, &height, &channels, STBI_rgb_alpha);
+	uint8_t *pixels = stbi_load(file_path, &width, &height, &channels, STBI_default);
 
 	if (pixels == NULL) {
 		LOG_ERROR("Failed to load image [ %s ]", file_path);
@@ -128,7 +129,7 @@ int main(void) {
 		vertex_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
 		vertex_buffers[index]->vertex_count = model->primitives[index].vertex_count;
 
-		index_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(model->primitives[index].indices) * model->primitives->index_count, (void *)model->primitives[index].indices);
+		index_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
 		index_buffers[index]->index_count = model->primitives[index].index_count;
 	}
 
@@ -154,6 +155,7 @@ int main(void) {
 		last_frame = current_frame;
 
 		platform_poll_events(platform);
+		update_uniforms(&context, platform, delta_time);
 		vulkan_renderer_begin_frame(&context, platform);
 
 		for (uint32_t index = 0; index < model->primitive_count; ++index) {
@@ -161,8 +163,6 @@ int main(void) {
 		}
 
 		Vulkan_renderer_end_frame(&context);
-
-		update_uniforms(&context, platform, delta_time);
 
 		if (input_mouse_pressed(SV_MOUSE_BUTTON_LEFT))
 			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
@@ -306,11 +306,13 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 						}
 					} break;
 					case cgltf_attribute_type_texcoord: {
-						float *src = (float *)((uint8_t *)buffer->data + view->offset);
+						uint8_t *data = (uint8_t *)buffer->data + view->offset;
+						size_t stride = view->stride ? view->stride : accessor->stride;
 
 						for (uint32_t index = 0; index < accessor->count; ++index) {
-							out_primitive->vertices[index].uv[0] = src[index * 2 + 0];
-							out_primitive->vertices[index].uv[1] = src[index * 2 + 1];
+							float *src = (float *)(data + index * stride);
+							out_primitive->vertices[index].uv[0] = src[0];
+							out_primitive->vertices[index].uv[1] = src[1];
 						}
 					} break;
 					case cgltf_attribute_type_invalid:
@@ -352,49 +354,54 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 				cgltf_pbr_metallic_roughness *pbr_material = &material->pbr_metallic_roughness;
 
 				if (pbr_material->base_color_texture.texture) {
-					cgltf_texture_view base_color_view = pbr_material->base_color_texture;
-					cgltf_texture *base_color_texture = base_color_view.texture;
-					cgltf_image *base_color = base_color_texture->image;
+					cgltf_texture_view texture_view = pbr_material->base_color_texture;
+
+					cgltf_texture *texture = texture_view.texture;
+					cgltf_sampler *sampler = texture->sampler;
+
+					cgltf_image *image = texture->image;
 
 					Texture *out_texture = &out_material->base_color_texture;
 					out_texture->path = arena_push_array_zero(arena, char, MAX_FILE_PATH_LENGTH);
 
-					if (base_color->buffer_view) {
-						cgltf_buffer_view *view = base_color->buffer_view;
-						cgltf_buffer *buffer = view->buffer;
+					if (image->buffer_view) {
+						cgltf_buffer_view *buffer_view = image->buffer_view;
+						cgltf_buffer *buffer = buffer_view->buffer;
 
-						LOG_DEBUG("%s BufferView { offset = %d, size = %d, stride = %d }", base_color->name, view->offset, view->size, view->stride);
-						LOG_DEBUG("%s Buffer { size = %d }", base_color->name, buffer->size);
+						LOG_DEBUG("%s BufferView { offset = %d, size = %d, stride = %d }", image->name, buffer_view->offset, buffer_view->size, buffer_view->stride);
+						LOG_DEBUG("%s Buffer { size = %d }", image->name, buffer->size);
 
 						uint32_t length = 0;
 						char c;
 
-						uint8_t *src = (uint8_t *)buffer->data + view->offset;
+						uint8_t *src = (uint8_t *)buffer->data + buffer_view->offset;
+						uint64_t bytes = *((uint64_t *)src);
+						LOG_DEBUG("Hex: %zX", bytes);
 
-						while ((c = base_color->mime_type[length++]) != '\0') {
+						while ((c = image->mime_type[length++]) != '\0') {
 							if (c == '/' || c == '\\') {
-								if (strcmp(&base_color->mime_type[length], "png") == 0) {
-									LOG_DEBUG("MimeType should be png (it is '%s')", base_color->mime_type);
+								if (strcmp(&image->mime_type[length], "png") == 0) {
+									LOG_DEBUG("MimeType should be png (it is '%s')", image->mime_type);
 
 									strncpy(out_texture->path, relative_path, MAX_FILE_PATH_LENGTH);
 									strncat(out_texture->path, node->name, MAX_FILE_NAME_LENGTH);
 									out_texture->path[strnlen(out_texture->path, MAX_FILE_PATH_LENGTH)] = '_';
 									out_texture->path[strnlen(out_texture->path, MAX_FILE_PATH_LENGTH) + 1] = '\0';
-									strncat(out_texture->path, base_color->name, MAX_FILE_PATH_LENGTH);
+									strncat(out_texture->path, image->name, MAX_FILE_PATH_LENGTH);
 									strncat(out_texture->path, ".png", MAX_FILE_PATH_LENGTH);
 
-									uint8_t *pixels = stbi_load_from_memory(src, view->size, (int32_t *)&out_texture->width, (int32_t *)&out_texture->height, (int32_t *)&out_texture->channels, 4);
-									stbi_write_png(out_texture->path, out_texture->width, out_texture->height, out_texture->channels, pixels, out_texture->width);
+									uint8_t *pixels = stbi_load_from_memory(src, buffer_view->size, (int32_t *)&out_texture->width, (int32_t *)&out_texture->height, (int32_t *)&out_texture->channels, 4);
+									stbi_write_png(out_texture->path, out_texture->width, out_texture->height, out_texture->channels, pixels, 0);
 								}
-								if (strcmp(&base_color->mime_type[length], "jpeg") == 0) {
-									LOG_DEBUG("MimeType should be jpeg (it is '%s')", base_color->mime_type);
+								if (strcmp(&image->mime_type[length], "jpeg") == 0) {
+									LOG_DEBUG("MimeType should be jpeg (it is '%s')", image->mime_type);
 								}
 							}
 						}
 					} else {
-						LOG_DEBUG("URI '%s'[%s]", base_color->name, base_color->uri);
+						LOG_DEBUG("URI '%s'[%s]", image->name, image->uri);
 						strncpy(out_texture->path, relative_path, MAX_FILE_PATH_LENGTH);
-						strncat(out_texture->path, base_color->uri, MAX_FILE_NAME_LENGTH);
+						strncat(out_texture->path, image->uri, MAX_FILE_NAME_LENGTH);
 					}
 				}
 
