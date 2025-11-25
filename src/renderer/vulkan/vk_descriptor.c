@@ -1,3 +1,4 @@
+#include "common.h"
 #include "core/logger.h"
 #include "renderer/vk_renderer.h"
 #include <vulkan/vulkan_core.h>
@@ -71,7 +72,7 @@ bool vulkan_create_descriptor_set(VulkanContext *context) {
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = context->descriptor_pool,
-		.descriptorSetCount = MAX_FRAMES_IN_FLIGHT,
+		.descriptorSetCount = array_count(layouts),
 		.pSetLayouts = layouts
 	};
 

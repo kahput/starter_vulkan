@@ -16,9 +16,15 @@ typedef struct {
 	vec3 normal;
 } Vertex;
 
+typedef struct image {
+	int32_t width, height, channels;
+
+	void *pixels;
+} Image;
+
 typedef struct {
 	char *path;
-	uint32_t width, height, channels;
+	int32_t width, height, channels;
 
 	void *internal;
 } Texture;

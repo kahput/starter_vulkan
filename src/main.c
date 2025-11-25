@@ -32,6 +32,9 @@ Model *load_gltf_model(Arena *arena, const char *path);
 bool resize_event(Event *event);
 void update_uniforms(VulkanContext *context, Platform *platform, float dt);
 
+Image load_image(const char *path);
+void unload_image(Image image);
+
 bool file_exists(const char *path);
 void file_name(const char *src, char *dst);
 void file_path(const char *src, char *dst);
@@ -101,29 +104,13 @@ int main(void) {
 	Model *model = load_gltf_model(state.assets, BOT_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, MAGE_FILE_PATH);
 
-	LOG_DEBUG("Model path to diffuse color is: '%s'", model->primitives->material.base_color_texture.path);
-	const char *file_path = model->primitives->material.base_color_texture.path;
-	char filename[256];
-	file_name(file_path, filename);
-	LOG_INFO("Loading %s...", filename);
-	logger_indent();
-	int32_t width, height, channels;
-	uint8_t *pixels = stbi_load(file_path, &width, &height, &channels, STBI_default);
+	Image model_alebdo = load_image(model->primitives->material.base_color_texture.path);
 
-	if (pixels == NULL) {
-		LOG_ERROR("Failed to load image [ %s ]", file_path);
-		return -1;
-	}
-
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, width, height, channels);
-	LOG_INFO("%s loaded", filename);
-	logger_dedent();
-
-	vulkan_create_texture_image(&context, width, height, channels, pixels);
+	vulkan_create_texture_image(&context, model_alebdo.width, model_alebdo.height, model_alebdo.channels, model_alebdo.pixels);
 	vulkan_create_texture_image_view(&context);
 	vulkan_create_texture_sampler(&context);
 
-	stbi_image_free(pixels);
+	unload_image(model_alebdo);
 
 	Buffer *vertex_buffers[model->primitive_count];
 	Buffer *index_buffers[model->primitive_count];
@@ -483,6 +470,31 @@ Model *load_gltf_model(Arena *arena, const char *path) {
 	}
 	LOG_ERROR("Failed to load model");
 	return NULL;
+}
+
+Image load_image(const char *path) {
+	Image image;
+	char filename[256];
+	file_name(path, filename);
+	LOG_INFO("Loading %s...", filename);
+	logger_indent();
+	image.pixels = stbi_load(path, &image.width, &image.height, &image.channels, STBI_default);
+
+	if (image.pixels == NULL) {
+		LOG_ERROR("Failed to load image [ %s ]", path);
+		return (Image){ 0 };
+	}
+
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, image.width, image.height, image.channels);
+	LOG_INFO("%s loaded", filename);
+	logger_dedent();
+
+	return image;
+}
+
+void unload_image(Image image) {
+	if (image.pixels)
+		stbi_image_free(image.pixels);
 }
 
 bool file_exists(const char *path) {
