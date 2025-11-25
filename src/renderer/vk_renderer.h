@@ -19,8 +19,8 @@ bool Vulkan_renderer_end_frame(VulkanContext *context);
 bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer);
 
-Buffer *vulkan_buffer_create(struct arena *arena, VulkanContext *context, BufferType type, size_t size, void *data);
-bool vulkan_buffer_bind(VulkanContext *context, Buffer *buffer);
+Buffer *vulkan_renderer_create_buffer(struct arena *arena, VulkanContext *context, BufferType type, size_t size, void *data);
+bool vulkan_renderer_bind_buffer(VulkanContext *context, Buffer *buffer);
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 

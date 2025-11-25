@@ -4,6 +4,7 @@
 #include "common.h"
 #include "core/arena.h"
 #include "core/logger.h"
+#include "renderer/vulkan/vk_types.h"
 #include <vulkan/vulkan_core.h>
 
 VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, uint32_t count);
@@ -26,6 +27,8 @@ bool vulkan_create_swapchain(VulkanContext *context, Platform *platform) {
 	uint32_t image_count = capabilities.minImageCount + 1;
 	if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount)
 		image_count = capabilities.maxImageCount;
+
+	image_count = min(image_count, SWAPCHAIN_BUFFERING);
 
 	VkSwapchainCreateInfoKHR swapchain_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -58,7 +61,6 @@ bool vulkan_create_swapchain(VulkanContext *context, Platform *platform) {
 	vkGetSwapchainImagesKHR(context->device.logical, context->swapchain.handle, &context->swapchain.images.count, context->swapchain.images.handles);
 
 	create_swapchain_image_views(context);
-
 
 	return true;
 }

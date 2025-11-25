@@ -12,6 +12,7 @@
 #include <cglm/vec3.h>
 #include <cgltf/cgltf.h>
 
+#include <fcntl.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
 
@@ -19,6 +20,7 @@
 #include "core/arena.h"
 #include "core/logger.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
@@ -30,8 +32,9 @@ Model *load_gltf_model(Arena *arena, const char *path);
 bool resize_event(Event *event);
 void update_uniforms(VulkanContext *context, Platform *platform, float dt);
 
-void get_filename(const char *src, char *dst);
-void get_path(const char *src, char *dst);
+bool file_exists(const char *path);
+void file_name(const char *src, char *dst);
+void file_path(const char *src, char *dst);
 
 static const float camera_speed = 1.0f;
 
@@ -100,9 +103,9 @@ int main(void) {
 
 	LOG_DEBUG("Model path to diffuse color is: '%s'", model->primitives->material.base_color_texture.path);
 	const char *file_path = model->primitives->material.base_color_texture.path;
-	char file_name[256];
-	get_filename(file_path, file_name);
-	LOG_INFO("Loading %s...", file_name);
+	char filename[256];
+	file_name(file_path, filename);
+	LOG_INFO("Loading %s...", filename);
 	logger_indent();
 	int32_t width, height, channels;
 	uint8_t *pixels = stbi_load(file_path, &width, &height, &channels, STBI_default);
@@ -112,8 +115,8 @@ int main(void) {
 		return -1;
 	}
 
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", file_name, width, height, channels);
-	LOG_INFO("%s loaded", file_name);
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, width, height, channels);
+	LOG_INFO("%s loaded", filename);
 	logger_dedent();
 
 	vulkan_create_texture_image(&context, width, height, channels, pixels);
@@ -126,10 +129,10 @@ int main(void) {
 	Buffer *index_buffers[model->primitive_count];
 
 	for (uint32_t index = 0; index < model->primitive_count; ++index) {
-		vertex_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
+		vertex_buffers[index] = vulkan_renderer_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
 		vertex_buffers[index]->vertex_count = model->primitives[index].vertex_count;
 
-		index_buffers[index] = vulkan_buffer_create(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
+		index_buffers[index] = vulkan_renderer_create_buffer(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
 		index_buffers[index]->index_count = model->primitives[index].index_count;
 	}
 
@@ -159,6 +162,9 @@ int main(void) {
 		vulkan_renderer_begin_frame(&context, platform);
 
 		for (uint32_t index = 0; index < model->primitive_count; ++index) {
+			vulkan_renderer_bind_buffer(&context, vertex_buffers[index]);
+			vulkan_renderer_bind_buffer(&context, index_buffers[index]);
+
 			vulkan_renderer_draw_indexed(&context, vertex_buffers[index], index_buffers[index]);
 		}
 
@@ -375,8 +381,6 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 						char c;
 
 						uint8_t *src = (uint8_t *)buffer->data + buffer_view->offset;
-						uint64_t bytes = *((uint64_t *)src);
-						LOG_DEBUG("Hex: %zX", bytes);
 
 						while ((c = image->mime_type[length++]) != '\0') {
 							if (c == '/' || c == '\\') {
@@ -390,8 +394,14 @@ void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Mode
 									strncat(out_texture->path, image->name, MAX_FILE_PATH_LENGTH);
 									strncat(out_texture->path, ".png", MAX_FILE_PATH_LENGTH);
 
-									uint8_t *pixels = stbi_load_from_memory(src, buffer_view->size, (int32_t *)&out_texture->width, (int32_t *)&out_texture->height, (int32_t *)&out_texture->channels, 4);
-									stbi_write_png(out_texture->path, out_texture->width, out_texture->height, out_texture->channels, pixels, 0);
+									if (!file_exists(out_texture->path)) {
+										LOG_DEBUG("Generating %s...", out_texture->path);
+										logger_indent();
+										uint8_t *pixels = stbi_load_from_memory(src, buffer_view->size, (int32_t *)&out_texture->width, (int32_t *)&out_texture->height, (int32_t *)&out_texture->channels, 4);
+										stbi_write_png(out_texture->path, out_texture->width, out_texture->height, out_texture->channels, pixels, 0);
+										LOG_DEBUG("File generated");
+										logger_dedent();
+									}
 								}
 								if (strcmp(&image->mime_type[length], "jpeg") == 0) {
 									LOG_DEBUG("MimeType should be jpeg (it is '%s')", image->mime_type);
@@ -463,7 +473,7 @@ Model *load_gltf_model(Arena *arena, const char *path) {
 			load_nodes(arena, scene->nodes[node_index], &primitive_count, model, NULL);
 			model->primitives = arena_push_array_zero(arena, RenderPrimitive, primitive_count);
 			char directory[MAX_FILE_PATH_LENGTH];
-			get_path(path, directory);
+			file_path(path, directory);
 			load_nodes(arena, scene->nodes[node_index], &primitive_count, model, directory);
 			break;
 		}
@@ -475,7 +485,16 @@ Model *load_gltf_model(Arena *arena, const char *path) {
 	return NULL;
 }
 
-void get_filename(const char *src, char *dst) {
+bool file_exists(const char *path) {
+	FILE *file = fopen(path, "r");
+	if (file) {
+		fclose(file);
+		return true;
+	}
+	return false;
+}
+
+void file_name(const char *src, char *dst) {
 	uint32_t start = 0, length = 0;
 	char c;
 
@@ -492,7 +511,7 @@ void get_filename(const char *src, char *dst) {
 	memcpy(dst, src + start, length - start);
 }
 
-void get_path(const char *src, char *dst) {
+void file_path(const char *src, char *dst) {
 	uint32_t final = 0, length = 0;
 	char c;
 

@@ -4,8 +4,8 @@
 
 #include <vulkan/vulkan_core.h>
 
-#define MAX_FRAMES_IN_FLIGHT 3
-#define MAX_SWAPCHAIN_IMAGES 3
+#define MAX_FRAMES_IN_FLIGHT 2
+#define SWAPCHAIN_BUFFERING 3
 
 typedef struct vulkan_buffer {
 	VkBuffer handle;
@@ -51,8 +51,8 @@ typedef struct VulkanSwapchain {
 	VkSwapchainKHR handle;
 
 	struct {
-		VkImage handles[MAX_SWAPCHAIN_IMAGES];
-		VkImageView views[MAX_SWAPCHAIN_IMAGES];
+		VkImage handles[SWAPCHAIN_BUFFERING];
+		VkImageView views[SWAPCHAIN_BUFFERING];
 		uint32_t count;
 	} images;
 

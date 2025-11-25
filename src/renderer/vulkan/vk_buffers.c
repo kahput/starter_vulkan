@@ -9,7 +9,7 @@
 
 int32_t to_vulkan_usage(BufferType type);
 
-Buffer *vulkan_buffer_create(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
+Buffer *vulkan_renderer_create_buffer(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
 	Buffer *buffer = arena_push_type(arena, Buffer);
 	VulkanBuffer *internal = arena_push_type(arena, VulkanBuffer);
 	buffer->internal = internal;
@@ -137,7 +137,7 @@ int32_t to_vulkan_usage(BufferType type) {
 	}
 }
 
-bool vulkan_buffer_bind(VulkanContext *context, Buffer *buffer) {
+bool vulkan_renderer_bind_buffer(VulkanContext *context, Buffer *buffer) {
 	VulkanBuffer *vulkan_buffer = (VulkanBuffer *)buffer->internal;
 
 	if (vulkan_buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {

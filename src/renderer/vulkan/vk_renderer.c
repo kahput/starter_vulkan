@@ -141,7 +141,7 @@ bool Vulkan_renderer_end_frame(VulkanContext *context) {
 	}
 
 	VkSemaphore wait_semaphores[] = { context->image_available_semaphores[context->current_frame] };
-	VkSemaphore signal_semaphores[] = { context->render_finished_semaphores[image_index] };
+	VkSemaphore signal_semaphores[] = { context->render_finished_semaphores[context->current_frame] };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info = {
@@ -177,21 +177,11 @@ bool Vulkan_renderer_end_frame(VulkanContext *context) {
 }
 
 bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer) {
-	if (vulkan_buffer_bind(context, vertex_buffer) == false) {
-		LOG_WARN("Aborting draw...");
-		return false;
-	}
-
 	vkCmdDraw(context->command_buffers[context->current_frame], vertex_buffer->vertex_count, 1, 0, 0);
 	return true;
 }
 
 bool vulkan_renderer_draw_indexed(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer) {
-	if (vulkan_buffer_bind(context, vertex_buffer) == false || vulkan_buffer_bind(context, index_buffer) == false) {
-		LOG_WARN("Aborting indexed draw...");
-		return false;
-	}
-
 	vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_buffer->index_count, 1, 0, 0, 0);
 	return true;
 }
