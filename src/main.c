@@ -90,15 +90,8 @@ int main(void) {
 
 	// ================== DYNAMIC ==================
 
-	VertexAttribute attributes[] = {
-		{ .name = "in_position", .format = FORMAT_FLOAT3, .binding = 0 },
-		{ .name = "in_uv", .format = FORMAT_FLOAT2, .binding = 0 },
-		{ .name = "in_normal", .format = FORMAT_FLOAT3, .binding = 0 },
-	};
-
-	vulkan_create_descriptor_set_layout(&context);
-	vulkan_create_pipline(&context, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv", attributes, array_count(attributes));
-
+	// ================== CPU ==================
+	//
 	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
 	Model *model = load_gltf_model(state.assets, BOT_FILE_PATH);
@@ -106,11 +99,27 @@ int main(void) {
 
 	Image model_alebdo = load_image(model->primitives->material.base_color_texture.path);
 
+	// ================== GPU ==================
+
 	vulkan_create_texture_image(&context, model_alebdo.width, model_alebdo.height, model_alebdo.channels, model_alebdo.pixels);
 	vulkan_create_texture_image_view(&context);
 	vulkan_create_texture_sampler(&context);
 
 	unload_image(model_alebdo);
+
+	ShaderAttribute attributes[] = {
+		{ .name = "in_position", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT3, .binding = 0 },
+		{ .name = "in_uv", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT2, .binding = 0 },
+		{ .name = "in_normal", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT3, .binding = 0 },
+	};
+
+	ShaderUniform uniforms[] = {
+		{ .name = "u_mvp", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_VERTEX, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_OBJECT },
+		{ .name = "u_texture", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL }
+	};
+
+	vulkan_create_descriptor_set_layout(&context);
+	vulkan_create_pipeline(&context, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv", attributes, array_count(attributes), uniforms, array_count(uniforms));
 
 	Buffer *vertex_buffers[model->primitive_count];
 	Buffer *index_buffers[model->primitive_count];

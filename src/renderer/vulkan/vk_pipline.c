@@ -13,13 +13,13 @@ struct shader_file {
 	uint8_t *content;
 };
 
-static inline int32_t vaf_to_vulkan_format(VertexAttributeFormat format);
-static inline uint32_t vaf_to_byte_size(VertexAttributeFormat format);
+static inline int32_t ftovkf(ShaderAttributeFormat format);
+static inline uint32_t ftobs(ShaderAttributeFormat format);
 
 struct shader_file read_file(struct arena *arena, const char *path);
 bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code);
 
-bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, VertexAttribute *attributes, uint32_t attribute_count) {
+bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count, ShaderUniform *uniforms, uint32_t uniform_count) {
 	ArenaTemp temp = arena_get_scratch(NULL);
 	struct shader_file vertex_shader_code = read_file(temp.arena, vertex_shader_path);
 	struct shader_file fragment_shader_code = read_file(temp.arena, fragment_shader_path);
@@ -67,7 +67,7 @@ bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_pat
 
 	uint32_t unique_bindings = 0;
 	for (uint32_t attribute_index = 0; attribute_index < attribute_count; ++attribute_index) {
-		VertexAttribute attribute = attributes[attribute_index];
+		ShaderAttribute attribute = attributes[attribute_index];
 		uint32_t byte_offset = 0;
 		for (uint32_t binding_index = 0; binding_index < attribute_count; ++binding_index) {
 			VkVertexInputBindingDescription *binding_description = &binding_descriptions[binding_index];
@@ -77,7 +77,7 @@ bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_pat
 				binding_description->binding = attribute.binding;
 				binding_description->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 				byte_offset = binding_description->stride;
-				binding_description->stride += vaf_to_byte_size(attribute.format);
+				binding_description->stride += ftobs(attribute.format);
 				break;
 			}
 		}
@@ -85,7 +85,7 @@ bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_pat
 		VkVertexInputAttributeDescription attribute_description = {
 			.binding = attribute.binding,
 			.location = attribute_index,
-			.format = vaf_to_vulkan_format(attribute.format),
+			.format = ftovkf(attribute.format),
 			.offset = byte_offset
 		};
 
@@ -141,6 +141,10 @@ bool vulkan_create_pipline(VulkanContext *context, const char *vertex_shader_pat
 		.attachmentCount = 1,
 		.pAttachments = &color_blend_attachment,
 	};
+
+	for (uint32_t uniform_index = 0; uniform_index < uniform_count; ++uniform_index) {
+		ShaderUniform uniform = uniforms[uniform_index];
+	}
 
 	VkPipelineLayoutCreateInfo pl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -238,16 +242,34 @@ bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct
 	return true;
 }
 
-int32_t vaf_to_vulkan_format(VertexAttributeFormat format) {
+int32_t ftovkf(ShaderAttributeFormat format) {
 	switch (format) {
-		case FORMAT_FLOAT:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
 			return VK_FORMAT_R32_SFLOAT;
-		case FORMAT_FLOAT2:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
 			return VK_FORMAT_R32G32_SFLOAT;
-		case FORMAT_FLOAT3:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
 			return VK_FORMAT_R32G32B32_SFLOAT;
-		case FORMAT_FLOAT4:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
 			return VK_FORMAT_R32G32B32A32_SFLOAT;
+
+		case SHADER_ATTRIBUTE_FORMAT_INT:
+			return VK_FORMAT_R32_SINT;
+		case SHADER_ATTRIBUTE_FORMAT_INT2:
+			return VK_FORMAT_R32G32_SINT;
+		case SHADER_ATTRIBUTE_FORMAT_INT3:
+			return VK_FORMAT_R32G32B32_SINT;
+		case SHADER_ATTRIBUTE_FORMAT_INT4:
+			return VK_FORMAT_R32G32B32A32_SINT;
+
+		case SHADER_ATTRIBUTE_FORMAT_UINT:
+			return VK_FORMAT_R32_UINT;
+		case SHADER_ATTRIBUTE_FORMAT_UINT2:
+			return VK_FORMAT_R32G32_UINT;
+		case SHADER_ATTRIBUTE_FORMAT_UINT3:
+			return VK_FORMAT_R32G32B32_UINT;
+		case SHADER_ATTRIBUTE_FORMAT_UINT4:
+			return VK_FORMAT_R32G32B32A32_UINT;
 		default: {
 			LOG_ERROR("Unkown attribute format type provided!");
 			return 0;
@@ -255,16 +277,34 @@ int32_t vaf_to_vulkan_format(VertexAttributeFormat format) {
 	}
 }
 
-uint32_t vaf_to_byte_size(VertexAttributeFormat format) {
+uint32_t ftobs(ShaderAttributeFormat format) {
 	switch (format) {
-		case FORMAT_FLOAT:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
 			return sizeof(float);
-		case FORMAT_FLOAT2:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
 			return sizeof(float) * 2;
-		case FORMAT_FLOAT3:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
 			return sizeof(float) * 3;
-		case FORMAT_FLOAT4:
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
 			return sizeof(float) * 4;
+
+		case SHADER_ATTRIBUTE_FORMAT_INT:
+			return sizeof(int32_t);
+		case SHADER_ATTRIBUTE_FORMAT_INT2:
+			return sizeof(int32_t) * 2;
+		case SHADER_ATTRIBUTE_FORMAT_INT3:
+			return sizeof(int32_t) * 3;
+		case SHADER_ATTRIBUTE_FORMAT_INT4:
+			return sizeof(int32_t) * 4;
+
+		case SHADER_ATTRIBUTE_FORMAT_UINT:
+			return sizeof(uint32_t);
+		case SHADER_ATTRIBUTE_FORMAT_UINT2:
+			return sizeof(uint32_t) * 2;
+		case SHADER_ATTRIBUTE_FORMAT_UINT3:
+			return sizeof(uint32_t) * 3;
+		case SHADER_ATTRIBUTE_FORMAT_UINT4:
+			return sizeof(uint32_t) * 4;
 		default: {
 			LOG_ERROR("Unkown attribute format type provided!");
 			return 0;
