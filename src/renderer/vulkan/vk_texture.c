@@ -7,8 +7,8 @@
 
 static VkFormat channels_to_vulkan_format(uint32_t channels);
 
-bool vulkan_create_texture_image(VulkanContext *context, uint32_t width, uint32_t height, uint32_t channels, const void *pixels) {
-	VkDeviceSize size = width * height * 4;
+bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image) {
+	VkDeviceSize size = image->width * image->height * image->channels;
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -20,12 +20,12 @@ bool vulkan_create_texture_image(VulkanContext *context, uint32_t width, uint32_
 
 	void *data;
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, pixels, (size_t)size);
+	memcpy(data, image->pixels, (size_t)size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
 	vulkan_image_create(
 		context, indices, array_count(indices),
-		width, height, channels_to_vulkan_format(channels), VK_IMAGE_TILING_OPTIMAL,
+		image->width, image->height, channels_to_vulkan_format(image->channels), VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		&context->texture_image);
 
@@ -34,7 +34,7 @@ bool vulkan_create_texture_image(VulkanContext *context, uint32_t width, uint32_
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, VK_ACCESS_TRANSFER_WRITE_BIT);
-	vulkan_buffer_to_image(context, staging_buffer, context->texture_image.handle, width, height);
+	vulkan_buffer_to_image(context, staging_buffer, context->texture_image.handle, image->width, image->height);
 	vulkan_image_transition(
 		context, context->texture_image.handle, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,

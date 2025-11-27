@@ -43,6 +43,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/random.h>
 #include <unistd.h>
 
 #define LIBRARY_COUNT sizeof(struct wl_library) / sizeof(void *)
@@ -191,6 +192,7 @@ bool platform_init_wayland(Platform *platform) {
 	internal->pointer_mode = wl_pointer_mode;
 
 	internal->time_ms = wl_time_ms;
+	internal->random_64 = wl_random_64;
 
 	internal->create_vulkan_surface = wl_create_vulkan_surface;
 	internal->vulkan_extensions = wl_vulkan_extensions;
@@ -320,6 +322,13 @@ uint64_t wl_time_ms(Platform *platform) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (uint64_t)(ts.tv_sec * 1000ULL + ts.tv_nsec / 1000000ULL);
+}
+
+uint64_t wl_random_64(Platform *platform) {
+	uint64_t random_value;
+	if (getrandom(&random_value, sizeof(random_value), GRND_RANDOM) != sizeof(random_value))
+		LOG_WARN("Platform: Random number failed");
+	return random_value;
 }
 
 bool wl_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurfaceKHR *surface) {

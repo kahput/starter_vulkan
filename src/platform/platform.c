@@ -91,6 +91,11 @@ uint64_t platform_time_ms(Platform *platform) {
 	return internal->time_ms(platform);
 }
 
+uint64_t platform_random_64(Platform *platform) {
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	return internal->random_64(platform);
+}
+
 bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface) {
 	struct platform_internal *internal = (struct platform_internal *)platform->internal;
 	return internal->create_vulkan_surface(platform, instance, surface);

@@ -19,6 +19,8 @@ bool Vulkan_renderer_end_frame(VulkanContext *context);
 bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer);
 
+bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image);
+
 Buffer *vulkan_renderer_create_buffer(struct arena *arena, VulkanContext *context, BufferType type, size_t size, void *data);
 bool vulkan_renderer_bind_buffer(VulkanContext *context, Buffer *buffer);
 
@@ -58,7 +60,6 @@ bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_pa
 
 bool vulkan_create_command_pool(VulkanContext *context);
 
-bool vulkan_create_texture_image(VulkanContext *context, uint32_t width, uint32_t height, uint32_t channels, const void *pixels);
 bool vulkan_create_texture_image_view(VulkanContext *context);
 bool vulkan_create_texture_sampler(VulkanContext *context);
 

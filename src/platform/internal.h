@@ -39,6 +39,7 @@ struct platform_internal {
 	bool (*pointer_mode)(Platform *, PointerMode);
 
 	uint64_t (*time_ms)(Platform *);
+	uint64_t (*random_64)(Platform *);
 
 	bool (*create_vulkan_surface)(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
 	const char **(*vulkan_extensions)(Platform *platform, uint32_t *count);

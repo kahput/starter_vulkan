@@ -18,6 +18,7 @@
 
 #include "common.h"
 #include "core/arena.h"
+#include "core/identifiers.h"
 #include "core/logger.h"
 
 #include <stdio.h>
@@ -45,7 +46,6 @@ typedef struct camera {
 	float speed, sensitivity;
 
 	float yaw, pitch;
-
 	vec3 position, up;
 } Camera;
 
@@ -62,8 +62,6 @@ int main(void) {
 	state.permanent = arena_alloc();
 	state.frame = arena_alloc();
 	state.assets = arena_alloc();
-
-	LOG_INFO("Size: %d", sizeof(Vertex));
 
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
@@ -96,12 +94,11 @@ int main(void) {
 	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
 	Model *model = load_gltf_model(state.assets, BOT_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, MAGE_FILE_PATH);
-
 	Image model_alebdo = load_image(model->primitives->material.base_color_texture.path);
 
 	// ================== GPU ==================
 
-	vulkan_create_texture_image(&context, model_alebdo.width, model_alebdo.height, model_alebdo.channels, model_alebdo.pixels);
+	vulkan_renderer_upload_image(&context, &model_alebdo);
 	vulkan_create_texture_image_view(&context);
 	vulkan_create_texture_sampler(&context);
 
@@ -114,8 +111,14 @@ int main(void) {
 	};
 
 	ShaderUniform uniforms[] = {
-		{ .name = "u_mvp", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_VERTEX, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_OBJECT },
-		{ .name = "u_texture", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL }
+		{ .name = "u_view_projection", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_VERTEX, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_FRAME },
+		{ .name = "u_material_props", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
+		{ .name = "u_albedo", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
+		{ .name = "u_normal_map", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
+		{ .name = "u_metallic_roughness", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
+		{ .name = "u_emission", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
+		{ .name = "u_occlusion", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
+		{ .name = "u_model", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_OBJECT },
 	};
 
 	vulkan_create_descriptor_set_layout(&context);
@@ -148,6 +151,11 @@ int main(void) {
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
+	UUID id = identifier_create();
+
+	Handle handle = handle_create(0);
+	handle_increment(&handle);
+
 	while (platform_should_close(platform) == false) {
 		float current_frame = (double)(platform_time_ms(platform) - state.start_time) / 1000.0f;
 		delta_time = current_frame - last_frame;
@@ -166,9 +174,9 @@ int main(void) {
 
 		Vulkan_renderer_end_frame(&context);
 
-		if (input_mouse_pressed(SV_MOUSE_BUTTON_LEFT))
+		if (input_key_down(SV_KEY_LEFTCTRL))
 			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
-		if (input_mouse_pressed(SV_MOUSE_BUTTON_RIGHT))
+		else
 			platform_pointer_mode(platform, PLATFORM_POINTER_DISABLED);
 
 		if (state.resized) {
@@ -231,7 +239,7 @@ void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 
 	if (use_keys) {
 		glm_vec3_muladds(camera_right, (input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * state.camera.speed * dt, move);
-		glm_vec3_muladds(state.camera.up, (input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_LEFTCTRL)) * state.camera.speed * dt, move);
+		glm_vec3_muladds(state.camera.up, (input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_C)) * state.camera.speed * dt, move);
 		glm_vec3_muladds(camera_forward, (input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * state.camera.speed * dt, move);
 	}
 
