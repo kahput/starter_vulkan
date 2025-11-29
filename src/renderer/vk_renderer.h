@@ -16,8 +16,14 @@ void vulkan_renderer_destroy(VulkanContext *context);
 bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platform);
 bool Vulkan_renderer_end_frame(VulkanContext *context);
 
+bool vulkan_renderer_begin(VulkanContext *context, Handle target);
+bool vulkan_renderer_end(VulkanContext *context, Handle target);
+
 bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer);
+
+// Shader vulkan_renderer_create_shader(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path);
+bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count);
 
 bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image);
 
@@ -56,7 +62,6 @@ bool vulkan_recreate_swapchain(VulkanContext *context, struct platform *platform
 bool vulkan_create_renderpass(VulkanContext *context);
 
 bool vulkan_create_descriptor_set_layout(VulkanContext *context);
-bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count, ShaderUniform *uniforms, uint32_t uniform_count);
 
 bool vulkan_create_command_pool(VulkanContext *context);
 

@@ -1,4 +1,5 @@
 #include "renderer/vk_renderer.h"
+#include "core/identifiers.h"
 #include "core/logger.h"
 
 static uint32_t image_index = 0;

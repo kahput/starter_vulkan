@@ -1,8 +1,11 @@
 #pragma once
 
 #include "common.h"
+#include "core/identifiers.h"
 
 #include <cglm/cglm.h>
+
+typedef Handle Shader;
 
 typedef struct {
 	mat4 model;
@@ -28,6 +31,11 @@ typedef struct {
 
 	void *internal;
 } Texture;
+
+typedef struct {
+	Handle color_attachment;
+	Handle depth_attachment;
+} RenderPassDesc;
 
 typedef struct material {
 	Texture base_color_texture;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "core/identifiers.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -61,6 +62,21 @@ typedef struct VulkanSwapchain {
 	VkExtent2D extent;
 } VulkanSwapchain;
 
+typedef struct vulkan_shader {
+	VkShaderModule vertex_shader, fragment_shader;
+
+	VkVertexInputBindingDescription *bindings;
+	uint32_t binding_count;
+
+	VkVertexInputAttributeDescription *attributes;
+	uint32_t attribute_count;
+
+	VkDescriptorSetLayout *layouts;
+	uint32_t layout_count;
+
+	VkPipelineLayout pipeline_layout;
+} VulkanShader;
+
 typedef struct {
 	VkInstance instance;
 
@@ -72,6 +88,8 @@ typedef struct {
 
 	VkDescriptorSetLayout descriptor_set_layout;
 	VkPipelineLayout pipeline_layout;
+
+	VulkanShader shader;
 	VkPipeline graphics_pipeline;
 
 	uint32_t current_frame;

@@ -1,10 +1,14 @@
+#include "core/identifiers.h"
 #include "renderer/vk_renderer.h"
 
+#include <spirv_reflect/spirv_reflect.h>
+
+#include "common.h"
 #include "core/arena.h"
 #include "core/logger.h"
 
-#include "common.h"
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -17,9 +21,9 @@ static inline int32_t ftovkf(ShaderAttributeFormat format);
 static inline uint32_t ftobs(ShaderAttributeFormat format);
 
 struct shader_file read_file(struct arena *arena, const char *path);
-bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code);
+bool create_shader(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code);
 
-bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count, ShaderUniform *uniforms, uint32_t uniform_count) {
+bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count) {
 	ArenaTemp temp = arena_get_scratch(NULL);
 	struct shader_file vertex_shader_code = read_file(temp.arena, vertex_shader_path);
 	struct shader_file fragment_shader_code = read_file(temp.arena, fragment_shader_path);
@@ -30,22 +34,18 @@ bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_pa
 		return false;
 	}
 
-	VkShaderModule vertex_shader;
-	create_shader_module(context, &vertex_shader, vertex_shader_code);
-
-	VkShaderModule fragment_shader;
-	create_shader_module(context, &fragment_shader, fragment_shader_code);
+	create_shader(context, &context->shader, vertex_shader_code, fragment_shader_code);
 
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_VERTEX_BIT,
-		.module = vertex_shader,
+		.module = context->shader.vertex_shader,
 		.pName = "main"
 	};
 	VkPipelineShaderStageCreateInfo fss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-		.module = fragment_shader,
+		.module = context->shader.fragment_shader,
 		.pName = "main"
 	};
 
@@ -142,10 +142,6 @@ bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_pa
 		.pAttachments = &color_blend_attachment,
 	};
 
-	for (uint32_t uniform_index = 0; uniform_index < uniform_count; ++uniform_index) {
-		ShaderUniform uniform = uniforms[uniform_index];
-	}
-
 	VkPipelineLayoutCreateInfo pl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount = 1,
@@ -155,8 +151,8 @@ bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_pa
 
 	if (vkCreatePipelineLayout(context->device.logical, &pl_create_info, NULL, &context->pipeline_layout) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create graphcis pipeline layout");
-		vkDestroyShaderModule(context->device.logical, vertex_shader, NULL);
-		vkDestroyShaderModule(context->device.logical, fragment_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, context->shader.vertex_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, context->shader.fragment_shader, NULL);
 		return false;
 	}
 
@@ -195,13 +191,13 @@ bool vulkan_create_pipeline(VulkanContext *context, const char *vertex_shader_pa
 
 	if (vkCreateGraphicsPipelines(context->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &context->graphics_pipeline) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create graphics pipeline");
-		vkDestroyShaderModule(context->device.logical, vertex_shader, NULL);
-		vkDestroyShaderModule(context->device.logical, fragment_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, context->shader.vertex_shader, NULL);
+		vkDestroyShaderModule(context->device.logical, context->shader.fragment_shader, NULL);
 		return false;
 	}
 
-	vkDestroyShaderModule(context->device.logical, vertex_shader, NULL);
-	vkDestroyShaderModule(context->device.logical, fragment_shader, NULL);
+	vkDestroyShaderModule(context->device.logical, context->shader.vertex_shader, NULL);
+	vkDestroyShaderModule(context->device.logical, context->shader.fragment_shader, NULL);
 	arena_reset_scratch(temp);
 
 	LOG_INFO("Graphics pipeline created");
@@ -227,17 +223,117 @@ struct shader_file read_file(struct arena *arena, const char *path) {
 	return (struct shader_file){ .size = size, .content = byte_content };
 }
 
-bool create_shader_module(VulkanContext *context, VkShaderModule *module, struct shader_file code) {
-	VkShaderModuleCreateInfo sm_create_info = {
+bool create_shader(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code) {
+	VkShaderModuleCreateInfo vsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = code.size,
-		.pCode = (uint32_t *)code.content,
+		.codeSize = vertex_shader_code.size,
+		.pCode = (uint32_t *)vertex_shader_code.content,
 	};
 
-	if (vkCreateShaderModule(context->device.logical, &sm_create_info, NULL, module) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create shader module");
+	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create vertex shader module");
 		return false;
 	}
+
+	VkShaderModuleCreateInfo fsm_create_info = {
+		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = fragment_shader_code.size,
+		.pCode = (uint32_t *)fragment_shader_code.content,
+	};
+
+	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create fragment shader module");
+		return false;
+	}
+
+	ArenaTemp temp = arena_get_scratch(NULL);
+
+	// Generate reflection data for a shader
+
+	// clang-format off
+	enum { VERTEX_SHADER, FRAGMENT_SHADER };
+	// clang-format on
+
+	SpvReflectShaderModule modules[2];
+	SpvReflectResult result = spvReflectCreateShaderModule(vertex_shader_code.size, vertex_shader_code.content, &modules[VERTEX_SHADER]);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	result = spvReflectCreateShaderModule(fragment_shader_code.size, fragment_shader_code.content, &modules[FRAGMENT_SHADER]);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+	// Enumerate and extract shader's input variables
+	uint32_t input_variable_count = 0;
+	result = spvReflectEnumerateInputVariables(&modules[VERTEX_SHADER], &input_variable_count, NULL);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	SpvReflectInterfaceVariable **input_variables =
+		(SpvReflectInterfaceVariable **)arena_push_array(temp.arena, SpvReflectInterfaceVariable *, input_variable_count);
+
+	result = spvReflectEnumerateInputVariables(&modules[VERTEX_SHADER], &input_variable_count, input_variables);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+	for (uint32_t index = 0; index < input_variable_count; ++index) {
+		SpvReflectInterfaceVariable *input = input_variables[index];
+
+		LOG_INFO("Shader_variable: %s", input->name);
+	}
+
+	// Output variables, descriptor bindings, descriptor sets, and push constants
+	// can be enumerated and extracted using a similar mechanism.
+	uint32_t vs_set_count = 0;
+	result = spvReflectEnumerateDescriptorSets(&modules[VERTEX_SHADER], &vs_set_count, NULL);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	uint32_t fs_set_count = 0;
+	result = spvReflectEnumerateDescriptorSets(&modules[FRAGMENT_SHADER], &fs_set_count, NULL);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+	SpvReflectDescriptorSet **vs_sets = arena_push_array(temp.arena, SpvReflectDescriptorSet *, vs_set_count);
+	result = spvReflectEnumerateDescriptorSets(&modules[VERTEX_SHADER], &vs_set_count, vs_sets);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	SpvReflectDescriptorSet **fs_sets = arena_push_array(temp.arena, SpvReflectDescriptorSet *, fs_set_count);
+	result = spvReflectEnumerateDescriptorSets(&modules[FRAGMENT_SHADER], &fs_set_count, fs_sets);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+	uint32_t set_count = vs_set_count + fs_set_count;
+	VkDescriptorSetLayoutCreateInfo *set_layouts = arena_push_array(temp.arena, VkDescriptorSetLayoutCreateInfo, set_count);
+
+	for (size_t set_index = 0; set_index < vs_set_count; ++set_index) {
+		SpvReflectDescriptorSet *refl_set = vs_sets[set_index];
+		VkDescriptorSetLayoutCreateInfo *layout = &set_layouts[set_index];
+
+		VkDescriptorSetLayoutBinding *bindings = arena_push_array(temp.arena, VkDescriptorSetLayoutBinding, refl_set->binding_count);
+		for (uint32_t binding_index = 0; binding_index < refl_set->binding_count; ++binding_index) {
+			SpvReflectDescriptorBinding *refl_binding = refl_set->bindings[binding_index];
+			VkDescriptorSetLayoutBinding *layout_binding = &bindings[binding_index];
+
+			layout_binding->binding = refl_binding->binding;
+			layout_binding->descriptorType = (VkDescriptorType)refl_binding->descriptor_type;
+			layout_binding->descriptorCount = 1;
+
+			for (uint32_t i_dim = 0; i_dim < refl_binding->array.dims_count; ++i_dim) {
+				layout_binding->descriptorCount *= refl_binding->array.dims[i_dim];
+			}
+			layout_binding->stageFlags = modules[VERTEX_SHADER].shader_stage;
+		}
+
+		// layout.set_number = refl_set->set;
+		layout->sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layout->bindingCount = refl_set->binding_count;
+		layout->pBindings = bindings;
+	}
+
+	context->shader.layouts = (VkDescriptorSetLayout *)malloc(sizeof(VkDescriptorSetLayout) * vs_set_count);
+	context->shader.layout_count = vs_set_count;
+	for (uint32_t layout_index = 0; layout_index < vs_set_count; ++layout_index) {
+		if (vkCreateDescriptorSetLayout(context->device.logical, &set_layouts[layout_index], NULL, &context->shader.layouts[layout_index]) != VK_SUCCESS) {
+			LOG_ERROR("Failed to create descriptor set layout");
+			return false;
+		}
+	}
+
+	// Destroy the reflection data when no longer required.
+	spvReflectDestroyShaderModule(&modules[VERTEX_SHADER]);
+	spvReflectDestroyShaderModule(&modules[FRAGMENT_SHADER]);
+
+	arena_reset_scratch(temp);
 
 	return true;
 }

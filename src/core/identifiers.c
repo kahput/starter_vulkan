@@ -12,11 +12,13 @@
 #define HANDLE_GENERATION_MASK ((1 << HANDLE_GENERATION_BITS) - 1)
 
 UUID identifier_create(void) {
-	uint64_t random_value;
-	if (getrandom(&random_value, sizeof(random_value), GRND_RANDOM) != sizeof(random_value))
-		LOG_WARN("Identifier: Random number failed");
+	uint64_t random_value = 0;
+	while (random_value == 0)
+		if (getrandom(&random_value, sizeof(random_value), GRND_RANDOM) != sizeof(random_value))
+			LOG_WARN("Identifier: Random number failed");
 	return random_value;
 }
+
 UUID identifier_create_from_u64(uint64_t uuid) {
 	return (UUID)uuid;
 }
@@ -26,7 +28,7 @@ Handle handle_create(uint32_t index) {
 }
 
 bool handle_valid(Handle handle) {
-	return handle.packed != UINT32_MAX;
+	return handle.packed != UINT32_MAX && handle.uuid != INVALID_UUID;
 }
 
 uint32_t handle_index(Handle handle) {
