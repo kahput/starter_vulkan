@@ -10,9 +10,10 @@
 
 typedef struct vulkan_buffer {
 	VkBuffer handle;
-	VkBufferUsageFlags usage;
-
 	VkDeviceMemory memory;
+	void *mapped;
+
+	VkBufferUsageFlags usage;
 	VkMemoryPropertyFlags memory_property_flags;
 } VulkanBuffer;
 
@@ -99,6 +100,8 @@ typedef struct {
 
 	VulkanImage texture_image;
 	VkSampler texture_sampler;
+
+	struct pool *buffer_pool;
 
 	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];

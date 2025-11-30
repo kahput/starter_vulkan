@@ -20,15 +20,15 @@ bool vulkan_renderer_begin(VulkanContext *context, Handle target);
 bool vulkan_renderer_end(VulkanContext *context, Handle target);
 
 bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer);
-bool vulkan_renderer_draw_indexed(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer);
+bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index);
 
 // Shader vulkan_renderer_create_shader(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path);
 bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count);
 
 bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image);
 
-Buffer *vulkan_renderer_create_buffer(struct arena *arena, VulkanContext *context, BufferType type, size_t size, void *data);
-bool vulkan_renderer_bind_buffer(VulkanContext *context, Buffer *buffer);
+bool vulkan_renderer_create_buffer(VulkanContext *context, BufferType type, size_t size, void *data);
+bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t index);
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 

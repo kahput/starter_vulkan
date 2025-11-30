@@ -1,10 +1,13 @@
 #include "renderer/vk_renderer.h"
-#include "core/identifiers.h"
+
+#include "allocators/pool.h"
 #include "core/logger.h"
 
 static uint32_t image_index = 0;
 
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context) {
+	context->buffer_pool = allocator_pool_from_arena(arena, sizeof(VulkanBuffer), 1024);
+
 	if (vulkan_create_instance(context, platform) == false)
 		return false;
 
@@ -182,7 +185,7 @@ bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer) {
 	return true;
 }
 
-bool vulkan_renderer_draw_indexed(VulkanContext *context, Buffer *vertex_buffer, Buffer *index_buffer) {
-	vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_buffer->index_count, 1, 0, 0, 0);
+bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count) {
+	vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_count, 1, 0, 0, 0);
 	return true;
 }

@@ -1,21 +1,18 @@
-#include "allocators/arena.h"
 #include "renderer/vk_renderer.h"
 
+#include "allocators/pool.h"
 #include "core/logger.h"
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 // static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 
 int32_t to_vulkan_usage(BufferType type);
 
-Buffer *vulkan_renderer_create_buffer(Arena *arena, VulkanContext *context, BufferType type, size_t size, void *data) {
-	Buffer *buffer = arena_push_type(arena, Buffer);
-	VulkanBuffer *internal = arena_push_type(arena, VulkanBuffer);
-	buffer->internal = internal;
+bool vulkan_renderer_create_buffer(VulkanContext *context, BufferType type, size_t size, void *data) {
+	VulkanBuffer *buffer = pool_push(context->buffer_pool);
 
-	internal->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);
-	internal->memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+	buffer->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);
+	buffer->memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -25,18 +22,17 @@ Buffer *vulkan_renderer_create_buffer(Arena *arena, VulkanContext *context, Buff
 
 	vulkan_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
-	void *mapped_data;
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &mapped_data);
-	memcpy(mapped_data, data, size);
+	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &buffer->mapped);
+	memcpy(buffer->mapped, data, size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
-	vulkan_create_buffer(context, context->device.graphics_index, size, internal->usage, internal->memory_property_flags, &internal->handle, &internal->memory);
+	vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle, &buffer->memory);
 
-	vulkan_copy_buffer(context, staging_buffer, internal->handle, size);
+	vulkan_copy_buffer(context, staging_buffer, buffer->handle, size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
-	return buffer;
+	return true;
 }
 
 bool vulkan_create_uniform_buffers(VulkanContext *context) {
@@ -137,8 +133,8 @@ int32_t to_vulkan_usage(BufferType type) {
 	}
 }
 
-bool vulkan_renderer_bind_buffer(VulkanContext *context, Buffer *buffer) {
-	VulkanBuffer *vulkan_buffer = (VulkanBuffer *)buffer->internal;
+bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t index) {
+	VulkanBuffer *vulkan_buffer = &((VulkanBuffer *)context->buffer_pool->array)[index];
 
 	if (vulkan_buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffers[] = { vulkan_buffer->handle };

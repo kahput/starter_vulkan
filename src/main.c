@@ -124,15 +124,9 @@ int main(void) {
 	vulkan_create_descriptor_set_layout(&context);
 	vulkan_renderer_create_pipeline(&context, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv", attributes, array_count(attributes));
 
-	Buffer *vertex_buffers[model->primitive_count];
-	Buffer *index_buffers[model->primitive_count];
-
 	for (uint32_t index = 0; index < model->primitive_count; ++index) {
-		vertex_buffers[index] = vulkan_renderer_create_buffer(state.permanent, &context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
-		vertex_buffers[index]->vertex_count = model->primitives[index].vertex_count;
-
-		index_buffers[index] = vulkan_renderer_create_buffer(state.permanent, &context, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
-		index_buffers[index]->index_count = model->primitives[index].index_count;
+		vulkan_renderer_create_buffer(&context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
+		vulkan_renderer_create_buffer(&context, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
 	}
 
 	vulkan_create_uniform_buffers(&context);
@@ -166,10 +160,13 @@ int main(void) {
 		vulkan_renderer_begin_frame(&context, platform);
 
 		for (uint32_t index = 0; index < model->primitive_count; ++index) {
-			vulkan_renderer_bind_buffer(&context, vertex_buffers[index]);
-			vulkan_renderer_bind_buffer(&context, index_buffers[index]);
+			uint32_t vertex_buffer = (index * 2) + 0;
+			uint32_t index_buffer = (index * 2) + 1;
 
-			vulkan_renderer_draw_indexed(&context, vertex_buffers[index], index_buffers[index]);
+			vulkan_renderer_bind_buffer(&context, vertex_buffer);
+			vulkan_renderer_bind_buffer(&context, index_buffer);
+
+			vulkan_renderer_draw_indexed(&context, model->primitives[index].index_count);
 		}
 
 		Vulkan_renderer_end_frame(&context);
