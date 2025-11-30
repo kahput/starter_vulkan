@@ -1,3 +1,4 @@
+#include "allocators/pool.h"
 #include "renderer/vk_renderer.h"
 
 #include "core/logger.h"
@@ -7,8 +8,10 @@
 
 static VkFormat channels_to_vulkan_format(uint32_t channels);
 
-bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image) {
+bool vulkan_renderer_create_texture(VulkanContext *context, const Image *image) {
 	VkDeviceSize size = image->width * image->height * image->channels;
+
+	VulkanImage *texture = (VulkanImage *)pool_push(context->texture_pool);
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -27,16 +30,16 @@ bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image) {
 		context, indices, array_count(indices),
 		image->width, image->height, channels_to_vulkan_format(image->channels), VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&context->texture_image);
+		texture);
 
 	vulkan_image_transition(
-		context, context->texture_image.handle, VK_IMAGE_ASPECT_COLOR_BIT,
+		context, texture->handle, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, VK_ACCESS_TRANSFER_WRITE_BIT);
-	vulkan_buffer_to_image(context, staging_buffer, context->texture_image.handle, image->width, image->height);
+	vulkan_buffer_to_image(context, staging_buffer, texture->handle, image->width, image->height);
 	vulkan_image_transition(
-		context, context->texture_image.handle, VK_IMAGE_ASPECT_COLOR_BIT,
+		context, texture->handle, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 		VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -44,21 +47,16 @@ bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image) {
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
-	LOG_INFO("Vulkan Texture created");
-	return true;
-}
-
-bool vulkan_create_texture_image_view(VulkanContext *context) {
-	if (vulkan_image_view_create(context, context->texture_image.handle, context->texture_image.format, VK_IMAGE_ASPECT_COLOR_BIT, &context->texture_image.view) == false) {
+	if (vulkan_image_view_create(context, texture->handle, texture->format, VK_IMAGE_ASPECT_COLOR_BIT, &texture->view) == false) {
 		LOG_ERROR("Failed to create VkImageView");
 		return false;
 	}
 
-	LOG_INFO("VkImageView created");
+	LOG_INFO("Vulkan Texture created");
 	return true;
 }
 
-bool vulkan_create_texture_sampler(VulkanContext *context) {
+bool vulkan_renderer_create_sampler(VulkanContext *context) {
 	VkSamplerCreateInfo sampler_info = {
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.magFilter = VK_FILTER_LINEAR,

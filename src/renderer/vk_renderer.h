@@ -25,7 +25,8 @@ bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index);
 // Shader vulkan_renderer_create_shader(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path);
 bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count);
 
-bool vulkan_renderer_upload_image(VulkanContext *context, const Image *image);
+bool vulkan_renderer_create_texture(VulkanContext *context, const Image *image);
+bool vulkan_renderer_create_sampler(VulkanContext *context);
 
 bool vulkan_renderer_create_buffer(VulkanContext *context, BufferType type, size_t size, void *data);
 bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t index);
@@ -64,9 +65,6 @@ bool vulkan_create_renderpass(VulkanContext *context);
 bool vulkan_create_descriptor_set_layout(VulkanContext *context);
 
 bool vulkan_create_command_pool(VulkanContext *context);
-
-bool vulkan_create_texture_image_view(VulkanContext *context);
-bool vulkan_create_texture_sampler(VulkanContext *context);
 
 bool vulkan_create_uniform_buffers(VulkanContext *context);
 bool vulkan_create_descriptor_pool(VulkanContext *context);

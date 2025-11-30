@@ -98,10 +98,10 @@ typedef struct {
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
-	VulkanImage texture_image;
 	VkSampler texture_sampler;
 
 	struct pool *buffer_pool;
+	struct pool *texture_pool;
 
 	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];

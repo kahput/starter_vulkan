@@ -7,6 +7,7 @@ static uint32_t image_index = 0;
 
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context) {
 	context->buffer_pool = allocator_pool_from_arena(arena, sizeof(VulkanBuffer), 1024);
+	context->texture_pool = allocator_pool_from_arena(arena, sizeof(VulkanImage), 256);
 
 	if (vulkan_create_instance(context, platform) == false)
 		return false;

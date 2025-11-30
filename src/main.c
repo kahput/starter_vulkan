@@ -93,14 +93,8 @@ int main(void) {
 
 	// ================== GPU ==================
 
-	struct pool *numbers = allocator_pool(sizeof(size_t), 1024);
-	struct pool *arena_numbers = allocator_pool_from_arena(state.frame, sizeof(size_t), 1024);
-
-	size_t *value = pool_push(numbers);
-
-	vulkan_renderer_upload_image(&context, &model_alebdo);
-	vulkan_create_texture_image_view(&context);
-	vulkan_create_texture_sampler(&context);
+	vulkan_renderer_create_texture(&context, &model_alebdo);
+	vulkan_renderer_create_sampler(&context);
 
 	importer_unload_image(model_alebdo);
 

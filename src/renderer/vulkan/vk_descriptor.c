@@ -1,7 +1,8 @@
+#include "renderer/vk_renderer.h"
+
+#include "allocators/pool.h"
 #include "common.h"
 #include "core/logger.h"
-#include "renderer/vk_renderer.h"
-#include <vulkan/vulkan_core.h>
 
 bool vulkan_create_descriptor_set_layout(VulkanContext *context) {
 	VkDescriptorSetLayoutBinding mvp_layout_binding = {
@@ -88,9 +89,11 @@ bool vulkan_create_descriptor_set(VulkanContext *context) {
 			.range = sizeof(MVPObject),
 		};
 
+		VulkanImage *texture = &((VulkanImage *)context->texture_pool->array)[0];
+
 		VkDescriptorImageInfo image_info = {
 			.sampler = context->texture_sampler,
-			.imageView = context->texture_image.view,
+			.imageView = texture->view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
 
