@@ -1,6 +1,6 @@
 #include "hash_table.h"
 
-#include "core/arena.h"
+#include "allocators/arena.h"
 #include "core/logger.h"
 
 #include <math.h>

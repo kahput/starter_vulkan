@@ -2,7 +2,7 @@
 
 #include "platform.h"
 
-#include "core/arena.h"
+#include "allocators/arena.h"
 #include "core/logger.h"
 
 #include <string.h>

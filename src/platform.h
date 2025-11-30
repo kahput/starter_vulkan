@@ -2,7 +2,7 @@
 
 #include "common.h"
 
-#include "core/arena.h"
+#include "allocators/arena.h"
 
 typedef struct platform {
 	uint32_t logical_width, logical_height;

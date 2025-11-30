@@ -1,7 +1,7 @@
 #include "renderer/vk_renderer.h"
 
 #include "common.h"
-#include "core/arena.h"
+#include "allocators/arena.h"
 #include "core/logger.h"
 
 #include <string.h>

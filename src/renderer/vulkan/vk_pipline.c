@@ -4,7 +4,7 @@
 #include <spirv_reflect/spirv_reflect.h>
 
 #include "common.h"
-#include "core/arena.h"
+#include "allocators/arena.h"
 #include "core/logger.h"
 
 #include <errno.h>

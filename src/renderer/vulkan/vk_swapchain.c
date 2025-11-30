@@ -2,7 +2,7 @@
 #include "renderer/vk_renderer.h"
 
 #include "common.h"
-#include "core/arena.h"
+#include "allocators/arena.h"
 #include "core/logger.h"
 #include "renderer/vulkan/vk_types.h"
 #include <vulkan/vulkan_core.h>

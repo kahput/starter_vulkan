@@ -1,6 +1,6 @@
 #include "renderer/vk_renderer.h"
 
-#include "core/arena.h"
+#include "allocators/arena.h"
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 

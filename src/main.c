@@ -1,3 +1,4 @@
+#include "allocators/pool.h"
 #include "assets/importer.h"
 #include "platform.h"
 
@@ -17,8 +18,8 @@
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
 
+#include "allocators/arena.h"
 #include "common.h"
-#include "core/arena.h"
 #include "core/identifiers.h"
 #include "core/logger.h"
 
@@ -53,9 +54,9 @@ static struct State {
 } state;
 
 int main(void) {
-	state.permanent = arena_alloc();
-	state.frame = arena_alloc();
-	state.assets = arena_alloc();
+	state.permanent = allocator_arena();
+	state.frame = allocator_arena();
+	state.assets = allocator_arena();
 
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
@@ -91,6 +92,11 @@ int main(void) {
 	Image model_alebdo = importer_load_image(model->primitives->material.base_color_texture.path);
 
 	// ================== GPU ==================
+
+	struct pool *numbers = allocator_pool(sizeof(size_t), 1024);
+	struct pool *arena_numbers = allocator_pool_from_arena(state.frame, sizeof(size_t), 1024);
+
+	size_t *value = pool_push(numbers);
 
 	vulkan_renderer_upload_image(&context, &model_alebdo);
 	vulkan_create_texture_image_view(&context);
