@@ -75,38 +75,26 @@ bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader) 
 			.range = sizeof(MVPObject),
 		};
 
-		VulkanImage *texture = &context->texture_pool[0];
-		VulkanSampler *sampler = &context->sampler_pool[0];
+		// VulkanImage *texture = &context->texture_pool[0];
+		// VulkanSampler *sampler = &context->sampler_pool[0];
+		//
+		// VkDescriptorImageInfo image_info = {
+		// 	.sampler = sampler->handle,
+		// 	.imageView = texture->view,
+		// 	.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		// };
 
-		VkDescriptorImageInfo image_info = {
-			.sampler = sampler->handle,
-			.imageView = texture->view,
-			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = shader->descriptor_sets[frame],
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorCount = 1,
+			.pBufferInfo = &buffer_info,
 		};
 
-		VkWriteDescriptorSet descriptor_writes[] = {
-			{
-			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = shader->descriptor_sets[frame],
-			  .dstBinding = 0,
-			  .dstArrayElement = 0,
-			  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			  .descriptorCount = 1,
-			  .pBufferInfo = &buffer_info,
-			},
-			{
-			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = shader->descriptor_sets[frame],
-			  .dstBinding = 1,
-			  .dstArrayElement = 0,
-			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			  .descriptorCount = 1,
-			  .pImageInfo = &image_info,
-			},
-
-		};
-
-		vkUpdateDescriptorSets(context->device.logical, array_count(descriptor_writes), descriptor_writes, 0, NULL);
+		vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
 	}
 
 	LOG_INFO("Vulkan DescriptorSets created");
@@ -146,14 +134,28 @@ bool vulkan_renderer_set_uniform_buffer(VulkanContext *context, uint32_t shader_
 }
 
 bool vulkan_renderer_set_uniform_texture_sampler(VulkanContext *context, uint32_t shader_index, const char *name, uint32_t texture_index, uint32_t sampler_index) {
-	if (shader_index >= MAX_SHADERS) {
-		LOG_ERROR("Vulkan: Shader index %d out of bounds", shader_index);
+	if (shader_index >= MAX_SHADERS || texture_index >= MAX_TEXTURES || sampler_index >= MAX_SAMPLERS) {
+		LOG_ERROR("Vulkan: Shader, texture or sampler index %d out of bounds", shader_index);
 		return false;
 	}
 
 	VulkanShader *shader = &context->shader_pool[shader_index];
 	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to set uniforms for shader at index %d, but index is not in use", shader_index);
+		assert(false);
+		return false;
+	}
+
+	VulkanImage *texture = &context->texture_pool[texture_index];
+	if (texture->handle == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to set uniforms for shader at index %d, but texture index is not in use", texture_index);
+		assert(false);
+		return false;
+	}
+
+	VulkanSampler *sampler = &context->sampler_pool[sampler_index];
+	if (sampler->handle == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to set uniforms for shader at index %d, but sampler index is not in use", sampler_index);
 		assert(false);
 		return false;
 	}
@@ -168,6 +170,26 @@ bool vulkan_renderer_set_uniform_texture_sampler(VulkanContext *context, uint32_
 
 	if (target == NULL) {
 		LOG_WARN("Vulkan: Uniform texture sampler '%s' not found in shader %d", name, shader_index);
+	}
+
+	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+		VkDescriptorImageInfo image_info = {
+			.sampler = sampler->handle,
+			.imageView = texture->view,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		};
+
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = shader->descriptor_sets[frame],
+			.dstBinding = 1,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.descriptorCount = 1,
+			.pImageInfo = &image_info,
+		};
+
+		vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
 	}
 
 	return true;

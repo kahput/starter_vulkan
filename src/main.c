@@ -101,6 +101,8 @@ int main(void) {
 	vulkan_renderer_create_shader(&context, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
 	vulkan_renderer_create_pipeline(&context, 0, 0);
 
+	vulkan_renderer_set_uniform_texture_sampler(&context, 0, "texture_sampler", 0, 0);
+
 	for (uint32_t index = 0, store_index = 0; index < model->primitive_count; ++index) {
 		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
 		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
