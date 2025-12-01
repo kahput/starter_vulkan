@@ -1,6 +1,5 @@
 #pragma once
 
-#include "renderer_types.h"
 #include "vulkan/vk_types.h"
 
 #define CGLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -12,6 +11,7 @@ struct platform;
 
 #define MAX_BUFFERS 1024
 #define MAX_TEXTURES 256
+#define MAX_SAMPLERS 32
 #define MAX_SHADERS 32
 #define MAX_PIPELINES 32
 
@@ -29,8 +29,11 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 
 bool vulkan_renderer_bind_pipeline(VulkanContext *context, uint32_t retrieve_index);
 
+bool vulkan_renderer_set_uniform_buffer(VulkanContext *context, uint32_t shader_index, const char *name, void *data);
+bool vulkan_renderer_set_uniform_texture_sampler(VulkanContext *context, uint32_t shader_index, const char *name, uint32_t texture_index, uint32_t sampler_index);
+
 bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, const Image *image);
-bool vulkan_renderer_create_sampler(VulkanContext *context);
+bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index);
 
 bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
 bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index);

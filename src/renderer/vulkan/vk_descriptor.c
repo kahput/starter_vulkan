@@ -1,8 +1,10 @@
+#include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
 #include "allocators/pool.h"
 #include "common.h"
 #include "core/logger.h"
+#include <string.h>
 
 bool vulkan_create_descriptor_set_layout(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout) {
 	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
@@ -74,9 +76,10 @@ bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader) 
 		};
 
 		VulkanImage *texture = &context->texture_pool[0];
+		VulkanSampler *sampler = &context->sampler_pool[0];
 
 		VkDescriptorImageInfo image_info = {
-			.sampler = context->texture_sampler,
+			.sampler = sampler->handle,
 			.imageView = texture->view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		};
@@ -107,5 +110,65 @@ bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader) 
 	}
 
 	LOG_INFO("Vulkan DescriptorSets created");
+	return true;
+}
+
+bool vulkan_renderer_set_uniform_buffer(VulkanContext *context, uint32_t shader_index, const char *name, void *data) {
+	if (shader_index >= MAX_SHADERS) {
+		LOG_ERROR("Vulkan: Shader index %d out of bounds", shader_index);
+		return false;
+	}
+
+	VulkanShader *shader = &context->shader_pool[shader_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to set uniforms for shader at index %d, but index is not in use", shader_index);
+		assert(false);
+		return false;
+	}
+
+	ShaderUniform *target = NULL;
+	for (uint32_t index = 0; index < MAX_UNIFORMS; ++index) {
+		if (strcmp(shader->uniforms[index].name, name) == 0) {
+			target = &shader->uniforms[index];
+		}
+	}
+
+	if (target == NULL) {
+		LOG_WARN("Vulkan: Uniform '%s' not found in shader %d", name, shader_index);
+		return false;
+	}
+
+	VulkanBuffer *buffer = &shader->uniform_buffers[context->current_frame];
+	uint8_t *dest = (uint8_t *)buffer->mapped;
+	memcpy(dest, data, target->size);
+
+	return true;
+}
+
+bool vulkan_renderer_set_uniform_texture_sampler(VulkanContext *context, uint32_t shader_index, const char *name, uint32_t texture_index, uint32_t sampler_index) {
+	if (shader_index >= MAX_SHADERS) {
+		LOG_ERROR("Vulkan: Shader index %d out of bounds", shader_index);
+		return false;
+	}
+
+	VulkanShader *shader = &context->shader_pool[shader_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to set uniforms for shader at index %d, but index is not in use", shader_index);
+		assert(false);
+		return false;
+	}
+
+	ShaderUniform *target = NULL;
+	for (uint32_t index = 0; index < MAX_UNIFORMS; ++index) {
+		if (strcmp(shader->uniforms[index].name, name) == 0 && shader->uniforms[index].type == SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER) {
+			target = &shader->uniforms[index];
+			LOG_DEBUG("Vulkan: Uniform texture sampler '%s' found", name);
+		}
+	}
+
+	if (target == NULL) {
+		LOG_WARN("Vulkan: Uniform texture sampler '%s' not found in shader %d", name, shader_index);
+	}
+
 	return true;
 }

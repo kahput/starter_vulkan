@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "core/identifiers.h"
+#include "renderer/renderer_types.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -19,12 +20,16 @@ typedef struct vulkan_buffer {
 
 typedef struct vulkan_image {
 	VkImage handle;
-	VkFormat format;
-
+	VkImageView view;
 	VkDeviceMemory memory;
 
-	VkImageView view;
+	VkFormat format;
 } VulkanImage;
+
+typedef struct vulkan_sampler {
+	VkSampler handle;
+	VkSamplerCreateInfo info;
+} VulkanSampler;
 
 typedef struct swapchain_support_details {
 	VkSurfaceCapabilitiesKHR capabilities;
@@ -67,6 +72,7 @@ typedef struct VulkanSwapchain {
 #define MAX_ATTRIBUTES 16
 #define MAX_BINDINGS 4
 #define MAX_PUSH_CONSTANT_RANGES 3
+#define MAX_UNIFORMS 32
 
 typedef struct vulkan_shader {
 	VkShaderModule vertex_shader, fragment_shader;
@@ -82,6 +88,7 @@ typedef struct vulkan_shader {
 	uint32_t ps_count;
 
 	VulkanBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
+	ShaderUniform uniforms[MAX_UNIFORMS];
 
 	VkDescriptorPool descriptor_pool;
 	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
@@ -103,18 +110,17 @@ typedef struct {
 	VulkanSwapchain swapchain;
 	VulkanImage depth_attachment;
 
-	VulkanShader *shaders;
-	VulkanPipeline *pipelines;
+	VulkanShader *shader_pool;
+	VulkanPipeline *pipeline_pool;
 
 	uint32_t current_frame;
 
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
-	VkSampler texture_sampler;
-
 	VulkanBuffer *buffer_pool;
 	VulkanImage *texture_pool;
+	VulkanSampler *sampler_pool;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];

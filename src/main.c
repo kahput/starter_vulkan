@@ -94,7 +94,7 @@ int main(void) {
 	// ================== GPU ==================
 
 	vulkan_renderer_create_texture(&context, 0, &model_alebdo);
-	vulkan_renderer_create_sampler(&context);
+	vulkan_renderer_create_sampler(&context, 0);
 
 	importer_unload_image(model_alebdo);
 
@@ -219,7 +219,7 @@ void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 	glm_perspective(glm_rad(45.f), (float)context->swapchain.extent.width / (float)context->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
-	memcpy(context->shaders[0].uniform_buffers[context->current_frame].mapped, &mvp, sizeof(MVPObject));
+	vulkan_renderer_set_uniform_buffer(context, 0, "mvp", &mvp);
 }
 
 bool resize_event(Event *event) {

@@ -9,6 +9,7 @@
 #include "core/logger.h"
 
 #include "allocators/arena.h"
+#include "renderer/vulkan/vk_types.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -32,7 +33,7 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 		return false;
 	}
 
-	VulkanShader *shader = &context->shaders[store_index];
+	VulkanShader *shader = &context->shader_pool[store_index];
 	if (shader->vertex_shader != NULL || shader->fragment_shader != NULL) {
 		LOG_FATAL("Engine: Frontend renderer allocated shader at index %d, but index is already in use", store_index);
 		assert(false);
@@ -73,8 +74,8 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 
 	reflect_shader_interface(context, shader, vertex_shader_code, fragment_shader_code);
 
-	vulkan_create_uniform_buffers(context, shader->uniform_buffers, sizeof(MVPObject));
 	vulkan_create_descriptor_pool(context, shader);
+	vulkan_create_uniform_buffers(context, shader->uniform_buffers, sizeof(MVPObject));
 	vulkan_create_descriptor_set(context, shader);
 
 	arena_reset_scratch(temp);
@@ -88,7 +89,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 		return false;
 	}
 
-	VulkanPipeline *pipeline = &context->pipelines[store_index];
+	VulkanPipeline *pipeline = &context->pipeline_pool[store_index];
 	if (pipeline->handle != NULL) {
 		LOG_FATAL("Engine: Frontend renderer allocated pipeline at index %d, but index is already in use", store_index);
 		assert(false);
@@ -96,7 +97,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 	}
 
 	pipeline->shader_index = shader_index;
-	VulkanShader *shader = &context->shaders[pipeline->shader_index];
+	VulkanShader *shader = &context->shader_pool[pipeline->shader_index];
 	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
 		LOG_FATAL("Engine: Frontend renderer allocated pipeline with shader at index %d, but index is not in use", pipeline->shader_index);
 		assert(false);
@@ -227,7 +228,7 @@ bool vulkan_renderer_bind_pipeline(VulkanContext *context, uint32_t retrieve_ind
 		return false;
 	}
 
-	VulkanPipeline *pipeline = &context->pipelines[retrieve_index];
+	VulkanPipeline *pipeline = &context->pipeline_pool[retrieve_index];
 	if (pipeline->handle == NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to bind pipeline at index %d, but index is not in use", retrieve_index);
 		assert(false);
@@ -235,7 +236,7 @@ bool vulkan_renderer_bind_pipeline(VulkanContext *context, uint32_t retrieve_ind
 	}
 	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
 
-	VulkanShader *shader = &context->shaders[pipeline->shader_index];
+	VulkanShader *shader = &context->shader_pool[pipeline->shader_index];
 	vkCmdBindDescriptorSets(
 		context->command_buffers[context->current_frame],
 		VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
@@ -383,6 +384,24 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 			vk_binding->stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 			vk_binding->pImmutableSamplers = NULL;
 
+			ShaderUniform *uniform = &shader->uniforms[reflect_binding->binding];
+
+			memcpy(uniform->name, reflect_binding->name, sizeof(uniform->name));
+			uniform->type =
+				reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+				? SHADER_UNIFORM_TYPE_BUFFER
+				: reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+				? SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER
+				: SHADER_UNIFORM_UNDEFINED;
+			uniform->stage = SHADER_STAGE_VERTEX;
+			uniform->count = reflect_binding->count;
+			uniform->frequency = reflect_binding->set;
+			if (uniform->type == SHADER_UNIFORM_TYPE_BUFFER) {
+				SpvReflectBlockVariable block = reflect_binding->block;
+
+				uniform->size = block.size;
+			}
+
 			info->binding_count++;
 		}
 
@@ -403,13 +422,17 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 		for (uint32_t b = 0; b < reflect_set->binding_count; ++b) {
 			SpvReflectDescriptorBinding *reflect_binding = reflect_set->bindings[b];
 
+			ShaderUniform *uniform = &shader->uniforms[reflect_binding->binding];
+
 			// Check if binding already exists (from vertex shader)
 			bool found = false;
 			for (uint32_t existing = 0; existing < info->binding_count; ++existing) {
 				if (info->bindings[existing].binding == reflect_binding->binding) {
 					// Merge stage flags
 					info->bindings[existing].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+					uniform->stage |= SHADER_STAGE_FRAGMENT;
 					found = true;
+
 					break;
 				}
 			}
@@ -421,6 +444,17 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 				vk_binding->descriptorCount = reflect_binding->count;
 				vk_binding->stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 				vk_binding->pImmutableSamplers = NULL;
+
+				memcpy(uniform->name, reflect_binding->name, sizeof(uniform->name));
+				uniform->type =
+					reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+					? SHADER_UNIFORM_TYPE_BUFFER
+					: reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+					? SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER
+					: SHADER_UNIFORM_UNDEFINED;
+				uniform->stage = SHADER_STAGE_FRAGMENT;
+				uniform->count = reflect_binding->count;
+				uniform->frequency = reflect_binding->set;
 
 				info->binding_count++;
 			}

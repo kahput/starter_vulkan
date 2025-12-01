@@ -8,8 +8,9 @@ static uint32_t image_index = 0;
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context) {
 	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
 	context->texture_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
-	context->shaders = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
-	context->pipelines = arena_push_array_zero(arena, VulkanPipeline, MAX_PIPELINES);
+	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
+	context->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
+	context->pipeline_pool = arena_push_array_zero(arena, VulkanPipeline, MAX_PIPELINES);
 
 	if (vulkan_create_instance(context, platform) == false)
 		return false;
@@ -122,7 +123,6 @@ bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platfo
 		.extent = context->swapchain.extent
 	};
 	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
-
 
 	return true;
 }

@@ -86,6 +86,7 @@ typedef enum {
 } ShaderUniformFrequency;
 
 typedef enum {
+	SHADER_UNIFORM_UNDEFINED,
 	SHADER_UNIFORM_TYPE_BUFFER,
 	SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER
 } ShaderUniformType;
@@ -119,10 +120,10 @@ typedef struct shader_attribute {
 } ShaderAttribute;
 
 typedef struct uniform_binding {
-	const char *name;
+	char name[64];
 	ShaderUniformType type;
 	ShaderStage stage;
-	uint32_t array_count;
+	uint32_t size, count;
 
 	ShaderUniformFrequency frequency;
 } ShaderUniform;
