@@ -10,26 +10,32 @@
 struct arena;
 struct platform;
 
+#define MAX_BUFFERS 1024
+#define MAX_TEXTURES 256
+#define MAX_SHADERS 32
+#define MAX_PIPELINES 32
+
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context);
 void vulkan_renderer_destroy(VulkanContext *context);
 
 bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platform);
 bool Vulkan_renderer_end_frame(VulkanContext *context);
 
-bool vulkan_renderer_begin(VulkanContext *context, Handle target);
-bool vulkan_renderer_end(VulkanContext *context, Handle target);
+bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
+bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer);
-bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index);
+bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, const char *vertex_shader_path, const char *fragment_shader_path);
+bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, uint32_t shader_index);
 
-// Shader vulkan_renderer_create_shader(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path);
-bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count);
+bool vulkan_renderer_bind_pipeline(VulkanContext *context, uint32_t retrieve_index);
 
-bool vulkan_renderer_create_texture(VulkanContext *context, const Image *image);
+bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, const Image *image);
 bool vulkan_renderer_create_sampler(VulkanContext *context);
 
-bool vulkan_renderer_create_buffer(VulkanContext *context, BufferType type, size_t size, void *data);
-bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t index);
+bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
+bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index);
+
+bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer buffers[MAX_FRAMES_IN_FLIGHT], size_t size);
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
@@ -62,13 +68,12 @@ bool vulkan_recreate_swapchain(VulkanContext *context, struct platform *platform
 
 bool vulkan_create_renderpass(VulkanContext *context);
 
-bool vulkan_create_descriptor_set_layout(VulkanContext *context);
+bool vulkan_create_descriptor_set_layout(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout);
 
 bool vulkan_create_command_pool(VulkanContext *context);
 
-bool vulkan_create_uniform_buffers(VulkanContext *context);
-bool vulkan_create_descriptor_pool(VulkanContext *context);
-bool vulkan_create_descriptor_set(VulkanContext *context);
+bool vulkan_create_descriptor_pool(VulkanContext *context, VulkanShader *shader);
+bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader);
 
 bool vulkan_create_command_buffer(VulkanContext *context);
 bool vulkan_create_sync_objects(VulkanContext *context);

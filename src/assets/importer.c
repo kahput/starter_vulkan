@@ -32,7 +32,7 @@ Model *importer_load_gltf(struct arena *arena, const char *path) {
 		LOG_INFO("Loading %s...", path);
 		cgltf_scene *scene = data->scene;
 		logger_indent();
-		Model *model = arena_push_type_zero(arena, Model);
+		Model *model = arena_push_struct_zero(arena, Model);
 		for (uint32_t node_index = 0; node_index < scene->nodes_count; ++node_index) {
 			uint32_t primitive_count = 0;
 			load_nodes(arena, scene->nodes[node_index], &primitive_count, model, NULL);

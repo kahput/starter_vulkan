@@ -1,15 +1,35 @@
 #include "renderer/vk_renderer.h"
 
-#include "allocators/pool.h"
 #include "core/logger.h"
+#include <assert.h>
 #include <string.h>
 
 // static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 
 int32_t to_vulkan_usage(BufferType type);
 
-bool vulkan_renderer_create_buffer(VulkanContext *context, BufferType type, size_t size, void *data) {
-	VulkanBuffer *buffer = pool_push(context->buffer_pool);
+bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data) {
+	const char *stringify[] = {
+		"Vertex buffer",
+		"Index buffer",
+		"Uniform buffer",
+	};
+
+	if (store_index >= MAX_BUFFERS) {
+		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
+		return false;
+	}
+
+	VulkanBuffer *buffer = &context->buffer_pool[store_index];
+	if (buffer->handle != NULL) {
+		LOG_FATAL("Engine: Frontend renderer allocated buffer at index %d, but index is already in use", store_index);
+		assert(false);
+		return false;
+	}
+
+	LOG_INFO("Vulkan: Creating %s resource...", stringify[type]);
+
+	logger_indent();
 
 	buffer->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);
 	buffer->memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -20,31 +40,39 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, BufferType type, size
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
+	LOG_DEBUG("Creating staging buffer...");
+	logger_indent();
 	vulkan_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	logger_dedent();
 
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &buffer->mapped);
 	memcpy(buffer->mapped, data, size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
+	LOG_DEBUG("Creating buffer...");
+	logger_indent();
 	vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle, &buffer->memory);
+	logger_dedent();
 
 	vulkan_copy_buffer(context, staging_buffer, buffer->handle, size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
+	LOG_INFO("%s resource created", stringify[type]);
+
+	logger_dedent();
+
 	return true;
 }
 
-bool vulkan_create_uniform_buffers(VulkanContext *context) {
-	VkDeviceSize size = sizeof(MVPObject);
-
+bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer buffers[MAX_FRAMES_IN_FLIGHT], size_t size) {
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		vulkan_create_buffer(context, context->device.graphics_index, size, usage, properties, context->uniform_buffers + i, context->uniform_buffers_memory + i);
+	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
+		vulkan_create_buffer(context, context->device.graphics_index, size, usage, properties, &buffers[index].handle, &buffers[index].memory);
 
-		vkMapMemory(context->device.logical, context->uniform_buffers_memory[i], 0, size, 0, &context->uniform_buffers_mapped[i]);
+		vkMapMemory(context->device.logical, buffers[index].memory, 0, size, 0, &buffers[index].mapped);
 	}
 
 	return true;
@@ -103,7 +131,7 @@ bool vulkan_create_buffer(
 
 	vkBindBufferMemory(context->device.logical, *buffer, *buffer_memory, 0);
 
-	LOG_INFO("VkBuffer created");
+	LOG_DEBUG("VkBuffer created");
 
 	return true;
 }
@@ -133,8 +161,13 @@ int32_t to_vulkan_usage(BufferType type) {
 	}
 }
 
-bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t index) {
-	VulkanBuffer *vulkan_buffer = &((VulkanBuffer *)context->buffer_pool->array)[index];
+bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index) {
+	const VulkanBuffer *vulkan_buffer = &context->buffer_pool[retrieve_index];
+	if (vulkan_buffer->handle == NULL) {
+		LOG_FATAL("Vulkan: Renderer requested buffer bind at index %d, but no valid buffer found at index", retrieve_index);
+		assert(false);
+		return false;
+	}
 
 	if (vulkan_buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffers[] = { vulkan_buffer->handle };

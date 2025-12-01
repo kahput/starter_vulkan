@@ -63,20 +63,36 @@ typedef struct VulkanSwapchain {
 	VkExtent2D extent;
 } VulkanSwapchain;
 
+#define MAX_SETS 3
+#define MAX_ATTRIBUTES 16
+#define MAX_BINDINGS 4
+#define MAX_PUSH_CONSTANT_RANGES 3
+
 typedef struct vulkan_shader {
 	VkShaderModule vertex_shader, fragment_shader;
 
-	VkVertexInputBindingDescription *bindings;
-	uint32_t binding_count;
+	VkVertexInputAttributeDescription attributes[MAX_ATTRIBUTES];
+	VkVertexInputBindingDescription bindings[MAX_BINDINGS];
+	uint32_t attribute_count, binding_count;
 
-	VkVertexInputAttributeDescription *attributes;
-	uint32_t attribute_count;
+	VkDescriptorSetLayout layouts[MAX_SETS];
+	uint32_t set_count;
 
-	VkDescriptorSetLayout *layouts;
-	uint32_t layout_count;
+	VkPushConstantRange push_constant_ranges[MAX_PUSH_CONSTANT_RANGES];
+	uint32_t ps_count;
+
+	VulkanBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
+
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
 
 	VkPipelineLayout pipeline_layout;
 } VulkanShader;
+
+typedef struct vulkan_pipeline {
+	VkPipeline handle;
+	uint32_t shader_index;
+} VulkanPipeline;
 
 typedef struct {
 	VkInstance instance;
@@ -87,11 +103,8 @@ typedef struct {
 	VulkanSwapchain swapchain;
 	VulkanImage depth_attachment;
 
-	VkDescriptorSetLayout descriptor_set_layout;
-	VkPipelineLayout pipeline_layout;
-
-	VulkanShader shader;
-	VkPipeline graphics_pipeline;
+	VulkanShader *shaders;
+	VulkanPipeline *pipelines;
 
 	uint32_t current_frame;
 
@@ -100,15 +113,8 @@ typedef struct {
 
 	VkSampler texture_sampler;
 
-	struct pool *buffer_pool;
-	struct pool *texture_pool;
-
-	VkBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
-	VkDeviceMemory uniform_buffers_memory[MAX_FRAMES_IN_FLIGHT];
-	void *uniform_buffers_mapped[MAX_FRAMES_IN_FLIGHT];
-
-	VkDescriptorPool descriptor_pool;
-	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
+	VulkanBuffer *buffer_pool;
+	VulkanImage *texture_pool;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];

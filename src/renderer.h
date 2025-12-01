@@ -2,6 +2,9 @@
 
 #include "renderer/renderer_types.h"
 
+typedef Handle MeshHandle;
+typedef Handle MaterialHandle;
+
 bool renderer_begin_frame(void);
 
 bool renderer_submit_mesh(void);

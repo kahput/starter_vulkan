@@ -4,38 +4,22 @@
 #include "common.h"
 #include "core/logger.h"
 
-bool vulkan_create_descriptor_set_layout(VulkanContext *context) {
-	VkDescriptorSetLayoutBinding mvp_layout_binding = {
-		.binding = 0,
-		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-		.descriptorCount = 1,
-		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT
-	};
-
-	VkDescriptorSetLayoutBinding sampler_layout_binding = {
-		.binding = 1,
-		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.descriptorCount = 1,
-		.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
-	};
-
-	VkDescriptorSetLayoutBinding bindings[] = { mvp_layout_binding, sampler_layout_binding };
-
+bool vulkan_create_descriptor_set_layout(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout) {
 	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = array_count(bindings),
+		.bindingCount = binding_count,
 		.pBindings = bindings,
 	};
 
-	if (vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &context->descriptor_set_layout) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create descriptor set layout");
+	if (vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, out_layout) != VK_SUCCESS) {
+		LOG_ERROR("Vulkan: Failed to create descriptor set layout");
 		return false;
 	}
 
 	return true;
 }
 
-bool vulkan_create_descriptor_pool(VulkanContext *context) {
+bool vulkan_create_descriptor_pool(VulkanContext *context, VulkanShader *shader) {
 	VkDescriptorPoolSize sizes[] = {
 		{
 		  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -55,7 +39,7 @@ bool vulkan_create_descriptor_pool(VulkanContext *context) {
 		.maxSets = MAX_FRAMES_IN_FLIGHT,
 	};
 
-	if (vkCreateDescriptorPool(context->device.logical, &dp_create_info, NULL, &context->descriptor_pool) != VK_SUCCESS) {
+	if (vkCreateDescriptorPool(context->device.logical, &dp_create_info, NULL, &shader->descriptor_pool) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan DescriptorPool");
 		return false;
 	}
@@ -64,32 +48,32 @@ bool vulkan_create_descriptor_pool(VulkanContext *context) {
 	return true;
 }
 
-bool vulkan_create_descriptor_set(VulkanContext *context) {
+bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader) {
 	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
-	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		layouts[i] = context->descriptor_set_layout;
+	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+		layouts[frame] = shader->layouts[0];
 	}
 
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = context->descriptor_pool,
+		.descriptorPool = shader->descriptor_pool,
 		.descriptorSetCount = array_count(layouts),
 		.pSetLayouts = layouts
 	};
 
-	if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, context->descriptor_sets) != VK_SUCCESS) {
+	if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, shader->descriptor_sets) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan DescriptorSets");
 		return false;
 	}
 
-	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
 		VkDescriptorBufferInfo buffer_info = {
-			.buffer = context->uniform_buffers[i],
+			.buffer = shader->uniform_buffers[frame].handle,
 			.offset = 0,
 			.range = sizeof(MVPObject),
 		};
 
-		VulkanImage *texture = &((VulkanImage *)context->texture_pool->array)[0];
+		VulkanImage *texture = &context->texture_pool[0];
 
 		VkDescriptorImageInfo image_info = {
 			.sampler = context->texture_sampler,
@@ -100,7 +84,7 @@ bool vulkan_create_descriptor_set(VulkanContext *context) {
 		VkWriteDescriptorSet descriptor_writes[] = {
 			{
 			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = context->descriptor_sets[i],
+			  .dstSet = shader->descriptor_sets[frame],
 			  .dstBinding = 0,
 			  .dstArrayElement = 0,
 			  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -109,7 +93,7 @@ bool vulkan_create_descriptor_set(VulkanContext *context) {
 			},
 			{
 			  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			  .dstSet = context->descriptor_sets[i],
+			  .dstSet = shader->descriptor_sets[frame],
 			  .dstBinding = 1,
 			  .dstArrayElement = 0,
 			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,

@@ -8,10 +8,20 @@
 
 static VkFormat channels_to_vulkan_format(uint32_t channels);
 
-bool vulkan_renderer_create_texture(VulkanContext *context, const Image *image) {
+bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, const Image *image) {
 	VkDeviceSize size = image->width * image->height * image->channels;
 
-	VulkanImage *texture = (VulkanImage *)pool_push(context->texture_pool);
+	if (store_index >= MAX_TEXTURES) {
+		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
+		return false;
+	}
+
+	VulkanImage *texture = &context->texture_pool[store_index];
+	if (texture->handle != NULL) {
+		LOG_FATAL("Engine: Frontend renderer allocated texture at index %d, but index is already in use", store_index);
+		assert(false);
+		return false;
+	}
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;

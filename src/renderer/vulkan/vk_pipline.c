@@ -1,11 +1,14 @@
 #include "core/identifiers.h"
+#include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
+#include <assert.h>
 #include <spirv_reflect/spirv_reflect.h>
 
 #include "common.h"
-#include "allocators/arena.h"
 #include "core/logger.h"
+
+#include "allocators/arena.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -17,13 +20,25 @@ struct shader_file {
 	uint8_t *content;
 };
 
-static inline int32_t ftovkf(ShaderAttributeFormat format);
-static inline uint32_t ftobs(ShaderAttributeFormat format);
+// static inline int32_t ftovkf(ShaderAttributeFormat format);
+// static inline uint32_t ftobs(ShaderAttributeFormat format);
 
 struct shader_file read_file(struct arena *arena, const char *path);
-bool create_shader(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code);
+bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code);
 
-bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_shader_path, const char *fragment_shader_path, ShaderAttribute *attributes, uint32_t attribute_count) {
+bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, const char *vertex_shader_path, const char *fragment_shader_path) {
+	if (store_index >= MAX_SHADERS) {
+		LOG_ERROR("Vulkan: Shader index %d out of bounds", store_index);
+		return false;
+	}
+
+	VulkanShader *shader = &context->shaders[store_index];
+	if (shader->vertex_shader != NULL || shader->fragment_shader != NULL) {
+		LOG_FATAL("Engine: Frontend renderer allocated shader at index %d, but index is already in use", store_index);
+		assert(false);
+		return false;
+	}
+
 	ArenaTemp temp = arena_get_scratch(NULL);
 	struct shader_file vertex_shader_code = read_file(temp.arena, vertex_shader_path);
 	struct shader_file fragment_shader_code = read_file(temp.arena, fragment_shader_path);
@@ -34,18 +49,70 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_
 		return false;
 	}
 
-	create_shader(context, &context->shader, vertex_shader_code, fragment_shader_code);
+	VkShaderModuleCreateInfo vsm_create_info = {
+		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = vertex_shader_code.size,
+		.pCode = (uint32_t *)vertex_shader_code.content,
+	};
+
+	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create vertex shader module");
+		return false;
+	}
+
+	VkShaderModuleCreateInfo fsm_create_info = {
+		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = fragment_shader_code.size,
+		.pCode = (uint32_t *)fragment_shader_code.content,
+	};
+
+	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create fragment shader module");
+		return false;
+	}
+
+	reflect_shader_interface(context, shader, vertex_shader_code, fragment_shader_code);
+
+	vulkan_create_uniform_buffers(context, shader->uniform_buffers, sizeof(MVPObject));
+	vulkan_create_descriptor_pool(context, shader);
+	vulkan_create_descriptor_set(context, shader);
+
+	arena_reset_scratch(temp);
+
+	return true;
+}
+
+bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, uint32_t shader_index) {
+	if (store_index >= MAX_PIPELINES) {
+		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", store_index);
+		return false;
+	}
+
+	VulkanPipeline *pipeline = &context->pipelines[store_index];
+	if (pipeline->handle != NULL) {
+		LOG_FATAL("Engine: Frontend renderer allocated pipeline at index %d, but index is already in use", store_index);
+		assert(false);
+		return false;
+	}
+
+	pipeline->shader_index = shader_index;
+	VulkanShader *shader = &context->shaders[pipeline->shader_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		LOG_FATAL("Engine: Frontend renderer allocated pipeline with shader at index %d, but index is not in use", pipeline->shader_index);
+		assert(false);
+		return false;
+	}
 
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_VERTEX_BIT,
-		.module = context->shader.vertex_shader,
+		.module = shader->vertex_shader,
 		.pName = "main"
 	};
 	VkPipelineShaderStageCreateInfo fss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-		.module = context->shader.fragment_shader,
+		.module = shader->fragment_shader,
 		.pName = "main"
 	};
 
@@ -62,42 +129,12 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_
 		.pDynamicStates = dynamic_states
 	};
 
-	VkVertexInputBindingDescription *binding_descriptions = arena_push_array_zero(temp.arena, VkVertexInputBindingDescription, attribute_count);
-	VkVertexInputAttributeDescription *attribute_descriptions = arena_push_array(temp.arena, VkVertexInputAttributeDescription, attribute_count);
-
-	uint32_t unique_bindings = 0;
-	for (uint32_t attribute_index = 0; attribute_index < attribute_count; ++attribute_index) {
-		ShaderAttribute attribute = attributes[attribute_index];
-		uint32_t byte_offset = 0;
-		for (uint32_t binding_index = 0; binding_index < attribute_count; ++binding_index) {
-			VkVertexInputBindingDescription *binding_description = &binding_descriptions[binding_index];
-			unique_bindings += binding_description->stride == 0;
-
-			if (binding_description->binding == attribute.binding || binding_description->stride == 0) {
-				binding_description->binding = attribute.binding;
-				binding_description->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-				byte_offset = binding_description->stride;
-				binding_description->stride += ftobs(attribute.format);
-				break;
-			}
-		}
-
-		VkVertexInputAttributeDescription attribute_description = {
-			.binding = attribute.binding,
-			.location = attribute_index,
-			.format = ftovkf(attribute.format),
-			.offset = byte_offset
-		};
-
-		attribute_descriptions[attribute_index] = attribute_description;
-	}
-
 	VkPipelineVertexInputStateCreateInfo vis_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		.vertexBindingDescriptionCount = unique_bindings,
-		.pVertexBindingDescriptions = binding_descriptions,
-		.vertexAttributeDescriptionCount = attribute_count,
-		.pVertexAttributeDescriptions = attribute_descriptions
+		.vertexBindingDescriptionCount = shader->binding_count,
+		.pVertexBindingDescriptions = shader->bindings,
+		.vertexAttributeDescriptionCount = shader->attribute_count,
+		.pVertexAttributeDescriptions = shader->attributes
 	};
 
 	VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
@@ -142,20 +179,6 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_
 		.pAttachments = &color_blend_attachment,
 	};
 
-	VkPipelineLayoutCreateInfo pl_create_info = {
-		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		.setLayoutCount = 1,
-		.pSetLayouts = &context->descriptor_set_layout,
-		.pushConstantRangeCount = 0,
-	};
-
-	if (vkCreatePipelineLayout(context->device.logical, &pl_create_info, NULL, &context->pipeline_layout) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create graphcis pipeline layout");
-		vkDestroyShaderModule(context->device.logical, context->shader.vertex_shader, NULL);
-		vkDestroyShaderModule(context->device.logical, context->shader.fragment_shader, NULL);
-		return false;
-	}
-
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 		.depthTestEnable = VK_TRUE,
@@ -186,21 +209,37 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, const char *vertex_
 		.pDepthStencilState = &depth_stencil_create_info,
 		.pColorBlendState = &cbs_create_info,
 		.pDynamicState = &ds_create_info,
-		.layout = context->pipeline_layout,
+		.layout = shader->pipeline_layout,
 	};
 
-	if (vkCreateGraphicsPipelines(context->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &context->graphics_pipeline) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create graphics pipeline");
-		vkDestroyShaderModule(context->device.logical, context->shader.vertex_shader, NULL);
-		vkDestroyShaderModule(context->device.logical, context->shader.fragment_shader, NULL);
+	if (vkCreateGraphicsPipelines(context->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &pipeline->handle) != VK_SUCCESS) {
+		LOG_ERROR("Vulkan: Failed to create pipeline");
 		return false;
 	}
 
-	vkDestroyShaderModule(context->device.logical, context->shader.vertex_shader, NULL);
-	vkDestroyShaderModule(context->device.logical, context->shader.fragment_shader, NULL);
-	arena_reset_scratch(temp);
+	LOG_INFO("VkPipeline created");
+	return true;
+}
 
-	LOG_INFO("Graphics pipeline created");
+bool vulkan_renderer_bind_pipeline(VulkanContext *context, uint32_t retrieve_index) {
+	if (retrieve_index >= MAX_PIPELINES) {
+		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", retrieve_index);
+		return false;
+	}
+
+	VulkanPipeline *pipeline = &context->pipelines[retrieve_index];
+	if (pipeline->handle == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to bind pipeline at index %d, but index is not in use", retrieve_index);
+		assert(false);
+		return false;
+	}
+	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
+
+	VulkanShader *shader = &context->shaders[pipeline->shader_index];
+	vkCmdBindDescriptorSets(
+		context->command_buffers[context->current_frame],
+		VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+		0, 1, &shader->descriptor_sets[context->current_frame], 0, NULL);
 	return true;
 }
 
@@ -223,187 +262,327 @@ struct shader_file read_file(struct arena *arena, const char *path) {
 	return (struct shader_file){ .size = size, .content = byte_content };
 }
 
-bool create_shader(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code) {
-	VkShaderModuleCreateInfo vsm_create_info = {
-		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = vertex_shader_code.size,
-		.pCode = (uint32_t *)vertex_shader_code.content,
-	};
+bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code) {
+	SpvReflectShaderModule vertex_module, fragment_module;
+	SpvReflectResult result;
 
-	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create vertex shader module");
+	// Create reflection modules
+	result = spvReflectCreateShaderModule(vertex_shader_code.size, vertex_shader_code.content, &vertex_module);
+	if (result != SPV_REFLECT_RESULT_SUCCESS) {
+		LOG_ERROR("Failed to reflect vertex shader");
 		return false;
 	}
 
-	VkShaderModuleCreateInfo fsm_create_info = {
-		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = fragment_shader_code.size,
-		.pCode = (uint32_t *)fragment_shader_code.content,
-	};
-
-	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create fragment shader module");
+	result = spvReflectCreateShaderModule(fragment_shader_code.size, fragment_shader_code.content, &fragment_module);
+	if (result != SPV_REFLECT_RESULT_SUCCESS) {
+		LOG_ERROR("Failed to reflect fragment shader");
+		spvReflectDestroyShaderModule(&vertex_module);
 		return false;
 	}
 
 	ArenaTemp temp = arena_get_scratch(NULL);
 
-	// Generate reflection data for a shader
-
-	// clang-format off
-	enum { VERTEX_SHADER, FRAGMENT_SHADER };
-	// clang-format on
-
-	SpvReflectShaderModule modules[2];
-	SpvReflectResult result = spvReflectCreateShaderModule(vertex_shader_code.size, vertex_shader_code.content, &modules[VERTEX_SHADER]);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-	result = spvReflectCreateShaderModule(fragment_shader_code.size, fragment_shader_code.content, &modules[FRAGMENT_SHADER]);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-	// Enumerate and extract shader's input variables
+	// ========== VERTEX INPUT ATTRIBUTES ==========
 	uint32_t input_variable_count = 0;
-	result = spvReflectEnumerateInputVariables(&modules[VERTEX_SHADER], &input_variable_count, NULL);
+	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, NULL);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-	SpvReflectInterfaceVariable **input_variables =
-		(SpvReflectInterfaceVariable **)arena_push_array(temp.arena, SpvReflectInterfaceVariable *, input_variable_count);
 
-	result = spvReflectEnumerateInputVariables(&modules[VERTEX_SHADER], &input_variable_count, input_variables);
+	SpvReflectInterfaceVariable **input_variables = arena_push_array(temp.arena, SpvReflectInterfaceVariable *, input_variable_count);
+	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, input_variables);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+	shader->attribute_count = 0;
+	shader->binding_count = 0;
+
+	// Track unique bindings
+	uint32_t bindings_used[MAX_BINDINGS] = { 0 };
 
 	for (uint32_t index = 0; index < input_variable_count; ++index) {
-		SpvReflectInterfaceVariable *input = input_variables[index];
+		SpvReflectInterfaceVariable *var = input_variables[index];
 
-		LOG_INFO("Shader_variable: %s", input->name);
+		// Skip built-ins (gl_VertexIndex, etc.)
+		if (var->decoration_flags & SPV_REFLECT_DECORATION_BUILT_IN) {
+			continue;
+		}
+
+		VkVertexInputAttributeDescription *attr = &shader->attributes[shader->attribute_count];
+		attr->location = var->location;
+		attr->binding = 0; // Assume single binding for now
+		attr->format = (VkFormat)var->format;
+		attr->offset = 0; // Will be calculated based on previous attributes
+
+		shader->attribute_count++;
+		bindings_used[0] = 1; // Mark binding 0 as used
+
+		assert(shader->attribute_count < MAX_ATTRIBUTES);
 	}
 
-	// Output variables, descriptor bindings, descriptor sets, and push constants
-	// can be enumerated and extracted using a similar mechanism.
-	uint32_t vs_set_count = 0;
-	result = spvReflectEnumerateDescriptorSets(&modules[VERTEX_SHADER], &vs_set_count, NULL);
+	// Create binding descriptions for used bindings
+	uint32_t stride = 0;
+	for (uint32_t index = 0; index < shader->attribute_count; ++index) {
+		shader->attributes[index].offset = stride;
+
+		// Calculate stride based on format
+		VkFormat format = shader->attributes[index].format;
+		if (format == VK_FORMAT_R32_SFLOAT)
+			stride += 4;
+		else if (format == VK_FORMAT_R32G32_SFLOAT)
+			stride += 8;
+		else if (format == VK_FORMAT_R32G32B32_SFLOAT)
+			stride += 12;
+		else if (format == VK_FORMAT_R32G32B32A32_SFLOAT)
+			stride += 16;
+		// Add more formats as needed
+	}
+
+	if (bindings_used[0]) {
+		shader->bindings[0].binding = 0;
+		shader->bindings[0].stride = stride;
+		shader->bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		shader->binding_count = 1;
+	}
+
+	// ========== DESCRIPTOR SETS ==========
+	uint32_t vs_set_count = 0, fs_set_count = 0;
+	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, NULL);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-	uint32_t fs_set_count = 0;
-	result = spvReflectEnumerateDescriptorSets(&modules[FRAGMENT_SHADER], &fs_set_count, NULL);
+	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, NULL);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
 	SpvReflectDescriptorSet **vs_sets = arena_push_array(temp.arena, SpvReflectDescriptorSet *, vs_set_count);
-	result = spvReflectEnumerateDescriptorSets(&modules[VERTEX_SHADER], &vs_set_count, vs_sets);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
 	SpvReflectDescriptorSet **fs_sets = arena_push_array(temp.arena, SpvReflectDescriptorSet *, fs_set_count);
-	result = spvReflectEnumerateDescriptorSets(&modules[FRAGMENT_SHADER], &fs_set_count, fs_sets);
+
+	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, vs_sets);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, fs_sets);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
-	uint32_t set_count = vs_set_count + fs_set_count;
-	VkDescriptorSetLayoutCreateInfo *set_layouts = arena_push_array(temp.arena, VkDescriptorSetLayoutCreateInfo, set_count);
+	// Merge descriptor sets from both stages
+	typedef struct {
+		uint32_t set;
+		uint32_t binding_count;
+		VkDescriptorSetLayoutBinding bindings[32];
+	} SetInfo;
 
-	for (size_t set_index = 0; set_index < vs_set_count; ++set_index) {
-		SpvReflectDescriptorSet *refl_set = vs_sets[set_index];
-		VkDescriptorSetLayoutCreateInfo *layout = &set_layouts[set_index];
+	SetInfo merged_sets[MAX_SETS] = { 0 };
+	uint32_t unique_set_count = 0;
 
-		VkDescriptorSetLayoutBinding *bindings = arena_push_array(temp.arena, VkDescriptorSetLayoutBinding, refl_set->binding_count);
-		for (uint32_t binding_index = 0; binding_index < refl_set->binding_count; ++binding_index) {
-			SpvReflectDescriptorBinding *refl_binding = refl_set->bindings[binding_index];
-			VkDescriptorSetLayoutBinding *layout_binding = &bindings[binding_index];
+	// Process vertex shader sets
+	for (uint32_t i = 0; i < vs_set_count; ++i) {
+		SpvReflectDescriptorSet *reflect_set = vs_sets[i];
+		SetInfo *info = &merged_sets[reflect_set->set];
+		info->set = reflect_set->set;
 
-			layout_binding->binding = refl_binding->binding;
-			layout_binding->descriptorType = (VkDescriptorType)refl_binding->descriptor_type;
-			layout_binding->descriptorCount = 1;
+		for (uint32_t b = 0; b < reflect_set->binding_count; ++b) {
+			SpvReflectDescriptorBinding *reflect_binding = reflect_set->bindings[b];
 
-			for (uint32_t i_dim = 0; i_dim < refl_binding->array.dims_count; ++i_dim) {
-				layout_binding->descriptorCount *= refl_binding->array.dims[i_dim];
-			}
-			layout_binding->stageFlags = modules[VERTEX_SHADER].shader_stage;
+			VkDescriptorSetLayoutBinding *vk_binding = &info->bindings[info->binding_count];
+			vk_binding->binding = reflect_binding->binding;
+			vk_binding->descriptorType = (VkDescriptorType)reflect_binding->descriptor_type;
+			vk_binding->descriptorCount = reflect_binding->count;
+			vk_binding->stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+			vk_binding->pImmutableSamplers = NULL;
+
+			info->binding_count++;
 		}
 
-		// layout.set_number = refl_set->set;
-		layout->sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layout->bindingCount = refl_set->binding_count;
-		layout->pBindings = bindings;
+		if (reflect_set->set >= unique_set_count) {
+			unique_set_count = reflect_set->set + 1;
+		}
 	}
 
-	context->shader.layouts = (VkDescriptorSetLayout *)malloc(sizeof(VkDescriptorSetLayout) * vs_set_count);
-	context->shader.layout_count = vs_set_count;
-	for (uint32_t layout_index = 0; layout_index < vs_set_count; ++layout_index) {
-		if (vkCreateDescriptorSetLayout(context->device.logical, &set_layouts[layout_index], NULL, &context->shader.layouts[layout_index]) != VK_SUCCESS) {
-			LOG_ERROR("Failed to create descriptor set layout");
+	// Process fragment shader sets (merge or add new)
+	for (uint32_t i = 0; i < fs_set_count; ++i) {
+		SpvReflectDescriptorSet *reflect_set = fs_sets[i];
+		SetInfo *info = &merged_sets[reflect_set->set];
+
+		if (info->binding_count == 0) {
+			info->set = reflect_set->set;
+		}
+
+		for (uint32_t b = 0; b < reflect_set->binding_count; ++b) {
+			SpvReflectDescriptorBinding *reflect_binding = reflect_set->bindings[b];
+
+			// Check if binding already exists (from vertex shader)
+			bool found = false;
+			for (uint32_t existing = 0; existing < info->binding_count; ++existing) {
+				if (info->bindings[existing].binding == reflect_binding->binding) {
+					// Merge stage flags
+					info->bindings[existing].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
+				VkDescriptorSetLayoutBinding *vk_binding = &info->bindings[info->binding_count];
+				vk_binding->binding = reflect_binding->binding;
+				vk_binding->descriptorType = (VkDescriptorType)reflect_binding->descriptor_type;
+				vk_binding->descriptorCount = reflect_binding->count;
+				vk_binding->stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+				vk_binding->pImmutableSamplers = NULL;
+
+				info->binding_count++;
+			}
+		}
+
+		if (reflect_set->set >= unique_set_count) {
+			unique_set_count = reflect_set->set + 1;
+		}
+	}
+
+	// Create descriptor set layouts
+	shader->set_count = unique_set_count;
+	for (uint32_t index = 0; index < unique_set_count; ++index) {
+		SetInfo *info = &merged_sets[index];
+
+		if (vulkan_create_descriptor_set_layout(context, info->bindings, info->binding_count, &shader->layouts[index]) == false) {
+			spvReflectDestroyShaderModule(&vertex_module);
+			spvReflectDestroyShaderModule(&fragment_module);
+			arena_reset_scratch(temp);
 			return false;
 		}
 	}
 
-	// Destroy the reflection data when no longer required.
-	spvReflectDestroyShaderModule(&modules[VERTEX_SHADER]);
-	spvReflectDestroyShaderModule(&modules[FRAGMENT_SHADER]);
+	// ========== PUSH CONSTANTS ==========
+	uint32_t vs_push_count = 0, fs_push_count = 0;
+	result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, NULL);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, NULL);
+	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+	shader->ps_count = 0;
+
+	if (vs_push_count > 0) {
+		SpvReflectBlockVariable **push_blocks = arena_push_array(temp.arena, SpvReflectBlockVariable *, vs_push_count);
+		result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, push_blocks);
+		assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+		for (uint32_t i = 0; i < vs_push_count; ++i) {
+			shader->push_constant_ranges[shader->ps_count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+			shader->push_constant_ranges[shader->ps_count].offset = push_blocks[i]->offset;
+			shader->push_constant_ranges[shader->ps_count].size = push_blocks[i]->size;
+			shader->ps_count++;
+		}
+	}
+
+	if (fs_push_count > 0) {
+		SpvReflectBlockVariable **push_blocks = arena_push_array(temp.arena, SpvReflectBlockVariable *, fs_push_count);
+		result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, push_blocks);
+		assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+		for (uint32_t i = 0; i < fs_push_count; ++i) {
+			// Check if range already exists (merge stage flags)
+			bool found = false;
+			for (uint32_t j = 0; j < shader->ps_count; ++j) {
+				if (shader->push_constant_ranges[j].offset == push_blocks[i]->offset &&
+					shader->push_constant_ranges[j].size == push_blocks[i]->size) {
+					shader->push_constant_ranges[j].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
+				shader->push_constant_ranges[shader->ps_count].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+				shader->push_constant_ranges[shader->ps_count].offset = push_blocks[i]->offset;
+				shader->push_constant_ranges[shader->ps_count].size = push_blocks[i]->size;
+				shader->ps_count++;
+			}
+		}
+	}
+
+	// ========== CREATE PIPELINE LAYOUT ==========
+	VkPipelineLayoutCreateInfo pipeline_layout_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = shader->set_count,
+		.pSetLayouts = shader->layouts,
+		.pushConstantRangeCount = shader->ps_count,
+		.pPushConstantRanges = shader->push_constant_ranges,
+	};
+
+	if (vkCreatePipelineLayout(context->device.logical, &pipeline_layout_info, NULL, &shader->pipeline_layout) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create pipeline layout");
+		spvReflectDestroyShaderModule(&vertex_module);
+		spvReflectDestroyShaderModule(&fragment_module);
+		return false;
+	}
+
+	// Cleanup reflection modules
+	spvReflectDestroyShaderModule(&vertex_module);
+	spvReflectDestroyShaderModule(&fragment_module);
 
 	arena_reset_scratch(temp);
 
 	return true;
 }
 
-int32_t ftovkf(ShaderAttributeFormat format) {
-	switch (format) {
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
-			return VK_FORMAT_R32_SFLOAT;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
-			return VK_FORMAT_R32G32_SFLOAT;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
-			return VK_FORMAT_R32G32B32_SFLOAT;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
-			return VK_FORMAT_R32G32B32A32_SFLOAT;
-
-		case SHADER_ATTRIBUTE_FORMAT_INT:
-			return VK_FORMAT_R32_SINT;
-		case SHADER_ATTRIBUTE_FORMAT_INT2:
-			return VK_FORMAT_R32G32_SINT;
-		case SHADER_ATTRIBUTE_FORMAT_INT3:
-			return VK_FORMAT_R32G32B32_SINT;
-		case SHADER_ATTRIBUTE_FORMAT_INT4:
-			return VK_FORMAT_R32G32B32A32_SINT;
-
-		case SHADER_ATTRIBUTE_FORMAT_UINT:
-			return VK_FORMAT_R32_UINT;
-		case SHADER_ATTRIBUTE_FORMAT_UINT2:
-			return VK_FORMAT_R32G32_UINT;
-		case SHADER_ATTRIBUTE_FORMAT_UINT3:
-			return VK_FORMAT_R32G32B32_UINT;
-		case SHADER_ATTRIBUTE_FORMAT_UINT4:
-			return VK_FORMAT_R32G32B32A32_UINT;
-		default: {
-			LOG_ERROR("Unkown attribute format type provided!");
-			return 0;
-		} break;
-	}
-}
-
-uint32_t ftobs(ShaderAttributeFormat format) {
-	switch (format) {
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
-			return sizeof(float);
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
-			return sizeof(float) * 2;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
-			return sizeof(float) * 3;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
-			return sizeof(float) * 4;
-
-		case SHADER_ATTRIBUTE_FORMAT_INT:
-			return sizeof(int32_t);
-		case SHADER_ATTRIBUTE_FORMAT_INT2:
-			return sizeof(int32_t) * 2;
-		case SHADER_ATTRIBUTE_FORMAT_INT3:
-			return sizeof(int32_t) * 3;
-		case SHADER_ATTRIBUTE_FORMAT_INT4:
-			return sizeof(int32_t) * 4;
-
-		case SHADER_ATTRIBUTE_FORMAT_UINT:
-			return sizeof(uint32_t);
-		case SHADER_ATTRIBUTE_FORMAT_UINT2:
-			return sizeof(uint32_t) * 2;
-		case SHADER_ATTRIBUTE_FORMAT_UINT3:
-			return sizeof(uint32_t) * 3;
-		case SHADER_ATTRIBUTE_FORMAT_UINT4:
-			return sizeof(uint32_t) * 4;
-		default: {
-			LOG_ERROR("Unkown attribute format type provided!");
-			return 0;
-		} break;
-	}
-}
+// int32_t ftovkf(ShaderAttributeFormat format) {
+// 	switch (format) {
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
+// 			return VK_FORMAT_R32_SFLOAT;
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
+// 			return VK_FORMAT_R32G32_SFLOAT;
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
+// 			return VK_FORMAT_R32G32B32_SFLOAT;
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
+// 			return VK_FORMAT_R32G32B32A32_SFLOAT;
+//
+// 		case SHADER_ATTRIBUTE_FORMAT_INT:
+// 			return VK_FORMAT_R32_SINT;
+// 		case SHADER_ATTRIBUTE_FORMAT_INT2:
+// 			return VK_FORMAT_R32G32_SINT;
+// 		case SHADER_ATTRIBUTE_FORMAT_INT3:
+// 			return VK_FORMAT_R32G32B32_SINT;
+// 		case SHADER_ATTRIBUTE_FORMAT_INT4:
+// 			return VK_FORMAT_R32G32B32A32_SINT;
+//
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT:
+// 			return VK_FORMAT_R32_UINT;
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT2:
+// 			return VK_FORMAT_R32G32_UINT;
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT3:
+// 			return VK_FORMAT_R32G32B32_UINT;
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT4:
+// 			return VK_FORMAT_R32G32B32A32_UINT;
+// 		default: {
+// 			LOG_ERROR("Unkown attribute format type provided!");
+// 			return 0;
+// 		} break;
+// 	}
+// }
+//
+// uint32_t ftobs(ShaderAttributeFormat format) {
+// 	switch (format) {
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
+// 			return sizeof(float);
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
+// 			return sizeof(float) * 2;
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
+// 			return sizeof(float) * 3;
+// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
+// 			return sizeof(float) * 4;
+//
+// 		case SHADER_ATTRIBUTE_FORMAT_INT:
+// 			return sizeof(int32_t);
+// 		case SHADER_ATTRIBUTE_FORMAT_INT2:
+// 			return sizeof(int32_t) * 2;
+// 		case SHADER_ATTRIBUTE_FORMAT_INT3:
+// 			return sizeof(int32_t) * 3;
+// 		case SHADER_ATTRIBUTE_FORMAT_INT4:
+// 			return sizeof(int32_t) * 4;
+//
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT:
+// 			return sizeof(uint32_t);
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT2:
+// 			return sizeof(uint32_t) * 2;
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT3:
+// 			return sizeof(uint32_t) * 3;
+// 		case SHADER_ATTRIBUTE_FORMAT_UINT4:
+// 			return sizeof(uint32_t) * 4;
+// 		default: {
+// 			LOG_ERROR("Unkown attribute format type provided!");
+// 			return 0;
+// 		} break;
+// 	}
+// }

@@ -1,13 +1,15 @@
 #include "renderer/vk_renderer.h"
 
-#include "allocators/pool.h"
+#include "allocators/arena.h"
 #include "core/logger.h"
 
 static uint32_t image_index = 0;
 
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context) {
-	context->buffer_pool = allocator_pool_from_arena(arena, sizeof(VulkanBuffer), 1024);
-	context->texture_pool = allocator_pool_from_arena(arena, sizeof(VulkanImage), 256);
+	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
+	context->texture_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
+	context->shaders = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
+	context->pipelines = arena_push_array_zero(arena, VulkanPipeline, MAX_PIPELINES);
 
 	if (vulkan_create_instance(context, platform) == false)
 		return false;
@@ -104,7 +106,6 @@ bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platfo
 	};
 
 	vkCmdBeginRendering(context->command_buffers[context->current_frame], &r_info);
-	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, context->graphics_pipeline);
 
 	VkViewport viewport = {
 		.x = 0,
@@ -122,10 +123,6 @@ bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platfo
 	};
 	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
 
-	vkCmdBindDescriptorSets(
-		context->command_buffers[context->current_frame],
-		VK_PIPELINE_BIND_POINT_GRAPHICS, context->pipeline_layout,
-		0, 1, &context->descriptor_sets[context->current_frame], 0, NULL);
 
 	return true;
 }
@@ -181,8 +178,8 @@ bool Vulkan_renderer_end_frame(VulkanContext *context) {
 	return true;
 }
 
-bool vulkan_renderer_draw(VulkanContext *context, Buffer *vertex_buffer) {
-	vkCmdDraw(context->command_buffers[context->current_frame], vertex_buffer->vertex_count, 1, 0, 0);
+bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count) {
+	vkCmdDraw(context->command_buffers[context->current_frame], vertex_count, 1, 0, 0);
 	return true;
 }
 

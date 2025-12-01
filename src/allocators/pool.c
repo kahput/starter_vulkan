@@ -7,12 +7,14 @@
 #include <string.h>
 
 struct pool *allocator_pool(size_t element_size, uint32_t capacity) {
-	struct pool *pool = malloc(sizeof(struct pool));
-	pool->array = pool->free_elements = malloc(element_size * capacity);
+	if (capacity == 0 || element_size < sizeof(size_t)) {
+		LOG_WARN("Allocator: pool size must fit size_t pointer");
+		return NULL;
+	}
 
+	struct pool *pool = malloc(sizeof(struct pool) + element_size * capacity);
+	pool->array = pool->free_elements = (struct pool_element *)(pool + 1);
 	pool->element_size = element_size;
-	pool->capacity = capacity;
-	pool->count = 0;
 
 	for (uint32_t index = 0; index < capacity - 1; ++index) {
 		struct pool_element *element = (struct pool_element *)((uint8_t *)pool->array + element_size * index);
@@ -25,8 +27,13 @@ struct pool *allocator_pool(size_t element_size, uint32_t capacity) {
 }
 
 struct pool *allocator_pool_from_arena(struct arena *arena, size_t element_size, uint32_t capacity) {
-	struct pool *pool = arena_push_type(arena, struct pool);
-	pool->array = pool->free_elements = arena_push(arena, element_size * capacity);
+	if (capacity == 0 || element_size < sizeof(size_t)) {
+		LOG_WARN("Allocator: pool size must fit size_t pointer");
+		return NULL;
+	}
+
+	struct pool *pool = arena_push(arena, sizeof(struct pool) + element_size * capacity);
+	pool->array = pool->free_elements = (struct pool_element *)(pool + 1);
 	pool->element_size = element_size;
 
 	for (uint32_t index = 0; index < capacity; ++index) {
@@ -48,7 +55,7 @@ void pool_destroy(struct pool *pool) {
 	}
 }
 
-void *pool_push(struct pool *pool) {
+void *pool_alloc(struct pool *pool) {
 	if (pool == NULL || pool->free_elements == NULL) {
 		LOG_WARN("Allocator: pool invalid or out of space");
 		return NULL;
@@ -60,7 +67,7 @@ void *pool_push(struct pool *pool) {
 	return element;
 }
 
-void *pool_push_zero(struct pool *pool) {
+void *pool_alloc_zeroed(struct pool *pool) {
 	if (pool == NULL || pool->free_elements == NULL) {
 		LOG_WARN("Allocator: invalid parameter or out of space");
 		return NULL;

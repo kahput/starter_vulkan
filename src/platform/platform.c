@@ -22,8 +22,8 @@ static const struct {
 };
 
 Platform *platform_startup(Arena *arena, uint32_t width, uint32_t height, const char *title) {
-	Platform *platform = arena_push_type(arena, Platform);
-	platform->internal = arena_push_type_zero(arena, struct platform_internal);
+	Platform *platform = arena_push_struct(arena, Platform);
+	platform->internal = arena_push_struct_zero(arena, struct platform_internal);
 
 	size_t count = sizeof(supported_platforms) / sizeof(supported_platforms[0]);
 	if (count == 0) {

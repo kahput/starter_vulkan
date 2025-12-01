@@ -93,39 +93,18 @@ int main(void) {
 
 	// ================== GPU ==================
 
-	vulkan_renderer_create_texture(&context, &model_alebdo);
+	vulkan_renderer_create_texture(&context, 0, &model_alebdo);
 	vulkan_renderer_create_sampler(&context);
 
 	importer_unload_image(model_alebdo);
 
-	ShaderAttribute attributes[] = {
-		{ .name = "in_position", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT3, .binding = 0 },
-		{ .name = "in_uv", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT2, .binding = 0 },
-		{ .name = "in_normal", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT3, .binding = 0 },
-	};
+	vulkan_renderer_create_shader(&context, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
+	vulkan_renderer_create_pipeline(&context, 0, 0);
 
-	ShaderUniform uniforms[] = {
-		{ .name = "u_view_projection", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_VERTEX, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_FRAME },
-		{ .name = "u_material_props", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
-		{ .name = "u_albedo", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
-		{ .name = "u_normal_map", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
-		{ .name = "u_metallic_roughness", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
-		{ .name = "u_emission", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
-		{ .name = "u_occlusion", .type = SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_MATERIAL },
-		{ .name = "u_model", .type = SHADER_UNIFORM_TYPE_BUFFER, .stage = SHADER_STAGE_FRAGMENT, .array_count = 1, .frequency = SHADER_UNIFORM_FREQUENCY_PER_OBJECT },
-	};
-
-	vulkan_create_descriptor_set_layout(&context);
-	vulkan_renderer_create_pipeline(&context, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv", attributes, array_count(attributes));
-
-	for (uint32_t index = 0; index < model->primitive_count; ++index) {
-		vulkan_renderer_create_buffer(&context, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
-		vulkan_renderer_create_buffer(&context, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
+	for (uint32_t index = 0, store_index = 0; index < model->primitive_count; ++index) {
+		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
+		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
 	}
-
-	vulkan_create_uniform_buffers(&context);
-	vulkan_create_descriptor_pool(&context);
-	vulkan_create_descriptor_set(&context);
 
 	state.camera = (Camera){
 		.speed = 3.0f,
@@ -139,11 +118,6 @@ int main(void) {
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
-	UUID id = identifier_create();
-
-	Handle handle = handle_create(0);
-	handle_increment(&handle);
-
 	while (platform_should_close(platform) == false) {
 		float current_frame = (double)(platform_time_ms(platform) - state.start_time) / 1000.0f;
 		delta_time = current_frame - last_frame;
@@ -152,13 +126,11 @@ int main(void) {
 		platform_poll_events(platform);
 		update_uniforms(&context, platform, delta_time);
 		vulkan_renderer_begin_frame(&context, platform);
+		vulkan_renderer_bind_pipeline(&context, 0);
 
-		for (uint32_t index = 0; index < model->primitive_count; ++index) {
-			uint32_t vertex_buffer = (index * 2) + 0;
-			uint32_t index_buffer = (index * 2) + 1;
-
-			vulkan_renderer_bind_buffer(&context, vertex_buffer);
-			vulkan_renderer_bind_buffer(&context, index_buffer);
+		for (uint32_t index = 0, retrive_index = 0; index < model->primitive_count; ++index) {
+			vulkan_renderer_bind_buffer(&context, retrive_index++);
+			vulkan_renderer_bind_buffer(&context, retrive_index++);
 
 			vulkan_renderer_draw_indexed(&context, model->primitives[index].index_count);
 		}
@@ -247,7 +219,7 @@ void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 	glm_perspective(glm_rad(45.f), (float)context->swapchain.extent.width / (float)context->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
-	memcpy(context->uniform_buffers_mapped[context->current_frame], &mvp, sizeof(MVPObject));
+	memcpy(context->shaders[0].uniform_buffers[context->current_frame].mapped, &mvp, sizeof(MVPObject));
 }
 
 bool resize_event(Event *event) {

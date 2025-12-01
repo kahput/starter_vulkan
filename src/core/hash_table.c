@@ -32,7 +32,7 @@ HashTable *ht_create(Arena *arena, size_t type_size) {
 		return NULL;
 	}
 
-	HashTable *ht = arena_push_type(arena, HashTable);
+	HashTable *ht = arena_push_struct(arena, HashTable);
 	*ht = (HashTable){
 		.capacity = HT_CAPACITY,
 		.count = 0,
