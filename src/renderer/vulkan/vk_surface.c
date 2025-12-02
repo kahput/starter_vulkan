@@ -1,5 +1,7 @@
 #include "platform.h"
 
+#include "vk_internal.h"
+
 #include "core/logger.h"
 #include "renderer/vk_renderer.h"
 

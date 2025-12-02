@@ -1,6 +1,7 @@
 #include "renderer/vk_renderer.h"
 
 #include "platform.h"
+#include "vk_internal.h"
 
 #include "allocators/arena.h"
 #include "core/logger.h"

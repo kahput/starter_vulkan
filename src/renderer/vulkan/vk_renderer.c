@@ -1,50 +1,62 @@
 #include "renderer/vk_renderer.h"
 
+#include "vk_internal.h"
+
 #include "allocators/arena.h"
 #include "core/logger.h"
 
 static uint32_t image_index = 0;
 
-bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext *context) {
-	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
-	context->texture_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
-	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
-	context->set_pool = arena_push_array_zero(arena, VulkanResourceSet, MAX_RESOURCE_SETS);
+bool vulkan_renderer_create(struct arena *arena, VulkanContext **out_context, struct platform *platform) {
+	*out_context = arena_push_struct(arena, VulkanContext);
 
-	context->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
-	context->pipeline_pool = arena_push_array_zero(arena, VulkanPipeline, MAX_PIPELINES);
+	VulkanContext *ctx = *out_context;
 
-	if (vulkan_create_instance(context, platform) == false)
+	uint32_t version = 0;
+	vkEnumerateInstanceVersion(&version);
+
+	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
+
+	ctx->texture_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
+	ctx->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
+	ctx->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
+	ctx->set_pool = arena_push_array_zero(arena, VulkanResourceSet, MAX_RESOURCE_SETS);
+
+	ctx->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
+	ctx->pipeline_pool = arena_push_array_zero(arena, VulkanPipeline, MAX_PIPELINES);
+
+	if (vulkan_create_instance(ctx, platform) == false)
 		return false;
 
-	if (vulkan_create_surface(platform, context) == false)
+	if (vulkan_create_surface(platform, ctx) == false)
 		return false;
 
-	if (vulkan_create_device(arena, context) == false)
+	if (vulkan_create_device(arena, ctx) == false)
 		return false;
 
-	if (vulkan_create_command_pool(context) == false)
+	if (vulkan_create_command_pool(ctx) == false)
 		return false;
 
-	if (vulkan_create_command_buffer(context) == false)
+	if (vulkan_create_command_buffer(ctx) == false)
 		return false;
 
-	if (vulkan_create_descriptor_pool(context) == false)
+	if (vulkan_create_descriptor_pool(ctx) == false)
 		return false;
 
-	if (vulkan_create_sync_objects(context) == false)
+	if (vulkan_create_sync_objects(ctx) == false)
 		return false;
 
-	if (vulkan_create_swapchain(context, platform) == false)
+	if (vulkan_create_swapchain(ctx, platform) == false)
 		return false;
 
-	if (vulkan_create_depth_image(context) == false)
+	if (vulkan_create_depth_image(ctx) == false)
 		return false;
 
 	return true;
 }
 
 void vulkan_renderer_destroy(VulkanContext *context) {
+	vkDeviceWaitIdle(context->device.logical);
 }
 
 bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platform) {

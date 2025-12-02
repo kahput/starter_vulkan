@@ -51,6 +51,8 @@ static struct State {
 
 	Camera camera;
 
+	VulkanContext *ctx;
+
 	Arena *permanent, *frame, *assets;
 } state;
 
@@ -59,16 +61,11 @@ int main(void) {
 	state.frame = allocator_arena();
 	state.assets = allocator_arena();
 
-	uint32_t version = 0;
-	vkEnumerateInstanceVersion(&version);
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	event_system_startup();
 	input_system_startup();
 
-	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
-
-	VulkanContext context = { 0 };
 	Platform *platform = platform_startup(state.permanent, 1280, 720, "Starter Vulkan");
 	if (platform == NULL) {
 		LOG_ERROR("Platform startup failed");
@@ -80,7 +77,7 @@ int main(void) {
 	state.start_time = platform_time_ms(platform);
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
-	vulkan_renderer_create(state.permanent, platform, &context);
+	vulkan_renderer_create(state.permanent, &state.ctx, platform);
 
 	// ================== DYNAMIC ==================
 
@@ -94,13 +91,13 @@ int main(void) {
 
 	// ================== GPU ==================
 
-	vulkan_renderer_create_texture(&context, 0, &model_alebdo);
-	vulkan_renderer_create_sampler(&context, 0);
+	vulkan_renderer_create_texture(state.ctx, 0, &model_alebdo);
+	vulkan_renderer_create_sampler(state.ctx, 0);
 
 	importer_unload_image(model_alebdo);
 
-	vulkan_renderer_create_shader(&context, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
-	vulkan_renderer_create_pipeline(&context, 0, 0);
+	vulkan_renderer_create_shader(state.ctx, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
+	vulkan_renderer_create_pipeline(state.ctx, 0, 0);
 
 	MVPObject mvp = { 0 };
 	glm_mat4_identity(mvp.model);
@@ -112,15 +109,15 @@ int main(void) {
 	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
-	vulkan_renderer_create_buffer(&context, 0, BUFFER_TYPE_UNIFORM, sizeof(MVPObject), &mvp);
-	vulkan_renderer_create_resource_set(&context, 0, 0, 0);
+	vulkan_renderer_create_buffer(state.ctx, 0, BUFFER_TYPE_UNIFORM, sizeof(MVPObject), &mvp);
+	vulkan_renderer_create_resource_set(state.ctx, 0, 0, 0);
 
-	vulkan_renderer_update_resource_set_buffer(&context, 0, "mvp", 0);
-	vulkan_renderer_update_resource_set_texture_sampler(&context, 0, "texture_sampler", 0, 0);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, 0, "mvp", 0);
+	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, 0, "texture_sampler", 0, 0);
 
 	for (uint32_t index = 0, store_index = 1; index < model->primitive_count; ++index) {
-		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
-		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
+		vulkan_renderer_create_buffer(state.ctx, store_index++, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
+		vulkan_renderer_create_buffer(state.ctx, store_index++, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
 	}
 
 	state.camera = (Camera){
@@ -141,45 +138,44 @@ int main(void) {
 		last_frame = current_frame;
 
 		platform_poll_events(platform);
-		update_uniforms(&context, platform, delta_time);
-		vulkan_renderer_begin_frame(&context, platform);
-		vulkan_renderer_bind_pipeline(&context, 0);
-		vulkan_renderer_bind_resource_set(&context, 0);
+		update_uniforms(state.ctx, platform, delta_time);
+		vulkan_renderer_begin_frame(state.ctx, platform);
+		vulkan_renderer_bind_pipeline(state.ctx, 0);
+		vulkan_renderer_bind_resource_set(state.ctx, 0);
 
 		for (uint32_t index = 0, retrive_index = 1; index < model->primitive_count; ++index) {
-			vulkan_renderer_bind_buffer(&context, retrive_index++);
-			vulkan_renderer_bind_buffer(&context, retrive_index++);
+			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
+			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
 
-			vulkan_renderer_draw_indexed(&context, model->primitives[index].index_count);
+			vulkan_renderer_draw_indexed(state.ctx, model->primitives[index].index_count);
 		}
 
-		Vulkan_renderer_end_frame(&context);
+		Vulkan_renderer_end_frame(state.ctx);
 
 		if (input_key_down(SV_KEY_LEFTCTRL))
 			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
 		else
 			platform_pointer_mode(platform, PLATFORM_POINTER_DISABLED);
 
-		if (state.resized) {
-			LOG_INFO("Recreating Swapchain...");
-			logger_indent();
-			if (vulkan_recreate_swapchain(&context, platform) == true) {
-				LOG_INFO("Swapchain successfully recreated");
-			} else {
-				LOG_WARN("Failed to recreate swapchain");
-			}
-
-			logger_dedent();
-			state.resized = false;
-		}
+		// if (state.resized) {
+		// 	LOG_INFO("Recreating Swapchain...");
+		// 	logger_indent();
+		// 	if (vulkan_recreate_swapchain(&context, platform) == true) {
+		// 		LOG_INFO("Swapchain successfully recreated");
+		// 	} else {
+		// 		LOG_WARN("Failed to recreate swapchain");
+		// 	}
+		//
+		// 	logger_dedent();
+		// 	state.resized = false;
+		// }
 
 		input_system_update();
 	}
 
 	input_system_shutdown();
 	event_system_shutdown();
-
-	vkDeviceWaitIdle(context.device.logical);
+	vulkan_renderer_destroy(state.ctx);
 
 	return 0;
 }
@@ -234,7 +230,7 @@ void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 	glm_lookat(state.camera.position, camera_target, camera_up, mvp.view);
 
 	glm_mat4_identity(mvp.projection);
-	glm_perspective(glm_rad(45.f), (float)context->swapchain.extent.width / (float)context->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
+	glm_perspective(glm_rad(45.f), (float)platform->physical_height / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
 	vulkan_renderer_update_buffer(context, 0, 0, sizeof(MVPObject), &mvp);

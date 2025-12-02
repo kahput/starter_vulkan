@@ -2,6 +2,8 @@
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
+#include "vk_internal.h"
+
 #include <assert.h>
 #include <spirv_reflect/spirv_reflect.h>
 

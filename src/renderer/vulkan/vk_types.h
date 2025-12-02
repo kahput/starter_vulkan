@@ -104,7 +104,7 @@ typedef struct vulkan_resource_set {
 	uint32_t shader_index;
 } VulkanResourceSet;
 
-typedef struct {
+struct vulkan_context {
 	VkInstance instance;
 
 	VkSurfaceKHR surface;
@@ -134,4 +134,4 @@ typedef struct {
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;
 #endif
-} VulkanContext;
+};

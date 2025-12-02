@@ -1,8 +1,10 @@
 #include "platform.h"
 #include "renderer/vk_renderer.h"
 
-#include "common.h"
+#include "vk_internal.h"
+
 #include "allocators/arena.h"
+#include "common.h"
 #include "core/logger.h"
 #include "renderer/vulkan/vk_types.h"
 #include <vulkan/vulkan_core.h>

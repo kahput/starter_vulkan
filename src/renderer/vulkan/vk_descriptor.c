@@ -1,6 +1,8 @@
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
+#include "vk_internal.h"
+
 #include "allocators/pool.h"
 #include "common.h"
 #include "core/logger.h"
