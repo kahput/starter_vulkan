@@ -35,7 +35,15 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	logger_indent();
 
 	if (type == BUFFER_TYPE_UNIFORM) {
-		return vulkan_create_uniform_buffers(context, buffer, size);
+		bool result = vulkan_create_uniform_buffers(context, buffer, size);
+		logger_dedent();
+		return result;
+	}
+
+	if (data == NULL) {
+		bool result = vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
+		logger_dedent();
+		return result;
 	}
 
 	buffer->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);

@@ -99,17 +99,7 @@ int main(void) {
 	vulkan_renderer_create_shader(state.ctx, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
 	vulkan_renderer_create_pipeline(state.ctx, 0, 0);
 
-	MVPObject mvp = { 0 };
-	glm_mat4_identity(mvp.model);
-
-	glm_mat4_identity(mvp.view);
-	glm_lookat((vec3){ 0.0f, 0.0f, 20.0f }, (vec3){ 0.0f, 0.0f, 0.0f }, (vec3){ 0.0f, 1.0f, 0.0f }, mvp.view);
-
-	glm_mat4_identity(mvp.projection);
-	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
-	mvp.projection[1][1] *= -1;
-
-	vulkan_renderer_create_buffer(state.ctx, 0, BUFFER_TYPE_UNIFORM, sizeof(MVPObject), &mvp);
+	vulkan_renderer_create_buffer(state.ctx, 0, BUFFER_TYPE_UNIFORM, sizeof(MVPObject), NULL);
 	vulkan_renderer_create_resource_set(state.ctx, 0, 0, 0);
 
 	vulkan_renderer_update_resource_set_buffer(state.ctx, 0, "mvp", 0);
