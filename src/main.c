@@ -18,10 +18,11 @@
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
 
-#include "allocators/arena.h"
 #include "common.h"
 #include "core/identifiers.h"
 #include "core/logger.h"
+
+#include "allocators/arena.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -101,9 +102,23 @@ int main(void) {
 	vulkan_renderer_create_shader(&context, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
 	vulkan_renderer_create_pipeline(&context, 0, 0);
 
-	vulkan_renderer_set_uniform_texture_sampler(&context, 0, "texture_sampler", 0, 0);
+	MVPObject mvp = { 0 };
+	glm_mat4_identity(mvp.model);
 
-	for (uint32_t index = 0, store_index = 0; index < model->primitive_count; ++index) {
+	glm_mat4_identity(mvp.view);
+	glm_lookat((vec3){ 0.0f, 0.0f, 20.0f }, (vec3){ 0.0f, 0.0f, 0.0f }, (vec3){ 0.0f, 1.0f, 0.0f }, mvp.view);
+
+	glm_mat4_identity(mvp.projection);
+	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
+	mvp.projection[1][1] *= -1;
+
+	vulkan_renderer_create_buffer(&context, 0, BUFFER_TYPE_UNIFORM, sizeof(MVPObject), &mvp);
+	vulkan_renderer_create_resource_set(&context, 0, 0, 0);
+
+	vulkan_renderer_update_resource_set_buffer(&context, 0, "mvp", 0);
+	vulkan_renderer_update_resource_set_texture_sampler(&context, 0, "texture_sampler", 0, 0);
+
+	for (uint32_t index = 0, store_index = 1; index < model->primitive_count; ++index) {
 		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
 		vulkan_renderer_create_buffer(&context, store_index++, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
 	}
@@ -129,8 +144,9 @@ int main(void) {
 		update_uniforms(&context, platform, delta_time);
 		vulkan_renderer_begin_frame(&context, platform);
 		vulkan_renderer_bind_pipeline(&context, 0);
+		vulkan_renderer_bind_resource_set(&context, 0);
 
-		for (uint32_t index = 0, retrive_index = 0; index < model->primitive_count; ++index) {
+		for (uint32_t index = 0, retrive_index = 1; index < model->primitive_count; ++index) {
 			vulkan_renderer_bind_buffer(&context, retrive_index++);
 			vulkan_renderer_bind_buffer(&context, retrive_index++);
 
@@ -221,7 +237,8 @@ void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 	glm_perspective(glm_rad(45.f), (float)context->swapchain.extent.width / (float)context->swapchain.extent.height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
-	vulkan_renderer_set_uniform_buffer(context, 0, "mvp", &mvp);
+	vulkan_renderer_update_buffer(context, 0, 0, sizeof(MVPObject), &mvp);
+	// vulkan_renderer_update_resource_set_buffer(context, 0, "mvp", &mvp);
 }
 
 bool resize_event(Event *event) {

@@ -9,6 +9,8 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
 	context->texture_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
 	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
+	context->set_pool = arena_push_array_zero(arena, VulkanResourceSet, MAX_RESOURCE_SETS);
+
 	context->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
 	context->pipeline_pool = arena_push_array_zero(arena, VulkanPipeline, MAX_PIPELINES);
 
@@ -25,6 +27,9 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 		return false;
 
 	if (vulkan_create_command_buffer(context) == false)
+		return false;
+
+	if (vulkan_create_descriptor_pool(context) == false)
 		return false;
 
 	if (vulkan_create_sync_objects(context) == false)

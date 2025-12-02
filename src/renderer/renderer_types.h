@@ -125,5 +125,5 @@ typedef struct uniform_binding {
 	ShaderStage stage;
 	uint32_t size, count;
 
-	ShaderUniformFrequency frequency;
+	uint32_t set, binding;
 } ShaderUniform;

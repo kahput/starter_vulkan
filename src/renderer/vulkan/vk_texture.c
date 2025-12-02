@@ -16,7 +16,7 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 
 	VulkanImage *texture = &context->texture_pool[store_index];
 	if (texture->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer allocated texture at index %d, but index is already in use", store_index);
+		LOG_FATAL("Engine: Frontend renderer tried to allocatetexture at index %d, but index is already in use", store_index);
 		assert(false);
 		return false;
 	}
@@ -74,7 +74,7 @@ bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index
 
 	VulkanSampler *sampler = &context->sampler_pool[store_index];
 	if (sampler->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer allocated texture at index %d, but index is already in use", store_index);
+		LOG_FATAL("Engine: Frontend renderer tried to allocatetexture at index %d, but index is already in use", store_index);
 		assert(false);
 		return false;
 	}

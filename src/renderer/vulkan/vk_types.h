@@ -10,9 +10,11 @@
 #define SWAPCHAIN_BUFFERING 3
 
 typedef struct vulkan_buffer {
-	VkBuffer handle;
-	VkDeviceMemory memory;
-	void *mapped;
+	VkBuffer handle[MAX_FRAMES_IN_FLIGHT];
+	VkDeviceMemory memory[MAX_FRAMES_IN_FLIGHT];
+	void *mapped[MAX_FRAMES_IN_FLIGHT];
+
+	uint32_t count;
 
 	VkBufferUsageFlags usage;
 	VkMemoryPropertyFlags memory_property_flags;
@@ -87,11 +89,7 @@ typedef struct vulkan_shader {
 	VkPushConstantRange push_constant_ranges[MAX_PUSH_CONSTANT_RANGES];
 	uint32_t ps_count;
 
-	VulkanBuffer uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 	ShaderUniform uniforms[MAX_UNIFORMS];
-
-	VkDescriptorPool descriptor_pool;
-	VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
 
 	VkPipelineLayout pipeline_layout;
 } VulkanShader;
@@ -101,6 +99,11 @@ typedef struct vulkan_pipeline {
 	uint32_t shader_index;
 } VulkanPipeline;
 
+typedef struct vulkan_resource_set {
+	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
+	uint32_t shader_index;
+} VulkanResourceSet;
+
 typedef struct {
 	VkInstance instance;
 
@@ -109,22 +112,24 @@ typedef struct {
 
 	VulkanSwapchain swapchain;
 	VulkanImage depth_attachment;
+	VkCommandPool graphics_command_pool, transfer_command_pool;
+	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
 	VulkanShader *shader_pool;
 	VulkanPipeline *pipeline_pool;
 
-	uint32_t current_frame;
-
-	VkCommandPool graphics_command_pool, transfer_command_pool;
-	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
-
 	VulkanBuffer *buffer_pool;
 	VulkanImage *texture_pool;
 	VulkanSampler *sampler_pool;
+	VulkanResourceSet *set_pool;
+
+	VkDescriptorPool descriptor_pool;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
+
+	uint32_t current_frame;
 
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;

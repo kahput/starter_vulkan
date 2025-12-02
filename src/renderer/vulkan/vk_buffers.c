@@ -3,6 +3,7 @@
 #include "core/logger.h"
 #include <assert.h>
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 // static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 
@@ -21,8 +22,8 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	}
 
 	VulkanBuffer *buffer = &context->buffer_pool[store_index];
-	if (buffer->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer allocated buffer at index %d, but index is already in use", store_index);
+	if (buffer->handle[0] != NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to allocate buffer at index %d, but index is already in use", store_index);
 		assert(false);
 		return false;
 	}
@@ -30,6 +31,10 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	LOG_INFO("Vulkan: Creating %s resource...", stringify[type]);
 
 	logger_indent();
+
+	if (type == BUFFER_TYPE_UNIFORM) {
+		return vulkan_create_uniform_buffers(context, buffer, size);
+	}
 
 	buffer->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);
 	buffer->memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -45,16 +50,16 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	vulkan_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 	logger_dedent();
 
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &buffer->mapped);
-	memcpy(buffer->mapped, data, size);
+	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &buffer->mapped[0]);
+	memcpy(buffer->mapped[0], data, size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
 	LOG_DEBUG("Creating buffer...");
 	logger_indent();
-	vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle, &buffer->memory);
+	vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 	logger_dedent();
 
-	vulkan_copy_buffer(context, staging_buffer, buffer->handle, size);
+	vulkan_copy_buffer(context, staging_buffer, buffer->handle[0], size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
@@ -65,31 +70,62 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	return true;
 }
 
-bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer buffers[MAX_FRAMES_IN_FLIGHT], size_t size) {
-	VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-	VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-		vulkan_create_buffer(context, context->device.graphics_index, size, usage, properties, &buffers[index].handle, &buffers[index].memory);
-
-		vkMapMemory(context->device.logical, buffers[index].memory, 0, size, 0, &buffers[index].mapped);
+bool vulkan_renderer_update_buffer(VulkanContext *context, uint32_t retrieve_index, uint32_t offset, size_t size, void *data) {
+	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
+	if (buffer->handle[0] == NULL) {
+		LOG_FATAL("Vulkan: Renderer requested to update buffer at index %d, but no valid buffer found at index", retrieve_index);
+		assert(false);
+		return false;
 	}
 
+	if ((buffer->usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) == VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
+		uint8_t *dest = (uint8_t *)buffer->mapped[context->current_frame] + offset;
+		memcpy(dest, data, size);
+		return true;
+	}
+
+	uint8_t *dest = (uint8_t *)buffer->mapped[0] + offset;
+	memcpy(dest, data, size);
 	return true;
 }
 
-uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
-	VkPhysicalDeviceMemoryProperties memory_properties;
-	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
-
-	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
-		if (type_filter & (1 << i) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
-			return i;
-		}
+bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index) {
+	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
+	if (buffer->handle[0] == NULL) {
+		LOG_FATAL("Vulkan: Renderer requested to bind buffer at index %d, but no valid buffer found at index", retrieve_index);
+		assert(false);
+		return false;
 	}
 
-	LOG_ERROR("Failed to find suitable memory type!");
-	return 0;
+	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
+		VkBuffer vertex_buffers[] = { buffer->handle[0] };
+		VkDeviceSize offsets[] = { 0 };
+
+		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, array_count(offsets), vertex_buffers, offsets);
+		return true;
+	}
+
+	if (buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle[0], 0, VK_INDEX_TYPE_UINT32);
+		return true;
+	}
+
+	LOG_WARN("Buffer failed to bind: Unsupported buffer type");
+
+	return false;
+}
+
+bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer *buffer, size_t size) {
+	buffer->usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	buffer->memory_property_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
+		vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[index], &buffer->memory[index]);
+
+		vkMapMemory(context->device.logical, buffer->memory[index], 0, size, 0, &buffer->mapped[index]);
+	}
+
+	return true;
 }
 
 bool vulkan_create_buffer(
@@ -147,6 +183,20 @@ bool vulkan_copy_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDe
 	return true;
 }
 
+uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
+	VkPhysicalDeviceMemoryProperties memory_properties;
+	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+
+	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
+		if (type_filter & (1 << i) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+
+	LOG_ERROR("Failed to find suitable memory type!");
+	return 0;
+}
+
 int32_t to_vulkan_usage(BufferType type) {
 	switch (type) {
 		case BUFFER_TYPE_VERTEX:
@@ -159,30 +209,4 @@ int32_t to_vulkan_usage(BufferType type) {
 		default:
 			return -1;
 	}
-}
-
-bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index) {
-	const VulkanBuffer *vulkan_buffer = &context->buffer_pool[retrieve_index];
-	if (vulkan_buffer->handle == NULL) {
-		LOG_FATAL("Vulkan: Renderer requested buffer bind at index %d, but no valid buffer found at index", retrieve_index);
-		assert(false);
-		return false;
-	}
-
-	if (vulkan_buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-		VkBuffer vertex_buffers[] = { vulkan_buffer->handle };
-		VkDeviceSize offsets[] = { 0 };
-
-		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, array_count(offsets), vertex_buffers, offsets);
-		return true;
-	}
-
-	if (vulkan_buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
-		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], vulkan_buffer->handle, 0, VK_INDEX_TYPE_UINT32);
-		return true;
-	}
-
-	LOG_WARN("Buffer failed to bind: Unsupported buffer type");
-
-	return false;
 }
