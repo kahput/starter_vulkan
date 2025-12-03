@@ -8,10 +8,9 @@
 typedef Handle Shader;
 
 typedef struct {
-	mat4 model;
 	mat4 view;
 	mat4 projection;
-} MVPObject;
+} CameraUpload;
 
 typedef struct {
 	vec3 position;
@@ -88,6 +87,7 @@ typedef enum {
 typedef enum {
 	SHADER_UNIFORM_UNDEFINED,
 	SHADER_UNIFORM_TYPE_BUFFER,
+	SHADER_UNIFORM_TYPE_CONSTANTS,
 	SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER
 } ShaderUniformType;
 

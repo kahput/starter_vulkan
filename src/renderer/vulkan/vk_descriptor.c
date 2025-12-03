@@ -177,6 +177,38 @@ bool vulkan_renderer_update_resource_set_texture_sampler(VulkanContext *context,
 	return true;
 }
 
+bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_index, const char *name, void *data) {
+	VulkanShader *shader = &context->shader_pool[shader_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to push constants to shader at index %d, but index is not in use", shader_index);
+		assert(false);
+		return false;
+	}
+
+	ShaderUniform *target = NULL;
+	for (uint32_t index = 0; index < MAX_UNIFORMS; ++index) {
+		if (strcmp(shader->uniforms[index].name, name) == 0) {
+			target = &shader->uniforms[index];
+		}
+	}
+
+	if (target == NULL) {
+		LOG_WARN("Vulkan: Uniform buffer '%s' not found in shader %d", name, shader_index);
+		return false;
+	}
+
+	VkShaderStageFlags flags =
+		target->stage == SHADER_STAGE_VERTEX
+		? VK_SHADER_STAGE_VERTEX_BIT
+		: target->stage == SHADER_STAGE_FRAGMENT
+		? VK_SHADER_STAGE_FRAGMENT_BIT
+		: 0;
+
+	vkCmdPushConstants(context->command_buffers[context->current_frame], shader->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, target->size, data);
+
+	return true;
+}
+
 bool vulkan_renderer_bind_resource_set(VulkanContext *context, uint32_t retrieve_index) {
 	if (retrieve_index >= MAX_RESOURCE_SETS) {
 		LOG_ERROR("Vulkan: Resource set index %d out of bounds", retrieve_index);

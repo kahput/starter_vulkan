@@ -90,6 +90,7 @@ typedef struct vulkan_shader {
 	uint32_t ps_count;
 
 	ShaderUniform uniforms[MAX_UNIFORMS];
+	uint32_t uniform_count;
 
 	VkPipelineLayout pipeline_layout;
 } VulkanShader;

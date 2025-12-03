@@ -366,6 +366,8 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 	SetInfo merged_sets[MAX_SETS] = { 0 };
 	uint32_t unique_set_count = 0;
 
+	shader->uniform_count = 0;
+
 	// Process vertex shader sets
 	for (uint32_t i = 0; i < vs_set_count; ++i) {
 		SpvReflectDescriptorSet *reflect_set = vs_sets[i];
@@ -382,7 +384,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 			vk_binding->stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 			vk_binding->pImmutableSamplers = NULL;
 
-			ShaderUniform *uniform = &shader->uniforms[reflect_binding->binding];
+			ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
 
 			memcpy(uniform->name, reflect_binding->name, sizeof(uniform->name));
 			uniform->type =
@@ -421,7 +423,14 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 		for (uint32_t b = 0; b < reflect_set->binding_count; ++b) {
 			SpvReflectDescriptorBinding *reflect_binding = reflect_set->bindings[b];
 
-			ShaderUniform *uniform = &shader->uniforms[reflect_binding->binding];
+			bool found_uniform = false;
+			for (uint32_t uniform_index = 0; uniform_index < shader->uniform_count; ++uniform_index) {
+				ShaderUniform *uniform = &shader->uniforms[uniform_index];
+				if (uniform->set == reflect_set->set && uniform->binding == reflect_binding->binding) {
+					uniform->stage |= SHADER_STAGE_FRAGMENT;
+					found_uniform = true;
+				}
+			}
 
 			// Check if binding already exists (from vertex shader)
 			bool found = false;
@@ -429,21 +438,14 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 				if (info->bindings[existing].binding == reflect_binding->binding) {
 					// Merge stage flags
 					info->bindings[existing].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-					uniform->stage |= SHADER_STAGE_FRAGMENT;
 					found = true;
 
 					break;
 				}
 			}
 
-			if (!found) {
-				VkDescriptorSetLayoutBinding *vk_binding = &info->bindings[info->binding_count];
-				vk_binding->binding = reflect_binding->binding;
-				vk_binding->descriptorType = (VkDescriptorType)reflect_binding->descriptor_type;
-				vk_binding->descriptorCount = reflect_binding->count;
-				vk_binding->stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-				vk_binding->pImmutableSamplers = NULL;
-
+			if (found_uniform == false) {
+				ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
 				memcpy(uniform->name, reflect_binding->name, sizeof(uniform->name));
 				uniform->type =
 					reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER
@@ -455,6 +457,15 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 				uniform->count = reflect_binding->count;
 				uniform->set = reflect_binding->set;
 				uniform->binding = reflect_binding->binding;
+			}
+
+			if (!found) {
+				VkDescriptorSetLayoutBinding *vk_binding = &info->bindings[info->binding_count];
+				vk_binding->binding = reflect_binding->binding;
+				vk_binding->descriptorType = (VkDescriptorType)reflect_binding->descriptor_type;
+				vk_binding->descriptorCount = reflect_binding->count;
+				vk_binding->stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+				vk_binding->pImmutableSamplers = NULL;
 
 				info->binding_count++;
 			}
@@ -487,16 +498,26 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 
 	shader->ps_count = 0;
 
+	uint32_t push_constant_offset = shader->uniform_count;
+
 	if (vs_push_count > 0) {
 		SpvReflectBlockVariable **push_blocks = arena_push_array(temp.arena, SpvReflectBlockVariable *, vs_push_count);
 		result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, push_blocks);
 		assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
 		for (uint32_t i = 0; i < vs_push_count; ++i) {
+			SpvReflectBlockVariable *push_block = push_blocks[i];
+
 			shader->push_constant_ranges[shader->ps_count].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-			shader->push_constant_ranges[shader->ps_count].offset = push_blocks[i]->offset;
-			shader->push_constant_ranges[shader->ps_count].size = push_blocks[i]->size;
+			shader->push_constant_ranges[shader->ps_count].offset = push_block->offset;
+			shader->push_constant_ranges[shader->ps_count].size = push_block->size;
 			shader->ps_count++;
+
+			ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
+			memcpy(uniform->name, push_block->name, sizeof(uniform->name));
+			uniform->type = SHADER_UNIFORM_TYPE_CONSTANTS;
+			uniform->stage = SHADER_STAGE_VERTEX;
+			uniform->size = push_block->size;
 		}
 	}
 
@@ -506,21 +527,41 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 		assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
 		for (uint32_t i = 0; i < fs_push_count; ++i) {
+			SpvReflectBlockVariable *push_block = push_blocks[i];
+
+			bool found_uniform = false;
+
+			for (uint32_t uniform_index = push_constant_offset; uniform_index < shader->uniform_count; ++uniform_index) {
+				ShaderUniform *uniform = &shader->uniforms[uniform_index];
+				if (strcmp(uniform->name, push_block->name) == 0) {
+					uniform->stage |= SHADER_STAGE_FRAGMENT;
+					found_uniform = true;
+				}
+			}
+
 			// Check if range already exists (merge stage flags)
 			bool found = false;
 			for (uint32_t j = 0; j < shader->ps_count; ++j) {
-				if (shader->push_constant_ranges[j].offset == push_blocks[i]->offset &&
-					shader->push_constant_ranges[j].size == push_blocks[i]->size) {
+				if (shader->push_constant_ranges[j].offset == push_block->offset &&
+					shader->push_constant_ranges[j].size == push_block->size) {
 					shader->push_constant_ranges[j].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
 					found = true;
 					break;
 				}
 			}
 
+			if (found_uniform == false) {
+				ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
+				memcpy(uniform->name, push_block->name, sizeof(uniform->name));
+				uniform->type = SHADER_UNIFORM_TYPE_CONSTANTS;
+				uniform->stage = SHADER_STAGE_FRAGMENT;
+				uniform->size = push_block->size;
+			}
+
 			if (!found) {
 				shader->push_constant_ranges[shader->ps_count].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-				shader->push_constant_ranges[shader->ps_count].offset = push_blocks[i]->offset;
-				shader->push_constant_ranges[shader->ps_count].size = push_blocks[i]->size;
+				shader->push_constant_ranges[shader->ps_count].offset = push_block->offset;
+				shader->push_constant_ranges[shader->ps_count].size = push_block->size;
 				shader->ps_count++;
 			}
 		}

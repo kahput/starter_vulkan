@@ -1,5 +1,3 @@
-#include "allocators/pool.h"
-#include "assets/importer.h"
 #include "platform.h"
 
 #include "event.h"
@@ -7,9 +5,12 @@
 #include "input.h"
 #include "input/input_types.h"
 
+#include "assets/importer.h"
+
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
+#include <cglm/affine-pre.h>
 #include <cglm/util.h>
 #include <cglm/vec3.h>
 #include <cgltf/cgltf.h>
@@ -23,6 +24,7 @@
 #include "core/logger.h"
 
 #include "allocators/arena.h"
+#include "allocators/pool.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -34,7 +36,7 @@
 
 Model *load_gltf_model(Arena *arena, const char *path);
 bool resize_event(Event *event);
-void update_uniforms(VulkanContext *context, Platform *platform, float dt);
+void update_camera(VulkanContext *context, Platform *platform, float dt);
 
 static const float camera_speed = 1.0f;
 
@@ -99,10 +101,10 @@ int main(void) {
 	vulkan_renderer_create_shader(state.ctx, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
 	vulkan_renderer_create_pipeline(state.ctx, 0, 0);
 
-	vulkan_renderer_create_buffer(state.ctx, 0, BUFFER_TYPE_UNIFORM, sizeof(MVPObject), NULL);
+	vulkan_renderer_create_buffer(state.ctx, 0, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
 	vulkan_renderer_create_resource_set(state.ctx, 0, 0, 0);
 
-	vulkan_renderer_update_resource_set_buffer(state.ctx, 0, "mvp", 0);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, 0, "u_camera", 0);
 	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, 0, "texture_sampler", 0, 0);
 
 	for (uint32_t index = 0, store_index = 1; index < model->primitive_count; ++index) {
@@ -128,10 +130,25 @@ int main(void) {
 		last_frame = current_frame;
 
 		platform_poll_events(platform);
-		update_uniforms(state.ctx, platform, delta_time);
+		update_camera(state.ctx, platform, delta_time);
 		vulkan_renderer_begin_frame(state.ctx, platform);
 		vulkan_renderer_bind_pipeline(state.ctx, 0);
 		vulkan_renderer_bind_resource_set(state.ctx, 0);
+
+		mat4 model_matrix;
+		glm_mat4_identity(model_matrix);
+		vulkan_renderer_push_constants(state.ctx, 0, "push_constants", model_matrix);
+
+		for (uint32_t index = 0, retrive_index = 1; index < model->primitive_count; ++index) {
+			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
+			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
+
+			vulkan_renderer_draw_indexed(state.ctx, model->primitives[index].index_count);
+		}
+
+		vec4 offset = { 5.0f, 0.0f, 0.0f };
+		glm_translate(model_matrix, offset);
+		vulkan_renderer_push_constants(state.ctx, 0, "push_constants", model_matrix);
 
 		for (uint32_t index = 0, retrive_index = 1; index < model->primitive_count; ++index) {
 			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
@@ -170,9 +187,8 @@ int main(void) {
 	return 0;
 }
 
-void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
-	MVPObject mvp = { 0 };
-	glm_mat4_identity(mvp.model);
+void update_camera(VulkanContext *context, Platform *platform, float dt) {
+	CameraUpload mvp = { 0 };
 
 	static bool use_keys = true;
 
@@ -223,8 +239,7 @@ void update_uniforms(VulkanContext *context, Platform *platform, float dt) {
 	glm_perspective(glm_rad(45.f), (float)platform->physical_height / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
-	vulkan_renderer_update_buffer(context, 0, 0, sizeof(MVPObject), &mvp);
-	// vulkan_renderer_update_resource_set_buffer(context, 0, "mvp", &mvp);
+	vulkan_renderer_update_buffer(context, 0, 0, sizeof(CameraUpload), &mvp);
 }
 
 bool resize_event(Event *event) {
