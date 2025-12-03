@@ -2,9 +2,7 @@
 #include "platform.h"
 
 #include "event.h"
-
 #include "input.h"
-#include "input/input_types.h"
 
 #include "assets/importer.h"
 
@@ -161,19 +159,6 @@ int main(void) {
 			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
 		else
 			platform_pointer_mode(platform, PLATFORM_POINTER_DISABLED);
-
-		// if (state.resized) {
-		// 	LOG_INFO("Recreating Swapchain...");
-		// 	logger_indent();
-		// 	if (vulkan_recreate_swapchain(&context, platform) == true) {
-		// 		LOG_INFO("Swapchain successfully recreated");
-		// 	} else {
-		// 		LOG_WARN("Failed to recreate swapchain");
-		// 	}
-		//
-		// 	logger_dedent();
-		// 	state.resized = false;
-		// }
 
 		input_system_update();
 	}

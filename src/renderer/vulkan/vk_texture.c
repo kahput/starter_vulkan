@@ -12,13 +12,13 @@ static VkFormat channels_to_vulkan_format(uint32_t channels);
 
 bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, const Image *image) {
 	if (store_index >= MAX_TEXTURES) {
-		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
+		LOG_ERROR("Vulkan: Texture index %d out of bounds", store_index);
 		return false;
 	}
 
 	VulkanImage *texture = &context->texture_pool[store_index];
 	if (texture->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocatetexture at index %d, but index is already in use", store_index);
+		LOG_FATAL("Engine: Frontend renderer tried to allocate texture at index %d, but index is already in use", store_index);
 		assert(false);
 		return false;
 	}
@@ -68,6 +68,30 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 	return true;
 }
 
+bool vulkan_renderer_destroy_texture(VulkanContext *context, uint32_t retrieve_index) {
+	if (retrieve_index >= MAX_TEXTURES) {
+		LOG_ERROR("Vulkan: Texture index %d out of bounds", retrieve_index);
+		return false;
+	}
+
+	VulkanImage *texture = &context->texture_pool[retrieve_index];
+	if (texture->handle == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to destroy texture at index %d, but index is not in use", retrieve_index);
+		assert(false);
+		return false;
+	}
+
+	vkDestroyImageView(context->device.logical, texture->view, NULL);
+	vkDestroyImage(context->device.logical, texture->handle, NULL);
+	vkFreeMemory(context->device.logical, texture->memory, NULL);
+
+	texture->handle = NULL;
+	texture->memory = NULL;
+	texture->view = NULL;
+
+	return true;
+}
+
 bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index) {
 	if (store_index >= MAX_SAMPLERS) {
 		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
@@ -106,6 +130,26 @@ bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index
 	}
 
 	LOG_INFO("VkSampler created");
+	return true;
+}
+
+bool vulkan_renderer_destroy_sampler(VulkanContext *context, uint32_t retrieve_index) {
+	if (retrieve_index >= MAX_SAMPLERS) {
+		LOG_ERROR("Vulkan: Sampler index %d out of bounds", retrieve_index);
+		return false;
+	}
+
+	VulkanSampler *sampler = &context->sampler_pool[retrieve_index];
+	if (sampler->handle == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to destroy sampler at index %d, but index is not in use", retrieve_index);
+		assert(false);
+		return false;
+	}
+
+	vkDestroySampler(context->device.logical, sampler->handle, NULL);
+
+	sampler->handle = NULL;
+
 	return true;
 }
 

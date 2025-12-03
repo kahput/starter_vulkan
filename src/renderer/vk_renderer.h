@@ -32,6 +32,13 @@ bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index
 bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
 bool vulkan_renderer_create_resource_set(VulkanContext *context, uint32_t store_index, uint32_t shader_index, uint32_t set_number);
 
+bool vulkan_renderer_destroy_shader(VulkanContext *context, uint32_t retrieve_index);
+bool vulkan_renderer_destroy_pipeline(VulkanContext *context, uint32_t retrieve_index);
+bool vulkan_renderer_destroy_texture(VulkanContext *context, uint32_t retrieve_index);
+bool vulkan_renderer_destroy_sampler(VulkanContext *context, uint32_t retrieve_index);
+bool vulkan_renderer_destroy_buffer(VulkanContext *context, uint32_t retrieve_index);
+bool vulkan_renderer_destroy_resource_set(VulkanContext *context, uint32_t retrieve_index);
+
 bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_index, const char *name, void *data);
 
 bool vulkan_renderer_bind_pipeline(VulkanContext *context, uint32_t retrieve_index);

@@ -1,12 +1,14 @@
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
+#include "renderer/vulkan/vk_types.h"
 #include "vk_internal.h"
 
 #include "allocators/pool.h"
 #include "common.h"
 #include "core/logger.h"
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 bool vulkan_renderer_create_resource_set(VulkanContext *context, uint32_t store_index, uint32_t shader_index, uint32_t set_number) {
 	if (store_index >= MAX_RESOURCE_SETS || shader_index >= MAX_SHADERS) {
@@ -16,14 +18,14 @@ bool vulkan_renderer_create_resource_set(VulkanContext *context, uint32_t store_
 
 	VulkanResourceSet *resource_set = &context->set_pool[store_index];
 	if (resource_set->sets[0] != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocate resource set at index %d, but index is already in use", store_index);
+		LOG_FATAL("Vulkan: Frontend renderer tried to allocate resource set at index %d, but index is already in use", store_index);
 		assert(false);
 		return false;
 	}
 
 	VulkanShader *shader = &context->shader_pool[shader_index];
 	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocateresource set with shader at index %d, but index is not in use", shader_index);
+		LOG_FATAL("Vulkan: Frontend renderer tried to allocateresource set with shader at index %d, but index is not in use", shader_index);
 		assert(false);
 		return false;
 	}
@@ -48,6 +50,26 @@ bool vulkan_renderer_create_resource_set(VulkanContext *context, uint32_t store_
 	}
 
 	LOG_INFO("Vulkan: VkDescriptorSet created");
+
+	return true;
+}
+
+bool vulkan_renderer_destroy_resource_set(VulkanContext *context, uint32_t retrieve_index) {
+	if (retrieve_index >= MAX_RESOURCE_SETS) {
+		LOG_ERROR("Vulkan: Set index %d out of bounds", retrieve_index);
+		return false;
+	}
+
+	VulkanResourceSet *set = &context->set_pool[retrieve_index];
+	if (set->sets[0] == NULL) {
+		LOG_FATAL("Vulkan: Frontend renderer tried to destroy set at index %d, but index is already in use", retrieve_index);
+		assert(false);
+		return false;
+	}
+
+	vkFreeDescriptorSets(context->device.logical, context->descriptor_pool, MAX_FRAMES_IN_FLIGHT, set->sets);
+	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index)
+		set->sets[index] = NULL;
 
 	return true;
 }

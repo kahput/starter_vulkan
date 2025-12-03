@@ -55,3 +55,11 @@ VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default);
 
 typedef VK_CREATE_UTIL_DEBUG_MESSENGER(fn_create_utils_debug_messenger);
 static fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messneger_default;
+
+// EXTENSIONS
+#define VK_DESTROY_UTIL_DEBUG_MESSENGER(name) \
+	VKAPI_ATTR void VKAPI_CALL name(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks *pAllocator)
+VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messneger_default);
+
+typedef VK_DESTROY_UTIL_DEBUG_MESSENGER(fn_destroy_utils_debug_messenger);
+static fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger = vulkan_destroy_utils_debug_messneger_default;

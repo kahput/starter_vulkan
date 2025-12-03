@@ -1,5 +1,6 @@
 #include "renderer/vk_renderer.h"
 
+#include "renderer/vulkan/vk_types.h"
 #include "vk_internal.h"
 
 #include "core/logger.h"
@@ -34,7 +35,10 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 
 	logger_indent();
 
+	buffer->count = 1;
+
 	if (type == BUFFER_TYPE_UNIFORM) {
+		buffer->count = MAX_FRAMES_IN_FLIGHT;
 		bool result = vulkan_create_uniform_buffers(context, buffer, size);
 		logger_dedent();
 		return result;
@@ -76,6 +80,32 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	LOG_INFO("%s resource created", stringify[type]);
 
 	logger_dedent();
+
+	return true;
+}
+
+bool vulkan_renderer_destroy_buffer(VulkanContext *context, uint32_t retrieve_index) {
+	if (retrieve_index >= MAX_BUFFERS) {
+		LOG_ERROR("Vulkan: Buffer index %d out of bounds", retrieve_index);
+		return false;
+	}
+
+	VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
+	if (buffer->handle[0] == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to destroy buffer at index %d, but index is already in use", retrieve_index);
+		assert(false);
+		return false;
+	}
+
+	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
+		if (buffer->handle[index] != NULL) {
+			vkDestroyBuffer(context->device.logical, buffer->handle[index], NULL);
+			vkFreeMemory(context->device.logical, buffer->memory[index], NULL);
+
+			buffer->handle[index] = NULL; 
+			buffer->memory[index] = NULL; 
+		}
+	}
 
 	return true;
 }

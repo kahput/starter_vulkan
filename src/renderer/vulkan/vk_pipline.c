@@ -37,7 +37,7 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 
 	VulkanShader *shader = &context->shader_pool[store_index];
 	if (shader->vertex_shader != NULL || shader->fragment_shader != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocateshader at index %d, but index is already in use", store_index);
+		LOG_FATAL("Engine: Frontend renderer tried to allocate shader at index %d, but index is already in use", store_index);
 		assert(false);
 		return false;
 	}
@@ -81,6 +81,33 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 	return true;
 }
 
+bool vulkan_renderer_destroy_shader(VulkanContext *context, uint32_t retrieve_index) {
+	if (retrieve_index >= MAX_SHADERS) {
+		LOG_ERROR("Vulkan: Shader index %d out of bounds", retrieve_index);
+		return false;
+	}
+
+	VulkanShader *shader = &context->shader_pool[retrieve_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to destroy shader at index %d, but index is not in use", retrieve_index);
+		assert(false);
+		return false;
+	}
+
+	vkDestroyShaderModule(context->device.logical, shader->vertex_shader, NULL);
+	vkDestroyShaderModule(context->device.logical, shader->fragment_shader, NULL);
+
+	shader->vertex_shader = NULL;
+	shader->fragment_shader = NULL;
+
+	for (uint32_t index = 0; index < shader->set_count; ++index)
+		vkDestroyDescriptorSetLayout(context->device.logical, shader->layouts[index], NULL);
+
+	vkDestroyPipelineLayout(context->device.logical, shader->pipeline_layout, NULL);
+
+	return true;
+}
+
 bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, uint32_t shader_index) {
 	if (store_index >= MAX_PIPELINES) {
 		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", store_index);
@@ -89,7 +116,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 
 	VulkanPipeline *pipeline = &context->pipeline_pool[store_index];
 	if (pipeline->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocatepipeline at index %d, but index is already in use", store_index);
+		LOG_FATAL("Engine: Frontend renderer tried to allocate pipeline at index %d, but index is already in use", store_index);
 		assert(false);
 		return false;
 	}
@@ -217,6 +244,25 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 	}
 
 	LOG_INFO("VkPipeline created");
+	return true;
+}
+
+bool vulkan_renderer_destroy_pipeline(VulkanContext *context, uint32_t retrieve_index) {
+	if (retrieve_index >= MAX_PIPELINES) {
+		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", retrieve_index);
+		return false;
+	}
+
+	VulkanPipeline *pipeline = &context->pipeline_pool[retrieve_index];
+	if (pipeline->handle == NULL) {
+		LOG_FATAL("Engine: Frontend renderer tried to destroy pipeline at index %d, but index is not in use", retrieve_index);
+		assert(false);
+		return false;
+	}
+
+	vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
+
+	pipeline->handle =NULL;
 	return true;
 }
 

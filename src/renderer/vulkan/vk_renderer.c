@@ -1,11 +1,13 @@
 #include "renderer/vk_renderer.h"
 
+#include "renderer/vulkan/vk_types.h"
 #include "vk_internal.h"
 
 #include "platform.h"
 
 #include "allocators/arena.h"
 #include "core/logger.h"
+#include <vulkan/vulkan_core.h>
 
 static uint32_t image_index = 0;
 
@@ -59,6 +61,59 @@ bool vulkan_renderer_create(struct arena *arena, VulkanContext **out_context, st
 
 void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDeviceWaitIdle(context->device.logical);
+
+	for (uint32_t index = 0; index < MAX_PIPELINES; ++index) {
+		if (context->pipeline_pool[index].handle != NULL)
+			vulkan_renderer_destroy_pipeline(context, index);
+	}
+	vkDestroyDescriptorPool(context->device.logical, context->descriptor_pool, NULL);
+
+	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
+		if (context->shader_pool[index].vertex_shader != NULL)
+			vulkan_renderer_destroy_shader(context, index);
+	}
+
+	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
+		if (context->texture_pool[index].handle != NULL)
+			vulkan_renderer_destroy_texture(context, index);
+	}
+
+	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
+		if (context->sampler_pool[index].handle != NULL)
+			vulkan_renderer_destroy_sampler(context, index);
+	}
+
+	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
+		if (context->buffer_pool[index].handle[0] != NULL)
+			vulkan_renderer_destroy_buffer(context, index);
+	}
+
+	vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, NULL);
+	vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, NULL);
+
+	for (uint32_t index = 0; index < context->swapchain.images.count; ++index) {
+		vkDestroyImageView(context->device.logical, context->swapchain.images.views[index], NULL);
+	}
+
+	vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
+	vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
+	vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
+
+	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
+
+	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
+		vkDestroySemaphore(context->device.logical, context->render_finished_semaphores[index], NULL);
+		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[index], NULL);
+		vkDestroyFence(context->device.logical, context->in_flight_fences[index], NULL);
+	}
+
+#ifndef NDEBUG
+	vkDestroyDebugUtilsMessenger(context->instance, context->debug_messenger, NULL);
+#endif
+
+	vkDestroyDevice(context->device.logical, NULL);
+	vkDestroySurfaceKHR(context->instance, context->surface, NULL);
+	vkDestroyInstance(context->instance, NULL);
 }
 
 bool vulkan_renderer_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {

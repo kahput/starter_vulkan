@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.h"
+#include "input/input_types.h"
 
 bool input_system_startup(void);
 bool input_system_shutdown(void);

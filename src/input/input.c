@@ -1,6 +1,4 @@
 #include "input.h"
-#include "common.h"
-#include "input_types.h"
 
 #include "event.h"
 #include "events/platform_events.h"
