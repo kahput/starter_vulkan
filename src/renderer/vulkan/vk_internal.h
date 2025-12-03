@@ -35,8 +35,8 @@ bool vulkan_create_surface(struct platform *platform, struct vulkan_context *ctx
 
 bool vulkan_create_device(struct arena *arena, struct vulkan_context *ctx);
 
-bool vulkan_create_swapchain(struct vulkan_context *ctx, struct platform *platform);
-bool vulkan_recreate_swapchain(struct vulkan_context *ctx, struct platform *platform);
+bool vulkan_create_swapchain(struct vulkan_context *ctx, uint32_t width, uint32_t height);
+bool vulkan_recreate_swapchain(struct vulkan_context *ctx, uint32_t width, uint32_t height);
 
 bool vulkan_create_descriptor_set_layout(struct vulkan_context *ctx, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout);
 

@@ -1,3 +1,4 @@
+#include "events/platform_events.h"
 #include "platform.h"
 
 #include "event.h"
@@ -48,14 +49,11 @@ typedef struct camera {
 } Camera;
 
 static struct State {
-	bool resized;
-	uint64_t start_time;
-
+	Arena *permanent, *frame, *assets;
 	Camera camera;
-
 	VulkanContext *ctx;
 
-	Arena *permanent, *frame, *assets;
+	uint64_t start_time;
 } state;
 
 int main(void) {
@@ -236,13 +234,15 @@ void update_camera(VulkanContext *context, Platform *platform, float dt) {
 	glm_lookat(state.camera.position, camera_target, camera_up, mvp.view);
 
 	glm_mat4_identity(mvp.projection);
-	glm_perspective(glm_rad(45.f), (float)platform->physical_height / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
+	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
 	mvp.projection[1][1] *= -1;
 
 	vulkan_renderer_update_buffer(context, 0, 0, sizeof(CameraUpload), &mvp);
 }
 
 bool resize_event(Event *event) {
-	state.resized = true;
+	WindowResizeEvent *wr_event = (WindowResizeEvent *)event;
+
+	vulkan_renderer_resize(state.ctx, wr_event->width, wr_event->height);
 	return true;
 }

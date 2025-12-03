@@ -1,11 +1,10 @@
-#pragma once
+#ifndef RENDERER_TYPES_H
+#define RENDERER_TYPES_H
 
 #include "common.h"
 #include "core/identifiers.h"
 
 #include <cglm/cglm.h>
-
-typedef Handle Shader;
 
 typedef struct {
 	mat4 view;
@@ -30,11 +29,6 @@ typedef struct {
 
 	void *internal;
 } Texture;
-
-typedef struct {
-	Handle color_attachment;
-	Handle depth_attachment;
-} RenderPassDesc;
 
 typedef struct material {
 	Texture base_color_texture;
@@ -64,14 +58,6 @@ typedef enum buffer_type {
 	BUFFER_TYPE_INDEX,
 	BUFFER_TYPE_UNIFORM,
 } BufferType;
-
-typedef struct buffer {
-	uint32_t vertex_count, index_count;
-
-	void *internal;
-} Buffer;
-
-// Shader
 
 typedef enum shader_stage {
 	SHADER_STAGE_VERTEX,
@@ -127,3 +113,5 @@ typedef struct uniform_binding {
 
 	uint32_t set, binding;
 } ShaderUniform;
+
+#endif

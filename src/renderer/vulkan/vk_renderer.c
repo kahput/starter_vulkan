@@ -2,6 +2,8 @@
 
 #include "vk_internal.h"
 
+#include "platform.h"
+
 #include "allocators/arena.h"
 #include "core/logger.h"
 
@@ -46,7 +48,7 @@ bool vulkan_renderer_create(struct arena *arena, VulkanContext **out_context, st
 	if (vulkan_create_sync_objects(ctx) == false)
 		return false;
 
-	if (vulkan_create_swapchain(ctx, platform) == false)
+	if (vulkan_create_swapchain(ctx, platform->physical_width, platform->physical_height) == false)
 		return false;
 
 	if (vulkan_create_depth_image(ctx) == false)
@@ -59,13 +61,26 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDeviceWaitIdle(context->device.logical);
 }
 
+bool vulkan_renderer_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
+	LOG_INFO("Recreating Swapchain...");
+	logger_indent();
+	if (vulkan_recreate_swapchain(context, new_width, new_height) == true) {
+		LOG_INFO("Swapchain successfully recreated");
+	} else {
+		LOG_WARN("Failed to recreate swapchain");
+	}
+
+	logger_dedent();
+	return true;
+}
+
 bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platform) {
 	vkWaitForFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame], VK_TRUE, UINT64_MAX);
 
 	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		vulkan_recreate_swapchain(context, platform);
+		vulkan_recreate_swapchain(context, platform->physical_width, platform->physical_height);
 		LOG_INFO("Recreating Swapchain");
 		return false;
 	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {

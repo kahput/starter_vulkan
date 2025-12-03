@@ -11,16 +11,16 @@
 
 VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, uint32_t count);
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count);
-VkExtent2D swapchain_select_extent(Platform *platform, const VkSurfaceCapabilitiesKHR *capabilities);
+VkExtent2D swapchain_select_extent(uint32_t window_width, uint32_t window_height, const VkSurfaceCapabilitiesKHR *capabilities);
 
 // static bool create_renderpass(VkDevice logical_device, VkFormat swapchain_image_format, VkRenderPass *renderpass);
 static bool create_swapchain_image_views(VulkanContext *context);
 // static bool create_swapchain_framebuffers(VulkanContext *context);
 
-bool vulkan_create_swapchain(VulkanContext *context, Platform *platform) {
+bool vulkan_create_swapchain(VulkanContext *context, uint32_t width, uint32_t height) {
 	context->swapchain.format = swapchain_select_surface_format(context->device.swapchain_details.formats, context->device.swapchain_details.format_count);
 	context->swapchain.present_mode = swapchain_select_present_mode(context->device.swapchain_details.present_modes, context->device.swapchain_details.present_mode_count);
-	context->swapchain.extent = swapchain_select_extent(platform, &context->device.swapchain_details.capabilities);
+	context->swapchain.extent = swapchain_select_extent(width, height, &context->device.swapchain_details.capabilities);
 
 	uint32_t queue_family_indices[] = { context->device.graphics_index, context->device.present_index };
 
@@ -67,7 +67,7 @@ bool vulkan_create_swapchain(VulkanContext *context, Platform *platform) {
 	return true;
 }
 
-bool vulkan_recreate_swapchain(VulkanContext *context, Platform *platform) {
+bool vulkan_recreate_swapchain(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
 	vkDeviceWaitIdle(context->device.logical);
 
 	for (uint32_t i = 0; i < context->swapchain.images.count; ++i) {
@@ -80,7 +80,7 @@ bool vulkan_recreate_swapchain(VulkanContext *context, Platform *platform) {
 		vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
 	}
 
-	if (vulkan_create_swapchain(context, platform) == false)
+	if (vulkan_create_swapchain(context, new_width, new_height) == false)
 		return false;
 	if (vulkan_create_depth_image(context) == false)
 		return false;
@@ -107,11 +107,11 @@ VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D swapchain_select_extent(Platform *platform, const VkSurfaceCapabilitiesKHR *capabilities) {
+VkExtent2D swapchain_select_extent(uint32_t window_width, uint32_t window_height, const VkSurfaceCapabilitiesKHR *capabilities) {
 	if (capabilities->currentExtent.width != UINT32_MAX)
 		return capabilities->currentExtent;
 	else
-		return (VkExtent2D){ platform->physical_width, platform->physical_height };
+		return (VkExtent2D){ window_width, window_height };
 }
 
 bool create_swapchain_image_views(VulkanContext *context) {

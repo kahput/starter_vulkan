@@ -28,26 +28,27 @@ Model *importer_load_gltf(struct arena *arena, const char *path) {
 	if (result == cgltf_result_success)
 		result = cgltf_validate(data);
 
-	if (result == cgltf_result_success) {
-		LOG_INFO("Loading %s...", path);
-		cgltf_scene *scene = data->scene;
-		logger_indent();
-		Model *model = arena_push_struct_zero(arena, Model);
-		for (uint32_t node_index = 0; node_index < scene->nodes_count; ++node_index) {
-			uint32_t primitive_count = 0;
-			load_nodes(arena, scene->nodes[node_index], &primitive_count, model, NULL);
-			model->primitives = arena_push_array_zero(arena, RenderPrimitive, primitive_count);
-			char directory[MAX_FILE_PATH_LENGTH];
-			file_path(path, directory);
-			load_nodes(arena, scene->nodes[node_index], &primitive_count, model, directory);
-			break;
-		}
-		logger_dedent();
-		cgltf_free(data);
-		return model;
+	if (result != cgltf_result_success) {
+		LOG_ERROR("Importer: Failed to load model");
+		return NULL;
 	}
-	LOG_ERROR("Failed to load model");
-	return NULL;
+
+	LOG_INFO("Loading %s...", path);
+	cgltf_scene *scene = data->scene;
+	logger_indent();
+	Model *model = arena_push_struct_zero(arena, Model);
+	for (uint32_t node_index = 0; node_index < scene->nodes_count; ++node_index) {
+		uint32_t primitive_count = 0;
+		load_nodes(arena, scene->nodes[node_index], &primitive_count, model, NULL);
+		model->primitives = arena_push_array_zero(arena, RenderPrimitive, primitive_count);
+		char directory[MAX_FILE_PATH_LENGTH];
+		file_path(path, directory);
+		load_nodes(arena, scene->nodes[node_index], &primitive_count, model, directory);
+		break;
+	}
+	logger_dedent();
+	cgltf_free(data);
+	return model;
 }
 
 Image importer_load_image(const char *path) {

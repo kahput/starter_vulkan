@@ -17,6 +17,7 @@ typedef struct vulkan_context VulkanContext;
 
 bool vulkan_renderer_create(struct arena *arena, VulkanContext **context, struct platform *platform);
 void vulkan_renderer_destroy(VulkanContext *context);
+bool vulkan_renderer_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height);
 
 bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platform);
 bool Vulkan_renderer_end_frame(VulkanContext *context);

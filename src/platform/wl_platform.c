@@ -406,7 +406,7 @@ void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t w
 		wp_viewport_set_destination(wl->viewport, platform->logical_width, platform->logical_height);
 
 		WindowResizeEvent event = event_create(WindowResizeEvent, SV_EVENT_WINDOW_RESIZED);
-		event.width = width, event.height = height;
+		event.width = platform->physical_width, event.height = platform->physical_height;
 
 		event_emit((Event *)&event);
 	}

@@ -1,7 +1,6 @@
 #include "renderer.h"
 
 bool renderer_begin_frame(void) {
-
 	return true;
 }
 
