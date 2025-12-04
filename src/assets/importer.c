@@ -1,5 +1,7 @@
 #include "importer.h"
 
+#include "common.h"
+#include "core/identifiers.h"
 #include "renderer/renderer_types.h"
 
 #include <cgltf/cgltf.h>
@@ -11,13 +13,51 @@
 
 #include <string.h>
 
+typedef struct {
+	struct record {
+		char path[MAX_FILE_PATH_LENGTH];
+		uint32_t generation;
+		Asset asset;
+	} *records;
+
+	uint32_t count, capacity;
+} AssetRegistry;
+
+AssetRegistry registry = { 0 };
+
 bool file_exists(const char *path);
 void file_name(const char *src, char *dst);
 void file_path(const char *src, char *dst);
 
+bool asset_system_startup(struct arena *arena) {
+	registry.records = arena_push_array_zero(arena, struct record, MAX_ASSETS);
+	registry.capacity = MAX_ASSETS;
+
+	return true;
+}
+bool asset_system_shutdown(void) { return true; }
+
+HAsset asset_load_model(const char *path) {
+	struct record *record = &registry.records[registry.count];
+
+	memcpy(record->path, path, strnlen(path, MAX_FILE_PATH_LENGTH - 1));
+	record->asset.type = ASSET_TYPE_MESH;
+	record->generation = 1;
+
+	return handle_create(registry.count++);
+}
+
+bool asset_unload_model(HAsset asset) {
+	registry.records[handle_index(asset)].generation++;
+
+	return true;
+}
+
+Asset *asset_get(HAsset asset) { return NULL; }
+
 static void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Model *out_model, const char *relative_path);
 
-Model *importer_load_gltf(struct arena *arena, const char *path) {
+GLTFPrimitive *importer_load_gltf(struct arena *arena, const char *path) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
 	cgltf_result result = cgltf_parse_file(&options, path, &data);
@@ -48,7 +88,8 @@ Model *importer_load_gltf(struct arena *arena, const char *path) {
 	}
 	logger_dedent();
 	cgltf_free(data);
-	return model;
+
+	return NULL;
 }
 
 Image importer_load_image(const char *path) {

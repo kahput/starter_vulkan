@@ -26,8 +26,6 @@ typedef struct image {
 typedef struct {
 	char *path;
 	int32_t width, height, channels;
-
-	void *internal;
 } Texture;
 
 typedef struct material {
@@ -52,6 +50,13 @@ typedef struct model {
 	RenderPrimitive *primitives;
 	uint32_t primitive_count;
 } Model;
+
+typedef struct gltf_primitive {
+	float *positions, *uvs, *normals;
+	uint32_t *indices;
+
+	uint32_t vertex_count, index_count;
+} GLTFPrimitive;
 
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
@@ -113,5 +118,70 @@ typedef struct uniform_binding {
 
 	uint32_t set, binding;
 } ShaderUniform;
+
+typedef enum cull_mode {
+	CULL_MODE_NONE = 0,
+	CULL_MODE_FRONT = 1,
+	CULL_MODE_BACK = 2,
+	CULL_MODE_FRONT_AND_BACK = 3
+} PipelineCullMode;
+
+typedef enum front_face {
+	FRONT_FACE_COUNTER_CLOCKWISE = 0, // Default in most engines
+	FRONT_FACE_CLOCKWISE = 1 // Default in Vulkan coordinate system
+} PipelineFrontFace;
+
+typedef enum polygon_mode {
+	POLYGON_MODE_FILL = 0,
+	POLYGON_MODE_LINE = 1, // Wireframe
+	POLYGON_MODE_POINT = 2,
+} PipelinePolygonMode;
+
+typedef enum compare_op {
+	COMPARE_OP_NEVER = 0,
+	COMPARE_OP_LESS = 1,
+	COMPARE_OP_EQUAL = 2,
+	COMPARE_OP_LESS_OR_EQUAL = 3,
+	COMPARE_OP_GREATER = 4,
+	COMPARE_OP_NOT_EQUAL = 5,
+	COMPARE_OP_GREATER_OR_EQUAL = 6,
+	COMPARE_OP_ALWAYS = 7
+} PipelineCompareOp;
+
+typedef struct pipeline_desc {
+	uint32_t shader_index;
+
+	ShaderAttribute *attributes;
+	uint32_t attribute_count;
+
+	PipelineCullMode cull_mode;
+	PipelineFrontFace front_face;
+	PipelinePolygonMode polygon_mode;
+	float line_width;
+
+	bool depth_test_enable;
+	bool depth_write_enable;
+	PipelineCompareOp depth_compare_op;
+
+	bool blend_enable;
+
+	bool topology_line_list;
+} PipelineDesc;
+
+#define DEFAULT_PIPELINE(index)              \
+	(PipelineDesc) {                                \
+		.shader_index = index,               \
+		.attributes = NULL,                         \
+		.attribute_count = 0,                       \
+		.cull_mode = CULL_MODE_BACK,                \
+		.front_face = FRONT_FACE_COUNTER_CLOCKWISE, \
+		.polygon_mode = POLYGON_MODE_FILL,          \
+		.line_width = 1.0f,                         \
+		.depth_test_enable = true,                  \
+		.depth_write_enable = true,                 \
+		.depth_compare_op = COMPARE_OP_LESS,        \
+		.blend_enable = false,                      \
+		.topology_line_list = false                 \
+	}
 
 #endif

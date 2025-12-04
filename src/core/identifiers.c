@@ -24,11 +24,11 @@ UUID identifier_create_from_u64(uint64_t uuid) {
 }
 
 Handle handle_create(uint32_t index) {
-	return (Handle){ .packed = index, .uuid = identifier_create() };
+	return (Handle){ .packed = index };
 }
 
 bool handle_valid(Handle handle) {
-	return handle.packed != UINT32_MAX && handle.uuid != INVALID_UUID;
+	return handle.packed != UINT32_MAX;
 }
 
 uint32_t handle_index(Handle handle) {

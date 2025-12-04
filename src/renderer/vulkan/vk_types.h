@@ -71,16 +71,16 @@ typedef struct VulkanSwapchain {
 } VulkanSwapchain;
 
 #define MAX_SETS 3
-#define MAX_ATTRIBUTES 16
-#define MAX_BINDINGS 4
+#define MAX_INPUT_ATTRIBUTES 16
+#define MAX_INPUT_BINDINGS 16
 #define MAX_PUSH_CONSTANT_RANGES 3
 #define MAX_UNIFORMS 32
 
 typedef struct vulkan_shader {
 	VkShaderModule vertex_shader, fragment_shader;
 
-	VkVertexInputAttributeDescription attributes[MAX_ATTRIBUTES];
-	VkVertexInputBindingDescription bindings[MAX_BINDINGS];
+	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];
+	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
 	uint32_t attribute_count, binding_count;
 
 	VkDescriptorSetLayout layouts[MAX_SETS];

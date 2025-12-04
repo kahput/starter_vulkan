@@ -23,8 +23,12 @@ struct shader_file {
 	uint8_t *content;
 };
 
-// static inline int32_t ftovkf(ShaderAttributeFormat format);
-// static inline uint32_t ftobs(ShaderAttributeFormat format);
+struct vertex_input_state {
+	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];
+	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
+
+	uint32_t binding_count, attribute_count;
+};
 
 struct shader_file read_file(struct arena *arena, const char *path);
 bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code);
@@ -108,7 +112,8 @@ bool vulkan_renderer_destroy_shader(VulkanContext *context, uint32_t retrieve_in
 	return true;
 }
 
-bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, uint32_t shader_index) {
+static bool override_attributes(struct vertex_input_state *state, ShaderAttribute *attributes, uint32_t attribute_count);
+bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, PipelineDesc desc) {
 	if (store_index >= MAX_PIPELINES) {
 		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", store_index);
 		return false;
@@ -121,7 +126,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 		return false;
 	}
 
-	pipeline->shader_index = shader_index;
+	pipeline->shader_index = desc.shader_index;
 	VulkanShader *shader = &context->shader_pool[pipeline->shader_index];
 	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to allocatepipeline with shader at index %d, but index is not in use", pipeline->shader_index);
@@ -155,17 +160,24 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 		.pDynamicStates = dynamic_states
 	};
 
-	VkPipelineVertexInputStateCreateInfo vis_create_info = {
-		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		.vertexBindingDescriptionCount = shader->binding_count,
-		.pVertexBindingDescriptions = shader->bindings,
-		.vertexAttributeDescriptionCount = shader->attribute_count,
-		.pVertexAttributeDescriptions = shader->attributes
-	};
+	VkPipelineVertexInputStateCreateInfo vis_create_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+		struct vertex_input_state override = { 0 };
+	if (desc.attribute_count > 0) {
+		override_attributes(&override, desc.attributes, desc.attribute_count);
+		vis_create_info.vertexBindingDescriptionCount = override.binding_count;
+		vis_create_info.pVertexBindingDescriptions = override.bindings;
+		vis_create_info.vertexAttributeDescriptionCount = override.attribute_count;
+		vis_create_info.pVertexAttributeDescriptions = override.attributes;
+	} else {
+		vis_create_info.vertexBindingDescriptionCount = shader->binding_count;
+		vis_create_info.pVertexBindingDescriptions = shader->bindings;
+		vis_create_info.vertexAttributeDescriptionCount = shader->attribute_count;
+		vis_create_info.pVertexAttributeDescriptions = shader->attributes;
+	}
 
 	VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-		.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		.topology = desc.topology_line_list ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 		.primitiveRestartEnable = VK_FALSE
 	};
 
@@ -179,10 +191,10 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 		.depthClampEnable = VK_FALSE,
 		.rasterizerDiscardEnable = VK_FALSE,
-		.polygonMode = VK_POLYGON_MODE_FILL,
-		.lineWidth = 1.0f,
-		.cullMode = VK_CULL_MODE_BACK_BIT,
-		.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+		.polygonMode = (VkPolygonMode)desc.polygon_mode,
+		.lineWidth = desc.line_width > 0.0f ? desc.line_width : 1.0f,
+		.cullMode = (VkCullModeFlags)desc.cull_mode,
+		.frontFace = (VkFrontFace)desc.front_face,
 		.depthBiasEnable = VK_FALSE,
 	};
 
@@ -207,9 +219,9 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		.depthTestEnable = VK_TRUE,
-		.depthWriteEnable = VK_TRUE,
-		.depthCompareOp = VK_COMPARE_OP_LESS,
+		.depthTestEnable = desc.depth_test_enable ? VK_TRUE : VK_FALSE,
+		.depthWriteEnable = desc.depth_write_enable ? VK_TRUE : VK_FALSE,
+		.depthCompareOp = (VkCompareOp)desc.depth_compare_op,
 		.depthBoundsTestEnable = VK_FALSE,
 		.minDepthBounds = 0.0f,
 		.maxDepthBounds = 1.0f
@@ -262,7 +274,7 @@ bool vulkan_renderer_destroy_pipeline(VulkanContext *context, uint32_t retrieve_
 
 	vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
 
-	pipeline->handle =NULL;
+	pipeline->handle = NULL;
 	return true;
 }
 
@@ -340,7 +352,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 	shader->binding_count = 0;
 
 	// Track unique bindings
-	uint32_t bindings_used[MAX_BINDINGS] = { 0 };
+	uint32_t bindings_used[MAX_INPUT_BINDINGS] = { 0 };
 
 	for (uint32_t index = 0; index < input_variable_count; ++index) {
 		SpvReflectInterfaceVariable *var = input_variables[index];
@@ -359,7 +371,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 		shader->attribute_count++;
 		bindings_used[0] = 1; // Mark binding 0 as used
 
-		assert(shader->attribute_count < MAX_ATTRIBUTES);
+		assert(shader->attribute_count < MAX_INPUT_ATTRIBUTES);
 	}
 
 	// Create binding descriptions for used bindings
@@ -638,72 +650,109 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 	return true;
 }
 
-// int32_t ftovkf(ShaderAttributeFormat format) {
-// 	switch (format) {
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
-// 			return VK_FORMAT_R32_SFLOAT;
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
-// 			return VK_FORMAT_R32G32_SFLOAT;
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
-// 			return VK_FORMAT_R32G32B32_SFLOAT;
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
-// 			return VK_FORMAT_R32G32B32A32_SFLOAT;
-//
-// 		case SHADER_ATTRIBUTE_FORMAT_INT:
-// 			return VK_FORMAT_R32_SINT;
-// 		case SHADER_ATTRIBUTE_FORMAT_INT2:
-// 			return VK_FORMAT_R32G32_SINT;
-// 		case SHADER_ATTRIBUTE_FORMAT_INT3:
-// 			return VK_FORMAT_R32G32B32_SINT;
-// 		case SHADER_ATTRIBUTE_FORMAT_INT4:
-// 			return VK_FORMAT_R32G32B32A32_SINT;
-//
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT:
-// 			return VK_FORMAT_R32_UINT;
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT2:
-// 			return VK_FORMAT_R32G32_UINT;
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT3:
-// 			return VK_FORMAT_R32G32B32_UINT;
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT4:
-// 			return VK_FORMAT_R32G32B32A32_UINT;
-// 		default: {
-// 			LOG_ERROR("Unkown attribute format type provided!");
-// 			return 0;
-// 		} break;
-// 	}
-// }
-//
-// uint32_t ftobs(ShaderAttributeFormat format) {
-// 	switch (format) {
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
-// 			return sizeof(float);
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
-// 			return sizeof(float) * 2;
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
-// 			return sizeof(float) * 3;
-// 		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
-// 			return sizeof(float) * 4;
-//
-// 		case SHADER_ATTRIBUTE_FORMAT_INT:
-// 			return sizeof(int32_t);
-// 		case SHADER_ATTRIBUTE_FORMAT_INT2:
-// 			return sizeof(int32_t) * 2;
-// 		case SHADER_ATTRIBUTE_FORMAT_INT3:
-// 			return sizeof(int32_t) * 3;
-// 		case SHADER_ATTRIBUTE_FORMAT_INT4:
-// 			return sizeof(int32_t) * 4;
-//
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT:
-// 			return sizeof(uint32_t);
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT2:
-// 			return sizeof(uint32_t) * 2;
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT3:
-// 			return sizeof(uint32_t) * 3;
-// 		case SHADER_ATTRIBUTE_FORMAT_UINT4:
-// 			return sizeof(uint32_t) * 4;
-// 		default: {
-// 			LOG_ERROR("Unkown attribute format type provided!");
-// 			return 0;
-// 		} break;
-// 	}
-// }
+static inline int32_t to_vk(ShaderAttributeFormat format);
+static inline uint32_t to_bytes(ShaderAttributeFormat format);
+
+static bool override_attributes(struct vertex_input_state *override, ShaderAttribute *attributes, uint32_t attribute_count) {
+	uint32_t unique_bindings = 0;
+	for (uint32_t attribute_index = 0; attribute_index < attribute_count; ++attribute_index) {
+		ShaderAttribute attribute = attributes[attribute_index];
+		uint32_t byte_offset = 0;
+		for (uint32_t binding_index = 0; binding_index < attribute_count; ++binding_index) {
+			VkVertexInputBindingDescription *binding_description = &override->bindings[binding_index];
+			unique_bindings += binding_description->stride == 0;
+
+			if (binding_description->binding == attribute.binding || binding_description->stride == 0) {
+				binding_description->binding = attribute.binding;
+				binding_description->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+				byte_offset = binding_description->stride;
+				binding_description->stride += to_bytes(attribute.format);
+				break;
+			}
+		}
+
+		VkVertexInputAttributeDescription attribute_description = {
+			.binding = attribute.binding,
+			.location = attribute_index,
+			.format = to_vk(attribute.format),
+			.offset = byte_offset
+		};
+
+		override->attributes[attribute_index] = attribute_description;
+	}
+
+	override->binding_count = unique_bindings;
+	override->attribute_count = attribute_count;
+
+	return true;
+}
+
+int32_t to_vk(ShaderAttributeFormat format) {
+	switch (format) {
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
+			return VK_FORMAT_R32_SFLOAT;
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
+			return VK_FORMAT_R32G32_SFLOAT;
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
+			return VK_FORMAT_R32G32B32_SFLOAT;
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
+			return VK_FORMAT_R32G32B32A32_SFLOAT;
+
+		case SHADER_ATTRIBUTE_FORMAT_INT:
+			return VK_FORMAT_R32_SINT;
+		case SHADER_ATTRIBUTE_FORMAT_INT2:
+			return VK_FORMAT_R32G32_SINT;
+		case SHADER_ATTRIBUTE_FORMAT_INT3:
+			return VK_FORMAT_R32G32B32_SINT;
+		case SHADER_ATTRIBUTE_FORMAT_INT4:
+			return VK_FORMAT_R32G32B32A32_SINT;
+
+		case SHADER_ATTRIBUTE_FORMAT_UINT:
+			return VK_FORMAT_R32_UINT;
+		case SHADER_ATTRIBUTE_FORMAT_UINT2:
+			return VK_FORMAT_R32G32_UINT;
+		case SHADER_ATTRIBUTE_FORMAT_UINT3:
+			return VK_FORMAT_R32G32B32_UINT;
+		case SHADER_ATTRIBUTE_FORMAT_UINT4:
+			return VK_FORMAT_R32G32B32A32_UINT;
+		default: {
+			LOG_ERROR("Unkown attribute format type provided!");
+			return 0;
+		} break;
+	}
+}
+
+uint32_t to_bytes(ShaderAttributeFormat format) {
+	switch (format) {
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
+			return sizeof(float);
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
+			return sizeof(float) * 2;
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
+			return sizeof(float) * 3;
+		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
+			return sizeof(float) * 4;
+
+		case SHADER_ATTRIBUTE_FORMAT_INT:
+			return sizeof(int32_t);
+		case SHADER_ATTRIBUTE_FORMAT_INT2:
+			return sizeof(int32_t) * 2;
+		case SHADER_ATTRIBUTE_FORMAT_INT3:
+			return sizeof(int32_t) * 3;
+		case SHADER_ATTRIBUTE_FORMAT_INT4:
+			return sizeof(int32_t) * 4;
+
+		case SHADER_ATTRIBUTE_FORMAT_UINT:
+			return sizeof(uint32_t);
+		case SHADER_ATTRIBUTE_FORMAT_UINT2:
+			return sizeof(uint32_t) * 2;
+		case SHADER_ATTRIBUTE_FORMAT_UINT3:
+			return sizeof(uint32_t) * 3;
+		case SHADER_ATTRIBUTE_FORMAT_UINT4:
+			return sizeof(uint32_t) * 4;
+		default: {
+			LOG_ERROR("Unkown attribute format type provided!");
+			return 0;
+		} break;
+	}
+}

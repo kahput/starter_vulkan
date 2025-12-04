@@ -102,8 +102,8 @@ bool vulkan_renderer_destroy_buffer(VulkanContext *context, uint32_t retrieve_in
 			vkDestroyBuffer(context->device.logical, buffer->handle[index], NULL);
 			vkFreeMemory(context->device.logical, buffer->memory[index], NULL);
 
-			buffer->handle[index] = NULL; 
-			buffer->memory[index] = NULL; 
+			buffer->handle[index] = NULL;
+			buffer->memory[index] = NULL;
 		}
 	}
 
@@ -138,10 +138,45 @@ bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index
 	}
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-		VkBuffer vertex_buffers[] = { buffer->handle[0] };
-		VkDeviceSize offsets[] = { 0 };
+		VkBuffer vertex_buffer[1] = { buffer->handle[0] };
+		VkDeviceSize offset[1] = { 0 };
 
-		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, array_count(offsets), vertex_buffers, offsets);
+		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, vertex_buffer, offset);
+		return true;
+	}
+
+	if (buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle[0], 0, VK_INDEX_TYPE_UINT32);
+		return true;
+	}
+
+	LOG_WARN("Buffer failed to bind: Unsupported buffer type");
+
+	return false;
+}
+
+bool vulkan_renderer_bind_buffers(VulkanContext *context, uint32_t *buffers, uint32_t count) {
+	if (buffers == NULL || count <= 0) {
+		LOG_ERROR("Vulkan: Invalid arguments passed, aborting bind");
+		return false;
+	}
+
+	const VulkanBuffer *buffer = &context->buffer_pool[buffers[0]];
+	if (buffer->handle[0] == NULL) {
+		LOG_FATAL("Vulkan: Renderer requested to bind buffer at index %d, but no valid buffer found at index", buffers[0]);
+		assert(false);
+		return false;
+	}
+
+	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
+		VkBuffer vertex_buffers[16] = { 0 };
+		VkDeviceSize offsets[16] = { 0 };
+		for (uint32_t index = 0; index < count; ++index) {
+			vertex_buffers[index] = context->buffer_pool[buffers[index]].handle[0];
+			offsets[index] = 0;
+		}
+
+		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, count, vertex_buffers, offsets);
 		return true;
 	}
 

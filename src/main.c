@@ -10,6 +10,7 @@
 #include "renderer/vk_renderer.h"
 
 #include <cglm/affine-pre.h>
+#include <cglm/mat4.h>
 #include <cglm/util.h>
 #include <cglm/vec3.h>
 #include <cgltf/cgltf.h>
@@ -63,6 +64,7 @@ int main(void) {
 
 	event_system_startup();
 	input_system_startup();
+	asset_system_startup(state.assets);
 
 	Platform *platform = platform_startup(state.permanent, 1280, 720, "Starter Vulkan");
 	if (platform == NULL) {
@@ -83,30 +85,67 @@ int main(void) {
 	//
 	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
-	Model *model = importer_load_gltf(state.assets, BOT_FILE_PATH);
-	// Model *model = load_gltf_model(state.assets, MAGE_FILE_PATH);
-	Image model_alebdo = importer_load_image(model->primitives->material.base_color_texture.path);
+	// GLTFPrimitive *primitive = importer_load_gltf(state.assets, BOT_FILE_PATH);
+
+	// clang-format off
+    float positions[] = {
+        // positions          // texture coords
+         0.5f,  0.5f, 0.0f,    // top right
+         0.5f, -0.5f, 0.0f,    // bottom right
+        -0.5f, -0.5f, 0.0f,    // bottom left
+        -0.5f,  0.5f, 0.0f,    // top left 
+    };
+
+	float uvs[] = {
+		1.0f, 1.0f,
+		1.0f, 0.0f,
+		0.0f, 0.0f,
+		0.0f, 1.0f 
+	};
+
+    uint32_t indices[] = {
+        0, 1, 3, // first triangle
+        1, 2, 3  // second triangle
+    };
+	// clang-format on
+
+	GLTFPrimitive primitive = {
+		.positions = positions,
+		.uvs = uvs,
+		.normals = NULL,
+		.indices = indices,
+		.index_count = 6,
+		.vertex_count = 4
+	};
 
 	// ================== GPU ==================
 
-	vulkan_renderer_create_texture(state.ctx, 0, &model_alebdo);
-	vulkan_renderer_create_sampler(state.ctx, 0);
-
-	importer_unload_image(model_alebdo);
+	// vulkan_renderer_create_texture(state.ctx, 0, &model_alebdo);
+	// vulkan_renderer_create_sampler(state.ctx, 0);
 
 	vulkan_renderer_create_shader(state.ctx, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
-	vulkan_renderer_create_pipeline(state.ctx, 0, 0);
+
+	ShaderAttribute quad_attributes[] = {
+		{ .name = "u_position", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT3, .binding = 0 },
+		{ .name = "u_uv", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT2, .binding = 1 },
+	};
+
+	PipelineDesc default_pipeline = DEFAULT_PIPELINE(0);
+	default_pipeline.cull_mode = CULL_MODE_NONE;
+	default_pipeline.attributes = quad_attributes;
+	default_pipeline.attribute_count = array_count(quad_attributes);
+
+	vulkan_renderer_create_pipeline(state.ctx, 0, default_pipeline);
 
 	vulkan_renderer_create_buffer(state.ctx, 0, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
-	vulkan_renderer_create_resource_set(state.ctx, 0, 0, 0);
+	vulkan_renderer_create_resource_set(state.ctx, 0, 0, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
 
-	vulkan_renderer_update_resource_set_buffer(state.ctx, 0, "u_camera", 0);
-	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, 0, "texture_sampler", 0, 0);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", 0);
+	// vulkan_renderer_update_resource_set_texture_sampler(state.ctx, 0, "texture_sampler", 0, 0);
 
-	for (uint32_t index = 0, store_index = 1; index < model->primitive_count; ++index) {
-		vulkan_renderer_create_buffer(state.ctx, store_index++, BUFFER_TYPE_VERTEX, model->primitives[index].vertex_count * sizeof(Vertex), model->primitives[index].vertices);
-		vulkan_renderer_create_buffer(state.ctx, store_index++, BUFFER_TYPE_INDEX, sizeof(uint32_t) * model->primitives->index_count, (void *)model->primitives[index].indices);
-	}
+	vulkan_renderer_create_buffer(state.ctx, 1, BUFFER_TYPE_VERTEX, primitive.vertex_count * sizeof(float) * 3, primitive.positions);
+	vulkan_renderer_create_buffer(state.ctx, 2, BUFFER_TYPE_VERTEX, primitive.vertex_count * sizeof(float) * 2, primitive.uvs);
+	vulkan_renderer_create_buffer(state.ctx, 3, BUFFER_TYPE_INDEX, primitive.index_count * sizeof(uint32_t), primitive.indices);
 
 	state.camera = (Camera){
 		.speed = 3.0f,
@@ -133,25 +172,15 @@ int main(void) {
 
 		mat4 model_matrix;
 		glm_mat4_identity(model_matrix);
+		// glm_mat4_scale(model_matrix, 10);
 		vulkan_renderer_push_constants(state.ctx, 0, "push_constants", model_matrix);
 
-		for (uint32_t index = 0, retrive_index = 1; index < model->primitive_count; ++index) {
-			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
-			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
+		uint32_t vbs[] = { 1, 2 };
 
-			vulkan_renderer_draw_indexed(state.ctx, model->primitives[index].index_count);
-		}
+		vulkan_renderer_bind_buffers(state.ctx, vbs, array_count(vbs));
+		vulkan_renderer_bind_buffer(state.ctx, 3);
 
-		vec4 offset = { 5.0f, 0.0f, 0.0f };
-		glm_translate(model_matrix, offset);
-		vulkan_renderer_push_constants(state.ctx, 0, "push_constants", model_matrix);
-
-		for (uint32_t index = 0, retrive_index = 1; index < model->primitive_count; ++index) {
-			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
-			vulkan_renderer_bind_buffer(state.ctx, retrive_index++);
-
-			vulkan_renderer_draw_indexed(state.ctx, model->primitives[index].index_count);
-		}
+		vulkan_renderer_draw_indexed(state.ctx, primitive.index_count);
 
 		Vulkan_renderer_end_frame(state.ctx);
 
