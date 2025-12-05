@@ -23,33 +23,6 @@ typedef struct image {
 	void *pixels;
 } Image;
 
-typedef struct {
-	char *path;
-	int32_t width, height, channels;
-} Texture;
-
-typedef struct material {
-	Texture base_color_texture;
-	Texture metallic_roughness_texture;
-
-	float base_color_factor[4];
-	float metallic_factor;
-	float roughness_factor;
-} Material;
-
-typedef struct primitive {
-	Vertex *vertices;
-	uint32_t *indices;
-
-	uint32_t vertex_count, index_count;
-
-	Material material;
-} RenderPrimitive;
-
-typedef struct model {
-	RenderPrimitive *primitives;
-	uint32_t primitive_count;
-} Model;
 
 typedef struct gltf_primitive {
 	float *positions, *uvs, *normals;

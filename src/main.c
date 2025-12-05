@@ -34,7 +34,6 @@
 #define BOT_FILE_PATH "assets/models/characters/gdbot.glb"
 #define MAGE_FILE_PATH "assets/models/characters/mage.glb"
 
-Model *load_gltf_model(Arena *arena, const char *path);
 bool resize_event(Event *event);
 void update_camera(VulkanContext *context, Platform *platform, float dt);
 
@@ -45,6 +44,8 @@ typedef struct camera {
 
 	float yaw, pitch;
 	vec3 position, up;
+
+	mat4 view, projection;
 } Camera;
 
 static struct State {
@@ -165,7 +166,12 @@ int main(void) {
 		last_frame = current_frame;
 
 		platform_poll_events(platform);
+
 		update_camera(state.ctx, platform, delta_time);
+
+		vulkan_renderer_update_buffer(state.ctx, 0, 0, sizeof(mat4), &state.camera.view);
+		vulkan_renderer_update_buffer(state.ctx, 0, sizeof(mat4), sizeof(mat4), &state.camera.projection);
+
 		vulkan_renderer_begin_frame(state.ctx, platform);
 		vulkan_renderer_bind_pipeline(state.ctx, 0);
 		vulkan_renderer_bind_resource_set(state.ctx, 0);
@@ -244,14 +250,12 @@ void update_camera(VulkanContext *context, Platform *platform, float dt) {
 	vec3 camera_target;
 	glm_vec3_sub(state.camera.position, camera_forward, camera_target);
 
-	glm_mat4_identity(mvp.view);
-	glm_lookat(state.camera.position, camera_target, camera_up, mvp.view);
+	glm_mat4_identity(state.camera.view);
+	glm_lookat(state.camera.position, camera_target, camera_up, state.camera.view);
 
 	glm_mat4_identity(mvp.projection);
-	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, mvp.projection);
-	mvp.projection[1][1] *= -1;
-
-	vulkan_renderer_update_buffer(context, 0, 0, sizeof(CameraUpload), &mvp);
+	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, state.camera.projection);
+	state.camera.projection[1][1] *= -1;
 }
 
 bool resize_event(Event *event) {

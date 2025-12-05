@@ -5,6 +5,11 @@
 typedef Handle MeshHandle;
 typedef Handle MaterialHandle;
 
+struct arena;
+struct platform;
+
+bool renderer_startup(struct arena *arena, struct platform *platform);
+
 bool renderer_begin_frame(void);
 
 bool renderer_submit_mesh(void);
