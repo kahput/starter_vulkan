@@ -10,7 +10,7 @@
 
 static VkFormat channels_to_vulkan_format(uint32_t channels);
 
-bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, const Image *image) {
+bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels) {
 	if (store_index >= MAX_TEXTURES) {
 		LOG_ERROR("Vulkan: Texture index %d out of bounds", store_index);
 		return false;
@@ -23,7 +23,7 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 		return false;
 	}
 
-	VkDeviceSize size = image->width * image->height * image->channels;
+	VkDeviceSize size = width * height * channels;
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -35,12 +35,12 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 
 	void *data;
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, image->pixels, (size_t)size);
+	memcpy(data, pixels, (size_t)size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
 	vulkan_image_create(
 		context, indices, array_count(indices),
-		image->width, image->height, channels_to_vulkan_format(image->channels), VK_IMAGE_TILING_OPTIMAL,
+		width, height, channels_to_vulkan_format(channels), VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		texture);
 
@@ -49,7 +49,7 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, VK_ACCESS_TRANSFER_WRITE_BIT);
-	vulkan_buffer_to_image(context, staging_buffer, texture->handle, image->width, image->height);
+	vulkan_buffer_to_image(context, staging_buffer, texture->handle, width, height);
 	vulkan_image_transition(
 		context, texture->handle, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,

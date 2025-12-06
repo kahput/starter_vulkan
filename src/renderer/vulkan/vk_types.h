@@ -102,7 +102,7 @@ typedef struct vulkan_pipeline {
 
 typedef struct vulkan_resource_set {
 	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
-	uint32_t shader_index;
+	uint32_t shader_index, set_number;
 } VulkanResourceSet;
 
 struct vulkan_context {

@@ -17,21 +17,24 @@ typedef struct {
 	vec3 normal;
 } Vertex;
 
-typedef struct image {
+typedef struct texture_asset {
+	void *pixels;
+
 	int32_t width, height, channels;
-
-	uint8_t *pixels;
-} Image;
-
-typedef struct gltf_primitive {
-	float *positions, *uvs, *normals;
-	uint32_t *indices;
-
-	uint32_t vertex_count, index_count;
-} GLTFPrimitive;
+	char *path;
+} TextureAsset;
 
 typedef struct material_data {
-	void *nothing;
+	TextureAsset *base_color_texture;
+	TextureAsset *metallic_roughness_texture; // G = Roughness, B = Metallic
+	TextureAsset *normal_texture;
+	TextureAsset *occlusion_texture;
+	TextureAsset *emissive_texture;
+
+	float base_color_factor[4];
+	float metallic_factor;
+	float roughness_factor;
+	vec3 emissive_factor;
 } MaterialAsset;
 
 typedef struct mesh_asset {
@@ -41,8 +44,20 @@ typedef struct mesh_asset {
 	uint32_t *indices;
 	uint32_t index_count;
 
-	MaterialAsset material;
+	MaterialAsset *material;
 } MeshAsset;
+
+typedef struct texture {
+	uint32_t texture, sampler;
+} Texture;
+
+typedef struct material {
+	uint32_t shader, pipeline;
+} Material;
+
+typedef struct material_instance {
+	uint32_t material, resource_set;
+} MaterialInstance;
 
 typedef struct mesh {
 	uint32_t vertex_buffer, index_buffer;
@@ -57,6 +72,9 @@ typedef struct scene {
 
 	MaterialAsset *materials;
 	uint32_t material_count;
+
+	TextureAsset *textures;
+	uint32_t texture_count;
 } SceneAsset;
 
 typedef enum buffer_type {

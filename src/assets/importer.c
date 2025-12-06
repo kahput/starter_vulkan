@@ -11,11 +11,14 @@
 #include "allocators/arena.h"
 #include "core/logger.h"
 
+#include <stdio.h>
 #include <string.h>
 
-bool file_exists(const char *path);
-void file_name(const char *src, char *dst);
-void file_path(const char *src, char *dst);
+bool filesystem_file_exists(const char *path);
+void filesystem_filename(const char *src, char *dst);
+void filesystem_directory(const char *src, char *dst);
+
+static TextureAsset *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex);
 
 SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	cgltf_options options = { 0 };
@@ -36,6 +39,65 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	LOG_INFO("Loading %s...", path);
 	logger_indent();
 	SceneAsset *asset = arena_push_struct(arena, SceneAsset);
+	char base_directory[MAX_FILE_PATH_LENGTH];
+	filesystem_directory(path, base_directory);
+
+	asset->texture_count = data->images_count;
+	asset->textures = arena_push_array_zero(arena, TextureAsset, asset->texture_count);
+
+	for (uint32_t texture_index = 0; texture_index < asset->texture_count; ++texture_index) {
+		cgltf_image *src = &data->images[texture_index];
+		TextureAsset *dst = &asset->textures[texture_index];
+
+		if (src->buffer_view) {
+			uint8_t *data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
+			dst->pixels = stbi_load_from_memory(data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
+		} else if (src->uri) {
+			size_t full_path_length = strnlen(base_directory, MAX_FILE_PATH_LENGTH) + strlen(src->uri) + 1;
+			snprintf(dst->path, full_path_length, "%s%s", base_directory, src->uri);
+
+			dst->pixels = stbi_load(dst->path, &dst->width, &dst->height, &dst->channels, 4);
+		}
+
+		if (!dst->pixels) {
+			LOG_WARN("Importer: Failed to load texture for image index %d", texture_index);
+		} else {
+			dst->channels = 4; // We forced 4 channels in stbi_load
+		}
+	}
+
+	asset->material_count = data->materials_count;
+	asset->materials = arena_push_array_zero(arena, MaterialAsset, asset->material_count);
+	LOG_INFO("Number of materials: %d", asset->material_count);
+
+	for (uint32_t index = 0; index < asset->material_count; ++index) {
+		cgltf_material *src = &data->materials[index];
+		MaterialAsset *dst = &asset->materials[index];
+
+		// PBR Metallic Roughness
+		if (src->has_pbr_metallic_roughness) {
+			cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
+
+			// Factors
+			mempcpy(dst->base_color_factor, pbr->base_color_factor, sizeof(vec4));
+			dst->metallic_factor = pbr->metallic_factor;
+			dst->roughness_factor = pbr->roughness_factor;
+
+			// Textures
+			dst->base_color_texture = find_loaded_texture(data, asset, pbr->base_color_texture.texture);
+			dst->metallic_roughness_texture = find_loaded_texture(data, asset, pbr->metallic_roughness_texture.texture);
+		}
+
+		// Normal Map
+		dst->normal_texture = find_loaded_texture(data, asset, src->normal_texture.texture);
+
+		// Occlusion
+		dst->occlusion_texture = find_loaded_texture(data, asset, src->occlusion_texture.texture);
+
+		// Emissive
+		memcpy(dst->emissive_factor, src->emissive_factor, sizeof(vec3));
+		dst->emissive_texture = find_loaded_texture(data, asset, src->emissive_texture.texture);
+	}
 
 	uint32_t mesh_count = 0;
 	for (uint32_t index = 0; index < data->meshes_count; ++index) {
@@ -52,24 +114,24 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 		cgltf_mesh *mesh = &data->meshes[mesh_index];
 
 		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
-			cgltf_primitive *primitive = &mesh->primitives[primitive_index];
-			MeshAsset *asset_mesh = &asset->meshes[mesh_count++];
+			cgltf_primitive *src_mesh = &mesh->primitives[primitive_index];
+			MeshAsset *dst_mesh = &asset->meshes[mesh_count++];
 
-			asset_mesh->index_count = primitive->indices->count;
-			asset_mesh->indices = arena_push_array_zero(arena, uint32_t, asset_mesh->index_count);
+			dst_mesh->index_count = src_mesh->indices->count;
+			dst_mesh->indices = arena_push_array_zero(arena, uint32_t, dst_mesh->index_count);
 
-			uint8_t *index_buffer_data = (uint8_t *)primitive->indices->buffer_view->buffer->data + primitive->indices->offset + primitive->indices->buffer_view->offset;
-			uint32_t index_stride = primitive->indices->buffer_view->stride ? primitive->indices->buffer_view->stride : primitive->indices->stride;
+			uint8_t *index_buffer_data = (uint8_t *)src_mesh->indices->buffer_view->buffer->data + src_mesh->indices->offset + src_mesh->indices->buffer_view->offset;
+			uint32_t index_stride = src_mesh->indices->buffer_view->stride ? src_mesh->indices->buffer_view->stride : src_mesh->indices->stride;
 
-			for (uint32_t index = 0; index < primitive->indices->count; ++index) {
+			for (uint32_t index = 0; index < src_mesh->indices->count; ++index) {
 				if (index_stride == 2)
-					asset_mesh->indices[index] = ((uint16_t *)index_buffer_data)[index];
+					dst_mesh->indices[index] = ((uint16_t *)index_buffer_data)[index];
 				else if (index_stride == 4)
-					asset_mesh->indices[index] = ((uint32_t *)index_buffer_data)[index];
+					dst_mesh->indices[index] = ((uint32_t *)index_buffer_data)[index];
 			}
 
-			for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
-				cgltf_attribute *attribute = &primitive->attributes[attribute_index];
+			for (uint32_t attribute_index = 0; attribute_index < src_mesh->attributes_count; ++attribute_index) {
+				cgltf_attribute *attribute = &src_mesh->attributes[attribute_index];
 
 				cgltf_accessor *accessor = attribute->data;
 				cgltf_buffer_view *view = accessor->buffer_view;
@@ -78,39 +140,39 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 				uint8_t *vertex_buffer_data = (uint8_t *)buffer->data + accessor->offset + view->offset;
 				uint32_t attribute_stride = view->stride ? view->stride : accessor->stride;
 
-				if (asset_mesh->vertices == NULL) {
-					asset_mesh->vertex_count = accessor->count;
-					asset_mesh->vertices = arena_push_array_zero(arena, Vertex, asset_mesh->vertex_count);
+				if (dst_mesh->vertices == NULL) {
+					dst_mesh->vertex_count = accessor->count;
+					dst_mesh->vertices = arena_push_array_zero(arena, Vertex, dst_mesh->vertex_count);
 				}
 
 				switch (attribute->type) {
 					case cgltf_attribute_type_position: {
-						for (uint32_t vertex_index = 0; vertex_index < asset_mesh->vertex_count; ++vertex_index) {
-							Vertex *dst = &asset_mesh->vertices[vertex_index];
-							float *src = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
 
-							dst->position[0] = src[0];
-							dst->position[1] = src[1];
-							dst->position[2] = src[2];
+							dst_vertex->position[0] = src_vertex[0];
+							dst_vertex->position[1] = src_vertex[1];
+							dst_vertex->position[2] = src_vertex[2];
 						}
 					} break;
 					case cgltf_attribute_type_normal: {
-						for (uint32_t vertex_index = 0; vertex_index < asset_mesh->vertex_count; ++vertex_index) {
-							Vertex *dst = &asset_mesh->vertices[vertex_index];
-							float *src = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
 
-							dst->normal[0] = src[0];
-							dst->normal[1] = src[1];
-							dst->normal[2] = src[2];
+							dst_vertex->normal[0] = src_vertex[0];
+							dst_vertex->normal[1] = src_vertex[1];
+							dst_vertex->normal[2] = src_vertex[2];
 						}
 					} break;
 					case cgltf_attribute_type_texcoord: {
-						for (uint32_t vertex_index = 0; vertex_index < asset_mesh->vertex_count; ++vertex_index) {
-							Vertex *dst = &asset_mesh->vertices[vertex_index];
-							float *src = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
+							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
 
-							dst->uv[0] = src[0];
-							dst->uv[1] = src[1];
+							dst_vertex->uv[0] = src_vertex[0];
+							dst_vertex->uv[1] = src_vertex[1];
 						}
 					} break;
 					case cgltf_attribute_type_tangent:
@@ -123,6 +185,13 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 						break;
 				}
 			}
+
+			if (src_mesh->material) {
+				uint32_t index = src_mesh->material - data->materials;
+				dst_mesh->material = &asset->materials[index];
+
+			} else
+				dst_mesh->material = NULL;
 		}
 	}
 
@@ -132,261 +201,32 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	return asset;
 }
 
-// static void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Model *out_model, const char *relative_path);
-
-// GLTFPrimitive *importer_load_gltf(struct arena *arena, const char *path) {
-// 	cgltf_options options = { 0 };
-// 	cgltf_data *data = NULL;
-// 	cgltf_result result = cgltf_parse_file(&options, path, &data);
-//
-// 	if (result == cgltf_result_success)
-// 		result = cgltf_load_buffers(&options, data, path);
-//
-// 	if (result == cgltf_result_success)
-// 		result = cgltf_validate(data);
-//
-// 	if (result != cgltf_result_success) {
-// 		LOG_ERROR("Importer: Failed to load model");
-// 		return NULL;
-// 	}
-//
-// 	LOG_INFO("Loading %s...", path);
-// 	cgltf_scene *scene = data->scene;
+// Image importer_load_image(const char *path) {
+// 	Image image;
+// 	char filename[256];
+// 	filesystem_filename(path, filename);
+// 	LOG_INFO("Loading %s...", filename);
 // 	logger_indent();
-// 	Model *model = arena_push_struct_zero(arena, Model);
-// 	for (uint32_t node_index = 0; node_index < scene->nodes_count; ++node_index) {
-// 		uint32_t primitive_count = 0;
-// 		load_nodes(arena, scene->nodes[node_index], &primitive_count, model, NULL);
-// 		model->primitives = arena_push_array_zero(arena, RenderPrimitive, primitive_count);
-// 		char directory[MAX_FILE_PATH_LENGTH];
-// 		file_path(path, directory);
-// 		load_nodes(arena, scene->nodes[node_index], &primitive_count, model, directory);
-// 		break;
+// 	image.pixels = stbi_load(path, &image.width, &image.height, &image.channels, STBI_default);
+//
+// 	if (image.pixels == NULL) {
+// 		LOG_ERROR("Failed to load image [ %s ]", path);
+// 		return (Image){ 0 };
 // 	}
+//
+// 	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, image.width, image.height, image.channels);
+// 	LOG_INFO("%s loaded", filename);
 // 	logger_dedent();
-// 	cgltf_free(data);
 //
-// 	return NULL;
+// 	return image;
+// }
+//
+// void importer_unload_image(Image image) {
+// 	if (image.pixels)
+// 		stbi_image_free(image.pixels);
 // }
 
-Image importer_load_image(const char *path) {
-	Image image;
-	char filename[256];
-	file_name(path, filename);
-	LOG_INFO("Loading %s...", filename);
-	logger_indent();
-	image.pixels = stbi_load(path, &image.width, &image.height, &image.channels, STBI_default);
-
-	if (image.pixels == NULL) {
-		LOG_ERROR("Failed to load image [ %s ]", path);
-		return (Image){ 0 };
-	}
-
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, image.width, image.height, image.channels);
-	LOG_INFO("%s loaded", filename);
-	logger_dedent();
-
-	return image;
-}
-
-void importer_unload_image(Image image) {
-	if (image.pixels)
-		stbi_image_free(image.pixels);
-}
-
-// void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Model *out_model, const char *relative_path) {
-// 	if (node->mesh) {
-// 		cgltf_mesh *mesh = node->mesh;
-// 		*total_primitives += mesh->primitives_count;
-// 		LOG_DEBUG("Node[%s] has Mesh '%s' with %d primitives", node->name, mesh->name, mesh->primitives_count);
-// 		if (out_model->primitives == NULL)
-// 			goto skip_loading;
-// 		logger_indent();
-//
-// 		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
-// 			cgltf_primitive *primitive = &mesh->primitives[primitive_index];
-// 			RenderPrimitive *out_primitive = &out_model->primitives[out_model->primitive_count++];
-//
-// 			// ATTRIBUTES
-// 			LOG_DEBUG("---PRIMITIVE[%d]---", primitive_index, primitive->attributes_count);
-// 			logger_indent();
-// 			for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
-// 				cgltf_attribute *attribute = &primitive->attributes[attribute_index];
-// 				if (out_primitive->vertices == NULL)
-// 					out_primitive->vertices = arena_push_array_zero(arena, Vertex, attribute->data->count);
-// 				LOG_DEBUG("Attribute[%d]- %s", attribute_index, attribute->name);
-// 				logger_indent();
-//
-// 				cgltf_accessor *accessor = attribute->data;
-// 				cgltf_buffer_view *view = accessor->buffer_view;
-// 				cgltf_buffer *buffer = view->buffer;
-// 				out_primitive->vertex_count = accessor->count;
-//
-// 				LOG_DEBUG("Accessor { offset = %d, count = %d, stride = %d }", accessor->offset, accessor->count, accessor->stride);
-// 				LOG_DEBUG("BufferView { offset = %d, size = %d, stride = %d }", view->offset, view->size, view->stride);
-// 				LOG_DEBUG("Buffer { size = %d }", buffer->size);
-//
-// 				switch (attribute->type) {
-// 					case cgltf_attribute_type_position: {
-// 						float *src = (float *)((uint8_t *)buffer->data + view->offset);
-//
-// 						for (uint32_t index = 0; index < accessor->count; ++index) {
-// 							out_primitive->vertices[index].position[0] = src[index * 3 + 0];
-// 							out_primitive->vertices[index].position[1] = src[index * 3 + 1];
-// 							out_primitive->vertices[index].position[2] = src[index * 3 + 2];
-// 						}
-// 					} break;
-// 					case cgltf_attribute_type_normal: {
-// 						float *src = (float *)((uint8_t *)buffer->data + view->offset);
-//
-// 						for (uint32_t index = 0; index < accessor->count; ++index) {
-// 							out_primitive->vertices[index].normal[0] = src[index * 3 + 0];
-// 							out_primitive->vertices[index].normal[1] = src[index * 3 + 1];
-// 							out_primitive->vertices[index].normal[2] = src[index * 3 + 2];
-// 						}
-// 					} break;
-// 					case cgltf_attribute_type_texcoord: {
-// 						uint8_t *data = (uint8_t *)buffer->data + view->offset;
-// 						size_t stride = view->stride ? view->stride : accessor->stride;
-//
-// 						for (uint32_t index = 0; index < accessor->count; ++index) {
-// 							float *src = (float *)(data + index * stride);
-// 							out_primitive->vertices[index].uv[0] = src[0];
-// 							out_primitive->vertices[index].uv[1] = src[1];
-// 						}
-// 					} break;
-// 					case cgltf_attribute_type_invalid:
-// 					case cgltf_attribute_type_tangent:
-// 					case cgltf_attribute_type_color:
-// 					case cgltf_attribute_type_joints:
-// 					case cgltf_attribute_type_weights:
-// 					case cgltf_attribute_type_custom:
-// 					case cgltf_attribute_type_max_enum:
-// 						break;
-// 				}
-// 				logger_dedent();
-//
-// 				// ATTRIBUTES
-// 			}
-// 			cgltf_accessor *indices = primitive->indices;
-// 			cgltf_buffer_view *indices_view = indices->buffer_view;
-// 			cgltf_buffer *indices_buffer = indices_view->buffer;
-//
-// 			LOG_DEBUG("Indices Accessor { offset = %d, count = %d, stride = %d }", indices->offset, indices->count, indices->stride);
-// 			LOG_DEBUG("Indices BufferView { offset = %d, size = %d, stride = %d }", indices_view->offset, indices_view->size, indices_view->stride);
-// 			LOG_DEBUG("Indices Buffer { size = %d }", indices_buffer->size);
-//
-// 			out_primitive->indices = arena_push_array(arena, uint32_t, indices->count);
-// 			out_primitive->index_count = indices->count;
-// 			for (uint32_t index = 0; index < indices->count; ++index) {
-// 				void *data = (uint8_t *)indices_buffer->data + indices_view->offset;
-// 				uint16_t *value = (uint16_t *)data + index;
-//
-// 				out_primitive->indices[index] = *value;
-// 			}
-//
-// 			cgltf_material *material = primitive->material;
-// 			if (material->has_pbr_metallic_roughness) {
-// 				Material *out_material = &out_primitive->material;
-// 				LOG_DEBUG("Material is Metallic Roughness PBR based");
-// 				logger_indent();
-//
-// 				cgltf_pbr_metallic_roughness *pbr_material = &material->pbr_metallic_roughness;
-//
-// 				if (pbr_material->base_color_texture.texture) {
-// 					cgltf_texture_view texture_view = pbr_material->base_color_texture;
-//
-// 					cgltf_texture *texture = texture_view.texture;
-// 					cgltf_sampler *sampler = texture->sampler;
-//
-// 					cgltf_image *image = texture->image;
-//
-// 					Texture *out_texture = &out_material->base_color_texture;
-// 					out_texture->path = arena_push_array_zero(arena, char, MAX_FILE_PATH_LENGTH);
-//
-// 					if (image->buffer_view) {
-// 						cgltf_buffer_view *buffer_view = image->buffer_view;
-// 						cgltf_buffer *buffer = buffer_view->buffer;
-//
-// 						LOG_DEBUG("%s BufferView { offset = %d, size = %d, stride = %d }", image->name, buffer_view->offset, buffer_view->size, buffer_view->stride);
-// 						LOG_DEBUG("%s Buffer { size = %d }", image->name, buffer->size);
-//
-// 						uint32_t length = 0;
-// 						char c;
-//
-// 						uint8_t *src = (uint8_t *)buffer->data + buffer_view->offset;
-//
-// 						while ((c = image->mime_type[length++]) != '\0') {
-// 							if (c == '/' || c == '\\') {
-// 								if (strcmp(&image->mime_type[length], "png") == 0) {
-// 									LOG_DEBUG("MimeType should be png (it is '%s')", image->mime_type);
-//
-// 									strncpy(out_texture->path, relative_path, MAX_FILE_PATH_LENGTH);
-// 									strncat(out_texture->path, node->name, MAX_FILE_NAME_LENGTH);
-// 									out_texture->path[strnlen(out_texture->path, MAX_FILE_PATH_LENGTH)] = '_';
-// 									out_texture->path[strnlen(out_texture->path, MAX_FILE_PATH_LENGTH) + 1] = '\0';
-// 									strncat(out_texture->path, image->name, MAX_FILE_PATH_LENGTH);
-// 									strncat(out_texture->path, ".png", MAX_FILE_PATH_LENGTH);
-//
-// 									if (!file_exists(out_texture->path)) {
-// 										LOG_DEBUG("Generating %s...", out_texture->path);
-// 										logger_indent();
-// 										uint8_t *pixels = stbi_load_from_memory(src, buffer_view->size, (int32_t *)&out_texture->width, (int32_t *)&out_texture->height, (int32_t *)&out_texture->channels, 4);
-// 										stbi_write_png(out_texture->path, out_texture->width, out_texture->height, out_texture->channels, pixels, 0);
-// 										LOG_DEBUG("File generated");
-// 										logger_dedent();
-// 									}
-// 								}
-// 								if (strcmp(&image->mime_type[length], "jpeg") == 0) {
-// 									LOG_DEBUG("MimeType should be jpeg (it is '%s')", image->mime_type);
-// 								}
-// 							}
-// 						}
-// 					} else {
-// 						LOG_DEBUG("URI '%s'[%s]", image->name, image->uri);
-// 						strncpy(out_texture->path, relative_path, MAX_FILE_PATH_LENGTH);
-// 						strncat(out_texture->path, image->uri, MAX_FILE_NAME_LENGTH);
-// 					}
-// 				}
-//
-// 				if (pbr_material->metallic_roughness_texture.texture) {
-// 					cgltf_texture_view metallic_roughness_view = pbr_material->metallic_roughness_texture;
-// 					cgltf_texture *metallic_roughness_texture = metallic_roughness_view.texture;
-// 					cgltf_image *metallic_roughness = metallic_roughness_texture->image;
-//
-// 					if (metallic_roughness->buffer_view) {
-// 						cgltf_buffer_view *view = metallic_roughness->buffer_view;
-// 						cgltf_buffer *buffer = view->buffer;
-//
-// 						LOG_DEBUG("%s BufferView { offset = %d, size = %d, stride = %d }", metallic_roughness->name, view->offset, view->size, view->stride);
-// 						LOG_DEBUG("%s Buffer { size = %d }", metallic_roughness->name, buffer->size);
-//
-// 						LOG_INFO("MimeType: %s", metallic_roughness->mime_type);
-// 					} else {
-// 						LOG_DEBUG("URI '%s'[%s]", metallic_roughness->name, metallic_roughness->uri);
-// 					}
-// 				}
-// 				logger_dedent();
-//
-// 				if (material->emissive_texture.texture) {
-// 					LOG_DEBUG("Has emission texture");
-// 				}
-// 			} else {
-// 				LOG_WARN("Non Metallic Roughness PBR material, loading skipped");
-// 			}
-// 			logger_dedent();
-// 		}
-// 		logger_dedent();
-// 	}
-//
-// skip_loading:
-//
-// 	for (uint32_t node_index = 0; node_index < node->children_count; ++node_index) {
-// 		load_nodes(arena, node->children[node_index], total_primitives, out_model, relative_path);
-// 	}
-// }
-
-bool file_exists(const char *path) {
+bool filesystem_file_exists(const char *path) {
 	FILE *file = fopen(path, "r");
 	if (file) {
 		fclose(file);
@@ -395,7 +235,7 @@ bool file_exists(const char *path) {
 	return false;
 }
 
-void file_name(const char *src, char *dst) {
+void filesystem_filename(const char *src, char *dst) {
 	uint32_t start = 0, length = 0;
 	char c;
 
@@ -412,7 +252,7 @@ void file_name(const char *src, char *dst) {
 	memcpy(dst, src + start, length - start);
 }
 
-void file_path(const char *src, char *dst) {
+void filesystem_directory(const char *src, char *dst) {
 	uint32_t final = 0, length = 0;
 	char c;
 
@@ -424,4 +264,18 @@ void file_path(const char *src, char *dst) {
 
 	memcpy(dst, src, final);
 	dst[final] = '\0';
+}
+
+TextureAsset *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex) {
+	if (!gltf_tex || !gltf_tex->image)
+		return NULL;
+
+	// Calculate index based on pointer arithmetic
+	// cgltf stores images in a contiguous array, so we can find the index
+	size_t index = gltf_tex->image - data->images;
+
+	if (index < scene->texture_count) {
+		return &scene->textures[index];
+	}
+	return NULL;
 }

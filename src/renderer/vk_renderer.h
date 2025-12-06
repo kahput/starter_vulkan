@@ -28,7 +28,7 @@ bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, const char *vertex_shader_path, const char *fragment_shader_path);
 bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, PipelineDesc description);
 
-bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, const Image *image);
+bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels);
 bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index);
 bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
 bool vulkan_renderer_create_resource_set(VulkanContext *context, uint32_t store_index, uint32_t shader_index, uint32_t set_number);

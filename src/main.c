@@ -36,7 +36,7 @@
 
 bool resize_event(Event *event);
 
-bool upload_meshes(SceneAsset *asset);
+bool upload_scene(SceneAsset *asset);
 void update_camera(VulkanContext *context, Platform *platform, float dt);
 
 static const float camera_speed = 1.0f;
@@ -51,16 +51,27 @@ typedef struct camera {
 } Camera;
 
 #define MAX_MESHES 256
+#define MAX_MATERIAL_INSTANCES 32
 
 static struct State {
 	Arena *permanent, *frame, *assets;
 	Camera camera;
 	VulkanContext *ctx;
 
+	uint32_t scene_buffer;
+
 	Mesh meshes[MAX_MESHES];
 	uint32_t mesh_count;
 
-	uint32_t buffer_count;
+	Material master_material;
+
+	Texture textures[MAX_TEXTURES];
+	uint32_t texture_count;
+
+	MaterialInstance materials[MAX_MATERIAL_INSTANCES];
+	uint32_t material_count;
+
+	uint32_t buffer_count, set_count;
 
 	uint64_t start_time;
 } state;
@@ -94,25 +105,20 @@ int main(void) {
 	//
 	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
-	ArenaTemp temp = arena_begin_temp(state.assets);
-	SceneAsset *scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
-	upload_meshes(scene);
-	arena_end_temp(temp);
 
-	// ================== GPU ==================
-
-	// vulkan_renderer_create_texture(state.ctx, 0, &model_alebdo);
-	// vulkan_renderer_create_sampler(state.ctx, 0);
+	state.scene_buffer = state.buffer_count++;
+	vulkan_renderer_create_buffer(state.ctx, state.scene_buffer, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
 
 	vulkan_renderer_create_shader(state.ctx, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
 	vulkan_renderer_create_pipeline(state.ctx, 0, DEFAULT_PIPELINE(0));
 
-	Handle uniform_buffer = handle_create(state.buffer_count++);
-	vulkan_renderer_create_buffer(state.ctx, handle_index(uniform_buffer), BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
-	vulkan_renderer_create_resource_set(state.ctx, 0, 0, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+	ArenaTemp temp = arena_begin_temp(state.assets);
+	SceneAsset *scene = importer_load_gltf(state.assets, BOT_FILE_PATH);
+	upload_scene(scene);
+	arena_end_temp(temp);
 
-	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", handle_index(uniform_buffer));
-	// vulkan_renderer_update_resource_set_texture_sampler(state.ctx, 0, "texture_sampler", 0, 0);
+	vulkan_renderer_create_resource_set(state.ctx, 0, 0, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", state.scene_buffer);
 
 	state.camera = (Camera){
 		.speed = 3.0f,
@@ -135,12 +141,12 @@ int main(void) {
 
 		update_camera(state.ctx, platform, delta_time);
 
-		vulkan_renderer_update_buffer(state.ctx, handle_index(uniform_buffer), 0, sizeof(mat4), &state.camera.view);
-		vulkan_renderer_update_buffer(state.ctx, handle_index(uniform_buffer), sizeof(mat4), sizeof(mat4), &state.camera.projection);
+		vulkan_renderer_update_buffer(state.ctx, state.scene_buffer, 0, sizeof(mat4), &state.camera.view);
+		vulkan_renderer_update_buffer(state.ctx, state.scene_buffer, sizeof(mat4), sizeof(mat4), &state.camera.projection);
 
 		vulkan_renderer_begin_frame(state.ctx, platform);
 		vulkan_renderer_bind_pipeline(state.ctx, 0);
-		vulkan_renderer_bind_resource_set(state.ctx, 0);
+		vulkan_renderer_bind_resource_set(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
 
 		mat4 model_matrix;
 		glm_mat4_identity(model_matrix);
@@ -172,7 +178,7 @@ int main(void) {
 	return 0;
 }
 
-bool upload_meshes(SceneAsset *asset) {
+bool upload_scene(SceneAsset *asset) {
 	if (state.buffer_count >= MAX_MESHES) {
 		LOG_WARN("Main: mesh slots filled, aborting upload");
 		return false;
@@ -191,6 +197,31 @@ bool upload_meshes(SceneAsset *asset) {
 		vulkan_renderer_create_buffer(state.ctx, mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * asset_mesh->vertex_count, asset_mesh->vertices);
 		vulkan_renderer_create_buffer(state.ctx, mesh->index_buffer, BUFFER_TYPE_INDEX, sizeof(uint32_t) * asset_mesh->index_count, asset_mesh->indices);
 	}
+
+	for (uint32_t texture_index = 0; texture_index < asset->texture_count; ++texture_index) {
+		TextureAsset *asset_texture = &asset->textures[texture_index];
+		Texture *texture = &state.textures[state.texture_count];
+
+		texture->texture = state.texture_count++;
+		texture->sampler = 0;
+
+		vulkan_renderer_create_texture(state.ctx, texture->texture, asset_texture->width, asset_texture->height, asset_texture->channels, asset_texture->pixels);
+	}
+
+	//
+	// for (uint32_t material_index = 0; material_index < asset->material_count; ++material_index) {
+	// 	MaterialAsset *asset_material = &asset->materials[material_index];
+	// 	MaterialInstance *instance = &state.materials[state.material_count++];
+	//
+	// 	instance->material = 0;
+	//
+	// 	vulkan_renderer_create_resource_set(state.ctx, instance->resource_set++, state.master_material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
+	//
+	//
+	// 	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", state.uniform_buffer);
+	// 	if ()
+	// 	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL, "texture_sampler", texture, 0);
+	// }
 
 	return true;
 }

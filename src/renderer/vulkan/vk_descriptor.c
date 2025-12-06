@@ -31,10 +31,11 @@ bool vulkan_renderer_create_resource_set(VulkanContext *context, uint32_t store_
 	}
 
 	resource_set->shader_index = shader_index;
+	resource_set->set_number = set_number;
 
 	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
-		layouts[frame] = shader->layouts[set_number];
+		layouts[frame] = shader->layouts[resource_set->set_number];
 	}
 
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
@@ -248,7 +249,7 @@ bool vulkan_renderer_bind_resource_set(VulkanContext *context, uint32_t retrieve
 	vkCmdBindDescriptorSets(
 		context->command_buffers[context->current_frame],
 		VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
-		0, 1, &set->sets[context->current_frame], 0, NULL);
+		set->set_number, 1, &set->sets[context->current_frame], 0, NULL);
 	return true;
 }
 
