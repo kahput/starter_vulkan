@@ -20,9 +20,8 @@ typedef struct {
 typedef struct image {
 	int32_t width, height, channels;
 
-	void *pixels;
+	uint8_t *pixels;
 } Image;
-
 
 typedef struct gltf_primitive {
 	float *positions, *uvs, *normals;
@@ -30,6 +29,35 @@ typedef struct gltf_primitive {
 
 	uint32_t vertex_count, index_count;
 } GLTFPrimitive;
+
+typedef struct material_data {
+	void *nothing;
+} MaterialAsset;
+
+typedef struct mesh_asset {
+	Vertex *vertices;
+	uint32_t vertex_count;
+
+	uint32_t *indices;
+	uint32_t index_count;
+
+	MaterialAsset material;
+} MeshAsset;
+
+typedef struct mesh {
+	uint32_t vertex_buffer, index_buffer;
+	uint32_t vertex_count, index_count;
+
+	uint32_t material;
+} Mesh;
+
+typedef struct scene {
+	MeshAsset *meshes;
+	uint32_t mesh_count;
+
+	MaterialAsset *materials;
+	uint32_t material_count;
+} SceneAsset;
 
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
@@ -141,9 +169,9 @@ typedef struct pipeline_desc {
 	bool topology_line_list;
 } PipelineDesc;
 
-#define DEFAULT_PIPELINE(index)              \
+#define DEFAULT_PIPELINE(index)                     \
 	(PipelineDesc) {                                \
-		.shader_index = index,               \
+		.shader_index = index,                      \
 		.attributes = NULL,                         \
 		.attribute_count = 0,                       \
 		.cull_mode = CULL_MODE_BACK,                \

@@ -35,6 +35,8 @@
 #define MAGE_FILE_PATH "assets/models/characters/mage.glb"
 
 bool resize_event(Event *event);
+
+bool upload_meshes(SceneAsset *asset);
 void update_camera(VulkanContext *context, Platform *platform, float dt);
 
 static const float camera_speed = 1.0f;
@@ -48,10 +50,17 @@ typedef struct camera {
 	mat4 view, projection;
 } Camera;
 
+#define MAX_MESHES 256
+
 static struct State {
 	Arena *permanent, *frame, *assets;
 	Camera camera;
 	VulkanContext *ctx;
+
+	Mesh meshes[MAX_MESHES];
+	uint32_t mesh_count;
+
+	uint32_t buffer_count;
 
 	uint64_t start_time;
 } state;
@@ -65,7 +74,6 @@ int main(void) {
 
 	event_system_startup();
 	input_system_startup();
-	asset_system_startup(state.assets);
 
 	Platform *platform = platform_startup(state.permanent, 1280, 720, "Starter Vulkan");
 	if (platform == NULL) {
@@ -86,38 +94,10 @@ int main(void) {
 	//
 	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
-	// GLTFPrimitive *primitive = importer_load_gltf(state.assets, BOT_FILE_PATH);
-
-	// clang-format off
-    float positions[] = {
-        // positions          // texture coords
-         0.5f,  0.5f, 0.0f,    // top right
-         0.5f, -0.5f, 0.0f,    // bottom right
-        -0.5f, -0.5f, 0.0f,    // bottom left
-        -0.5f,  0.5f, 0.0f,    // top left 
-    };
-
-	float uvs[] = {
-		1.0f, 1.0f,
-		1.0f, 0.0f,
-		0.0f, 0.0f,
-		0.0f, 1.0f 
-	};
-
-    uint32_t indices[] = {
-        0, 1, 3, // first triangle
-        1, 2, 3  // second triangle
-    };
-	// clang-format on
-
-	GLTFPrimitive primitive = {
-		.positions = positions,
-		.uvs = uvs,
-		.normals = NULL,
-		.indices = indices,
-		.index_count = 6,
-		.vertex_count = 4
-	};
+	ArenaTemp temp = arena_begin_temp(state.assets);
+	SceneAsset *scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
+	upload_meshes(scene);
+	arena_end_temp(temp);
 
 	// ================== GPU ==================
 
@@ -125,28 +105,14 @@ int main(void) {
 	// vulkan_renderer_create_sampler(state.ctx, 0);
 
 	vulkan_renderer_create_shader(state.ctx, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
+	vulkan_renderer_create_pipeline(state.ctx, 0, DEFAULT_PIPELINE(0));
 
-	ShaderAttribute quad_attributes[] = {
-		{ .name = "u_position", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT3, .binding = 0 },
-		{ .name = "u_uv", .format = SHADER_ATTRIBUTE_FORMAT_FLOAT2, .binding = 1 },
-	};
-
-	PipelineDesc default_pipeline = DEFAULT_PIPELINE(0);
-	default_pipeline.cull_mode = CULL_MODE_NONE;
-	default_pipeline.attributes = quad_attributes;
-	default_pipeline.attribute_count = array_count(quad_attributes);
-
-	vulkan_renderer_create_pipeline(state.ctx, 0, default_pipeline);
-
-	vulkan_renderer_create_buffer(state.ctx, 0, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
+	Handle uniform_buffer = handle_create(state.buffer_count++);
+	vulkan_renderer_create_buffer(state.ctx, handle_index(uniform_buffer), BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
 	vulkan_renderer_create_resource_set(state.ctx, 0, 0, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
 
-	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", 0);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", handle_index(uniform_buffer));
 	// vulkan_renderer_update_resource_set_texture_sampler(state.ctx, 0, "texture_sampler", 0, 0);
-
-	vulkan_renderer_create_buffer(state.ctx, 1, BUFFER_TYPE_VERTEX, primitive.vertex_count * sizeof(float) * 3, primitive.positions);
-	vulkan_renderer_create_buffer(state.ctx, 2, BUFFER_TYPE_VERTEX, primitive.vertex_count * sizeof(float) * 2, primitive.uvs);
-	vulkan_renderer_create_buffer(state.ctx, 3, BUFFER_TYPE_INDEX, primitive.index_count * sizeof(uint32_t), primitive.indices);
 
 	state.camera = (Camera){
 		.speed = 3.0f,
@@ -169,8 +135,8 @@ int main(void) {
 
 		update_camera(state.ctx, platform, delta_time);
 
-		vulkan_renderer_update_buffer(state.ctx, 0, 0, sizeof(mat4), &state.camera.view);
-		vulkan_renderer_update_buffer(state.ctx, 0, sizeof(mat4), sizeof(mat4), &state.camera.projection);
+		vulkan_renderer_update_buffer(state.ctx, handle_index(uniform_buffer), 0, sizeof(mat4), &state.camera.view);
+		vulkan_renderer_update_buffer(state.ctx, handle_index(uniform_buffer), sizeof(mat4), sizeof(mat4), &state.camera.projection);
 
 		vulkan_renderer_begin_frame(state.ctx, platform);
 		vulkan_renderer_bind_pipeline(state.ctx, 0);
@@ -181,12 +147,13 @@ int main(void) {
 		// glm_mat4_scale(model_matrix, 10);
 		vulkan_renderer_push_constants(state.ctx, 0, "push_constants", model_matrix);
 
-		uint32_t vbs[] = { 1, 2 };
+		for (uint32_t mesh_index = 0; mesh_index < state.mesh_count; ++mesh_index) {
+			Mesh *mesh = &state.meshes[mesh_index];
+			vulkan_renderer_bind_buffer(state.ctx, mesh->vertex_buffer);
+			vulkan_renderer_bind_buffer(state.ctx, mesh->index_buffer);
 
-		vulkan_renderer_bind_buffers(state.ctx, vbs, array_count(vbs));
-		vulkan_renderer_bind_buffer(state.ctx, 3);
-
-		vulkan_renderer_draw_indexed(state.ctx, primitive.index_count);
+			vulkan_renderer_draw_indexed(state.ctx, mesh->index_count);
+		}
 
 		Vulkan_renderer_end_frame(state.ctx);
 
@@ -203,6 +170,29 @@ int main(void) {
 	vulkan_renderer_destroy(state.ctx);
 
 	return 0;
+}
+
+bool upload_meshes(SceneAsset *asset) {
+	if (state.buffer_count >= MAX_MESHES) {
+		LOG_WARN("Main: mesh slots filled, aborting upload");
+		return false;
+	}
+
+	for (uint32_t mesh_index = 0; mesh_index < asset->mesh_count; ++mesh_index) {
+		MeshAsset *asset_mesh = &asset->meshes[mesh_index];
+		Mesh *mesh = &state.meshes[state.mesh_count++];
+
+		mesh->vertex_buffer = state.buffer_count++;
+		mesh->index_buffer = state.buffer_count++;
+
+		mesh->vertex_count = asset_mesh->vertex_count;
+		mesh->index_count = asset_mesh->index_count;
+
+		vulkan_renderer_create_buffer(state.ctx, mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * asset_mesh->vertex_count, asset_mesh->vertices);
+		vulkan_renderer_create_buffer(state.ctx, mesh->index_buffer, BUFFER_TYPE_INDEX, sizeof(uint32_t) * asset_mesh->index_count, asset_mesh->indices);
+	}
+
+	return true;
 }
 
 void update_camera(VulkanContext *context, Platform *platform, float dt) {

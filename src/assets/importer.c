@@ -13,47 +13,124 @@
 
 #include <string.h>
 
-typedef struct {
-	struct record {
-		char path[MAX_FILE_PATH_LENGTH];
-		uint32_t generation;
-		Asset asset;
-	} *records;
-
-	uint32_t count, capacity;
-} AssetRegistry;
-
-AssetRegistry registry = { 0 };
-
 bool file_exists(const char *path);
 void file_name(const char *src, char *dst);
 void file_path(const char *src, char *dst);
 
-bool asset_system_startup(struct arena *arena) {
-	registry.records = arena_push_array_zero(arena, struct record, MAX_ASSETS);
-	registry.capacity = MAX_ASSETS;
+SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
+	cgltf_options options = { 0 };
+	cgltf_data *data = NULL;
+	cgltf_result result = cgltf_parse_file(&options, path, &data);
 
-	return true;
+	if (result == cgltf_result_success)
+		result = cgltf_load_buffers(&options, data, path);
+
+	if (result == cgltf_result_success)
+		result = cgltf_validate(data);
+
+	if (result != cgltf_result_success) {
+		LOG_ERROR("Importer: Failed to load model");
+		return NULL;
+	}
+
+	LOG_INFO("Loading %s...", path);
+	logger_indent();
+	SceneAsset *asset = arena_push_struct(arena, SceneAsset);
+
+	uint32_t mesh_count = 0;
+	for (uint32_t index = 0; index < data->meshes_count; ++index) {
+		cgltf_mesh *mesh = &data->meshes[index];
+
+		mesh_count += mesh->primitives_count;
+	}
+
+	asset->mesh_count = mesh_count;
+	asset->meshes = arena_push_array_zero(arena, MeshAsset, asset->mesh_count);
+
+	mesh_count = 0;
+	for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
+		cgltf_mesh *mesh = &data->meshes[mesh_index];
+
+		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
+			cgltf_primitive *primitive = &mesh->primitives[primitive_index];
+			MeshAsset *asset_mesh = &asset->meshes[mesh_count++];
+
+			asset_mesh->index_count = primitive->indices->count;
+			asset_mesh->indices = arena_push_array_zero(arena, uint32_t, asset_mesh->index_count);
+
+			uint8_t *index_buffer_data = (uint8_t *)primitive->indices->buffer_view->buffer->data + primitive->indices->offset + primitive->indices->buffer_view->offset;
+			uint32_t index_stride = primitive->indices->buffer_view->stride ? primitive->indices->buffer_view->stride : primitive->indices->stride;
+
+			for (uint32_t index = 0; index < primitive->indices->count; ++index) {
+				if (index_stride == 2)
+					asset_mesh->indices[index] = ((uint16_t *)index_buffer_data)[index];
+				else if (index_stride == 4)
+					asset_mesh->indices[index] = ((uint32_t *)index_buffer_data)[index];
+			}
+
+			for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
+				cgltf_attribute *attribute = &primitive->attributes[attribute_index];
+
+				cgltf_accessor *accessor = attribute->data;
+				cgltf_buffer_view *view = accessor->buffer_view;
+				cgltf_buffer *buffer = view->buffer;
+
+				uint8_t *vertex_buffer_data = (uint8_t *)buffer->data + accessor->offset + view->offset;
+				uint32_t attribute_stride = view->stride ? view->stride : accessor->stride;
+
+				if (asset_mesh->vertices == NULL) {
+					asset_mesh->vertex_count = accessor->count;
+					asset_mesh->vertices = arena_push_array_zero(arena, Vertex, asset_mesh->vertex_count);
+				}
+
+				switch (attribute->type) {
+					case cgltf_attribute_type_position: {
+						for (uint32_t vertex_index = 0; vertex_index < asset_mesh->vertex_count; ++vertex_index) {
+							Vertex *dst = &asset_mesh->vertices[vertex_index];
+							float *src = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+
+							dst->position[0] = src[0];
+							dst->position[1] = src[1];
+							dst->position[2] = src[2];
+						}
+					} break;
+					case cgltf_attribute_type_normal: {
+						for (uint32_t vertex_index = 0; vertex_index < asset_mesh->vertex_count; ++vertex_index) {
+							Vertex *dst = &asset_mesh->vertices[vertex_index];
+							float *src = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+
+							dst->normal[0] = src[0];
+							dst->normal[1] = src[1];
+							dst->normal[2] = src[2];
+						}
+					} break;
+					case cgltf_attribute_type_texcoord: {
+						for (uint32_t vertex_index = 0; vertex_index < asset_mesh->vertex_count; ++vertex_index) {
+							Vertex *dst = &asset_mesh->vertices[vertex_index];
+							float *src = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+
+							dst->uv[0] = src[0];
+							dst->uv[1] = src[1];
+						}
+					} break;
+					case cgltf_attribute_type_tangent:
+					case cgltf_attribute_type_invalid:
+					case cgltf_attribute_type_color:
+					case cgltf_attribute_type_joints:
+					case cgltf_attribute_type_weights:
+					case cgltf_attribute_type_custom:
+					case cgltf_attribute_type_max_enum:
+						break;
+				}
+			}
+		}
+	}
+
+	logger_dedent();
+	cgltf_free(data);
+
+	return asset;
 }
-bool asset_system_shutdown(void) { return true; }
-
-HAsset asset_load_model(const char *path) {
-	struct record *record = &registry.records[registry.count];
-
-	memcpy(record->path, path, strnlen(path, MAX_FILE_PATH_LENGTH - 1));
-	record->asset.type = ASSET_TYPE_MESH;
-	record->generation = 1;
-
-	return handle_create(registry.count++);
-}
-
-bool asset_unload_model(HAsset asset) {
-	registry.records[handle_index(asset)].generation++;
-
-	return true;
-}
-
-Asset *asset_get(HAsset asset) { return NULL; }
 
 // static void load_nodes(Arena *arena, cgltf_node *node, uint32_t *total_primitives, Model *out_model, const char *relative_path);
 

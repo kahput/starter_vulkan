@@ -161,7 +161,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 	};
 
 	VkPipelineVertexInputStateCreateInfo vis_create_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-		struct vertex_input_state override = { 0 };
+	struct vertex_input_state override = { 0 };
 	if (desc.attribute_count > 0) {
 		override_attributes(&override, desc.attributes, desc.attribute_count);
 		vis_create_info.vertexBindingDescriptionCount = override.binding_count;
