@@ -150,12 +150,18 @@ int main(void) {
 	vulkan_renderer_update_resource_set_buffer(state.ctx, scene_set, "u_scene", state.scene_buffer);
 
 	// ========================= MODELS ======================================
+	// TODO: Fix stb_image memory leak
 	ArenaTemp temp = arena_begin_temp(state.assets);
-	SceneAsset *scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
+	SceneAsset *scene = NULL;
+	scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
 	upload_scene(scene);
 	arena_end_temp(temp);
 	temp = arena_begin_temp(state.assets);
 	scene = importer_load_gltf(state.assets, BOT_FILE_PATH);
+	upload_scene(scene);
+	arena_end_temp(temp);
+	temp = arena_begin_temp(state.assets);
+	scene = importer_load_gltf(state.assets, GATE_FILE_PATH);
 	upload_scene(scene);
 	arena_end_temp(temp);
 
@@ -192,7 +198,7 @@ int main(void) {
 
 			mat4 model_matrix;
 			glm_mat4_identity(model_matrix);
-			glm_translate(model_matrix, (vec3){ 2.0f * model_index, 0.0f, 0.0f });
+			glm_translate(model_matrix, (vec3){ -3.0f + (3 * model_index), 0.0f, 0.0f });
 			vulkan_renderer_push_constants(state.ctx, 0, "push_constants", model_matrix);
 
 			for (uint32_t mesh_index = 0; mesh_index < model->mesh_count; ++mesh_index) {
@@ -226,7 +232,7 @@ int main(void) {
 }
 
 bool upload_scene(SceneAsset *scene) {
-	if (state.buffer_count >= MAX_MODEL_MESHES) {
+	if (state.buffer_count >= MAX_BUFFERS) {
 		LOG_WARN("Main: mesh slots filled, aborting upload");
 		return false;
 	}

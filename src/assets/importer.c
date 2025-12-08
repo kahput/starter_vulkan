@@ -54,6 +54,7 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 			dst->pixels = stbi_load_from_memory(data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 		} else if (src->uri) {
 			size_t full_path_length = strnlen(base_directory, MAX_FILE_PATH_LENGTH) + strlen(src->uri) + 1;
+			dst->path = arena_push_array_zero(arena, char, full_path_length);
 			snprintf(dst->path, full_path_length, "%s%s", base_directory, src->uri);
 
 			dst->pixels = stbi_load(dst->path, &dst->width, &dst->height, &dst->channels, 4);
@@ -182,8 +183,8 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 
 							dst_vertex->tangent[0] = src_vertex[0];
 							dst_vertex->tangent[1] = src_vertex[1];
-							dst_vertex->tangent[2] = src_vertex[0];
-							dst_vertex->tangent[4] = src_vertex[1];
+							dst_vertex->tangent[2] = src_vertex[2];
+							dst_vertex->tangent[3] = src_vertex[3];
 						}
 					} break;
 					case cgltf_attribute_type_invalid:
