@@ -187,7 +187,7 @@ bool vulkan_renderer_update_resource_set_texture_sampler(VulkanContext *context,
 		VkWriteDescriptorSet descriptor_write = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.dstSet = resource_set->sets[frame],
-			.dstBinding = 1,
+			.dstBinding = target->binding,
 			.dstArrayElement = 0,
 			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.descriptorCount = 1,

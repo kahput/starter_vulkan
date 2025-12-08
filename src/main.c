@@ -52,6 +52,8 @@ typedef struct camera {
 
 #define MAX_MESHES 256
 #define MAX_MATERIAL_INSTANCES 32
+#define DEFAULT_TEXTURE_BASE_COLOR 0
+#define DEFAULT_TEXTURE_OFFSET DEFAULT_TEXTURE_BASE_COLOR + 1
 
 static struct State {
 	Arena *permanent, *frame, *assets;
@@ -60,18 +62,23 @@ static struct State {
 
 	uint32_t scene_buffer;
 
+	uint32_t default_sampler;
+	uint32_t default_texture_base_color;
+	uint32_t default_texture_offset;
+
 	Mesh meshes[MAX_MESHES];
 	uint32_t mesh_count;
 
-	Material master_material;
-
-	Texture textures[MAX_TEXTURES];
-	uint32_t texture_count;
+	Material PBR_material;
 
 	MaterialInstance materials[MAX_MATERIAL_INSTANCES];
 	uint32_t material_count;
 
-	uint32_t buffer_count, set_count;
+	// GPU resources
+	Texture textures[MAX_TEXTURES];
+	uint32_t texture_count;
+
+	uint32_t buffer_count, set_count, sampler_count;
 
 	uint64_t start_time;
 } state;
@@ -109,16 +116,27 @@ int main(void) {
 	state.scene_buffer = state.buffer_count++;
 	vulkan_renderer_create_buffer(state.ctx, state.scene_buffer, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
 
-	vulkan_renderer_create_shader(state.ctx, 0, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
-	vulkan_renderer_create_pipeline(state.ctx, 0, DEFAULT_PIPELINE(0));
+	state.PBR_material = (Material){ .shader = 0, .pipeline = 0 };
+	vulkan_renderer_create_shader(state.ctx, state.PBR_material.shader, "./assets/shaders/vs_PBR.spv", "./assets/shaders/fs_PBR.spv");
+	vulkan_renderer_create_pipeline(state.ctx, state.PBR_material.pipeline, DEFAULT_PIPELINE(0));
+
+	state.default_texture_base_color = state.texture_count++;
+	uint8_t WHITE[4] = { 255, 255, 255, 255 };
+	vulkan_renderer_create_texture(state.ctx, state.default_texture_base_color, 1, 1, 4, WHITE);
+	// Other default textures here...
+
+	state.default_texture_offset = state.texture_count;
+	state.default_sampler = state.sampler_count++;
+	vulkan_renderer_create_sampler(state.ctx, state.default_sampler);
+
+	uint32_t scene_set = state.set_count++;
+	vulkan_renderer_create_resource_set(state.ctx, scene_set, state.PBR_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, scene_set, "u_scene", state.scene_buffer);
 
 	ArenaTemp temp = arena_begin_temp(state.assets);
-	SceneAsset *scene = importer_load_gltf(state.assets, BOT_FILE_PATH);
+	SceneAsset *scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
 	upload_scene(scene);
 	arena_end_temp(temp);
-
-	vulkan_renderer_create_resource_set(state.ctx, 0, 0, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
-	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", state.scene_buffer);
 
 	state.camera = (Camera){
 		.speed = 3.0f,
@@ -146,7 +164,7 @@ int main(void) {
 
 		vulkan_renderer_begin_frame(state.ctx, platform);
 		vulkan_renderer_bind_pipeline(state.ctx, 0);
-		vulkan_renderer_bind_resource_set(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+		vulkan_renderer_bind_resource_set(state.ctx, scene_set);
 
 		mat4 model_matrix;
 		glm_mat4_identity(model_matrix);
@@ -155,6 +173,10 @@ int main(void) {
 
 		for (uint32_t mesh_index = 0; mesh_index < state.mesh_count; ++mesh_index) {
 			Mesh *mesh = &state.meshes[mesh_index];
+			MaterialInstance *material = &state.materials[mesh->material];
+
+			vulkan_renderer_bind_resource_set(state.ctx, material->resource_set);
+
 			vulkan_renderer_bind_buffer(state.ctx, mesh->vertex_buffer);
 			vulkan_renderer_bind_buffer(state.ctx, mesh->index_buffer);
 
@@ -178,50 +200,77 @@ int main(void) {
 	return 0;
 }
 
-bool upload_scene(SceneAsset *asset) {
+bool upload_scene(SceneAsset *scene) {
 	if (state.buffer_count >= MAX_MESHES) {
 		LOG_WARN("Main: mesh slots filled, aborting upload");
 		return false;
 	}
 
-	for (uint32_t mesh_index = 0; mesh_index < asset->mesh_count; ++mesh_index) {
-		MeshAsset *asset_mesh = &asset->meshes[mesh_index];
-		Mesh *mesh = &state.meshes[state.mesh_count++];
+	// TODO: Make use of, and upload all relevant material data;
 
-		mesh->vertex_buffer = state.buffer_count++;
-		mesh->index_buffer = state.buffer_count++;
+	for (uint32_t texture_index = 0; texture_index < scene->texture_count; ++texture_index) {
+		TextureSource *src = &scene->textures[texture_index];
+		Texture *dst = &state.textures[state.texture_count];
 
-		mesh->vertex_count = asset_mesh->vertex_count;
-		mesh->index_count = asset_mesh->index_count;
+		dst->texture = state.texture_count++;
+		dst->sampler = 0;
 
-		vulkan_renderer_create_buffer(state.ctx, mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * asset_mesh->vertex_count, asset_mesh->vertices);
-		vulkan_renderer_create_buffer(state.ctx, mesh->index_buffer, BUFFER_TYPE_INDEX, sizeof(uint32_t) * asset_mesh->index_count, asset_mesh->indices);
+		vulkan_renderer_create_texture(state.ctx, dst->texture, src->width, src->height, src->channels, src->pixels);
 	}
 
-	for (uint32_t texture_index = 0; texture_index < asset->texture_count; ++texture_index) {
-		TextureAsset *asset_texture = &asset->textures[texture_index];
-		Texture *texture = &state.textures[state.texture_count];
+	for (uint32_t material_index = 0; material_index < scene->material_count; ++material_index) {
+		MaterialSource *src = &scene->materials[material_index];
+		MaterialInstance *dst = &state.materials[state.material_count++];
 
-		texture->texture = state.texture_count++;
-		texture->sampler = 0;
+		dst->material = state.PBR_material;
+		dst->parameter_uniform_buffer = state.buffer_count++;
+		dst->resource_set = state.set_count++;
 
-		vulkan_renderer_create_texture(state.ctx, texture->texture, asset_texture->width, asset_texture->height, asset_texture->channels, asset_texture->pixels);
+		vulkan_renderer_create_resource_set(state.ctx, dst->resource_set, state.PBR_material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
+
+		MaterialParameters parameters = {
+			.base_color_factor = {
+			  src->base_color_factor[0],
+			  src->base_color_factor[1],
+			  src->base_color_factor[2],
+			  src->base_color_factor[3],
+			},
+			.metallic_factor = src->metallic_factor,
+			.roughness_factor = src->roughness_factor,
+			.emissive_factor = {
+			  src->emissive_factor[0],
+			  src->emissive_factor[1],
+			  src->emissive_factor[2],
+			}
+		};
+
+		vulkan_renderer_create_buffer(state.ctx, dst->parameter_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(MaterialParameters), &parameters);
+		vulkan_renderer_update_resource_set_buffer(state.ctx, dst->resource_set, "u_material_parameters", dst->parameter_uniform_buffer);
+
+		if (src->base_color_texture) {
+			uint32_t texture_index = src->base_color_texture - scene->textures;
+			texture_index += state.default_texture_offset;
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst->resource_set, "u_base_color_texture", texture_index, state.default_sampler);
+		} else {
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst->resource_set, "u_base_color_texture", state.default_texture_base_color, state.default_sampler);
+		}
 	}
 
-	//
-	// for (uint32_t material_index = 0; material_index < asset->material_count; ++material_index) {
-	// 	MaterialAsset *asset_material = &asset->materials[material_index];
-	// 	MaterialInstance *instance = &state.materials[state.material_count++];
-	//
-	// 	instance->material = 0;
-	//
-	// 	vulkan_renderer_create_resource_set(state.ctx, instance->resource_set++, state.master_material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
-	//
-	//
-	// 	vulkan_renderer_update_resource_set_buffer(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_FRAME, "u_camera", state.uniform_buffer);
-	// 	if ()
-	// 	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL, "texture_sampler", texture, 0);
-	// }
+	for (uint32_t mesh_index = 0; mesh_index < scene->mesh_count; ++mesh_index) {
+		MeshSource *src = &scene->meshes[mesh_index];
+		Mesh *dst = &state.meshes[state.mesh_count++];
+
+		dst->vertex_buffer = state.buffer_count++;
+		dst->index_buffer = state.buffer_count++;
+
+		dst->vertex_count = src->vertex_count;
+		dst->index_count = src->index_count;
+
+		dst->material = src->material - scene->materials;
+
+		vulkan_renderer_create_buffer(state.ctx, dst->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * src->vertex_count, src->vertices);
+		vulkan_renderer_create_buffer(state.ctx, dst->index_buffer, BUFFER_TYPE_INDEX, sizeof(uint32_t) * src->index_count, src->indices);
+	}
 
 	return true;
 }

@@ -17,35 +17,54 @@ typedef struct {
 	vec3 normal;
 } Vertex;
 
-typedef struct texture_asset {
+typedef struct texture_source {
 	void *pixels;
 
 	int32_t width, height, channels;
 	char *path;
-} TextureAsset;
+} TextureSource;
 
-typedef struct material_data {
-	TextureAsset *base_color_texture;
-	TextureAsset *metallic_roughness_texture; // G = Roughness, B = Metallic
-	TextureAsset *normal_texture;
-	TextureAsset *occlusion_texture;
-	TextureAsset *emissive_texture;
+typedef struct material_source {
+	TextureSource *base_color_texture;
+	TextureSource *metallic_roughness_texture; // G = Roughness, B = Metallic
+	TextureSource *normal_texture;
+	TextureSource *occlusion_texture;
+	TextureSource *emissive_texture;
 
-	float base_color_factor[4];
+	vec4 base_color_factor;
 	float metallic_factor;
 	float roughness_factor;
 	vec3 emissive_factor;
-} MaterialAsset;
+} MaterialSource;
 
-typedef struct mesh_asset {
+typedef struct material_paramters {
+	vec4 base_color_factor;
+	float metallic_factor;
+	float roughness_factor;
+	vec2 _pad0;
+	vec4 emissive_factor;
+} MaterialParameters;
+
+typedef struct mesh_source {
 	Vertex *vertices;
 	uint32_t vertex_count;
 
 	uint32_t *indices;
 	uint32_t index_count;
 
-	MaterialAsset *material;
-} MeshAsset;
+	MaterialSource *material;
+} MeshSource;
+
+typedef struct scene_source {
+	MeshSource *meshes;
+	uint32_t mesh_count;
+
+	MaterialSource *materials;
+	uint32_t material_count;
+
+	TextureSource *textures;
+	uint32_t texture_count;
+} SceneAsset;
 
 typedef struct texture {
 	uint32_t texture, sampler;
@@ -56,7 +75,8 @@ typedef struct material {
 } Material;
 
 typedef struct material_instance {
-	uint32_t material, resource_set;
+	Material material;
+	uint32_t resource_set, parameter_uniform_buffer;
 } MaterialInstance;
 
 typedef struct mesh {
@@ -65,17 +85,6 @@ typedef struct mesh {
 
 	uint32_t material;
 } Mesh;
-
-typedef struct scene {
-	MeshAsset *meshes;
-	uint32_t mesh_count;
-
-	MaterialAsset *materials;
-	uint32_t material_count;
-
-	TextureAsset *textures;
-	uint32_t texture_count;
-} SceneAsset;
 
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,

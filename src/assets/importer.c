@@ -18,7 +18,7 @@ bool filesystem_file_exists(const char *path);
 void filesystem_filename(const char *src, char *dst);
 void filesystem_directory(const char *src, char *dst);
 
-static TextureAsset *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex);
+static TextureSource *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex);
 
 SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	cgltf_options options = { 0 };
@@ -43,11 +43,11 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	filesystem_directory(path, base_directory);
 
 	asset->texture_count = data->images_count;
-	asset->textures = arena_push_array_zero(arena, TextureAsset, asset->texture_count);
+	asset->textures = arena_push_array_zero(arena, TextureSource, asset->texture_count);
 
 	for (uint32_t texture_index = 0; texture_index < asset->texture_count; ++texture_index) {
 		cgltf_image *src = &data->images[texture_index];
-		TextureAsset *dst = &asset->textures[texture_index];
+		TextureSource *dst = &asset->textures[texture_index];
 
 		if (src->buffer_view) {
 			uint8_t *data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
@@ -67,12 +67,12 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	}
 
 	asset->material_count = data->materials_count;
-	asset->materials = arena_push_array_zero(arena, MaterialAsset, asset->material_count);
+	asset->materials = arena_push_array_zero(arena, MaterialSource, asset->material_count);
 	LOG_INFO("Number of materials: %d", asset->material_count);
 
 	for (uint32_t index = 0; index < asset->material_count; ++index) {
 		cgltf_material *src = &data->materials[index];
-		MaterialAsset *dst = &asset->materials[index];
+		MaterialSource *dst = &asset->materials[index];
 
 		// PBR Metallic Roughness
 		if (src->has_pbr_metallic_roughness) {
@@ -107,7 +107,7 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	}
 
 	asset->mesh_count = mesh_count;
-	asset->meshes = arena_push_array_zero(arena, MeshAsset, asset->mesh_count);
+	asset->meshes = arena_push_array_zero(arena, MeshSource, asset->mesh_count);
 
 	mesh_count = 0;
 	for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
@@ -115,7 +115,7 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 
 		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
 			cgltf_primitive *src_mesh = &mesh->primitives[primitive_index];
-			MeshAsset *dst_mesh = &asset->meshes[mesh_count++];
+			MeshSource *dst_mesh = &asset->meshes[mesh_count++];
 
 			dst_mesh->index_count = src_mesh->indices->count;
 			dst_mesh->indices = arena_push_array_zero(arena, uint32_t, dst_mesh->index_count);
@@ -266,7 +266,7 @@ void filesystem_directory(const char *src, char *dst) {
 	dst[final] = '\0';
 }
 
-TextureAsset *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex) {
+TextureSource *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex) {
 	if (!gltf_tex || !gltf_tex->image)
 		return NULL;
 
