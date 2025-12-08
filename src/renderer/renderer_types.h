@@ -13,8 +13,9 @@ typedef struct {
 
 typedef struct {
 	vec3 position;
-	vec2 uv;
 	vec3 normal;
+	vec2 uv;
+	vec4 tangent;
 } Vertex;
 
 typedef struct texture_source {

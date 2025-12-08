@@ -362,7 +362,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 			continue;
 		}
 
-		VkVertexInputAttributeDescription *attr = &shader->attributes[shader->attribute_count];
+		VkVertexInputAttributeDescription *attr = &shader->attributes[var->location];
 		attr->location = var->location;
 		attr->binding = 0; // Assume single binding for now
 		attr->format = (VkFormat)var->format;

@@ -175,7 +175,17 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 							dst_vertex->uv[1] = src_vertex[1];
 						}
 					} break;
-					case cgltf_attribute_type_tangent:
+					case cgltf_attribute_type_tangent: {
+						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
+							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
+
+							dst_vertex->tangent[0] = src_vertex[0];
+							dst_vertex->tangent[1] = src_vertex[1];
+							dst_vertex->tangent[2] = src_vertex[0];
+							dst_vertex->tangent[4] = src_vertex[1];
+						}
+					} break;
 					case cgltf_attribute_type_invalid:
 					case cgltf_attribute_type_color:
 					case cgltf_attribute_type_joints:
