@@ -7,7 +7,7 @@
 struct platform;
 struct arena;
 
-bool vulkan_create_uniform_buffers(struct vulkan_context *ctx, VulkanBuffer *buffer, size_t size);
+bool vulkan_create_uniform_buffers(struct vulkan_context *ctx, VulkanBuffer *buffer, size_t size, void *data);
 
 uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 

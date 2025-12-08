@@ -75,7 +75,10 @@ static struct State {
 	uint32_t scene_buffer;
 
 	uint32_t default_sampler;
-	uint32_t default_texture_base_color;
+
+	uint32_t default_texture_white;
+	uint32_t default_texture_black;
+	uint32_t default_texture_normal;
 	uint32_t default_texture_offset;
 
 	Model models[MAX_MODELS];
@@ -118,6 +121,7 @@ int main(void) {
 	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
 	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
 
+	// ========================= DEFAULT ======================================
 	state.scene_buffer = state.buffer_count++;
 	vulkan_renderer_create_buffer(state.ctx, state.scene_buffer, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
 
@@ -125,10 +129,17 @@ int main(void) {
 	vulkan_renderer_create_shader(state.ctx, state.PBR_material.shader, "./assets/shaders/vs_PBR.spv", "./assets/shaders/fs_PBR.spv");
 	vulkan_renderer_create_pipeline(state.ctx, state.PBR_material.pipeline, DEFAULT_PIPELINE(0));
 
-	state.default_texture_base_color = state.texture_count++;
+	state.default_texture_white = state.texture_count++;
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
-	vulkan_renderer_create_texture(state.ctx, state.default_texture_base_color, 1, 1, 4, WHITE);
-	// Other default textures here...
+	vulkan_renderer_create_texture(state.ctx, state.default_texture_white, 1, 1, 4, WHITE);
+
+	state.default_texture_black = state.texture_count++;
+	uint8_t BLACK[4] = { 0, 0, 0, 255 };
+	vulkan_renderer_create_texture(state.ctx, state.default_texture_black, 1, 1, 4, BLACK);
+
+	state.default_texture_normal = state.texture_count++;
+	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
+	vulkan_renderer_create_texture(state.ctx, state.default_texture_normal, 1, 1, 4, FLAT_NORMAL);
 
 	state.default_texture_offset = state.texture_count;
 	state.default_sampler = state.sampler_count++;
@@ -138,6 +149,7 @@ int main(void) {
 	vulkan_renderer_create_resource_set(state.ctx, scene_set, state.PBR_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
 	vulkan_renderer_update_resource_set_buffer(state.ctx, scene_set, "u_scene", state.scene_buffer);
 
+	// ========================= MODELS ======================================
 	ArenaTemp temp = arena_begin_temp(state.assets);
 	SceneAsset *scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
 	upload_scene(scene);
@@ -270,10 +282,37 @@ bool upload_scene(SceneAsset *scene) {
 
 		if (src_material->base_color_texture) {
 			uint32_t texture_index = src_material->base_color_texture - scene->textures;
-			texture_index += texture_offset;
-			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_base_color_texture", texture_index, state.default_sampler);
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_base_color_texture", texture_index + texture_offset, state.default_sampler);
 		} else {
-			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_base_color_texture", state.default_texture_base_color, state.default_sampler);
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_base_color_texture", state.default_texture_white, state.default_sampler);
+		}
+
+		if (src_material->metallic_roughness_texture) {
+			uint32_t texture_index = src_material->metallic_roughness_texture - scene->textures;
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_metallic_roughness_texture", texture_index + texture_offset, state.default_sampler);
+		} else {
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_metallic_roughness_texture", state.default_texture_white, state.default_sampler);
+		}
+
+		if (src_material->normal_texture) {
+			uint32_t texture_index = src_material->normal_texture - scene->textures;
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_normal_texture", texture_index + texture_offset, state.default_sampler);
+		} else {
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_normal_texture", state.default_texture_normal, state.default_sampler);
+		}
+
+		if (src_material->occlusion_texture) {
+			uint32_t texture_index = src_material->occlusion_texture - scene->textures;
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_occlusion_texture", texture_index + texture_offset, state.default_sampler);
+		} else {
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_occlusion_texture", state.default_texture_white, state.default_sampler);
+		}
+
+		if (src_material->emissive_texture) {
+			uint32_t texture_index = src_material->emissive_texture - scene->textures;
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_emissive_texture", texture_index + texture_offset, state.default_sampler);
+		} else {
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_emissive_texture", state.default_texture_white, state.default_sampler);
 		}
 	}
 

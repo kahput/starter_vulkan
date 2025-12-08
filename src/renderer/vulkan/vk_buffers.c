@@ -39,7 +39,7 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 
 	if (type == BUFFER_TYPE_UNIFORM) {
 		buffer->count = MAX_FRAMES_IN_FLIGHT;
-		bool result = vulkan_create_uniform_buffers(context, buffer, size);
+		bool result = vulkan_create_uniform_buffers(context, buffer, size, data);
 		logger_dedent();
 		return result;
 	}
@@ -190,7 +190,7 @@ bool vulkan_renderer_bind_buffers(VulkanContext *context, uint32_t *buffers, uin
 	return false;
 }
 
-bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer *buffer, size_t size) {
+bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data) {
 	buffer->usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	buffer->memory_property_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
@@ -198,6 +198,10 @@ bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer *buffer,
 		vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[index], &buffer->memory[index]);
 
 		vkMapMemory(context->device.logical, buffer->memory[index], 0, size, 0, &buffer->mapped[index]);
+
+		if (data) {
+			memcpy(buffer->mapped[index], data, size);
+		}
 	}
 
 	return true;

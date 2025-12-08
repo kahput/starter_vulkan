@@ -8,12 +8,12 @@ struct platform;
 
 typedef struct vulkan_context VulkanContext;
 
-#define MAX_BUFFERS 1024
-#define MAX_TEXTURES 256
+#define MAX_BUFFERS 2048
+#define MAX_TEXTURES 512
 #define MAX_SAMPLERS 32
 #define MAX_SHADERS 32
 #define MAX_PIPELINES 32
-#define MAX_RESOURCE_SETS 256
+#define MAX_RESOURCE_SETS 512
 
 bool vulkan_renderer_create(struct arena *arena, VulkanContext **context, struct platform *platform);
 void vulkan_renderer_destroy(VulkanContext *context);

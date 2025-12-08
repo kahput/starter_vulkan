@@ -35,7 +35,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, stru
 
 bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, const char *vertex_shader_path, const char *fragment_shader_path) {
 	if (store_index >= MAX_SHADERS) {
-		LOG_ERROR("Vulkan: Shader index %d out of bounds", store_index);
+		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting create", store_index);
 		return false;
 	}
 

@@ -96,6 +96,7 @@ bool vulkan_renderer_update_resource_set_buffer(VulkanContext *context, uint32_t
 	for (uint32_t index = 0; index < MAX_UNIFORMS; ++index) {
 		if (strcmp(shader->uniforms[index].name, name) == 0) {
 			target = &shader->uniforms[index];
+			LOG_DEBUG("Vulkan: Uniform buffer '%s' found. Set = %d, Binding = %d", name, target->set, target->binding);
 		}
 	}
 
@@ -110,15 +111,6 @@ bool vulkan_renderer_update_resource_set_buffer(VulkanContext *context, uint32_t
 			.offset = 0,
 			.range = VK_WHOLE_SIZE,
 		};
-
-		// VulkanImage *texture = &context->texture_pool[0];
-		// VulkanSampler *sampler = &context->sampler_pool[0];
-		//
-		// VkDescriptorImageInfo image_info = {
-		// 	.sampler = sampler->handle,
-		// 	.imageView = texture->view,
-		// 	.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-		// };
 
 		VkWriteDescriptorSet descriptor_write = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
