@@ -10,11 +10,11 @@ struct arena {
 
 static Arena *scratch_arenas[2] = { NULL, NULL };
 
-Arena *allocator_arena(void) {
+Arena *allocator_arena(size_t size) {
 	Arena *arena = malloc(sizeof(Arena));
 	arena->offset = 0;
-	arena->capacity = (1 << 24);
-	arena->data = malloc(arena->capacity);
+	arena->capacity = size;
+	arena->data = malloc(size);
 	return arena;
 }
 
@@ -62,9 +62,9 @@ void arena_end_temp(ArenaTemp temp) {
 
 ArenaTemp arena_get_scratch(Arena **arena) {
 	if (!scratch_arenas[0])
-		scratch_arenas[0] = allocator_arena();
+		scratch_arenas[0] = allocator_arena(MiB(2));
 	if (!scratch_arenas[1])
-		scratch_arenas[1] = allocator_arena();
+		scratch_arenas[1] = allocator_arena(MiB(2));
 
 	ArenaTemp scratch_arena = {
 		.arena = arena == scratch_arenas ? scratch_arenas[1] : scratch_arenas[0]

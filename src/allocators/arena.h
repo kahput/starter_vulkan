@@ -8,7 +8,7 @@ typedef struct {
 	uint32_t position;
 } ArenaTemp;
 
-struct arena *allocator_arena(void);
+struct arena *allocator_arena(size_t size);
 void arena_clear(struct arena *arena);
 void arena_destroy(struct arena *arena);
 

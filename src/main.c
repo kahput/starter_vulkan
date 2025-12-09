@@ -92,9 +92,9 @@ static struct State {
 } state;
 
 int main(void) {
-	state.permanent = allocator_arena();
-	state.frame = allocator_arena();
-	state.assets = allocator_arena();
+	state.permanent = allocator_arena(MiB(64));
+	state.frame = allocator_arena(MiB(4));
+	state.assets = allocator_arena(MiB(128));
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
@@ -113,13 +113,6 @@ int main(void) {
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
 	vulkan_renderer_create(state.permanent, &state.ctx, platform);
-
-	// ================== DYNAMIC ==================
-
-	// ================== CPU ==================
-	//
-	// Model *model = load_gltf_model(state.assets, GATE_FILE_PATH);
-	// Model *model = load_gltf_model(state.assets, GATE_DOOR_FILE_PATH);
 
 	// ========================= DEFAULT ======================================
 	state.scene_buffer = state.buffer_count++;

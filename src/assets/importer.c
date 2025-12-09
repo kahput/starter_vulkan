@@ -52,9 +52,9 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 		if (src->buffer_view) {
 			uint8_t *data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
 
-			uint8_t *pixels = stbi_load_from_memory(data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, STBI_default);
+			uint8_t *pixels = stbi_load_from_memory(data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 
-			size_t pixel_buffer_size = dst->width * dst->height * dst->channels;
+			size_t pixel_buffer_size = dst->width * dst->height * 4;
 			dst->pixels = arena_push_array_zero(arena, uint8_t, pixel_buffer_size);
 			memcpy(dst->pixels, pixels, pixel_buffer_size);
 
@@ -64,9 +64,9 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 			dst->path = arena_push_array_zero(arena, char, full_path_length);
 			snprintf(dst->path, full_path_length, "%s%s", base_directory, src->uri);
 
-			uint8_t *pixels = stbi_load(dst->path, &dst->width, &dst->height, &dst->channels, STBI_default);
+			uint8_t *pixels = stbi_load(dst->path, &dst->width, &dst->height, &dst->channels, 4);
 
-			size_t pixel_buffer_size = dst->width * dst->height * dst->channels;
+			size_t pixel_buffer_size = dst->width * dst->height * 4;
 			dst->pixels = arena_push_array_zero(arena, uint8_t, pixel_buffer_size);
 			memcpy(dst->pixels, pixels, pixel_buffer_size);
 
@@ -75,7 +75,9 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 
 		if (!dst->pixels) {
 			LOG_WARN("Importer: Failed to load texture for image index %d", texture_index);
-		} 	
+		} else {
+			dst->channels = 4; // We forced 4 channels in stbi_load
+		}
 	}
 
 	asset->material_count = data->materials_count;
