@@ -48,7 +48,7 @@ typedef struct camera {
 	float yaw, pitch;
 	vec3 position, up;
 
-	mat4 view, projection;
+	CameraUpload upload;
 } Camera;
 
 #define MAX_MODEL_MESHES 32
@@ -84,7 +84,7 @@ static struct State {
 	Model models[MAX_MODELS];
 	uint32_t model_count;
 
-	Material PBR_material;
+	Material model_material, sprite_material;
 
 	uint32_t buffer_count, texture_count, set_count, sampler_count;
 
@@ -125,9 +125,13 @@ int main(void) {
 	state.scene_buffer = state.buffer_count++;
 	vulkan_renderer_create_buffer(state.ctx, state.scene_buffer, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
 
-	state.PBR_material = (Material){ .shader = 0, .pipeline = 0 };
-	vulkan_renderer_create_shader(state.ctx, state.PBR_material.shader, "./assets/shaders/vs_PBR.spv", "./assets/shaders/fs_PBR.spv");
-	vulkan_renderer_create_pipeline(state.ctx, state.PBR_material.pipeline, DEFAULT_PIPELINE(0));
+	state.model_material = (Material){ .shader = 0, .pipeline = 0 };
+	vulkan_renderer_create_shader(state.ctx, state.model_material.shader, "./assets/shaders/vs_PBR.spv", "./assets/shaders/fs_PBR.spv");
+	vulkan_renderer_create_pipeline(state.ctx, state.model_material.pipeline, DEFAULT_PIPELINE(0));
+
+	state.sprite_material = (Material){ .shader = 1, .pipeline = 1 };
+	vulkan_renderer_create_shader(state.ctx, state.sprite_material.shader, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
+	vulkan_renderer_create_pipeline(state.ctx, state.sprite_material.pipeline, DEFAULT_PIPELINE(0));
 
 	state.default_texture_white = state.texture_count++;
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
@@ -146,11 +150,10 @@ int main(void) {
 	vulkan_renderer_create_sampler(state.ctx, state.default_sampler);
 
 	uint32_t scene_set = state.set_count++;
-	vulkan_renderer_create_resource_set(state.ctx, scene_set, state.PBR_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+	vulkan_renderer_create_resource_set(state.ctx, scene_set, state.model_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
 	vulkan_renderer_update_resource_set_buffer(state.ctx, scene_set, "u_scene", state.scene_buffer);
 
 	// ========================= MODELS ======================================
-	// TODO: Fix stb_image memory leak
 	ArenaTemp temp = arena_begin_temp(state.assets);
 	SceneAsset *scene = NULL;
 	scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
@@ -186,8 +189,7 @@ int main(void) {
 
 		update_camera(state.ctx, platform, delta_time);
 
-		vulkan_renderer_update_buffer(state.ctx, state.scene_buffer, 0, sizeof(mat4), &state.camera.view);
-		vulkan_renderer_update_buffer(state.ctx, state.scene_buffer, sizeof(mat4), sizeof(mat4), &state.camera.projection);
+		vulkan_renderer_update_buffer(state.ctx, state.scene_buffer, 0, sizeof(CameraUpload), &state.camera.upload);
 
 		vulkan_renderer_begin_frame(state.ctx, platform);
 		vulkan_renderer_bind_pipeline(state.ctx, 0);
@@ -240,8 +242,6 @@ bool upload_scene(SceneAsset *scene) {
 	uint32_t texture_offset = state.texture_count;
 	Model *dst = &state.models[state.model_count++];
 
-	// TODO: Make use of, and upload all relevant material data;
-
 	for (uint32_t texture_index = 0; texture_index < scene->texture_count; ++texture_index) {
 		if (texture_index > MAX_MODEL_TEXTURES)
 			assert("Model has more than max textures");
@@ -261,11 +261,11 @@ bool upload_scene(SceneAsset *scene) {
 		MaterialSource *src_material = &scene->materials[material_index];
 		MaterialInstance *dst_material = &dst->materials[dst->material_count++];
 
-		dst_material->material = state.PBR_material;
+		dst_material->material = state.model_material;
 		dst_material->parameter_uniform_buffer = state.buffer_count++;
 		dst_material->resource_set = state.set_count++;
 
-		vulkan_renderer_create_resource_set(state.ctx, dst_material->resource_set, state.PBR_material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
+		vulkan_renderer_create_resource_set(state.ctx, dst_material->resource_set, state.model_material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
 
 		MaterialParameters parameters = {
 			.base_color_factor = {
@@ -389,12 +389,12 @@ void update_camera(VulkanContext *context, Platform *platform, float dt) {
 	vec3 camera_target;
 	glm_vec3_sub(state.camera.position, camera_forward, camera_target);
 
-	glm_mat4_identity(state.camera.view);
-	glm_lookat(state.camera.position, camera_target, camera_up, state.camera.view);
+	glm_mat4_identity(state.camera.upload.view);
+	glm_lookat(state.camera.position, camera_target, camera_up, state.camera.upload.view);
 
 	glm_mat4_identity(mvp.projection);
-	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, state.camera.projection);
-	state.camera.projection[1][1] *= -1;
+	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, state.camera.upload.projection);
+	state.camera.upload.projection[1][1] *= -1;
 }
 
 bool resize_event(Event *event) {
