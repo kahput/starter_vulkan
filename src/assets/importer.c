@@ -322,7 +322,7 @@ void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indic
 
 		vec3 edge1 = { 0 }, edge2 = { 0 };
 		glm_vec3_sub(points[1]->position, points[0]->position, edge1);
-		glm_vec3_sub(points[2]->position, points[0]->position, edge1);
+		glm_vec3_sub(points[2]->position, points[0]->position, edge2);
 
 		vec2 delta_1 = { 0 }, delta_2 = { 0 };
 		glm_vec2_sub(points[1]->uv, points[0]->uv, delta_1);
