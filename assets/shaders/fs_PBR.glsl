@@ -21,5 +21,20 @@ layout(location = 0) out vec4 out_color;
 
 void main() {
     // TODO: PBR
-    out_color = texture(u_base_color_texture, uv) * u_material_parameters.base_color_factor;
+    vec4 albedo = texture(u_base_color_texture, uv) * u_material_parameters.base_color_factor;
+    vec3 normal = texture(u_normal_texture, uv).rgb * 2.0 - 1.0;
+
+    vec4 mr_sample = texture(u_metallic_roughness_texture, uv);
+    float roughness = mr_sample.g * u_material_parameters.roughness_factor;
+    float metallic = mr_sample.b * u_material_parameters.metallic_factor;
+
+    float ao = texture(u_occlusion_texture, uv).r;
+    vec3 emissive = texture(u_emissive_texture, uv).rgb * u_material_parameters.emissive_factor;
+
+    // out_color = vec4(normal, 1.0);
+
+    vec3 ambient = vec3(0.03) * albedo.rgb * ao;
+    vec3 color = ambient + emissive;
+
+    out_color = vec4(color, albedo.a);
 }

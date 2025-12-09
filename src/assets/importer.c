@@ -4,6 +4,7 @@
 #include "core/identifiers.h"
 #include "renderer/renderer_types.h"
 
+#include <cglm/vec3.h>
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
@@ -18,6 +19,7 @@ bool filesystem_file_exists(const char *path);
 void filesystem_filename(const char *src, char *dst);
 void filesystem_directory(const char *src, char *dst);
 
+static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 static TextureSource *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex);
 
 SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
@@ -131,6 +133,8 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 			cgltf_primitive *src_mesh = &mesh->primitives[primitive_index];
 			MeshSource *dst_mesh = &asset->meshes[mesh_count++];
 
+			bool has_tangents = false;
+
 			dst_mesh->index_count = src_mesh->indices->count;
 			dst_mesh->indices = arena_push_array_zero(arena, uint32_t, dst_mesh->index_count);
 
@@ -194,6 +198,8 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
 							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
 
+							has_tangents = true;
+
 							dst_vertex->tangent[0] = src_vertex[0];
 							dst_vertex->tangent[1] = src_vertex[1];
 							dst_vertex->tangent[2] = src_vertex[2];
@@ -209,6 +215,9 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 						break;
 				}
 			}
+
+			if (has_tangents == false)
+				calculate_tangents(dst_mesh->vertices, dst_mesh->vertex_count, dst_mesh->indices, dst_mesh->index_count);
 
 			if (src_mesh->material) {
 				uint32_t index = src_mesh->material - data->materials;
@@ -300,4 +309,38 @@ TextureSource *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, co
 		return &scene->textures[index];
 	}
 	return NULL;
+}
+
+void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count) {
+	for (uint32_t i = 0; i < vertex_count; i++) {
+		memset(vertices[i].tangent, 0, sizeof(vec4));
+	}
+
+	for (uint32_t index = 0; index < index_count; index += 3) {
+		uint32_t triangle[3] = { indices[index + 0], indices[index + 1], indices[index + 2] };
+		Vertex *points[3] = { &vertices[triangle[0]], &vertices[triangle[1]], &vertices[triangle[2]] };
+
+		vec3 edge1 = { 0 }, edge2 = { 0 };
+		glm_vec3_sub(points[1]->position, points[0]->position, edge1);
+		glm_vec3_sub(points[2]->position, points[0]->position, edge1);
+
+		vec2 delta_1 = { 0 }, delta_2 = { 0 };
+		glm_vec2_sub(points[1]->uv, points[0]->uv, delta_1);
+		glm_vec2_sub(points[2]->uv, points[0]->uv, delta_2);
+
+		float f = 1.0f / (delta_1[0] * delta_2[1] - delta_2[0] * delta_1[1]);
+
+		vec3 tangent;
+		tangent[0] = f * (delta_2[1] * edge1[0] - delta_1[1] * edge2[0]);
+		tangent[1] = f * (delta_2[1] * edge1[1] - delta_1[1] * edge2[1]);
+		tangent[2] = f * (delta_2[1] * edge1[2] - delta_1[1] * edge2[2]);
+
+		glm_vec3_add(points[0]->tangent, tangent, points[0]->tangent);
+		glm_vec3_add(points[1]->tangent, tangent, points[1]->tangent);
+		glm_vec3_add(points[2]->tangent, tangent, points[2]->tangent);
+
+		points[0]->tangent[3] = 1.0f;
+		points[1]->tangent[3] = 1.0f;
+		points[2]->tangent[3] = 1.0f;
+	}
 }

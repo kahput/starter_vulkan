@@ -20,6 +20,16 @@ layout(location = 1) out vec3 normal;
 
 void main() {
     gl_Position = u_scene.projection * u_scene.view * push_constants.model * vec4(in_position, 1.0f);
+
+    vec3 T = normalize(vec3(push_constants.model * vec4(in_tangent.xyz, 0.0)));
+    vec3 N = normalize(vec3(push_constants.model * vec4(in_normal, 0.0)));
+
+    T = normalize(T - dot(T, N) * N);
+
+    vec3 B = cross(N, T) * in_tangent.w;
+
+    mat3 TBN = transpose(mat3(T, B, N));
+
     uv = in_uv;
     normal = in_normal;
 }
