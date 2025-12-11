@@ -9,7 +9,9 @@
 typedef struct {
 	mat4 view;
 	mat4 projection;
-} CameraUpload;
+	vec3 camera_position;
+	float _pad0;
+} SceneData;
 
 typedef struct {
 	vec3 position;
@@ -197,7 +199,32 @@ typedef struct pipeline_desc {
 	bool topology_line_list;
 } PipelineDesc;
 
-// TODO: Move this
+typedef enum sampler_filter {
+	FILTER_NEAREST = 0,
+	FILTER_LINEAR = 1
+} SamplerFilter;
+
+typedef enum sampler_address_mode {
+	SAMPLER_ADDRESS_MODE_REPEAT = 0,
+	SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT = 1,
+	SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE = 2,
+	SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER = 3
+} SamplerAddressMode;
+
+typedef struct sampler_desc {
+	SamplerFilter min_filter;
+	SamplerFilter mag_filter;
+
+	SamplerFilter mipmap_filter;
+
+	SamplerAddressMode address_mode_u;
+	SamplerAddressMode address_mode_v;
+	SamplerAddressMode address_mode_w;
+
+	bool anisotropy_enable;
+} SamplerDesc;
+
+// TODO: Move these
 #define DEFAULT_PIPELINE(index)                     \
 	(PipelineDesc) {                                \
 		.shader_index = index,                      \
@@ -212,6 +239,26 @@ typedef struct pipeline_desc {
 		.depth_compare_op = COMPARE_OP_LESS,        \
 		.blend_enable = false,                      \
 		.topology_line_list = false                 \
+	}
+
+#define DEFAULT_SAMPLER                                \
+	(SamplerDesc) {                                    \
+		.min_filter = FILTER_LINEAR,                   \
+		.mag_filter = FILTER_LINEAR,                   \
+		.address_mode_u = SAMPLER_ADDRESS_MODE_REPEAT, \
+		.address_mode_v = SAMPLER_ADDRESS_MODE_REPEAT, \
+		.address_mode_w = SAMPLER_ADDRESS_MODE_REPEAT, \
+		.anisotropy_enable = true                      \
+	}
+
+#define SPRITE_SAMPLER                                        \
+	(SamplerDesc) {                                           \
+		.min_filter = FILTER_NEAREST,                         \
+		.mag_filter = FILTER_NEAREST,                         \
+		.address_mode_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
+		.address_mode_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
+		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
+		.anisotropy_enable = false                            \
 	}
 
 #endif

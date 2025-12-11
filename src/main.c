@@ -48,7 +48,7 @@ typedef struct camera {
 	float yaw, pitch;
 	vec3 position, up;
 
-	CameraUpload upload;
+	mat4 view, projection;
 } Camera;
 
 #define MAX_MODEL_MESHES 32
@@ -81,7 +81,7 @@ static struct State {
 	uint32_t scene_uniform_buffer;
 	Mesh quad_mesh;
 
-	uint32_t default_sampler;
+	uint32_t default_sampler, sprite_sampler;
 
 	uint32_t default_texture_white;
 	uint32_t default_texture_black;
@@ -147,7 +147,10 @@ int main(void) {
 
 	state.default_texture_offset = state.texture_count;
 	state.default_sampler = state.sampler_count++;
-	vulkan_renderer_create_sampler(state.ctx, state.default_sampler);
+	vulkan_renderer_create_sampler(state.ctx, state.default_sampler, DEFAULT_SAMPLER);
+
+	state.sprite_sampler = state.sampler_count++;
+	vulkan_renderer_create_sampler(state.ctx, state.sprite_sampler, SPRITE_SAMPLER);
 
 	uint32_t terrain_set = state.set_count++;
 	vulkan_renderer_create_resource_set(state.ctx, terrain_set, state.model_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
@@ -186,7 +189,7 @@ int main(void) {
 	TextureSource *sprite_texture = importer_load_image(temp.arena, "assets/sprites/kenney/tile_0085.png");
 	Sprite sprite = {
 		.material = { .material = state.sprite_material, .parameter_uniform_buffer = state.scene_uniform_buffer, .resource_set = state.set_count++ },
-		.texture = { .texture = state.texture_count++, .sampler = state.default_sampler }
+		.texture = { .texture = state.texture_count++, .sampler = state.sprite_sampler }
 	};
 	vulkan_renderer_create_texture(state.ctx, sprite.texture.texture, sprite_texture->width, sprite_texture->height, sprite_texture->channels, sprite_texture->pixels);
 	arena_end_temp(temp);
@@ -215,7 +218,11 @@ int main(void) {
 
 		update_camera(state.ctx, platform, delta_time);
 
-		vulkan_renderer_update_buffer(state.ctx, state.scene_uniform_buffer, 0, sizeof(CameraUpload), &state.camera.upload);
+		SceneData data = { 0 };
+		glm_mat4_copy(state.camera.view, data.view);
+		glm_mat4_copy(state.camera.projection, data.projection);
+		glm_vec3_copy(state.camera.position, data.camera_position);
+		vulkan_renderer_update_buffer(state.ctx, state.scene_uniform_buffer, 0, sizeof(SceneData), &data);
 
 		vulkan_renderer_begin_frame(state.ctx, platform);
 
@@ -394,7 +401,7 @@ bool upload_scene(SceneAsset *scene) {
 }
 
 void update_camera(VulkanContext *context, Platform *platform, float dt) {
-	CameraUpload mvp = { 0 };
+	SceneData mvp = { 0 };
 
 	static bool use_keys = true;
 
@@ -438,12 +445,12 @@ void update_camera(VulkanContext *context, Platform *platform, float dt) {
 	vec3 camera_target;
 	glm_vec3_sub(state.camera.position, camera_forward, camera_target);
 
-	glm_mat4_identity(state.camera.upload.view);
-	glm_lookat(state.camera.position, camera_target, camera_up, state.camera.upload.view);
+	glm_mat4_identity(state.camera.view);
+	glm_lookat(state.camera.position, camera_target, camera_up, state.camera.view);
 
 	glm_mat4_identity(mvp.projection);
-	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, state.camera.upload.projection);
-	state.camera.upload.projection[1][1] *= -1;
+	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, state.camera.projection);
+	state.camera.projection[1][1] *= -1;
 }
 
 bool resize_event(Event *event) {

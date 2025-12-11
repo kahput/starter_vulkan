@@ -92,7 +92,7 @@ bool vulkan_renderer_destroy_texture(VulkanContext *context, uint32_t retrieve_i
 	return true;
 }
 
-bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index) {
+bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index, SamplerDesc description) {
 	if (store_index >= MAX_SAMPLERS) {
 		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
 		return false;
@@ -107,15 +107,15 @@ bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index
 
 	sampler->info = (VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-		.magFilter = VK_FILTER_LINEAR,
-		.minFilter = VK_FILTER_LINEAR,
-		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.magFilter = (VkFilter)description.mag_filter,
+		.minFilter = (VkFilter)description.min_filter,
+		.mipmapMode = (VkSamplerMipmapMode)description.mipmap_filter,
+		.addressModeU = (VkSamplerAddressMode)description.address_mode_u,
+		.addressModeV = (VkSamplerAddressMode)description.address_mode_v,
+		.addressModeW = (VkSamplerAddressMode)description.address_mode_w,
 		.mipLodBias = 0.0f,
-		.anisotropyEnable = true,
-		.maxAnisotropy = context->device.properties.limits.maxSamplerAnisotropy,
+		.anisotropyEnable = description.anisotropy_enable,
+		.maxAnisotropy = description.anisotropy_enable ? context->device.properties.limits.maxSamplerAnisotropy : 0.0f,
 		.compareEnable = VK_FALSE,
 		.compareOp = VK_COMPARE_OP_ALWAYS,
 		.minLod = 0.0f,

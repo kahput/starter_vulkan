@@ -21,5 +21,4 @@ layout(location = 0) out vec2 out_uv;
 void main() {
     gl_Position = u_scene.projection * u_scene.view * push_constants.model * vec4(in_position, 1.0f);
     out_uv = in_uv;
-    // normal = in_normal;
 }
