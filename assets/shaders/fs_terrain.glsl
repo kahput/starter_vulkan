@@ -33,7 +33,7 @@ void main() {
 
     // out_color = vec4(normal, 1.0);
 
-    vec3 ambient = vec3(0.03) * albedo.rgb * ao;
+    vec3 ambient = vec3(.5) * albedo.rgb * ao;
     vec3 color = ambient + emissive;
 
     out_color = vec4(color, albedo.a);

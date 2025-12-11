@@ -123,7 +123,7 @@ int main(void) {
 
 	// ========================= DEFAULT ======================================
 	state.scene_uniform_buffer = state.buffer_count++;
-	vulkan_renderer_create_buffer(state.ctx, state.scene_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
+	vulkan_renderer_create_buffer(state.ctx, state.scene_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(SceneData), NULL);
 
 	state.model_material = (Material){ .shader = 0, .pipeline = 0 };
 	vulkan_renderer_create_shader(state.ctx, state.model_material.shader, "./assets/shaders/vs_terrain.spv", "./assets/shaders/fs_terrain.spv");
@@ -131,7 +131,9 @@ int main(void) {
 
 	state.sprite_material = (Material){ .shader = 1, .pipeline = 1 };
 	vulkan_renderer_create_shader(state.ctx, state.sprite_material.shader, "./assets/shaders/vs_sprite.spv", "./assets/shaders/fs_sprite.spv");
-	vulkan_renderer_create_pipeline(state.ctx, state.sprite_material.pipeline, DEFAULT_PIPELINE(state.sprite_material.shader));
+	PipelineDesc sprite_pipeline = DEFAULT_PIPELINE(state.sprite_material.shader);
+	sprite_pipeline.cull_mode = CULL_MODE_NONE;
+	vulkan_renderer_create_pipeline(state.ctx, state.sprite_material.pipeline, sprite_pipeline);
 
 	state.default_texture_white = state.texture_count++;
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
@@ -234,7 +236,7 @@ int main(void) {
 			mat4 transform;
 			glm_mat4_identity(transform);
 			glm_translate(transform, (vec3){ 0.f, 0.0f, 5.0f });
-			vulkan_renderer_push_constants(state.ctx, 0, "push_constants", transform);
+			vulkan_renderer_push_constants(state.ctx, state.sprite_material.shader, "push_constants", transform);
 
 			Mesh *mesh = &state.quad_mesh;
 			MaterialInstance *material = &sprite.material;
@@ -401,8 +403,6 @@ bool upload_scene(SceneAsset *scene) {
 }
 
 void update_camera(VulkanContext *context, Platform *platform, float dt) {
-	SceneData mvp = { 0 };
-
 	static bool use_keys = true;
 
 	if (input_key_pressed(SV_KEY_TAB))
@@ -448,7 +448,7 @@ void update_camera(VulkanContext *context, Platform *platform, float dt) {
 	glm_mat4_identity(state.camera.view);
 	glm_lookat(state.camera.position, camera_target, camera_up, state.camera.view);
 
-	glm_mat4_identity(mvp.projection);
+	glm_mat4_identity(state.camera.projection);
 	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, state.camera.projection);
 	state.camera.projection[1][1] *= -1;
 }
