@@ -15,6 +15,7 @@ typedef struct vulkan_buffer {
 	void *mapped[MAX_FRAMES_IN_FLIGHT];
 
 	uint32_t count;
+	VkDeviceSize size;
 
 	VkBufferUsageFlags usage;
 	VkMemoryPropertyFlags memory_property_flags;

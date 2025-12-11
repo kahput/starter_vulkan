@@ -36,16 +36,17 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	logger_indent();
 
 	buffer->count = 1;
+	buffer->size = size;
 
 	if (type == BUFFER_TYPE_UNIFORM) {
 		buffer->count = MAX_FRAMES_IN_FLIGHT;
-		bool result = vulkan_create_uniform_buffers(context, buffer, size, data);
+		bool result = vulkan_create_uniform_buffers(context, buffer, buffer->size, data);
 		logger_dedent();
 		return result;
 	}
 
 	if (data == NULL) {
-		bool result = vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
+		bool result = vulkan_create_buffer(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 		logger_dedent();
 		return result;
 	}
@@ -61,19 +62,19 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 
 	LOG_DEBUG("Creating staging buffer...");
 	logger_indent();
-	vulkan_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vulkan_create_buffer(context, context->device.graphics_index, buffer->size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 	logger_dedent();
 
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &buffer->mapped[0]);
-	memcpy(buffer->mapped[0], data, size);
+	vkMapMemory(context->device.logical, staging_buffer_memory, 0, buffer->size, 0, &buffer->mapped[0]);
+	memcpy(buffer->mapped[0], data, buffer->size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
 	LOG_DEBUG("Creating buffer...");
 	logger_indent();
-	vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
+	vulkan_create_buffer(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 	logger_dedent();
 
-	vulkan_copy_buffer(context, staging_buffer, buffer->handle[0], size);
+	vulkan_copy_buffer(context, staging_buffer, buffer->handle[0], buffer->size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
@@ -118,14 +119,20 @@ bool vulkan_renderer_update_buffer(VulkanContext *context, uint32_t retrieve_ind
 		return false;
 	}
 
+	size_t copy_size = size;
+	if (buffer->size < copy_size) {
+		LOG_WARN("Update size bigger than allocation size, ignoring difference of %dB", size - buffer->size);
+		copy_size = buffer->size;
+	}
+
 	if ((buffer->usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) == VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
 		uint8_t *dest = (uint8_t *)buffer->mapped[context->current_frame] + offset;
-		memcpy(dest, data, size);
+		memcpy(dest, data, copy_size);
 		return true;
 	}
 
 	uint8_t *dest = (uint8_t *)buffer->mapped[0] + offset;
-	memcpy(dest, data, size);
+	memcpy(dest, data, copy_size);
 	return true;
 }
 
