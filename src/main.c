@@ -67,12 +67,19 @@ typedef struct model {
 	uint32_t texture_count;
 } Model;
 
+typedef struct Sprite {
+	MaterialInstance material;
+
+	Texture texture;
+} Sprite;
+
 static struct State {
 	Arena *permanent, *frame, *assets;
 	Camera camera;
 	VulkanContext *ctx;
 
-	uint32_t scene_buffer;
+	uint32_t scene_uniform_buffer;
+	Mesh quad_mesh;
 
 	uint32_t default_sampler;
 
@@ -115,16 +122,16 @@ int main(void) {
 	vulkan_renderer_create(state.permanent, &state.ctx, platform);
 
 	// ========================= DEFAULT ======================================
-	state.scene_buffer = state.buffer_count++;
-	vulkan_renderer_create_buffer(state.ctx, state.scene_buffer, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
+	state.scene_uniform_buffer = state.buffer_count++;
+	vulkan_renderer_create_buffer(state.ctx, state.scene_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(mat4) * 2, NULL);
 
 	state.model_material = (Material){ .shader = 0, .pipeline = 0 };
-	vulkan_renderer_create_shader(state.ctx, state.model_material.shader, "./assets/shaders/vs_PBR.spv", "./assets/shaders/fs_PBR.spv");
-	vulkan_renderer_create_pipeline(state.ctx, state.model_material.pipeline, DEFAULT_PIPELINE(0));
+	vulkan_renderer_create_shader(state.ctx, state.model_material.shader, "./assets/shaders/vs_terrain.spv", "./assets/shaders/fs_terrain.spv");
+	vulkan_renderer_create_pipeline(state.ctx, state.model_material.pipeline, DEFAULT_PIPELINE(state.model_material.shader));
 
 	state.sprite_material = (Material){ .shader = 1, .pipeline = 1 };
-	vulkan_renderer_create_shader(state.ctx, state.sprite_material.shader, "./assets/shaders/vs_default.spv", "./assets/shaders/fs_default.spv");
-	vulkan_renderer_create_pipeline(state.ctx, state.sprite_material.pipeline, DEFAULT_PIPELINE(0));
+	vulkan_renderer_create_shader(state.ctx, state.sprite_material.shader, "./assets/shaders/vs_sprite.spv", "./assets/shaders/fs_sprite.spv");
+	vulkan_renderer_create_pipeline(state.ctx, state.sprite_material.pipeline, DEFAULT_PIPELINE(state.sprite_material.shader));
 
 	state.default_texture_white = state.texture_count++;
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
@@ -142,31 +149,57 @@ int main(void) {
 	state.default_sampler = state.sampler_count++;
 	vulkan_renderer_create_sampler(state.ctx, state.default_sampler);
 
-	uint32_t scene_set = state.set_count++;
-	vulkan_renderer_create_resource_set(state.ctx, scene_set, state.model_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
-	vulkan_renderer_update_resource_set_buffer(state.ctx, scene_set, "u_scene", state.scene_buffer);
+	uint32_t terrain_set = state.set_count++;
+	vulkan_renderer_create_resource_set(state.ctx, terrain_set, state.model_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, terrain_set, "u_scene", state.scene_uniform_buffer);
+
+	uint32_t sprite_set = state.set_count++;
+	vulkan_renderer_create_resource_set(state.ctx, sprite_set, state.sprite_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, sprite_set, "u_scene", state.scene_uniform_buffer);
 
 	// ========================= MODELS ======================================
+	Vertex quad_vertices[4] = {
+		{ .position = { -0.5f, 1.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ .position = { -0.5f, 0.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ .position = { 0.5f, 0.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ .position = { 0.5f, 1.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+	};
+	uint32_t quad_indices[] = { 0, 1, 2, 2, 3, 0 };
+	state.quad_mesh = (Mesh){
+		.vertex_buffer = state.buffer_count++,
+		.index_buffer = state.buffer_count++,
+		.vertex_count = countof(quad_vertices),
+		.index_count = countof(quad_indices),
+		.material = 0,
+	};
+
+	vulkan_renderer_create_buffer(state.ctx, state.quad_mesh.vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(quad_vertices), quad_vertices);
+	vulkan_renderer_create_buffer(state.ctx, state.quad_mesh.index_buffer, BUFFER_TYPE_INDEX, sizeof(quad_indices), quad_indices);
+
 	ArenaTemp temp = arena_begin_temp(state.assets);
 	SceneAsset *scene = NULL;
-	scene = importer_load_gltf(state.assets, MAGE_FILE_PATH);
+	scene = importer_load_gltf(state.assets, GATE_DOOR_FILE_PATH);
 	upload_scene(scene);
 	arena_end_temp(temp);
+
 	temp = arena_begin_temp(state.assets);
-	scene = importer_load_gltf(state.assets, BOT_FILE_PATH);
-	upload_scene(scene);
+	TextureSource *sprite_texture = importer_load_image(temp.arena, "assets/sprites/kenney/tile_0085.png");
+	Sprite sprite = {
+		.material = { .material = state.sprite_material, .parameter_uniform_buffer = state.scene_uniform_buffer, .resource_set = state.set_count++ },
+		.texture = { .texture = state.texture_count++, .sampler = state.default_sampler }
+	};
+	vulkan_renderer_create_texture(state.ctx, sprite.texture.texture, sprite_texture->width, sprite_texture->height, sprite_texture->channels, sprite_texture->pixels);
 	arena_end_temp(temp);
-	temp = arena_begin_temp(state.assets);
-	scene = importer_load_gltf(state.assets, GATE_FILE_PATH);
-	upload_scene(scene);
-	arena_end_temp(temp);
+
+	vulkan_renderer_create_resource_set(state.ctx, sprite.material.resource_set, state.sprite_material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
+	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, sprite.material.resource_set, "u_texture", sprite.texture.texture, sprite.texture.sampler);
 
 	state.camera = (Camera){
 		.speed = 3.0f,
 		.sensitivity = 2.5f,
 		.pitch = 0.0f,
 		.yaw = 90.f,
-		.position = { 0.0f, 1.0f, 5.0f },
+		.position = { 0.0f, 1.0f, 10.0f },
 		.up = { 0.0f, 1.0f, 0.0f },
 	};
 
@@ -182,19 +215,42 @@ int main(void) {
 
 		update_camera(state.ctx, platform, delta_time);
 
-		vulkan_renderer_update_buffer(state.ctx, state.scene_buffer, 0, sizeof(CameraUpload), &state.camera.upload);
+		vulkan_renderer_update_buffer(state.ctx, state.scene_uniform_buffer, 0, sizeof(CameraUpload), &state.camera.upload);
 
 		vulkan_renderer_begin_frame(state.ctx, platform);
-		vulkan_renderer_bind_pipeline(state.ctx, 0);
-		vulkan_renderer_bind_resource_set(state.ctx, scene_set);
 
+		vulkan_renderer_bind_pipeline(state.ctx, state.sprite_material.pipeline);
+		vulkan_renderer_bind_resource_set(state.ctx, sprite_set);
+
+		// Draw Sprite
+		{
+			mat4 transform;
+			glm_mat4_identity(transform);
+			glm_translate(transform, (vec3){ 0.f, 0.0f, 5.0f });
+			vulkan_renderer_push_constants(state.ctx, 0, "push_constants", transform);
+
+			Mesh *mesh = &state.quad_mesh;
+			MaterialInstance *material = &sprite.material;
+
+			vulkan_renderer_bind_resource_set(state.ctx, material->resource_set);
+
+			vulkan_renderer_bind_buffer(state.ctx, mesh->vertex_buffer);
+			vulkan_renderer_bind_buffer(state.ctx, mesh->index_buffer);
+
+			vulkan_renderer_draw_indexed(state.ctx, mesh->index_count);
+		}
+
+		vulkan_renderer_bind_pipeline(state.ctx, state.model_material.pipeline);
+		vulkan_renderer_bind_resource_set(state.ctx, terrain_set);
+
+		// Draw Terrain
 		for (uint32_t model_index = 0; model_index < state.model_count; ++model_index) {
 			Model *model = &state.models[model_index];
 
-			mat4 model_matrix;
-			glm_mat4_identity(model_matrix);
-			glm_translate(model_matrix, (vec3){ -3.0f + (3 * model_index), 0.0f, 0.0f });
-			vulkan_renderer_push_constants(state.ctx, 0, "push_constants", model_matrix);
+			mat4 transform;
+			glm_mat4_identity(transform);
+			glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
+			vulkan_renderer_push_constants(state.ctx, 0, "push_constants", transform);
 
 			for (uint32_t mesh_index = 0; mesh_index < model->mesh_count; ++mesh_index) {
 				Mesh *mesh = &model->meshes[mesh_index];
@@ -311,7 +367,7 @@ bool upload_scene(SceneAsset *scene) {
 			uint32_t texture_index = src_material->emissive_texture - scene->textures;
 			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_emissive_texture", texture_index + texture_offset, state.default_sampler);
 		} else {
-			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_emissive_texture", state.default_texture_white, state.default_sampler);
+			vulkan_renderer_update_resource_set_texture_sampler(state.ctx, dst_material->resource_set, "u_emissive_texture", state.default_texture_black, state.default_sampler);
 		}
 	}
 

@@ -221,7 +221,7 @@ bool vulkan_create_buffer(
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		.queueFamilyIndexCount = 1,
 		.pQueueFamilyIndices = family_indices
-		// .queueFamilyIndexCount = array_count(family_indices),
+		// .queueFamilyIndexCount = countof(family_indices),
 		// .pQueueFamilyIndices = family_indices
 	};
 

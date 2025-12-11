@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define array_count(array) sizeof(array) / sizeof(*array)
+#define countof(array) sizeof(array) / sizeof(*array)
 #define member_size(type, member) (sizeof(((type *)0)->member))
 
 #define max(a, b) (a >= b ? a : b)

@@ -156,7 +156,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 
 	VkPipelineDynamicStateCreateInfo ds_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-		.dynamicStateCount = array_count(dynamic_states),
+		.dynamicStateCount = countof(dynamic_states),
 		.pDynamicStates = dynamic_states
 	};
 
@@ -237,7 +237,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 	VkGraphicsPipelineCreateInfo gp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
 		.pNext = &r_create_info,
-		.stageCount = array_count(shader_stages),
+		.stageCount = countof(shader_stages),
 		.pStages = shader_stages,
 		.pVertexInputState = &vis_create_info,
 		.pInputAssemblyState = &ias_create_info,

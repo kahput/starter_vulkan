@@ -197,6 +197,7 @@ typedef struct pipeline_desc {
 	bool topology_line_list;
 } PipelineDesc;
 
+// TODO: Move this
 #define DEFAULT_PIPELINE(index)                     \
 	(PipelineDesc) {                                \
 		.shader_index = index,                      \

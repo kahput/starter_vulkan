@@ -111,7 +111,7 @@ bool on_key_event(Event *event) {
 	KeyEvent *key_event = (KeyEvent *)event;
 
 	if (key_event->leave) {
-		for (uint32_t index = 0; index < array_count(state.keys); ++index) {
+		for (uint32_t index = 0; index < countof(state.keys); ++index) {
 			state.keys[index].state = false;
 			state.keys[index].last = false;
 		}

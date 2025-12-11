@@ -41,7 +41,7 @@ bool vulkan_renderer_create_resource_set(VulkanContext *context, uint32_t store_
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = context->descriptor_pool,
-		.descriptorSetCount = array_count(layouts),
+		.descriptorSetCount = countof(layouts),
 		.pSetLayouts = layouts
 	};
 
@@ -274,7 +274,7 @@ bool vulkan_create_descriptor_pool(VulkanContext *context) {
 
 	VkDescriptorPoolCreateInfo dp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		.poolSizeCount = array_count(sizes),
+		.poolSizeCount = countof(sizes),
 		.pPoolSizes = sizes,
 		.maxSets = 1000,
 	};
@@ -297,7 +297,7 @@ bool vulkan_create_descriptor_pool(VulkanContext *context) {
 // 	VkDescriptorSetAllocateInfo ds_allocate_info = {
 // 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 // 		.descriptorPool = shader->descriptor_pool,
-// 		.descriptorSetCount = array_count(layouts),
+// 		.descriptorSetCount = countof(layouts),
 // 		.pSetLayouts = layouts
 // 	};
 //

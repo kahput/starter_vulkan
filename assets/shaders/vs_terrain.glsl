@@ -4,6 +4,7 @@
 layout(set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 projection;
+    vec3 camera_position;
 } u_scene;
 
 layout(push_constant) uniform constants {
@@ -23,12 +24,10 @@ void main() {
 
     vec3 T = normalize(vec3(push_constants.model * vec4(in_tangent.xyz, 0.0)));
     vec3 N = normalize(vec3(push_constants.model * vec4(in_normal, 0.0)));
-
     T = normalize(T - dot(T, N) * N);
-
     vec3 B = cross(N, T) * in_tangent.w;
 
-    mat3 TBN = transpose(mat3(T, B, N));
+    mat3 TBN = mat3(T, B, N);
 
     uv = in_uv;
     normal = in_normal;

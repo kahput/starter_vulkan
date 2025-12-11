@@ -674,7 +674,7 @@ void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, 
 	// };
 
 	KeyEvent event = event_create(KeyEvent, state == WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED);
-	event.key = scancode < array_count(wl->keycodes) ? wl->keycodes[scancode] : SV_KEY_UNKOWN;
+	event.key = scancode < countof(wl->keycodes) ? wl->keycodes[scancode] : SV_KEY_UNKOWN;
 	event.mods = wl->xkb.modifiers;
 	// event.is_repeat = false;
 
@@ -707,7 +707,7 @@ void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t se
 		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod2"), SV_MOD_KEY_NUMLOCK }
 	};
 
-	for (size_t index = 0; index < array_count(modifiers); ++index) {
+	for (size_t index = 0; index < countof(modifiers); ++index) {
 		if (xkb_state_mod_index_is_active(wl->xkb.state,
 				modifiers[index].index,
 				XKB_STATE_MODS_EFFECTIVE) == 1) {

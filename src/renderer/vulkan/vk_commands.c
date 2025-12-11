@@ -36,7 +36,7 @@ bool vulkan_create_command_buffer(VulkanContext *context) {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandPool = context->graphics_command_pool,
 		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		.commandBufferCount = array_count(context->command_buffers)
+		.commandBufferCount = countof(context->command_buffers)
 	};
 
 	if (vkAllocateCommandBuffers(context->device.logical, &cb_allocate_info, context->command_buffers) != VK_SUCCESS) {

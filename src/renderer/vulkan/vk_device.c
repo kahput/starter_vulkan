@@ -24,8 +24,8 @@ bool vulkan_create_device(Arena *arena, VulkanContext *context) {
 	uint32_t queue_families[] = { context->device.graphics_index, context->device.transfer_index, context->device.present_index };
 	uint32_t unique_count = 0;
 
-	VkDeviceQueueCreateInfo queue_create_infos[array_count(queue_families)];
-	for (uint32_t i = 0; i < array_count(queue_families); ++i) {
+	VkDeviceQueueCreateInfo queue_create_infos[countof(queue_families)];
+	for (uint32_t i = 0; i < countof(queue_families); ++i) {
 		bool duplicate = false;
 		for (uint32_t j = 0; j < i; ++j) {
 			if (queue_families[j] == queue_families[i]) {
@@ -113,7 +113,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 		return false;
 
 	ArenaTemp temp = arena_get_scratch(NULL);
-	uint32_t requested_extensions = array_count(extensions), available_extensions = 0;
+	uint32_t requested_extensions = countof(extensions), available_extensions = 0;
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, NULL);
 
 	VkExtensionProperties *properties = arena_push_array_zero(temp.arena, VkExtensionProperties, available_extensions);

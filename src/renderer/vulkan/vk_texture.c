@@ -39,7 +39,7 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
 	vulkan_image_create(
-		context, indices, array_count(indices),
+		context, indices, countof(indices),
 		width, height, channels_to_vulkan_format(channels), VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		texture);

@@ -235,12 +235,12 @@ bool Vulkan_renderer_end_frame(VulkanContext *context) {
 
 	VkSubmitInfo submit_info = {
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.waitSemaphoreCount = array_count(wait_semaphores),
+		.waitSemaphoreCount = countof(wait_semaphores),
 		.pWaitSemaphores = wait_semaphores,
 		.pWaitDstStageMask = wait_stages,
 		.commandBufferCount = 1,
 		.pCommandBuffers = &context->command_buffers[context->current_frame],
-		.signalSemaphoreCount = array_count(signal_semaphores),
+		.signalSemaphoreCount = countof(signal_semaphores),
 		.pSignalSemaphores = signal_semaphores
 	};
 

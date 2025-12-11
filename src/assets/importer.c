@@ -22,6 +22,34 @@ void filesystem_directory(const char *src, char *dst);
 static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 static TextureSource *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex);
 
+TextureSource *importer_load_image(Arena *arena, const char *path) {
+	TextureSource *texture = arena_push_struct_zero(arena, TextureSource);
+	char filename[256];
+	filesystem_filename(path, filename);
+	LOG_INFO("Loading %s...", filename);
+	logger_indent();
+	uint8_t *pixels = stbi_load(path, &texture->width, &texture->height, &texture->channels, 4);
+	if (pixels == NULL) {
+		LOG_ERROR("Failed to load image [ %s ]", path);
+		static uint8_t magenta[] = { 255, 0, 255, 255 };
+		texture->width = texture->height = 1;
+		texture->channels = 4;
+		texture->pixels = magenta;
+		return texture;
+	}
+	texture->channels = 4;
+	uint32_t pixel_buffer_size = texture->width * texture->height * texture->channels;
+	texture->pixels = arena_push_array(arena, uint8_t, pixel_buffer_size);
+	memcpy(texture->pixels, pixels, pixel_buffer_size);
+	stbi_image_free(pixels);
+
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, texture->width, texture->height, texture->channels);
+	LOG_INFO("%s loaded", filename);
+	logger_dedent();
+
+	return texture;
+}
+
 SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
@@ -231,31 +259,6 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 
 	return asset;
 }
-
-// Image importer_load_image(const char *path) {
-// 	Image image;
-// 	char filename[256];
-// 	filesystem_filename(path, filename);
-// 	LOG_INFO("Loading %s...", filename);
-// 	logger_indent();
-// 	image.pixels = stbi_load(path, &image.width, &image.height, &image.channels, STBI_default);
-//
-// 	if (image.pixels == NULL) {
-// 		LOG_ERROR("Failed to load image [ %s ]", path);
-// 		return (Image){ 0 };
-// 	}
-//
-// 	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, image.width, image.height, image.channels);
-// 	LOG_INFO("%s loaded", filename);
-// 	logger_dedent();
-//
-// 	return image;
-// }
-//
-// void importer_unload_image(Image image) {
-// 	if (image.pixels)
-// 		stbi_image_free(image.pixels);
-// }
 
 bool filesystem_file_exists(const char *path) {
 	FILE *file = fopen(path, "r");
