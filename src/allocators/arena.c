@@ -62,9 +62,9 @@ void arena_end_temp(ArenaTemp temp) {
 
 ArenaTemp arena_get_scratch(Arena **arena) {
 	if (!scratch_arenas[0])
-		scratch_arenas[0] = allocator_arena(MiB(2));
+		scratch_arenas[0] = allocator_arena(MiB(4));
 	if (!scratch_arenas[1])
-		scratch_arenas[1] = allocator_arena(MiB(2));
+		scratch_arenas[1] = allocator_arena(MiB(4));
 
 	ArenaTemp scratch_arena = {
 		.arena = arena == scratch_arenas ? scratch_arenas[1] : scratch_arenas[0]

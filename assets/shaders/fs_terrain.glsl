@@ -12,7 +12,7 @@ layout(set = 1, binding = 5) uniform MaterialParameters {
     float metallic_factor;
     float roughness_factor;
     vec3 emissive_factor;
-} u_material_parameters;
+} u_material;
 
 layout(location = 0) in vec2 uv;
 layout(location = 1) in vec3 normal;
@@ -21,15 +21,15 @@ layout(location = 0) out vec4 out_color;
 
 void main() {
     // TODO: PBR
-    vec4 albedo = texture(u_base_color_texture, uv) * u_material_parameters.base_color_factor;
+    vec4 albedo = texture(u_base_color_texture, uv) * u_material.base_color_factor;
     vec3 normal = texture(u_normal_texture, uv).rgb * 2.0 - 1.0;
 
     vec4 mr_sample = texture(u_metallic_roughness_texture, uv);
-    float roughness = mr_sample.g * u_material_parameters.roughness_factor;
-    float metallic = mr_sample.b * u_material_parameters.metallic_factor;
+    float roughness = mr_sample.g * u_material.roughness_factor;
+    float metallic = mr_sample.b * u_material.metallic_factor;
 
     float ao = texture(u_occlusion_texture, uv).r;
-    vec3 emissive = texture(u_emissive_texture, uv).rgb * u_material_parameters.emissive_factor;
+    vec3 emissive = texture(u_emissive_texture, uv).rgb * u_material.emissive_factor;
 
     // out_color = vec4(normal, 1.0);
 

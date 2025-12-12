@@ -86,7 +86,7 @@ typedef struct mesh {
 	uint32_t vertex_buffer, index_buffer;
 	uint32_t vertex_count, index_count;
 
-	uint32_t material;
+	MaterialInstance *material;
 } Mesh;
 
 typedef enum buffer_type {

@@ -11,6 +11,7 @@
 
 #include <assert.h>
 #include <cglm/affine-pre.h>
+#include <cglm/affine.h>
 #include <cglm/mat4.h>
 #include <cglm/util.h>
 #include <cglm/vec3.h>
@@ -37,8 +38,16 @@
 
 bool resize_event(Event *event);
 
+typedef enum {
+	ORIENTATION_Y,
+	ORIENTATION_X,
+	ORIENTATION_Z,
+} Orientation;
+
 bool upload_scene(SceneAsset *asset);
 void update_camera(VulkanContext *context, Platform *platform, float dt);
+bool create_default_material_instance(void);
+bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation);
 
 static const float camera_speed = 1.0f;
 
@@ -93,6 +102,9 @@ static struct State {
 
 	Material model_material, sprite_material;
 
+	MaterialParameters default_parameters;
+	MaterialInstance default_material_instance;
+
 	uint32_t buffer_count, texture_count, set_count, sampler_count;
 
 	uint64_t start_time;
@@ -127,7 +139,9 @@ int main(void) {
 
 	state.model_material = (Material){ .shader = 0, .pipeline = 0 };
 	vulkan_renderer_create_shader(state.ctx, state.model_material.shader, "./assets/shaders/vs_terrain.spv", "./assets/shaders/fs_terrain.spv");
-	vulkan_renderer_create_pipeline(state.ctx, state.model_material.pipeline, DEFAULT_PIPELINE(state.model_material.shader));
+	PipelineDesc model_pipeline = DEFAULT_PIPELINE(state.model_material.shader);
+	// model_pipeline.polygon_mode = POLYGON_MODE_LINE;
+	vulkan_renderer_create_pipeline(state.ctx, state.model_material.pipeline, model_pipeline);
 
 	state.sprite_material = (Material){ .shader = 1, .pipeline = 1 };
 	vulkan_renderer_create_shader(state.ctx, state.sprite_material.shader, "./assets/shaders/vs_sprite.spv", "./assets/shaders/fs_sprite.spv");
@@ -162,24 +176,14 @@ int main(void) {
 	vulkan_renderer_create_resource_set(state.ctx, sprite_set, state.sprite_material.shader, SHADER_UNIFORM_FREQUENCY_PER_FRAME);
 	vulkan_renderer_update_resource_set_buffer(state.ctx, sprite_set, "u_scene", state.scene_uniform_buffer);
 
-	// ========================= MODELS ======================================
-	Vertex quad_vertices[4] = {
-		{ .position = { -0.5f, 1.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
-		{ .position = { -0.5f, 0.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
-		{ .position = { 0.5f, 0.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
-		{ .position = { 0.5f, 1.0f, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
-	};
-	uint32_t quad_indices[] = { 0, 1, 2, 2, 3, 0 };
-	state.quad_mesh = (Mesh){
-		.vertex_buffer = state.buffer_count++,
-		.index_buffer = state.buffer_count++,
-		.vertex_count = countof(quad_vertices),
-		.index_count = countof(quad_indices),
-		.material = 0,
-	};
+	create_default_material_instance();
 
-	vulkan_renderer_create_buffer(state.ctx, state.quad_mesh.vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(quad_vertices), quad_vertices);
-	vulkan_renderer_create_buffer(state.ctx, state.quad_mesh.index_buffer, BUFFER_TYPE_INDEX, sizeof(quad_indices), quad_indices);
+	// ========================= MODELS ======================================
+	create_plane_mesh(&state.quad_mesh, 0, 0, ORIENTATION_Z);
+
+	Mesh floor = { 0 };
+	create_plane_mesh(&floor, 10, 10, ORIENTATION_Y);
+	floor.material = &state.default_material_instance;
 
 	ArenaTemp temp = arena_begin_temp(state.assets);
 	SceneAsset *scene = NULL;
@@ -235,7 +239,7 @@ int main(void) {
 		{
 			mat4 transform;
 			glm_mat4_identity(transform);
-			glm_translate(transform, (vec3){ 0.f, 0.0f, 5.0f });
+			glm_translate(transform, (vec3){ 0.f, 0.5f, 5.0f });
 			vulkan_renderer_push_constants(state.ctx, state.sprite_material.shader, "push_constants", transform);
 
 			Mesh *mesh = &state.quad_mesh;
@@ -244,15 +248,36 @@ int main(void) {
 			vulkan_renderer_bind_resource_set(state.ctx, material->resource_set);
 
 			vulkan_renderer_bind_buffer(state.ctx, mesh->vertex_buffer);
-			vulkan_renderer_bind_buffer(state.ctx, mesh->index_buffer);
-
-			vulkan_renderer_draw_indexed(state.ctx, mesh->index_count);
+			if (mesh->index_count) {
+				vulkan_renderer_bind_buffer(state.ctx, mesh->index_buffer);
+				vulkan_renderer_draw_indexed(state.ctx, mesh->index_count);
+			} else
+				vulkan_renderer_draw(state.ctx, mesh->vertex_count);
 		}
 
 		vulkan_renderer_bind_pipeline(state.ctx, state.model_material.pipeline);
 		vulkan_renderer_bind_resource_set(state.ctx, terrain_set);
 
 		// Draw Terrain
+		{
+			mat4 transform;
+			glm_mat4_identity(transform);
+			glm_scale(transform, (vec3){ 100.0f, 0.0f, 100.0f });
+			vulkan_renderer_push_constants(state.ctx, state.model_material.shader, "push_constants", transform);
+
+			Mesh *mesh = &floor;
+			MaterialInstance *material = mesh->material;
+
+			vulkan_renderer_bind_resource_set(state.ctx, material->resource_set);
+
+			vulkan_renderer_bind_buffer(state.ctx, mesh->vertex_buffer);
+			if (mesh->index_count) {
+				vulkan_renderer_bind_buffer(state.ctx, mesh->index_buffer);
+				vulkan_renderer_draw_indexed(state.ctx, mesh->index_count);
+			} else
+				vulkan_renderer_draw(state.ctx, mesh->vertex_count);
+		}
+
 		for (uint32_t model_index = 0; model_index < state.model_count; ++model_index) {
 			Model *model = &state.models[model_index];
 
@@ -263,7 +288,7 @@ int main(void) {
 
 			for (uint32_t mesh_index = 0; mesh_index < model->mesh_count; ++mesh_index) {
 				Mesh *mesh = &model->meshes[mesh_index];
-				MaterialInstance *material = &model->materials[mesh->material];
+				MaterialInstance *material = mesh->material;
 
 				vulkan_renderer_bind_resource_set(state.ctx, material->resource_set);
 
@@ -342,7 +367,7 @@ bool upload_scene(SceneAsset *scene) {
 		};
 
 		vulkan_renderer_create_buffer(state.ctx, dst_material->parameter_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(MaterialParameters), &parameters);
-		vulkan_renderer_update_resource_set_buffer(state.ctx, dst_material->resource_set, "u_material_parameters", dst_material->parameter_uniform_buffer);
+		vulkan_renderer_update_resource_set_buffer(state.ctx, dst_material->resource_set, "u_material", dst_material->parameter_uniform_buffer);
 
 		if (src_material->base_color_texture) {
 			uint32_t texture_index = src_material->base_color_texture - scene->textures;
@@ -393,7 +418,7 @@ bool upload_scene(SceneAsset *scene) {
 		dst_mesh->vertex_count = src_mesh->vertex_count;
 		dst_mesh->index_count = src_mesh->index_count;
 
-		dst_mesh->material = src_mesh->material - scene->materials;
+		dst_mesh->material = &dst->materials[src_mesh->material - scene->materials];
 
 		vulkan_renderer_create_buffer(state.ctx, dst_mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * src_mesh->vertex_count, src_mesh->vertices);
 		vulkan_renderer_create_buffer(state.ctx, dst_mesh->index_buffer, BUFFER_TYPE_INDEX, sizeof(uint32_t) * src_mesh->index_count, src_mesh->indices);
@@ -457,5 +482,113 @@ bool resize_event(Event *event) {
 	WindowResizeEvent *wr_event = (WindowResizeEvent *)event;
 
 	vulkan_renderer_resize(state.ctx, wr_event->width, wr_event->height);
+	return true;
+}
+
+bool create_default_material_instance(void) {
+	state.default_parameters = (MaterialParameters){
+		.base_color_factor = { 0.8f, 0.8f, 0.8f, 1.0f },
+		.emissive_factor = { 0.0f, 0.0f, 0.0f, 0.0f },
+		.roughness_factor = 0.5f,
+		.metallic_factor = 0.0f,
+	};
+
+	state.default_material_instance = (MaterialInstance){
+		.material = state.model_material,
+		.parameter_uniform_buffer = state.buffer_count++,
+		.resource_set = state.set_count++
+	};
+	vulkan_renderer_create_buffer(state.ctx, state.default_material_instance.parameter_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(MaterialParameters), &state.default_parameters);
+
+	vulkan_renderer_create_resource_set(state.ctx, state.default_material_instance.resource_set, state.default_material_instance.material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, state.default_material_instance.resource_set, "u_scene", state.scene_uniform_buffer);
+	vulkan_renderer_update_resource_set_buffer(state.ctx, state.default_material_instance.resource_set, "u_material", state.default_material_instance.parameter_uniform_buffer);
+
+	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, state.default_material_instance.resource_set, "u_base_color_texture", state.default_texture_white, state.default_sampler);
+	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, state.default_material_instance.resource_set, "u_metallic_roughness_texture", state.default_texture_white, state.default_sampler);
+	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, state.default_material_instance.resource_set, "u_normal_texture", state.default_texture_normal, state.default_sampler);
+	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, state.default_material_instance.resource_set, "u_occlusion_texture", state.default_texture_white, state.default_sampler);
+	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, state.default_material_instance.resource_set, "u_emissive_texture", state.default_texture_black, state.default_sampler);
+
+	return true;
+}
+
+bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation) {
+	ArenaTemp temp = arena_get_scratch(NULL);
+
+	uint32_t rows = subdivide_width + 1, columns = subdivide_depth + 1;
+
+	Vertex *vertices = arena_push_array_zero(temp.arena, Vertex, rows * columns * 6);
+	mesh->vertex_count = 0;
+
+	float row_unit = ((float)1 / rows);
+	float column_unit = ((float)1 / columns);
+
+	for (uint32_t column = 0; column < columns; ++column) {
+		for (uint32_t row = 0; row < rows; ++row) {
+			uint32_t index = (column * subdivide_width) + row;
+
+			float rowf = -0.5f + (float)row * row_unit;
+			float columnf = -0.5f + (float)column * column_unit;
+
+			// TODO: Make a single set instead of three
+			// Vertex v00 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			// Vertex v10 = { .position = { 0.0f }, { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			// Vertex v01 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			// Vertex v11 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			Vertex orientation_y_vertex00 = { .position = { rowf, 0, columnf }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_y_vertex10 = { .position = { rowf + row_unit, 0, columnf }, { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_y_vertex01 = { .position = { rowf, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_y_vertex11 = { .position = { rowf + row_unit, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			Vertex orientation_x_vertex00 = { .position = { 0, columnf + column_unit, rowf }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_x_vertex10 = { .position = { 0, columnf + column_unit, rowf + row_unit }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_x_vertex01 = { .position = { 0, columnf, rowf }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_x_vertex11 = { .position = { 0, columnf, rowf + row_unit }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			Vertex orientation_z_vertex00 = { .position = { rowf, columnf + column_unit, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_z_vertex10 = { .position = { rowf + row_unit, columnf + column_unit, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_z_vertex01 = { .position = { rowf, columnf, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_z_vertex11 = { .position = { rowf + row_unit, columnf, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			switch (orientation) {
+				case ORIENTATION_Y: {
+					vertices[mesh->vertex_count++] = orientation_y_vertex00;
+					vertices[mesh->vertex_count++] = orientation_y_vertex01;
+					vertices[mesh->vertex_count++] = orientation_y_vertex10;
+
+					vertices[mesh->vertex_count++] = orientation_y_vertex10;
+					vertices[mesh->vertex_count++] = orientation_y_vertex01;
+					vertices[mesh->vertex_count++] = orientation_y_vertex11;
+				} break;
+				case ORIENTATION_X: {
+					vertices[mesh->vertex_count++] = orientation_x_vertex00;
+					vertices[mesh->vertex_count++] = orientation_x_vertex01;
+					vertices[mesh->vertex_count++] = orientation_x_vertex10;
+
+					vertices[mesh->vertex_count++] = orientation_x_vertex10;
+					vertices[mesh->vertex_count++] = orientation_x_vertex01;
+					vertices[mesh->vertex_count++] = orientation_x_vertex11;
+				} break;
+				case ORIENTATION_Z: {
+					vertices[mesh->vertex_count++] = orientation_z_vertex00;
+					vertices[mesh->vertex_count++] = orientation_z_vertex01;
+					vertices[mesh->vertex_count++] = orientation_z_vertex10;
+
+					vertices[mesh->vertex_count++] = orientation_z_vertex10;
+					vertices[mesh->vertex_count++] = orientation_z_vertex01;
+					vertices[mesh->vertex_count++] = orientation_z_vertex11;
+				} break;
+					break;
+			}
+		}
+	}
+
+	mesh->vertex_buffer = state.buffer_count++;
+	vulkan_renderer_create_buffer(state.ctx, mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * mesh->vertex_count, vertices);
+
+	mesh->index_buffer = mesh->index_count = 0;
+
 	return true;
 }
