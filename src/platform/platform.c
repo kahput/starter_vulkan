@@ -103,5 +103,5 @@ bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *ins
 
 const char **platform_vulkan_extensions(Platform *platform, uint32_t *count) {
 	struct platform_internal *internal = (struct platform_internal *)platform->internal;
-	return internal->vulkan_extensions(platform, count);
+	return internal->vulkan_extensions(count);
 }

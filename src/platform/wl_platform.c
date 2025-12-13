@@ -351,7 +351,7 @@ bool wl_create_vulkan_surface(Platform *platform, VkInstance instance, VkSurface
 	return true;
 }
 
-const char **wl_vulkan_extensions(Platform *platform, uint32_t *count) {
+const char **wl_vulkan_extensions(uint32_t *count) {
 	*count = sizeof(extensions) / sizeof(*extensions);
 	return extensions;
 }

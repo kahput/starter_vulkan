@@ -228,4 +228,4 @@ struct VkSurfaceKHR_T;
 struct VkInstance_T;
 
 bool wl_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
-const char **wl_vulkan_extensions(Platform *platform, uint32_t *count);
+const char **wl_vulkan_extensions(uint32_t *count);
