@@ -32,6 +32,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MAX_MODEL_MESHES 32
+#define MAX_MODEL_MATERIALS 8
+#define MAX_MODEL_TEXTURES 8
+#define MAX_MODELS 8
+
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
 #define GATE_DOOR_FILE_PATH "assets/models/modular_dungeon/gate-door.glb"
 #define BOT_FILE_PATH "assets/models/characters/gdbot.glb"
@@ -48,6 +53,8 @@ typedef enum {
 static const float CAMERA_MOVE_SPEED = 5.f;
 static const float CAMERA_SENSITIVITY = .001f;
 
+static const float PLAYER_MOVE_SPEED = 5.f;
+
 typedef enum {
 	CAMERA_PROJECTION_PERSPECTIVE = 0,
 	CAMERA_PROJECTION_ORTHOGRAPHIC
@@ -59,11 +66,6 @@ typedef struct camera {
 
 	CameraProjection projection;
 } Camera;
-
-#define MAX_MODEL_MESHES 32
-#define MAX_MODEL_MATERIALS 8
-#define MAX_MODEL_TEXTURES 8
-#define MAX_MODELS 8
 
 typedef struct model {
 	Mesh meshes[MAX_MODEL_MESHES];
@@ -82,8 +84,15 @@ typedef struct Sprite {
 	Texture texture;
 } Sprite;
 
+typedef struct layer {
+	void (*update)(float dt);
+} Layer;
+
 bool upload_scene(SceneAsset *asset);
-void editor_update(VulkanContext *context, float dt);
+
+void editor_update(float dt);
+void game_update(float dt);
+
 bool create_default_material_instance(void);
 bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation);
 
@@ -109,7 +118,18 @@ static struct State {
 	Material model_material, sprite_material;
 
 	Camera editor_camera, world_camera;
-	Camera *current;
+	Camera *current_camera;
+
+	enum {
+		EDITOR_LAYER,
+		GAME_LAYER,
+		MAX_LAYER
+	} L;
+	Layer layers[MAX_LAYER];
+
+	Layer *current_layer;
+
+	vec3 sprite_position;
 
 	MaterialParameters default_parameters;
 	MaterialInstance default_material_instance;
@@ -134,6 +154,14 @@ int main(void) {
 		LOG_ERROR("Platform startup failed");
 		return -1;
 	}
+
+	state.layers[EDITOR_LAYER] = (Layer){
+		.update = editor_update,
+	};
+
+	state.layers[GAME_LAYER] = (Layer){
+		.update = game_update,
+	};
 
 	platform_pointer_mode(state.display, PLATFORM_POINTER_DISABLED);
 
@@ -219,10 +247,20 @@ int main(void) {
 		.fov = 45.f,
 		.projection = CAMERA_PROJECTION_PERSPECTIVE
 	};
+	state.current_layer = &state.layers[EDITOR_LAYER];
+	state.current_camera = &state.editor_camera;
 
-	vec3 sprite_position = { 0.0f, 0.5f, 5.0f };
+	state.sprite_position[0] = 0.0f;
+	state.sprite_position[1] = 0.5f;
+	state.sprite_position[2] = 5.0f;
 
-	state.current = &state.editor_camera;
+	state.world_camera = (Camera){
+		.position = { state.sprite_position[0], state.sprite_position[1] + 2.f, state.sprite_position[2] + 5.f },
+		.target = { state.sprite_position[0], state.sprite_position[1], state.sprite_position[2] },
+		.up = { 0.0f, 1.0f, 0.0f },
+		.fov = 45.f,
+		.projection = CAMERA_PROJECTION_PERSPECTIVE
+	};
 
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
@@ -234,14 +272,14 @@ int main(void) {
 
 		platform_poll_events(state.display);
 
-		editor_update(state.ctx, delta_time);
+		state.current_layer->update(delta_time);
 
 		SceneData data = { 0 };
 		glm_mat4_identity(data.view);
-		glm_lookat(state.editor_camera.position, state.editor_camera.target, state.editor_camera.up, data.view);
+		glm_lookat(state.current_camera->position, state.current_camera->target, state.current_camera->up, data.view);
 
 		glm_mat4_identity(data.projection);
-		glm_perspective(glm_rad(state.editor_camera.fov), (float)state.display->physical_width / (float)state.display->physical_height, 0.1f, 1000.f, data.projection);
+		glm_perspective(glm_rad(state.current_camera->fov), (float)state.display->physical_width / (float)state.display->physical_height, 0.1f, 1000.f, data.projection);
 		data.projection[1][1] *= -1;
 
 		vulkan_renderer_update_buffer(state.ctx, state.scene_uniform_buffer, 0, sizeof(SceneData), &data);
@@ -251,11 +289,16 @@ int main(void) {
 		vulkan_renderer_bind_pipeline(state.ctx, state.sprite_material.pipeline);
 		vulkan_renderer_bind_resource_set(state.ctx, sprite_set);
 
+		if (input_key_pressed(SV_KEY_TAB)) {
+			state.current_layer = state.current_layer == &state.layers[EDITOR_LAYER] ? &state.layers[GAME_LAYER] : &state.layers[EDITOR_LAYER];
+			state.current_camera = state.current_camera == &state.editor_camera ? &state.world_camera : &state.editor_camera;
+		}
+
 		// Draw Sprite
 		{
 			mat4 transform;
 			glm_mat4_identity(transform);
-			glm_translate(transform, sprite_position);
+			glm_translate(transform, state.sprite_position);
 			vulkan_renderer_push_constants(state.ctx, state.sprite_material.shader, "push_constants", transform);
 
 			Mesh *mesh = &state.quad_mesh;
@@ -443,7 +486,7 @@ bool upload_scene(SceneAsset *scene) {
 	return true;
 }
 
-void editor_update(VulkanContext *context, float dt) {
+void editor_update(float dt) {
 	float yaw_delta = -input_mouse_dx() * CAMERA_SENSITIVITY;
 	float pitch_delta = -input_mouse_dy() * CAMERA_SENSITIVITY;
 
@@ -479,6 +522,22 @@ void editor_update(VulkanContext *context, float dt) {
 	glm_vec3_negate(move);
 	glm_vec3_add(move, state.editor_camera.position, state.editor_camera.position);
 	glm_vec3_add(state.editor_camera.position, target_position, state.editor_camera.target);
+}
+
+void game_update(float dt) {
+	vec3 target_position, camera_right;
+
+	glm_vec3_sub(state.editor_camera.target, state.editor_camera.position, target_position);
+	glm_vec3_normalize(target_position);
+	vec3 move = GLM_VEC3_ZERO_INIT;
+
+	glm_vec3_cross(target_position, state.editor_camera.up, camera_right);
+	glm_vec3_normalize(camera_right);
+
+	glm_vec3_muladds(camera_right, (input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * PLAYER_MOVE_SPEED * dt, move);
+	glm_vec3_muladds(target_position, (input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * PLAYER_MOVE_SPEED * dt, move);
+
+	glm_vec3_add(move, state.sprite_position, state.sprite_position);
 }
 
 bool resize_event(Event *event) {
