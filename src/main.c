@@ -45,8 +45,8 @@ typedef enum {
 	ORIENTATION_Z,
 } Orientation;
 
-static const float CAMERA_MOVE_SPEED = 5.4f;
-static const float CAMERA_SENSITIVITY = .003f;
+static const float CAMERA_MOVE_SPEED = 5.f;
+static const float CAMERA_SENSITIVITY = .001f;
 
 typedef enum {
 	CAMERA_PROJECTION_PERSPECTIVE = 0,
@@ -220,6 +220,8 @@ int main(void) {
 		.projection = CAMERA_PROJECTION_PERSPECTIVE
 	};
 
+	vec3 sprite_position = { 0.0f, 0.5f, 5.0f };
+
 	state.current = &state.editor_camera;
 
 	float delta_time = 0.0f;
@@ -253,7 +255,7 @@ int main(void) {
 		{
 			mat4 transform;
 			glm_mat4_identity(transform);
-			glm_translate(transform, (vec3){ 0.f, 0.5f, 5.0f });
+			glm_translate(transform, sprite_position);
 			vulkan_renderer_push_constants(state.ctx, state.sprite_material.shader, "push_constants", transform);
 
 			Mesh *mesh = &state.quad_mesh;
@@ -442,17 +444,17 @@ bool upload_scene(SceneAsset *scene) {
 }
 
 void editor_update(VulkanContext *context, float dt) {
-	float yaw_delta = input_mouse_dx() * CAMERA_SENSITIVITY;
-	float pitch_delta = input_mouse_dy() * CAMERA_SENSITIVITY;
+	float yaw_delta = -input_mouse_dx() * CAMERA_SENSITIVITY;
+	float pitch_delta = -input_mouse_dy() * CAMERA_SENSITIVITY;
 
 	vec3 target_position, camera_right;
 
 	glm_vec3_sub(state.editor_camera.target, state.editor_camera.position, target_position);
 	glm_vec3_normalize(target_position);
 
-	glm_vec3_rotate(target_position, -yaw_delta, state.editor_camera.up);
+	glm_vec3_rotate(target_position, yaw_delta, state.editor_camera.up);
 
-	glm_vec3_cross(state.editor_camera.up, target_position, camera_right);
+	glm_vec3_cross(target_position, state.editor_camera.up, camera_right);
 	glm_vec3_normalize(camera_right);
 
 	vec3 camera_down;
@@ -460,14 +462,18 @@ void editor_update(VulkanContext *context, float dt) {
 
 	float max_angle = glm_vec3_angle(state.editor_camera.up, target_position) - 0.001f;
 	float min_angle = -glm_vec3_angle(camera_down, target_position) + 0.001f;
+
 	pitch_delta = clamp(pitch_delta, min_angle, max_angle);
 
 	glm_vec3_rotate(target_position, pitch_delta, camera_right);
 
 	vec3 move = GLM_VEC3_ZERO_INIT;
 
+	glm_vec3_cross(state.editor_camera.up, target_position, camera_right);
+	glm_vec3_normalize(camera_right);
+
 	glm_vec3_muladds(camera_right, (input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * CAMERA_MOVE_SPEED * dt, move);
-	glm_vec3_muladds(state.editor_camera.up, (input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_C)) * CAMERA_MOVE_SPEED * dt, move);
+	glm_vec3_muladds(camera_down, (input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_C)) * CAMERA_MOVE_SPEED * dt, move);
 	glm_vec3_muladds(target_position, (input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * CAMERA_MOVE_SPEED * dt, move);
 
 	glm_vec3_negate(move);

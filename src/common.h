@@ -9,8 +9,8 @@
 #define countof(array) sizeof(array) / sizeof(*array)
 #define member_size(type, member) (sizeof(((type *)0)->member))
 
-#define max(a, b) (a >= b ? a : b)
-#define min(a, b) (a <= b ? a : b)
+#define max(a, b) (a > b ? a : b)
+#define min(a, b) (a < b ? a : b)
 
 #define clamp(value, minimum, maximum) (min(max(value, minimum), maximum))
 
