@@ -18,6 +18,7 @@
 #include <cgltf/cgltf.h>
 
 #include <fcntl.h>
+#include <math.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
 
@@ -44,20 +45,19 @@ typedef enum {
 	ORIENTATION_Z,
 } Orientation;
 
-bool upload_scene(SceneAsset *asset);
-void update_camera(VulkanContext *context, Platform *platform, float dt);
-bool create_default_material_instance(void);
-bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation);
+static const float CAMERA_MOVE_SPEED = 5.4f;
+static const float CAMERA_SENSITIVITY = .003f;
 
-static const float camera_speed = 1.0f;
+typedef enum {
+	CAMERA_PROJECTION_PERSPECTIVE = 0,
+	CAMERA_PROJECTION_ORTHOGRAPHIC
+} CameraProjection;
 
 typedef struct camera {
-	float speed, sensitivity;
+	vec3 position, target, up;
+	float fov;
 
-	float yaw, pitch;
-	vec3 position, up;
-
-	mat4 view, projection;
+	CameraProjection projection;
 } Camera;
 
 #define MAX_MODEL_MESHES 32
@@ -82,10 +82,16 @@ typedef struct Sprite {
 	Texture texture;
 } Sprite;
 
+bool upload_scene(SceneAsset *asset);
+void editor_update(VulkanContext *context, float dt);
+bool create_default_material_instance(void);
+bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation);
+
 static struct State {
 	Arena *permanent, *frame, *assets;
-	Camera camera;
+
 	VulkanContext *ctx;
+	Platform *display;
 
 	uint32_t scene_uniform_buffer;
 	Mesh quad_mesh;
@@ -101,6 +107,9 @@ static struct State {
 	uint32_t model_count;
 
 	Material model_material, sprite_material;
+
+	Camera editor_camera, world_camera;
+	Camera *current;
 
 	MaterialParameters default_parameters;
 	MaterialInstance default_material_instance;
@@ -120,18 +129,18 @@ int main(void) {
 	event_system_startup();
 	input_system_startup();
 
-	Platform *platform = platform_startup(state.permanent, 1280, 720, "Starter Vulkan");
-	if (platform == NULL) {
+	state.display = platform_startup(state.permanent, 1280, 720, "Starter Vulkan");
+	if (state.display == NULL) {
 		LOG_ERROR("Platform startup failed");
 		return -1;
 	}
 
-	platform_pointer_mode(platform, PLATFORM_POINTER_DISABLED);
+	platform_pointer_mode(state.display, PLATFORM_POINTER_DISABLED);
 
-	state.start_time = platform_time_ms(platform);
+	state.start_time = platform_time_ms(state.display);
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
-	vulkan_renderer_create(state.permanent, &state.ctx, platform);
+	vulkan_renderer_create(state.permanent, &state.ctx, state.display);
 
 	// ========================= DEFAULT ======================================
 	state.scene_uniform_buffer = state.buffer_count++;
@@ -203,34 +212,39 @@ int main(void) {
 	vulkan_renderer_create_resource_set(state.ctx, sprite.material.resource_set, state.sprite_material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
 	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, sprite.material.resource_set, "u_texture", sprite.texture.texture, sprite.texture.sampler);
 
-	state.camera = (Camera){
-		.speed = 3.0f,
-		.sensitivity = 2.5f,
-		.pitch = 0.0f,
-		.yaw = 90.f,
+	state.editor_camera = (Camera){
 		.position = { 0.0f, 1.0f, 10.0f },
+		.target = { 0.0f, 1.0f, 5.0f },
 		.up = { 0.0f, 1.0f, 0.0f },
+		.fov = 45.f,
+		.projection = CAMERA_PROJECTION_PERSPECTIVE
 	};
+
+	state.current = &state.editor_camera;
 
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
-	while (platform_should_close(platform) == false) {
-		float current_frame = (double)(platform_time_ms(platform) - state.start_time) / 1000.0f;
+	while (platform_should_close(state.display) == false) {
+		float current_frame = (double)(platform_time_ms(state.display) - state.start_time) / 1000.0f;
 		delta_time = current_frame - last_frame;
 		last_frame = current_frame;
 
-		platform_poll_events(platform);
+		platform_poll_events(state.display);
 
-		update_camera(state.ctx, platform, delta_time);
+		editor_update(state.ctx, delta_time);
 
 		SceneData data = { 0 };
-		glm_mat4_copy(state.camera.view, data.view);
-		glm_mat4_copy(state.camera.projection, data.projection);
-		glm_vec3_copy(state.camera.position, data.camera_position);
+		glm_mat4_identity(data.view);
+		glm_lookat(state.editor_camera.position, state.editor_camera.target, state.editor_camera.up, data.view);
+
+		glm_mat4_identity(data.projection);
+		glm_perspective(glm_rad(state.editor_camera.fov), (float)state.display->physical_width / (float)state.display->physical_height, 0.1f, 1000.f, data.projection);
+		data.projection[1][1] *= -1;
+
 		vulkan_renderer_update_buffer(state.ctx, state.scene_uniform_buffer, 0, sizeof(SceneData), &data);
 
-		vulkan_renderer_begin_frame(state.ctx, platform);
+		vulkan_renderer_begin_frame(state.ctx, state.display);
 
 		vulkan_renderer_bind_pipeline(state.ctx, state.sprite_material.pipeline);
 		vulkan_renderer_bind_resource_set(state.ctx, sprite_set);
@@ -302,9 +316,9 @@ int main(void) {
 		Vulkan_renderer_end_frame(state.ctx);
 
 		if (input_key_down(SV_KEY_LEFTCTRL))
-			platform_pointer_mode(platform, PLATFORM_POINTER_NORMAL);
+			platform_pointer_mode(state.display, PLATFORM_POINTER_NORMAL);
 		else
-			platform_pointer_mode(platform, PLATFORM_POINTER_DISABLED);
+			platform_pointer_mode(state.display, PLATFORM_POINTER_DISABLED);
 
 		input_system_update();
 	}
@@ -427,55 +441,38 @@ bool upload_scene(SceneAsset *scene) {
 	return true;
 }
 
-void update_camera(VulkanContext *context, Platform *platform, float dt) {
-	static bool use_keys = true;
+void editor_update(VulkanContext *context, float dt) {
+	float yaw_delta = input_mouse_dx() * CAMERA_SENSITIVITY;
+	float pitch_delta = input_mouse_dy() * CAMERA_SENSITIVITY;
 
-	if (input_key_pressed(SV_KEY_TAB))
-		use_keys = !use_keys;
+	vec3 target_position, camera_right;
 
-	state.camera.yaw += input_mouse_delta_x() * state.camera.sensitivity * 0.01f;
-	state.camera.pitch += input_mouse_delta_y() * state.camera.sensitivity * 0.01f;
+	glm_vec3_sub(state.editor_camera.target, state.editor_camera.position, target_position);
+	glm_vec3_normalize(target_position);
 
-	if (state.camera.pitch > 89.0f)
-		state.camera.pitch = 89.0f;
-	if (state.camera.pitch < -89.0f)
-		state.camera.pitch = -89.0f;
+	glm_vec3_rotate(target_position, -yaw_delta, state.editor_camera.up);
 
-	vec3 camera_forward = {
-		cos(glm_rad(state.camera.yaw)) * cos(glm_rad(state.camera.pitch)),
-		sin(glm_rad(state.camera.pitch)),
-		sin(glm_rad(state.camera.yaw)) * cos(glm_rad(state.camera.pitch)),
-	};
-	glm_vec3_normalize(camera_forward);
-
-	vec3 camera_right;
-	glm_vec3_cross(state.camera.up, camera_forward, camera_right);
+	glm_vec3_cross(state.editor_camera.up, target_position, camera_right);
 	glm_vec3_normalize(camera_right);
 
-	vec3 camera_up;
-	glm_vec3_cross(camera_forward, camera_right, camera_up);
+	vec3 camera_down;
+	glm_vec3_negate_to(state.editor_camera.up, camera_down);
 
-	vec3 move;
-	glm_vec3_zero(move);
+	float max_angle = glm_vec3_angle(state.editor_camera.up, target_position) - 0.001f;
+	float min_angle = -glm_vec3_angle(camera_down, target_position) + 0.001f;
+	pitch_delta = clamp(pitch_delta, min_angle, max_angle);
 
-	if (use_keys) {
-		glm_vec3_muladds(camera_right, (input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * state.camera.speed * dt, move);
-		glm_vec3_muladds(state.camera.up, (input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_C)) * state.camera.speed * dt, move);
-		glm_vec3_muladds(camera_forward, (input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * state.camera.speed * dt, move);
-	}
+	glm_vec3_rotate(target_position, pitch_delta, camera_right);
 
-	// glm_vec3_normalize(move);
-	glm_vec3_add(move, state.camera.position, state.camera.position);
+	vec3 move = GLM_VEC3_ZERO_INIT;
 
-	vec3 camera_target;
-	glm_vec3_sub(state.camera.position, camera_forward, camera_target);
+	glm_vec3_muladds(camera_right, (input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * CAMERA_MOVE_SPEED * dt, move);
+	glm_vec3_muladds(state.editor_camera.up, (input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_C)) * CAMERA_MOVE_SPEED * dt, move);
+	glm_vec3_muladds(target_position, (input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * CAMERA_MOVE_SPEED * dt, move);
 
-	glm_mat4_identity(state.camera.view);
-	glm_lookat(state.camera.position, camera_target, camera_up, state.camera.view);
-
-	glm_mat4_identity(state.camera.projection);
-	glm_perspective(glm_rad(45.f), (float)platform->physical_width / (float)platform->physical_height, 0.1f, 1000.f, state.camera.projection);
-	state.camera.projection[1][1] *= -1;
+	glm_vec3_negate(move);
+	glm_vec3_add(move, state.editor_camera.position, state.editor_camera.position);
+	glm_vec3_add(state.editor_camera.position, target_position, state.editor_camera.target);
 }
 
 bool resize_event(Event *event) {

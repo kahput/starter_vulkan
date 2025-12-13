@@ -12,6 +12,8 @@
 #define max(a, b) (a >= b ? a : b)
 #define min(a, b) (a <= b ? a : b)
 
+#define clamp(value, minimum, maximum) (min(max(value, minimum), maximum))
+
 #define MAX_FILE_NAME_LENGTH UINT8_MAX
 #define MAX_FILE_PATH_LENGTH 512
 

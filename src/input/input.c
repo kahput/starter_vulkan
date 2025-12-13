@@ -100,10 +100,10 @@ double input_mouse_y(void) {
 	return state.motion.y;
 }
 
-double input_mouse_delta_x(void) {
+double input_mouse_dx(void) {
 	return state.motion.x - state.motion.last_x;
 }
-double input_mouse_delta_y(void) {
+double input_mouse_dy(void) {
 	return state.motion.y - state.motion.last_y;
 }
 

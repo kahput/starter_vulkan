@@ -22,5 +22,5 @@ bool input_mouse_up(int button);
 double input_mouse_x(void);
 double input_mouse_y(void);
 
-double input_mouse_delta_x(void);
-double input_mouse_delta_y(void);
+double input_mouse_dx(void);
+double input_mouse_dy(void);
