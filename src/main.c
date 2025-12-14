@@ -1,3 +1,4 @@
+#include "core/hash_trie.h"
 #include "events/platform_events.h"
 #include "platform.h"
 
@@ -26,9 +27,12 @@
 #include "core/identifiers.h"
 #include "core/logger.h"
 
+#include "core/hash_table.h"
+
 #include "allocators/arena.h"
 #include "allocators/pool.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -97,7 +101,7 @@ bool create_default_material_instance(void);
 bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation);
 
 static struct State {
-	Arena *permanent, *frame, *assets;
+	Arena permanent_arena, frame_arena, load_arena;
 
 	VulkanContext *ctx;
 	Platform *display;
@@ -140,16 +144,16 @@ static struct State {
 } state;
 
 int main(void) {
-	state.permanent = allocator_arena(MiB(64));
-	state.frame = allocator_arena(MiB(4));
-	state.assets = allocator_arena(MiB(128));
+	allocator_arena(&state.permanent_arena, MiB(64));
+	allocator_arena(&state.frame_arena, MiB(4));
+	allocator_arena(&state.load_arena, MiB(128));
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	event_system_startup();
 	input_system_startup();
 
-	state.display = platform_startup(state.permanent, 1280, 720, "Starter Vulkan");
+	state.display = platform_startup(&state.permanent_arena, 1280, 720, "Starter Vulkan");
 	if (state.display == NULL) {
 		LOG_ERROR("Platform startup failed");
 		return -1;
@@ -168,7 +172,7 @@ int main(void) {
 	state.start_time = platform_time_ms(state.display);
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
-	vulkan_renderer_create(state.permanent, &state.ctx, state.display);
+	vulkan_renderer_create(&state.permanent_arena, &state.ctx, state.display);
 
 	// ========================= DEFAULT ======================================
 	state.scene_uniform_buffer = state.buffer_count++;
@@ -215,20 +219,18 @@ int main(void) {
 
 	create_default_material_instance();
 
-	// ========================= MODELS ======================================
 	create_plane_mesh(&state.quad_mesh, 0, 0, ORIENTATION_Z);
 
 	Mesh floor = { 0 };
 	create_plane_mesh(&floor, 10, 10, ORIENTATION_Y);
 	floor.material = &state.default_material_instance;
 
-	ArenaTemp temp = arena_begin_temp(state.assets);
-	SceneAsset *scene = NULL;
-	scene = importer_load_gltf(state.assets, GATE_DOOR_FILE_PATH);
+	ArenaTemp temp = arena_begin_temp(&state.load_arena);
+	SceneAsset *scene = importer_load_gltf(&state.load_arena, GATE_DOOR_FILE_PATH);
 	upload_scene(scene);
 	arena_end_temp(temp);
 
-	temp = arena_begin_temp(state.assets);
+	temp = arena_begin_temp(&state.load_arena);
 	TextureSource *sprite_texture = importer_load_image(temp.arena, "assets/sprites/kenney/tile_0085.png");
 	Sprite sprite = {
 		.material = { .material = state.sprite_material, .parameter_uniform_buffer = state.scene_uniform_buffer, .resource_set = state.set_count++ },
@@ -525,19 +527,7 @@ void editor_update(float dt) {
 }
 
 void game_update(float dt) {
-	vec3 target_position, camera_right;
-
-	glm_vec3_sub(state.editor_camera.target, state.editor_camera.position, target_position);
-	glm_vec3_normalize(target_position);
-	vec3 move = GLM_VEC3_ZERO_INIT;
-
-	glm_vec3_cross(target_position, state.editor_camera.up, camera_right);
-	glm_vec3_normalize(camera_right);
-
-	glm_vec3_muladds(camera_right, (input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * PLAYER_MOVE_SPEED * dt, move);
-	glm_vec3_muladds(target_position, (input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * PLAYER_MOVE_SPEED * dt, move);
-
-	glm_vec3_add(move, state.sprite_position, state.sprite_position);
+	// TODO: Gameplay
 }
 
 bool resize_event(Event *event) {
@@ -595,7 +585,7 @@ bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_
 
 			// TODO: Make a single set instead of three
 			// Vertex v00 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-			// Vertex v10 = { .position = { 0.0f }, { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			// Vertex v10 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
 			// Vertex v01 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
 			// Vertex v11 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
 
@@ -651,6 +641,8 @@ bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_
 	vulkan_renderer_create_buffer(state.ctx, mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * mesh->vertex_count, vertices);
 
 	mesh->index_buffer = mesh->index_count = 0;
+
+	arena_reset_scratch(temp);
 
 	return true;
 }

@@ -2,13 +2,16 @@
 
 #include "common.h"
 
-typedef struct arena Arena;
+typedef struct arena {
+	size_t offset, capacity;
+	void *buffer;
+} Arena;
 typedef struct {
 	struct arena *arena;
 	uint32_t position;
 } ArenaTemp;
 
-struct arena *allocator_arena(size_t size);
+bool allocator_arena(Arena *arena, size_t size);
 void arena_clear(struct arena *arena);
 void arena_destroy(struct arena *arena);
 
@@ -25,7 +28,7 @@ void arena_set(struct arena *arena, size_t position);
 ArenaTemp arena_begin_temp(struct arena *arena);
 void arena_end_temp(ArenaTemp temp);
 
-ArenaTemp arena_get_scratch(Arena **arena);
+ArenaTemp arena_get_scratch(Arena *conflict);
 #define arena_reset_scratch(t) arena_end_temp(t)
 
 size_t arena_size(struct arena *arena);
