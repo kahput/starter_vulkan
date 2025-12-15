@@ -9,13 +9,13 @@
 
 #include "common.h"
 #include "core/logger.h"
+#include "platform/filesystem.h"
 
 #include "allocators/arena.h"
 #include "renderer/vulkan/vk_types.h"
 
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
 #include <vulkan/vulkan_core.h>
 
 struct shader_file {
@@ -30,10 +30,9 @@ struct vertex_input_state {
 	uint32_t binding_count, attribute_count;
 };
 
-struct shader_file read_file(struct arena *arena, const char *path);
-bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code);
+bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File vertex_shader_code, File fragment_shader_code);
 
-bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, const char *vertex_shader_path, const char *fragment_shader_path) {
+bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path) {
 	if (store_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting create", store_index);
 		return false;
@@ -47,8 +46,9 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 	}
 
 	ArenaTemp temp = arena_get_scratch(NULL);
-	struct shader_file vertex_shader_code = read_file(temp.arena, vertex_shader_path);
-	struct shader_file fragment_shader_code = read_file(temp.arena, fragment_shader_path);
+
+	File vertex_shader_code = filesystem_read(temp.arena, vertex_shader_path);
+	File fragment_shader_code = filesystem_read(temp.arena, fragment_shader_path);
 
 	if (vertex_shader_code.size <= 0 && fragment_shader_code.size <= 0) {
 		LOG_ERROR("Failed to load files");
@@ -319,7 +319,7 @@ struct shader_file read_file(struct arena *arena, const char *path) {
 	return (struct shader_file){ .size = size, .content = byte_content };
 }
 
-bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, struct shader_file vertex_shader_code, struct shader_file fragment_shader_code) {
+bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File vertex_shader_code, File fragment_shader_code) {
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 

@@ -3,6 +3,8 @@
 #include "common.h"
 #include "renderer_types.h"
 
+#include "core/astring.h"
+
 struct arena;
 struct platform;
 
@@ -25,7 +27,7 @@ bool Vulkan_renderer_end_frame(VulkanContext *context);
 bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, const char *vertex_shader_path, const char *fragment_shader_path);
+bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path);
 bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, PipelineDesc description);
 
 bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels);

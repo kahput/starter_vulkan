@@ -151,11 +151,11 @@ typedef enum {
 } MouseButton;
 
 typedef enum {
-	SV_MOD_KEY_SHIFT = 0x0001,
-	SV_MOD_KEY_CONTROL = 0x0002,
-	SV_MOD_KEY_ALT = 0x0004,
-	SV_MOD_KEY_SUPER = 0x0008,
-	SV_MOD_KEY_CAPSLOCK = 0x0010,
-	SV_MOD_KEY_NUMLOCK = 0x0020,
+	SV_MOD_KEY_SHIFT = 1 << 0,
+	SV_MOD_KEY_CONTROL = 1 << 1,
+	SV_MOD_KEY_ALT = 1 << 2,
+	SV_MOD_KEY_SUPER = 1 << 3,
+	SV_MOD_KEY_CAPSLOCK = 1 << 4,
+	SV_MOD_KEY_NUMLOCK = 1 << 5,
 } ModKeyFlagBits;
 typedef uint32_t ModKeyFlags;

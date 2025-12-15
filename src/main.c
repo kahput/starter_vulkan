@@ -1,8 +1,10 @@
-#include "core/hash_trie.h"
-#include "events/platform_events.h"
+#include "assets.h"
+#include "core/astring.h"
 #include "platform.h"
 
 #include "event.h"
+#include "events/platform_events.h"
+
 #include "input.h"
 
 #include "assets/importer.h"
@@ -10,31 +12,12 @@
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
-#include <assert.h>
-#include <cglm/affine-pre.h>
-#include <cglm/affine.h>
-#include <cglm/mat4.h>
-#include <cglm/util.h>
-#include <cglm/vec3.h>
-#include <cgltf/cgltf.h>
-
-#include <fcntl.h>
-#include <math.h>
-#include <stb/stb_image.h>
-#include <stb/stb_image_write.h>
+#include <cglm/cglm.h>
 
 #include "common.h"
-#include "core/identifiers.h"
 #include "core/logger.h"
 
-#include "core/hash_table.h"
-
 #include "allocators/arena.h"
-#include "allocators/pool.h"
-
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
 
 #define MAX_MODEL_MESHES 32
 #define MAX_MODEL_MATERIALS 8
@@ -144,9 +127,9 @@ static struct State {
 } state;
 
 int main(void) {
-	allocator_arena(&state.permanent_arena, MiB(64));
-	allocator_arena(&state.frame_arena, MiB(4));
-	allocator_arena(&state.load_arena, MiB(128));
+	state.permanent_arena = arena_create(MiB(64));
+	state.frame_arena = arena_create(MiB(4));
+	state.load_arena = arena_create(MiB(128));
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
@@ -179,13 +162,13 @@ int main(void) {
 	vulkan_renderer_create_buffer(state.ctx, state.scene_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(SceneData), NULL);
 
 	state.model_material = (Material){ .shader = 0, .pipeline = 0 };
-	vulkan_renderer_create_shader(state.ctx, state.model_material.shader, "./assets/shaders/vs_terrain.spv", "./assets/shaders/fs_terrain.spv");
+	vulkan_renderer_create_shader(state.ctx, state.model_material.shader, SLITERAL("./assets/shaders/vs_terrain.spv"), SLITERAL("./assets/shaders/fs_terrain.spv"));
 	PipelineDesc model_pipeline = DEFAULT_PIPELINE(state.model_material.shader);
 	// model_pipeline.polygon_mode = POLYGON_MODE_LINE;
 	vulkan_renderer_create_pipeline(state.ctx, state.model_material.pipeline, model_pipeline);
 
 	state.sprite_material = (Material){ .shader = 1, .pipeline = 1 };
-	vulkan_renderer_create_shader(state.ctx, state.sprite_material.shader, "./assets/shaders/vs_sprite.spv", "./assets/shaders/fs_sprite.spv");
+	vulkan_renderer_create_shader(state.ctx, state.sprite_material.shader, SLITERAL("./assets/shaders/vs_sprite.spv"), SLITERAL("./assets/shaders/fs_sprite.spv"));
 	PipelineDesc sprite_pipeline = DEFAULT_PIPELINE(state.sprite_material.shader);
 	sprite_pipeline.cull_mode = CULL_MODE_NONE;
 	vulkan_renderer_create_pipeline(state.ctx, state.sprite_material.pipeline, sprite_pipeline);
@@ -224,6 +207,37 @@ int main(void) {
 	Mesh floor = { 0 };
 	create_plane_mesh(&floor, 10, 10, ORIENTATION_Y);
 	floor.material = &state.default_material_instance;
+
+	AssetLibrary library = {
+		.arena = arena_create(MiB(4))
+	};
+	asset_library_track_file(&library, SLITERAL(BOT_FILE_PATH));
+
+	// asset_library_track_directory(&library, SLITERAL("assets/models/modular_dungeon"));
+
+	/*
+	 * ================================EXPLICT================================
+	 * AssetLibrary assets = { 0 }
+	 * asset_library_scan_directory(&assets, "assets/models/modular_dungeon");
+	 *
+	 * MeshSource *source = asset_library_fetch_mesh(&assets, "gate");
+	 * TextureSource *source = asset_library_fetch_image(&assets, "colormap");
+	 * Mesh *mesh = renderer_upload_mesh(source);
+	 *
+	 * ...
+	 * renderer_submit(mesh);
+	 *
+	 * ================================IMPLICT================================
+	 *
+	 * AssetLibrary assets = { 0 };
+	 * asset_library_process_directory(&assets, "assets/models/modular_dungeon");
+	 *
+	 * MeshID mesh = asset_library_fetch_mesh(&assets, "gate");
+	 *
+	 * ...
+	 * // Uploads if not already uploaded here
+	 * renderer_submit(mesh);
+	 */
 
 	ArenaTemp temp = arena_begin_temp(&state.load_arena);
 	SceneAsset *scene = importer_load_gltf(&state.load_arena, GATE_DOOR_FILE_PATH);

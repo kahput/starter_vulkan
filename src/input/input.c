@@ -20,7 +20,6 @@ static struct {
 
 		bool initialized, virtual_cursor;
 	} motion;
-
 } state;
 
 static bool on_key_event(Event *event);

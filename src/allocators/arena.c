@@ -5,10 +5,19 @@
 
 static Arena scratch_arenas[2] = { 0 };
 
-bool allocator_arena(Arena *arena, size_t size) {
-	arena->offset = 0;
-	arena->capacity = size;
-	arena->buffer = malloc(size);
+Arena arena_create(size_t size) {
+	Arena arena = { 0 };
+	arena.offset = 0;
+	arena.capacity = size;
+	arena.buffer = malloc(size);
+	return arena;
+}
+
+Arena arena_create_from_memory(void *buffer, size_t offset, size_t size) {
+	Arena arena = { 0 };
+	arena.offset = 0;
+	arena.capacity = size;
+	arena.buffer = (uint8_t *)buffer + offset;
 	return arena;
 }
 
@@ -47,7 +56,7 @@ void *arena_push_zero(Arena *arena, size_t size) {
 	return result;
 }
 
-ArenaTemp arena_begin_temp(struct arena *arena) {
+ArenaTemp arena_begin_temp(Arena *arena) {
 	return (ArenaTemp){ .arena = arena, .position = arena_size(arena) };
 }
 void arena_end_temp(ArenaTemp temp) {
@@ -56,9 +65,9 @@ void arena_end_temp(ArenaTemp temp) {
 
 ArenaTemp arena_get_scratch(Arena *conflict) {
 	if (!scratch_arenas[0].buffer)
-		allocator_arena(&scratch_arenas[0], MiB(4));
+		scratch_arenas[0] = arena_create(MiB(4));
 	if (!scratch_arenas[1].buffer)
-		allocator_arena(&scratch_arenas[1], MiB(4));
+		scratch_arenas[1] = arena_create(MiB(4));
 
 	ArenaTemp temp = {
 		.arena = conflict == &scratch_arenas[0] ? &scratch_arenas[1] : &scratch_arenas[0],

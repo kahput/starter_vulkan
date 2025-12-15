@@ -15,7 +15,6 @@
 #include <stdio.h>
 #include <string.h>
 
-bool filesystem_file_exists(const char *path);
 void filesystem_filename(const char *src, char *dst);
 void filesystem_directory(const char *src, char *dst);
 
@@ -258,15 +257,6 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	cgltf_free(data);
 
 	return asset;
-}
-
-bool filesystem_file_exists(const char *path) {
-	FILE *file = fopen(path, "r");
-	if (file) {
-		fclose(file);
-		return true;
-	}
-	return false;
 }
 
 void filesystem_filename(const char *src, char *dst) {
