@@ -41,8 +41,8 @@ bool vulkan_create_instance(VulkanContext *context, Platform *platform) {
 	const char **extensions = platform_vulkan_extensions(platform, &requested_extensions);
 	vkEnumerateInstanceExtensionProperties(NULL, &available_extensions, NULL);
 
-	ArenaTemp temp = arena_get_scratch(NULL);
-	VkExtensionProperties *properties = arena_push_array_zero(temp.arena, VkExtensionProperties, available_extensions);
+	ArenaTemp scratch = arena_scratch(NULL);
+	VkExtensionProperties *properties = arena_push_array_zero(scratch.arena, VkExtensionProperties, available_extensions);
 	vkEnumerateInstanceExtensionProperties(NULL, &available_extensions, properties);
 
 	uint32_t match = 0;
@@ -54,6 +54,7 @@ bool vulkan_create_instance(VulkanContext *context, Platform *platform) {
 	}
 	if (match != requested_extensions) {
 		LOG_ERROR("Requested extensions not found");
+		arena_release_scratch(scratch);
 		return false;
 	}
 
@@ -68,7 +69,7 @@ bool vulkan_create_instance(VulkanContext *context, Platform *platform) {
 	uint32_t requested_layers = sizeof(layers) / sizeof(*layers), available_layers = 0;
 	vkEnumerateInstanceLayerProperties(&available_layers, NULL);
 
-	VkLayerProperties *layer_properties = arena_push_array_zero(temp.arena, VkLayerProperties, available_layers);
+	VkLayerProperties *layer_properties = arena_push_array_zero(scratch.arena, VkLayerProperties, available_layers);
 	vkEnumerateInstanceLayerProperties(&available_layers, layer_properties);
 
 	match = 0;
@@ -79,6 +80,7 @@ bool vulkan_create_instance(VulkanContext *context, Platform *platform) {
 
 	if (match != requested_layers) {
 		LOG_ERROR("Requested layers not found");
+		arena_release_scratch(scratch);
 		return false;
 	}
 	create_info.enabledLayerCount = requested_layers;
@@ -100,13 +102,13 @@ bool vulkan_create_instance(VulkanContext *context, Platform *platform) {
 	VkResult result = vkCreateInstance(&create_info, NULL, &context->instance);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Vulkan instance creation failed");
+		arena_release_scratch(scratch);
 		return false;
 	}
 
 	LOG_INFO("Vulkan Instance created");
 
-	arena_reset_scratch(temp);
-
+	arena_release_scratch(scratch);
 	return true;
 }
 

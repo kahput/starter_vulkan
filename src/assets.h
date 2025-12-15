@@ -5,9 +5,9 @@
 #include "core/hash_trie.h"
 
 typedef enum {
-	ASSET_TYPE_UNDEFINED ,
-	ASSET_TYPE_MESH ,
-	ASSET_TYPE_TEXTURE ,
+	ASSET_TYPE_UNDEFINED,
+	ASSET_TYPE_MESH,
+	ASSET_TYPE_TEXTURE,
 	ASSET_TYPE_COUNT,
 } AssetType;
 
@@ -18,16 +18,18 @@ typedef struct {
 	AssetType type;
 	uint64_t last_modified;
 
+	bool is_loaded;
 	void *source_data;
 } AssetEntry;
 
 typedef struct asset_library {
+	Arena *arena;
 	AssetEntry *root;
 
 	uint32_t tracked_file_count;
-
-	Arena arena;
 } AssetLibrary;
 
-bool asset_library_track_directory(AssetLibrary *library, String directory);
-bool asset_library_track_file(AssetLibrary *library, String file_path);
+bool asset_library_startup(void *memory, size_t offset, size_t size);
+
+bool asset_library_track_directory(String directory);
+bool asset_library_track_file(String file_path);

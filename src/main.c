@@ -84,7 +84,7 @@ bool create_default_material_instance(void);
 bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation);
 
 static struct State {
-	Arena permanent_arena, frame_arena, load_arena;
+	Arena permanent_arena, frame_arena;
 
 	VulkanContext *ctx;
 	Platform *display;
@@ -128,13 +128,14 @@ static struct State {
 
 int main(void) {
 	state.permanent_arena = arena_create(MiB(64));
+	state.permanent_arena.capacity = MiB(32);
 	state.frame_arena = arena_create(MiB(4));
-	state.load_arena = arena_create(MiB(128));
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	event_system_startup();
 	input_system_startup();
+	asset_library_startup(state.permanent_arena.buffer, MiB(32), MiB(32));
 
 	state.display = platform_startup(&state.permanent_arena, 1280, 720, "Starter Vulkan");
 	if (state.display == NULL) {
@@ -208,10 +209,7 @@ int main(void) {
 	create_plane_mesh(&floor, 10, 10, ORIENTATION_Y);
 	floor.material = &state.default_material_instance;
 
-	AssetLibrary library = {
-		.arena = arena_create(MiB(4))
-	};
-	asset_library_track_file(&library, SLITERAL(BOT_FILE_PATH));
+	asset_library_track_directory(SLITERAL("assets/models/modular_dungeon"));
 
 	// asset_library_track_directory(&library, SLITERAL("assets/models/modular_dungeon"));
 
@@ -239,12 +237,12 @@ int main(void) {
 	 * renderer_submit(mesh);
 	 */
 
-	ArenaTemp temp = arena_begin_temp(&state.load_arena);
-	SceneAsset *scene = importer_load_gltf(&state.load_arena, GATE_DOOR_FILE_PATH);
+	ArenaTemp temp = arena_begin_temp(&state.permanent_arena);
+	SceneAsset *scene = importer_load_gltf(&state.permanent_arena, GATE_DOOR_FILE_PATH);
 	upload_scene(scene);
 	arena_end_temp(temp);
 
-	temp = arena_begin_temp(&state.load_arena);
+	temp = arena_begin_temp(&state.permanent_arena);
 	TextureSource *sprite_texture = importer_load_image(temp.arena, "assets/sprites/kenney/tile_0085.png");
 	Sprite sprite = {
 		.material = { .material = state.sprite_material, .parameter_uniform_buffer = state.scene_uniform_buffer, .resource_set = state.set_count++ },
@@ -567,7 +565,6 @@ bool create_default_material_instance(void) {
 	vulkan_renderer_create_buffer(state.ctx, state.default_material_instance.parameter_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(MaterialParameters), &state.default_parameters);
 
 	vulkan_renderer_create_resource_set(state.ctx, state.default_material_instance.resource_set, state.default_material_instance.material.shader, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
-	vulkan_renderer_update_resource_set_buffer(state.ctx, state.default_material_instance.resource_set, "u_scene", state.scene_uniform_buffer);
 	vulkan_renderer_update_resource_set_buffer(state.ctx, state.default_material_instance.resource_set, "u_material", state.default_material_instance.parameter_uniform_buffer);
 
 	vulkan_renderer_update_resource_set_texture_sampler(state.ctx, state.default_material_instance.resource_set, "u_base_color_texture", state.default_texture_white, state.default_sampler);
@@ -580,11 +577,11 @@ bool create_default_material_instance(void) {
 }
 
 bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation) {
-	ArenaTemp temp = arena_get_scratch(NULL);
+	ArenaTemp scratch = arena_scratch(NULL);
 
 	uint32_t rows = subdivide_width + 1, columns = subdivide_depth + 1;
 
-	Vertex *vertices = arena_push_array_zero(temp.arena, Vertex, rows * columns * 6);
+	Vertex *vertices = arena_push_array_zero(scratch.arena, Vertex, rows * columns * 6);
 	mesh->vertex_count = 0;
 
 	float row_unit = ((float)1 / rows);
@@ -656,7 +653,7 @@ bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_
 
 	mesh->index_buffer = mesh->index_count = 0;
 
-	arena_reset_scratch(temp);
+	arena_release_scratch(scratch);
 
 	return true;
 }

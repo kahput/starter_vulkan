@@ -84,8 +84,8 @@ bool select_physical_device(Arena *arena, VulkanContext *context) {
 		return false;
 	}
 
-	ArenaTemp temp = arena_get_scratch(NULL);
-	VkPhysicalDevice *physical_devices = arena_push_array_zero(temp.arena, VkPhysicalDevice, device_count);
+	ArenaTemp scratch = arena_scratch(NULL);
+	VkPhysicalDevice *physical_devices = arena_push_array_zero(scratch.arena, VkPhysicalDevice, device_count);
 	vkEnumeratePhysicalDevices(context->instance, &device_count, physical_devices);
 
 	LOG_INFO("Selecting suitable device...");
@@ -98,7 +98,7 @@ bool select_physical_device(Arena *arena, VulkanContext *context) {
 		}
 	}
 
-	arena_reset_scratch(temp);
+	arena_release_scratch(scratch);
 	return found_suitable;
 }
 
@@ -112,11 +112,11 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	if (!(device->features.geometryShader && device->features.samplerAnisotropy))
 		return false;
 
-	ArenaTemp temp = arena_get_scratch(NULL);
+	ArenaTemp scratch = arena_scratch(NULL);
 	uint32_t requested_extensions = countof(extensions), available_extensions = 0;
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, NULL);
 
-	VkExtensionProperties *properties = arena_push_array_zero(temp.arena, VkExtensionProperties, available_extensions);
+	VkExtensionProperties *properties = arena_push_array_zero(scratch.arena, VkExtensionProperties, available_extensions);
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, properties);
 
 	for (uint32_t i = 0; i < requested_extensions; i++) {
@@ -138,7 +138,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &device->swapchain_details.format_count, NULL);
 	if (device->swapchain_details.format_count == 0) {
 		LOG_ERROR("No surface formats available");
-		arena_reset_scratch(temp);
+		arena_release_scratch(scratch);
 		return false;
 	}
 
@@ -148,7 +148,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->swapchain_details.present_mode_count, NULL);
 	if (device->swapchain_details.present_mode_count == 0) {
 		LOG_ERROR("No surface modes available");
-		arena_reset_scratch(temp);
+		arena_release_scratch(scratch);
 		return false;
 	}
 
@@ -158,7 +158,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, NULL);
 
-	VkQueueFamilyProperties *queue_family_properties = arena_push_array_zero(temp.arena, VkQueueFamilyProperties, queue_family_count);
+	VkQueueFamilyProperties *queue_family_properties = arena_push_array_zero(scratch.arena, VkQueueFamilyProperties, queue_family_count);
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_family_properties);
 
 	device->graphics_index = -1, device->transfer_index = -1,
@@ -178,7 +178,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 			device->present_index = index;
 	}
 
-	arena_reset_scratch(temp);
+	arena_release_scratch(scratch);
 	LOG_INFO("Device '%s' selected", device->properties.deviceName);
 
 	return true;

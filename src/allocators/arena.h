@@ -29,7 +29,7 @@ void arena_set(Arena *, size_t position);
 ArenaTemp arena_begin_temp(Arena *);
 void arena_end_temp(ArenaTemp temp);
 
-ArenaTemp arena_get_scratch(Arena *conflict);
-#define arena_reset_scratch(t) arena_end_temp(t)
+ArenaTemp arena_scratch(Arena *conflict);
+#define arena_release_scratch(t) arena_end_temp(t)
 
 size_t arena_size(Arena *);

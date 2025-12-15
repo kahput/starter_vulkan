@@ -63,18 +63,18 @@ void arena_end_temp(ArenaTemp temp) {
 	arena_set(temp.arena, temp.position);
 }
 
-ArenaTemp arena_get_scratch(Arena *conflict) {
+ArenaTemp arena_scratch(Arena *conflict) {
 	if (!scratch_arenas[0].buffer)
 		scratch_arenas[0] = arena_create(MiB(4));
 	if (!scratch_arenas[1].buffer)
 		scratch_arenas[1] = arena_create(MiB(4));
 
-	ArenaTemp temp = {
+	ArenaTemp scratch = {
 		.arena = conflict == &scratch_arenas[0] ? &scratch_arenas[1] : &scratch_arenas[0],
 	};
-	temp.position = arena_size(temp.arena);
+	scratch.position = arena_size(scratch.arena);
 
-	return temp;
+	return scratch;
 }
 
 void arena_pop(Arena *arena, size_t size) {

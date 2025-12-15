@@ -28,7 +28,7 @@ uint64_t string_hash64(String string) {
 
 String string_copy(struct arena *arena, String target) {
 	String copy = target;
-	copy.data = arena_push_array_zero(arena, uint8_t, target.size);
+	copy.data = arena_push_zero(arena, target.size);
 
 	if (copy.size)
 		memcpy(copy.data, target.data, copy.size);
@@ -37,7 +37,7 @@ String string_copy(struct arena *arena, String target) {
 
 String string_copy_content(struct arena *arena, String target) {
 	String copy = target;
-	copy.data = arena_push_array_zero(arena, uint8_t, target.length);
+	copy.data = arena_push_zero(arena, target.length);
 
 	if (copy.length)
 		memcpy(copy.data, target.data, copy.length);
@@ -57,7 +57,7 @@ String string_directory_from_path(Arena *arena, String path) {
 
 	while ((c = path.data[length++])) {
 		if (c == '/' || c == '\\') {
-			final = length;
+			final = length - 1;
 		}
 	}
 
@@ -74,7 +74,7 @@ String string_directory_from_path(Arena *arena, String path) {
 }
 
 String string_filename_from_path(Arena *arena, String path) {
-	int32_t start = -1;
+	int32_t start = 0;
 	uint32_t length = 0;
 	uint8_t c;
 
@@ -82,10 +82,6 @@ String string_filename_from_path(Arena *arena, String path) {
 		if (c == '/' || c == '\\') {
 			start = length;
 		}
-	}
-
-	if (start == -1) {
-		return (String){ 0 };
 	}
 
 	String name = {
@@ -99,7 +95,7 @@ String string_filename_from_path(Arena *arena, String path) {
 	return name;
 }
 String string_extension_from_path(struct arena *arena, String name) {
-	int32_t start = -1;
+	int32_t start = 0;
 	uint32_t length = 0;
 	uint8_t c;
 
@@ -107,10 +103,6 @@ String string_extension_from_path(struct arena *arena, String name) {
 		if (c == '.') {
 			start = length;
 		}
-	}
-
-	if (start == -1) {
-		return (String){ 0 };
 	}
 
 	String extension = {
@@ -140,4 +132,15 @@ size_t cstring_nlength(const char *string, size_t max_length) {
 	}
 
 	return length - 1;
+}
+
+char *cstring_null_terminated(struct arena *arena, String string) {
+	if (string.data[string.length] == '\0')
+		return (char *)string.data;
+
+	char *null_termianted = arena_push_zero(arena, string.length + 1);
+	mempcpy(null_termianted, string.data, string.length + 1);
+	null_termianted[string.length] = '\0';
+
+	return null_termianted;
 }

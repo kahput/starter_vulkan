@@ -30,7 +30,7 @@ struct vertex_input_state {
 	uint32_t binding_count, attribute_count;
 };
 
-bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File vertex_shader_code, File fragment_shader_code);
+bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code);
 
 bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path) {
 	if (store_index >= MAX_SHADERS) {
@@ -45,14 +45,14 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 		return false;
 	}
 
-	ArenaTemp temp = arena_get_scratch(NULL);
+	ArenaTemp scratch = arena_scratch(NULL);
 
-	File vertex_shader_code = filesystem_read(temp.arena, vertex_shader_path);
-	File fragment_shader_code = filesystem_read(temp.arena, fragment_shader_path);
+	FileContent vertex_shader_code = filesystem_read(scratch.arena, vertex_shader_path);
+	FileContent fragment_shader_code = filesystem_read(scratch.arena, fragment_shader_path);
 
 	if (vertex_shader_code.size <= 0 && fragment_shader_code.size <= 0) {
 		LOG_ERROR("Failed to load files");
-		arena_reset_scratch(temp);
+		arena_release_scratch(scratch);
 		return false;
 	}
 
@@ -80,7 +80,7 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 
 	reflect_shader_interface(context, shader, vertex_shader_code, fragment_shader_code);
 
-	arena_reset_scratch(temp);
+	arena_release_scratch(scratch);
 
 	return true;
 }
@@ -319,7 +319,7 @@ struct shader_file read_file(struct arena *arena, const char *path) {
 	return (struct shader_file){ .size = size, .content = byte_content };
 }
 
-bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File vertex_shader_code, File fragment_shader_code) {
+bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code) {
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
@@ -337,14 +337,14 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 		return false;
 	}
 
-	ArenaTemp temp = arena_get_scratch(NULL);
+	ArenaTemp scratch = arena_scratch(NULL);
 
 	// ========== VERTEX INPUT ATTRIBUTES ==========
 	uint32_t input_variable_count = 0;
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, NULL);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
-	SpvReflectInterfaceVariable **input_variables = arena_push_array(temp.arena, SpvReflectInterfaceVariable *, input_variable_count);
+	SpvReflectInterfaceVariable **input_variables = arena_push_array(scratch.arena, SpvReflectInterfaceVariable *, input_variable_count);
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, input_variables);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
@@ -406,8 +406,8 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, NULL);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
-	SpvReflectDescriptorSet **vs_sets = arena_push_array(temp.arena, SpvReflectDescriptorSet *, vs_set_count);
-	SpvReflectDescriptorSet **fs_sets = arena_push_array(temp.arena, SpvReflectDescriptorSet *, fs_set_count);
+	SpvReflectDescriptorSet **vs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, vs_set_count);
+	SpvReflectDescriptorSet **fs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, fs_set_count);
 
 	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, vs_sets);
 	assert(result == SPV_REFLECT_RESULT_SUCCESS);
@@ -542,7 +542,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 		if (vulkan_create_descriptor_set_layout(context, info->bindings, info->binding_count, &shader->layouts[index]) == false) {
 			spvReflectDestroyShaderModule(&vertex_module);
 			spvReflectDestroyShaderModule(&fragment_module);
-			arena_reset_scratch(temp);
+			arena_release_scratch(scratch);
 			return false;
 		}
 	}
@@ -559,7 +559,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	uint32_t push_constant_offset = shader->uniform_count;
 
 	if (vs_push_count > 0) {
-		SpvReflectBlockVariable **push_blocks = arena_push_array(temp.arena, SpvReflectBlockVariable *, vs_push_count);
+		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, vs_push_count);
 		result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, push_blocks);
 		assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
@@ -580,7 +580,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	}
 
 	if (fs_push_count > 0) {
-		SpvReflectBlockVariable **push_blocks = arena_push_array(temp.arena, SpvReflectBlockVariable *, fs_push_count);
+		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, fs_push_count);
 		result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, push_blocks);
 		assert(result == SPV_REFLECT_RESULT_SUCCESS);
 
@@ -645,7 +645,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	spvReflectDestroyShaderModule(&vertex_module);
 	spvReflectDestroyShaderModule(&fragment_module);
 
-	arena_reset_scratch(temp);
+	arena_release_scratch(scratch);
 
 	return true;
 }
