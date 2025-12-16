@@ -1,9 +1,16 @@
 #include "assets.h"
 
 #include "allocators/arena.h"
+#include "assets/importer.h"
 #include "core/hash_trie.h"
 #include "core/logger.h"
 #include "platform/filesystem.h"
+
+static const char *extensions[ASSET_TYPE_COUNT][8] = {
+	[ASSET_TYPE_UNDEFINED] = { NULL },
+	[ASSET_TYPE_GEOMETRY] = { "glb", "gltf", NULL },
+	[ASSET_TYPE_IMAGE] = { "png", "jpeg", "jpg", NULL }
+};
 
 static AssetLibrary *library = { 0 };
 
@@ -26,25 +33,22 @@ bool asset_library_startup(void *memory, size_t offset, size_t size) {
 	return true;
 }
 
-static const char *extensions[ASSET_TYPE_COUNT][8] = {
-	[ASSET_TYPE_UNDEFINED] = { NULL },
-	[ASSET_TYPE_MESH] = { "glb", "gltf", NULL },
-	[ASSET_TYPE_TEXTURE] = { "png", "jpeg", "jpg", NULL }
-};
-
 static AssetType file_extension_to_asset_type(String extension);
 
 bool asset_library_track_directory(String directory) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
 	FileNode *head = filesystem_load_directory_files(scratch.arena, directory, true);
+	uint32_t count = 0;
 
 	while (head) {
 		asset_library_track_file(head->path);
+		count++;
 
 		head = head->next;
 	}
 
+	LOG_INFO("AssetLibrary: %d files tracked", count);
 	arena_release_scratch(scratch);
 	return true;
 }
@@ -56,7 +60,6 @@ bool asset_library_track_file(String file_path) {
 
 	if (entry->full_path.length == 0) {
 		entry->full_path = string_copy(library->arena, file_path);
-		LOG_INFO("Asset: File '%s' tracked", name.data);
 		entry->type = file_extension_to_asset_type(string_extension_from_path(scratch.arena, file_path));
 		entry->source_data = NULL;
 
@@ -85,4 +88,36 @@ static AssetType file_extension_to_asset_type(String extension) {
 	}
 
 	return ASSET_TYPE_UNDEFINED;
+}
+
+ModelSource *asset_library_load_model(Arena *arena, String key) {
+	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
+
+	if (entry == NULL) {
+		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
+		return NULL;
+	}
+
+	if (entry->type != ASSET_TYPE_GEOMETRY) {
+		LOG_ERROR("Assets: Key '%s' is not geometry");
+		return NULL;
+	}
+
+	return importer_load_gltf(arena, entry->full_path);
+}
+
+TextureSource *asset_library_load_image(Arena *arena, String key) {
+	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
+
+	if (entry == NULL) {
+		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
+		return NULL;
+	}
+
+	if (entry->type != ASSET_TYPE_IMAGE) {
+		LOG_ERROR("Assets: Key '%s' is not a image");
+		return NULL;
+	}
+
+	return importer_load_image(arena, entry->full_path);
 }

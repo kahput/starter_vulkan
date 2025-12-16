@@ -2,6 +2,7 @@
 #define RENDERER_TYPES_H
 
 #include "common.h"
+#include "core/astring.h"
 #include "core/identifiers.h"
 
 #include <cglm/cglm.h>
@@ -24,7 +25,7 @@ typedef struct texture_source {
 	void *pixels;
 
 	int32_t width, height, channels;
-	char *path;
+	String path;
 } TextureSource;
 
 typedef struct material_source {
@@ -58,7 +59,7 @@ typedef struct mesh_source {
 	MaterialSource *material;
 } MeshSource;
 
-typedef struct scene_source {
+typedef struct model_source {
 	MeshSource *meshes;
 	uint32_t mesh_count;
 
@@ -67,7 +68,7 @@ typedef struct scene_source {
 
 	TextureSource *textures;
 	uint32_t texture_count;
-} SceneAsset;
+} ModelSource;
 
 typedef struct texture {
 	uint32_t texture, sampler;
@@ -136,7 +137,7 @@ typedef enum shader_attribute_format {
 } ShaderAttributeFormat;
 
 typedef struct shader_attribute {
-	const char *name;
+	String name;
 	ShaderAttributeFormat format;
 	uint8_t binding;
 } ShaderAttribute;

@@ -22,7 +22,7 @@ bool string_contains(String a, String b);
 
 uint64_t string_hash64(String string);
 String string_copy(Arena *arena, String target);
-String string_copy_content(Arena *arena, String target);
+String string_copy_length(Arena *arena, String target);
 String string_concat(Arena *arena, String head, String tail);
 
 String string_format(Arena *arena, String format, ...);

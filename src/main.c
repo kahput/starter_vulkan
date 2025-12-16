@@ -7,8 +7,6 @@
 
 #include "input.h"
 
-#include "assets/importer.h"
-
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
@@ -75,7 +73,7 @@ typedef struct layer {
 	void (*update)(float dt);
 } Layer;
 
-bool upload_scene(SceneAsset *asset);
+bool upload_scene(ModelSource *asset);
 
 void editor_update(float dt);
 void game_update(float dt);
@@ -209,41 +207,14 @@ int main(void) {
 	create_plane_mesh(&floor, 10, 10, ORIENTATION_Y);
 	floor.material = &state.default_material_instance;
 
-	asset_library_track_directory(SLITERAL("assets/models/modular_dungeon"));
-
-	// asset_library_track_directory(&library, SLITERAL("assets/models/modular_dungeon"));
-
-	/*
-	 * ================================EXPLICT================================
-	 * AssetLibrary assets = { 0 }
-	 * asset_library_scan_directory(&assets, "assets/models/modular_dungeon");
-	 *
-	 * MeshSource *source = asset_library_fetch_mesh(&assets, "gate");
-	 * TextureSource *source = asset_library_fetch_image(&assets, "colormap");
-	 * Mesh *mesh = renderer_upload_mesh(source);
-	 *
-	 * ...
-	 * renderer_submit(mesh);
-	 *
-	 * ================================IMPLICT================================
-	 *
-	 * AssetLibrary assets = { 0 };
-	 * asset_library_process_directory(&assets, "assets/models/modular_dungeon");
-	 *
-	 * MeshID mesh = asset_library_fetch_mesh(&assets, "gate");
-	 *
-	 * ...
-	 * // Uploads if not already uploaded here
-	 * renderer_submit(mesh);
-	 */
-
+	asset_library_track_directory(SLITERAL("assets"));
 	ArenaTemp temp = arena_begin_temp(&state.permanent_arena);
-	SceneAsset *scene = importer_load_gltf(&state.permanent_arena, GATE_DOOR_FILE_PATH);
-	upload_scene(scene);
+	ModelSource *source = asset_library_load_model(temp.arena, SLITERAL("room-small.glb"));
+	upload_scene(source);
 	arena_end_temp(temp);
 
 	temp = arena_begin_temp(&state.permanent_arena);
-	TextureSource *sprite_texture = importer_load_image(temp.arena, "assets/sprites/kenney/tile_0085.png");
+	TextureSource *sprite_texture = asset_library_load_image(temp.arena, SLITERAL("tile_0085.png"));
 	Sprite sprite = {
 		.material = { .material = state.sprite_material, .parameter_uniform_buffer = state.scene_uniform_buffer, .resource_set = state.set_count++ },
 		.texture = { .texture = state.texture_count++, .sampler = state.sprite_sampler }
@@ -356,7 +327,7 @@ int main(void) {
 
 			mat4 transform;
 			glm_mat4_identity(transform);
-			glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
+			glm_translate(transform, (vec3){ 0.0f, 0.01f, 0.0f });
 			vulkan_renderer_push_constants(state.ctx, 0, "push_constants", transform);
 
 			for (uint32_t mesh_index = 0; mesh_index < model->mesh_count; ++mesh_index) {
@@ -389,7 +360,7 @@ int main(void) {
 	return 0;
 }
 
-bool upload_scene(SceneAsset *scene) {
+bool upload_scene(ModelSource *scene) {
 	if (state.buffer_count >= MAX_BUFFERS) {
 		LOG_WARN("Main: mesh slots filled, aborting upload");
 		return false;

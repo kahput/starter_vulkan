@@ -1,6 +1,7 @@
 #include "importer.h"
 
 #include "common.h"
+#include "core/astring.h"
 #include "core/identifiers.h"
 #include "renderer/renderer_types.h"
 
@@ -19,21 +20,25 @@ void filesystem_filename(const char *src, char *dst);
 void filesystem_directory(const char *src, char *dst);
 
 static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
-static TextureSource *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex);
+static TextureSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
 
-TextureSource *importer_load_image(Arena *arena, const char *path) {
+TextureSource *importer_load_image(struct arena *arena, String path) {
 	TextureSource *texture = arena_push_struct_zero(arena, TextureSource);
-	char filename[256];
-	filesystem_filename(path, filename);
-	LOG_INFO("Loading %s...", filename);
+
+	ArenaTemp scratch = arena_scratch(arena);
+
+	String filename = string_filename_from_path(scratch.arena, path);
+	LOG_INFO("Loading %s...", filename.data);
+
 	logger_indent();
-	uint8_t *pixels = stbi_load(path, &texture->width, &texture->height, &texture->channels, 4);
+	uint8_t *pixels = stbi_load(path.data, &texture->width, &texture->height, &texture->channels, 4);
 	if (pixels == NULL) {
-		LOG_ERROR("Failed to load image [ %s ]", path);
+		LOG_ERROR("Failed to load image [ %s ]", path.data);
 		static uint8_t magenta[] = { 255, 0, 255, 255 };
 		texture->width = texture->height = 1;
 		texture->channels = 4;
 		texture->pixels = magenta;
+		arena_release_scratch(scratch);
 		return texture;
 	}
 	texture->channels = 4;
@@ -42,20 +47,21 @@ TextureSource *importer_load_image(Arena *arena, const char *path) {
 	memcpy(texture->pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename, texture->width, texture->height, texture->channels);
-	LOG_INFO("%s loaded", filename);
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.data, texture->width, texture->height, texture->channels);
+	LOG_INFO("%s loaded", filename.data);
 	logger_dedent();
 
+	arena_release_scratch(scratch);
 	return texture;
 }
 
-SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
+ModelSource *importer_load_gltf(struct arena *arena, String path) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
-	cgltf_result result = cgltf_parse_file(&options, path, &data);
+	cgltf_result result = cgltf_parse_file(&options, path.data, &data);
 
 	if (result == cgltf_result_success)
-		result = cgltf_load_buffers(&options, data, path);
+		result = cgltf_load_buffers(&options, data, path.data);
 
 	if (result == cgltf_result_success)
 		result = cgltf_validate(data);
@@ -65,11 +71,12 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 		return NULL;
 	}
 
-	LOG_INFO("Loading %s...", path);
+	LOG_INFO("Loading %s...", path.data);
 	logger_indent();
-	SceneAsset *asset = arena_push_struct(arena, SceneAsset);
-	char base_directory[MAX_FILE_PATH_LENGTH];
-	filesystem_directory(path, base_directory);
+	ModelSource *asset = arena_push_struct(arena, ModelSource);
+
+	ArenaTemp scratch = arena_scratch(arena);
+	String base_directory = string_directory_from_path(scratch.arena, path);
 
 	asset->texture_count = data->images_count;
 	asset->textures = arena_push_array_zero(arena, TextureSource, asset->texture_count);
@@ -89,11 +96,8 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 
 			stbi_image_free(pixels);
 		} else if (src->uri) {
-			size_t full_path_length = strnlen(base_directory, MAX_FILE_PATH_LENGTH) + strlen(src->uri) + 1;
-			dst->path = arena_push_array_zero(arena, char, full_path_length);
-			snprintf(dst->path, full_path_length, "%s%s", base_directory, src->uri);
-
-			uint8_t *pixels = stbi_load(dst->path, &dst->width, &dst->height, &dst->channels, 4);
+			dst->path = string_format(arena, SLITERAL("%s/%s"), base_directory.data, src->uri);
+			uint8_t *pixels = stbi_load(dst->path.data, &dst->width, &dst->height, &dst->channels, 4);
 
 			size_t pixel_buffer_size = dst->width * dst->height * 4;
 			dst->pixels = arena_push_array_zero(arena, uint8_t, pixel_buffer_size);
@@ -256,6 +260,7 @@ SceneAsset *importer_load_gltf(Arena *arena, const char *path) {
 	logger_dedent();
 	cgltf_free(data);
 
+	arena_release_scratch(scratch);
 	return asset;
 }
 
@@ -290,7 +295,7 @@ void filesystem_directory(const char *src, char *dst) {
 	dst[final] = '\0';
 }
 
-TextureSource *find_loaded_texture(const cgltf_data *data, SceneAsset *scene, const cgltf_texture *gltf_tex) {
+TextureSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex) {
 	if (!gltf_tex || !gltf_tex->image)
 		return NULL;
 

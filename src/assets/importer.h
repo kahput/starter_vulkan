@@ -1,12 +1,14 @@
 #pragma once
 
+#include "core/astring.h"
 #include "core/identifiers.h"
+
 #include "renderer/renderer_types.h"
 
 struct arena;
 
-TextureSource *importer_load_image(struct arena *arena, const char *path);
-SceneAsset *importer_load_gltf(struct arena *arena, const char *path);
+TextureSource *importer_load_image(struct arena *arena, String path);
+ModelSource *importer_load_gltf(struct arena *arena, String path);
 
 // GLTFPrimitive *importer_load_gltf(struct arena *arena, const char *path);
 

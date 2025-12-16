@@ -2,6 +2,7 @@
 
 #include "allocators/arena.h"
 
+#include <stdio.h>
 #include <string.h>
 
 bool string_equals(String a, String b) {
@@ -35,7 +36,7 @@ String string_copy(struct arena *arena, String target) {
 	return copy;
 }
 
-String string_copy_content(struct arena *arena, String target) {
+String string_copy_length(struct arena *arena, String target) {
 	String copy = target;
 	copy.data = arena_push_zero(arena, target.length);
 
@@ -45,7 +46,7 @@ String string_copy_content(struct arena *arena, String target) {
 }
 
 String string_concat(struct arena *arena, String head, String tail) {
-	head = string_copy_content(arena, head);
+	head = string_copy_length(arena, head);
 	head.length += string_copy(arena, tail).length;
 	head.size = head.length + 1;
 	return head;
@@ -71,6 +72,44 @@ String string_directory_from_path(Arena *arena, String path) {
 	memcpy(directory.data, path.data, directory.size);
 	directory.data[directory.length] = '\0';
 	return directory;
+}
+
+String string_format(Arena *arena, String format, ...) {
+	va_list args;
+	va_start(args, format);
+
+	// We must copy the args because vsnprintf consumes them.
+	// We need to use them twice (once for sizing, once for writing).
+	va_list args_copy;
+	va_copy(args_copy, args);
+
+	// 1. Pass One: Determine the required length (excluding null terminator)
+	// We assume format.data is null-terminated (Safe if using SLITERAL or S macros)
+	int length = vsnprintf(NULL, 0, format.data, args);
+
+	if (length < 0) {
+		// Handle encoding errors (optional)
+		va_end(args_copy);
+		va_end(args);
+		return (String){ 0 };
+	}
+
+	// 2. Allocate exact memory
+	// +1 for the null terminator
+	size_t size = length + 1;
+	char *buffer = arena_push_zero(arena, size);
+
+	// 3. Pass Two: Write the formatted string to the buffer
+	vsnprintf(buffer, size, format.data, args_copy);
+
+	va_end(args_copy);
+	va_end(args);
+
+	return (String){
+		.data = buffer,
+		.length = (size_t)length,
+		.size = size
+	};
 }
 
 String string_filename_from_path(Arena *arena, String path) {
