@@ -1,9 +1,9 @@
 #pragma once
 
+#include "assets/asset_types.h"
+
 #include "common.h"
 #include "core/hash_trie.h"
-
-#include "renderer/renderer_types.h"
 
 #include "allocators/arena.h"
 

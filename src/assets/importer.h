@@ -3,14 +3,9 @@
 #include "core/astring.h"
 #include "core/identifiers.h"
 
-#include "renderer/renderer_types.h"
+#include "asset_types.h"
 
 struct arena;
 
 TextureSource *importer_load_image(struct arena *arena, String path);
 ModelSource *importer_load_gltf(struct arena *arena, String path);
-
-// GLTFPrimitive *importer_load_gltf(struct arena *arena, const char *path);
-
-// Image importer_load_image(const char *path);
-// void importer_unload_image(Image image);

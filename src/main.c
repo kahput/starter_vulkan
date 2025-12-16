@@ -1,6 +1,8 @@
-#include "assets.h"
 #include "core/astring.h"
 #include "platform.h"
+
+#include "assets.h"
+#include "assets/asset_types.h"
 
 #include "event.h"
 #include "events/platform_events.h"
