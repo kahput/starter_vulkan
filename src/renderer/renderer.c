@@ -303,16 +303,15 @@ bool renderer_begin_frame(Camera *camera) {
 	vulkan_renderer_bind_resource_set(renderer->context, renderer->model_material.global_set);
 
 	if (camera) {
-	SceneData data = { 0 };
-	glm_mat4_identity(data.view);
-	glm_lookat(camera->position, camera->target, camera->up, data.view);
+		SceneData data = { 0 };
+		glm_mat4_identity(data.view);
+		glm_lookat(camera->position, camera->target, camera->up, data.view);
 
-	glm_mat4_identity(data.projection);
-	glm_perspective(glm_rad(camera->fov), (float)renderer->width / (float)renderer->height, 0.1f, 1000.f, data.projection);
-	data.projection[1][1] *= -1;
+		glm_mat4_identity(data.projection);
+		glm_perspective(glm_rad(camera->fov), (float)renderer->width / (float)renderer->height, 0.1f, 1000.f, data.projection);
+		data.projection[1][1] *= -1;
 
-	vulkan_renderer_update_buffer(renderer->context, renderer->frame_uniform_buffer, 0, sizeof(SceneData), &data);
-
+		vulkan_renderer_update_buffer(renderer->context, renderer->frame_uniform_buffer, 0, sizeof(SceneData), &data);
 	}
 
 	return true;
@@ -519,8 +518,11 @@ uint32_t resolve_mesh(UUID id, MeshSource *source) {
 	gpu_mesh->vertex_count = source->vertex_count;
 	vulkan_renderer_create_buffer(renderer->context, gpu_mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(*source->vertices) * gpu_mesh->vertex_count, source->vertices);
 
-	uint32_t material_index = resolve_material(source->material->asset_id, source->material);
-	gpu_mesh->material = ((MaterialInstance *)renderer->material_allocator->slots) + material_index;
+	ResourceEntry *material_entry = hash_trie_lookup_hash(&renderer->material_map, id, ResourceEntry);
+	if (material_entry == NULL || entry->pool_index == INVALID_INDEX) {
+		gpu_mesh->material = &renderer->default_material_instance;
+	} else
+		gpu_mesh->material = ((MaterialInstance *)renderer->material_allocator->slots) + resolve_material(source->material->asset_id, source->material);
 
 	if (source->index_count) {
 		gpu_mesh->index_buffer = resource_handle_new(&renderer->buffer_handler);

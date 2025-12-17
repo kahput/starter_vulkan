@@ -1,4 +1,5 @@
 #include "core/astring.h"
+#include "core/identifiers.h"
 #include "platform.h"
 
 #include "assets.h"
@@ -49,7 +50,7 @@ typedef struct layer {
 void editor_update(float dt);
 void game_update(float dt);
 bool resize_event(Event *event);
-MeshSource *create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation);
+UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation, MeshSource **out_mesh);
 
 static struct State {
 	Arena permanent_arena, frame_arena;
@@ -114,12 +115,16 @@ int main(void) {
 			LOG_INFO("Uploaded model: %llu", state.small_room_id);
 		}
 
-		// TextureSource *sprite_src = NULL;
-		// UUID sprite_id = asset_library_load_image(scratch.arena, SLITERAL("tile_0085"), &sprite_src);
-		//
-		// if (sprite_src) {
-		// 	renderer_upload_image(sprite_id, sprite_src);
-		// }
+		TextureSource *sprite_image = NULL;
+		MeshSource *sprite_mesh = NULL;
+
+		UUID sprite_image_id = asset_library_load_image(scratch.arena, SLITERAL("tile_0085.png"), &sprite_image);
+		UUID sprite_mesh_id = create_plane_mesh(scratch.arena, 1, 1, ORIENTATION_Z, &sprite_mesh);
+
+		if (sprite_image) {
+			renderer_upload_image(sprite_image_id, sprite_image);
+			renderer_upload_mesh(sprite_mesh_id, sprite_mesh);
+		}
 	}
 	arena_release_scratch(scratch);
 
@@ -214,84 +219,84 @@ bool resize_event(Event *event) {
 	return true;
 }
 
-// bool create_plane_mesh(Mesh *mesh, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation) {
-// 	ArenaTemp scratch = arena_scratch(NULL);
-//
-// 	uint32_t rows = subdivide_width + 1, columns = subdivide_depth + 1;
-//
-// 	Vertex *vertices = arena_push_array_zero(scratch.arena, Vertex, rows * columns * 6);
-// 	mesh->vertex_count = 0;
-//
-// 	float row_unit = ((float)1 / rows);
-// 	float column_unit = ((float)1 / columns);
-//
-// 	for (uint32_t column = 0; column < columns; ++column) {
-// 		for (uint32_t row = 0; row < rows; ++row) {
-// 			uint32_t index = (column * subdivide_width) + row;
-//
-// 			float rowf = -0.5f + (float)row * row_unit;
-// 			float columnf = -0.5f + (float)column * column_unit;
-//
-// 			// TODO: Make a single set instead of three
-// 			// Vertex v00 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			// Vertex v10 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			// Vertex v01 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			// Vertex v11 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-//
-// 			Vertex orientation_y_vertex00 = { .position = { rowf, 0, columnf }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_y_vertex10 = { .position = { rowf + row_unit, 0, columnf }, { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_y_vertex01 = { .position = { rowf, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_y_vertex11 = { .position = { rowf + row_unit, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-//
-// 			Vertex orientation_x_vertex00 = { .position = { 0, columnf + column_unit, rowf }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_x_vertex10 = { .position = { 0, columnf + column_unit, rowf + row_unit }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_x_vertex01 = { .position = { 0, columnf, rowf }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_x_vertex11 = { .position = { 0, columnf, rowf + row_unit }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-//
-// 			Vertex orientation_z_vertex00 = { .position = { rowf, columnf + column_unit, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_z_vertex10 = { .position = { rowf + row_unit, columnf + column_unit, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_z_vertex01 = { .position = { rowf, columnf, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-// 			Vertex orientation_z_vertex11 = { .position = { rowf + row_unit, columnf, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-//
-// 			switch (orientation) {
-// 				case ORIENTATION_Y: {
-// 					vertices[mesh->vertex_count++] = orientation_y_vertex00;
-// 					vertices[mesh->vertex_count++] = orientation_y_vertex01;
-// 					vertices[mesh->vertex_count++] = orientation_y_vertex10;
-//
-// 					vertices[mesh->vertex_count++] = orientation_y_vertex10;
-// 					vertices[mesh->vertex_count++] = orientation_y_vertex01;
-// 					vertices[mesh->vertex_count++] = orientation_y_vertex11;
-// 				} break;
-// 				case ORIENTATION_X: {
-// 					vertices[mesh->vertex_count++] = orientation_x_vertex00;
-// 					vertices[mesh->vertex_count++] = orientation_x_vertex01;
-// 					vertices[mesh->vertex_count++] = orientation_x_vertex10;
-//
-// 					vertices[mesh->vertex_count++] = orientation_x_vertex10;
-// 					vertices[mesh->vertex_count++] = orientation_x_vertex01;
-// 					vertices[mesh->vertex_count++] = orientation_x_vertex11;
-// 				} break;
-// 				case ORIENTATION_Z: {
-// 					vertices[mesh->vertex_count++] = orientation_z_vertex00;
-// 					vertices[mesh->vertex_count++] = orientation_z_vertex01;
-// 					vertices[mesh->vertex_count++] = orientation_z_vertex10;
-//
-// 					vertices[mesh->vertex_count++] = orientation_z_vertex10;
-// 					vertices[mesh->vertex_count++] = orientation_z_vertex01;
-// 					vertices[mesh->vertex_count++] = orientation_z_vertex11;
-// 				} break;
-// 					break;
-// 			}
-// 		}
-// 	}
-//
-// 	mesh->vertex_buffer = state.buffer_count++;
-// 	vulkan_renderer_create_buffer(state.ctx, mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(Vertex) * mesh->vertex_count, vertices);
-//
-// 	mesh->index_buffer = mesh->index_count = 0;
-//
-// 	arena_release_scratch(scratch);
-//
-// 	return true;
-// }
+UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation, MeshSource **out_mesh) {
+	uint32_t rows = subdivide_width + 1, columns = subdivide_depth + 1;
+
+	String name = string_format(arena, SLITERAL("plane_%ux%u_d"), subdivide_width, subdivide_depth, orientation);
+	UUID id = identifier_create_from_u64(string_hash64(name));
+
+	(*out_mesh) = arena_push_struct(arena, MeshSource);
+
+	(*out_mesh)->asset_id = id;
+	(*out_mesh)->vertices = arena_push_array_zero(arena, Vertex, rows * columns * 6);
+	(*out_mesh)->vertex_count = 0;
+
+	float row_unit = ((float)1 / rows);
+	float column_unit = ((float)1 / columns);
+
+	for (uint32_t column = 0; column < columns; ++column) {
+		for (uint32_t row = 0; row < rows; ++row) {
+			uint32_t index = (column * subdivide_width) + row;
+
+			float rowf = -0.5f + (float)row * row_unit;
+			float columnf = -0.5f + (float)column * column_unit;
+
+			// TODO: Make a single set instead of three
+			// Vertex v00 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			// Vertex v10 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			// Vertex v01 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			// Vertex v11 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			Vertex orientation_y_vertex00 = { .position = { rowf, 0, columnf }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_y_vertex10 = { .position = { rowf + row_unit, 0, columnf }, { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_y_vertex01 = { .position = { rowf, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_y_vertex11 = { .position = { rowf + row_unit, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			Vertex orientation_x_vertex00 = { .position = { 0, columnf + column_unit, rowf }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_x_vertex10 = { .position = { 0, columnf + column_unit, rowf + row_unit }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_x_vertex01 = { .position = { 0, columnf, rowf }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_x_vertex11 = { .position = { 0, columnf, rowf + row_unit }, .normal = { 1.0f, 0.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			Vertex orientation_z_vertex00 = { .position = { rowf, columnf + column_unit, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_z_vertex10 = { .position = { rowf + row_unit, columnf + column_unit, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_z_vertex01 = { .position = { rowf, columnf, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_z_vertex11 = { .position = { rowf + row_unit, columnf, 0 }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+
+			switch (orientation) {
+				case ORIENTATION_Y: {
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_y_vertex00;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_y_vertex01;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_y_vertex10;
+
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_y_vertex10;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_y_vertex01;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_y_vertex11;
+				} break;
+				case ORIENTATION_X: {
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_x_vertex00;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_x_vertex01;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_x_vertex10;
+
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_x_vertex10;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_x_vertex01;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_x_vertex11;
+				} break;
+				case ORIENTATION_Z: {
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_z_vertex00;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_z_vertex01;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_z_vertex10;
+
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_z_vertex10;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_z_vertex01;
+					(*out_mesh)->vertices[(*out_mesh)->vertex_count++] = orientation_z_vertex11;
+				} break;
+					break;
+			}
+		}
+	}
+
+	(*out_mesh)->indices = NULL, (*out_mesh)->index_count = 0;
+	(*out_mesh)->material = NULL;
+
+	return id;
+}
