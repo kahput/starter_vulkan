@@ -1,26 +1,27 @@
 #ifndef POOL_H
 #define POOL_H
 
+#include "allocators/arena.h"
 #include "common.h"
 
 struct arena;
 
-struct pool_element {
-	struct pool_element *next;
-};
+typedef struct pool_slot {
+	struct pool_slot *next;
+} PoolSlot;
 
-struct pool {
-	struct pool_element *array, *free_elements;
-	size_t element_size;
-};
+typedef struct pool {
+	PoolSlot *slots, *free_slots;
+	size_t slot_size;
+} Pool;
 
-struct pool *allocator_pool(size_t element_size, uint32_t capacity);
-struct pool *allocator_pool_from_arena(struct arena *arena, size_t element_size, uint32_t capacity);
-void pool_destroy(struct pool *pool);
+Pool *allocator_pool(size_t slot_size, uint32_t capacity);
+Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_size);
+void pool_destroy(Pool *pool);
 
-void *pool_alloc(struct pool *pool);
-void *pool_alloc_zeroed(struct pool *pool);
+void *pool_alloc(Pool *pool);
+void *pool_alloc_zeroed(Pool *pool);
 
-void pool_free(struct pool *pool, void *element);
+void pool_free(Pool *pool, void *element);
 
 #endif

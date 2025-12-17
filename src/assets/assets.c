@@ -2,7 +2,9 @@
 
 #include "allocators/arena.h"
 #include "assets/importer.h"
+#include "core/astring.h"
 #include "core/hash_trie.h"
+#include "core/identifiers.h"
 #include "core/logger.h"
 #include "platform/filesystem.h"
 
@@ -25,7 +27,7 @@ bool asset_library_startup(void *memory, size_t offset, size_t size) {
 	library->arena = (Arena *)(library + 1);
 
 	*library->arena = (Arena){
-		.buffer = library->arena + 1,
+		.memory = library->arena + 1,
 		.offset = 0,
 		.capacity = size - minimum_footprint
 	};
@@ -90,34 +92,42 @@ static AssetType file_extension_to_asset_type(String extension) {
 	return ASSET_TYPE_UNDEFINED;
 }
 
-ModelSource *asset_library_load_model(Arena *arena, String key) {
+UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 
 	if (entry == NULL) {
 		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
-		return NULL;
+		*out_model = NULL;
+		return INVALID_UUID;
 	}
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {
 		LOG_ERROR("Assets: Key '%s' is not geometry");
-		return NULL;
+		*out_model = NULL;
+		return INVALID_UUID;
 	}
 
-	return importer_load_gltf(arena, entry->full_path);
+	*out_model = importer_load_gltf(arena, entry->full_path);
+
+	return entry->node.hash;
 }
 
-TextureSource *asset_library_load_image(Arena *arena, String key) {
+UUID asset_library_load_image(Arena *arena, String key, TextureSource **out_texture) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 
 	if (entry == NULL) {
 		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
-		return NULL;
+		*out_texture = NULL;
+		return INVALID_UUID;
 	}
 
 	if (entry->type != ASSET_TYPE_IMAGE) {
 		LOG_ERROR("Assets: Key '%s' is not a image");
-		return NULL;
+		*out_texture = NULL;
+		return INVALID_UUID;
 	}
 
-	return importer_load_image(arena, entry->full_path);
+	*out_texture = importer_load_image(arena, entry->full_path);
+
+	return entry->node.hash;
 }

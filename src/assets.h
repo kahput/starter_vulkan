@@ -7,13 +7,6 @@
 
 #include "allocators/arena.h"
 
-typedef enum {
-	ASSET_TYPE_UNDEFINED,
-	ASSET_TYPE_GEOMETRY,
-	ASSET_TYPE_IMAGE,
-	ASSET_TYPE_COUNT,
-} AssetType;
-
 typedef struct {
 	HashTrieNode node;
 
@@ -37,5 +30,7 @@ bool asset_library_startup(void *memory, size_t offset, size_t size);
 bool asset_library_track_directory(String directory);
 bool asset_library_track_file(String file_path);
 
-ModelSource *asset_library_load_model(Arena *arena, String key);
-TextureSource *asset_library_load_image(Arena *arena, String key);
+UUID asset_library_model_mesh_id(String key, uint32_t index);
+
+UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model);
+UUID asset_library_load_image(Arena *arena, String key, TextureSource **out_texture);

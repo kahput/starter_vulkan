@@ -7,6 +7,19 @@
 
 #include <cglm/cglm.h>
 
+// TODO: Move these
+typedef enum {
+	CAMERA_PROJECTION_PERSPECTIVE = 0,
+	CAMERA_PROJECTION_ORTHOGRAPHIC
+} CameraProjection;
+
+typedef struct camera {
+	vec3 position, target, up;
+	float fov;
+
+	CameraProjection projection;
+} Camera;
+
 typedef struct {
 	mat4 view;
 	mat4 projection;
@@ -29,13 +42,13 @@ typedef struct material_paramters {
 	vec4 emissive_factor;
 } MaterialParameters;
 
-
 typedef struct texture {
-	uint32_t texture, sampler;
+	uint32_t handle, sampler;
 } Texture;
 
 typedef struct material {
 	uint32_t shader, pipeline;
+	uint32_t global_set;
 } Material;
 
 typedef struct material_instance {
@@ -202,7 +215,7 @@ typedef struct sampler_desc {
 		.topology_line_list = false                 \
 	}
 
-#define DEFAULT_SAMPLER                                \
+#define LINEAR_SAMPLER                                 \
 	(SamplerDesc) {                                    \
 		.min_filter = FILTER_LINEAR,                   \
 		.mag_filter = FILTER_LINEAR,                   \
@@ -212,7 +225,7 @@ typedef struct sampler_desc {
 		.anisotropy_enable = true                      \
 	}
 
-#define SPRITE_SAMPLER                                        \
+#define NEAREST_SAMPLER                                       \
 	(SamplerDesc) {                                           \
 		.min_filter = FILTER_NEAREST,                         \
 		.mag_filter = FILTER_NEAREST,                         \

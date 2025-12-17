@@ -6,10 +6,15 @@
 
 #include <cglm/cglm.h>
 
-// TODO: Create ID for every asset
-typedef uint64_t AssetID;
+typedef enum {
+	ASSET_TYPE_UNDEFINED,
+	ASSET_TYPE_GEOMETRY,
+	ASSET_TYPE_IMAGE,
+	ASSET_TYPE_COUNT,
+} AssetType;
 
 typedef struct texture_source {
+	UUID asset_id;
 	void *pixels;
 
 	int32_t width, height, channels;
@@ -17,6 +22,7 @@ typedef struct texture_source {
 } TextureSource;
 
 typedef struct material_source {
+	UUID asset_id;
 	TextureSource *base_color_texture;
 	TextureSource *metallic_roughness_texture; // G = Roughness, B = Metallic
 	TextureSource *normal_texture;
@@ -30,6 +36,8 @@ typedef struct material_source {
 } MaterialSource;
 
 typedef struct mesh_source {
+	UUID asset_id;
+
 	Vertex *vertices;
 	uint32_t vertex_count;
 
@@ -46,6 +54,6 @@ typedef struct model_source {
 	MaterialSource *materials;
 	uint32_t material_count;
 
-	TextureSource *textures;
-	uint32_t texture_count;
+	TextureSource *images;
+	uint32_t image_count;
 } ModelSource;

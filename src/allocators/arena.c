@@ -9,7 +9,7 @@ Arena arena_create(size_t size) {
 	Arena arena = { 0 };
 	arena.offset = 0;
 	arena.capacity = size;
-	arena.buffer = malloc(size);
+	arena.memory = malloc(size);
 	return arena;
 }
 
@@ -17,7 +17,7 @@ Arena arena_create_from_memory(void *buffer, size_t offset, size_t size) {
 	Arena arena = { 0 };
 	arena.offset = 0;
 	arena.capacity = size;
-	arena.buffer = (uint8_t *)buffer + offset;
+	arena.memory = (uint8_t *)buffer + offset;
 	return arena;
 }
 
@@ -25,7 +25,7 @@ void arena_clear(Arena *arena) {
 	arena->offset = 0;
 }
 void arena_free(Arena *arena) {
-	free(arena->buffer);
+	free(arena->memory);
 	free(arena);
 }
 
@@ -36,7 +36,7 @@ void *arena_push(Arena *arena, size_t size) {
 		// return NULL;
 	}
 
-	void *result = (uint8_t *)arena->buffer + arena->offset;
+	void *result = (uint8_t *)arena->memory + arena->offset;
 	arena->offset += size;
 
 	return result;
@@ -49,7 +49,7 @@ void *arena_push_zero(Arena *arena, size_t size) {
 		// return NULL;
 	}
 
-	void *result = (uint8_t *)arena->buffer + arena->offset;
+	void *result = (uint8_t *)arena->memory + arena->offset;
 	memset(result, 0, size);
 	arena->offset += size;
 
@@ -64,9 +64,9 @@ void arena_end_temp(ArenaTemp temp) {
 }
 
 ArenaTemp arena_scratch(Arena *conflict) {
-	if (!scratch_arenas[0].buffer)
+	if (!scratch_arenas[0].memory)
 		scratch_arenas[0] = arena_create(MiB(4));
-	if (!scratch_arenas[1].buffer)
+	if (!scratch_arenas[1].memory)
 		scratch_arenas[1] = arena_create(MiB(4));
 
 	ArenaTemp scratch = {

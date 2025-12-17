@@ -78,12 +78,12 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 	ArenaTemp scratch = arena_scratch(arena);
 	String base_directory = string_directory_from_path(scratch.arena, path);
 
-	asset->texture_count = data->images_count;
-	asset->textures = arena_push_array_zero(arena, TextureSource, asset->texture_count);
+	asset->image_count = data->images_count;
+	asset->images = arena_push_array_zero(arena, TextureSource, asset->image_count);
 
-	for (uint32_t texture_index = 0; texture_index < asset->texture_count; ++texture_index) {
+	for (uint32_t texture_index = 0; texture_index < asset->image_count; ++texture_index) {
 		cgltf_image *src = &data->images[texture_index];
-		TextureSource *dst = &asset->textures[texture_index];
+		TextureSource *dst = &asset->images[texture_index];
 
 		if (src->buffer_view) {
 			uint8_t *data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
@@ -303,8 +303,8 @@ TextureSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, c
 	// cgltf stores images in a contiguous array, so we can find the index
 	size_t index = gltf_tex->image - data->images;
 
-	if (index < scene->texture_count) {
-		return &scene->textures[index];
+	if (index < scene->image_count) {
+		return &scene->images[index];
 	}
 	return NULL;
 }

@@ -3,92 +3,94 @@
 #include "arena.h"
 #include "core/logger.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
-struct pool *allocator_pool(size_t element_size, uint32_t capacity) {
-	if (capacity == 0 || element_size < sizeof(size_t)) {
+Pool *allocator_pool(size_t slot_size, uint32_t capacity) {
+	if (capacity == 0 || slot_size < sizeof(size_t)) {
 		LOG_WARN("Allocator: pool size must fit size_t pointer");
 		return NULL;
 	}
 
-	struct pool *pool = malloc(sizeof(struct pool) + element_size * capacity);
-	pool->array = pool->free_elements = (struct pool_element *)(pool + 1);
-	pool->element_size = element_size;
+	Pool *pool = malloc(sizeof(struct pool) + slot_size * capacity);
+	pool->slots = pool->free_slots = (PoolSlot *)(pool + 1);
+	pool->slot_size = slot_size;
 
 	for (uint32_t index = 0; index < capacity - 1; ++index) {
-		struct pool_element *element = (struct pool_element *)((uint8_t *)pool->array + element_size * index);
-		element->next = (struct pool_element *)((uint8_t *)element + element_size);
+		PoolSlot *element = (PoolSlot *)((uint8_t *)pool->slots + slot_size * index);
+		element->next = (PoolSlot *)((uint8_t *)element + slot_size);
 	}
-	struct pool_element *last = (struct pool_element *)((uint8_t *)pool->array + (element_size * (capacity - 1)));
+	PoolSlot *last = (PoolSlot *)((uint8_t *)pool->slots + (slot_size * (capacity - 1)));
 	last->next = NULL;
 
 	return pool;
 }
 
-struct pool *allocator_pool_from_arena(struct arena *arena, size_t element_size, uint32_t capacity) {
-	if (capacity == 0 || element_size < sizeof(size_t)) {
+Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_size) {
+	if (capacity == 0 || slot_size < sizeof(size_t)) {
 		LOG_WARN("Allocator: pool size must fit size_t pointer");
 		return NULL;
 	}
 
-	struct pool *pool = arena_push(arena, sizeof(struct pool) + element_size * capacity);
-	pool->array = pool->free_elements = (struct pool_element *)(pool + 1);
-	pool->element_size = element_size;
+	Pool *pool = arena_push_struct(arena, Pool);
+	pool->slots = pool->free_slots = arena_push(arena, slot_size * capacity);
+	pool->slot_size = slot_size;
 
 	for (uint32_t index = 0; index < capacity; ++index) {
-		struct pool_element *element = (struct pool_element *)((uint8_t *)pool->array + element_size * index);
-		struct pool_element *next = (struct pool_element *)((uint8_t *)element + element_size);
+		PoolSlot *element = (PoolSlot *)((uint8_t *)pool->slots + slot_size * index);
+		PoolSlot *next = (PoolSlot *)((uint8_t *)element + slot_size);
 
 		element->next = next;
 	}
-	struct pool_element *last = (struct pool_element *)((uint8_t *)pool->array + (element_size * (capacity - 1)));
+	PoolSlot *last = (PoolSlot *)((uint8_t *)pool->slots + (slot_size * (capacity - 1)));
 	last->next = NULL;
 
 	return pool;
 }
 
-void pool_destroy(struct pool *pool) {
+void pool_destroy(Pool *pool) {
 	if (pool) {
-		free(pool->array);
+		free(pool->slots);
 		free(pool);
 	}
 }
 
-void *pool_alloc(struct pool *pool) {
-	if (pool == NULL || pool->free_elements == NULL) {
+void *pool_alloc(Pool *pool) {
+	if (pool == NULL || pool->free_slots == NULL) {
 		LOG_WARN("Allocator: pool invalid or out of space");
+		assert(false);
 		return NULL;
 	}
 
-	struct pool_element *element = pool->free_elements;
-	pool->free_elements = pool->free_elements->next;
+	PoolSlot *element = pool->free_slots;
+	pool->free_slots = element->next;
 
 	return element;
 }
 
-void *pool_alloc_zeroed(struct pool *pool) {
-	if (pool == NULL || pool->free_elements == NULL) {
+void *pool_alloc_zeroed(Pool *pool) {
+	if (pool == NULL || pool->free_slots == NULL) {
 		LOG_WARN("Allocator: invalid parameter or out of space");
 		return NULL;
 	}
 
-	struct pool_element *element = pool->free_elements;
-	pool->free_elements = pool->free_elements->next;
+	PoolSlot *element = pool->free_slots;
+	pool->free_slots = pool->free_slots->next;
 
-	memset(element, 0, pool->element_size);
+	memset(element, 0, pool->slot_size);
 
 	return element;
 }
 
-void pool_free(struct pool *pool, void *element) {
+void pool_free(Pool *pool, void *element) {
 	if (pool == NULL || element == NULL) {
 		LOG_WARN("Allocator: invalid paramters");
 		return;
 	}
 
-	struct pool_element *freed_element = element;
+	PoolSlot *freed_element = element;
 
-	freed_element->next = pool->free_elements;
-	pool->free_elements = freed_element;
+	freed_element->next = pool->free_slots;
+	pool->free_slots = freed_element;
 }

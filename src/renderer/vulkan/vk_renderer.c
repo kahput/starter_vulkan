@@ -11,7 +11,7 @@
 
 static uint32_t image_index = 0;
 
-bool vulkan_renderer_create(struct arena *arena, VulkanContext **out_context, struct platform *platform) {
+bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext **out_context) {
 	*out_context = arena_push_struct(arena, VulkanContext);
 
 	VulkanContext *ctx = *out_context;

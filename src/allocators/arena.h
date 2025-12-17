@@ -4,7 +4,7 @@
 
 typedef struct arena {
 	size_t offset, capacity;
-	void *buffer;
+	void *memory;
 } Arena;
 typedef struct {
 	struct arena *arena;
