@@ -12,7 +12,8 @@
 static const char *extensions[ASSET_TYPE_COUNT][8] = {
 	[ASSET_TYPE_UNDEFINED] = { NULL },
 	[ASSET_TYPE_GEOMETRY] = { "glb", "gltf", NULL },
-	[ASSET_TYPE_IMAGE] = { "png", "jpeg", "jpg", NULL }
+	[ASSET_TYPE_IMAGE] = { "png", "jpeg", "jpg", NULL },
+	[ASSET_TYPE_SHADER] = { "glsl", "spv" },
 };
 
 static AssetLibrary *library = { 0 };
@@ -79,6 +80,41 @@ bool asset_library_track_file(String file_path) {
 	return false;
 }
 
+UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shader) {
+	// if (out_shader == NULL)
+	// 	return INVALID_UUID;
+
+	ArenaTemp scratch = arena_scratch(arena);
+	String vertex_shader_key = string_find_and_replace(scratch.arena, key, SLITERAL("glsl"), SLITERAL("vert.spv"));
+	String fragment_shader_key = string_find_and_replace(scratch.arena, key, SLITERAL("glsl"), SLITERAL("frag.spv"));
+
+	AssetEntry *vs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
+	AssetEntry *fs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
+	if (vs_entry == NULL || fs_entry == NULL) {
+		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
+		*out_shader = NULL;
+		arena_release_scratch(scratch);
+		return INVALID_UUID;
+	}
+
+	if (vs_entry->type != ASSET_TYPE_SHADER || fs_entry->type != ASSET_TYPE_SHADER) {
+		LOG_ERROR("Assets: Key '%s' is not geometry");
+		*out_shader = NULL;
+		arena_release_scratch(scratch);
+		return INVALID_UUID;
+	}
+
+	*out_shader = arena_push_struct_zero(arena, ShaderSource);
+	if (importer_load_shader(arena, vs_entry->full_path, fs_entry->full_path, *out_shader) == false) {
+		LOG_WARN("Assets: Failed to load '%s'", key);
+		return INVALID_UUID;
+	}
+
+	arena_release_scratch(scratch);
+	(*out_shader)->id = vs_entry->node.hash;
+	return vs_entry->node.hash;
+}
+
 UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model, bool use_cached_textures) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 	if (entry == NULL) {
@@ -140,7 +176,7 @@ UUID asset_library_load_image(Arena *arena, String key, Image **out_texture) {
 	*out_texture = arena_push_struct_zero(arena, Image);
 	importer_load_image(arena, entry->full_path, *out_texture);
 
-	(*out_texture)->asset_id = entry->node.hash;
+	(*out_texture)->id = entry->node.hash;
 	return entry->node.hash;
 }
 
@@ -222,7 +258,7 @@ UUID asset_library_request_image(String key, Image **out_image) {
 
 	*out_image = arena_push_struct(library->arena, Image);
 	if (importer_load_image(library->arena, entry->full_path, *out_image)) {
-		(*out_image)->asset_id = entry->node.hash;
+		(*out_image)->id = entry->node.hash;
 
 		entry->source_data = *out_image;
 		entry->is_loaded = true;

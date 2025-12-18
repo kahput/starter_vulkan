@@ -3,7 +3,7 @@
 #include "common.h"
 
 typedef uint64_t UUID;
-#define INVALID_UUID 0
+#define INVALID_UUID UINT64_MAX
 
 UUID identifier_create(void);
 UUID identifier_create_from_u64(uint64_t uuid);

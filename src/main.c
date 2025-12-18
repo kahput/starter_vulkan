@@ -22,11 +22,6 @@
 
 #include "allocators/arena.h"
 
-#define MAX_MODEL_MESHES 32
-#define MAX_MODEL_MATERIALS 8
-#define MAX_MODEL_TEXTURES 8
-#define MAX_MODELS 8
-
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
 #define GATE_DOOR_FILE_PATH "assets/models/modular_dungeon/gate-door.glb"
 #define BOT_FILE_PATH "assets/models/characters/gdbot.glb"
@@ -48,7 +43,6 @@ typedef struct layer {
 } Layer;
 
 void editor_update(float dt);
-void game_update(float dt);
 bool resize_event(Event *event);
 UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation, MeshSource **out_mesh);
 
@@ -60,12 +54,7 @@ static struct State {
 
 	UUID small_room_id;
 
-	enum {
-		EDITOR_LAYER,
-		GAME_LAYER,
-		MAX_LAYER
-	} LayerType;
-	Layer layers[MAX_LAYER];
+	Layer layers[1];
 	Layer *current_layer;
 
 	uint64_t start_time;
@@ -95,9 +84,8 @@ int main(void) {
 	}
 	state.permanent_arena.offset += MiB(16);
 
-	state.layers[EDITOR_LAYER] = (Layer){ .update = editor_update };
-	state.layers[GAME_LAYER] = (Layer){ .update = game_update };
-	state.current_layer = &state.layers[EDITOR_LAYER];
+	state.layers[0] = (Layer){ .update = editor_update };
+	state.current_layer = &state.layers[0];
 
 	platform_pointer_mode(state.display, PLATFORM_POINTER_DISABLED);
 	state.start_time = platform_time_ms(state.display);
@@ -116,6 +104,9 @@ int main(void) {
 			renderer_upload_model(state.small_room_id, model_source);
 			LOG_INFO("Uploaded model: %lu", state.small_room_id);
 		}
+
+	ShaderSource *source = NULL;
+	asset_library_load_shader(scratch.arena, SLITERAL("PBR.glsl"), &source);
 
 		Image *sprite_image = NULL;
 		MeshSource *sprite_mesh = NULL;
@@ -210,10 +201,6 @@ void editor_update(float dt) {
 	glm_vec3_add(state.editor_camera.position, target_position, state.editor_camera.target);
 }
 
-void game_update(float dt) {
-	// TODO: Gameplay
-}
-
 bool resize_event(Event *event) {
 	WindowResizeEvent *wr_event = (WindowResizeEvent *)event;
 
@@ -229,7 +216,7 @@ UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivid
 
 	(*out_mesh) = arena_push_struct(arena, MeshSource);
 
-	(*out_mesh)->asset_id = id;
+	(*out_mesh)->id = id;
 	(*out_mesh)->vertices = arena_push_array_zero(arena, Vertex, rows * columns * 6);
 	(*out_mesh)->vertex_count = 0;
 

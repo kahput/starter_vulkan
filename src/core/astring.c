@@ -5,6 +5,20 @@
 #include <stdio.h>
 #include <string.h>
 
+String string_create(Arena *arena, size_t size) {
+	if (size == 0)
+		return (String){ 0 };
+
+	String rv = {
+		.length = size - 1,
+		.size = size,
+		.data = arena_push_zero(arena, size)
+	};
+
+	rv.data[rv.length] = '\0';
+	return rv;
+}
+
 bool string_equals(String a, String b) {
 	if (a.length != b.length)
 		return false;
@@ -12,17 +26,17 @@ bool string_equals(String a, String b) {
 	return !a.size || !memcmp(a.data, b.data, a.length);
 }
 
-bool string_contains(String a, String b) {
+int32_t string_contains(String a, String b) {
 	if (a.length < b.length)
 		return false;
 
 	for (uint32_t index = 0; index + b.length < a.size; ++index) {
 		if (memcmp(a.data + index, b.data, b.length) == 0) {
-			return true;
+			return index;
 		}
 	}
 
-	return false;
+	return -1;
 }
 
 uint64_t string_hash64(String string) {
@@ -76,6 +90,38 @@ String string_concat(struct arena *arena, String head, String tail) {
 	head.length += string_copy(arena, tail).length;
 	head.size = head.length + 1;
 	return head;
+}
+
+String string_insert_at(Arena *arena, String into, String insert, uint32_t index) {
+	index = index % into.length;
+
+	String rv = string_create(arena, into.length + insert.length + 1);
+
+	memcpy(rv.data, into.data, index);
+	memcpy(rv.data + index, insert.data, insert.length);
+	memcpy(rv.data + index + insert.length, into.data + index, into.length - index);
+
+	return rv;
+}
+
+String string_find_and_replace(Arena *arena, String string, String find, String replace) {
+	int32_t find_offset = 0;
+	if ((find_offset = string_contains(string, find)) == -1)
+		return string;
+
+	uint32_t find_length = find.length;
+	uint32_t new_length = replace.length + (string.length - find.length);
+
+	arena_scratch(arena);
+
+	String rv = string_create(arena, new_length + 1);
+
+	memcpy(rv.data, string.data, find_offset);
+	memcpy(rv.data + find_offset, replace.data, replace.length);
+
+	memcpy(rv.data + find_offset + replace.length, string.data + (find_offset + find_length), string.length - (find_offset + find_length));
+
+	return rv;
 }
 
 String string_directory_from_path(Arena *arena, String path) {

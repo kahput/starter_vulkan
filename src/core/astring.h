@@ -20,14 +20,20 @@ typedef struct {
 #define STRING_START 0
 #define STRING_END UINT32_MAX
 
+String string_create(Arena *arena, size_t size);
+
 bool string_equals(String a, String b);
-bool string_contains(String a, String b);
+// Returns substring start index if true, else -1
+int32_t string_contains(String a, String b);
 
 uint64_t string_hash64(String string);
 String string_copy(Arena *arena, String target);
 String string_copy_length(Arena *arena, String target);
 String string_slice(Arena *arena, String a, uint32_t start, uint32_t length);
 String string_concat(Arena *arena, String head, String tail);
+
+String string_insert_at(Arena *arena, String into, String insert, uint32_t index);
+String string_find_and_replace(Arena *arena, String string, String find, String replace);
 
 String string_format(Arena *arena, String format, ...);
 

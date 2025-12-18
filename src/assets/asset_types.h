@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "core/astring.h"
+#include "platform/filesystem.h"
 #include "renderer/renderer_types.h"
 
 #include <cglm/cglm.h>
@@ -10,19 +11,29 @@ typedef enum {
 	ASSET_TYPE_UNDEFINED,
 	ASSET_TYPE_GEOMETRY,
 	ASSET_TYPE_IMAGE,
+	ASSET_TYPE_SHADER,
 	ASSET_TYPE_COUNT,
 } AssetType;
 
 typedef struct image {
-	UUID asset_id;
+	UUID id;
 	String path;
 
 	void *pixels;
 	int32_t width, height, channels;
 } Image;
 
+typedef struct shader_source {
+	UUID id;
+	String path;
+
+	FileContent vertex_shader, fragment_shader;
+} ShaderSource;
+
 typedef struct material_source {
-	UUID asset_id;
+	UUID id;
+	UUID shader_id;
+
 	Image *base_color_texture;
 	Image *metallic_roughness_texture; // G = Roughness, B = Metallic
 	Image *normal_texture;
@@ -36,7 +47,7 @@ typedef struct material_source {
 } MaterialSource;
 
 typedef struct mesh_source {
-	UUID asset_id;
+	UUID id;
 
 	Vertex *vertices;
 	uint32_t vertex_count;

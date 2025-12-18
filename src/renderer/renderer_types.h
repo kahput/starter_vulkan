@@ -25,7 +25,7 @@ typedef struct {
 	mat4 projection;
 	vec3 camera_position;
 	float _pad0;
-} SceneData;
+} FrameData;
 
 typedef struct {
 	vec3 position;
@@ -156,8 +156,8 @@ typedef enum compare_op {
 typedef struct pipeline_desc {
 	uint32_t shader_index;
 
-	ShaderAttribute *attributes;
-	uint32_t attribute_count;
+	ShaderAttribute *override_attributes;
+	uint32_t override_count;
 
 	PipelineCullMode cull_mode;
 	PipelineFrontFace front_face;
@@ -202,8 +202,8 @@ typedef struct sampler_desc {
 #define DEFAULT_PIPELINE(index)                     \
 	(PipelineDesc) {                                \
 		.shader_index = index,                      \
-		.attributes = NULL,                         \
-		.attribute_count = 0,                       \
+		.override_attributes = NULL,                \
+		.override_count = 0,                        \
 		.cull_mode = CULL_MODE_BACK,                \
 		.front_face = FRONT_FACE_COUNTER_CLOCKWISE, \
 		.polygon_mode = POLYGON_MODE_FILL,          \

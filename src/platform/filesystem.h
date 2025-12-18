@@ -13,7 +13,7 @@ typedef uint32_t FileModeFlags;
 
 typedef struct {
 	size_t size;
-	uint8_t *content;
+	char *content;
 } FileContent;
 
 typedef struct file_path_node {

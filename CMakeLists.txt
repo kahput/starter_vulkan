@@ -96,16 +96,27 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
         if (${FILE_EXTENSION} STREQUAL ".glsl") 
             get_filename_component(DEST_DIR ${DEST_FILE} DIRECTORY)
             get_filename_component(DEST_NAME ${DEST_FILE} NAME_WE)
-            set(SPV_FILE ${DEST_DIR}/${DEST_NAME}.spv)
+
+            set(VERT_SPV_FILE ${DEST_DIR}/${DEST_NAME}.vert.spv)
+            set(FRAG_SPV_FILE ${DEST_DIR}/${DEST_NAME}.frag.spv)
+
             add_custom_command(
-                OUTPUT "${SPV_FILE}"
-                COMMAND glslc "${ASSET_FILE}" -o "${SPV_FILE}"
+                OUTPUT "${VERT_SPV_FILE}"
+                COMMAND glslc -DSHADER_STAGE_VERTEX "${ASSET_FILE}" -o "${VERT_SPV_FILE}"
                 DEPENDS "${ASSET_FILE}"
-                COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_PATH}.spv"
+                COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_PATH}.vert.spv"
                 VERBATIM
             )
 
-            list(APPEND ASSET_OUTPUTS "${SPV_FILE}")
+            add_custom_command(
+                OUTPUT "${FRAG_SPV_FILE}"
+                COMMAND glslc -DSHADER_STAGE_FRAGMENT "${ASSET_FILE}" -o "${FRAG_SPV_FILE}"
+                DEPENDS "${ASSET_FILE}"
+                COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_PATH}.frag.spv"
+                VERBATIM
+            )
+
+            list(APPEND ASSET_OUTPUTS "${VERT_SPV_FILE}" "${FRAG_SPV_FILE}")
         else()
         add_custom_command(
             OUTPUT "${DEST_FILE}"

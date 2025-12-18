@@ -1,4 +1,9 @@
 #version 450
+
+// -----------------------------------------------------------------------------
+// VERTEX SHADER
+// -----------------------------------------------------------------------------
+#ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
 layout(set = 0, binding = 0) uniform SceneData {
@@ -35,3 +40,26 @@ void main() {
     gl_Position = u_scene.projection * u_scene.view * vec4(vertex_position, 1.0f);
     out_uv = in_uv;
 }
+
+#endif
+
+// -----------------------------------------------------------------------------
+// FRAGMENT SHADER
+// -----------------------------------------------------------------------------
+#ifdef SHADER_STAGE_FRAGMENT
+#pragma shader_stage(fragment)
+
+layout(set = 1, binding = 0) uniform sampler2D u_texture;
+
+layout(location = 0) in vec2 in_uv;
+
+layout(location = 0) out vec4 out_color;
+
+void main() {
+    vec4 color = texture(u_texture, in_uv);
+
+    if (color.a < 0.1) discard;
+
+    out_color = color;
+}
+#endif

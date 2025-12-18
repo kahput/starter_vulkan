@@ -4,6 +4,7 @@
 #include "common.h"
 #include "core/astring.h"
 #include "core/identifiers.h"
+#include "platform/filesystem.h"
 #include "renderer/renderer_types.h"
 
 #include <cglm/vec3.h>
@@ -22,6 +23,13 @@ void filesystem_directory(const char *src, char *dst);
 
 static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 static Image *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
+
+bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path, ShaderSource *out_shader) {
+	out_shader->vertex_shader = filesystem_read(arena, vertex_path);
+	out_shader->fragment_shader = filesystem_read(arena, fragment_path);
+
+	return out_shader->fragment_shader.content && out_shader->vertex_shader.content;
+}
 
 bool importer_load_image(Arena *arena, String path, Image *out_texture) {
 	ArenaTemp scratch = arena_scratch(arena);
@@ -89,10 +97,10 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 			String mime_type = S(src->mime_type);
 
 			String name = string_format(scratch.arena, SLITERAL("%s_%s"), data->scene->name, src->name);
-			if (string_contains(S(src->mime_type), SLITERAL("png"))) {
+			if (string_contains(S(src->mime_type), SLITERAL("png")) != -1) {
 				dst->path = string_format(arena, SLITERAL("%s/%s.png"), base_directory, name);
 				stbi_write_png(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
-			} else if (string_contains(mime_type, SLITERAL("jpg")) || string_contains(mime_type, SLITERAL("jpeg"))) {
+			} else if (string_contains(mime_type, SLITERAL("jpg")) != -1 || string_contains(mime_type, SLITERAL("jpeg")) != -1) {
 				dst->path = string_format(arena, SLITERAL("%s/%s.jpg"), base_directory, name);
 				stbi_write_jpg(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
 			}

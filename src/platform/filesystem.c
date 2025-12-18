@@ -31,7 +31,7 @@ FileContent filesystem_read(Arena *arena, String path) {
 	uint32_t size = ftell(file);
 	fseek(file, 0L, SEEK_SET);
 
-	uint8_t *byte_content = arena_push_array_zero(arena, uint8_t, size);
+	char *byte_content = arena_push_array_zero(arena, char, size);
 	fread(byte_content, sizeof(*byte_content), size, file);
 
 	fclose(file);

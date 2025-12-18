@@ -128,15 +128,15 @@ bool renderer_create(void *memory, size_t offset, size_t size, void *display, ui
 
 	// ========================= DEFAULT ======================================
 	renderer->frame_uniform_buffer = resource_handle_new(&renderer->buffer_handler);
-	vulkan_renderer_create_buffer(renderer->context, renderer->frame_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(SceneData), NULL);
+	vulkan_renderer_create_buffer(renderer->context, renderer->frame_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(FrameData), NULL);
 
 	renderer->model_material = (Material){ .shader = 0, .pipeline = 0 };
-	vulkan_renderer_create_shader(renderer->context, renderer->model_material.shader, SLITERAL("./assets/shaders/vs_terrain.spv"), SLITERAL("./assets/shaders/fs_terrain.spv"));
+	vulkan_renderer_create_shader(renderer->context, renderer->model_material.shader, SLITERAL("./assets/shaders/PBR.vert.spv"), SLITERAL("./assets/shaders/PBR.frag.spv"));
 	PipelineDesc model_pipeline = DEFAULT_PIPELINE(renderer->model_material.shader);
 	vulkan_renderer_create_pipeline(renderer->context, renderer->model_material.pipeline, model_pipeline);
 
 	renderer->sprite_material = (Material){ .shader = 1, .pipeline = 1 };
-	vulkan_renderer_create_shader(renderer->context, renderer->sprite_material.shader, SLITERAL("./assets/shaders/vs_sprite.spv"), SLITERAL("./assets/shaders/fs_sprite.spv"));
+	vulkan_renderer_create_shader(renderer->context, renderer->sprite_material.shader, SLITERAL("./assets/shaders/sprite.vert.spv"), SLITERAL("./assets/shaders/sprite.frag.spv"));
 	PipelineDesc sprite_pipeline = DEFAULT_PIPELINE(renderer->sprite_material.shader);
 	sprite_pipeline.cull_mode = CULL_MODE_NONE;
 	vulkan_renderer_create_pipeline(renderer->context, renderer->sprite_material.pipeline, sprite_pipeline);
@@ -269,7 +269,7 @@ bool renderer_upload_model(UUID id, ModelSource *model) {
 		}
 
 		Image *image = &model->images[image_index];
-		gpu_model->image_pool_indices[gpu_model->image_count++] = resolve_texture(image->asset_id, image);
+		gpu_model->image_pool_indices[gpu_model->image_count++] = resolve_texture(image->id, image);
 	}
 
 	for (uint32_t material_index = 0; material_index < model->material_count; ++material_index) {
@@ -279,7 +279,7 @@ bool renderer_upload_model(UUID id, ModelSource *model) {
 		}
 
 		MaterialSource *material = &model->materials[material_index];
-		gpu_model->material_pool_indices[gpu_model->material_count++] = resolve_material(material->asset_id, material);
+		gpu_model->material_pool_indices[gpu_model->material_count++] = resolve_material(material->id, material);
 	}
 
 	for (uint32_t mesh_index = 0; mesh_index < model->mesh_count; ++mesh_index) {
@@ -289,7 +289,7 @@ bool renderer_upload_model(UUID id, ModelSource *model) {
 		}
 
 		MeshSource *mesh = &model->meshes[mesh_index];
-		gpu_model->mesh_pool_indices[gpu_model->mesh_count++] = resolve_mesh(mesh->asset_id, mesh);
+		gpu_model->mesh_pool_indices[gpu_model->mesh_count++] = resolve_mesh(mesh->id, mesh);
 	}
 
 	return true;
@@ -303,7 +303,7 @@ bool renderer_begin_frame(Camera *camera) {
 	vulkan_renderer_bind_resource_set(renderer->context, renderer->model_material.global_set);
 
 	if (camera) {
-		SceneData data = { 0 };
+		FrameData data = { 0 };
 		glm_mat4_identity(data.view);
 		glm_lookat(camera->position, camera->target, camera->up, data.view);
 
@@ -311,7 +311,7 @@ bool renderer_begin_frame(Camera *camera) {
 		glm_perspective(glm_rad(camera->fov), (float)renderer->width / (float)renderer->height, 0.1f, 1000.f, data.projection);
 		data.projection[1][1] *= -1;
 
-		vulkan_renderer_update_buffer(renderer->context, renderer->frame_uniform_buffer, 0, sizeof(SceneData), &data);
+		vulkan_renderer_update_buffer(renderer->context, renderer->frame_uniform_buffer, 0, sizeof(FrameData), &data);
 	}
 
 	return true;
@@ -460,38 +460,36 @@ uint32_t resolve_material(UUID id, MaterialSource *source) {
 	vulkan_renderer_create_buffer(renderer->context, gpu_material->parameter_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(MaterialParameters), &parameters);
 	vulkan_renderer_update_resource_set_buffer(renderer->context, gpu_material->resource_set, "u_material", gpu_material->parameter_uniform_buffer);
 
-	// TODO: Use source->base_color_texture->asset_id;
-
 	if (source->base_color_texture) {
-		uint32_t pool_index = resolve_texture(source->base_color_texture->asset_id, source->base_color_texture);
+		uint32_t pool_index = resolve_texture(source->base_color_texture->id, source->base_color_texture);
 		Texture *texture = ((Texture *)renderer->texture_allocator->slots) + pool_index;
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_base_color_texture", texture->handle, renderer->linear_sampler);
 	} else
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_base_color_texture", renderer->default_texture_white, renderer->linear_sampler);
 
 	if (source->metallic_roughness_texture) {
-		uint32_t pool_index = resolve_texture(source->metallic_roughness_texture->asset_id, source->metallic_roughness_texture);
+		uint32_t pool_index = resolve_texture(source->metallic_roughness_texture->id, source->metallic_roughness_texture);
 		Texture *texture = ((Texture *)renderer->texture_allocator->slots) + pool_index;
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_metallic_roughness_texture", texture->handle, renderer->linear_sampler);
 	} else
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_metallic_roughness_texture", renderer->default_texture_white, renderer->linear_sampler);
 
 	if (source->normal_texture) {
-		uint32_t pool_index = resolve_texture(source->normal_texture->asset_id, source->normal_texture);
+		uint32_t pool_index = resolve_texture(source->normal_texture->id, source->normal_texture);
 		Texture *texture = ((Texture *)renderer->texture_allocator->slots) + pool_index;
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_normal_texture", texture->handle, renderer->linear_sampler);
 	} else
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_normal_texture", renderer->default_texture_normal, renderer->linear_sampler);
 
 	if (source->occlusion_texture) {
-		uint32_t pool_index = resolve_texture(source->occlusion_texture->asset_id, source->occlusion_texture);
+		uint32_t pool_index = resolve_texture(source->occlusion_texture->id, source->occlusion_texture);
 		Texture *texture = ((Texture *)renderer->texture_allocator->slots) + pool_index;
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_occlusion_texture", texture->handle, renderer->linear_sampler);
 	} else
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_occlusion_texture", renderer->default_texture_white, renderer->linear_sampler);
 
 	if (source->emissive_texture) {
-		uint32_t pool_index = resolve_texture(source->emissive_texture->asset_id, source->emissive_texture);
+		uint32_t pool_index = resolve_texture(source->emissive_texture->id, source->emissive_texture);
 		Texture *texture = ((Texture *)renderer->texture_allocator->slots) + pool_index;
 		vulkan_renderer_update_resource_set_texture_sampler(renderer->context, gpu_material->resource_set, "u_emissive_texture", texture->handle, renderer->linear_sampler);
 	} else
@@ -521,7 +519,7 @@ uint32_t resolve_mesh(UUID id, MeshSource *source) {
 	if (source->material == NULL)
 		gpu_mesh->material = &renderer->default_material_instance;
 	else {
-		uint32_t material_index = resolve_material(source->material->asset_id, source->material);
+		uint32_t material_index = resolve_material(source->material->id, source->material);
 		gpu_mesh->material = ((MaterialInstance *)renderer->material_allocator->slots) + material_index;
 	}
 
