@@ -105,8 +105,8 @@ int main(void) {
 			LOG_INFO("Uploaded model: %lu", state.small_room_id);
 		}
 
-	ShaderSource *source = NULL;
-	asset_library_load_shader(scratch.arena, SLITERAL("PBR.glsl"), &source);
+		ShaderSource *source = NULL;
+		asset_library_load_shader(scratch.arena, SLITERAL("PBR.glsl"), &source);
 
 		Image *sprite_image = NULL;
 		MeshSource *sprite_mesh = NULL;

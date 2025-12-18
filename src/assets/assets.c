@@ -85,6 +85,7 @@ UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shad
 	// 	return INVALID_UUID;
 
 	ArenaTemp scratch = arena_scratch(arena);
+
 	String vertex_shader_key = string_find_and_replace(scratch.arena, key, SLITERAL("glsl"), SLITERAL("vert.spv"));
 	String fragment_shader_key = string_find_and_replace(scratch.arena, key, SLITERAL("glsl"), SLITERAL("frag.spv"));
 
@@ -110,9 +111,11 @@ UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shad
 		return INVALID_UUID;
 	}
 
+	(*out_shader)->path = string_format(arena, SLITERAL("%s/%s"), string_directory_from_path(scratch.arena, vs_entry->full_path).data, key.data);
+	(*out_shader)->id = string_hash64((*out_shader)->path);
+
 	arena_release_scratch(scratch);
-	(*out_shader)->id = vs_entry->node.hash;
-	return vs_entry->node.hash;
+	return (*out_shader)->id;
 }
 
 UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model, bool use_cached_textures) {
