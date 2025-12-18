@@ -7,5 +7,5 @@
 
 struct arena;
 
-TextureSource *importer_load_image(struct arena *arena, String path);
-ModelSource *importer_load_gltf(struct arena *arena, String path);
+bool importer_load_image(Arena *arena, String path, Image *out_texture);
+bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model);

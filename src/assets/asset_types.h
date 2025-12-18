@@ -13,21 +13,21 @@ typedef enum {
 	ASSET_TYPE_COUNT,
 } AssetType;
 
-typedef struct texture_source {
+typedef struct image {
 	UUID asset_id;
-	void *pixels;
-
-	int32_t width, height, channels;
 	String path;
-} TextureSource;
+
+	void *pixels;
+	int32_t width, height, channels;
+} Image;
 
 typedef struct material_source {
 	UUID asset_id;
-	TextureSource *base_color_texture;
-	TextureSource *metallic_roughness_texture; // G = Roughness, B = Metallic
-	TextureSource *normal_texture;
-	TextureSource *occlusion_texture;
-	TextureSource *emissive_texture;
+	Image *base_color_texture;
+	Image *metallic_roughness_texture; // G = Roughness, B = Metallic
+	Image *normal_texture;
+	Image *occlusion_texture;
+	Image *emissive_texture;
 
 	vec4 base_color_factor;
 	float metallic_factor;
@@ -54,6 +54,6 @@ typedef struct model_source {
 	MaterialSource *materials;
 	uint32_t material_count;
 
-	TextureSource *images;
+	Image *images;
 	uint32_t image_count;
 } ModelSource;

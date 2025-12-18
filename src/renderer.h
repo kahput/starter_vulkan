@@ -10,7 +10,7 @@ bool renderer_create(void *memory, size_t offset, size_t size, void *display, ui
 void renderer_destroy(void);
 
 bool renderer_upload_mesh(UUID id, MeshSource *mesh);
-bool renderer_upload_image(UUID, TextureSource *image);
+bool renderer_upload_image(UUID, Image *image);
 bool renderer_upload_material(UUID id, MaterialSource *material);
 
 bool renderer_upload_model(UUID id, ModelSource *model);

@@ -1,5 +1,6 @@
 #include "importer.h"
 
+#include "assets/asset_types.h"
 #include "common.h"
 #include "core/astring.h"
 #include "core/identifiers.h"
@@ -20,42 +21,40 @@ void filesystem_filename(const char *src, char *dst);
 void filesystem_directory(const char *src, char *dst);
 
 static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
-static TextureSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
+static Image *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
 
-TextureSource *importer_load_image(struct arena *arena, String path) {
-	TextureSource *texture = arena_push_struct_zero(arena, TextureSource);
-
+bool importer_load_image(Arena *arena, String path, Image *out_texture) {
 	ArenaTemp scratch = arena_scratch(arena);
 
 	String filename = string_filename_from_path(scratch.arena, path);
 	LOG_INFO("Loading %s...", filename.data);
 
 	logger_indent();
-	uint8_t *pixels = stbi_load(path.data, &texture->width, &texture->height, &texture->channels, 4);
+	uint8_t *pixels = stbi_load(path.data, &out_texture->width, &out_texture->height, &out_texture->channels, 4);
 	if (pixels == NULL) {
 		LOG_ERROR("Failed to load image [ %s ]", path.data);
 		static uint8_t magenta[] = { 255, 0, 255, 255 };
-		texture->width = texture->height = 1;
-		texture->channels = 4;
-		texture->pixels = magenta;
+		out_texture->width = out_texture->height = 1;
+		out_texture->channels = 4;
+		out_texture->pixels = magenta;
 		arena_release_scratch(scratch);
-		return texture;
+		return false;
 	}
-	texture->channels = 4;
-	uint32_t pixel_buffer_size = texture->width * texture->height * texture->channels;
-	texture->pixels = arena_push_array(arena, uint8_t, pixel_buffer_size);
-	memcpy(texture->pixels, pixels, pixel_buffer_size);
+	out_texture->channels = 4;
+	uint32_t pixel_buffer_size = out_texture->width * out_texture->height * out_texture->channels;
+	out_texture->pixels = arena_push_array(arena, uint8_t, pixel_buffer_size);
+	memcpy(out_texture->pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.data, texture->width, texture->height, texture->channels);
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.data, out_texture->width, out_texture->height, out_texture->channels);
 	LOG_INFO("%s loaded", filename.data);
 	logger_dedent();
 
 	arena_release_scratch(scratch);
-	return texture;
+	return true;
 }
 
-ModelSource *importer_load_gltf(struct arena *arena, String path) {
+bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
 	cgltf_result result = cgltf_parse_file(&options, path.data, &data);
@@ -73,55 +72,43 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 
 	LOG_INFO("Loading %s...", path.data);
 	logger_indent();
-	ModelSource *asset = arena_push_struct(arena, ModelSource);
 
 	ArenaTemp scratch = arena_scratch(arena);
 	String base_directory = string_directory_from_path(scratch.arena, path);
 
-	asset->image_count = data->images_count;
-	asset->images = arena_push_array_zero(arena, TextureSource, asset->image_count);
+	out_model->image_count = data->images_count;
+	out_model->images = arena_push_array_zero(arena, Image, out_model->image_count);
 
-	for (uint32_t texture_index = 0; texture_index < asset->image_count; ++texture_index) {
+	for (uint32_t texture_index = 0; texture_index < out_model->image_count; ++texture_index) {
 		cgltf_image *src = &data->images[texture_index];
-		TextureSource *dst = &asset->images[texture_index];
+		Image *dst = &out_model->images[texture_index];
 
 		if (src->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
 			uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
+			String mime_type = S(src->mime_type);
 
-
-			String name = string_format(arena, SLITERAL("%s_%s"), data->scene->name, src->name);
-
-			size_t pixel_buffer_size = dst->width * dst->height * 4;
-			dst->pixels = arena_push_array_zero(arena, uint8_t, pixel_buffer_size);
-			memcpy(dst->pixels, pixels, pixel_buffer_size);
-
+			String name = string_format(scratch.arena, SLITERAL("%s_%s"), data->scene->name, src->name);
+			if (string_contains(S(src->mime_type), SLITERAL("png"))) {
+				dst->path = string_format(arena, SLITERAL("%s/%s.png"), base_directory, name);
+				stbi_write_png(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
+			} else if (string_contains(mime_type, SLITERAL("jpg")) || string_contains(mime_type, SLITERAL("jpeg"))) {
+				dst->path = string_format(arena, SLITERAL("%s/%s.jpg"), base_directory, name);
+				stbi_write_jpg(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
+			}
 			stbi_image_free(pixels);
 		} else if (src->uri) {
 			dst->path = string_format(arena, SLITERAL("%s/%s"), base_directory.data, src->uri);
-			uint8_t *pixels = stbi_load(dst->path.data, &dst->width, &dst->height, &dst->channels, 4);
-
-			size_t pixel_buffer_size = dst->width * dst->height * 4;
-			dst->pixels = arena_push_array_zero(arena, uint8_t, pixel_buffer_size);
-			memcpy(dst->pixels, pixels, pixel_buffer_size);
-
-			stbi_image_free(pixels);
-		}
-
-		if (!dst->pixels) {
-			LOG_WARN("Importer: Failed to load texture for image index %d", texture_index);
-		} else {
-			dst->channels = 4; // We forced 4 channels in stbi_load
 		}
 	}
 
-	asset->material_count = data->materials_count;
-	asset->materials = arena_push_array_zero(arena, MaterialSource, asset->material_count);
-	LOG_INFO("Number of materials: %d", asset->material_count);
+	out_model->material_count = data->materials_count;
+	out_model->materials = arena_push_array_zero(arena, MaterialSource, out_model->material_count);
+	LOG_INFO("Number of materials: %d", out_model->material_count);
 
-	for (uint32_t index = 0; index < asset->material_count; ++index) {
+	for (uint32_t index = 0; index < out_model->material_count; ++index) {
 		cgltf_material *src = &data->materials[index];
-		MaterialSource *dst = &asset->materials[index];
+		MaterialSource *dst = &out_model->materials[index];
 
 		// PBR Metallic Roughness
 		if (src->has_pbr_metallic_roughness) {
@@ -133,19 +120,19 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 			dst->roughness_factor = pbr->roughness_factor;
 
 			// Textures
-			dst->base_color_texture = find_loaded_texture(data, asset, pbr->base_color_texture.texture);
-			dst->metallic_roughness_texture = find_loaded_texture(data, asset, pbr->metallic_roughness_texture.texture);
+			dst->base_color_texture = find_loaded_texture(data, out_model, pbr->base_color_texture.texture);
+			dst->metallic_roughness_texture = find_loaded_texture(data, out_model, pbr->metallic_roughness_texture.texture);
 		}
 
 		// Normal Map
-		dst->normal_texture = find_loaded_texture(data, asset, src->normal_texture.texture);
+		dst->normal_texture = find_loaded_texture(data, out_model, src->normal_texture.texture);
 
 		// Occlusion
-		dst->occlusion_texture = find_loaded_texture(data, asset, src->occlusion_texture.texture);
+		dst->occlusion_texture = find_loaded_texture(data, out_model, src->occlusion_texture.texture);
 
 		// Emissive
 		memcpy(dst->emissive_factor, src->emissive_factor, sizeof(vec3));
-		dst->emissive_texture = find_loaded_texture(data, asset, src->emissive_texture.texture);
+		dst->emissive_texture = find_loaded_texture(data, out_model, src->emissive_texture.texture);
 	}
 
 	uint32_t mesh_count = 0;
@@ -155,8 +142,8 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 		mesh_count += mesh->primitives_count;
 	}
 
-	asset->mesh_count = mesh_count;
-	asset->meshes = arena_push_array_zero(arena, MeshSource, asset->mesh_count);
+	out_model->mesh_count = mesh_count;
+	out_model->meshes = arena_push_array_zero(arena, MeshSource, out_model->mesh_count);
 
 	mesh_count = 0;
 	for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
@@ -164,7 +151,7 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 
 		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
 			cgltf_primitive *src_mesh = &mesh->primitives[primitive_index];
-			MeshSource *dst_mesh = &asset->meshes[mesh_count++];
+			MeshSource *dst_mesh = &out_model->meshes[mesh_count++];
 
 			bool has_tangents = false;
 
@@ -254,7 +241,7 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 
 			if (src_mesh->material) {
 				uint32_t index = src_mesh->material - data->materials;
-				dst_mesh->material = &asset->materials[index];
+				dst_mesh->material = &out_model->materials[index];
 			}
 		}
 	}
@@ -263,7 +250,7 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 	cgltf_free(data);
 
 	arena_release_scratch(scratch);
-	return asset;
+	return true;
 }
 
 void filesystem_filename(const char *src, char *dst) {
@@ -297,16 +284,14 @@ void filesystem_directory(const char *src, char *dst) {
 	dst[final] = '\0';
 }
 
-TextureSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex) {
+Image *find_loaded_texture(const cgltf_data *data, ModelSource *source, const cgltf_texture *gltf_tex) {
 	if (!gltf_tex || !gltf_tex->image)
 		return NULL;
 
-	// Calculate index based on pointer arithmetic
-	// cgltf stores images in a contiguous array, so we can find the index
 	size_t index = gltf_tex->image - data->images;
 
-	if (index < scene->image_count) {
-		return &scene->images[index];
+	if (index < source->image_count) {
+		return &source->images[index];
 	}
 	return NULL;
 }

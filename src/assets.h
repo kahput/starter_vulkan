@@ -32,5 +32,10 @@ bool asset_library_track_file(String file_path);
 
 UUID asset_library_model_mesh_id(String key, uint32_t index);
 
-UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model);
-UUID asset_library_load_image(Arena *arena, String key, TextureSource **out_texture);
+UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model, bool use_cached_textures);
+UUID asset_library_load_image(Arena *arena, String key, Image **out_texture);
+
+UUID asset_library_request_model(String key, ModelSource **out_model);
+UUID asset_library_request_image(String key, Image **out_image);
+
+bool asset_library_clear_cache(void);

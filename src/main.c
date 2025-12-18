@@ -104,11 +104,12 @@ int main(void) {
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
 	asset_library_track_directory(SLITERAL("assets"));
-
 	ArenaTemp scratch = arena_scratch(NULL);
 	{
 		ModelSource *model_source = NULL;
-		state.small_room_id = asset_library_load_model(scratch.arena, SLITERAL("room-small.glb"), &model_source);
+		state.small_room_id = asset_library_load_model(scratch.arena, SLITERAL("room-small.glb"), &model_source, true);
+		UUID gate = asset_library_load_model(scratch.arena, SLITERAL("gate.glb"), &model_source, true);
+		state.small_room_id = asset_library_load_model(scratch.arena, SLITERAL("room-small.glb"), &model_source, true);
 
 		if (model_source) {
 			renderer_upload_model(state.small_room_id, model_source);
@@ -116,7 +117,7 @@ int main(void) {
 			LOG_INFO("Uploaded model: %lu", state.small_room_id);
 		}
 
-		TextureSource *sprite_image = NULL;
+		Image *sprite_image = NULL;
 		MeshSource *sprite_mesh = NULL;
 
 		UUID sprite_image_id = asset_library_load_image(scratch.arena, SLITERAL("tile_0085.png"), &sprite_image);

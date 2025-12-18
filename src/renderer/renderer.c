@@ -41,7 +41,7 @@ void resource_handler_create(Arena *arena, ResourceHandler *handler, uint32_t ca
 uint32_t resource_handle_new(ResourceHandler *handler);
 void resource_handle_free(ResourceHandler *handler, uint32_t handle);
 
-static uint32_t resolve_texture(UUID id, TextureSource *source);
+static uint32_t resolve_texture(UUID id, Image *source);
 static uint32_t resolve_material(UUID id, MaterialSource *source);
 static uint32_t resolve_mesh(UUID id, MeshSource *source);
 
@@ -203,7 +203,7 @@ bool renderer_unload_mesh(UUID id) {
 	return false;
 }
 
-bool renderer_upload_image(UUID id, TextureSource *image) {
+bool renderer_upload_image(UUID id, Image *image) {
 	return resolve_texture(id, image) == INVALID_INDEX ? false : true;
 }
 
@@ -268,7 +268,7 @@ bool renderer_upload_model(UUID id, ModelSource *model) {
 			assert(false);
 		}
 
-		TextureSource *image = &model->images[image_index];
+		Image *image = &model->images[image_index];
 		gpu_model->image_pool_indices[gpu_model->image_count++] = resolve_texture(image->asset_id, image);
 	}
 
@@ -398,7 +398,7 @@ void resource_handle_free(ResourceHandler *handler, uint32_t handle) {
 	handler->free_indices[handler->free_count++] = handle;
 }
 
-uint32_t resolve_texture(UUID id, TextureSource *source) {
+uint32_t resolve_texture(UUID id, Image *source) {
 	ResourceEntry *entry = hash_trie_lookup_hash(&renderer->texture_map, id, ResourceEntry);
 	if (entry && entry->pool_index != INVALID_INDEX) {
 		return entry->pool_index;
