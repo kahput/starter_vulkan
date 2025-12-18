@@ -86,9 +86,11 @@ ModelSource *importer_load_gltf(struct arena *arena, String path) {
 		TextureSource *dst = &asset->images[texture_index];
 
 		if (src->buffer_view) {
-			uint8_t *data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
+			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
+			uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 
-			uint8_t *pixels = stbi_load_from_memory(data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
+
+			String name = string_format(arena, SLITERAL("%s_%s"), data->scene->name, src->name);
 
 			size_t pixel_buffer_size = dst->width * dst->height * 4;
 			dst->pixels = arena_push_array_zero(arena, uint8_t, pixel_buffer_size);

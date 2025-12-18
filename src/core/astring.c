@@ -13,7 +13,16 @@ bool string_equals(String a, String b) {
 }
 
 bool string_contains(String a, String b) {
-	return true;
+	if (a.length < b.length)
+		return false;
+
+	for (uint32_t index = 0; index + b.length < a.size; ++index) {
+		if (memcmp(a.data + index, b.data, b.length) == 0) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 uint64_t string_hash64(String string) {
@@ -43,6 +52,23 @@ String string_copy_length(struct arena *arena, String target) {
 	if (copy.length)
 		memcpy(copy.data, target.data, copy.length);
 	return copy;
+}
+
+String string_slice(Arena *arena, String a, uint32_t start, uint32_t length) {
+	start = start % a.size;
+	if (length == STRING_END || length > a.length) {
+		length = a.length - start;
+	}
+
+	String slice = {
+		.length = length,
+		.size = length + 1,
+		.data = a.data + start
+	};
+
+	slice = string_copy(arena, slice);
+	slice.data[slice.length] = '\0';
+	return slice;
 }
 
 String string_concat(struct arena *arena, String head, String tail) {

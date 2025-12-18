@@ -94,7 +94,6 @@ static AssetType file_extension_to_asset_type(String extension) {
 
 UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
-
 	if (entry == NULL) {
 		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
 		*out_model = NULL;

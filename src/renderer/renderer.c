@@ -518,11 +518,12 @@ uint32_t resolve_mesh(UUID id, MeshSource *source) {
 	gpu_mesh->vertex_count = source->vertex_count;
 	vulkan_renderer_create_buffer(renderer->context, gpu_mesh->vertex_buffer, BUFFER_TYPE_VERTEX, sizeof(*source->vertices) * gpu_mesh->vertex_count, source->vertices);
 
-	ResourceEntry *material_entry = hash_trie_lookup_hash(&renderer->material_map, id, ResourceEntry);
-	if (material_entry == NULL || entry->pool_index == INVALID_INDEX) {
+	if (source->material == NULL)
 		gpu_mesh->material = &renderer->default_material_instance;
-	} else
-		gpu_mesh->material = ((MaterialInstance *)renderer->material_allocator->slots) + resolve_material(source->material->asset_id, source->material);
+	else {
+		uint32_t material_index = resolve_material(source->material->asset_id, source->material);
+		gpu_mesh->material = ((MaterialInstance *)renderer->material_allocator->slots) + material_index;
+	}
 
 	if (source->index_count) {
 		gpu_mesh->index_buffer = resource_handle_new(&renderer->buffer_handler);

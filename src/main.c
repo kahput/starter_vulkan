@@ -112,7 +112,8 @@ int main(void) {
 
 		if (model_source) {
 			renderer_upload_model(state.small_room_id, model_source);
-			LOG_INFO("Uploaded model: %llu", state.small_room_id);
+			renderer_upload_model(state.small_room_id, model_source);
+			LOG_INFO("Uploaded model: %lu", state.small_room_id);
 		}
 
 		TextureSource *sprite_image = NULL;
