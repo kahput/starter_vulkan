@@ -27,8 +27,8 @@ bool string_equals(String a, String b);
 int32_t string_contains(String a, String b);
 
 uint64_t string_hash64(String string);
-String string_copy(Arena *arena, String target);
-String string_copy_length(Arena *arena, String target);
+String string_duplicate(Arena *arena, String target);
+String string_duplicate_by_length(Arena *arena, String target);
 String string_slice(Arena *arena, String a, uint32_t start, uint32_t length);
 String string_concat(Arena *arena, String head, String tail);
 

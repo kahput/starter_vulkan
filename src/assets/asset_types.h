@@ -27,7 +27,15 @@ typedef struct shader_source {
 	UUID id;
 	String path;
 
+	ShaderAttribute *attributes;
+	uint32_t attribute_count;
+
+	ShaderUniform *uniforms;
+	uint32_t uniform_count;
+
 	FileContent vertex_shader, fragment_shader;
+
+	PipelineDesc description;
 } ShaderSource;
 
 typedef struct material_source {

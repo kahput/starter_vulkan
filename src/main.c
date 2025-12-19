@@ -1,4 +1,5 @@
 #include "core/astring.h"
+#include "core/debug.h"
 #include "core/identifiers.h"
 #include "platform.h"
 
@@ -94,6 +95,12 @@ int main(void) {
 	asset_library_track_directory(SLITERAL("assets"));
 	ArenaTemp scratch = arena_scratch(NULL);
 	{
+		ShaderSource *terrain_shader = NULL;
+		UUID terrain_shader_id = asset_library_load_shader(scratch.arena, SLITERAL("pbr.glsl"), &terrain_shader);
+
+		ShaderSource *sprite_shader = NULL;
+		UUID sprite_shader_id = asset_library_load_shader(scratch.arena, SLITERAL("sprite.glsl"), &terrain_shader);
+
 		ModelSource *model_source = NULL;
 		state.small_room_id = asset_library_load_model(scratch.arena, SLITERAL("room-small.glb"), &model_source, true);
 		UUID gate = asset_library_load_model(scratch.arena, SLITERAL("gate.glb"), &model_source, true);
@@ -104,9 +111,6 @@ int main(void) {
 			renderer_upload_model(state.small_room_id, model_source);
 			LOG_INFO("Uploaded model: %lu", state.small_room_id);
 		}
-
-		ShaderSource *source = NULL;
-		asset_library_load_shader(scratch.arena, SLITERAL("PBR.glsl"), &source);
 
 		Image *sprite_image = NULL;
 		MeshSource *sprite_mesh = NULL;

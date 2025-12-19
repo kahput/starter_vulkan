@@ -65,7 +65,7 @@ FileNode *filesystem_load_directory_files(Arena *arena, String directory_path, b
 
 		if (S_ISDIR(info.st_mode) == false) {
 			FileNode *new_node = arena_push_struct(arena, FileNode);
-			new_node->path = string_copy(arena, full_path);
+			new_node->path = string_duplicate(arena, full_path);
 			new_node->next = NULL;
 
 			*list_tail = new_node;

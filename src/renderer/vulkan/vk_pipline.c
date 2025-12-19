@@ -1,3 +1,4 @@
+#include "core/debug.h"
 #include "core/identifiers.h"
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
@@ -650,8 +651,8 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	return true;
 }
 
-static inline int32_t to_vk(ShaderAttributeFormat format);
-static inline uint32_t to_bytes(ShaderAttributeFormat format);
+static inline VkFormat to_vk_format(ShaderAttributeFormat format);
+static inline size_t to_bytes(ShaderAttributeFormat format);
 
 static bool override_attributes(struct vertex_input_state *override, ShaderAttribute *attributes, uint32_t attribute_count) {
 	uint32_t unique_bindings = 0;
@@ -674,7 +675,7 @@ static bool override_attributes(struct vertex_input_state *override, ShaderAttri
 		VkVertexInputAttributeDescription attribute_description = {
 			.binding = attribute.binding,
 			.location = attribute_index,
-			.format = to_vk(attribute.format),
+			.format = to_vk_format(attribute.format),
 			.offset = byte_offset
 		};
 
@@ -687,72 +688,84 @@ static bool override_attributes(struct vertex_input_state *override, ShaderAttri
 	return true;
 }
 
-int32_t to_vk(ShaderAttributeFormat format) {
-	switch (format) {
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
-			return VK_FORMAT_R32_SFLOAT;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
-			return VK_FORMAT_R32G32_SFLOAT;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
-			return VK_FORMAT_R32G32B32_SFLOAT;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
-			return VK_FORMAT_R32G32B32A32_SFLOAT;
-
-		case SHADER_ATTRIBUTE_FORMAT_INT:
-			return VK_FORMAT_R32_SINT;
-		case SHADER_ATTRIBUTE_FORMAT_INT2:
-			return VK_FORMAT_R32G32_SINT;
-		case SHADER_ATTRIBUTE_FORMAT_INT3:
-			return VK_FORMAT_R32G32B32_SINT;
-		case SHADER_ATTRIBUTE_FORMAT_INT4:
-			return VK_FORMAT_R32G32B32A32_SINT;
-
-		case SHADER_ATTRIBUTE_FORMAT_UINT:
-			return VK_FORMAT_R32_UINT;
-		case SHADER_ATTRIBUTE_FORMAT_UINT2:
-			return VK_FORMAT_R32G32_UINT;
-		case SHADER_ATTRIBUTE_FORMAT_UINT3:
-			return VK_FORMAT_R32G32B32_UINT;
-		case SHADER_ATTRIBUTE_FORMAT_UINT4:
-			return VK_FORMAT_R32G32B32A32_UINT;
+VkFormat to_vk_format(ShaderAttributeFormat format) {
+	switch (format.type) {
+		case SHADER_ATTRIBUTE_TYPE_FLOAT64: {
+			const VkFormat types[] = { VK_FORMAT_R64_SFLOAT, VK_FORMAT_R64G64_SFLOAT, VK_FORMAT_R64G64B64_SFLOAT, VK_FORMAT_R64G64B64A64_SFLOAT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_INT64: {
+			const VkFormat types[] = { VK_FORMAT_R64_SINT, VK_FORMAT_R64G64_SINT, VK_FORMAT_R64G64B64_SINT, VK_FORMAT_R64G64B64A64_SINT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_UINT64: {
+			const VkFormat types[] = { VK_FORMAT_R64_UINT, VK_FORMAT_R64G64_UINT, VK_FORMAT_R64G64B64_UINT, VK_FORMAT_R64G64B64A64_UINT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_FLOAT32: {
+			const VkFormat types[] = { VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_INT32: {
+			const VkFormat types[] = { VK_FORMAT_R32_SINT, VK_FORMAT_R32G32_SINT, VK_FORMAT_R32G32B32_SINT, VK_FORMAT_R32G32B32A32_SINT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_UINT32: {
+			const VkFormat types[] = { VK_FORMAT_R32_UINT, VK_FORMAT_R32G32_UINT, VK_FORMAT_R32G32B32_UINT, VK_FORMAT_R32G32B32A32_UINT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_FLOAT16: {
+			const VkFormat types[] = { VK_FORMAT_R16_SFLOAT, VK_FORMAT_R16G16_SFLOAT, VK_FORMAT_R16G16B16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_INT16: {
+			const VkFormat types[] = { VK_FORMAT_R16_SINT, VK_FORMAT_R16G16_SINT, VK_FORMAT_R16G16B16_SINT, VK_FORMAT_R16G16B16A16_SINT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_UINT16: {
+			const VkFormat types[] = { VK_FORMAT_R16_UINT, VK_FORMAT_R16G16_UINT, VK_FORMAT_R16G16B16_UINT, VK_FORMAT_R16G16B16A16_UINT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_INT8: {
+			const VkFormat types[] = { VK_FORMAT_R8_SINT, VK_FORMAT_R8G8_SINT, VK_FORMAT_R8G8B8_SINT, VK_FORMAT_R8G8B8A8_SINT };
+			return types[format.count - 1];
+		}
+		case SHADER_ATTRIBUTE_TYPE_UINT8: {
+			const VkFormat types[] = { VK_FORMAT_R8_UINT, VK_FORMAT_R8G8_UINT, VK_FORMAT_R8G8B8_UINT, VK_FORMAT_R8G8B8A8_UINT };
+			return types[format.count - 1];
+		}
 		default: {
-			LOG_ERROR("Unkown attribute format type provided!");
-			return 0;
-		} break;
+			ASSERT_MESSAGE(false, "Shader attribute type should not be undefined");
+			return VK_FORMAT_UNDEFINED;
+		}
 	}
 }
-
-uint32_t to_bytes(ShaderAttributeFormat format) {
-	switch (format) {
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT:
-			return sizeof(float);
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT2:
-			return sizeof(float) * 2;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT3:
-			return sizeof(float) * 3;
-		case SHADER_ATTRIBUTE_FORMAT_FLOAT4:
-			return sizeof(float) * 4;
-
-		case SHADER_ATTRIBUTE_FORMAT_INT:
-			return sizeof(int32_t);
-		case SHADER_ATTRIBUTE_FORMAT_INT2:
-			return sizeof(int32_t) * 2;
-		case SHADER_ATTRIBUTE_FORMAT_INT3:
-			return sizeof(int32_t) * 3;
-		case SHADER_ATTRIBUTE_FORMAT_INT4:
-			return sizeof(int32_t) * 4;
-
-		case SHADER_ATTRIBUTE_FORMAT_UINT:
-			return sizeof(uint32_t);
-		case SHADER_ATTRIBUTE_FORMAT_UINT2:
-			return sizeof(uint32_t) * 2;
-		case SHADER_ATTRIBUTE_FORMAT_UINT3:
-			return sizeof(uint32_t) * 3;
-		case SHADER_ATTRIBUTE_FORMAT_UINT4:
-			return sizeof(uint32_t) * 4;
-		default: {
-			LOG_ERROR("Unkown attribute format type provided!");
+size_t to_bytes(ShaderAttributeFormat format) {
+	size_t type_size = 0;
+	switch (format.type) {
+		case SHADER_ATTRIBUTE_TYPE_FLOAT64:
+		case SHADER_ATTRIBUTE_TYPE_INT64:
+		case SHADER_ATTRIBUTE_TYPE_UINT64:
+			type_size = 8;
+			break;
+		case SHADER_ATTRIBUTE_TYPE_FLOAT32:
+		case SHADER_ATTRIBUTE_TYPE_INT32:
+		case SHADER_ATTRIBUTE_TYPE_UINT32:
+			type_size = 4;
+			break;
+		case SHADER_ATTRIBUTE_TYPE_FLOAT16:
+		case SHADER_ATTRIBUTE_TYPE_INT16:
+		case SHADER_ATTRIBUTE_TYPE_UINT16:
+			type_size = 2;
+			break;
+		case SHADER_ATTRIBUTE_TYPE_INT8:
+		case SHADER_ATTRIBUTE_TYPE_UINT8:
+			type_size = 1;
+			break;
+		case SHADER_ATTRIBUTE_TYPE_UNDEFINED:
+		case SHADER_ATTRIBUTE_TYPE_LAST:
+		default:
 			return 0;
-		} break;
 	}
+	return type_size * format.count;
 }

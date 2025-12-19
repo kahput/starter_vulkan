@@ -50,7 +50,7 @@ uint64_t string_hash64(String string) {
 	return h;
 }
 
-String string_copy(struct arena *arena, String target) {
+String string_duplicate(struct arena *arena, String target) {
 	String copy = target;
 	copy.data = arena_push_zero(arena, target.size);
 
@@ -59,7 +59,7 @@ String string_copy(struct arena *arena, String target) {
 	return copy;
 }
 
-String string_copy_length(struct arena *arena, String target) {
+String string_duplicate_by_length(struct arena *arena, String target) {
 	String copy = target;
 	copy.data = arena_push_zero(arena, target.length);
 
@@ -80,14 +80,14 @@ String string_slice(Arena *arena, String a, uint32_t start, uint32_t length) {
 		.data = a.data + start
 	};
 
-	slice = string_copy(arena, slice);
+	slice = string_duplicate(arena, slice);
 	slice.data[slice.length] = '\0';
 	return slice;
 }
 
 String string_concat(struct arena *arena, String head, String tail) {
-	head = string_copy_length(arena, head);
-	head.length += string_copy(arena, tail).length;
+	head = string_duplicate_by_length(arena, head);
+	head.length += string_duplicate(arena, tail).length;
 	head.size = head.length + 1;
 	return head;
 }

@@ -70,9 +70,10 @@ typedef enum buffer_type {
 } BufferType;
 
 typedef enum shader_stage {
-	SHADER_STAGE_VERTEX,
-	SHADER_STAGE_FRAGMENT,
-} ShaderStage;
+	SHADER_STAGE_VERTEX = 1 << 0,
+	SHADER_STAGE_FRAGMENT = 1 << 1,
+} ShaderStageFlagBits;
+typedef uint32_t ShaderStageFlag;
 
 typedef enum {
 	SHADER_UNIFORM_FREQUENCY_PER_FRAME,
@@ -88,38 +89,46 @@ typedef enum {
 } ShaderUniformType;
 
 typedef enum shader_attribute_format {
-	SHADER_ATTRIBUTE_FORMAT_FLOAT,
-	SHADER_ATTRIBUTE_FORMAT_FLOAT2,
-	SHADER_ATTRIBUTE_FORMAT_FLOAT3,
-	SHADER_ATTRIBUTE_FORMAT_FLOAT4,
+	SHADER_ATTRIBUTE_TYPE_UNDEFINED,
 
-	SHADER_ATTRIBUTE_FORMAT_INT,
-	SHADER_ATTRIBUTE_FORMAT_INT2,
-	SHADER_ATTRIBUTE_FORMAT_INT3,
-	SHADER_ATTRIBUTE_FORMAT_INT4,
+	SHADER_ATTRIBUTE_TYPE_FLOAT64,
+	SHADER_ATTRIBUTE_TYPE_INT64,
+	SHADER_ATTRIBUTE_TYPE_UINT64,
 
-	SHADER_ATTRIBUTE_FORMAT_UINT,
-	SHADER_ATTRIBUTE_FORMAT_UINT2,
-	SHADER_ATTRIBUTE_FORMAT_UINT3,
-	SHADER_ATTRIBUTE_FORMAT_UINT4,
+	SHADER_ATTRIBUTE_TYPE_FLOAT32,
+	SHADER_ATTRIBUTE_TYPE_INT32,
+	SHADER_ATTRIBUTE_TYPE_UINT32,
 
-	SHADER_ATTRIBUTE_FORMAT_MAT3,
-	SHADER_ATTRIBUTE_FORMAT_MAT4,
+	SHADER_ATTRIBUTE_TYPE_FLOAT16,
+	SHADER_ATTRIBUTE_TYPE_INT16,
+	SHADER_ATTRIBUTE_TYPE_UINT16,
 
-	SHADER_ATTRIBUTE_FORMAT_LAST
+	SHADER_ATTRIBUTE_TYPE_INT8,
+	SHADER_ATTRIBUTE_TYPE_UINT8,
+
+	SHADER_ATTRIBUTE_TYPE_LAST
+} ShaderAttributeType;
+
+typedef struct {
+	ShaderAttributeType type;
+	uint32_t count;
 } ShaderAttributeFormat;
 
 typedef struct shader_attribute {
 	String name;
 	ShaderAttributeFormat format;
-	uint8_t binding;
+	uint32_t binding;
+	size_t offset;
 } ShaderAttribute;
 
 typedef struct uniform_binding {
+	// TODO: Make this string
 	char name[64];
 	ShaderUniformType type;
-	ShaderStage stage;
-	uint32_t size, count;
+	ShaderStageFlag stage;
+
+	uint32_t count;
+	size_t size, offset;
 
 	uint32_t set, binding;
 } ShaderUniform;

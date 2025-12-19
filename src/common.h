@@ -1,11 +1,9 @@
 #pragma once
 
-#include <assert.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
-
 
 #define countof(array) sizeof(array) / sizeof(*array)
 #define member_size(type, member) (sizeof(((type *)0)->member))

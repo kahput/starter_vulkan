@@ -63,7 +63,7 @@ bool asset_library_track_file(String file_path) {
 	AssetEntry *entry = hash_trie_insert(library->arena, &library->root, name, AssetEntry);
 
 	if (entry->full_path.length == 0) {
-		entry->full_path = string_copy(library->arena, file_path);
+		entry->full_path = string_duplicate(library->arena, file_path);
 		entry->type = file_extension_to_asset_type(string_extension_from_path(scratch.arena, file_path));
 		entry->source_data = NULL;
 
@@ -81,16 +81,13 @@ bool asset_library_track_file(String file_path) {
 }
 
 UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shader) {
-	// if (out_shader == NULL)
-	// 	return INVALID_UUID;
-
 	ArenaTemp scratch = arena_scratch(arena);
 
 	String vertex_shader_key = string_find_and_replace(scratch.arena, key, SLITERAL("glsl"), SLITERAL("vert.spv"));
 	String fragment_shader_key = string_find_and_replace(scratch.arena, key, SLITERAL("glsl"), SLITERAL("frag.spv"));
 
 	AssetEntry *vs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
-	AssetEntry *fs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
+	AssetEntry *fs_entry = hash_trie_lookup(&library->root, fragment_shader_key, AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
 		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
 		*out_shader = NULL;

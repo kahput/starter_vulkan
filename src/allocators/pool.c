@@ -3,7 +3,7 @@
 #include "arena.h"
 #include "core/logger.h"
 
-#include <assert.h>
+#include "core/debug.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -59,7 +59,7 @@ void pool_destroy(Pool *pool) {
 void *pool_alloc(Pool *pool) {
 	if (pool == NULL || pool->free_slots == NULL) {
 		LOG_WARN("Allocator: pool invalid or out of space");
-		assert(false);
+		ASSERT(false);
 		return NULL;
 	}
 
