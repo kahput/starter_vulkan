@@ -47,13 +47,12 @@ typedef struct texture {
 } Texture;
 
 typedef struct material {
-	uint32_t shader, pipeline;
-	uint32_t global_set;
+	uint32_t shader;
 } Material;
 
 typedef struct material_instance {
 	Material material;
-	uint32_t resource_set, parameter_uniform_buffer;
+	uint32_t resource_set, material_parameter_buffer;
 } MaterialInstance;
 
 typedef struct mesh {
@@ -99,7 +98,6 @@ typedef enum shader_attribute_format {
 	SHADER_ATTRIBUTE_TYPE_INT32,
 	SHADER_ATTRIBUTE_TYPE_UINT32,
 
-	SHADER_ATTRIBUTE_TYPE_FLOAT16,
 	SHADER_ATTRIBUTE_TYPE_INT16,
 	SHADER_ATTRIBUTE_TYPE_UINT16,
 
@@ -163,8 +161,6 @@ typedef enum compare_op {
 } PipelineCompareOp;
 
 typedef struct pipeline_desc {
-	uint32_t shader_index;
-
 	ShaderAttribute *override_attributes;
 	uint32_t override_count;
 
@@ -208,9 +204,8 @@ typedef struct sampler_desc {
 } SamplerDesc;
 
 // TODO: Move these
-#define DEFAULT_PIPELINE(index)                     \
+#define DEFAULT_PIPELINE()                          \
 	(PipelineDesc) {                                \
-		.shader_index = index,                      \
 		.override_attributes = NULL,                \
 		.override_count = 0,                        \
 		.cull_mode = CULL_MODE_BACK,                \

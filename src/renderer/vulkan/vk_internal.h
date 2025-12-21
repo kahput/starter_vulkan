@@ -45,6 +45,7 @@ bool vulkan_create_command_pool(struct vulkan_context *ctx);
 bool vulkan_create_descriptor_pool(struct vulkan_context *ctx);
 // bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader);
 
+bool vulkan_create_global_set(struct vulkan_context *ctx);
 bool vulkan_create_command_buffer(struct vulkan_context *ctx);
 bool vulkan_create_sync_objects(struct vulkan_context *ctx);
 

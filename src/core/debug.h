@@ -33,14 +33,13 @@
 				abort();                                                      \
 			}                                                                 \
 		} while (0)
-	#define ASSERT_FORMAT(condition, fmt, ...)   :        \
-	do {                                                  \
+	#define ASSERT_FORMAT(condition, fmt, ...)            \
+		do {                                              \
 			if (!(condition)) {                           \
 				LOG_ERROR("Assertion (%s) failed | " fmt, \
 					#condition, __VA_ARGS__);             \
 				debug_break();                            \
 				abort();                                  \
 			}                                             \
-		}                                                 \
-		while (0)
+		} while (0)
 #endif

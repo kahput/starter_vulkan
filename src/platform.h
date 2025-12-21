@@ -19,7 +19,7 @@ typedef enum {
 	PLATFORM_POINTER_DISABLED,
 } PointerMode;
 
-Platform *platform_startup(Arena *arena, uint32_t width, uint32_t height, const char *title);
+bool platform_startup(Arena *arena, uint32_t width, uint32_t height, const char *title, Platform *platform);
 void platform_shutdown(Platform *platform);
 
 void platform_poll_events(Platform *platform);

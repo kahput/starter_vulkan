@@ -15,25 +15,14 @@
 #include "allocators/arena.h"
 #include "renderer/vulkan/vk_types.h"
 
-#include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include <vulkan/vulkan_core.h>
 
-struct shader_file {
-	uint32_t size;
-	uint8_t *content;
-};
-
-struct vertex_input_state {
-	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];
-	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
-
-	uint32_t binding_count, attribute_count;
-};
-
+bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant, PipelineDesc description);
 bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code);
 
-bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path) {
+bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path, PipelineDesc description) {
 	if (store_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting create", store_index);
 		return false;
@@ -41,8 +30,7 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 
 	VulkanShader *shader = &context->shader_pool[store_index];
 	if (shader->vertex_shader != NULL || shader->fragment_shader != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocate shader at index %d, but index is already in use", store_index);
-		assert(false);
+		ASSERT_FORMAT(false, "Engine: Frontend renderer tried to allocate shader at index %d, but index is already in use", store_index);
 		return false;
 	}
 
@@ -80,9 +68,9 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 	}
 
 	reflect_shader_interface(context, shader, vertex_shader_code, fragment_shader_code);
+	create_shader_variant(context, shader, &shader->variants[0], description);
 
 	arena_release_scratch(scratch);
-
 	return true;
 }
 
@@ -95,7 +83,7 @@ bool vulkan_renderer_destroy_shader(VulkanContext *context, uint32_t retrieve_in
 	VulkanShader *shader = &context->shader_pool[retrieve_index];
 	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to destroy shader at index %d, but index is not in use", retrieve_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -105,36 +93,27 @@ bool vulkan_renderer_destroy_shader(VulkanContext *context, uint32_t retrieve_in
 	shader->vertex_shader = NULL;
 	shader->fragment_shader = NULL;
 
-	for (uint32_t index = 0; index < shader->set_count; ++index)
-		vkDestroyDescriptorSetLayout(context->device.logical, shader->layouts[index], NULL);
-
+	vkDestroyDescriptorSetLayout(context->device.logical, shader->material_set_layout, NULL);
 	vkDestroyPipelineLayout(context->device.logical, shader->pipeline_layout, NULL);
+
+	for (uint32_t index = 0; index < shader->variant_count; ++index) {
+		VulkanPipeline *pipeline = &shader->variants[index];
+
+		vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
+	}
 
 	return true;
 }
 
+struct vertex_input_state {
+	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];
+	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
+
+	uint32_t binding_count, attribute_count;
+};
+
 static bool override_attributes(struct vertex_input_state *state, ShaderAttribute *attributes, uint32_t attribute_count);
-bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_index, PipelineDesc desc) {
-	if (store_index >= MAX_PIPELINES) {
-		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", store_index);
-		return false;
-	}
-
-	VulkanPipeline *pipeline = &context->pipeline_pool[store_index];
-	if (pipeline->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocate pipeline at index %d, but index is already in use", store_index);
-		assert(false);
-		return false;
-	}
-
-	pipeline->shader_index = desc.shader_index;
-	VulkanShader *shader = &context->shader_pool[pipeline->shader_index];
-	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocatepipeline with shader at index %d, but index is not in use", pipeline->shader_index);
-		assert(false);
-		return false;
-	}
-
+bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant, PipelineDesc description) {
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -163,8 +142,8 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 
 	VkPipelineVertexInputStateCreateInfo vis_create_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 	struct vertex_input_state override = { 0 };
-	if (desc.override_count > 0) {
-		override_attributes(&override, desc.override_attributes, desc.override_count);
+	if (description.override_count > 0) {
+		override_attributes(&override, description.override_attributes, description.override_count);
 		vis_create_info.vertexBindingDescriptionCount = override.binding_count;
 		vis_create_info.pVertexBindingDescriptions = override.bindings;
 		vis_create_info.vertexAttributeDescriptionCount = override.attribute_count;
@@ -178,7 +157,7 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 
 	VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-		.topology = desc.topology_line_list ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		.topology = description.topology_line_list ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 		.primitiveRestartEnable = VK_FALSE
 	};
 
@@ -192,10 +171,10 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 		.depthClampEnable = VK_FALSE,
 		.rasterizerDiscardEnable = VK_FALSE,
-		.polygonMode = (VkPolygonMode)desc.polygon_mode,
-		.lineWidth = desc.line_width > 0.0f ? desc.line_width : 1.0f,
-		.cullMode = (VkCullModeFlags)desc.cull_mode,
-		.frontFace = (VkFrontFace)desc.front_face,
+		.polygonMode = (VkPolygonMode)description.polygon_mode,
+		.lineWidth = description.line_width > 0.0f ? description.line_width : 1.0f,
+		.cullMode = (VkCullModeFlags)description.cull_mode,
+		.frontFace = (VkFrontFace)description.front_face,
 		.depthBiasEnable = VK_FALSE,
 	};
 
@@ -220,9 +199,9 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		.depthTestEnable = desc.depth_test_enable ? VK_TRUE : VK_FALSE,
-		.depthWriteEnable = desc.depth_write_enable ? VK_TRUE : VK_FALSE,
-		.depthCompareOp = (VkCompareOp)desc.depth_compare_op,
+		.depthTestEnable = description.depth_test_enable ? VK_TRUE : VK_FALSE,
+		.depthWriteEnable = description.depth_write_enable ? VK_TRUE : VK_FALSE,
+		.depthCompareOp = (VkCompareOp)description.depth_compare_op,
 		.depthBoundsTestEnable = VK_FALSE,
 		.minDepthBounds = 0.0f,
 		.maxDepthBounds = 1.0f
@@ -251,73 +230,196 @@ bool vulkan_renderer_create_pipeline(VulkanContext *context, uint32_t store_inde
 		.layout = shader->pipeline_layout,
 	};
 
-	if (vkCreateGraphicsPipelines(context->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &pipeline->handle) != VK_SUCCESS) {
+	if (vkCreateGraphicsPipelines(context->device.logical, VK_NULL_HANDLE, 1, &gp_create_info, NULL, &variant->handle) != VK_SUCCESS) {
 		LOG_ERROR("Vulkan: Failed to create pipeline");
 		return false;
 	}
 
-	LOG_INFO("VkPipeline created");
+	variant->description = description;
+	shader->variant_count++;
+
+	LOG_INFO("Vulkan: VkPipeline created");
 	return true;
 }
 
-bool vulkan_renderer_destroy_pipeline(VulkanContext *context, uint32_t retrieve_index) {
-	if (retrieve_index >= MAX_PIPELINES) {
-		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", retrieve_index);
+bool vulkan_renderer_bind_shader(VulkanContext *context, uint32_t shader_index, uint32_t resource_index) {
+	if (shader_index >= MAX_SHADERS || resource_index >= MAX_RESOURCE_SETS) {
+		LOG_ERROR("Vulkan: indices [shader_index = %d, resource_index = %d] out of bounds", shader_index, resource_index);
 		return false;
 	}
 
-	VulkanPipeline *pipeline = &context->pipeline_pool[retrieve_index];
+	VulkanShader *shader = &context->shader_pool[shader_index];
+	VulkanPipeline *pipeline = &shader->variants[0];
 	if (pipeline->handle == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to destroy pipeline at index %d, but index is not in use", retrieve_index);
-		assert(false);
+		ASSERT_FORMAT(false, "Engine: Frontend renderer tried to bind shader at index %d, but index is not in use", shader_index);
 		return false;
 	}
 
-	vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
-
-	pipeline->handle = NULL;
-	return true;
-}
-
-bool vulkan_renderer_bind_pipeline(VulkanContext *context, uint32_t retrieve_index) {
-	if (retrieve_index >= MAX_PIPELINES) {
-		LOG_ERROR("Vulkan: Pipeline index %d out of bounds", retrieve_index);
-		return false;
-	}
-
-	VulkanPipeline *pipeline = &context->pipeline_pool[retrieve_index];
-	if (pipeline->handle == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to bind pipeline at index %d, but index is not in use", retrieve_index);
-		assert(false);
-		return false;
-	}
 	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
+	vkCmdBindDescriptorSets(
+		context->command_buffers[context->current_frame],
+		VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+		SHADER_UNIFORM_FREQUENCY_PER_FRAME, 1, &context->global_set.sets[context->current_frame], 0, NULL);
+	vkCmdBindDescriptorSets(
+		context->command_buffers[context->current_frame],
+		VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+		SHADER_UNIFORM_FREQUENCY_PER_MATERIAL, 1, &shader->material_sets[resource_index].sets[context->current_frame], 0, NULL);
 
-	// VulkanShader *shader = &context->shader_pool[pipeline->shader_index];
-	// vkCmdBindDescriptorSets(
-	// 	context->command_buffers[context->current_frame],
-	// 	VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
-	// 	0, 1, &shader->descriptor_sets[context->current_frame], 0, NULL);
 	return true;
 }
 
-struct shader_file read_file(struct arena *arena, const char *path) {
-	FILE *file = fopen(path, "rb");
-	if (file == NULL) {
-		LOG_ERROR("Failed to read file %s: %s", path, strerror(errno));
-		return (struct shader_file){ 0 };
+bool vulkan_renderer_create_shader_resource(VulkanContext *context, uint32_t store_index, uint32_t shader_index) {
+	if (store_index >= MAX_RESOURCE_SETS || shader_index >= MAX_SHADERS) {
+		LOG_ERROR("Vulkan: indices [store_index = %d, shader_index = %d] out of bounds", store_index, shader_index);
+		return false;
 	}
 
-	fseek(file, 0L, SEEK_END);
-	uint32_t size = ftell(file);
-	fseek(file, 0L, SEEK_SET);
+	VulkanShader *shader = &context->shader_pool[shader_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		ASSERT_FORMAT(false, "Vulkan: Frontend renderer tried to allocate resource set with shader at index %d, but index is not in use", shader_index);
+		return false;
+	}
 
-	uint8_t *byte_content = arena_push_array_zero(arena, uint8_t, size);
-	fread(byte_content, sizeof(*byte_content), size, file);
+	VulkanResourceSet *resource_set = &shader->material_sets[store_index];
+	if (resource_set->sets[0] != NULL) {
+		ASSERT_FORMAT(false, "Vulkan: Frontend renderer tried to allocate resource set at index %d, but index is already in use", store_index);
+		return false;
+	}
 
-	fclose(file);
+	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
+	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+		layouts[frame] = shader->material_set_layout;
+	}
 
-	return (struct shader_file){ .size = size, .content = byte_content };
+	VkDescriptorSetAllocateInfo ds_allocate_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = context->descriptor_pool,
+		.descriptorSetCount = countof(layouts),
+		.pSetLayouts = layouts
+	};
+
+	if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, resource_set->sets) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create Vulkan DescriptorSets");
+		return false;
+	}
+
+	LOG_INFO("Vulkan: VkDescriptorSet created");
+
+	return true;
+}
+
+bool vulkan_renderer_set_shader_resource_buffer(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t buffer_index) {
+	if (shader_index >= MAX_SHADERS) {
+		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting", shader_index);
+		return false;
+	}
+
+	VulkanShader *shader = &context->shader_pool[shader_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		ASSERT_FORMAT(false, "Vulkan: Shader at index %d is not in use", shader_index);
+		return false;
+	}
+
+	VulkanBuffer *uniform_buffer = &context->buffer_pool[buffer_index];
+	if (uniform_buffer->handle[0] == NULL) {
+		ASSERT_FORMAT(false, "Vulkan: Buffer target at index %d is not in use", buffer_index);
+		return false;
+	}
+
+	ShaderUniform *target = NULL;
+	for (uint32_t index = 0; index < MAX_UNIFORMS; ++index) {
+		if (string_equals(string_create(shader->uniforms[index].name), name)) {
+			target = &shader->uniforms[index];
+			LOG_DEBUG("Vulkan: Uniform buffer '%.*s' found. Set = %d, Binding = %d", FS(name), target->set, target->binding);
+		}
+	}
+
+	if (target == NULL) {
+		LOG_WARN("Vulkan: Uniform buffer '%.*s' not found in shader %d", FS(name), shader_index);
+		return false;
+	}
+
+	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+		VkDescriptorBufferInfo buffer_info = {
+			.buffer = uniform_buffer->handle[frame],
+			.offset = 0,
+			.range = VK_WHOLE_SIZE,
+		};
+
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = shader->material_sets[resource_index].sets[frame],
+			.dstBinding = target->binding,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorCount = target->count,
+			.pBufferInfo = &buffer_info,
+		};
+
+		vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
+	}
+
+	return true;
+}
+
+bool vulkan_renderer_set_shader_resource_texture_sampler(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t texture_index, uint32_t sampler_index) {
+	if (shader_index >= MAX_SHADERS || texture_index >= MAX_TEXTURES || sampler_index >= MAX_SAMPLERS) {
+		LOG_ERROR("Vulkan: one or more of [shader_index = %d, texture_index = %d, sampler_index = %d] out of bounds", shader_index, texture_index, sampler_index);
+		return false;
+	}
+
+	VulkanShader *shader = &context->shader_pool[shader_index];
+	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
+		ASSERT_FORMAT(false, "Vulkan: Shader at index %d is not in use", shader_index);
+		return false;
+	}
+
+	VulkanImage *texture = &context->image_pool[texture_index];
+	if (texture->handle == NULL) {
+		ASSERT_FORMAT(false, "Engine: Frontend renderer tried to update resource set texture to texture at index %d, but texture index is not in use", texture_index);
+		return false;
+	}
+
+	VulkanSampler *sampler = &context->sampler_pool[sampler_index];
+	if (sampler->handle == NULL) {
+		ASSERT_FORMAT(false, "Engine: Frontend renderer tried to update resource set sampler to sampler at index %d, but sampler index is not in use", sampler_index);
+		return false;
+	}
+
+	ShaderUniform *target = NULL;
+	for (uint32_t index = 0; index < MAX_UNIFORMS; ++index) {
+		if (string_equals(string_create(shader->uniforms[index].name), name) && shader->uniforms[index].type == SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER) {
+			target = &shader->uniforms[index];
+			LOG_DEBUG("Vulkan: Uniform texture sampler '%.*s' found", FS(name));
+		}
+	}
+
+	if (target == NULL) {
+		LOG_WARN("Vulkan: Uniform texture sampler '%.*s' not found in shader %d", FS(name), shader_index);
+		return false;
+	}
+
+	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+		VkDescriptorImageInfo image_info = {
+			.sampler = sampler->handle,
+			.imageView = texture->view,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		};
+
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = shader->material_sets[resource_index].sets[frame],
+			.dstBinding = target->binding,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.descriptorCount = 1,
+			.pImageInfo = &image_info,
+		};
+
+		vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
+	}
+
+	return true;
 }
 
 bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code) {
@@ -343,17 +445,20 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	// ========== VERTEX INPUT ATTRIBUTES ==========
 	uint32_t input_variable_count = 0;
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
 	SpvReflectInterfaceVariable **input_variables = arena_push_array(scratch.arena, SpvReflectInterfaceVariable *, input_variable_count);
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, input_variables);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
 	shader->attribute_count = 0;
 	shader->binding_count = 0;
 
 	// Track unique bindings
 	uint32_t bindings_used[MAX_INPUT_BINDINGS] = { 0 };
+	uint32_t max_attributes = context->device.properties.limits.maxVertexInputAttributes;
+	uint32_t *indices = arena_push_array_zero(scratch.arena, uint32_t, max_attributes);
+	memset(indices, INT32_MAX, sizeof(uint32_t) * max_attributes);
 
 	for (uint32_t index = 0; index < input_variable_count; ++index) {
 		SpvReflectInterfaceVariable *var = input_variables[index];
@@ -363,7 +468,8 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 			continue;
 		}
 
-		VkVertexInputAttributeDescription *attr = &shader->attributes[var->location];
+		VkVertexInputAttributeDescription *attr = &shader->attributes[index];
+		indices[var->location] = index;
 		attr->location = var->location;
 		attr->binding = 0; // Assume single binding for now
 		attr->format = (VkFormat)var->format;
@@ -372,16 +478,28 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 		shader->attribute_count++;
 		bindings_used[0] = 1; // Mark binding 0 as used
 
-		assert(shader->attribute_count < MAX_INPUT_ATTRIBUTES);
+		ASSERT(shader->attribute_count < MAX_INPUT_ATTRIBUTES);
 	}
 
 	// Create binding descriptions for used bindings
 	uint32_t stride = 0;
 	for (uint32_t index = 0; index < shader->attribute_count; ++index) {
-		shader->attributes[index].offset = stride;
+		uint32_t next_index;
+		for (uint32_t attribute_index = 0; attribute_index < max_attributes; ++attribute_index) {
+			if ((next_index = indices[attribute_index]) != UINT32_MAX) {
+				indices[attribute_index] = -1;
+				break;
+			}
+		}
+
+		if (next_index == UINT32_MAX)
+			break;
+
+		VkVertexInputAttributeDescription *attr = &shader->attributes[next_index];
+		attr->offset += stride;
 
 		// Calculate stride based on format
-		VkFormat format = shader->attributes[index].format;
+		VkFormat format = attr->format;
 		if (format == VK_FORMAT_R32_SFLOAT)
 			stride += 4;
 		else if (format == VK_FORMAT_R32G32_SFLOAT)
@@ -403,17 +521,17 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	// ========== DESCRIPTOR SETS ==========
 	uint32_t vs_set_count = 0, fs_set_count = 0;
 	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
 	SpvReflectDescriptorSet **vs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, vs_set_count);
 	SpvReflectDescriptorSet **fs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, fs_set_count);
 
 	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, vs_sets);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, fs_sets);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
 	// Merge descriptor sets from both stages
 	typedef struct {
@@ -535,12 +653,20 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 		}
 	}
 
-	// Create descriptor set layouts
-	shader->set_count = unique_set_count;
-	for (uint32_t index = 0; index < unique_set_count; ++index) {
-		SetInfo *info = &merged_sets[index];
+	SetInfo *global_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_FRAME];
+	if (global_reflect_info->binding_count != context->global_set.binding_count) {
+		spvReflectDestroyShaderModule(&vertex_module);
+		spvReflectDestroyShaderModule(&fragment_module);
+		arena_release_scratch(scratch);
+		LOG_ERROR("Vulkan: Shader is incompatible, aborting");
+		return false;
+	}
 
-		if (vulkan_create_descriptor_set_layout(context, info->bindings, info->binding_count, &shader->layouts[index]) == false) {
+	for (uint32_t binding_index = 0; binding_index < global_reflect_info->binding_count; ++binding_index) {
+		VkDescriptorSetLayoutBinding *binding = &global_reflect_info->bindings[binding_index];
+
+		if (binding->descriptorType != context->global_set.bindings[binding_index].descriptorType) {
+			LOG_ERROR("Vulkan: Shader is incompatible, aborting");
 			spvReflectDestroyShaderModule(&vertex_module);
 			spvReflectDestroyShaderModule(&fragment_module);
 			arena_release_scratch(scratch);
@@ -548,12 +674,39 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 		}
 	}
 
+	SetInfo *material_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL];
+	if (vulkan_create_descriptor_set_layout(context, material_reflect_info->bindings, material_reflect_info->binding_count, &shader->material_set_layout) == false) {
+		spvReflectDestroyShaderModule(&vertex_module);
+		spvReflectDestroyShaderModule(&fragment_module);
+		arena_release_scratch(scratch);
+		return false;
+	}
+
+	VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT];
+	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+		layouts[frame] = shader->material_set_layout;
+	}
+
+	// VkDescriptorSetAllocateInfo ds_allocate_info = {
+	// 	.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+	// 	.descriptorPool = context->descriptor_pool,
+	// 	.descriptorSetCount = countof(layouts),
+	// 	.pSetLayouts = layouts
+	// };
+	//
+	// if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, shader->material_set.sets) != VK_SUCCESS) {
+	// 	LOG_ERROR("Vulkan: Failed to create VkDescriptorSets for shader");
+	// 	return false;
+	// }
+	//
+	// LOG_INFO("Vulkan: Shader VkDescriptorSets created");
+
 	// ========== PUSH CONSTANTS ==========
 	uint32_t vs_push_count = 0, fs_push_count = 0;
 	result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 	result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
+	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
 	shader->ps_count = 0;
 
@@ -562,7 +715,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	if (vs_push_count > 0) {
 		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, vs_push_count);
 		result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, push_blocks);
-		assert(result == SPV_REFLECT_RESULT_SUCCESS);
+		ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
 		for (uint32_t i = 0; i < vs_push_count; ++i) {
 			SpvReflectBlockVariable *push_block = push_blocks[i];
@@ -583,7 +736,7 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 	if (fs_push_count > 0) {
 		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, fs_push_count);
 		result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, push_blocks);
-		assert(result == SPV_REFLECT_RESULT_SUCCESS);
+		ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
 		for (uint32_t i = 0; i < fs_push_count; ++i) {
 			SpvReflectBlockVariable *push_block = push_blocks[i];
@@ -626,28 +779,26 @@ bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, File
 		}
 	}
 
+	spvReflectDestroyShaderModule(&vertex_module);
+	spvReflectDestroyShaderModule(&fragment_module);
+	arena_release_scratch(scratch);
+
 	// ========== CREATE PIPELINE LAYOUT ==========
+	layouts[SHADER_UNIFORM_FREQUENCY_PER_FRAME] = context->globa_set_layout;
+	layouts[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL] = shader->material_set_layout;
+
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		.setLayoutCount = shader->set_count,
-		.pSetLayouts = shader->layouts,
+		.setLayoutCount = 2,
+		.pSetLayouts = layouts,
 		.pushConstantRangeCount = shader->ps_count,
 		.pPushConstantRanges = shader->push_constant_ranges,
 	};
 
 	if (vkCreatePipelineLayout(context->device.logical, &pipeline_layout_info, NULL, &shader->pipeline_layout) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create pipeline layout");
-		spvReflectDestroyShaderModule(&vertex_module);
-		spvReflectDestroyShaderModule(&fragment_module);
 		return false;
 	}
-
-	// Cleanup reflection modules
-	spvReflectDestroyShaderModule(&vertex_module);
-	spvReflectDestroyShaderModule(&fragment_module);
-
-	arena_release_scratch(scratch);
-
 	return true;
 }
 
@@ -714,10 +865,6 @@ VkFormat to_vk_format(ShaderAttributeFormat format) {
 			const VkFormat types[] = { VK_FORMAT_R32_UINT, VK_FORMAT_R32G32_UINT, VK_FORMAT_R32G32B32_UINT, VK_FORMAT_R32G32B32A32_UINT };
 			return types[format.count - 1];
 		}
-		case SHADER_ATTRIBUTE_TYPE_FLOAT16: {
-			const VkFormat types[] = { VK_FORMAT_R16_SFLOAT, VK_FORMAT_R16G16_SFLOAT, VK_FORMAT_R16G16B16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT };
-			return types[format.count - 1];
-		}
 		case SHADER_ATTRIBUTE_TYPE_INT16: {
 			const VkFormat types[] = { VK_FORMAT_R16_SINT, VK_FORMAT_R16G16_SINT, VK_FORMAT_R16G16B16_SINT, VK_FORMAT_R16G16B16A16_SINT };
 			return types[format.count - 1];
@@ -753,7 +900,6 @@ size_t to_bytes(ShaderAttributeFormat format) {
 		case SHADER_ATTRIBUTE_TYPE_UINT32:
 			type_size = 4;
 			break;
-		case SHADER_ATTRIBUTE_TYPE_FLOAT16:
 		case SHADER_ATTRIBUTE_TYPE_INT16:
 		case SHADER_ATTRIBUTE_TYPE_UINT16:
 			type_size = 2;

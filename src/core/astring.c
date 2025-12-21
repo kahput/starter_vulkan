@@ -5,7 +5,14 @@
 #include <stdio.h>
 #include <string.h>
 
-String string_create(Arena *arena, size_t size) {
+String string_create(const char *string) {
+	String rv = (String){ .data = (char *)string, .length = cstring_length(string) };
+	rv.size = rv.length + 1;
+
+	return rv;
+}
+
+String string_create_from_arena(Arena *arena, size_t size) {
 	if (size == 0)
 		return (String){ 0 };
 
@@ -95,7 +102,7 @@ String string_concat(struct arena *arena, String head, String tail) {
 String string_insert_at(Arena *arena, String into, String insert, uint32_t index) {
 	index = index % into.length;
 
-	String rv = string_create(arena, into.length + insert.length + 1);
+	String rv = string_create_from_arena(arena, into.length + insert.length + 1);
 
 	memcpy(rv.data, into.data, index);
 	memcpy(rv.data + index, insert.data, insert.length);
@@ -114,7 +121,7 @@ String string_find_and_replace(Arena *arena, String string, String find, String 
 
 	arena_scratch(arena);
 
-	String rv = string_create(arena, new_length + 1);
+	String rv = string_create_from_arena(arena, new_length + 1);
 
 	memcpy(rv.data, string.data, find_offset);
 	memcpy(rv.data + find_offset, replace.data, replace.length);

@@ -8,19 +8,20 @@
 struct arena;
 
 typedef struct {
-	size_t length, size;
 	char *data;
+	size_t length, size;
 } String;
 
-#define SLITERAL(s) \
-	(String) { .data = (char *)s, .length = sizeof(s) - 1, .size = sizeof(s) }
 #define S(s) \
-	(String){ .data = (char *)s, .length = cstring_length(s), .size = cstring_length(s) + 1 }
+	(String) { .data = (char *)s, .length = sizeof(s) - 1, .size = sizeof(s) }
+
+#define FS(s) (uint32_t)(s).length, (s).data
 
 #define STRING_START 0
 #define STRING_END UINT32_MAX
 
-String string_create(Arena *arena, size_t size);
+String string_create(const char *string);
+String string_create_from_arena(Arena *arena, size_t size);
 
 bool string_equals(String a, String b);
 // Returns substring start index if true, else -1

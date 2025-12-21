@@ -25,13 +25,10 @@ void filesystem_directory(const char *src, char *dst);
 
 static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 static Image *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
-static bool reflect_shader_interface(Arena *arena, ShaderSource *shader, FileContent vertex_shader_code, FileContent fragment_shader_code);
 
 bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path, ShaderSource *out_shader) {
 	out_shader->vertex_shader = filesystem_read(arena, vertex_path);
 	out_shader->fragment_shader = filesystem_read(arena, fragment_path);
-
-	reflect_shader_interface(arena, out_shader, out_shader->vertex_shader, out_shader->fragment_shader);
 
 	return out_shader->fragment_shader.content && out_shader->vertex_shader.content;
 }
@@ -99,19 +96,19 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		if (src->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
 			uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
-			String mime_type = S(src->mime_type);
+			String mime_type = string_create(src->mime_type);
 
-			String name = string_format(scratch.arena, SLITERAL("%s_%s"), data->scene->name, src->name);
-			if (string_contains(S(src->mime_type), SLITERAL("png")) != -1) {
-				dst->path = string_format(arena, SLITERAL("%s/%s.png"), base_directory, name);
+			String name = string_format(scratch.arena, S("%s_%s"), data->scene->name, src->name);
+			if (string_contains(string_create(src->mime_type), S("png")) != -1) {
+				dst->path = string_format(arena, S("%s/%s.png"), base_directory, name);
 				stbi_write_png(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
-			} else if (string_contains(mime_type, SLITERAL("jpg")) != -1 || string_contains(mime_type, SLITERAL("jpeg")) != -1) {
-				dst->path = string_format(arena, SLITERAL("%s/%s.jpg"), base_directory, name);
+			} else if (string_contains(mime_type, S("jpg")) != -1 || string_contains(mime_type, S("jpeg")) != -1) {
+				dst->path = string_format(arena, S("%s/%s.jpg"), base_directory, name);
 				stbi_write_jpg(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
 			}
 			stbi_image_free(pixels);
 		} else if (src->uri) {
-			dst->path = string_format(arena, SLITERAL("%s/%s"), base_directory.data, src->uri);
+			dst->path = string_format(arena, S("%s/%s"), base_directory.data, src->uri);
 		}
 	}
 
@@ -337,328 +334,94 @@ void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indic
 	}
 }
 
-static inline ShaderAttributeFormat to_shader_attribute_format(SpvReflectFormat format) {
-	switch (format) {
-		case SPV_REFLECT_FORMAT_R16_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 1 };
-		case SPV_REFLECT_FORMAT_R16G16_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 2 };
-		case SPV_REFLECT_FORMAT_R16G16B16_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 3 };
-		case SPV_REFLECT_FORMAT_R16G16B16A16_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 4 };
+// TODO: Move these to the material system for reflection
 
-		case SPV_REFLECT_FORMAT_R16_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 1 };
-		case SPV_REFLECT_FORMAT_R16G16_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 2 };
-		case SPV_REFLECT_FORMAT_R16G16B16_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 3 };
-		case SPV_REFLECT_FORMAT_R16G16B16A16_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 4 };
-
-		case SPV_REFLECT_FORMAT_R16_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 1 };
-		case SPV_REFLECT_FORMAT_R16G16_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 2 };
-		case SPV_REFLECT_FORMAT_R16G16B16_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 3 };
-		case SPV_REFLECT_FORMAT_R16G16B16A16_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 4 };
-
-		case SPV_REFLECT_FORMAT_R32_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 1 };
-		case SPV_REFLECT_FORMAT_R32G32_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 2 };
-		case SPV_REFLECT_FORMAT_R32G32B32_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 3 };
-		case SPV_REFLECT_FORMAT_R32G32B32A32_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 4 };
-
-		case SPV_REFLECT_FORMAT_R32_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 1 };
-		case SPV_REFLECT_FORMAT_R32G32_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 2 };
-		case SPV_REFLECT_FORMAT_R32G32B32_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 3 };
-		case SPV_REFLECT_FORMAT_R32G32B32A32_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 4 };
-
-		case SPV_REFLECT_FORMAT_R32_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 1 };
-		case SPV_REFLECT_FORMAT_R32G32_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 2 };
-		case SPV_REFLECT_FORMAT_R32G32B32_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 3 };
-		case SPV_REFLECT_FORMAT_R32G32B32A32_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 4 };
-
-		case SPV_REFLECT_FORMAT_R64_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 1 };
-		case SPV_REFLECT_FORMAT_R64G64_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 2 };
-		case SPV_REFLECT_FORMAT_R64G64B64_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 3 };
-		case SPV_REFLECT_FORMAT_R64G64B64A64_UINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 4 };
-
-		case SPV_REFLECT_FORMAT_R64_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 1 };
-		case SPV_REFLECT_FORMAT_R64G64_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 2 };
-		case SPV_REFLECT_FORMAT_R64G64B64_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 3 };
-		case SPV_REFLECT_FORMAT_R64G64B64A64_SINT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 4 };
-
-		case SPV_REFLECT_FORMAT_R64_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 1 };
-		case SPV_REFLECT_FORMAT_R64G64_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 2 };
-		case SPV_REFLECT_FORMAT_R64G64B64_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 3 };
-		case SPV_REFLECT_FORMAT_R64G64B64A64_SFLOAT:
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 4 };
-
-		default: {
-			ASSERT_MESSAGE(0, "Undefined spirv reflection format");
-			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UNDEFINED, 0 };
-		}
-	}
-}
-
-bool reflect_shader_interface(Arena *arena, ShaderSource *shader, FileContent vertex_shader_code, FileContent fragment_shader_code) {
-	return true;
-	SpvReflectShaderModule vertex_module, fragment_module;
-	SpvReflectResult result;
-
-	// Create reflection modules
-	result = spvReflectCreateShaderModule(vertex_shader_code.size, vertex_shader_code.content, &vertex_module);
-	if (result != SPV_REFLECT_RESULT_SUCCESS) {
-		LOG_ERROR("Failed to reflect vertex shader");
-		return false;
-	}
-
-	result = spvReflectCreateShaderModule(fragment_shader_code.size, fragment_shader_code.content, &fragment_module);
-	if (result != SPV_REFLECT_RESULT_SUCCESS) {
-		LOG_ERROR("Failed to reflect fragment shader");
-		spvReflectDestroyShaderModule(&vertex_module);
-		return false;
-	}
-
-	ArenaTemp scratch = arena_scratch(NULL);
-
-	// ========== VERTEX ATTRIBUTES ==========
-	uint32_t vertex_input_attribute_count = 0;
-	result = spvReflectEnumerateInputVariables(&vertex_module, &vertex_input_attribute_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-	SpvReflectInterfaceVariable **input_variables = arena_push_array(scratch.arena, SpvReflectInterfaceVariable *, vertex_input_attribute_count);
-	result = spvReflectEnumerateInputVariables(&vertex_module, &vertex_input_attribute_count, input_variables);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-	shader->attribute_count = vertex_input_attribute_count;
-	shader->attributes = arena_push_array_zero(arena, ShaderAttribute, shader->attribute_count);
-	shader->uniform_count = 0;
-
-	for (uint32_t index = 0; index < shader->attribute_count; ++index) {
-		SpvReflectInterfaceVariable *var = input_variables[index];
-		ASSERT_MESSAGE(var->location < shader->attribute_count, "Location should be less than total number of attributes");
-		ShaderAttribute *attrib = &shader->attributes[var->location];
-
-		// Skip built-ins (gl_VertexIndex, etc.)
-		if (var->decoration_flags & SPV_REFLECT_DECORATION_BUILT_IN) {
-			continue;
-		}
-
-		attrib->name = string_duplicate(arena, S(var->name));
-		attrib->format = to_shader_attribute_format(var->format);
-		attrib->binding = 0;
-		attrib->offset = 0;
-	}
-
-	uint32_t stride = 0;
-	for (uint32_t index = 0; index < shader->attribute_count; ++index) {
-		shader->attributes[index].offset = stride;
-		ShaderAttributeFormat format = shader->attributes[index].format;
-
-		uint32_t type_size = 0;
-		switch (format.type) {
-			case SHADER_ATTRIBUTE_TYPE_INT16:
-			case SHADER_ATTRIBUTE_TYPE_UINT16:
-			case SHADER_ATTRIBUTE_TYPE_FLOAT16:
-				type_size = 2;
-				break;
-
-			case SHADER_ATTRIBUTE_TYPE_INT32:
-			case SHADER_ATTRIBUTE_TYPE_UINT32:
-			case SHADER_ATTRIBUTE_TYPE_FLOAT32:
-				type_size = 4;
-				break;
-
-			case SHADER_ATTRIBUTE_TYPE_INT64:
-			case SHADER_ATTRIBUTE_TYPE_UINT64:
-			case SHADER_ATTRIBUTE_TYPE_FLOAT64:
-				type_size = 8;
-				break;
-
-			default:
-				type_size = 0;
-				break;
-		}
-
-		stride += type_size * format.count;
-	}
-
-	// ========== DESCRIPTOR SETS ==========
-	uint32_t vs_set_count = 0, fs_set_count = 0;
-	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-	SpvReflectDescriptorSet **vs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, vs_set_count);
-	SpvReflectDescriptorSet **fs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, fs_set_count);
-
-	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, vs_sets);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, fs_sets);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-	// Merge descriptor sets from both stages
-	uint32_t unique_set_count = 0;
-	shader->uniform_count = 0;
-
-	// Process vertex shader sets
-	for (uint32_t i = 0; i < vs_set_count; ++i) {
-		SpvReflectDescriptorSet *reflect_set = vs_sets[i];
-
-		for (uint32_t b = 0; b < reflect_set->binding_count; ++b) {
-			SpvReflectDescriptorBinding *reflect_binding = reflect_set->bindings[b];
-
-			ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
-
-			memcpy(uniform->name, reflect_binding->name, sizeof(uniform->name));
-			uniform->type =
-				reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-				? SHADER_UNIFORM_TYPE_BUFFER
-				: reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
-				? SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER
-				: SHADER_UNIFORM_UNDEFINED;
-			uniform->stage = SHADER_STAGE_VERTEX;
-			uniform->count = reflect_binding->count;
-			uniform->set = reflect_binding->set;
-			uniform->binding = reflect_binding->binding;
-			if (uniform->type == SHADER_UNIFORM_TYPE_BUFFER) {
-				SpvReflectBlockVariable block = reflect_binding->block;
-
-				uniform->size = block.size;
-			}
-		}
-
-		if (reflect_set->set >= unique_set_count) {
-			unique_set_count = reflect_set->set + 1;
-		}
-	}
-
-	for (uint32_t i = 0; i < fs_set_count; ++i) {
-		SpvReflectDescriptorSet *reflect_set = fs_sets[i];
-
-		for (uint32_t b = 0; b < reflect_set->binding_count; ++b) {
-			SpvReflectDescriptorBinding *reflect_binding = reflect_set->bindings[b];
-
-			bool found_uniform = false;
-			for (uint32_t uniform_index = 0; uniform_index < shader->uniform_count; ++uniform_index) {
-				ShaderUniform *uniform = &shader->uniforms[uniform_index];
-				if (uniform->set == reflect_set->set && uniform->binding == reflect_binding->binding) {
-					uniform->stage |= SHADER_STAGE_FRAGMENT;
-					found_uniform = true;
-				}
-			}
-
-			if (found_uniform == false) {
-				ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
-				memcpy(uniform->name, reflect_binding->name, sizeof(uniform->name));
-				uniform->type =
-					reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-					? SHADER_UNIFORM_TYPE_BUFFER
-					: reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
-					? SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER
-					: SHADER_UNIFORM_UNDEFINED;
-				uniform->stage = SHADER_STAGE_FRAGMENT;
-				uniform->count = reflect_binding->count;
-				uniform->set = reflect_binding->set;
-				uniform->binding = reflect_binding->binding;
-			}
-		}
-
-		if (reflect_set->set >= unique_set_count) {
-			unique_set_count = reflect_set->set + 1;
-		}
-	}
-
-	// Create descriptor set layouts
-	// shader->set_count = unique_set_count;
-
-	// ========== PUSH CONSTANTS ==========
-	uint32_t vs_push_count = 0, fs_push_count = 0;
-	result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-	result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, NULL);
-	assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-	uint32_t push_constant_offset = shader->uniform_count;
-
-	if (vs_push_count > 0) {
-		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, vs_push_count);
-		result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, push_blocks);
-		assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-		for (uint32_t i = 0; i < vs_push_count; ++i) {
-			SpvReflectBlockVariable *push_block = push_blocks[i];
-
-			ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
-			memcpy(uniform->name, push_block->name, sizeof(uniform->name));
-			uniform->type = SHADER_UNIFORM_TYPE_CONSTANTS;
-			uniform->stage = SHADER_STAGE_VERTEX;
-			uniform->size = push_block->size;
-			uniform->offset = push_block->offset;
-		}
-	}
-
-	if (fs_push_count > 0) {
-		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, fs_push_count);
-		result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, push_blocks);
-		assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-		for (uint32_t i = 0; i < fs_push_count; ++i) {
-			SpvReflectBlockVariable *push_block = push_blocks[i];
-
-			bool found_uniform = false;
-			for (uint32_t uniform_index = push_constant_offset; uniform_index < shader->uniform_count; ++uniform_index) {
-				ShaderUniform *uniform = &shader->uniforms[uniform_index];
-				if (strcmp(uniform->name, push_block->name) == 0) {
-					uniform->stage |= SHADER_STAGE_FRAGMENT;
-					found_uniform = true;
-				}
-			}
-
-			if (found_uniform == false) {
-				ShaderUniform *uniform = &shader->uniforms[shader->uniform_count++];
-				memcpy(uniform->name, push_block->name, sizeof(uniform->name));
-				uniform->type = SHADER_UNIFORM_TYPE_CONSTANTS;
-				uniform->stage = SHADER_STAGE_FRAGMENT;
-				uniform->size = push_block->size;
-				uniform->offset = push_block->offset;
-			}
-		}
-	}
-
-	// Cleanup reflection modules
-	spvReflectDestroyShaderModule(&vertex_module);
-	spvReflectDestroyShaderModule(&fragment_module);
-
-	arena_release_scratch(scratch);
-
-	return true;
-}
+// static inline ShaderAttributeFormat to_shader_attribute_format(SpvReflectFormat format) {
+// 	switch (format) {
+// 		case SPV_REFLECT_FORMAT_R16_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 1 };
+// 		case SPV_REFLECT_FORMAT_R16G16_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 2 };
+// 		case SPV_REFLECT_FORMAT_R16G16B16_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 3 };
+// 		case SPV_REFLECT_FORMAT_R16G16B16A16_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R16_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 1 };
+// 		case SPV_REFLECT_FORMAT_R16G16_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 2 };
+// 		case SPV_REFLECT_FORMAT_R16G16B16_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 3 };
+// 		case SPV_REFLECT_FORMAT_R16G16B16A16_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R16_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 1 };
+// 		case SPV_REFLECT_FORMAT_R16G16_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 2 };
+// 		case SPV_REFLECT_FORMAT_R16G16B16_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 3 };
+// 		case SPV_REFLECT_FORMAT_R16G16B16A16_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R32_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 1 };
+// 		case SPV_REFLECT_FORMAT_R32G32_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 2 };
+// 		case SPV_REFLECT_FORMAT_R32G32B32_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 3 };
+// 		case SPV_REFLECT_FORMAT_R32G32B32A32_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R32_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 1 };
+// 		case SPV_REFLECT_FORMAT_R32G32_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 2 };
+// 		case SPV_REFLECT_FORMAT_R32G32B32_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 3 };
+// 		case SPV_REFLECT_FORMAT_R32G32B32A32_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R32_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 1 };
+// 		case SPV_REFLECT_FORMAT_R32G32_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 2 };
+// 		case SPV_REFLECT_FORMAT_R32G32B32_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 3 };
+// 		case SPV_REFLECT_FORMAT_R32G32B32A32_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R64_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 1 };
+// 		case SPV_REFLECT_FORMAT_R64G64_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 2 };
+// 		case SPV_REFLECT_FORMAT_R64G64B64_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 3 };
+// 		case SPV_REFLECT_FORMAT_R64G64B64A64_UINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R64_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 1 };
+// 		case SPV_REFLECT_FORMAT_R64G64_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 2 };
+// 		case SPV_REFLECT_FORMAT_R64G64B64_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 3 };
+// 		case SPV_REFLECT_FORMAT_R64G64B64A64_SINT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 4 };
+//
+// 		case SPV_REFLECT_FORMAT_R64_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 1 };
+// 		case SPV_REFLECT_FORMAT_R64G64_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 2 };
+// 		case SPV_REFLECT_FORMAT_R64G64B64_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 3 };
+// 		case SPV_REFLECT_FORMAT_R64G64B64A64_SFLOAT:
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 4 };
+//
+// 		default: {
+// 			ASSERT_MESSAGE(0, "Undefined spirv reflection format");
+// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UNDEFINED, 0 };
+// 		}
+// 	}
+// }

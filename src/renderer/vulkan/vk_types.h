@@ -1,8 +1,10 @@
 #pragma once
 
+#include "allocators/arena.h"
 #include "common.h"
 #include "core/identifiers.h"
 #include "renderer/renderer_types.h"
+#include "renderer/vk_renderer.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -74,8 +76,22 @@ typedef struct VulkanSwapchain {
 #define MAX_SETS 3
 #define MAX_INPUT_ATTRIBUTES 16
 #define MAX_INPUT_BINDINGS 16
+#define MAX_DESCRIPTOR_BINDINGS 32
 #define MAX_PUSH_CONSTANT_RANGES 3
 #define MAX_UNIFORMS 32
+#define MAX_VARIANTS 8
+
+typedef struct vulkan_resource_set {
+	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
+
+	VkDescriptorSetLayoutBinding bindings[MAX_DESCRIPTOR_BINDINGS];
+	uint32_t binding_count;
+} VulkanResourceSet;
+
+typedef struct vulkan_pipeline {
+	VkPipeline handle;
+	PipelineDesc description;
+} VulkanPipeline;
 
 typedef struct vulkan_shader {
 	VkShaderModule vertex_shader, fragment_shader;
@@ -84,27 +100,20 @@ typedef struct vulkan_shader {
 	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
 	uint32_t attribute_count, binding_count;
 
-	VkDescriptorSetLayout layouts[MAX_SETS];
-	uint32_t set_count;
+	VkDescriptorSetLayout material_set_layout;
+	VulkanResourceSet material_sets[MAX_RESOURCE_SETS];
 
 	VkPushConstantRange push_constant_ranges[MAX_PUSH_CONSTANT_RANGES];
 	uint32_t ps_count;
 
+	VkPipelineLayout pipeline_layout;
+
+	VulkanPipeline variants[MAX_VARIANTS];
+	uint32_t variant_count;
+
 	ShaderUniform uniforms[MAX_UNIFORMS];
 	uint32_t uniform_count;
-
-	VkPipelineLayout pipeline_layout;
 } VulkanShader;
-
-typedef struct vulkan_pipeline {
-	VkPipeline handle;
-	uint32_t shader_index;
-} VulkanPipeline;
-
-typedef struct vulkan_resource_set {
-	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
-	uint32_t shader_index, set_number;
-} VulkanResourceSet;
 
 struct vulkan_context {
 	VkInstance instance;
@@ -117,13 +126,19 @@ struct vulkan_context {
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
-	VulkanShader *shader_pool;
-	VulkanPipeline *pipeline_pool;
+	VkDescriptorSetLayout globa_set_layout;
+	VulkanResourceSet global_set;
 
+	VulkanShader *shader_pool;
 	VulkanBuffer *buffer_pool;
-	VulkanImage *texture_pool;
+	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
-	VulkanResourceSet *set_pool;
+
+	// TODO: Make backend handle indices
+	// IndexRecycler shader_indices;
+	// IndexRecycler buffer_indices;
+	// IndexRecycler image_indices;
+	// IndexRecycler sampler_indices;
 
 	VkDescriptorPool descriptor_pool;
 

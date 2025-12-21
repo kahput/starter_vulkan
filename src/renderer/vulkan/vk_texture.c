@@ -1,11 +1,10 @@
-#include "allocators/pool.h"
+#include "vk_internal.h"
 #include "renderer/vk_renderer.h"
 
-#include "vk_internal.h"
-
+#include "core/debug.h"
 #include "core/logger.h"
+#include "allocators/pool.h"
 
-#include <string.h>
 #include <vulkan/vulkan_core.h>
 
 static VkFormat channels_to_vulkan_format(uint32_t channels);
@@ -16,10 +15,10 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 		return false;
 	}
 
-	VulkanImage *texture = &context->texture_pool[store_index];
+	VulkanImage *texture = &context->image_pool[store_index];
 	if (texture->handle != NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to allocate texture at index %d, but index is already in use", store_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -74,10 +73,10 @@ bool vulkan_renderer_destroy_texture(VulkanContext *context, uint32_t retrieve_i
 		return false;
 	}
 
-	VulkanImage *texture = &context->texture_pool[retrieve_index];
+	VulkanImage *texture = &context->image_pool[retrieve_index];
 	if (texture->handle == NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to destroy texture at index %d, but index is not in use", retrieve_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -101,7 +100,7 @@ bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index
 	VulkanSampler *sampler = &context->sampler_pool[store_index];
 	if (sampler->handle != NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to allocatetexture at index %d, but index is already in use", store_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -142,7 +141,7 @@ bool vulkan_renderer_destroy_sampler(VulkanContext *context, uint32_t retrieve_i
 	VulkanSampler *sampler = &context->sampler_pool[retrieve_index];
 	if (sampler->handle == NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to destroy sampler at index %d, but index is not in use", retrieve_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 

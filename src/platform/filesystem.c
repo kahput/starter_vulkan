@@ -23,7 +23,7 @@ bool filesystem_file_exists(String path) {
 FileContent filesystem_read(Arena *arena, String path) {
 	FILE *file = fopen((const char *)path.data, "rb");
 	if (file == NULL) {
-		LOG_ERROR("Failed to read file %s: %s", path, strerror(errno));
+		LOG_ERROR("Failed to read file '%s': %s", path.data, strerror(errno));
 		return (FileContent){ 0 };
 	}
 
@@ -52,11 +52,11 @@ FileNode *filesystem_load_directory_files(Arena *arena, String directory_path, b
 	struct dirent *entry;
 
 	while ((entry = readdir(directory))) {
-		String entry_name = S(entry->d_name);
-		if (string_equals(entry_name, SLITERAL(".")) || string_equals(entry_name, SLITERAL("..")))
+		String entry_name = string_create(entry->d_name);
+		if (string_equals(entry_name, S(".")) || string_equals(entry_name, S("..")))
 			continue;
 
-		String full_path = string_concat(scratch.arena, directory_path, SLITERAL("/"));
+		String full_path = string_concat(scratch.arena, directory_path, S("/"));
 		full_path = string_concat(scratch.arena, full_path, entry_name);
 
 		struct stat info;

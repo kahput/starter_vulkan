@@ -13,8 +13,8 @@
 
 #define clamp(value, minimum, maximum) (min(max(value, minimum), maximum))
 
-#define MAX_FILE_NAME_LENGTH UINT8_MAX
-#define MAX_FILE_PATH_LENGTH 512
+#define INVALID_INDEX UINT32_MAX
+#define INVALID_UUID UINT64_MAX
 
 #define STATIC_ASSERT_(COND, LINE) typedef char static_assertion_##LINE[(!!(COND)) * 2 - 1]
 #define STATIC_ASSERT(COND, MSG) STATIC_ASSERT_(COND, MSG)

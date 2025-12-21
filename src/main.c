@@ -1,7 +1,8 @@
-#include "core/astring.h"
-#include "core/debug.h"
-#include "core/identifiers.h"
 #include "platform.h"
+
+#include "core/debug.h"
+#include "core/astring.h"
+#include "core/identifiers.h"
 
 #include "assets.h"
 #include "assets/asset_types.h"
@@ -14,8 +15,10 @@
 #include "renderer.h"
 #include "renderer/renderer_types.h"
 
+#include <cglm/affine.h>
 #include <cglm/cglm.h>
 #include <cglm/mat4.h>
+#include <cglm/types.h>
 #include <stdalign.h>
 
 #include "common.h"
@@ -49,7 +52,7 @@ UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivid
 
 static struct State {
 	Arena permanent_arena, frame_arena;
-	Platform *display;
+	Platform display;
 
 	Camera editor_camera;
 
@@ -61,6 +64,17 @@ static struct State {
 	uint64_t start_time;
 } state;
 
+typedef struct {
+	String name;
+	void *value;
+} MaterialProperty;
+
+typedef struct material_config {
+	ShaderSource *shader;
+	MaterialProperty *defaults;
+	PipelineDesc pipeine;
+} MaterialConfig;
+
 int main(void) {
 	state.permanent_arena = arena_create(MiB(64));
 	state.frame_arena = arena_create(MiB(4));
@@ -69,61 +83,18 @@ int main(void) {
 
 	event_system_startup();
 	input_system_startup();
+	asset_library_startup(arena_push_zero(&state.permanent_arena, MiB(16)), MiB(16));
 
-	asset_library_startup(state.permanent_arena.memory, 0, MiB(16));
-	state.permanent_arena.offset += MiB(16);
-
-	state.display = platform_startup(&state.permanent_arena, 1280, 720, "Starter Vulkan");
-	if (state.display == NULL) {
-		LOG_ERROR("Platform startup failed");
-		return -1;
-	}
-
-	if (renderer_create(state.permanent_arena.memory, state.permanent_arena.offset, MiB(16), state.display, state.display->physical_width, state.display->physical_height) == false) {
-		LOG_ERROR("Renderer startup failed");
-		return -1;
-	}
-	state.permanent_arena.offset += MiB(16);
+	// TODO: Rework platform layer when starting on Windows
+	platform_startup(&state.permanent_arena, 1280, 720, "Starter Vulkan", &state.display);
+	renderer_system_startup(arena_push_zero(&state.permanent_arena, MiB(16)), MiB(16), &state.display, state.display.physical_width, state.display.physical_height);
 
 	state.layers[0] = (Layer){ .update = editor_update };
 	state.current_layer = &state.layers[0];
 
-	platform_pointer_mode(state.display, PLATFORM_POINTER_DISABLED);
-	state.start_time = platform_time_ms(state.display);
+	platform_pointer_mode(&state.display, PLATFORM_POINTER_DISABLED);
+	state.start_time = platform_time_ms(&state.display);
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
-
-	asset_library_track_directory(SLITERAL("assets"));
-	ArenaTemp scratch = arena_scratch(NULL);
-	{
-		ShaderSource *terrain_shader = NULL;
-		UUID terrain_shader_id = asset_library_load_shader(scratch.arena, SLITERAL("pbr.glsl"), &terrain_shader);
-
-		ShaderSource *sprite_shader = NULL;
-		UUID sprite_shader_id = asset_library_load_shader(scratch.arena, SLITERAL("sprite.glsl"), &terrain_shader);
-
-		ModelSource *model_source = NULL;
-		state.small_room_id = asset_library_load_model(scratch.arena, SLITERAL("room-small.glb"), &model_source, true);
-		UUID gate = asset_library_load_model(scratch.arena, SLITERAL("gate.glb"), &model_source, true);
-		state.small_room_id = asset_library_load_model(scratch.arena, SLITERAL("room-small.glb"), &model_source, true);
-
-		if (model_source) {
-			renderer_upload_model(state.small_room_id, model_source);
-			renderer_upload_model(state.small_room_id, model_source);
-			LOG_INFO("Uploaded model: %lu", state.small_room_id);
-		}
-
-		Image *sprite_image = NULL;
-		MeshSource *sprite_mesh = NULL;
-
-		UUID sprite_image_id = asset_library_load_image(scratch.arena, SLITERAL("tile_0085.png"), &sprite_image);
-		UUID sprite_mesh_id = create_plane_mesh(scratch.arena, 1, 1, ORIENTATION_Z, &sprite_mesh);
-
-		if (sprite_image) {
-			renderer_upload_image(sprite_image_id, sprite_image);
-			renderer_upload_mesh(sprite_mesh_id, sprite_mesh);
-		}
-	}
-	arena_release_scratch(scratch);
 
 	state.editor_camera = (Camera){
 		.position = { 0.0f, 1.0f, 10.0f },
@@ -136,27 +107,36 @@ int main(void) {
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
-	while (platform_should_close(state.display) == false) {
-		float current_frame = (double)(platform_time_ms(state.display) - state.start_time) / 1000.0f;
+	ArenaTemp scratch = arena_scratch(NULL);
+	MeshSource *plane_src = NULL;
+	UUID plane_id = create_plane_mesh(scratch.arena, 1, 1, ORIENTATION_Z, &plane_src);
+
+	ShaderSource *source = NULL;
+	UUID shader = asset_library_request_shader(S("sprite.glsl"), &source);
+
+	Handle plane = renderer_upload_mesh(plane_id, plane_src);
+
+	while (platform_should_close(&state.display) == false) {
+		float current_frame = (double)(platform_time_ms(&state.display) - state.start_time) / 1000.0f;
 		delta_time = current_frame - last_frame;
 		last_frame = current_frame;
 
-		platform_poll_events(state.display);
+		platform_poll_events(&state.display);
 
 		state.current_layer->update(delta_time);
 
 		if (renderer_begin_frame(&state.editor_camera)) {
 			mat4 transform;
-			glm_mat4_identity(transform);
-			renderer_draw_model(state.small_room_id, transform);
+			glm_translate_make(transform, (vec3){ 0.0f, 1.0f, 0.0f });
+			renderer_draw_mesh(plane, transform);
 
 			renderer_end_frame();
 		}
 
 		if (input_key_down(SV_KEY_LEFTCTRL))
-			platform_pointer_mode(state.display, PLATFORM_POINTER_NORMAL);
+			platform_pointer_mode(&state.display, PLATFORM_POINTER_NORMAL);
 		else
-			platform_pointer_mode(state.display, PLATFORM_POINTER_DISABLED);
+			platform_pointer_mode(&state.display, PLATFORM_POINTER_DISABLED);
 
 		input_system_update();
 	}
@@ -215,7 +195,7 @@ bool resize_event(Event *event) {
 UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation, MeshSource **out_mesh) {
 	uint32_t rows = subdivide_width + 1, columns = subdivide_depth + 1;
 
-	String name = string_format(arena, SLITERAL("plane_%ux%u_d"), subdivide_width, subdivide_depth, orientation);
+	String name = string_format(arena, S("plane_%ux%u_d"), subdivide_width, subdivide_depth, orientation);
 	UUID id = identifier_create_from_u64(string_hash64(name));
 
 	(*out_mesh) = arena_push_struct(arena, MeshSource);

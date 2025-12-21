@@ -1,6 +1,8 @@
 #include "identifiers.h"
 #include <stdlib.h>
 
+#include "common.h"
+#include "core/debug.h"
 #include "core/logger.h"
 
 // TODO: Pass platform random value instead
@@ -24,30 +26,27 @@ UUID identifier_create_from_u64(uint64_t uuid) {
 }
 
 Handle handle_create(uint32_t index) {
-	return (Handle){ .packed = index };
+	return (Handle){ .index = index };
 }
 
 bool handle_valid(Handle handle) {
-	return handle.packed != UINT32_MAX;
+	return handle.index != INVALID_INDEX && handle.id != INVALID_UUID;
 }
 
-uint32_t handle_index(Handle handle) {
-	return handle.packed & HANDLE_INDEX_MASK;
+void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t capacity) {
+	recycler->free_indices = arena_push_array_zero(arena, uint32_t, capacity);
+	recycler->free_count = recycler->next_unused = 0;
+	recycler->capacity = capacity;
 }
 
-uint8_t handle_generation(Handle handle) {
-	return (handle.packed >> HANDLE_INDEX_BITS) & HANDLE_GENERATION_MASK;
+uint32_t recycler_new_index(IndexRecycler *recycler) {
+	if (recycler->free_count > 0)
+		return recycler->free_indices[--recycler->free_count];
+
+	ASSERT(recycler->next_unused < recycler->capacity);
+	return recycler->next_unused++;
 }
 
-bool handle_increment(Handle *handle) {
-	uint8_t generation = handle_generation(*handle) + 1;
-
-	if (generation >= HANDLE_GENERATION_MASK) {
-		LOG_WARN("Identifier: Handle generation wrapping");
-		handle->packed = handle_index(*handle) | (0 << HANDLE_INDEX_BITS);
-		return false;
-	}
-
-	handle->packed = handle_index(*handle) | (generation << HANDLE_INDEX_BITS);
-	return true;
+void recycler_free_index(IndexRecycler *handler, uint32_t handle) {
+	handler->free_indices[handler->free_count++] = handle;
 }

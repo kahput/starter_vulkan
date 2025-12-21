@@ -21,13 +21,11 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	ctx->texture_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
+	// Index into these
+	ctx->image_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
 	ctx->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
 	ctx->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
-	ctx->set_pool = arena_push_array_zero(arena, VulkanResourceSet, MAX_RESOURCE_SETS);
-
 	ctx->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
-	ctx->pipeline_pool = arena_push_array_zero(arena, VulkanPipeline, MAX_PIPELINES);
 
 	if (vulkan_create_instance(ctx, platform) == false)
 		return false;
@@ -56,25 +54,24 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 	if (vulkan_create_depth_image(ctx) == false)
 		return false;
 
+	// TODO: Let the user decide
+	if (vulkan_create_global_set(ctx) == false)
+		return false;
+
 	return true;
 }
 
 void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDeviceWaitIdle(context->device.logical);
 
-	for (uint32_t index = 0; index < MAX_PIPELINES; ++index) {
-		if (context->pipeline_pool[index].handle != NULL)
-			vulkan_renderer_destroy_pipeline(context, index);
-	}
 	vkDestroyDescriptorPool(context->device.logical, context->descriptor_pool, NULL);
-
 	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
 		if (context->shader_pool[index].vertex_shader != NULL)
 			vulkan_renderer_destroy_shader(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
-		if (context->texture_pool[index].handle != NULL)
+		if (context->image_pool[index].handle != NULL)
 			vulkan_renderer_destroy_texture(context, index);
 	}
 

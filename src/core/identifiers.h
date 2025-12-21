@@ -1,24 +1,28 @@
 #pragma once
 
 #include "common.h"
+#include "allocators/arena.h"
 
 typedef uint64_t UUID;
-#define INVALID_UUID UINT64_MAX
 
 UUID identifier_create(void);
 UUID identifier_create_from_u64(uint64_t uuid);
 
 typedef struct {
-	uint32_t packed;
+	UUID id;
+	uint32_t index, _pad0;
 } Handle;
-
-#define INVALID_INDEX UINT32_MAX
-#define INVALID_HANDLE ((Handle){ INVALID_INDEX })
 
 Handle handle_create(uint32_t index);
 bool handle_valid(Handle handle);
 
-uint32_t handle_index(Handle handle);
-uint8_t handle_generation(Handle handle);
+typedef struct index_recycler {
+	uint32_t *free_indices;
+	uint32_t free_count;
+	uint32_t next_unused;
+	uint32_t capacity;
+} IndexRecycler;
 
-bool handle_increment(Handle *handle);
+void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t capacity);
+uint32_t recycler_new_index(IndexRecycler *recycler);
+void recycler_free_index(IndexRecycler *recycler, uint32_t index);

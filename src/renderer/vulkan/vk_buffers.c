@@ -1,11 +1,10 @@
-#include "renderer/vk_renderer.h"
-
-#include "renderer/vulkan/vk_types.h"
 #include "vk_internal.h"
+#include "renderer/vk_renderer.h"
+#include "renderer/vulkan/vk_types.h"
 
+#include "core/debug.h"
 #include "core/logger.h"
-#include <assert.h>
-#include <string.h>
+
 #include <vulkan/vulkan_core.h>
 
 // static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
@@ -27,7 +26,7 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	VulkanBuffer *buffer = &context->buffer_pool[store_index];
 	if (buffer->handle[0] != NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to allocate buffer at index %d, but index is already in use", store_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -94,7 +93,7 @@ bool vulkan_renderer_destroy_buffer(VulkanContext *context, uint32_t retrieve_in
 	VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle[0] == NULL) {
 		LOG_FATAL("Engine: Frontend renderer tried to destroy buffer at index %d, but index is already in use", retrieve_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -111,11 +110,11 @@ bool vulkan_renderer_destroy_buffer(VulkanContext *context, uint32_t retrieve_in
 	return true;
 }
 
-bool vulkan_renderer_update_buffer(VulkanContext *context, uint32_t retrieve_index, uint32_t offset, size_t size, void *data) {
+bool vulkan_renderer_update_buffer(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data) {
 	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle[0] == NULL) {
 		LOG_FATAL("Vulkan: Renderer requested to update buffer at index %d, but no valid buffer found at index", retrieve_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -140,7 +139,7 @@ bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index
 	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle[0] == NULL) {
 		LOG_FATAL("Vulkan: Renderer requested to bind buffer at index %d, but no valid buffer found at index", retrieve_index);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
@@ -171,7 +170,7 @@ bool vulkan_renderer_bind_buffers(VulkanContext *context, uint32_t *buffers, uin
 	const VulkanBuffer *buffer = &context->buffer_pool[buffers[0]];
 	if (buffer->handle[0] == NULL) {
 		LOG_FATAL("Vulkan: Renderer requested to bind buffer at index %d, but no valid buffer found at index", buffers[0]);
-		assert(false);
+		ASSERT(false);
 		return false;
 	}
 
