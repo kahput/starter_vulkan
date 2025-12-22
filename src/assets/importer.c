@@ -96,10 +96,10 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		if (src->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
 			uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
-			String mime_type = string_create(src->mime_type);
+			String mime_type = string_wrap_cstring(src->mime_type);
 
 			String name = string_format(scratch.arena, S("%s_%s"), data->scene->name, src->name);
-			if (string_contains(string_create(src->mime_type), S("png")) != -1) {
+			if (string_contains(string_wrap_cstring(src->mime_type), S("png")) != -1) {
 				dst->path = string_format(arena, S("%s/%s.png"), base_directory, name);
 				stbi_write_png(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
 			} else if (string_contains(mime_type, S("jpg")) != -1 || string_contains(mime_type, S("jpeg")) != -1) {

@@ -20,72 +20,11 @@ typedef struct camera {
 	CameraProjection projection;
 } Camera;
 
-typedef struct {
-	mat4 view;
-	mat4 projection;
-	vec3 camera_position;
-	float _pad0;
-} FrameData;
-
-typedef struct {
-	vec3 position;
-	vec3 normal;
-	vec2 uv;
-	vec4 tangent;
-} Vertex;
-
-typedef struct material_paramters {
-	vec4 base_color_factor;
-	float metallic_factor;
-	float roughness_factor;
-	vec2 _pad0;
-	vec4 emissive_factor;
-} MaterialParameters;
-
-typedef struct texture {
-	uint32_t handle, sampler;
-} Texture;
-
-typedef struct material {
-	uint32_t shader;
-} Material;
-
-typedef struct material_instance {
-	Material material;
-	uint32_t resource_set, material_parameter_buffer;
-} MaterialInstance;
-
-typedef struct mesh {
-	uint32_t vertex_buffer, index_buffer;
-	uint32_t vertex_count, index_count;
-
-	MaterialInstance *material;
-} Mesh;
-
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
 	BUFFER_TYPE_INDEX,
 	BUFFER_TYPE_UNIFORM,
 } BufferType;
-
-typedef enum shader_stage {
-	SHADER_STAGE_VERTEX = 1 << 0,
-	SHADER_STAGE_FRAGMENT = 1 << 1,
-} ShaderStageFlagBits;
-typedef uint32_t ShaderStageFlag;
-
-typedef enum {
-	SHADER_UNIFORM_FREQUENCY_PER_FRAME,
-	SHADER_UNIFORM_FREQUENCY_PER_MATERIAL,
-	SHADER_UNIFORM_FREQUENCY_PER_OBJECT,
-} ShaderUniformFrequency;
-
-typedef enum {
-	SHADER_UNIFORM_UNDEFINED,
-	SHADER_UNIFORM_TYPE_BUFFER,
-	SHADER_UNIFORM_TYPE_CONSTANTS,
-	SHADER_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER
-} ShaderUniformType;
 
 typedef enum shader_attribute_format {
 	SHADER_ATTRIBUTE_TYPE_UNDEFINED,
@@ -119,17 +58,62 @@ typedef struct shader_attribute {
 	size_t offset;
 } ShaderAttribute;
 
-typedef struct uniform_binding {
-	// TODO: Make this string
-	char name[64];
-	ShaderUniformType type;
+typedef enum shader_stage {
+	SHADER_STAGE_VERTEX = 1 << 0,
+	SHADER_STAGE_FRAGMENT = 1 << 1,
+} ShaderStageFlagBits;
+typedef uint32_t ShaderStageFlag;
+
+typedef enum {
+	SHADER_UNIFORM_FREQUENCY_PER_FRAME,
+	SHADER_UNIFORM_FREQUENCY_PER_MATERIAL,
+	SHADER_UNIFORM_FREQUENCY_PER_OBJECT,
+} ShaderUniformFrequency;
+
+typedef enum {
+	SHADER_BINDING_UNDEFINED,
+	SHADER_BINDING_UNIFORM_BUFFER,
+	SHADER_BINDING_STORAGE_BUFFER,
+	SHADER_BINDING_COMBINED_IMAGE_SAMPLER
+} ShaderBindingType;
+
+typedef struct shader_member {
+	String name;
+	size_t offset, size;
+} ShaderMember;
+
+typedef struct shader_buffer {
+	String name;
+	size_t size;
+
+	ShaderMember *members;
+	uint32_t member_count;
+} ShaderBuffer;
+
+typedef struct shader_binding {
+	String name;
+	ShaderBindingType type;
+	ShaderStageFlag stage;
+	ShaderUniformFrequency frequency;
+	uint32_t binding, count;
+
+	ShaderBuffer *buffer_layout;
+} ShaderBinding;
+
+typedef struct shader_constant {
+	String name;
 	ShaderStageFlag stage;
 
-	uint32_t count;
-	size_t size, offset;
+	ShaderBuffer *buffer;
+} ShaderPushConstant;
 
-	uint32_t set, binding;
-} ShaderUniform;
+typedef struct {
+	ShaderBinding *bindings;
+	uint32_t binding_count;
+
+	ShaderPushConstant *push_constants;
+	uint32_t push_constant_count;
+} ShaderReflection;
 
 typedef enum cull_mode {
 	CULL_MODE_NONE = 0,
@@ -238,5 +222,57 @@ typedef struct sampler_desc {
 		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
 		.anisotropy_enable = false                            \
 	}
+
+typedef enum {
+	MATERIAL_INSTANCE_STATE_DIRTY = 1 << 0,
+} MaterialStateFlagBits;
+typedef uint32_t MaterialStateFlag;
+
+typedef struct material {
+	Handle shader;
+
+	ShaderReflection *reflection;
+	MaterialStateFlag flags;
+} MaterialBase;
+
+typedef struct material_instance {
+	MaterialBase base;
+	uint32_t override_resource_id, override_ubo_id;
+
+	MaterialStateFlag flags;
+} MaterialInstance;
+
+typedef struct {
+	mat4 view;
+	mat4 projection;
+	vec3 camera_position;
+	float _pad0;
+} FrameData;
+
+typedef struct {
+	vec3 position;
+	vec3 normal;
+	vec2 uv;
+	vec4 tangent;
+} Vertex;
+
+typedef struct material_paramters {
+	vec4 base_color_factor;
+	float metallic_factor;
+	float roughness_factor;
+	vec2 _pad0;
+	vec4 emissive_factor;
+} MaterialParameters;
+
+typedef struct texture {
+	uint32_t handle, sampler;
+} Texture;
+
+typedef struct mesh {
+	uint32_t vertex_buffer, index_buffer;
+	uint32_t vertex_count, index_count;
+
+	MaterialInstance *material;
+} Mesh;
 
 #endif

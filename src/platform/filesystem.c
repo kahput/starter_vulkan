@@ -52,7 +52,7 @@ FileNode *filesystem_load_directory_files(Arena *arena, String directory_path, b
 	struct dirent *entry;
 
 	while ((entry = readdir(directory))) {
-		String entry_name = string_create(entry->d_name);
+		String entry_name = string_wrap_cstring(entry->d_name);
 		if (string_equals(entry_name, S(".")) || string_equals(entry_name, S("..")))
 			continue;
 

@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-String string_create(const char *string) {
+String string_wrap_cstring(const char *string) {
 	String rv = (String){ .data = (char *)string, .length = cstring_length(string) };
 	rv.size = rv.length + 1;
 

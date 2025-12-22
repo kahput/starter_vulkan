@@ -9,6 +9,7 @@
 #include "core/hash_trie.h"
 #include "core/identifiers.h"
 
+#include "platform/filesystem.h"
 #include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
@@ -42,7 +43,7 @@ typedef struct renderer {
 	uint32_t global_set;
 
 	uint32_t frame_uniform_buffer;
-	Material model_material, sprite_material;
+	MaterialBase model_material, sprite_material;
 
 	uint32_t default_texture_white;
 	uint32_t default_texture_black;
@@ -109,13 +110,22 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 	renderer->frame_uniform_buffer = recycler_new_index(&renderer->buffer_indices);
 	vulkan_renderer_buffer_create(renderer->context, renderer->frame_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(FrameData), NULL);
 
-	renderer->model_material = (Material){ .shader = 0 };
-	vulkan_renderer_shader_create(renderer->context, renderer->model_material.shader, S("./assets/shaders/pbr.vert.spv"), S("./assets/shaders/pbr.frag.spv"), DEFAULT_PIPELINE());
+	renderer->model_material = (MaterialBase){ 0 };
+	renderer->model_material.shader = handle_create(0);
 
-	renderer->sprite_material = (Material){ .shader = 1 };
+	ArenaTemp scratch = arena_scratch(NULL);
+	FileContent vsc = filesystem_read(scratch.arena, S("./assets/shaders/pbr.vert.spv"));
+	FileContent fsc = filesystem_read(scratch.arena, S("./assets/shaders/pbr.frag.spv"));
+	vulkan_renderer_shader_create(renderer->arena, renderer->context, renderer->model_material.shader.index, vsc, fsc, DEFAULT_PIPELINE(), &renderer->model_material.reflection);
+
+	renderer->sprite_material = (MaterialBase){ .shader = handle_create(1) };
 	PipelineDesc sprite_pipeline = DEFAULT_PIPELINE();
 	sprite_pipeline.cull_mode = CULL_MODE_NONE;
-	vulkan_renderer_shader_create(renderer->context, renderer->sprite_material.shader, S("./assets/shaders/sprite.vert.spv"), S("./assets/shaders/sprite.frag.spv"), sprite_pipeline);
+
+	vsc = filesystem_read(scratch.arena, S("./assets/shaders/sprite.vert.spv"));
+	fsc = filesystem_read(scratch.arena, S("./assets/shaders/sprite.frag.spv"));
+	vulkan_renderer_shader_create(renderer->arena, renderer->context, renderer->sprite_material.shader.index, vsc, fsc, sprite_pipeline, &renderer->sprite_material.reflection);
+	arena_release_scratch(scratch);
 
 	renderer->default_texture_white = recycler_new_index(&renderer->image_indices);
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
@@ -198,8 +208,8 @@ bool renderer_draw_mesh(Handle handle, mat4 transform) {
 	Mesh *mesh = ((Mesh *)renderer->mesh_allocator->slots) + handle.index;
 	MaterialInstance *material = mesh->material;
 
-	vulkan_renderer_shader_bind(renderer->context, material->material.shader, material->resource_set);
-	vulkan_renderer_push_constants(renderer->context, 0, S("push_constants"), transform);
+	vulkan_renderer_shader_bind(renderer->context, material->base.shader.index, material->override_resource_id);
+	vulkan_renderer_push_constants(renderer->context, 0, 0, sizeof(mat4), transform);
 
 	vulkan_renderer_buffer_bind(renderer->context, mesh->vertex_buffer);
 	if (mesh->index_count) {
@@ -233,39 +243,39 @@ bool create_default_material_instance(void) {
 	};
 
 	renderer->default_material_instance = (MaterialInstance){
-		.material = renderer->model_material,
-		.material_parameter_buffer = recycler_new_index(&renderer->buffer_indices),
-		.resource_set = recycler_new_index(&renderer->set_indices)
+		.base = renderer->model_material,
+		.override_resource_id = recycler_new_index(&renderer->set_indices),
+		.override_ubo_id = recycler_new_index(&renderer->buffer_indices),
 	};
-	vulkan_renderer_buffer_create(renderer->context, renderer->default_material_instance.material_parameter_buffer, BUFFER_TYPE_UNIFORM, sizeof(MaterialParameters), &renderer->default_material_parameters);
+	vulkan_renderer_buffer_create(renderer->context, renderer->default_material_instance.override_ubo_id, BUFFER_TYPE_UNIFORM, sizeof(MaterialParameters), &renderer->default_material_parameters);
 
-	vulkan_renderer_shader_resource_create(renderer->context, renderer->default_material_instance.resource_set, renderer->default_material_instance.material.shader);
-	vulkan_renderer_shader_resource_set_buffer(renderer->context, renderer->model_material.shader, renderer->default_material_instance.resource_set, S("u_material"), renderer->default_material_instance.material_parameter_buffer);
-
-	vulkan_renderer_shader_resource_set_texture_sampler(
-		renderer->context,
-		renderer->model_material.shader, renderer->default_material_instance.resource_set,
-		S("u_base_color_texture"), renderer->default_texture_white, renderer->linear_sampler);
+	vulkan_renderer_shader_resource_create(renderer->context, renderer->default_material_instance.override_resource_id, renderer->default_material_instance.base.shader.index);
+	vulkan_renderer_shader_resource_set_buffer(renderer->context, renderer->model_material.shader.index, renderer->default_material_instance.override_resource_id, 5, renderer->default_material_instance.override_ubo_id);
 
 	vulkan_renderer_shader_resource_set_texture_sampler(
 		renderer->context,
-		renderer->model_material.shader, renderer->default_material_instance.resource_set,
-		S("u_metallic_roughness_texture"), renderer->default_texture_white, renderer->linear_sampler);
+		renderer->model_material.shader.index, renderer->default_material_instance.override_resource_id,
+		0, renderer->default_texture_white, renderer->linear_sampler);
 
 	vulkan_renderer_shader_resource_set_texture_sampler(
 		renderer->context,
-		renderer->model_material.shader, renderer->default_material_instance.resource_set,
-		S("u_normal_texture"), renderer->default_texture_normal, renderer->linear_sampler);
+		renderer->model_material.shader.index, renderer->default_material_instance.override_resource_id,
+		1, renderer->default_texture_white, renderer->linear_sampler);
 
 	vulkan_renderer_shader_resource_set_texture_sampler(
 		renderer->context,
-		renderer->model_material.shader, renderer->default_material_instance.resource_set,
-		S("u_occlusion_texture"), renderer->default_texture_white, renderer->linear_sampler);
+		renderer->model_material.shader.index, renderer->default_material_instance.override_resource_id,
+		2, renderer->default_texture_normal, renderer->linear_sampler);
 
 	vulkan_renderer_shader_resource_set_texture_sampler(
 		renderer->context,
-		renderer->model_material.shader, renderer->default_material_instance.resource_set,
-		S("u_emissive_texture"), renderer->default_texture_black, renderer->linear_sampler);
+		renderer->model_material.shader.index, renderer->default_material_instance.override_resource_id,
+		3, renderer->default_texture_white, renderer->linear_sampler);
+
+	vulkan_renderer_shader_resource_set_texture_sampler(
+		renderer->context,
+		renderer->model_material.shader.index, renderer->default_material_instance.override_resource_id,
+		4, renderer->default_texture_black, renderer->linear_sampler);
 
 	return true;
 }

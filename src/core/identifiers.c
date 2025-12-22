@@ -26,7 +26,11 @@ UUID identifier_create_from_u64(uint64_t uuid) {
 }
 
 Handle handle_create(uint32_t index) {
-	return (Handle){ .index = index };
+	return (Handle){ .id = identifier_create(), .index = index };
+}
+
+Handle handle_create_with_uuid(uint32_t index, UUID id) {
+	return (Handle){ .id = id, .index = index };
 }
 
 bool handle_valid(Handle handle) {

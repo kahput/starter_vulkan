@@ -20,7 +20,6 @@ typedef struct {
 #define STRING_START 0
 #define STRING_END UINT32_MAX
 
-String string_create(const char *string);
 String string_create_from_arena(Arena *arena, size_t size);
 
 bool string_equals(String a, String b);
@@ -41,6 +40,8 @@ String string_format(Arena *arena, String format, ...);
 String string_directory_from_path(Arena *arena, String path);
 String string_filename_from_path(Arena *arena, String path);
 String string_extension_from_path(Arena *arena, String name);
+
+String string_wrap_cstring(const char *string);
 
 size_t cstring_length(const char *);
 size_t cstring_nlength(const char *, size_t);

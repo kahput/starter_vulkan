@@ -5,7 +5,6 @@
 
 #include "core/astring.h"
 
-struct arena;
 struct platform;
 
 typedef struct vulkan_context VulkanContext;
@@ -17,7 +16,7 @@ typedef struct vulkan_context VulkanContext;
 #define MAX_PIPELINES 32
 #define MAX_RESOURCE_SETS 128
 
-bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext **out_context);
+bool vulkan_renderer_create(Arena *arena, struct platform *platform, VulkanContext **out_context);
 void vulkan_renderer_destroy(VulkanContext *context);
 bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height);
 
@@ -27,7 +26,7 @@ bool Vulkan_renderer_frame_end(VulkanContext *context);
 bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-bool vulkan_renderer_shader_create(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path, PipelineDesc description);
+bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, FileContent vertex_shader, FileContent fragment_shader, PipelineDesc description, ShaderReflection **out_reflection);
 bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t resource_index);
 
@@ -37,8 +36,8 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, 
 // bool vulkan_renderer_shader_variant_bind(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
 
 bool vulkan_renderer_shader_resource_create(VulkanContext *context, uint32_t store_index, uint32_t shader_index);
-bool vulkan_renderer_shader_resource_set_buffer(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t buffer_index);
-bool vulkan_renderer_shader_resource_set_texture_sampler(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t texture_index, uint32_t sampler_index);
+bool vulkan_renderer_shader_resource_set_buffer(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, uint32_t binding, uint32_t buffer_index);
+bool vulkan_renderer_shader_resource_set_texture_sampler(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index);
 
 bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels);
 bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index);
@@ -52,6 +51,6 @@ bool vulkan_renderer_buffers_bind(VulkanContext *context, uint32_t *buffers, uin
 bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index, SamplerDesc description);
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_index);
 
-bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_index, String name, void *data);
+bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_index, size_t offset, size_t size, void *data);
 
 bool vulkan_renderer_global_resource_set_buffer(VulkanContext *context, uint32_t buffer_index);

@@ -11,11 +11,6 @@ typedef enum {
 } FileModeFlagBits;
 typedef uint32_t FileModeFlags;
 
-typedef struct {
-	size_t size;
-	char *content;
-} FileContent;
-
 typedef struct file_path_node {
 	String path;
 	struct file_path_node *next;

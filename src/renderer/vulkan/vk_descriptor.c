@@ -224,35 +224,14 @@ bool vulkan_renderer_global_resource_set_buffer(VulkanContext *context, uint32_t
 // 	return true;
 // }
 
-bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_index, String name, void *data) {
+bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_index, size_t offset, size_t size, void *data) {
 	VulkanShader *shader = &context->shader_pool[shader_index];
 	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to push constants to shader at index %d, but index is not in use", shader_index);
-		ASSERT(false);
+		ASSERT_FORMAT(false, "Vulkan: Frontend renderer tried to push constants to shader at index %d, but index is not in use", shader_index);
 		return false;
 	}
 
-	ShaderUniform *target = NULL;
-	for (uint32_t index = 0; index < MAX_UNIFORMS; ++index) {
-		if (string_equals(string_create(shader->uniforms[index].name), name)) {
-			target = &shader->uniforms[index];
-		}
-	}
-
-	if (target == NULL) {
-		LOG_WARN("Vulkan: Uniform buffer '%.*s' not found in shader %d", FS(name), shader_index);
-		return false;
-	}
-
-	VkShaderStageFlags flags =
-		target->stage == SHADER_STAGE_VERTEX
-		? VK_SHADER_STAGE_VERTEX_BIT
-		: target->stage == SHADER_STAGE_FRAGMENT
-		? VK_SHADER_STAGE_FRAGMENT_BIT
-		: 0;
-
-	vkCmdPushConstants(context->command_buffers[context->current_frame], shader->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, target->size, data);
-
+	vkCmdPushConstants(context->command_buffers[context->current_frame], shader->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, size, data);
 	return true;
 }
 

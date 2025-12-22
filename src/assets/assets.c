@@ -302,7 +302,7 @@ AssetType file_extension_to_asset_type(String extension) {
 		uint32_t index = 0;
 		const char *ext = extensions[asset_index][index];
 		while (ext) {
-			if (string_equals(extension, string_create(ext)))
+			if (string_equals(extension, string_wrap_cstring(ext)))
 				return asset_index;
 
 			ext = extensions[asset_index][++index];
