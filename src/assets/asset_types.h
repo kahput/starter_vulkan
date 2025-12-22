@@ -21,7 +21,7 @@ typedef struct image {
 
 	void *pixels;
 	int32_t width, height, channels;
-} Image;
+} ImageSource;
 
 typedef struct shader_source {
 	UUID id;
@@ -30,20 +30,53 @@ typedef struct shader_source {
 	FileContent vertex_shader, fragment_shader;
 } ShaderSource;
 
+typedef enum {
+	PROPERTY_TYPE_FLOAT,
+	PROPERTY_TYPE_FLOAT2,
+	PROPERTY_TYPE_FLOAT3,
+	PROPERTY_TYPE_FLOAT4,
+
+	PROPERTY_TYPE_COLOR,
+
+	PROPERTY_TYPE_INT,
+	PROPERTY_TYPE_INT2,
+	PROPERTY_TYPE_INT3,
+	PROPERTY_TYPE_INT4,
+
+	PROPERTY_TYPE_IMAGE,
+} PropertyType;
+
+typedef struct {
+	String name;
+	PropertyType type;
+	union {
+		float f;
+		vec2 vecf2;
+		vec3 vecf3;
+		vec4 vecf4;
+
+		int32_t i;
+		ivec2 veci2;
+		ivec3 veci3;
+		ivec4 veci4;
+
+		uint32_t u;
+
+		ImageSource *image;
+
+		uint8_t *bytes;
+	} as;
+} MaterialProperty;
+
 typedef struct material_source {
 	UUID id;
-	UUID shader_id;
+	ShaderSource *shader;
 
-	Image *base_color_texture;
-	Image *metallic_roughness_texture; // G = Roughness, B = Metallic
-	Image *normal_texture;
-	Image *occlusion_texture;
-	Image *emissive_texture;
+	PipelineDesc description;
 
-	vec4 base_color_factor;
-	float metallic_factor;
-	float roughness_factor;
-	vec3 emissive_factor;
+	MaterialProperty *properties;
+	uint32_t property_count;
+
 } MaterialSource;
 
 typedef struct mesh_source {
@@ -65,6 +98,6 @@ typedef struct model_source {
 	MaterialSource *materials;
 	uint32_t material_count;
 
-	Image *images;
+	ImageSource *images;
 	uint32_t image_count;
 } ModelSource;

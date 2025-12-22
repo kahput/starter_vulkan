@@ -23,7 +23,7 @@
 bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant, PipelineDesc description);
 bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code, ShaderReflection *out_reflection);
 
-bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, FileContent vertex_shader_code, FileContent fragment_shader_code, PipelineDesc description, ShaderReflection **out_reflection) {
+bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, FileContent vertex_shader_code, FileContent fragment_shader_code, PipelineDesc description, ShaderReflection *out_reflection) {
 	if (store_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting create", store_index);
 		return false;
@@ -65,8 +65,7 @@ bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_
 		return false;
 	}
 
-	*out_reflection = arena_push_struct(arena, ShaderReflection);
-	reflect_shader_interface(arena, context, shader, vertex_shader_code, fragment_shader_code, *out_reflection);
+	reflect_shader_interface(arena, context, shader, vertex_shader_code, fragment_shader_code, out_reflection);
 	create_shader_variant(context, shader, &shader->variants[0], description);
 
 	arena_release_scratch(scratch);
@@ -628,13 +627,13 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 
 	out_reflection->bindings = arena_push_array(arena, ShaderBinding, shader->binding_count);
 
-	for (uint32_t set_index = 0; set_index < max_set_index; ++set_index) {
+	for (uint32_t set_index = 0, index = 0; set_index <= max_set_index; ++set_index) {
 		SetInfo *set = &merged_sets[set_index];
-		for (uint32_t binding_index = 0; binding_index < set->binding_count; ++binding_index) {
+		for (uint32_t binding_index = 0; binding_index < set->binding_count; ++binding_index, ++index) {
 			SpvReflectDescriptorBinding *spv = set->spv_binding[binding_index];
 			VkDescriptorSetLayoutBinding *vk = &set->vk_binding[binding_index];
 
-			ShaderBinding *dst = &out_reflection->bindings[binding_index];
+			ShaderBinding *dst = &out_reflection->bindings[index];
 
 			dst->name = string_duplicate(arena, string_wrap_cstring(spv->name));
 			dst->frequency = spv->set;

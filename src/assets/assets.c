@@ -153,7 +153,7 @@ UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model,
 			asset_library_track_file(path);
 		}
 
-		Image *image = NULL;
+		ImageSource *image = NULL;
 		if (use_cached_textures)
 			asset_library_request_image(name, &image);
 		else
@@ -166,7 +166,7 @@ UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model,
 	return entry->node.hash;
 }
 
-UUID asset_library_load_image(Arena *arena, String key, Image **out_texture) {
+UUID asset_library_load_image(Arena *arena, String key, ImageSource **out_texture) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 
 	if (entry == NULL) {
@@ -181,7 +181,7 @@ UUID asset_library_load_image(Arena *arena, String key, Image **out_texture) {
 		return INVALID_UUID;
 	}
 
-	*out_texture = arena_push_struct_zero(arena, Image);
+	*out_texture = arena_push_struct_zero(arena, ImageSource);
 	importer_load_image(arena, entry->full_path, *out_texture);
 
 	(*out_texture)->id = entry->node.hash;
@@ -259,7 +259,7 @@ UUID asset_library_request_model(String key, ModelSource **out_model) {
 	return entry->node.hash;
 }
 
-UUID asset_library_request_image(String key, Image **out_image) {
+UUID asset_library_request_image(String key, ImageSource **out_image) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 	if (entry == NULL) {
 		LOG_WARN("AssetLibrary: No image '%s'", key);
@@ -272,7 +272,7 @@ UUID asset_library_request_image(String key, Image **out_image) {
 	}
 
 	if (entry->is_loaded) {
-		*out_image = (Image *)entry->source_data;
+		*out_image = (ImageSource *)entry->source_data;
 		return entry->node.hash;
 	}
 

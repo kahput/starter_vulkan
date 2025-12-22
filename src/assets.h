@@ -34,10 +34,10 @@ UUID asset_library_model_mesh_id(String key, uint32_t index);
 
 UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shader);
 UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model, bool use_cached_textures);
-UUID asset_library_load_image(Arena *arena, String key, Image **out_texture);
+UUID asset_library_load_image(Arena *arena, String key, ImageSource **out_texture);
 
 UUID asset_library_request_shader(String key, ShaderSource **out_shader);
 UUID asset_library_request_model(String key, ModelSource **out_model);
-UUID asset_library_request_image(String key, Image **out_image);
+UUID asset_library_request_image(String key, ImageSource **out_image);
 
 bool asset_library_clear_cache(void);

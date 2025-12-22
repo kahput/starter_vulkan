@@ -13,7 +13,7 @@
 #define HANDLE_INDEX_MASK ((1 << HANDLE_INDEX_BITS) - 1)
 #define HANDLE_GENERATION_MASK ((1 << HANDLE_GENERATION_BITS) - 1)
 
-UUID identifier_create(void) {
+UUID identifier_generate(void) {
 	uint64_t random_value = 0;
 	while (random_value == 0)
 		if (getrandom(&random_value, sizeof(random_value), GRND_RANDOM) != sizeof(random_value))
@@ -26,7 +26,7 @@ UUID identifier_create_from_u64(uint64_t uuid) {
 }
 
 Handle handle_create(uint32_t index) {
-	return (Handle){ .id = identifier_create(), .index = index };
+	return (Handle){ .id = identifier_generate(), .index = index };
 }
 
 Handle handle_create_with_uuid(uint32_t index, UUID id) {

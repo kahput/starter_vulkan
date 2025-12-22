@@ -64,11 +64,6 @@ static struct State {
 	uint64_t start_time;
 } state;
 
-typedef struct {
-	String name;
-	void *value;
-} MaterialProperty;
-
 typedef struct material_config {
 	ShaderSource *shader;
 	MaterialProperty *defaults;
@@ -109,12 +104,34 @@ int main(void) {
 
 	ArenaTemp scratch = arena_scratch(NULL);
 	MeshSource *plane_src = NULL;
-	UUID plane_id = create_plane_mesh(scratch.arena, 1, 1, ORIENTATION_Z, &plane_src);
+	UUID plane_id = create_plane_mesh(scratch.arena, 0, 0, ORIENTATION_Z, &plane_src);
 
-	ShaderSource *source = NULL;
-	UUID shader = asset_library_request_shader(S("sprite.glsl"), &source);
+	asset_library_track_directory(S("assets"));
 
+	ShaderSource *shader_src = NULL;
+	UUID shader = asset_library_request_shader(S("sprite.glsl"), &shader_src);
+
+	ImageSource *image_src = NULL;
+	UUID img = asset_library_request_image(S("tile_0085.png"), &image_src);
+
+	MaterialProperty properties[] = {
+		(MaterialProperty){ .name = S("u_texture"), .type = PROPERTY_TYPE_IMAGE, .as.image = image_src },
+		(MaterialProperty){ .name = S("tint"), .type = PROPERTY_TYPE_COLOR, .as.vecf3 = { 1.0f, 0.0f, 0.0f } },
+	};
+
+	MaterialSource source = {
+		.id = identifier_generate(),
+		.shader = shader_src,
+		.properties = properties,
+		.property_count = countof(properties),
+		.description = DEFAULT_PIPELINE()
+	};
+	source.description.cull_mode = CULL_MODE_NONE;
+
+	Handle base_material = renderer_upload_material_base(shader_src->id, &source);
 	Handle plane = renderer_upload_mesh(plane_id, plane_src);
+
+	Handle material = renderer_material_instance_create(base_material);
 
 	while (platform_should_close(&state.display) == false) {
 		float current_frame = (double)(platform_time_ms(&state.display) - state.start_time) / 1000.0f;
@@ -128,7 +145,7 @@ int main(void) {
 		if (renderer_begin_frame(&state.editor_camera)) {
 			mat4 transform;
 			glm_translate_make(transform, (vec3){ 0.0f, 1.0f, 0.0f });
-			renderer_draw_mesh(plane, transform);
+			renderer_draw_mesh(plane, material, transform);
 
 			renderer_end_frame();
 		}

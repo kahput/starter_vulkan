@@ -1,15 +1,14 @@
 #include "importer.h"
 
 #include "assets/asset_types.h"
+#include "renderer/renderer_types.h"
 
 #include "common.h"
-#include "core/astring.h"
 #include "core/debug.h"
-#include "platform/filesystem.h"
-#include "renderer/renderer_types.h"
-#include "spirv_reflect/spirv_reflect.h"
+#include "core/astring.h"
 
-#include <cglm/vec3.h>
+#include "platform/filesystem.h"
+
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
@@ -20,11 +19,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MATERIAL_PROPERTY_COUNT 9
+
 void filesystem_filename(const char *src, char *dst);
 void filesystem_directory(const char *src, char *dst);
 
 static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
-static Image *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
+static ImageSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
 
 bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path, ShaderSource *out_shader) {
 	out_shader->vertex_shader = filesystem_read(arena, vertex_path);
@@ -33,7 +34,7 @@ bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path
 	return out_shader->fragment_shader.content && out_shader->vertex_shader.content;
 }
 
-bool importer_load_image(Arena *arena, String path, Image *out_texture) {
+bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
 	ArenaTemp scratch = arena_scratch(arena);
 
 	String filename = string_filename_from_path(scratch.arena, path);
@@ -64,6 +65,19 @@ bool importer_load_image(Arena *arena, String path, Image *out_texture) {
 	return true;
 }
 
+static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
+	{ .name = { .data = "u_base_color_texture", .length = 20, .size = 21 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .data = "u_metallic_roughness_texture", .length = 28, .size = 29 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .data = "u_normal_texture", .length = 16, .size = 17 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .data = "u_occlusion_texture", .length = 19, .size = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .data = "u_emissive_texture", .length = 18, .size = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+
+	{ .name = { .data = "base_color_factor", .length = 17, .size = 18 }, .type = PROPERTY_TYPE_FLOAT4, .as.vecf4 = { 1.0f, 1.0f, 1.0f, 1.0f } },
+	{ .name = { .data = "metallic_factor", .length = 15, .size = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.0f },
+	{ .name = { .data = "roughness_factor", .length = 16, .size = 17 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.5f },
+	{ .name = { .data = "emissive_factor", .length = 15, .size = 16 }, .type = PROPERTY_TYPE_FLOAT3, .as.vecf3 = { 1.0f, 1.0f, 1.0f } },
+};
+
 bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
@@ -87,11 +101,11 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 	String base_directory = string_directory_from_path(scratch.arena, path);
 
 	out_model->image_count = data->images_count;
-	out_model->images = arena_push_array_zero(arena, Image, out_model->image_count);
+	out_model->images = arena_push_array_zero(arena, ImageSource, out_model->image_count);
 
 	for (uint32_t texture_index = 0; texture_index < out_model->image_count; ++texture_index) {
 		cgltf_image *src = &data->images[texture_index];
-		Image *dst = &out_model->images[texture_index];
+		ImageSource *dst = &out_model->images[texture_index];
 
 		if (src->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
@@ -120,23 +134,28 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		cgltf_material *src = &data->materials[index];
 		MaterialSource *dst = &out_model->materials[index];
 
+		dst->property_count = MATERIAL_PROPERTY_COUNT;
+		dst->properties = arena_push_array_zero(arena, MaterialProperty, dst->property_count);
+
+		memcpy(dst->properties, default_properties, sizeof(default_properties));
+
 		if (src->has_pbr_metallic_roughness) {
 			cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
 
-			mempcpy(dst->base_color_factor, pbr->base_color_factor, sizeof(vec4));
-			dst->metallic_factor = pbr->metallic_factor;
-			dst->roughness_factor = pbr->roughness_factor;
+			mempcpy(dst->properties[5].as.vecf4, pbr->base_color_factor, sizeof(vec4));
 
-			dst->base_color_texture = find_loaded_texture(data, out_model, pbr->base_color_texture.texture);
-			dst->metallic_roughness_texture = find_loaded_texture(data, out_model, pbr->metallic_roughness_texture.texture);
+			dst->properties[6].as.f = pbr->metallic_factor;
+			dst->properties[7].as.f = pbr->roughness_factor;
+
+			dst->properties[0].as.image = find_loaded_texture(data, out_model, pbr->base_color_texture.texture);
+			dst->properties[1].as.image = find_loaded_texture(data, out_model, pbr->metallic_roughness_texture.texture);
 		}
 
-		dst->normal_texture = find_loaded_texture(data, out_model, src->normal_texture.texture);
+		dst->properties[2].as.image = find_loaded_texture(data, out_model, src->normal_texture.texture);
+		dst->properties[3].as.image = find_loaded_texture(data, out_model, src->occlusion_texture.texture);
 
-		dst->occlusion_texture = find_loaded_texture(data, out_model, src->occlusion_texture.texture);
-
-		memcpy(dst->emissive_factor, src->emissive_factor, sizeof(vec3));
-		dst->emissive_texture = find_loaded_texture(data, out_model, src->emissive_texture.texture);
+		memcpy(dst->properties[8].as.vecf3, src->emissive_factor, sizeof(vec3));
+		dst->properties[4].as.image = find_loaded_texture(data, out_model, src->emissive_texture.texture);
 	}
 
 	uint32_t mesh_count = 0;
@@ -288,7 +307,7 @@ void filesystem_directory(const char *src, char *dst) {
 	dst[final] = '\0';
 }
 
-Image *find_loaded_texture(const cgltf_data *data, ModelSource *source, const cgltf_texture *gltf_tex) {
+ImageSource *find_loaded_texture(const cgltf_data *data, ModelSource *source, const cgltf_texture *gltf_tex) {
 	if (!gltf_tex || !gltf_tex->image)
 		return NULL;
 

@@ -230,9 +230,14 @@ typedef uint32_t MaterialStateFlag;
 
 typedef struct material {
 	Handle shader;
-
-	ShaderReflection *reflection;
 	MaterialStateFlag flags;
+	ShaderReflection reflection;
+
+	void *default_ubo_data;
+	size_t ubo_size;
+	uint32_t default_textures[16];
+
+	uint32_t instance_count;
 } MaterialBase;
 
 typedef struct material_instance {

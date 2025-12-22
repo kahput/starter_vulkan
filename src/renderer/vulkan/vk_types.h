@@ -111,8 +111,6 @@ typedef struct vulkan_shader {
 	VulkanPipeline variants[MAX_VARIANTS];
 	uint32_t variant_count;
 
-	// ShaderUniform uniforms[MAX_UNIFORMS];
-	// uint32_t uniform_count;
 } VulkanShader;
 
 struct vulkan_context {

@@ -26,7 +26,7 @@ bool Vulkan_renderer_frame_end(VulkanContext *context);
 bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, FileContent vertex_shader, FileContent fragment_shader, PipelineDesc description, ShaderReflection **out_reflection);
+bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, FileContent vertex_shader_code, FileContent fragment_shader_code, PipelineDesc description, ShaderReflection *out_reflection);
 bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t resource_index);
 
