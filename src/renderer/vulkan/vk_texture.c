@@ -9,7 +9,7 @@
 
 static VkFormat channels_to_vulkan_format(uint32_t channels);
 
-bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels) {
+bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels) {
 	if (store_index >= MAX_TEXTURES) {
 		LOG_ERROR("Vulkan: Texture index %d out of bounds", store_index);
 		return false;
@@ -67,7 +67,7 @@ bool vulkan_renderer_create_texture(VulkanContext *context, uint32_t store_index
 	return true;
 }
 
-bool vulkan_renderer_destroy_texture(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index) {
 	if (retrieve_index >= MAX_TEXTURES) {
 		LOG_ERROR("Vulkan: Texture index %d out of bounds", retrieve_index);
 		return false;
@@ -91,7 +91,7 @@ bool vulkan_renderer_destroy_texture(VulkanContext *context, uint32_t retrieve_i
 	return true;
 }
 
-bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index, SamplerDesc description) {
+bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index, SamplerDesc description) {
 	if (store_index >= MAX_SAMPLERS) {
 		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
 		return false;
@@ -132,7 +132,7 @@ bool vulkan_renderer_create_sampler(VulkanContext *context, uint32_t store_index
 	return true;
 }
 
-bool vulkan_renderer_destroy_sampler(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_index) {
 	if (retrieve_index >= MAX_SAMPLERS) {
 		LOG_ERROR("Vulkan: Sampler index %d out of bounds", retrieve_index);
 		return false;

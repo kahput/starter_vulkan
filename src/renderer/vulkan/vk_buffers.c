@@ -11,7 +11,7 @@
 
 int32_t to_vulkan_usage(BufferType type);
 
-bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data) {
+bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data) {
 	const char *stringify[] = {
 		"Vertex buffer",
 		"Index buffer",
@@ -84,7 +84,7 @@ bool vulkan_renderer_create_buffer(VulkanContext *context, uint32_t store_index,
 	return true;
 }
 
-bool vulkan_renderer_destroy_buffer(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_index) {
 	if (retrieve_index >= MAX_BUFFERS) {
 		LOG_ERROR("Vulkan: Buffer index %d out of bounds", retrieve_index);
 		return false;
@@ -110,7 +110,7 @@ bool vulkan_renderer_destroy_buffer(VulkanContext *context, uint32_t retrieve_in
 	return true;
 }
 
-bool vulkan_renderer_update_buffer(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data) {
+bool vulkan_renderer_buffer_update(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data) {
 	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle[0] == NULL) {
 		LOG_FATAL("Vulkan: Renderer requested to update buffer at index %d, but no valid buffer found at index", retrieve_index);
@@ -135,7 +135,7 @@ bool vulkan_renderer_update_buffer(VulkanContext *context, uint32_t retrieve_ind
 	return true;
 }
 
-bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_buffer_bind(VulkanContext *context, uint32_t retrieve_index) {
 	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle[0] == NULL) {
 		LOG_FATAL("Vulkan: Renderer requested to bind buffer at index %d, but no valid buffer found at index", retrieve_index);
@@ -161,7 +161,7 @@ bool vulkan_renderer_bind_buffer(VulkanContext *context, uint32_t retrieve_index
 	return false;
 }
 
-bool vulkan_renderer_bind_buffers(VulkanContext *context, uint32_t *buffers, uint32_t count) {
+bool vulkan_renderer_buffers_bind(VulkanContext *context, uint32_t *buffers, uint32_t count) {
 	if (buffers == NULL || count <= 0) {
 		LOG_ERROR("Vulkan: Invalid arguments passed, aborting bind");
 		return false;

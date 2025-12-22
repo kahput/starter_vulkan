@@ -67,22 +67,22 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDestroyDescriptorPool(context->device.logical, context->descriptor_pool, NULL);
 	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
 		if (context->shader_pool[index].vertex_shader != NULL)
-			vulkan_renderer_destroy_shader(context, index);
+			vulkan_renderer_shader_destroy(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
 		if (context->image_pool[index].handle != NULL)
-			vulkan_renderer_destroy_texture(context, index);
+			vulkan_renderer_texture_destroy(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
 		if (context->sampler_pool[index].handle != NULL)
-			vulkan_renderer_destroy_sampler(context, index);
+			vulkan_renderer_sampler_destroy(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
 		if (context->buffer_pool[index].handle[0] != NULL)
-			vulkan_renderer_destroy_buffer(context, index);
+			vulkan_renderer_buffer_destroy(context, index);
 	}
 
 	vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, NULL);
@@ -113,7 +113,7 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDestroyInstance(context->instance, NULL);
 }
 
-bool vulkan_renderer_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
+bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
 	LOG_INFO("Recreating Swapchain...");
 	logger_indent();
 	if (vulkan_recreate_swapchain(context, new_width, new_height) == true) {
@@ -126,7 +126,7 @@ bool vulkan_renderer_resize(VulkanContext *context, uint32_t new_width, uint32_t
 	return true;
 }
 
-bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platform) {
+bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platform) {
 	vkWaitForFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame], VK_TRUE, UINT64_MAX);
 
 	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
@@ -211,7 +211,7 @@ bool vulkan_renderer_begin_frame(VulkanContext *context, struct platform *platfo
 	return true;
 }
 
-bool Vulkan_renderer_end_frame(VulkanContext *context) {
+bool Vulkan_renderer_frame_end(VulkanContext *context) {
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
 
 	vulkan_image_transition(

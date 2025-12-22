@@ -26,7 +26,7 @@ static void *HT_TOMBSTONE = (void *)-1;
 static int ht_hash(const char *s, const int a, const int m);
 static int ht_get_hash(const char *s, const int num_buckets, const int attempt);
 
-HashTable *ht_create(Arena *arena, size_t type_size) {
+HashTable *ht_create(Arena *arena, size_t type_size, size_t alignment) {
 	if (arena == NULL || type_size <= 0) {
 		LOG_ERROR("ht_create(): Invalid parameters ");
 		return NULL;
@@ -42,7 +42,7 @@ HashTable *ht_create(Arena *arena, size_t type_size) {
 
 	ht->item_size = HT_MAX_KEY_SIZE + ht->type_size;
 
-	ht->items = arena_push_zero(arena, ht->item_size * ht->capacity);
+	ht->items = arena_push_zero(arena, ht->item_size * ht->capacity, alignment);
 	return ht;
 }
 

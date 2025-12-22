@@ -14,7 +14,7 @@ typedef struct {
 
 	uint8_t padding[MAX_EVENT_SIZE - sizeof(EventCommon)];
 } Event;
-#define EVENT_DEFINE(name) STATIC_ASSERT(sizeof(name) <= sizeof(Event), __LINE__)
+#define EVENT_DEFINE(name) STATIC_ASSERT(sizeof(name) <= sizeof(Event))
 
 typedef bool (*PFN_on_event)(Event *event);
 

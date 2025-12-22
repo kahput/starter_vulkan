@@ -5,7 +5,9 @@
 #include "core/logger.h"
 
 #include "common.h"
+
 #include <string.h>
+#include <stdlib.h>
 
 static const struct {
 	bool (*initialize)(Platform *);

@@ -9,6 +9,8 @@
 #include "common.h"
 #include <dlfcn.h>
 
+#include <stdlib.h>
+
 #define XCB_COUNT sizeof(((X11Platform *)0)->xcb) / sizeof(void *)
 
 static const char *extensions[] = {

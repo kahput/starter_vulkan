@@ -13,7 +13,7 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_renderer_set_global_resource_buffer(VulkanContext *context, uint32_t buffer_index) {
+bool vulkan_renderer_global_resource_set_buffer(VulkanContext *context, uint32_t buffer_index) {
 	VulkanBuffer *uniform_buffer = &context->buffer_pool[buffer_index];
 	if (uniform_buffer->handle[0] == NULL) {
 		ASSERT_FORMAT(false, "Vulkan: Buffer target at index %d is not in use", buffer_index);

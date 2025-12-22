@@ -22,7 +22,7 @@
 bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant, PipelineDesc description);
 bool reflect_shader_interface(VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code);
 
-bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path, PipelineDesc description) {
+bool vulkan_renderer_shader_create(VulkanContext *context, uint32_t store_index, String vertex_shader_path, String fragment_shader_path, PipelineDesc description) {
 	if (store_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting create", store_index);
 		return false;
@@ -74,7 +74,7 @@ bool vulkan_renderer_create_shader(VulkanContext *context, uint32_t store_index,
 	return true;
 }
 
-bool vulkan_renderer_destroy_shader(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index) {
 	if (retrieve_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: Shader index %d out of bounds", retrieve_index);
 		return false;
@@ -242,7 +242,7 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	return true;
 }
 
-bool vulkan_renderer_bind_shader(VulkanContext *context, uint32_t shader_index, uint32_t resource_index) {
+bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t resource_index) {
 	if (shader_index >= MAX_SHADERS || resource_index >= MAX_RESOURCE_SETS) {
 		LOG_ERROR("Vulkan: indices [shader_index = %d, resource_index = %d] out of bounds", shader_index, resource_index);
 		return false;
@@ -268,7 +268,7 @@ bool vulkan_renderer_bind_shader(VulkanContext *context, uint32_t shader_index, 
 	return true;
 }
 
-bool vulkan_renderer_create_shader_resource(VulkanContext *context, uint32_t store_index, uint32_t shader_index) {
+bool vulkan_renderer_shader_resource_create(VulkanContext *context, uint32_t store_index, uint32_t shader_index) {
 	if (store_index >= MAX_RESOURCE_SETS || shader_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: indices [store_index = %d, shader_index = %d] out of bounds", store_index, shader_index);
 		return false;
@@ -308,7 +308,7 @@ bool vulkan_renderer_create_shader_resource(VulkanContext *context, uint32_t sto
 	return true;
 }
 
-bool vulkan_renderer_set_shader_resource_buffer(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t buffer_index) {
+bool vulkan_renderer_shader_resource_set_buffer(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t buffer_index) {
 	if (shader_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting", shader_index);
 		return false;
@@ -362,7 +362,7 @@ bool vulkan_renderer_set_shader_resource_buffer(VulkanContext *context, uint32_t
 	return true;
 }
 
-bool vulkan_renderer_set_shader_resource_texture_sampler(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t texture_index, uint32_t sampler_index) {
+bool vulkan_renderer_shader_resource_set_texture_sampler(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, String name, uint32_t texture_index, uint32_t sampler_index) {
 	if (shader_index >= MAX_SHADERS || texture_index >= MAX_TEXTURES || sampler_index >= MAX_SAMPLERS) {
 		LOG_ERROR("Vulkan: one or more of [shader_index = %d, texture_index = %d, sampler_index = %d] out of bounds", shader_index, texture_index, sampler_index);
 		return false;

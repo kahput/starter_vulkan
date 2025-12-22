@@ -8,28 +8,29 @@ typedef struct arena {
 } Arena;
 typedef struct {
 	struct arena *arena;
-	uint32_t position;
+	size_t position;
 } ArenaTemp;
 
 Arena arena_create(size_t size);
-Arena arena_create_from_memory(void *buffer, size_t offset, size_t size);
-void arena_clear(Arena *);
-void arena_destroy(Arena *);
+Arena arena_create_from_memory(void *buffer, size_t size);
+void arena_destroy(Arena *arena);
 
-void *arena_push(Arena *arena, size_t size);
-void *arena_push_zero(Arena *, size_t size);
-#define arena_push_array(arena, type, count) (type *)arena_push((arena), sizeof(type) * (count))
-#define arena_push_array_zero(arena, type, count) (type *)arena_push_zero((arena), sizeof(type) * (count))
-#define arena_push_struct(arena, type) (type *)arena_push((arena), sizeof(type));
-#define arena_push_struct_zero(arena, type) (type *)arena_push_zero((arena), sizeof(type));
+void *arena_push(Arena *arena, size_t size, size_t alignment);
+void *arena_push_zero(Arena *arena, size_t size, size_t alignment);
 
-void arena_pop(Arena *, size_t size);
-void arena_set(Arena *, size_t position);
+void arena_pop(Arena *arena, size_t size);
+void arena_set(Arena *arena, size_t position);
+
+size_t arena_size(Arena *arena);
+void arena_clear(Arena *arena);
 
 ArenaTemp arena_begin_temp(Arena *);
 void arena_end_temp(ArenaTemp temp);
 
 ArenaTemp arena_scratch(Arena *conflict);
-#define arena_release_scratch(t) arena_end_temp(t)
+#define arena_release_scratch(scratch) arena_end_temp(scratch)
 
-size_t arena_size(Arena *);
+#define arena_push_array(arena, type, count) ((type *)arena_push((arena), sizeof(type) * (count), alignof(type)))
+#define arena_push_array_zero(arena, type, count) ((type *)arena_push_zero((arena), sizeof(type) * (count), alignof(type)))
+#define arena_push_struct(arena, type) ((type *)arena_push((arena), sizeof(type), alignof(type)))
+#define arena_push_struct_zero(arena, type) ((type *)arena_push_zero((arena), sizeof(type), alignof(type)))

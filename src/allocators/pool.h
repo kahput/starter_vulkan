@@ -16,7 +16,7 @@ typedef struct pool {
 } Pool;
 
 Pool *allocator_pool(size_t slot_size, uint32_t capacity);
-Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_size);
+Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_size, size_t alignment);
 void pool_destroy(Pool *pool);
 
 void *pool_alloc(Pool *pool);
