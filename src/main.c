@@ -13,12 +13,12 @@
 #include "input.h"
 
 #include "renderer.h"
-#include "renderer/renderer_types.h"
 
 #include <cglm/affine.h>
 #include <cglm/cglm.h>
 #include <cglm/mat4.h>
 #include <cglm/types.h>
+#include <math.h>
 #include <stdalign.h>
 
 #include "common.h"
@@ -63,12 +63,6 @@ static struct State {
 
 	uint64_t start_time;
 } state;
-
-typedef struct material_config {
-	ShaderSource *shader;
-	MaterialProperty *defaults;
-	PipelineDesc pipeine;
-} MaterialConfig;
 
 int main(void) {
 	state.permanent_arena = arena_create(MiB(64));
@@ -116,7 +110,7 @@ int main(void) {
 
 	MaterialProperty properties[] = {
 		(MaterialProperty){ .name = S("u_texture"), .type = PROPERTY_TYPE_IMAGE, .as.image = image_src },
-		(MaterialProperty){ .name = S("tint"), .type = PROPERTY_TYPE_COLOR, .as.vecf3 = { 1.0f, 0.0f, 0.0f } },
+		(MaterialProperty){ .name = S("tint"), .type = PROPERTY_TYPE_COLOR, .as.vecf3 = { 1.0f, 1.0f, 0.0f } },
 	};
 
 	MaterialSource source = {
@@ -124,14 +118,15 @@ int main(void) {
 		.shader = shader_src,
 		.properties = properties,
 		.property_count = countof(properties),
-		.description = DEFAULT_PIPELINE()
 	};
-	source.description.cull_mode = CULL_MODE_NONE;
 
-	Handle base_material = renderer_upload_material_base(shader_src->id, &source);
-	Handle plane = renderer_upload_mesh(plane_id, plane_src);
+	Handle base_material = renderer_material_base_upload(shader_src->id, &source);
+	Handle plane = renderer_mesh_upload(plane_id, plane_src);
 
 	Handle material = renderer_material_instance_create(base_material);
+	UUID sprite_id_2 = asset_library_request_image(S("tile_0086.png"), &image_src);
+	renderer_image_upload(sprite_id_2, image_src);
+	renderer_material_instance_set_texture(material, S("u_texture"), sprite_id_2);
 
 	while (platform_should_close(&state.display) == false) {
 		float current_frame = (double)(platform_time_ms(&state.display) - state.start_time) / 1000.0f;
@@ -142,7 +137,12 @@ int main(void) {
 
 		state.current_layer->update(delta_time);
 
+		static float tint = 0.0f;
+		tint += delta_time;
+
 		if (renderer_begin_frame(&state.editor_camera)) {
+			renderer_material_instance_set4fv(material, S("tint"), (vec4){ (cos(tint) + 1.0f) / 2.f, 1.0f, 1.0f, 1.0f });
+
 			mat4 transform;
 			glm_translate_make(transform, (vec3){ 0.0f, 1.0f, 0.0f });
 			renderer_draw_mesh(plane, material, transform);
@@ -205,7 +205,7 @@ void editor_update(float dt) {
 bool resize_event(Event *event) {
 	WindowResizeEvent *wr_event = (WindowResizeEvent *)event;
 
-	renderer_resize(wr_event->width, wr_event->height);
+	renderer_on_resize(wr_event->width, wr_event->height);
 	return true;
 }
 

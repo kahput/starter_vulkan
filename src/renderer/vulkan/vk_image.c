@@ -47,7 +47,7 @@ bool vulkan_image_create(
 	VkMemoryAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 		.allocationSize = memory_requirements.size,
-		.memoryTypeIndex = find_memory_type(context->device.physical, memory_requirements.memoryTypeBits, properties),
+		.memoryTypeIndex = vulkan_memory_type_find(context->device.physical, memory_requirements.memoryTypeBits, properties),
 	};
 
 	if (vkAllocateMemory(context->device.logical, &allocate_info, NULL, &image->memory) != VK_SUCCESS) {
@@ -92,7 +92,7 @@ bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat fo
 
 bool vulkan_image_transition(VulkanContext *context, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
 	VkCommandBuffer command_buffer;
-	vulkan_begin_single_time_commands(context, context->graphics_command_pool, &command_buffer);
+	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
 	VkImageMemoryBarrier image_barrier = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -120,14 +120,14 @@ bool vulkan_image_transition(VulkanContext *context, VkImage image, VkImageAspec
 		0, NULL,
 		1, &image_barrier);
 
-	vulkan_end_single_time_commands(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
+	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 
 	return true;
 }
 
 bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
 	VkCommandBuffer command_buffer;
-	vulkan_begin_single_time_commands(context, context->transfer_command_pool, &command_buffer);
+	vulkan_command_oneshot_begin(context, context->transfer_command_pool, &command_buffer);
 
 	VkBufferImageCopy region = {
 		.bufferOffset = 0,
@@ -145,6 +145,6 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, u
 
 	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-	vulkan_end_single_time_commands(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
+	vulkan_command_oneshot_end(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
 	return true;
 }

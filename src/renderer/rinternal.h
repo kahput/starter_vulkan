@@ -8,17 +8,6 @@
 #include <cglm/cglm.h>
 
 // TODO: Move these
-typedef enum {
-	CAMERA_PROJECTION_PERSPECTIVE = 0,
-	CAMERA_PROJECTION_ORTHOGRAPHIC
-} CameraProjection;
-
-typedef struct camera {
-	vec3 position, target, up;
-	float fov;
-
-	CameraProjection projection;
-} Camera;
 
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
@@ -253,13 +242,6 @@ typedef struct {
 	vec3 camera_position;
 	float _pad0;
 } FrameData;
-
-typedef struct {
-	vec3 position;
-	vec3 normal;
-	vec2 uv;
-	vec4 tangent;
-} Vertex;
 
 typedef struct material_paramters {
 	vec4 base_color_factor;

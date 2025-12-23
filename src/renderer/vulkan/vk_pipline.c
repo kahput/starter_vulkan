@@ -1,20 +1,14 @@
-#include "core/astring.h"
-#include "core/debug.h"
-#include "core/identifiers.h"
-#include "renderer/renderer_types.h"
-#include "renderer/vk_renderer.h"
-
 #include "vk_internal.h"
+#include "renderer/vk_renderer.h"
 
 #include <assert.h>
 #include <spirv_reflect/spirv_reflect.h>
 
 #include "common.h"
+#include "core/debug.h"
 #include "core/logger.h"
-#include "platform/filesystem.h"
-
+#include "core/astring.h"
 #include "allocators/arena.h"
-#include "renderer/vulkan/vk_types.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -681,7 +675,7 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	}
 
 	SetInfo *material_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL];
-	if (vulkan_create_descriptor_set_layout(context, material_reflect_info->vk_binding, material_reflect_info->binding_count, &shader->material_set_layout) == false) {
+	if (vulkan_descriptor_layout_create(context, material_reflect_info->vk_binding, material_reflect_info->binding_count, &shader->material_set_layout) == false) {
 		spvReflectDestroyShaderModule(&vertex_module);
 		spvReflectDestroyShaderModule(&fragment_module);
 		arena_release_scratch(scratch);

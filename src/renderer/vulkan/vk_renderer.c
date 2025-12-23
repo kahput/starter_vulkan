@@ -1,6 +1,4 @@
 #include "renderer/vk_renderer.h"
-
-#include "renderer/vulkan/vk_types.h"
 #include "vk_internal.h"
 
 #include "platform.h"
@@ -27,35 +25,35 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 	ctx->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
 	ctx->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
 
-	if (vulkan_create_instance(ctx, platform) == false)
+	if (vulkan_instance_create(ctx, platform) == false)
 		return false;
 
-	if (vulkan_create_surface(platform, ctx) == false)
+	if (vulkan_surface_create(platform, ctx) == false)
 		return false;
 
-	if (vulkan_create_device(arena, ctx) == false)
+	if (vulkan_device_create(arena, ctx) == false)
 		return false;
 
-	if (vulkan_create_command_pool(ctx) == false)
+	if (vulkan_command_pool_create(ctx) == false)
 		return false;
 
-	if (vulkan_create_command_buffer(ctx) == false)
+	if (vulkan_command_buffer_create(ctx) == false)
 		return false;
 
-	if (vulkan_create_descriptor_pool(ctx) == false)
+	if (vulkan_descriptor_pool_create(ctx) == false)
 		return false;
 
-	if (vulkan_create_sync_objects(ctx) == false)
+	if (vulkan_sync_objects_create(ctx) == false)
 		return false;
 
-	if (vulkan_create_swapchain(ctx, platform->physical_width, platform->physical_height) == false)
+	if (vulkan_swapchain_create(ctx, platform->physical_width, platform->physical_height) == false)
 		return false;
 
 	if (vulkan_create_depth_image(ctx) == false)
 		return false;
 
 	// TODO: Let the user decide
-	if (vulkan_create_global_set(ctx) == false)
+	if (vulkan_descriptor_global_create(ctx) == false)
 		return false;
 
 	return true;
@@ -116,7 +114,7 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
 	LOG_INFO("Recreating Swapchain...");
 	logger_indent();
-	if (vulkan_recreate_swapchain(context, new_width, new_height) == true) {
+	if (vulkan_swapchain_recreate(context, new_width, new_height) == true) {
 		LOG_INFO("Swapchain successfully recreated");
 	} else {
 		LOG_WARN("Failed to recreate swapchain");
@@ -132,7 +130,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		vulkan_recreate_swapchain(context, platform->physical_width, platform->physical_height);
+		vulkan_swapchain_recreate(context, platform->physical_width, platform->physical_height);
 		LOG_INFO("Recreating Swapchain");
 		return false;
 	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {

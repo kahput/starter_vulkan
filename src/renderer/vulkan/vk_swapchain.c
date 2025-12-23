@@ -1,13 +1,11 @@
 #include "platform.h"
-#include "renderer/vk_renderer.h"
 
 #include "vk_internal.h"
+#include "renderer/vk_renderer.h"
 
-#include "allocators/arena.h"
 #include "common.h"
 #include "core/logger.h"
-#include "renderer/vulkan/vk_types.h"
-#include <vulkan/vulkan_core.h>
+#include "allocators/arena.h"
 
 VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, uint32_t count);
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count);
@@ -17,7 +15,7 @@ VkExtent2D swapchain_select_extent(uint32_t window_width, uint32_t window_height
 static bool create_swapchain_image_views(VulkanContext *context);
 // static bool create_swapchain_framebuffers(VulkanContext *context);
 
-bool vulkan_create_swapchain(VulkanContext *context, uint32_t width, uint32_t height) {
+bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t height) {
 	context->swapchain.format = swapchain_select_surface_format(context->device.swapchain_details.formats, context->device.swapchain_details.format_count);
 	context->swapchain.present_mode = swapchain_select_present_mode(context->device.swapchain_details.present_modes, context->device.swapchain_details.present_mode_count);
 	context->swapchain.extent = swapchain_select_extent(width, height, &context->device.swapchain_details.capabilities);
@@ -67,7 +65,7 @@ bool vulkan_create_swapchain(VulkanContext *context, uint32_t width, uint32_t he
 	return true;
 }
 
-bool vulkan_recreate_swapchain(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
+bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
 	vkDeviceWaitIdle(context->device.logical);
 
 	for (uint32_t i = 0; i < context->swapchain.images.count; ++i) {
@@ -80,7 +78,7 @@ bool vulkan_recreate_swapchain(VulkanContext *context, uint32_t new_width, uint3
 		vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
 	}
 
-	if (vulkan_create_swapchain(context, new_width, new_height) == false)
+	if (vulkan_swapchain_create(context, new_width, new_height) == false)
 		return false;
 	if (vulkan_create_depth_image(context) == false)
 		return false;

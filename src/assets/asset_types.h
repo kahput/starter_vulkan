@@ -2,8 +2,7 @@
 
 #include "common.h"
 #include "core/astring.h"
-#include "platform/filesystem.h"
-#include "renderer/renderer_types.h"
+#include "core/identifiers.h"
 
 #include <cglm/cglm.h>
 
@@ -72,12 +71,17 @@ typedef struct material_source {
 	UUID id;
 	ShaderSource *shader;
 
-	PipelineDesc description;
-
 	MaterialProperty *properties;
 	uint32_t property_count;
 
 } MaterialSource;
+
+typedef struct {
+	vec3 position;
+	vec3 normal;
+	vec2 uv;
+	vec4 tangent;
+} Vertex;
 
 typedef struct mesh_source {
 	UUID id;

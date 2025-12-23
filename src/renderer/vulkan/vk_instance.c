@@ -27,7 +27,7 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 };
 void create_debug_messenger(VulkanContext *context);
 
-bool vulkan_create_instance(VulkanContext *context, Platform *platform) {
+bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",

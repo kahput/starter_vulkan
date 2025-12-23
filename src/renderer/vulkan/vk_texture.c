@@ -30,7 +30,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 	VkDeviceMemory staging_buffer_memory;
 
 	uint32_t indices[] = { context->device.graphics_index, context->device.transfer_index };
-	vulkan_create_buffer(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vulkan_buffer_create(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);

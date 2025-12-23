@@ -1,14 +1,11 @@
-#include "core/astring.h"
-#include "renderer/renderer_types.h"
+#include "renderer/rinternal.h"
 #include "renderer/vk_renderer.h"
 
-#include "renderer/vulkan/vk_types.h"
 #include "vk_internal.h"
 
 #include "common.h"
 #include "core/debug.h"
 #include "core/logger.h"
-#include "allocators/pool.h"
 
 #include <string.h>
 #include <vulkan/vulkan_core.h>
@@ -251,7 +248,7 @@ bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_inde
 // 	return true;
 // }
 //
-bool vulkan_create_descriptor_set_layout(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout) {
+bool vulkan_descriptor_layout_create(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout) {
 	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		.bindingCount = binding_count,
@@ -266,7 +263,7 @@ bool vulkan_create_descriptor_set_layout(VulkanContext *context, VkDescriptorSet
 	return true;
 }
 
-bool vulkan_create_descriptor_pool(VulkanContext *context) {
+bool vulkan_descriptor_pool_create(VulkanContext *context) {
 	VkDescriptorPoolSize sizes[] = {
 		{
 		  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -294,7 +291,7 @@ bool vulkan_create_descriptor_pool(VulkanContext *context) {
 	return true;
 }
 
-bool vulkan_create_global_set(VulkanContext *context) {
+bool vulkan_descriptor_global_create(VulkanContext *context) {
 	context->global_set.bindings[0] = (VkDescriptorSetLayoutBinding){
 		.binding = 0,
 		.descriptorCount = 1,

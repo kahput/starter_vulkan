@@ -1,11 +1,8 @@
 #include "vk_internal.h"
 #include "renderer/vk_renderer.h"
-#include "renderer/vulkan/vk_types.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
-
-#include <vulkan/vulkan_core.h>
 
 // static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 
@@ -39,13 +36,13 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 
 	if (type == BUFFER_TYPE_UNIFORM) {
 		buffer->count = MAX_FRAMES_IN_FLIGHT;
-		bool result = vulkan_create_uniform_buffers(context, buffer, buffer->size, data);
+		bool result = vulkan_buffer_ubo_create(context, buffer, buffer->size, data);
 		logger_dedent();
 		return result;
 	}
 
 	if (data == NULL) {
-		bool result = vulkan_create_buffer(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
+		bool result = vulkan_buffer_create(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 		logger_dedent();
 		return result;
 	}
@@ -61,7 +58,7 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 
 	LOG_DEBUG("Creating staging buffer...");
 	logger_indent();
-	vulkan_create_buffer(context, context->device.graphics_index, buffer->size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vulkan_buffer_create(context, context->device.graphics_index, buffer->size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 	logger_dedent();
 
 	vkMapMemory(context->device.logical, staging_buffer_memory, 0, buffer->size, 0, &buffer->mapped[0]);
@@ -70,10 +67,10 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 
 	LOG_DEBUG("Creating buffer...");
 	logger_indent();
-	vulkan_create_buffer(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
+	vulkan_buffer_create(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 	logger_dedent();
 
-	vulkan_copy_buffer(context, staging_buffer, buffer->handle[0], buffer->size);
+	vulkan_buffer_to_buffer(context, staging_buffer, buffer->handle[0], buffer->size);
 	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
 	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
@@ -196,12 +193,12 @@ bool vulkan_renderer_buffers_bind(VulkanContext *context, uint32_t *buffers, uin
 	return false;
 }
 
-bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data) {
+bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data) {
 	buffer->usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	buffer->memory_property_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-		vulkan_create_buffer(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[index], &buffer->memory[index]);
+		vulkan_buffer_create(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[index], &buffer->memory[index]);
 
 		vkMapMemory(context->device.logical, buffer->memory[index], 0, size, 0, &buffer->mapped[index]);
 
@@ -213,7 +210,7 @@ bool vulkan_create_uniform_buffers(VulkanContext *context, VulkanBuffer *buffer,
 	return true;
 }
 
-bool vulkan_create_buffer(
+bool vulkan_buffer_create(
 	VulkanContext *context,
 	uint32_t queue_family_index,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
@@ -242,7 +239,7 @@ bool vulkan_create_buffer(
 	VkMemoryAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 		.allocationSize = memory_requirements.size,
-		.memoryTypeIndex = find_memory_type(context->device.physical, memory_requirements.memoryTypeBits, properties),
+		.memoryTypeIndex = vulkan_memory_type_find(context->device.physical, memory_requirements.memoryTypeBits, properties),
 	};
 
 	if (vkAllocateMemory(context->device.logical, &allocate_info, NULL, buffer_memory) != VK_SUCCESS) {
@@ -257,18 +254,18 @@ bool vulkan_create_buffer(
 	return true;
 }
 
-bool vulkan_copy_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
+bool vulkan_buffer_to_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
 	VkCommandBuffer command_buffer;
-	vulkan_begin_single_time_commands(context, context->transfer_command_pool, &command_buffer);
+	vulkan_command_oneshot_begin(context, context->transfer_command_pool, &command_buffer);
 
 	VkBufferCopy copy_region = { .size = size };
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
 
-	vulkan_end_single_time_commands(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
+	vulkan_command_oneshot_end(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
 	return true;
 }
 
-uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
+uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
 	VkPhysicalDeviceMemoryProperties memory_properties;
 	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 

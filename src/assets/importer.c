@@ -1,7 +1,5 @@
 #include "importer.h"
-
 #include "assets/asset_types.h"
-#include "renderer/renderer_types.h"
 
 #include "common.h"
 #include "core/debug.h"

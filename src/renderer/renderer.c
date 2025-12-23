@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "rinternal.h"
 
 #include "allocators/arena.h"
 #include "allocators/pool.h"
@@ -12,7 +13,6 @@
 #include "core/identifiers.h"
 
 #include "platform/filesystem.h"
-#include "renderer/renderer_types.h"
 #include "renderer/vk_renderer.h"
 
 #include <assert.h>
@@ -82,7 +82,7 @@ static bool create_default_material_instance(void);
 static ShaderMember *find_member_in_reflection(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency);
 
 static uint32_t resolve_mesh(UUID id, MeshSource *source);
-// static uint32_t resolve_image(UUID id, ImageSource *source);
+static uint32_t resolve_image(UUID id, ImageSource *source);
 static uint32_t resolve_material(UUID id, MaterialSource *source);
 
 bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t width, uint32_t height) {
@@ -169,14 +169,22 @@ void renderer_system_shutdown(void) {
 	vulkan_renderer_destroy(renderer->context);
 }
 
-Handle renderer_upload_material_base(UUID id, MaterialSource *source) {
+Handle renderer_image_upload(UUID id, ImageSource *source) {
 	if (source)
-		return (Handle){ .id = id, .index = resolve_material(id, source) };
+		return handle_create_with_uuid(resolve_image(id, source), id);
 	return INVALID_HANDLE;
 }
 
-Handle renderer_upload_mesh(UUID id, MeshSource *mesh) {
-	return (Handle){ .id = id, .index = resolve_mesh(id, mesh) };
+Handle renderer_material_base_upload(UUID id, MaterialSource *source) {
+	if (source)
+		return handle_create_with_uuid(resolve_material(id, source), id);
+	return INVALID_HANDLE;
+}
+
+Handle renderer_mesh_upload(UUID id, MeshSource *source) {
+	if (source)
+		return handle_create_with_uuid(resolve_mesh(id, source), id);
+	return INVALID_HANDLE;
 }
 
 Handle renderer_material_instance_create(Handle base_material_handle) {
@@ -243,6 +251,72 @@ Handle renderer_material_instance_create(Handle base_material_handle) {
 
 bool renderer_material_instance_destroy(Handle instance) { return false; }
 
+static bool renderer_material_instance_set(Handle instance_handle, String name, void *value) {
+	if (handle_valid(instance_handle) == false)
+		return false;
+
+	MaterialInstance *instance = ((MaterialInstance *)renderer->instance_allocator->slots) + instance_handle.index;
+	MaterialBase *base = &instance->base;
+
+	ShaderMember *member = find_member_in_reflection(&base->reflection, name, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
+	if (member == NULL)
+		return false;
+
+	vulkan_renderer_buffer_update(renderer->context, instance->override_ubo_id, member->offset, member->size, value);
+	return true;
+}
+
+bool renderer_material_instance_setf(Handle instance_handle, String name, float value) {
+	return renderer_material_instance_set(instance_handle, name, &value);
+}
+
+bool renderer_material_instance_set2fv(Handle instance, String name, vec2 value) {
+	return renderer_material_instance_set(instance, name, value);
+}
+bool renderer_material_instance_set3fv(Handle instance, String name, vec3 value) {
+	return renderer_material_instance_set(instance, name, value);
+}
+bool renderer_material_instance_set4fv(Handle instance, String name, vec4 value) {
+	return renderer_material_instance_set(instance, name, value);
+}
+
+bool renderer_material_instance_set_texture(Handle instance_handle, String name, UUID texture_id) {
+	if (handle_valid(instance_handle) == false)
+		return false;
+
+	ResourceEntry *entry = hash_trie_lookup_hash(&renderer->texture_map, texture_id, ResourceEntry);
+	if (entry == NULL || entry->pool_index == INVALID_INDEX) {
+		LOG_WARN("Texture passed to renderer_material_instance_set_texture is not uploaded, ignoring request");
+		return false;
+	}
+
+	Texture *texture = ((Texture *)renderer->texture_allocator->slots) + entry->pool_index;
+	MaterialInstance *instance = ((MaterialInstance *)renderer->instance_allocator->slots) + instance_handle.index;
+	MaterialBase *base = &instance->base;
+
+	int32_t texture_binding = -1;
+	for (uint32_t i = 0; i < base->reflection.binding_count; ++i) {
+		ShaderBinding *binding = &base->reflection.bindings[i];
+		if (string_equals(binding->name, name) && binding->type == SHADER_BINDING_COMBINED_IMAGE_SAMPLER &&
+			binding->frequency == SHADER_UNIFORM_FREQUENCY_PER_MATERIAL) {
+			texture_binding = base->reflection.bindings[i].binding;
+			break;
+		}
+	}
+
+	if (texture_binding == -1) {
+		LOG_WARN("Non-existant texture binding passed to renderer_material_instance_set_texture, ignoring request");
+		return false;
+	}
+
+	vulkan_renderer_shader_resource_set_texture_sampler(renderer->context, base->shader.index, instance->override_resource_id, texture_binding, texture->handle, renderer->nearest_sampler);
+	return true;
+}
+
+// bool renderer_material_instance_commit(Handle instance_handle) {
+// 	return true;
+// }
+
 bool renderer_unload_mesh(UUID id) {
 	ResourceEntry *entry = hash_trie_lookup_hash(&renderer->mesh_map, id, ResourceEntry);
 
@@ -291,7 +365,6 @@ bool renderer_draw_mesh(Handle mesh_handle, Handle material_instance_handle, mat
 		return false;
 
 	Mesh *mesh = ((Mesh *)renderer->mesh_allocator->slots) + mesh_handle.index;
-	// MaterialInstance *instance = mesh->material;
 	MaterialInstance *instance = ((MaterialInstance *)renderer->instance_allocator->slots) + material_instance_handle.index; // This doesn't draw
 
 	vulkan_renderer_shader_bind(renderer->context, instance->base.shader.index, 0);
@@ -312,7 +385,7 @@ bool renderer_end_frame(void) {
 	return Vulkan_renderer_frame_end(renderer->context);
 }
 
-bool renderer_resize(uint32_t width, uint32_t height) {
+bool renderer_on_resize(uint32_t width, uint32_t height) {
 	if (vulkan_renderer_on_resize(renderer->context, width, height)) {
 		renderer->width = width, renderer->height = height;
 		return true;
@@ -396,7 +469,7 @@ uint32_t resolve_mesh(UUID id, MeshSource *source) {
 	return pool_index;
 }
 
-uint32_t resolve_texture(UUID id, ImageSource *source) {
+uint32_t resolve_image(UUID id, ImageSource *source) {
 	ResourceEntry *entry = hash_trie_lookup_hash(&renderer->texture_map, id, ResourceEntry);
 	if (entry && entry->pool_index != INVALID_INDEX) {
 		return entry->pool_index;
@@ -438,7 +511,7 @@ uint32_t resolve_material(UUID id, MaterialSource *source) {
 	vulkan_renderer_shader_create(
 		renderer->arena, renderer->context,
 		base->shader.index, source->shader->vertex_shader, source->shader->fragment_shader,
-		source->description,
+		DEFAULT_PIPELINE(),
 		&base->reflection);
 
 	for (uint32_t index = 0; index < countof(base->default_textures); ++index)
@@ -468,7 +541,7 @@ uint32_t resolve_material(UUID id, MaterialSource *source) {
 		if (property->type == PROPERTY_TYPE_IMAGE) {
 			for (uint32_t binding_index = 0; binding_index < base->reflection.binding_count; ++binding_index) {
 				if (string_equals(base->reflection.bindings[binding_index].name, property->name)) {
-					base->default_textures[base->reflection.bindings[binding_index].binding] = resolve_texture(property->as.image->id, property->as.image);
+					base->default_textures[base->reflection.bindings[binding_index].binding] = resolve_image(property->as.image->id, property->as.image);
 					break;
 				}
 			}

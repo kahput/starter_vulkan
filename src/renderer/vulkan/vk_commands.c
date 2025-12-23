@@ -7,7 +7,7 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_create_command_pool(VulkanContext *context) {
+bool vulkan_command_pool_create(VulkanContext *context) {
 	VkCommandPoolCreateInfo cp_create_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -31,7 +31,7 @@ bool vulkan_create_command_pool(VulkanContext *context) {
 	return true;
 }
 
-bool vulkan_create_command_buffer(VulkanContext *context) {
+bool vulkan_command_buffer_create(VulkanContext *context) {
 	VkCommandBufferAllocateInfo cb_allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandPool = context->graphics_command_pool,
@@ -48,7 +48,7 @@ bool vulkan_create_command_buffer(VulkanContext *context) {
 	return true;
 }
 
-bool vulkan_begin_single_time_commands(VulkanContext *context, VkCommandPool pool, VkCommandBuffer *buffer) {
+bool vulkan_command_oneshot_begin(VulkanContext *context, VkCommandPool pool, VkCommandBuffer *buffer) {
 	VkCommandBufferAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandPool = pool,
@@ -71,7 +71,7 @@ bool vulkan_begin_single_time_commands(VulkanContext *context, VkCommandPool poo
 	return true;
 }
 
-bool vulkan_end_single_time_commands(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
+bool vulkan_command_oneshot_end(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
 	vkEndCommandBuffer(*buffer);
 
 	VkSubmitInfo submit_info = {

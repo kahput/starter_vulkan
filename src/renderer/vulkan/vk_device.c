@@ -16,7 +16,7 @@ static const char *extensions[] = {
 static bool select_physical_device(Arena *arena, VulkanContext *context);
 static bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface, VulkanDevice *device);
 
-bool vulkan_create_device(Arena *arena, VulkanContext *context) {
+bool vulkan_device_create(Arena *arena, VulkanContext *context) {
 	if (select_physical_device(arena, context) == false)
 		return false;
 
