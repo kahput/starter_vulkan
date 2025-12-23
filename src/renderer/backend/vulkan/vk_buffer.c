@@ -1,5 +1,5 @@
 #include "vk_internal.h"
-#include "renderer/vk_renderer.h"
+#include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
 #include "core/logger.h"

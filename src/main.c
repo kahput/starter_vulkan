@@ -103,30 +103,64 @@ int main(void) {
 	asset_library_track_directory(S("assets"));
 
 	ShaderSource *shader_src = NULL;
-	UUID shader = asset_library_request_shader(S("sprite.glsl"), &shader_src);
+	UUID shader_id = asset_library_request_shader(S("sprite.glsl"), &shader_src);
 
-	ImageSource *image_src = NULL;
-	UUID img = asset_library_request_image(S("tile_0085.png"), &image_src);
+	// MaterialProperty properties[] = {
+	// 	(MaterialProperty){ .name = S("u_texture"), .type = PROPERTY_TYPE_IMAGE, .as.image = image_src },
+	// 	(MaterialProperty){ .name = S("tint"), .type = PROPERTY_TYPE_COLOR, .as.vec3f = { 1.0f, 1.0f, 0.0f } },
+	// };
 
-	MaterialProperty properties[] = {
-		(MaterialProperty){ .name = S("u_texture"), .type = PROPERTY_TYPE_IMAGE, .as.image = image_src },
-		(MaterialProperty){ .name = S("tint"), .type = PROPERTY_TYPE_COLOR, .as.vecf3 = { 1.0f, 1.0f, 0.0f } },
+	ShaderConfig shader_config = {
+		.vertex_code = shader_src->vertex_shader.content,
+		.vertex_code_size = shader_src->vertex_shader.size,
+		.fragment_code = shader_src->fragment_shader.content,
+		.fragment_code_size = shader_src->fragment_shader.size,
+		.default_ubo_data = (vec4){ 1.0f, 1.0f, 1.0f, 1.0f },
+		.ubo_size = sizeof(vec4)
 	};
 
-	MaterialSource source = {
-		.id = identifier_generate(),
-		.shader = shader_src,
-		.properties = properties,
-		.property_count = countof(properties),
+	RShader shader = renderer_shader_create(shader_src->id, &shader_config);
+	MeshConfig mconfig = {
+		.vertices = plane_src->vertices,
+		.vertex_size = (sizeof *plane_src->vertices),
+		.vertex_count = plane_src->vertex_count,
+		.indices = plane_src->indices,
+		.index_size = (sizeof *plane_src->indices),
+		.index_count = plane_src->index_count,
 	};
+	RMesh plane = renderer_mesh_create(plane_id, &mconfig);
 
-	Handle base_material = renderer_material_base_upload(shader_src->id, &source);
-	Handle plane = renderer_mesh_upload(plane_id, plane_src);
+	ImageSource *sprite_src = NULL;
 
-	Handle material = renderer_material_instance_create(base_material);
-	UUID sprite_id_2 = asset_library_request_image(S("tile_0086.png"), &image_src);
-	renderer_image_upload(sprite_id_2, image_src);
-	renderer_material_instance_set_texture(material, S("u_texture"), sprite_id_2);
+	// Sprite 0
+	UUID sprite_id = asset_library_request_image(S("tile_0085.png"), &sprite_src);
+	TextureConfig sprite_tex = { .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
+	renderer_texture_create(sprite_id, &sprite_tex);
+
+	Handle mat_instance = renderer_material_create(shader);
+	renderer_material_set_texture(mat_instance, S("u_texture"), sprite_id);
+
+	// Sprite 1
+	UUID sprite_id_1 = asset_library_request_image(S("tile_0086.png"), &sprite_src);
+	sprite_tex = (TextureConfig){ .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
+	renderer_texture_create(sprite_id_1, &sprite_tex);
+
+	Handle mat_instance2 = renderer_material_create(shader);
+	renderer_material_set_texture(mat_instance2, S("u_texture"), sprite_id_1);
+
+	ModelSource *model_src;
+	UUID model_id = asset_library_request_model(S("gate.glb"), &model_src);
+
+	mconfig = (MeshConfig){
+		.vertices = model_src->meshes->vertices,
+		.vertex_size = (sizeof *model_src->meshes->vertices),
+		.vertex_count = model_src->meshes->vertex_count,
+		.indices = model_src->meshes->indices,
+		.index_size = (sizeof *model_src->meshes->indices),
+		.index_count = model_src->meshes->index_count,
+	};
+	RMesh gate = renderer_mesh_create(model_id, &mconfig);
+	RMaterial pbr = renderer_material_default();
 
 	while (platform_should_close(&state.display) == false) {
 		float current_frame = (double)(platform_time_ms(&state.display) - state.start_time) / 1000.0f;
@@ -141,11 +175,17 @@ int main(void) {
 		tint += delta_time;
 
 		if (renderer_begin_frame(&state.editor_camera)) {
-			renderer_material_instance_set4fv(material, S("tint"), (vec4){ (cos(tint) + 1.0f) / 2.f, 1.0f, 1.0f, 1.0f });
+			renderer_material_set4fv(mat_instance, S("tint"), (vec4){ (cos(tint) + 1.0f) / 2.f, 1.0f, 1.0f, 1.0f });
 
 			mat4 transform;
 			glm_translate_make(transform, (vec3){ 0.0f, 1.0f, 0.0f });
-			renderer_draw_mesh(plane, material, transform);
+			renderer_draw_mesh(plane, mat_instance, transform);
+
+			glm_translate_make(transform, (vec3){ 3.0f, 1.0f, 0.0f });
+			renderer_draw_mesh(plane, mat_instance2, transform);
+
+			glm_translate_make(transform, (vec3){ 0.0f, 0.0f, -3.0f });
+			renderer_draw_mesh(gate, pbr, transform);
 
 			renderer_end_frame();
 		}

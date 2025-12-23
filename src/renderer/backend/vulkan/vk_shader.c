@@ -1,5 +1,5 @@
 #include "vk_internal.h"
-#include "renderer/vk_renderer.h"
+#include "renderer/backend/vulkan_api.h"
 
 #include <assert.h>
 #include <spirv_reflect/spirv_reflect.h>
@@ -15,9 +15,9 @@
 #include <vulkan/vulkan_core.h>
 
 bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant, PipelineDesc description);
-bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code, ShaderReflection *out_reflection);
+bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, ShaderConfig *config, ShaderReflection *out_reflection);
 
-bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, FileContent vertex_shader_code, FileContent fragment_shader_code, PipelineDesc description, ShaderReflection *out_reflection) {
+bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, ShaderConfig *config, PipelineDesc description, ShaderReflection *out_reflection) {
 	if (store_index >= MAX_SHADERS) {
 		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting create", store_index);
 		return false;
@@ -29,18 +29,15 @@ bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_
 		return false;
 	}
 
-	ArenaTemp scratch = arena_scratch(NULL);
-
-	if (vertex_shader_code.size <= 0 && fragment_shader_code.size <= 0) {
+	if (config->vertex_code == NULL || config->vertex_code_size == 0 || config->fragment_code == NULL || config->fragment_code_size == 0) {
 		LOG_ERROR("Vulkan: Invalid shader code passed to vulkan_renderer_shader_craete");
-		arena_release_scratch(scratch);
 		return false;
 	}
 
 	VkShaderModuleCreateInfo vsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = vertex_shader_code.size,
-		.pCode = (uint32_t *)vertex_shader_code.content,
+		.codeSize = config->vertex_code_size,
+		.pCode = (uint32_t *)config->vertex_code,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
@@ -50,8 +47,8 @@ bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_
 
 	VkShaderModuleCreateInfo fsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = fragment_shader_code.size,
-		.pCode = (uint32_t *)fragment_shader_code.content,
+		.codeSize = config->fragment_code_size,
+		.pCode = (uint32_t *)config->fragment_code,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
@@ -59,10 +56,8 @@ bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_
 		return false;
 	}
 
-	reflect_shader_interface(arena, context, shader, vertex_shader_code, fragment_shader_code, out_reflection);
+	reflect_shader_interface(arena, context, shader, config, out_reflection);
 	create_shader_variant(context, shader, &shader->variants[0], description);
-
-	arena_release_scratch(scratch);
 	return true;
 }
 
@@ -441,7 +436,7 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 	buffer->size = block->size;
 
 	buffer->member_count = count_shader_members(block);
-	buffer->members = arena_push_array(arena, ShaderMember, buffer->member_count);
+	buffer->members = arena_push_array_zero(arena, ShaderMember, buffer->member_count);
 
 	ShaderMember *cursor = buffer->members;
 	for (uint32_t i = 0; i < block->member_count; ++i) {
@@ -451,17 +446,17 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 	return buffer;
 }
 
-bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, FileContent vertex_shader_code, FileContent fragment_shader_code, ShaderReflection *out_reflection) {
+bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, ShaderConfig *config, ShaderReflection *out_reflection) {
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
-	result = spvReflectCreateShaderModule(vertex_shader_code.size, vertex_shader_code.content, &vertex_module);
+	result = spvReflectCreateShaderModule(config->vertex_code_size, config->vertex_code, &vertex_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect vertex shader");
 		return false;
 	}
 
-	result = spvReflectCreateShaderModule(fragment_shader_code.size, fragment_shader_code.content, &fragment_module);
+	result = spvReflectCreateShaderModule(config->fragment_code_size, config->fragment_code, &fragment_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect fragment shader");
 		spvReflectDestroyShaderModule(&vertex_module);
@@ -474,7 +469,7 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, NULL);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
-	SpvReflectInterfaceVariable **input_variables = arena_push_array(scratch.arena, SpvReflectInterfaceVariable *, input_variable_count);
+	SpvReflectInterfaceVariable **input_variables = arena_push_array_zero(scratch.arena, SpvReflectInterfaceVariable *, input_variable_count);
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, input_variables);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
@@ -542,8 +537,8 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, NULL);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
-	SpvReflectDescriptorSet **vs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, vs_set_count);
-	SpvReflectDescriptorSet **fs_sets = arena_push_array(scratch.arena, SpvReflectDescriptorSet *, fs_set_count);
+	SpvReflectDescriptorSet **vs_sets = arena_push_array_zero(scratch.arena, SpvReflectDescriptorSet *, vs_set_count);
+	SpvReflectDescriptorSet **fs_sets = arena_push_array_zero(scratch.arena, SpvReflectDescriptorSet *, fs_set_count);
 
 	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, vs_sets);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
@@ -619,7 +614,7 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	for (uint32_t i = 0; i <= max_set_index; ++i)
 		out_reflection->binding_count += merged_sets[i].binding_count;
 
-	out_reflection->bindings = arena_push_array(arena, ShaderBinding, shader->binding_count);
+	out_reflection->bindings = arena_push_array_zero(arena, ShaderBinding, out_reflection->binding_count);
 
 	for (uint32_t set_index = 0, index = 0; set_index <= max_set_index; ++set_index) {
 		SetInfo *set = &merged_sets[set_index];
@@ -630,6 +625,11 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 			ShaderBinding *dst = &out_reflection->bindings[index];
 
 			dst->name = string_duplicate(arena, string_wrap_cstring(spv->name));
+
+			if (dst != out_reflection->bindings) {
+				LOG_INFO("Current name: %.*s", FS(dst->name));
+				LOG_INFO("Last name %.*s", FS(out_reflection->bindings[index - 1].name));
+			}
 			dst->frequency = spv->set;
 			dst->binding = spv->binding;
 			dst->count = spv->count;
@@ -696,7 +696,7 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	shader->ps_count = 0;
 
 	if (vs_push_count > 0) {
-		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, vs_push_count);
+		SpvReflectBlockVariable **push_blocks = arena_push_array_zero(scratch.arena, SpvReflectBlockVariable *, vs_push_count);
 		result = spvReflectEnumeratePushConstantBlocks(&vertex_module, &vs_push_count, push_blocks);
 
 		// TODO: Merge these like with descriptors
@@ -720,7 +720,7 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	if (fs_push_count > 0) {
 		LOG_WARN("Vulkan: Push constants in fragment shader not handled in shader reflection");
 
-		SpvReflectBlockVariable **push_blocks = arena_push_array(scratch.arena, SpvReflectBlockVariable *, fs_push_count);
+		SpvReflectBlockVariable **push_blocks = arena_push_array_zero(scratch.arena, SpvReflectBlockVariable *, fs_push_count);
 		result = spvReflectEnumeratePushConstantBlocks(&fragment_module, &fs_push_count, push_blocks);
 		ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 

@@ -1,5 +1,5 @@
 #include "vk_internal.h"
-#include "renderer/vk_renderer.h"
+#include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
@@ -7,9 +7,9 @@
 
 #include <vulkan/vulkan_core.h>
 
-static VkFormat channels_to_vulkan_format(uint32_t channels);
+static VkFormat to_vulkan_format(uint32_t channels, bool is_srgb);
 
-bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels) {
+bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, bool is_srgb, uint8_t *pixels) {
 	if (store_index >= MAX_TEXTURES) {
 		LOG_ERROR("Vulkan: Texture index %d out of bounds", store_index);
 		return false;
@@ -39,7 +39,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 
 	vulkan_image_create(
 		context, indices, countof(indices),
-		width, height, channels_to_vulkan_format(channels), VK_IMAGE_TILING_OPTIMAL,
+		width, height, to_vulkan_format(channels, is_srgb), VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		texture);
 
@@ -152,19 +152,35 @@ bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_i
 	return true;
 }
 
-static VkFormat channels_to_vulkan_format(uint32_t channels) {
-	switch (channels) {
-		case 1:
-			return VK_FORMAT_R8_SRGB;
-		case 2:
-			return VK_FORMAT_R8G8_SRGB;
-		case 3:
-			return VK_FORMAT_R8G8B8_SRGB;
-		case 4:
-			return VK_FORMAT_R8G8B8A8_SRGB;
-		default: {
-			LOG_WARN("Image channels must be in 1-4 range, defaulting to 3");
-			return VK_FORMAT_R8G8B8A8_SRGB;
-		} break;
-	}
+static VkFormat to_vulkan_format(uint32_t channels, bool is_srgb) {
+	if (is_srgb)
+		switch (channels) {
+			case 1:
+				return VK_FORMAT_R8_SRGB;
+			case 2:
+				return VK_FORMAT_R8G8_SRGB;
+			case 3:
+				return VK_FORMAT_R8G8B8_SRGB;
+			case 4:
+				return VK_FORMAT_R8G8B8A8_SRGB;
+			default: {
+				LOG_WARN("Image channels must be in 1-4 range, defaulting to 3");
+				return VK_FORMAT_R8G8B8A8_SRGB;
+			} break;
+		}
+	else
+		switch (channels) {
+			case 1:
+				return VK_FORMAT_R8_UNORM;
+			case 2:
+				return VK_FORMAT_R8G8_UNORM;
+			case 3:
+				return VK_FORMAT_R8G8B8_UNORM;
+			case 4:
+				return VK_FORMAT_R8G8B8A8_UNORM;
+			default: {
+				LOG_WARN("Image channels must be in 1-4 range, defaulting to 3");
+				return VK_FORMAT_R8G8B8A8_UNORM;
+			} break;
+		}
 }

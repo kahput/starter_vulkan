@@ -1,13 +1,10 @@
-#ifndef RENDERER_TYPES_H
-#define RENDERER_TYPES_H
+#pragma once
 
 #include "common.h"
 #include "core/astring.h"
 #include "core/identifiers.h"
 
 #include <cglm/cglm.h>
-
-// TODO: Move these
 
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
@@ -217,24 +214,23 @@ typedef enum {
 } MaterialStateFlagBits;
 typedef uint32_t MaterialStateFlag;
 
-typedef struct material {
-	Handle shader;
-	MaterialStateFlag flags;
+typedef struct {
+	Handle handle;
 	ShaderReflection reflection;
 
 	void *default_ubo_data;
 	size_t ubo_size;
-	uint32_t default_textures[16];
 
+	Handle default_textures[16];
 	uint32_t instance_count;
-} MaterialBase;
+} Shader;
 
-typedef struct material_instance {
-	MaterialBase base;
+typedef struct {
+	Handle shader;
 	uint32_t override_resource_id, override_ubo_id;
 
 	MaterialStateFlag flags;
-} MaterialInstance;
+} Material;
 
 typedef struct {
 	mat4 view;
@@ -259,7 +255,5 @@ typedef struct mesh {
 	uint32_t vertex_buffer, index_buffer;
 	uint32_t vertex_count, index_count;
 
-	MaterialInstance *material;
+	Handle material;
 } Mesh;
-
-#endif

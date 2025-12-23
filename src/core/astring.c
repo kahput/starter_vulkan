@@ -19,7 +19,7 @@ String string_create_from_arena(Arena *arena, size_t size) {
 	String rv = {
 		.length = size - 1,
 		.size = size,
-		.data = arena_push_zero(arena, size, 1)
+		.data = arena_push_array_zero(arena, char, size),
 	};
 
 	rv.data[rv.length] = '\0';
@@ -59,7 +59,7 @@ uint64_t string_hash64(String string) {
 
 String string_duplicate(struct arena *arena, String target) {
 	String copy = target;
-	copy.data = arena_push_zero(arena, target.size, 1);
+	copy.data = arena_push_array_zero(arena, char, target.size);
 
 	if (copy.size)
 		memcpy(copy.data, target.data, copy.size);
@@ -68,7 +68,7 @@ String string_duplicate(struct arena *arena, String target) {
 
 String string_duplicate_by_length(struct arena *arena, String target) {
 	String copy = target;
-	copy.data = arena_push_zero(arena, target.length, 1);
+	copy.data = arena_push_array_zero(arena, char, target.length);
 
 	if (copy.length)
 		memcpy(copy.data, target.data, copy.length);
@@ -146,7 +146,7 @@ String string_directory_from_path(Arena *arena, String path) {
 		.size = final + 1,
 	};
 
-	directory.data = arena_push_zero(arena, path.size, 1);
+	directory.data = arena_push_array_zero(arena, char, path.size);
 
 	memcpy(directory.data, path.data, directory.size);
 	directory.data[directory.length] = '\0';
@@ -176,7 +176,7 @@ String string_format(Arena *arena, String format, ...) {
 	// 2. Allocate exact memory
 	// +1 for the null terminator
 	size_t size = length + 1;
-	char *buffer = arena_push_zero(arena, size, 1);
+	char *buffer = arena_push_array_zero(arena, char, size);
 
 	// 3. Pass Two: Write the formatted string to the buffer
 	vsnprintf(buffer, size, format.data, args_copy);
@@ -206,7 +206,7 @@ String string_filename_from_path(Arena *arena, String path) {
 		.length = length - start,
 		.size = (length + 1) - start
 	};
-	name.data = arena_push_zero(arena, name.size, 1);
+	name.data = arena_push_array_zero(arena, char, name.size);
 	memcpy(name.data, path.data + start, name.length);
 	name.data[length] = '\0';
 
@@ -227,7 +227,7 @@ String string_extension_from_path(struct arena *arena, String name) {
 		.length = length - start,
 		.size = (length + 1) - start
 	};
-	extension.data = arena_push_zero(arena, extension.size, 1);
+	extension.data = arena_push_array_zero(arena, char, extension.size);
 	memcpy(extension.data, name.data + start, extension.length);
 	extension.data[length] = '\0';
 
@@ -256,7 +256,7 @@ char *cstring_null_terminated(struct arena *arena, String string) {
 	if (string.data[string.length] == '\0')
 		return (char *)string.data;
 
-	char *null_termianted = arena_push_zero(arena, string.length + 1, 1);
+	char *null_termianted = arena_push_array_zero(arena, char, string.length + 1);
 	mempcpy(null_termianted, string.data, string.length + 1);
 	null_termianted[string.length] = '\0';
 

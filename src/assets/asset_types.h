@@ -50,20 +50,18 @@ typedef struct {
 	PropertyType type;
 	union {
 		float f;
-		vec2 vecf2;
-		vec3 vecf3;
-		vec4 vecf4;
+		vec2 vec2f;
+		vec3 vec3f;
+		vec4 vec4f;
 
 		int32_t i;
-		ivec2 veci2;
-		ivec3 veci3;
-		ivec4 veci4;
+		ivec2 vec2i;
+		ivec3 vec3i;
+		ivec4 vec4i;
 
 		uint32_t u;
 
 		ImageSource *image;
-
-		uint8_t *bytes;
 	} as;
 } MaterialProperty;
 

@@ -2,14 +2,12 @@
 
 #define CGLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <cglm/cglm.h>
+#include <vulkan/vulkan_core.h>
+
+#include "renderer/backend/vulkan_api.h"
 
 #include "common.h"
-#include "core/identifiers.h"
 #include "allocators/arena.h"
-
-#include "renderer/vk_renderer.h"
-
-#include <vulkan/vulkan_core.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define SWAPCHAIN_BUFFERING 3

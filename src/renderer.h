@@ -5,32 +5,65 @@
 
 #include "scene.h"
 
-typedef Handle HMaterial;
-typedef Handle HMesh;
+typedef Handle RTexture;
+typedef Handle RShader;
+typedef Handle RMaterial;
+typedef Handle RMesh;
 
 bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t width, uint32_t height);
 void renderer_system_shutdown(void);
 
 bool renderer_begin_frame(Camera *camera);
-bool renderer_draw_mesh(Handle mesh, Handle material_instance, mat4 transform);
+bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, mat4 transform);
 bool renderer_end_frame(void);
 
 bool renderer_on_resize(uint32_t width, uint32_t height);
 
-Handle renderer_image_upload(UUID id, ImageSource *source);
-// Handle renderer_texture_upload(UUID id, ImageSource *source );
+typedef struct {
+	void *pixels;
+	uint32_t width;
+	uint32_t height;
+	uint32_t channels;
+	bool is_srgb;
+} TextureConfig;
+RTexture renderer_texture_create(UUID id, TextureConfig *config);
+bool renderer_texture_destroy(RTexture);
 
-Handle renderer_mesh_upload(UUID id, MeshSource *mesh);
+typedef struct {
+	void *vertices;
+	uint32_t vertex_size;
+	uint32_t vertex_count;
 
-Handle renderer_material_base_upload(UUID id, MaterialSource *source);
+	void *indices;
+	uint32_t index_size;
+	uint32_t index_count;
+} MeshConfig;
+RMesh renderer_mesh_create(UUID id, MeshConfig *config);
+bool renderer_mesh_destroy(RMesh mesh);
 
-Handle renderer_material_instance_create(Handle base);
-bool renderer_material_instance_destroy(Handle instance);
+typedef struct {
+	void *vertex_code;
+	size_t vertex_code_size;
 
-bool renderer_material_instance_setf(Handle instance, String name, float value);
-bool renderer_material_instance_set2fv(Handle instance, String name, vec2 value);
-bool renderer_material_instance_set3fv(Handle instance, String name, vec3 value);
-bool renderer_material_instance_set4fv(Handle instance, String name, vec4 value);
+	void *fragment_code;
+	size_t fragment_code_size;
 
-bool renderer_material_instance_set_texture(Handle instance, String name, UUID texture);
+	// PipelineDesc pipeline_desc;
+
+	void *default_ubo_data;
+	size_t ubo_size;
+} ShaderConfig;
+RShader renderer_shader_create(UUID id, ShaderConfig *config);
+bool renderer_shader_destroy(RShader shader);
+
+RMaterial renderer_material_create(RShader base);
+RMaterial renderer_material_default(void);
+bool renderer_material_destroy(RMaterial material);
+
+bool renderer_material_setf(RMaterial material, String name, float value);
+bool renderer_material_set2fv(RMaterial material, String name, vec2 value);
+bool renderer_material_set3fv(RMaterial material, String name, vec3 value);
+bool renderer_material_set4fv(RMaterial material, String name, vec4 value);
+
+bool renderer_material_set_texture(Handle instance, String name, UUID texture);
 // bool renderer_material_instance_commit(Handle instance);

@@ -70,10 +70,10 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 	{ .name = { .data = "u_occlusion_texture", .length = 19, .size = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
 	{ .name = { .data = "u_emissive_texture", .length = 18, .size = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
 
-	{ .name = { .data = "base_color_factor", .length = 17, .size = 18 }, .type = PROPERTY_TYPE_FLOAT4, .as.vecf4 = { 1.0f, 1.0f, 1.0f, 1.0f } },
+	{ .name = { .data = "base_color_factor", .length = 17, .size = 18 }, .type = PROPERTY_TYPE_FLOAT4, .as.vec4f = { 1.0f, 1.0f, 1.0f, 1.0f } },
 	{ .name = { .data = "metallic_factor", .length = 15, .size = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.0f },
 	{ .name = { .data = "roughness_factor", .length = 16, .size = 17 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.5f },
-	{ .name = { .data = "emissive_factor", .length = 15, .size = 16 }, .type = PROPERTY_TYPE_FLOAT3, .as.vecf3 = { 1.0f, 1.0f, 1.0f } },
+	{ .name = { .data = "emissive_factor", .length = 15, .size = 16 }, .type = PROPERTY_TYPE_FLOAT3, .as.vec3f = { 1.0f, 1.0f, 1.0f } },
 };
 
 bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
@@ -140,7 +140,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		if (src->has_pbr_metallic_roughness) {
 			cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
 
-			mempcpy(dst->properties[5].as.vecf4, pbr->base_color_factor, sizeof(vec4));
+			mempcpy(dst->properties[5].as.vec4f, pbr->base_color_factor, sizeof(vec4));
 
 			dst->properties[6].as.f = pbr->metallic_factor;
 			dst->properties[7].as.f = pbr->roughness_factor;
@@ -152,7 +152,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		dst->properties[2].as.image = find_loaded_texture(data, out_model, src->normal_texture.texture);
 		dst->properties[3].as.image = find_loaded_texture(data, out_model, src->occlusion_texture.texture);
 
-		memcpy(dst->properties[8].as.vecf3, src->emissive_factor, sizeof(vec3));
+		memcpy(dst->properties[8].as.vec3f, src->emissive_factor, sizeof(vec3));
 		dst->properties[4].as.image = find_loaded_texture(data, out_model, src->emissive_texture.texture);
 	}
 

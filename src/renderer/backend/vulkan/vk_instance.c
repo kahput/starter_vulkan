@@ -1,4 +1,4 @@
-#include "renderer/vk_renderer.h"
+#include "renderer/backend/vulkan_api.h"
 
 #include "platform.h"
 #include "vk_internal.h"
@@ -142,4 +142,20 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
 
 void create_debug_messenger(VulkanContext *context) {
 	vkCreateDebugUtilsMessenger(context->instance, &debug_utils_create_info, NULL, &context->debug_messenger);
+}
+
+VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default) {
+	return VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messneger_default) {
+	return;
+}
+
+void vulkan_load_extensions(VulkanContext *context) {
+	vkCreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context->instance, "vkCreateDebugUtilsMessengerEXT");
+	vkDestroyDebugUtilsMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context->instance, "vkDestroyDebugUtilsMessenger");
+	if (vkCreateDebugUtilsMessenger == NULL)
+		LOG_ERROR("Failed to load vkCreateDebugUtilsMessenger extension");
+	if (vkDestroyDebugUtilsMessenger == NULL)
+		LOG_ERROR("Failed to load vkDestroyDebugUtilsMessenger extension");
 }

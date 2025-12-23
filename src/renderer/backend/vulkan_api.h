@@ -1,7 +1,11 @@
 #pragma once
 
 #include "common.h"
-#include "rinternal.h"
+
+// TODO: Maybe move need structs to core_renderer_types.h
+#include "renderer.h"
+
+#include "renderer/r_internal.h"
 
 #include "core/astring.h"
 
@@ -26,7 +30,7 @@ bool Vulkan_renderer_frame_end(VulkanContext *context);
 bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, FileContent vertex_shader_code, FileContent fragment_shader_code, PipelineDesc description, ShaderReflection *out_reflection);
+bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, ShaderConfig *config, PipelineDesc description, ShaderReflection *out_reflection);
 bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t resource_index);
 
@@ -39,7 +43,7 @@ bool vulkan_renderer_shader_resource_create(VulkanContext *context, uint32_t sto
 bool vulkan_renderer_shader_resource_set_buffer(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, uint32_t binding, uint32_t buffer_index);
 bool vulkan_renderer_shader_resource_set_texture_sampler(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index);
 
-bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, uint8_t *pixels);
+bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, bool is_srgb, uint8_t *pixels);
 bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index);
 
 bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);

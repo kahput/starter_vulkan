@@ -73,7 +73,7 @@ void logger_log(LogLevel level, const char *file, int line, const char *format, 
 	va_list arg_ptr;
 	va_start(arg_ptr, format);
 	printf(
-		"%s %s%s%-5s\x1b[0m \x1b[37m%s:%d:\x1b[0m ",
+		"%s %s%s[%s]\x1b[0m \x1b[37m%s:%d:\x1b[0m ",
 		time_buffer, // Timestamp
 		g_log_level_colors[level], // Start color for the level
 		indent_buffer,
