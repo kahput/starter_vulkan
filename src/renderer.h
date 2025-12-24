@@ -57,6 +57,7 @@ typedef struct {
 	size_t ubo_size;
 } ShaderConfig;
 RShader renderer_shader_create(UUID id, ShaderConfig *config);
+RShader renderer_shader_default(void);
 bool renderer_shader_destroy(RShader shader);
 
 RMaterial renderer_material_create(RShader base);

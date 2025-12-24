@@ -18,7 +18,11 @@
 #include "allocators/arena.h"
 #include "core/identifiers.h"
 
+#include <cglm/affine-pre.h>
+#include <cglm/affine.h>
 #include <cglm/cglm.h>
+#include <cglm/mat4.h>
+#include <cglm/vec3.h>
 
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
 #define GATE_DOOR_FILE_PATH "assets/models/modular_dungeon/gate-door.glb"
@@ -80,8 +84,8 @@ int main(void) {
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
 	state.editor_camera = (Camera){
-		.position = { 0.0f, 1.0f, 10.0f },
-		.target = { 0.0f, 1.0f, 5.0f },
+		.position = { 27.0f, 15.0f, -3.0f },
+		.target = { 0.0f, 0.0f, -3.0f },
 		.up = { 0.0f, 1.0f, 0.0f },
 		.fov = 45.f,
 		.projection = CAMERA_PROJECTION_PERSPECTIVE
@@ -142,28 +146,51 @@ int main(void) {
 	Handle mat_instance2 = renderer_material_create(shader);
 	renderer_material_set_texture(mat_instance2, S("u_texture"), sprite_id_1);
 
-	ModelSource *model_src;
-	UUID model_id = asset_library_request_model(S("gate.glb"), &model_src);
+	// glTF Mesh
+	ModelSource *model_src = NULL;
+	UUID model_id = asset_library_request_model(S("room-large.glb"), &model_src);
 
-	mconfig = (MeshConfig){
-		.vertices = model_src->meshes->vertices,
-		.vertex_size = (sizeof *model_src->meshes->vertices),
-		.vertex_count = model_src->meshes->vertex_count,
-		.indices = model_src->meshes->indices,
-		.index_size = (sizeof *model_src->meshes->indices),
-		.index_count = model_src->meshes->index_count,
-	};
-	RMesh gate = renderer_mesh_create(model_id, &mconfig);
-	RMaterial pbr = renderer_material_default();
+	RMesh large_room = INVALID_HANDLE;
+	RMaterial large_room_mat = INVALID_HANDLE;
+	if (model_src) {
+		mconfig = (MeshConfig){
+			.vertices = model_src->meshes->vertices,
+			.vertex_size = (sizeof *model_src->meshes[0].vertices),
+			.vertex_count = model_src->meshes[0].vertex_count,
+			.indices = model_src->meshes[0].indices,
+			.index_size = (sizeof *model_src->meshes[0].indices),
+			.index_count = model_src->meshes[0].index_count,
+		};
+		large_room = renderer_mesh_create(model_id, &mconfig);
+		TextureConfig config = { .pixels = model_src->images->pixels, .width = model_src->images->width, .height = model_src->images->height, .channels = model_src->images->channels, .is_srgb = true };
+
+		renderer_texture_create(model_src->images->id, &config);
+
+		large_room_mat = renderer_material_create(renderer_shader_default());
+		renderer_material_set_texture(large_room_mat, model_src->materials->properties[0].name, model_src->images->id);
+	}
 
 	UUID current_texture = sprite_id_1;
 
+	float timer_accumulator = 0.0f;
+	uint32_t frames = 0;
+
 	while (platform_should_close(&state.display) == false) {
-		float current_frame = (double)(platform_time_ms(&state.display) - state.start_time) / 1000.0f;
+		float current_frame = platform_time_seconds(&state.display);
 		delta_time = current_frame - last_frame;
 		last_frame = current_frame;
 
 		platform_poll_events(&state.display);
+
+		timer_accumulator += delta_time;
+		frames++;
+
+		if (timer_accumulator >= 1.0f) {
+			LOG_INFO("FPS: %d", frames);
+
+			frames = 0;
+			timer_accumulator = 0;
+		}
 
 		state.current_layer->update(delta_time);
 
@@ -173,15 +200,19 @@ int main(void) {
 		if (renderer_begin_frame(&state.editor_camera)) {
 			renderer_material_set4fv(mat_instance, S("tint"), (vec4){ (cos(tint) + 1.0f) / 2.f, 1.0f, 1.0f, 1.0f });
 
-			mat4 transform;
-			glm_translate_make(transform, (vec3){ 0.0f, 1.0f, 0.0f });
+			mat4 transform = GLM_MAT4_IDENTITY_INIT;
+			glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
+			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
 			renderer_draw_mesh(plane, mat_instance, transform);
 
-			glm_translate_make(transform, (vec3){ 3.0f, 1.0f, 0.0f });
+			glm_mat4_identity(transform);
+			glm_translate(transform, (vec3){ 0.0f, 0.75f, 0.0f });
+			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
 			renderer_draw_mesh(plane, mat_instance2, transform);
 
-			glm_translate_make(transform, (vec3){ 0.0f, 0.0f, -3.0f });
-			renderer_draw_mesh(gate, pbr, transform);
+			glm_mat4_identity(transform);
+			glm_translate(transform, (vec3){ 0.0f, 0.0f, -3.0f });
+			renderer_draw_mesh(large_room, large_room_mat, transform);
 
 			renderer_end_frame();
 		}
@@ -192,6 +223,9 @@ int main(void) {
 			renderer_material_set_texture(mat_instance, S("u_texture"), current_texture == sprite_id_1 ? sprite_id : sprite_id_1);
 		}
 
+		// LOG_INFO("CameraPosition { %.2f, %.2f, %.2f }, target = { %.2f, %.2f, %.2f }",
+		// 	state.editor_camera.position[0], state.editor_camera.position[1], state.editor_camera.position[2],
+		// 	state.editor_camera.target[0], state.editor_camera.target[1], state.editor_camera.target[2]);
 		static bool wireframe = false;
 		if (input_key_pressed(SV_KEY_ENTER)) {
 			wireframe = wireframe ? false : true;

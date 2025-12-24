@@ -4,6 +4,7 @@
 
 #include "allocators/arena.h"
 
+#include "common.h"
 #include "core/astring.h"
 #include "core/hash_trie.h"
 #include "core/identifiers.h"
@@ -28,21 +29,23 @@ bool asset_library_startup(void *memory, size_t size) {
 	size_t minimum_footprint = sizeof(AssetLibrary) + sizeof(Arena);
 
 	uintptr_t base_addr = (uintptr_t)memory;
-	size_t alignment_needed = alignof(AssetLibrary);
-	size_t padding = (alignment_needed - (base_addr % alignment_needed)) % alignment_needed;
+	uintptr_t aligned_addr = aligned_address((uintptr_t)memory, alignof(Arena));
+	size_t padding = aligned_addr - base_addr;
 
-	if (size < minimum_footprint) {
+	if (size < minimum_footprint + padding) {
 		LOG_ERROR("Asset: Failed to startup asset library, memory footprint too small");
 		return false;
 	}
-	library = (AssetLibrary *)((uint8_t *)memory + padding);
-	library->arena = (Arena *)(library + 1);
+	Arena *arena = (Arena *)aligned_addr;
 
-	*library->arena = (Arena){
-		.memory = library->arena + 1,
+	*arena = (Arena){
+		.memory = arena + 1,
 		.offset = 0,
-		.capacity = size - minimum_footprint
+		.capacity = size - sizeof(Arena)
 	};
+
+	library = arena_push_struct_zero(arena, AssetLibrary);
+	library->arena = arena;
 
 	return true;
 }

@@ -69,12 +69,12 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	}
 
 	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
-		if (context->image_pool[index].handle != NULL)
+		if (context->image_pool[index].handle)
 			vulkan_renderer_texture_destroy(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
-		if (context->sampler_pool[index].handle != NULL)
+		if (context->sampler_pool[index].handle)
 			vulkan_renderer_sampler_destroy(context, index);
 	}
 

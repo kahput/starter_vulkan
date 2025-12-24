@@ -30,6 +30,7 @@ void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint3
 
 bool platform_pointer_mode(Platform *platform, PointerMode mode);
 
+double platform_time_seconds(Platform *platform);
 uint64_t platform_time_ms(Platform *platform);
 uint64_t platform_random_64(Platform *platform);
 

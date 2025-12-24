@@ -67,6 +67,7 @@ bool platform_init_x11(Platform *platform) {
 	internal->poll_events = x11_poll_events;
 	internal->should_close = x11_should_close;
 
+	internal->time = x11_time;
 	internal->time_ms = x11_time_ms;
 
 	internal->logical_dimensions = x11_get_logical_dimensions;
@@ -166,6 +167,12 @@ void x11_poll_events(Platform *platform) {
 }
 bool x11_should_close(Platform *platform) {
 	return platform->should_close;
+}
+
+double x11_time(Platform *platform) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (double)ts.tv_sec + (double)ts.tv_nsec / 1.0e9;
 }
 
 uint64_t x11_time_ms(Platform *platform) {

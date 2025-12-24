@@ -3,21 +3,21 @@
 #include "platform.h"
 
 #if defined(PLATFORM_WIN32)
-#include "platform/win32_platform.h"
+	#include "platform/win32_platform.h"
 #else
-#define PLATFORM_WIN32_LIBRARY_STATE
+	#define PLATFORM_WIN32_LIBRARY_STATE
 #endif
 
 #if defined(PLATFORM_WAYLAND)
-#include "platform/wl_platform.h"
+	#include "platform/wl_platform.h"
 #else
-#define PLATFORM_WAYLAND_LIBRARY_STATE
+	#define PLATFORM_WAYLAND_LIBRARY_STATE
 #endif
 
 #if defined(PLATFORM_X11)
-#include "platform/x11_platform.h"
+	#include "platform/x11_platform.h"
 #else
-#define PLATFORM_X11_LIBRARY_STATE
+	#define PLATFORM_X11_LIBRARY_STATE
 #endif
 
 #define PLATFORM_LIBRARY_STATE     \
@@ -38,6 +38,7 @@ struct platform_internal {
 
 	bool (*pointer_mode)(Platform *, PointerMode);
 
+	double (*time)(Platform *);
 	uint64_t (*time_ms)(Platform *);
 	uint64_t (*random_64)(Platform *);
 

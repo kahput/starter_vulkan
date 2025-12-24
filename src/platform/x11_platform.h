@@ -3,6 +3,7 @@
 #include <xcb/randr.h>
 #include <xcb/xcb.h>
 
+#include "platform.h"
 #include "common.h"
 
 typedef xcb_connection_t *(*PFN_xcb_connect)(const char *displayname, int *screenp);
@@ -66,6 +67,7 @@ void x11_shutdown(Platform *platform);
 void x11_poll_events(Platform *platform);
 bool x11_should_close(Platform *platform);
 
+double x11_time(Platform *platform);
 uint64_t x11_time_ms(Platform *platform);
 
 void x11_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);

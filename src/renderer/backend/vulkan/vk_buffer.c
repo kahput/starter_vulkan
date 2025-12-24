@@ -89,7 +89,7 @@ bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_in
 
 	VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle[0] == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to destroy buffer at index %d, but index is already in use", retrieve_index);
+		LOG_FATAL("buffer at index %d is not in use, aborting vulkan_renderer_buffer_destroy", retrieve_index);
 		ASSERT(false);
 		return false;
 	}

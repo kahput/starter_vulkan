@@ -1,4 +1,5 @@
 #include "platform/wl_platform.h"
+#include "core/debug.h"
 #include "platform.h"
 #include "platform/internal.h"
 
@@ -176,8 +177,9 @@ bool platform_init_wayland(Platform *platform) {
 
 	void **array = &_wl_library.handle;
 	for (uint32_t i = 0; i < LIBRARY_COUNT; i++) {
-		if (array[i] == NULL)
+		if (array[i] == NULL) {
 			return false;
+		}
 	}
 
 	internal->startup = wl_startup;
@@ -191,6 +193,7 @@ bool platform_init_wayland(Platform *platform) {
 
 	internal->pointer_mode = wl_pointer_mode;
 
+	internal->time = wl_time;
 	internal->time_ms = wl_time_ms;
 	internal->random_64 = wl_random_64;
 
@@ -316,6 +319,12 @@ bool wl_pointer_mode(Platform *platform, PointerMode mode) {
 		return true;
 	}
 	return false;
+}
+
+double wl_time(Platform *platform) {
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (double)ts.tv_sec + (double)ts.tv_nsec / 1.0e9;
 }
 
 uint64_t wl_time_ms(Platform *platform) {

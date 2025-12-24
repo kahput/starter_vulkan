@@ -87,6 +87,11 @@ bool platform_pointer_mode(Platform *platform, PointerMode mode) {
 	return internal->pointer_mode(platform, mode);
 }
 
+double platform_time_seconds(Platform *platform) {
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	return internal->time(platform);
+}
+
 uint64_t platform_time_ms(Platform *platform) {
 	struct platform_internal *internal = (struct platform_internal *)platform->internal;
 	return internal->time_ms(platform);

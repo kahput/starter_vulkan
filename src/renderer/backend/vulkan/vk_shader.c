@@ -95,7 +95,10 @@ bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_in
 	for (uint32_t index = 0; index < shader->variant_count; ++index) {
 		VulkanPipeline *pipeline = &shader->variants[index];
 
-		vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
+		if (pipeline->handle) {
+			vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
+			pipeline->handle = NULL;
+		}
 	}
 
 	return true;

@@ -221,6 +221,7 @@ void wl_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *h
 
 bool wl_pointer_mode(Platform *platform, PointerMode mode);
 
+double wl_time(Platform *platform);
 uint64_t wl_time_ms(Platform *platform);
 uint64_t wl_random_64(Platform *platform);
 

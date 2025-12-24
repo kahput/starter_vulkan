@@ -16,6 +16,7 @@
 #include "platform/filesystem.h"
 
 #include <cglm/vec3.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef struct {
@@ -84,25 +85,26 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 	size_t minimum_footprint = sizeof(Renderer) + sizeof(Arena);
 
 	uintptr_t base_addr = (uintptr_t)memory;
-	size_t alignment_needed = alignof(Renderer);
-	size_t padding = (alignment_needed - (base_addr % alignment_needed)) % alignment_needed;
+	uintptr_t aligned_addr = (uintptr_t)aligned_address((uintptr_t)memory, alignof(memory));
+	size_t padding = aligned_addr - base_addr;
 
 	if (size < minimum_footprint + padding) {
 		LOG_ERROR("Renderer: Failed to create renderer, memory footprint too small");
 		ASSERT(false);
 		return false;
 	}
-	renderer = (Renderer *)((uint8_t *)memory + padding);
-	renderer->arena = (Arena *)(renderer + 1);
-	renderer->display = display;
-
-	renderer->width = width, renderer->height = height;
-
-	*renderer->arena = (Arena){
-		.memory = renderer->arena + 1,
+	Arena *arena = (Arena *)aligned_addr;
+	*arena = (Arena){
+		.memory = arena + 1,
 		.offset = 0,
-		.capacity = size - minimum_footprint
+		.capacity = size - sizeof(Arena)
 	};
+
+	renderer = arena_push_struct_zero(arena, Renderer);
+	renderer->arena = arena;
+
+	renderer->display = display;
+	renderer->width = width, renderer->height = height;
 
 	if (vulkan_renderer_create(renderer->arena, renderer->display, &renderer->context) == false) {
 		LOG_ERROR("Renderer: Failed to create vulkan context");
@@ -194,6 +196,10 @@ RShader renderer_shader_create(UUID id, ShaderConfig *config) {
 	if (config)
 		return handle_create_with_uuid(resolve_shader(id, config), id);
 	return INVALID_HANDLE;
+}
+
+RShader renderer_shader_default(void) {
+	return renderer->default_shader;
 }
 
 Handle renderer_mesh_create(UUID id, MeshConfig *config) {
