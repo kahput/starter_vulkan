@@ -3,6 +3,7 @@
 #include "assets/asset_types.h"
 #include "core/identifiers.h"
 
+#include "renderer/r_internal.h"
 #include "scene.h"
 
 typedef Handle RTexture;
@@ -16,6 +17,8 @@ void renderer_system_shutdown(void);
 bool renderer_begin_frame(Camera *camera);
 bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, mat4 transform);
 bool renderer_end_frame(void);
+
+void renderer_state_global_wireframe_set(bool active);
 
 bool renderer_on_resize(uint32_t width, uint32_t height);
 

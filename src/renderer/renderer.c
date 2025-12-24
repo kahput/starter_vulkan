@@ -246,7 +246,7 @@ Handle renderer_material_create(Handle base_material_handle) {
 
 	for (uint32_t i = 0; i < shader->reflection.binding_count; ++i) {
 		ShaderBinding *b = &shader->reflection.bindings[i];
-		if (b->frequency == SHADER_UNIFORM_FREQUENCY_PER_MATERIAL && b->type == SHADER_BINDING_COMBINED_IMAGE_SAMPLER) {
+		if (b->frequency == SHADER_UNIFORM_FREQUENCY_PER_MATERIAL && b->type == SHADER_BINDING_TEXTURE_2D) {
 			RTexture rtexture = shader->default_textures[b->binding];
 			Texture *texture = ((Texture *)renderer->texture_allocator->slots) + rtexture.index;
 
@@ -316,7 +316,7 @@ bool renderer_material_set_texture(Handle instance_handle, String name, UUID tex
 	int32_t texture_binding = -1;
 	for (uint32_t i = 0; i < shader->reflection.binding_count; ++i) {
 		ShaderBinding *binding = &shader->reflection.bindings[i];
-		if (string_equals(binding->name, name) && binding->type == SHADER_BINDING_COMBINED_IMAGE_SAMPLER &&
+		if (string_equals(binding->name, name) && binding->type == SHADER_BINDING_TEXTURE_2D &&
 			binding->frequency == SHADER_UNIFORM_FREQUENCY_PER_MATERIAL) {
 			texture_binding = binding->binding;
 			break;
@@ -404,6 +404,10 @@ bool renderer_end_frame(void) {
 	return Vulkan_renderer_frame_end(renderer->context);
 }
 
+void renderer_state_global_wireframe_set(bool active) {
+	vulkan_renderer_shader_global_state_wireframe_set(renderer->context, active);
+}
+
 bool renderer_on_resize(uint32_t width, uint32_t height) {
 	if (vulkan_renderer_on_resize(renderer->context, width, height)) {
 		renderer->width = width, renderer->height = height;
@@ -474,10 +478,11 @@ uint32_t resolve_shader(UUID id, ShaderConfig *config) {
 	shader->handle = handle_create(recycler_new_index(&renderer->shader_indices));
 	shader->instance_count = 0;
 
+	PipelineDesc desc = DEFAULT_PIPELINE();
 	vulkan_renderer_shader_create(
 		renderer->arena, renderer->context,
 		shader->handle.index, config,
-		DEFAULT_PIPELINE(),
+		desc,
 		&shader->reflection);
 
 	for (uint32_t index = 0; index < countof(shader->default_textures); ++index)
@@ -495,10 +500,10 @@ uint32_t resolve_shader(UUID id, ShaderConfig *config) {
 			shader->ubo_size = binding->buffer_layout->size;
 			shader->default_ubo_data = arena_push_zero(renderer->arena, shader->ubo_size, 16);
 			if (config->default_ubo_data)
-			memcpy(shader->default_ubo_data, config->default_ubo_data, shader->ubo_size);
+				memcpy(shader->default_ubo_data, config->default_ubo_data, shader->ubo_size);
 		}
 
-		if (binding->type == SHADER_BINDING_COMBINED_IMAGE_SAMPLER)
+		if (binding->type == SHADER_BINDING_TEXTURE_2D)
 			if (string_contains(binding->name, S("normal")) != -1)
 				shader->default_textures[binding->binding] = renderer->default_texture_normal;
 	}

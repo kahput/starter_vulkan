@@ -16,10 +16,16 @@ bool vulkan_sync_objects_create(VulkanContext *context) {
 		.flags = VK_FENCE_CREATE_SIGNALED_BIT
 	};
 
-	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		if (vkCreateSemaphore(context->device.logical, &s_create_info, NULL, context->image_available_semaphores + i) != VK_SUCCESS ||
-			vkCreateSemaphore(context->device.logical, &s_create_info, NULL, context->render_finished_semaphores + i) != VK_SUCCESS ||
-			vkCreateFence(context->device.logical, &f_create_info, NULL, context->in_flight_fences + i) != VK_SUCCESS) {
+	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
+		if (vkCreateSemaphore(context->device.logical, &s_create_info, NULL, context->image_available_semaphores + frame_index) != VK_SUCCESS ||
+			vkCreateFence(context->device.logical, &f_create_info, NULL, context->in_flight_fences + frame_index) != VK_SUCCESS) {
+			LOG_ERROR("Failed to create synchronization objects");
+			return false;
+		}
+	}
+
+	for (uint32_t image_index = 0; image_index < SWAPCHAIN_IMAGE_COUNT; ++image_index) {
+		if (vkCreateSemaphore(context->device.logical, &s_create_info, NULL, context->render_finished_semaphores + image_index) != VK_SUCCESS) {
 			LOG_ERROR("Failed to create synchronization objects");
 			return false;
 		}

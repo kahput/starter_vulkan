@@ -1,30 +1,24 @@
+#include "input/input_types.h"
 #include "platform.h"
-
-#include "core/debug.h"
-#include "core/astring.h"
-#include "core/identifiers.h"
-
-#include "assets.h"
-#include "assets/asset_types.h"
 
 #include "event.h"
 #include "events/platform_events.h"
 
 #include "input.h"
 
+#include "assets.h"
+#include "assets/asset_types.h"
+
 #include "renderer.h"
 
-#include <cglm/affine.h>
-#include <cglm/cglm.h>
-#include <cglm/mat4.h>
-#include <cglm/types.h>
-#include <math.h>
-#include <stdalign.h>
-
 #include "common.h"
+#include "core/debug.h"
 #include "core/logger.h"
-
+#include "core/astring.h"
 #include "allocators/arena.h"
+#include "core/identifiers.h"
+
+#include <cglm/cglm.h>
 
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
 #define GATE_DOOR_FILE_PATH "assets/models/modular_dungeon/gate-door.glb"
@@ -162,6 +156,8 @@ int main(void) {
 	RMesh gate = renderer_mesh_create(model_id, &mconfig);
 	RMaterial pbr = renderer_material_default();
 
+	UUID current_texture = sprite_id_1;
+
 	while (platform_should_close(&state.display) == false) {
 		float current_frame = (double)(platform_time_ms(&state.display) - state.start_time) / 1000.0f;
 		delta_time = current_frame - last_frame;
@@ -188,6 +184,18 @@ int main(void) {
 			renderer_draw_mesh(gate, pbr, transform);
 
 			renderer_end_frame();
+		}
+
+		if (input_key_pressed(SV_KEY_L)) {
+			current_texture = current_texture == sprite_id_1 ? sprite_id : sprite_id_1;
+			renderer_material_set_texture(mat_instance2, S("u_texture"), current_texture);
+			renderer_material_set_texture(mat_instance, S("u_texture"), current_texture == sprite_id_1 ? sprite_id : sprite_id_1);
+		}
+
+		static bool wireframe = false;
+		if (input_key_pressed(SV_KEY_ENTER)) {
+			wireframe = wireframe ? false : true;
+			renderer_state_global_wireframe_set(wireframe);
 		}
 
 		if (input_key_down(SV_KEY_LEFTCTRL))

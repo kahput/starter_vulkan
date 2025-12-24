@@ -1,3 +1,4 @@
+#include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
@@ -25,7 +26,7 @@ bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_
 
 	VulkanShader *shader = &context->shader_pool[store_index];
 	if (shader->vertex_shader != NULL || shader->fragment_shader != NULL) {
-		ASSERT_FORMAT(false, "Engine: Frontend renderer tried to allocate shader at index %d, but index is already in use", store_index);
+		ASSERT_FORMAT(false, "Vulkan: shader at index %d already in use, aborting vulkan_renderer_shader_create", store_index);
 		return false;
 	}
 
@@ -57,7 +58,15 @@ bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_
 	}
 
 	reflect_shader_interface(arena, context, shader, config, out_reflection);
+
+	shader->current_variant = description.polygon_mode == POLYGON_MODE_FILL ? 0 : 1;
+
+	description.polygon_mode = POLYGON_MODE_FILL;
 	create_shader_variant(context, shader, &shader->variants[0], description);
+
+	description.polygon_mode = POLYGON_MODE_LINE;
+	create_shader_variant(context, shader, &shader->variants[1], description);
+
 	return true;
 }
 
@@ -236,7 +245,7 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, 
 	}
 
 	VulkanShader *shader = &context->shader_pool[shader_index];
-	VulkanPipeline *pipeline = &shader->variants[0];
+	VulkanPipeline *pipeline = &shader->variants[shader->current_variant];
 	if (pipeline->handle == NULL) {
 		ASSERT_FORMAT(false, "Engine: Frontend renderer tried to bind shader at index %d, but index is not in use", shader_index);
 		return false;
@@ -394,6 +403,17 @@ bool vulkan_renderer_shader_resource_set_texture_sampler(VulkanContext *context,
 	}
 
 	return true;
+}
+
+void vulkan_renderer_shader_global_state_wireframe_set(VulkanContext *context, bool active) {
+	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
+		VulkanShader *shader = &context->shader_pool[index];
+		if (shader == NULL)
+			continue;
+
+		shader->current_variant = active ? 1 : shader->current_variant == 1 ? 0
+																			: shader->current_variant;
+	}
 }
 
 static uint32_t count_shader_members(SpvReflectBlockVariable *var) {
@@ -648,31 +668,31 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 				dst->type = SHADER_BINDING_STORAGE_BUFFER;
 				dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
 			} else if (type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
-				dst->type = SHADER_BINDING_COMBINED_IMAGE_SAMPLER;
+				dst->type = SHADER_BINDING_TEXTURE_2D;
 			}
 		}
 	}
 
-	SetInfo *global_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_FRAME];
-	if (global_reflect_info->binding_count != context->global_set.binding_count) {
-		spvReflectDestroyShaderModule(&vertex_module);
-		spvReflectDestroyShaderModule(&fragment_module);
-		arena_release_scratch(scratch);
-		LOG_ERROR("Vulkan: Shader is incompatible, aborting");
-		return false;
-	}
-
-	for (uint32_t binding_index = 0; binding_index < global_reflect_info->binding_count; ++binding_index) {
-		VkDescriptorSetLayoutBinding *binding = &global_reflect_info->vk_binding[binding_index];
-
-		if (binding->descriptorType != context->global_set.bindings[binding_index].descriptorType) {
-			LOG_ERROR("Vulkan: Shader is incompatible, aborting");
-			spvReflectDestroyShaderModule(&vertex_module);
-			spvReflectDestroyShaderModule(&fragment_module);
-			arena_release_scratch(scratch);
-			return false;
-		}
-	}
+	// SetInfo *global_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_FRAME];
+	// if (global_reflect_info->binding_count != context->global_set.binding_count) {
+	// 	spvReflectDestroyShaderModule(&vertex_module);
+	// 	spvReflectDestroyShaderModule(&fragment_module);
+	// 	arena_release_scratch(scratch);
+	// 	LOG_ERROR("Vulkan: Shader is incompatible, aborting");
+	// 	return false;
+	// }
+	//
+	// for (uint32_t binding_index = 0; binding_index < global_reflect_info->binding_count; ++binding_index) {
+	// 	VkDescriptorSetLayoutBinding *binding = &global_reflect_info->vk_binding[binding_index];
+	//
+	// 	if (binding->descriptorType != context->global_set.bindings[binding_index].descriptorType) {
+	// 		LOG_ERROR("Vulkan: Shader is incompatible, aborting");
+	// 		spvReflectDestroyShaderModule(&vertex_module);
+	// 		spvReflectDestroyShaderModule(&fragment_module);
+	// 		arena_release_scratch(scratch);
+	// 		return false;
+	// 	}
+	// }
 
 	SetInfo *material_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL];
 	if (vulkan_descriptor_layout_create(context, material_reflect_info->vk_binding, material_reflect_info->binding_count, &shader->material_set_layout) == false) {

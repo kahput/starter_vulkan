@@ -90,7 +90,7 @@ bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat fo
 	return true;
 }
 
-bool vulkan_image_transition(VulkanContext *context, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
+void vulkan_image_transition(VulkanContext *context, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
@@ -121,8 +121,34 @@ bool vulkan_image_transition(VulkanContext *context, VkImage image, VkImageAspec
 		1, &image_barrier);
 
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
+}
 
-	return true;
+void vulkan_image_transition_inline(VulkanContext *context, VkCommandBuffer command_buffer, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
+	VkImageMemoryBarrier image_barrier = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.srcAccessMask = src_access,
+		.dstAccessMask = dst_access,
+		.oldLayout = old_layout,
+		.newLayout = new_layout,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image = image,
+		.subresourceRange = {
+		  .aspectMask = aspect,
+		  .baseMipLevel = 0,
+		  .levelCount = 1,
+		  .baseArrayLayer = 0,
+		  .layerCount = 1,
+		}
+	};
+
+	vkCmdPipelineBarrier(
+		command_buffer,
+		src_stage, dst_stage,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &image_barrier);
 }
 
 bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {

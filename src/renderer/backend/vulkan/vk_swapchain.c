@@ -28,7 +28,7 @@ bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t he
 	if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount)
 		image_count = capabilities.maxImageCount;
 
-	image_count = min(image_count, SWAPCHAIN_BUFFERING);
+	image_count = min(image_count, SWAPCHAIN_IMAGE_COUNT);
 
 	VkSwapchainCreateInfoKHR swapchain_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,

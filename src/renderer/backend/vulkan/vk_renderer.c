@@ -153,8 +153,9 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 	VkClearValue clear_color = { .color = { .float32 = { 0.01f, 0.01f, 0.01f, 1.0f } } };
 	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
 
-	vulkan_image_transition(
-		context, context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+	vulkan_image_transition_inline(
+		context, context->command_buffers[context->current_frame],
+		context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
@@ -212,20 +213,20 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 bool Vulkan_renderer_frame_end(VulkanContext *context) {
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
 
-	vulkan_image_transition(
-		context, context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+	vulkan_image_transition_inline(
+		context, context->command_buffers[context->current_frame],
+		context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0);
 
-	// vkCmdEndRenderPass(context->command_buffers[context->current_frame]);
 	if (vkEndCommandBuffer(context->command_buffers[context->current_frame]) != VK_SUCCESS) {
 		LOG_ERROR("Failed to record command buffer");
 		return false;
 	}
 
 	VkSemaphore wait_semaphores[] = { context->image_available_semaphores[context->current_frame] };
-	VkSemaphore signal_semaphores[] = { context->render_finished_semaphores[context->current_frame] };
+	VkSemaphore signal_semaphores[] = { context->render_finished_semaphores[image_index] };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info = {

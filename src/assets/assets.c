@@ -236,7 +236,7 @@ UUID asset_library_request_shader(String key, ShaderSource **out_shader) {
 
 UUID asset_library_request_model(String key, ModelSource **out_model) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
-	if (!entry)
+	if (entry == NULL)
 		return INVALID_UUID;
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {

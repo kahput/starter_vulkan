@@ -33,15 +33,18 @@ bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, ShaderConfig *config, PipelineDesc description, ShaderReflection *out_reflection);
 bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t resource_index);
-
 // TODO: Variants
 // bool vulkan_renderer_shader_variant_create(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, PipelineDesc description);
 // bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, PipelineDesc description);
-// bool vulkan_renderer_shader_variant_bind(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
+// bool vulkan_renderer_shader_variant_set(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
+// bool vulkan_renderer_shader_variant_lock(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
 
 bool vulkan_renderer_shader_resource_create(VulkanContext *context, uint32_t store_index, uint32_t shader_index);
+bool vulkan_renderer_global_resource_set_buffer(VulkanContext *context, uint32_t buffer_index);
 bool vulkan_renderer_shader_resource_set_buffer(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, uint32_t binding, uint32_t buffer_index);
 bool vulkan_renderer_shader_resource_set_texture_sampler(VulkanContext *context, uint32_t shader_index, uint32_t resource_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index);
+
+void vulkan_renderer_shader_global_state_wireframe_set(VulkanContext *context, bool active);
 
 bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, bool is_srgb, uint8_t *pixels);
 bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index);
@@ -56,5 +59,3 @@ bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_index);
 
 bool vulkan_renderer_push_constants(VulkanContext *context, uint32_t shader_index, size_t offset, size_t size, void *data);
-
-bool vulkan_renderer_global_resource_set_buffer(VulkanContext *context, uint32_t buffer_index);

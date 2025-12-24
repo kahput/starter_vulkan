@@ -10,7 +10,7 @@
 #include "allocators/arena.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
-#define SWAPCHAIN_BUFFERING 3
+#define SWAPCHAIN_IMAGE_COUNT 3
 
 typedef struct vulkan_buffer {
 	VkBuffer handle[MAX_FRAMES_IN_FLIGHT];
@@ -64,8 +64,8 @@ typedef struct VulkanSwapchain {
 	VkSwapchainKHR handle;
 
 	struct {
-		VkImage handles[SWAPCHAIN_BUFFERING];
-		VkImageView views[SWAPCHAIN_BUFFERING];
+		VkImage handles[SWAPCHAIN_IMAGE_COUNT];
+		VkImageView views[SWAPCHAIN_IMAGE_COUNT];
 		uint32_t count;
 	} images;
 
@@ -77,7 +77,7 @@ typedef struct VulkanSwapchain {
 #define MAX_SETS 3
 #define MAX_INPUT_ATTRIBUTES 16
 #define MAX_INPUT_BINDINGS 16
-#define MAX_DESCRIPTOR_BINDINGS 32
+#define MAX_BINDINGS_PER_RESOURCE 16
 #define MAX_PUSH_CONSTANT_RANGES 3
 #define MAX_UNIFORMS 32
 #define MAX_VARIANTS 8
@@ -85,8 +85,7 @@ typedef struct VulkanSwapchain {
 typedef struct vulkan_resource_set {
 	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
 
-	VkDescriptorSetLayoutBinding bindings[MAX_DESCRIPTOR_BINDINGS];
-	uint32_t binding_count;
+	ShaderBinding bindings[MAX_BINDINGS_PER_RESOURCE];
 } VulkanResourceSet;
 
 typedef struct vulkan_pipeline {
@@ -110,8 +109,7 @@ typedef struct vulkan_shader {
 	VkPipelineLayout pipeline_layout;
 
 	VulkanPipeline variants[MAX_VARIANTS];
-	uint32_t variant_count;
-
+	uint32_t variant_count, current_variant;
 } VulkanShader;
 struct vulkan_context;
 
@@ -138,7 +136,8 @@ bool vulkan_buffer_ubo_create(struct vulkan_context *ctx, VulkanBuffer *buffer, 
 
 bool vulkan_image_create(struct vulkan_context *ctx, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
 bool vulkan_image_view_create(struct vulkan_context *ctx, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
-bool vulkan_image_transition(struct vulkan_context *ctx, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void vulkan_image_transition(struct vulkan_context *ctx, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void vulkan_image_transition_inline(struct vulkan_context *ctx, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 
 bool vulkan_create_depth_image(struct vulkan_context *ctx);
 
@@ -191,7 +190,7 @@ struct vulkan_context {
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
 
-	// TODO: Make backend handle indices
+	// NOTE: Maybe make backend handle indices?
 	// IndexRecycler shader_indices;
 	// IndexRecycler buffer_indices;
 	// IndexRecycler image_indices;
@@ -200,7 +199,7 @@ struct vulkan_context {
 	VkDescriptorPool descriptor_pool;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
-	VkSemaphore render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
+	VkSemaphore render_finished_semaphores[SWAPCHAIN_IMAGE_COUNT];
 	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
 
 	uint32_t current_frame;
