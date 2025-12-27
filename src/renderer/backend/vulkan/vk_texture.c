@@ -29,7 +29,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
 
-	uint32_t indices[] = { context->device.graphics_index, context->device.transfer_index };
+	uint32_t indices[] = { context->device.graphics_index};
 	vulkan_buffer_create(context, context->device.graphics_index, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 
 	void *data;

@@ -84,7 +84,7 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	}
 
 	vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, NULL);
-	vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, NULL);
+	// vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, NULL);
 
 	for (uint32_t index = 0; index < context->swapchain.images.count; ++index) {
 		vkDestroyImageView(context->device.logical, context->swapchain.images.views[index], NULL);
@@ -150,7 +150,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 		return false;
 	}
 
-	VkClearValue clear_color = { .color = { .float32 = { 0.01f, 0.01f, 0.01f, 1.0f } } };
+	VkClearValue clear_color = { .color = { .float32 = { 1.00f, 1.00f, 1.00f, 1.0f } } };
 	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
 
 	vulkan_image_transition_inline(
@@ -267,6 +267,11 @@ bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count) {
 }
 
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count) {
+	static uint32_t last_frame = UINT32_MAX;
+	if (last_frame != UINT32_MAX && context->current_frame == last_frame) {
+		LOG_WARN("Drawing in same frame twice without advancing!");
+	}
+	last_frame = context->current_frame;
 	vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_count, 1, 0, 0, 0);
 	return true;
 }

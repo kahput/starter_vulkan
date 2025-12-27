@@ -1,3 +1,4 @@
+#include "assets/asset_types.h"
 #include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
@@ -11,6 +12,7 @@
 #include "core/astring.h"
 #include "allocators/arena.h"
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
@@ -549,9 +551,36 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 
 	if (shader->attribute_count) {
 		shader->bindings[0].binding = 0;
+		ASSERT(stride == 48);
 		shader->bindings[0].stride = stride;
-		shader->bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		shader->bindings[0]
+			.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 		shader->binding_count = 1;
+	}
+
+	for (uint32_t index = 0; index < shader->attribute_count; ++index) {
+		VkVertexInputAttributeDescription *attr = &shader->attributes[index];
+		LOG_INFO("ATTRIBUTE[0] = { location = %llu, binding = %llu, format = %llu, offset = %llu }", attr->location, attr->binding, attr->format, attr->offset);
+
+		if (attr->location == 0) {
+			ASSERT(attr->format == VK_FORMAT_R32G32B32_SFLOAT);
+			ASSERT(attr->offset == offsetof(Vertex, position));
+		}
+
+		if (attr->location == 1) {
+			ASSERT(attr->format == VK_FORMAT_R32G32B32_SFLOAT);
+			ASSERT(attr->offset == offsetof(Vertex, normal));
+		}
+
+		if (attr->location == 2) {
+			ASSERT(attr->format == VK_FORMAT_R32G32_SFLOAT);
+			ASSERT(attr->offset == offsetof(Vertex, uv));
+		}
+
+		if (attr->location == 3) {
+			ASSERT(attr->format == VK_FORMAT_R32G32B32A32_SFLOAT);
+			ASSERT(attr->offset == offsetof(Vertex, tangent));
+		}
 	}
 
 	uint32_t vs_set_count = 0, fs_set_count = 0;

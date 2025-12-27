@@ -17,29 +17,29 @@
 	#define ASSERT_MESSAGE(condition, message) ((void)0)
 	#define ASSERT_FORMAT(condition, fmt, ...) ((void)0)
 #else
-	#define ASSERT(condition)                                   \
-		do {                                                    \
-			if (!(condition)) {                                 \
-				LOG_ERROR("Assertion (%s) failed", #condition); \
-				debug_break();                                  \
-				abort();                                        \
-			}                                                   \
+	#define ASSERT(condition)                                    \
+		do {                                                     \
+			if (!(condition)) {                                  \
+				LOG_ERROR("Assertion failed: [%s]", #condition); \
+				debug_break();                                   \
+				abort();                                         \
+			}                                                    \
 		} while (0)
-	#define ASSERT_MESSAGE(condition, message)                                \
-		do {                                                                  \
-			if (!(condition)) {                                               \
-				LOG_ERROR("Assertion (%s) failed | %s", #condition, message); \
-				debug_break();                                                \
-				abort();                                                      \
-			}                                                                 \
+	#define ASSERT_MESSAGE(condition, message)                                 \
+		do {                                                                   \
+			if (!(condition)) {                                                \
+				LOG_ERROR("Assertion failed: [%s] | %s", #condition, message); \
+				debug_break();                                                 \
+				abort();                                                       \
+			}                                                                  \
 		} while (0)
-	#define ASSERT_FORMAT(condition, fmt, ...)            \
-		do {                                              \
-			if (!(condition)) {                           \
-				LOG_ERROR("Assertion (%s) failed | " fmt, \
-					#condition, __VA_ARGS__);             \
-				debug_break();                            \
-				abort();                                  \
-			}                                             \
+	#define ASSERT_FORMAT(condition, fmt, ...)             \
+		do {                                               \
+			if (!(condition)) {                            \
+				LOG_ERROR("Assertion failed: [%s] | " fmt, \
+					#condition, __VA_ARGS__);              \
+				debug_break();                             \
+				abort();                                   \
+			}                                              \
 		} while (0)
 #endif

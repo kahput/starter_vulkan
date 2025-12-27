@@ -153,7 +153,7 @@ void vulkan_image_transition_inline(VulkanContext *context, VkCommandBuffer comm
 
 bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
 	VkCommandBuffer command_buffer;
-	vulkan_command_oneshot_begin(context, context->transfer_command_pool, &command_buffer);
+	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
 	VkBufferImageCopy region = {
 		.bufferOffset = 0,
@@ -171,6 +171,6 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, u
 
 	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-	vulkan_command_oneshot_end(context, context->device.transfer_queue, context->transfer_command_pool, &command_buffer);
+	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 	return true;
 }

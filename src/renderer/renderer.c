@@ -16,6 +16,7 @@
 #include "platform/filesystem.h"
 
 #include <cglm/vec3.h>
+#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -85,7 +86,7 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 	size_t minimum_footprint = sizeof(Renderer) + sizeof(Arena);
 
 	uintptr_t base_addr = (uintptr_t)memory;
-	uintptr_t aligned_addr = (uintptr_t)aligned_address((uintptr_t)memory, alignof(memory));
+	uintptr_t aligned_addr = (uintptr_t)aligned_address((uintptr_t)memory, alignof(Arena));
 	size_t padding = aligned_addr - base_addr;
 
 	if (size < minimum_footprint + padding) {
@@ -392,12 +393,18 @@ bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, m
 	Mesh *mesh = ((Mesh *)renderer->mesh_allocator->slots) + mesh_handle.index;
 	Material *instance = ((Material *)renderer->material_allocator->slots) + material_instance_handle.index; // This doesn't draw
 
+	for (uint32_t i =0; i < 16; i++) {
+		float val = ((float*)transform)[i];
+		ASSERT(isnan(val) == false || isinf(val) == false);
+	}
+
 	vulkan_renderer_shader_bind(renderer->context, instance->shader.index, instance->override_resource_id);
 	vulkan_renderer_push_constants(renderer->context, 0, 0, sizeof(mat4), transform);
 
-	vulkan_renderer_buffer_bind(renderer->context, mesh->vertex_buffer);
+	vulkan_renderer_buffer_bind(renderer->context, mesh->vertex_buffer, 0);
 	if (mesh->index_count) {
-		vulkan_renderer_buffer_bind(renderer->context, mesh->index_buffer);
+		vulkan_renderer_buffer_bind(renderer->context, mesh->index_buffer, mesh->index_size);
+		// LOG_INFO("Drawing %d indices (%d vertices)", mesh->index_count, mesh->vertex_count);
 		vulkan_renderer_draw_indexed(renderer->context, mesh->index_count);
 
 	} else
@@ -440,8 +447,9 @@ uint32_t resolve_mesh(UUID id, MeshConfig *config) {
 	gpu_mesh->vertex_count = config->vertex_count;
 	vulkan_renderer_buffer_create(renderer->context, gpu_mesh->vertex_buffer, BUFFER_TYPE_VERTEX, config->vertex_size * config->vertex_count, config->vertices);
 
-	if (config->index_count) {
+	if (config->index_count != 0) {
 		gpu_mesh->index_buffer = recycler_new_index(&renderer->buffer_indices);
+		gpu_mesh->index_size = config->index_size;
 		gpu_mesh->index_count = config->index_count;
 
 		vulkan_renderer_buffer_create(renderer->context, gpu_mesh->index_buffer, BUFFER_TYPE_INDEX, config->index_size * config->index_count, config->indices);
@@ -485,6 +493,7 @@ uint32_t resolve_shader(UUID id, ShaderConfig *config) {
 	shader->instance_count = 0;
 
 	PipelineDesc desc = DEFAULT_PIPELINE();
+	desc.cull_mode = CULL_MODE_NONE;
 	vulkan_renderer_shader_create(
 		renderer->arena, renderer->context,
 		shader->handle.index, config,

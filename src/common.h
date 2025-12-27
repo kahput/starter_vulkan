@@ -46,8 +46,8 @@
 #define MiB(bytes) ((KiB(bytes)) * 1024ULL)
 #define GiB(bytes) ((MiB(bytes)) * 1024ULL)
 
-static inline uintptr_t aligned_address(uintptr_t address, size_t alignment) {
-	return (address + (alignment - 1)) & ~(alignment - 1);
+static inline uint64_t aligned_address(uint64_t address, uint64_t alignment) {
+	return ((address + (alignment - 1)) & ~(alignment - 1));
 }
 
 // TODO: Move this?

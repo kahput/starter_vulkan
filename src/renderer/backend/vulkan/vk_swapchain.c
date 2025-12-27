@@ -96,6 +96,7 @@ VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, 
 }
 
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count) {
+	return VK_PRESENT_MODE_FIFO_KHR;
 	for (uint32_t i = 0; i < count; i++) {
 		if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
 			return modes[i];

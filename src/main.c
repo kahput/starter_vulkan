@@ -63,14 +63,14 @@ static struct State {
 } state;
 
 int main(void) {
-	state.permanent_arena = arena_create(MiB(64));
+	state.permanent_arena = arena_create(MiB(512));
 	state.frame_arena = arena_create(MiB(4));
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	event_system_startup();
 	input_system_startup();
-	asset_library_startup(arena_push_zero(&state.permanent_arena, MiB(16), 1), MiB(16));
+	asset_library_startup(arena_push_zero(&state.permanent_arena, MiB(128), 1), MiB(128));
 
 	// TODO: Rework platform layer when starting on Windows
 	platform_startup(&state.permanent_arena, 1280, 720, "Starter Vulkan", &state.display);
@@ -94,10 +94,6 @@ int main(void) {
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
-	ArenaTemp scratch = arena_scratch(NULL);
-	MeshSource *plane_src = NULL;
-	UUID plane_id = create_plane_mesh(scratch.arena, 0, 0, ORIENTATION_Z, &plane_src);
-
 	asset_library_track_directory(S("assets"));
 
 	ShaderSource *shader_src = NULL;
@@ -118,15 +114,20 @@ int main(void) {
 	};
 
 	RShader shader = renderer_shader_create(shader_src->id, &shader_config);
+
+	ArenaTemp scratch = arena_scratch(NULL);
+	MeshSource *plane_src = NULL;
+	UUID plane_id = create_plane_mesh(scratch.arena, 0, 0, ORIENTATION_Z, &plane_src);
 	MeshConfig mconfig = {
 		.vertices = plane_src->vertices,
 		.vertex_size = (sizeof *plane_src->vertices),
 		.vertex_count = plane_src->vertex_count,
 		.indices = plane_src->indices,
-		.index_size = (sizeof *plane_src->indices),
+		.index_size = plane_src->index_size,
 		.index_count = plane_src->index_count,
 	};
 	RMesh plane = renderer_mesh_create(plane_id, &mconfig);
+	arena_release_scratch(scratch);
 
 	ImageSource *sprite_src = NULL;
 
@@ -148,19 +149,25 @@ int main(void) {
 
 	// glTF Mesh
 	ModelSource *model_src = NULL;
-	UUID model_id = asset_library_request_model(S("room-large.glb"), &model_src);
+	Arena unique_completely_new_memory = arena_create(MiB(500));
+	UUID model_id = asset_library_load_model(&unique_completely_new_memory, S("room-large.glb"), &model_src, true);
 
 	RMesh large_room = INVALID_HANDLE;
 	RMaterial large_room_mat = INVALID_HANDLE;
 	if (model_src) {
 		mconfig = (MeshConfig){
-			.vertices = model_src->meshes->vertices,
-			.vertex_size = (sizeof *model_src->meshes[0].vertices),
+			.vertices = model_src->meshes[0].vertices,
+			.vertex_size = sizeof(Vertex),
 			.vertex_count = model_src->meshes[0].vertex_count,
 			.indices = model_src->meshes[0].indices,
-			.index_size = (sizeof *model_src->meshes[0].indices),
+			.index_size = model_src->meshes[0].index_size,
 			.index_count = model_src->meshes[0].index_count,
 		};
+
+		LOG_INFO("Model loaded: %d meshes, %d materials, %d images",
+			model_src->mesh_count,
+			model_src->material_count,
+			model_src->image_count);
 		large_room = renderer_mesh_create(model_id, &mconfig);
 		TextureConfig config = { .pixels = model_src->images->pixels, .width = model_src->images->width, .height = model_src->images->height, .channels = model_src->images->channels, .is_srgb = true };
 
@@ -179,6 +186,7 @@ int main(void) {
 		float current_frame = platform_time_seconds(&state.display);
 		delta_time = current_frame - last_frame;
 		last_frame = current_frame;
+		delta_time = max(delta_time, 0.0016f);
 
 		platform_poll_events(&state.display);
 
@@ -217,11 +225,11 @@ int main(void) {
 			renderer_end_frame();
 		}
 
-		if (input_key_pressed(SV_KEY_L)) {
-			current_texture = current_texture == sprite_id_1 ? sprite_id : sprite_id_1;
-			renderer_material_set_texture(mat_instance2, S("u_texture"), current_texture);
-			renderer_material_set_texture(mat_instance, S("u_texture"), current_texture == sprite_id_1 ? sprite_id : sprite_id_1);
-		}
+		// if (input_key_pressed(SV_KEY_L)) {
+		// 	current_texture = current_texture == sprite_id_1 ? sprite_id : sprite_id_1;
+		// 	renderer_material_set_texture(mat_instance2, S("u_texture"), current_texture);
+		// 	renderer_material_set_texture(mat_instance, S("u_texture"), current_texture == sprite_id_1 ? sprite_id : sprite_id_1);
+		// }
 
 		// LOG_INFO("CameraPosition { %.2f, %.2f, %.2f }, target = { %.2f, %.2f, %.2f }",
 		// 	state.editor_camera.position[0], state.editor_camera.position[1], state.editor_camera.position[2],
@@ -320,7 +328,7 @@ UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivid
 			// Vertex v11 = { .position = { 0.0f }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
 
 			Vertex orientation_y_vertex00 = { .position = { rowf, 0, columnf }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
-			Vertex orientation_y_vertex10 = { .position = { rowf + row_unit, 0, columnf }, { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
+			Vertex orientation_y_vertex10 = { .position = { rowf + row_unit, 0, columnf }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
 			Vertex orientation_y_vertex01 = { .position = { rowf, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
 			Vertex orientation_y_vertex11 = { .position = { rowf + row_unit, 0, columnf + column_unit }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0.0f, 0.0f, 1.0f, 1.0f } };
 
@@ -367,7 +375,7 @@ UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivid
 		}
 	}
 
-	(*out_mesh)->indices = NULL, (*out_mesh)->index_count = 0;
+	(*out_mesh)->indices = NULL, (*out_mesh)->index_size = 0, (*out_mesh)->index_count = 0;
 	(*out_mesh)->material = NULL;
 
 	return id;

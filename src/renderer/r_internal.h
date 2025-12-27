@@ -255,6 +255,7 @@ typedef struct texture {
 typedef struct mesh {
 	uint32_t vertex_buffer, index_buffer;
 	uint32_t vertex_count, index_count;
+	size_t index_size;
 
 	Handle material;
 } Mesh;

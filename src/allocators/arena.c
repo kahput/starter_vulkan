@@ -32,6 +32,7 @@ void arena_free(Arena *arena) {
 }
 
 void *arena_push(Arena *arena, size_t size, size_t alignment) {
+	ASSERT(alignment > 0 && ((alignment & (alignment - 1)) == 0));
 	uintptr_t current = (uintptr_t)arena->memory + arena->offset;
 	uintptr_t aligned = aligned_address(current, alignment);
 

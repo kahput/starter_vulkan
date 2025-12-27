@@ -1,3 +1,5 @@
+#include "common.h"
+#include "core/debug.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "platform.h"
@@ -37,31 +39,32 @@ bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
 		.apiVersion = VK_API_VERSION_1_3
 	};
 
-	uint32_t requested_extensions = 0, available_extensions = 0;
-	const char **extensions = platform_vulkan_extensions(platform, &requested_extensions);
-	vkEnumerateInstanceExtensionProperties(NULL, &available_extensions, NULL);
+	uint32_t platform_extension_count = 0, extension_count = 0;
+	const char **extensions = platform_vulkan_extensions(platform, &platform_extension_count);
+	vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL);
 
 	ArenaTemp scratch = arena_scratch(NULL);
-	VkExtensionProperties *properties = arena_push_array_zero(scratch.arena, VkExtensionProperties, available_extensions);
-	vkEnumerateInstanceExtensionProperties(NULL, &available_extensions, properties);
+	VkExtensionProperties *properties = arena_push_array_zero(scratch.arena, VkExtensionProperties, extension_count);
+	vkEnumerateInstanceExtensionProperties(NULL, &extension_count, properties);
 
-	uint32_t match = 0;
-	for (uint32_t i = 0; i < available_extensions; i++) {
-		for (uint32_t j = 0; j < requested_extensions; j++) {
-			if (strcmp(properties[i].extensionName, extensions[j]) == 0)
-				match++;
+	for (uint32_t request_index = 0; request_index < platform_extension_count; ++request_index) {
+		bool found = false;
+		for (uint32_t extension_index = 0; extension_index < extension_count; ++extension_index) {
+			if (strcmp(properties[extension_index].extensionName, extensions[request_index]) == 0)
+				found = true;
 		}
-	}
-	if (match != requested_extensions) {
-		LOG_ERROR("Requested extensions not found");
-		arena_release_scratch(scratch);
-		return false;
+		if (found == false) {
+			LOG_FATAL("Extension '%s' not found, aborting vulkan_instance_create", extensions[request_index]);
+			ASSERT(false);
+			arena_release_scratch(scratch);
+			return false;
+		}
 	}
 
 	VkInstanceCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.pApplicationInfo = &app_info,
-		.enabledExtensionCount = requested_extensions,
+		.enabledExtensionCount = platform_extension_count,
 		.ppEnabledExtensionNames = extensions,
 	};
 
@@ -72,7 +75,7 @@ bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
 	VkLayerProperties *layer_properties = arena_push_array_zero(scratch.arena, VkLayerProperties, available_layers);
 	vkEnumerateInstanceLayerProperties(&available_layers, layer_properties);
 
-	match = 0;
+	uint32_t match = 0;
 	for (uint32_t i = 0; i < available_layers; i++)
 		for (uint32_t j = 0; j < requested_layers; j++)
 			if (strcmp(layer_properties[i].layerName, layers[j]) == 0)
@@ -86,12 +89,12 @@ bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
 	create_info.enabledLayerCount = requested_layers;
 	create_info.ppEnabledLayerNames = layers;
 
-	const char *debug_extensions[requested_extensions + 1];
-	for (uint32_t i = 0; i < requested_extensions; i++) {
+	const char *debug_extensions[platform_extension_count + 1];
+	for (uint32_t i = 0; i < platform_extension_count; i++) {
 		debug_extensions[i] = extensions[i];
 	}
 
-	debug_extensions[requested_extensions] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+	debug_extensions[platform_extension_count] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 
 	create_info.enabledExtensionCount = sizeof(debug_extensions) / sizeof(*debug_extensions);
 	create_info.ppEnabledExtensionNames = debug_extensions;

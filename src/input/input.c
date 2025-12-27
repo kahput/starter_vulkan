@@ -68,7 +68,7 @@ bool input_key_released(int key) {
 	return state.keys[key].state == true && state.keys[key].last == false;
 }
 bool input_key_pressed(int key) {
-	return state.keys[key].state == false && state.keys[key].last == true;
+	return state.keys[key].state == true && state.keys[key].last == false;
 }
 
 bool input_key_down(int key) {

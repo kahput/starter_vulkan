@@ -87,7 +87,8 @@ typedef struct mesh_source {
 	Vertex *vertices;
 	uint32_t vertex_count;
 
-	uint32_t *indices;
+	void *indices;
+	size_t index_size;
 	uint32_t index_count;
 
 	MaterialSource *material;

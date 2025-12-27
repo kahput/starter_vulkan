@@ -2,9 +2,9 @@
 #include "assets/asset_types.h"
 
 #include "common.h"
-#include "core/debug.h"
 #include "core/astring.h"
 
+#include "core/debug.h"
 #include "platform/filesystem.h"
 
 #include <cgltf/cgltf.h>
@@ -22,7 +22,7 @@
 void filesystem_filename(const char *src, char *dst);
 void filesystem_directory(const char *src, char *dst);
 
-static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
+// static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 static ImageSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
 
 bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path, ShaderSource *out_shader) {
@@ -91,7 +91,14 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		LOG_ERROR("Importer: Failed to load model");
 		return NULL;
 	}
-
+	// After loading, verify buffer data is valid
+	for (size_t i = 0; i < data->buffers_count; i++) {
+		if (data->buffers[i].data == NULL) {
+			LOG_ERROR("Buffer %zu has NULL data after loading", i);
+			cgltf_free(data);
+			return false;
+		}
+	}
 	LOG_INFO("Loading %s...", path.data);
 	logger_indent();
 
@@ -107,18 +114,25 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 		if (src->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
-			uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 			String mime_type = string_wrap_cstring(src->mime_type);
 
-			String name = string_format(scratch.arena, S("%s_%s"), data->scene->name, src->name);
+			String filename = string_find_and_replace(scratch.arena, string_filename_from_path(scratch.arena, path), S(".glb"), S(""));
+			String name = string_format(scratch.arena, S("%s_%s"), filename.data, (src->name ? src->name : "image"));
 			if (string_contains(string_wrap_cstring(src->mime_type), S("png")) != -1) {
-				dst->path = string_format(arena, S("%s/%s.png"), base_directory, name);
-				stbi_write_png(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
+				dst->path = string_format(arena, S("%s/%s.png"), base_directory.data, name.data);
+				if (filesystem_file_exists(dst->path) == false) {
+					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
+					stbi_write_png(dst->path.data, dst->width, dst->height, 4, pixels, STBI_default);
+					stbi_image_free(pixels);
+				}
 			} else if (string_contains(mime_type, S("jpg")) != -1 || string_contains(mime_type, S("jpeg")) != -1) {
-				dst->path = string_format(arena, S("%s/%s.jpg"), base_directory, name);
-				stbi_write_jpg(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
+				dst->path = string_format(arena, S("%s/%s.jpg"), base_directory.data, name.data);
+				if (filesystem_file_exists(dst->path) == false) {
+					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
+					stbi_write_jpg(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
+					stbi_image_free(pixels);
+				}
 			}
-			stbi_image_free(pixels);
 		} else if (src->uri) {
 			dst->path = string_format(arena, S("%s/%s"), base_directory.data, src->uri);
 		}
@@ -140,7 +154,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		if (src->has_pbr_metallic_roughness) {
 			cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
 
-			mempcpy(dst->properties[5].as.vec4f, pbr->base_color_factor, sizeof(vec4));
+			memcpy(dst->properties[5].as.vec4f, pbr->base_color_factor, sizeof(vec4));
 
 			dst->properties[6].as.f = pbr->metallic_factor;
 			dst->properties[7].as.f = pbr->roughness_factor;
@@ -174,78 +188,113 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 			cgltf_primitive *src_mesh = &mesh->primitives[primitive_index];
 			MeshSource *dst_mesh = &out_model->meshes[mesh_count++];
 
-			bool has_tangents = false;
+			// bool has_tangents = false;
 
-			dst_mesh->index_count = src_mesh->indices->count;
-			dst_mesh->indices = arena_push_array_zero(arena, uint32_t, dst_mesh->index_count);
+			cgltf_accessor *iaccessor = src_mesh->indices;
 
-			uint8_t *index_buffer_data = (uint8_t *)src_mesh->indices->buffer_view->buffer->data + src_mesh->indices->offset + src_mesh->indices->buffer_view->offset;
-			uint32_t index_stride = src_mesh->indices->buffer_view->stride ? src_mesh->indices->buffer_view->stride : src_mesh->indices->stride;
+			dst_mesh->index_count = iaccessor->count;
+			dst_mesh->index_size = iaccessor->component_type == cgltf_component_type_r_32u ? 4 : 2;
+			LOG_INFO("sizeof(indices) = %zu", dst_mesh->index_count * dst_mesh->index_size);
+			ASSERT(
+				(src_mesh->indices->component_type == cgltf_component_type_r_16u && dst_mesh->index_size == 2) ||
+				(src_mesh->indices->component_type == cgltf_component_type_r_32u && dst_mesh->index_size == 4)
 
-			for (uint32_t index = 0; index < src_mesh->indices->count; ++index) {
-				if (index_stride == 2)
-					dst_mesh->indices[index] = ((uint16_t *)index_buffer_data)[index];
-				else if (index_stride == 4)
-					dst_mesh->indices[index] = ((uint32_t *)index_buffer_data)[index];
+			);
+			ASSERT(src_mesh->indices->buffer_view->size == (src_mesh->indices->count * src_mesh->indices->stride));
+
+			dst_mesh->indices = arena_push_zero(arena, src_mesh->indices->buffer_view->size, dst_mesh->index_size);
+			cgltf_size unpacked = cgltf_accessor_unpack_indices(iaccessor, dst_mesh->indices, dst_mesh->index_size, dst_mesh->index_count);
+			for (uint32_t index = 0; index < dst_mesh->index_count; ++index) {
+				if (index < 4)
+					continue;
+
+				ASSERT(((uint16_t *)dst_mesh->indices)[index] != 0);
 			}
+			ASSERT(unpacked == dst_mesh->index_count);
 
 			for (uint32_t attribute_index = 0; attribute_index < src_mesh->attributes_count; ++attribute_index) {
 				cgltf_attribute *attribute = &src_mesh->attributes[attribute_index];
-
 				cgltf_accessor *accessor = attribute->data;
-				cgltf_buffer_view *view = accessor->buffer_view;
-				cgltf_buffer *buffer = view->buffer;
-
-				uint8_t *vertex_buffer_data = (uint8_t *)buffer->data + accessor->offset + view->offset;
-				uint32_t attribute_stride = view->stride ? view->stride : accessor->stride;
 
 				if (dst_mesh->vertices == NULL) {
 					dst_mesh->vertex_count = accessor->count;
 					dst_mesh->vertices = arena_push_array_zero(arena, Vertex, dst_mesh->vertex_count);
 				}
 
+				ASSERT(dst_mesh->vertex_count == accessor->count);
+
 				switch (attribute->type) {
 					case cgltf_attribute_type_position: {
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
-							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
 							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
 
-							dst_vertex->position[0] = src_vertex[0];
-							dst_vertex->position[1] = src_vertex[1];
-							dst_vertex->position[2] = src_vertex[2];
+							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->position, 3);
 						}
-					} break;
-					case cgltf_attribute_type_normal: {
+						ASSERT(accessor->stride == 12);
+						float *what_is_inside_my_array = arena_push_array_zero(scratch.arena, float, 3 * accessor->count);
+						ASSERT(accessor->count == dst_mesh->vertex_count);
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
-							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
-							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
-
-							dst_vertex->normal[0] = src_vertex[0];
-							dst_vertex->normal[1] = src_vertex[1];
-							dst_vertex->normal[2] = src_vertex[2];
+							what_is_inside_my_array[(vertex_index * 3) + 0] = dst_mesh->vertices[vertex_index].position[0];
+							what_is_inside_my_array[(vertex_index * 3) + 1] = dst_mesh->vertices[vertex_index].position[1];
+							what_is_inside_my_array[(vertex_index * 3) + 2] = dst_mesh->vertices[vertex_index].position[2];
 						}
+						float *what_is_inside_cgltf = arena_push_array_zero(scratch.arena, float, 3 * accessor->count);
+						cgltf_accessor_unpack_floats(accessor, what_is_inside_cgltf, accessor->count * 3);
+
+						ASSERT(memcmp(what_is_inside_cgltf, what_is_inside_my_array, sizeof(float) * 3 * accessor->count) == 0);
 					} break;
 					case cgltf_attribute_type_texcoord: {
+						ASSERT(accessor->component_type == cgltf_component_type_r_32f);
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
 							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
-							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
 
-							dst_vertex->uv[0] = src_vertex[0];
-							dst_vertex->uv[1] = src_vertex[1];
+							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->uv, 2);
 						}
+						// ASSERT(accessor->stride == 8);
+						// float *vertices = arena_push_array_zero(scratch.arena, float, 2 * accessor->count);
+						// ASSERT(accessor->count == dst_mesh->vertex_count);
+						// for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+						// 	vertices[(vertex_index * 2) + 0] = dst_mesh->vertices[vertex_index].uv[0];
+						// 	vertices[(vertex_index * 2) + 1] = dst_mesh->vertices[vertex_index].uv[1];
+						// }
+						// ASSERT(memcmp(vertices, vertex_buffer_data, view->size) == 0);
+					} break;
+					case cgltf_attribute_type_normal: {
+						ASSERT(accessor->component_type == cgltf_component_type_r_32f);
+						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
+
+							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->normal, 3);
+						}
+						// ASSERT(accessor->stride == 12);
+						// float *vertices = arena_push_array_zero(scratch.arena, float, 3 * accessor->count);
+						// ASSERT(accessor->count == dst_mesh->vertex_count);
+						// for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+						// 	vertices[(vertex_index * 3) + 0] = dst_mesh->vertices[vertex_index].normal[0];
+						// 	vertices[(vertex_index * 3) + 1] = dst_mesh->vertices[vertex_index].normal[1];
+						// 	vertices[(vertex_index * 3) + 2] = dst_mesh->vertices[vertex_index].normal[2];
+						// }
+						// ASSERT(memcmp(vertices, vertex_buffer_data, view->size) == 0);
 					} break;
 					case cgltf_attribute_type_tangent: {
+						ASSERT(accessor->component_type == cgltf_component_type_r_32f);
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
 							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
-							float *src_vertex = (float *)(vertex_buffer_data + vertex_index * attribute_stride);
 
-							has_tangents = true;
+							// has_tangents = true;
 
-							dst_vertex->tangent[0] = src_vertex[0];
-							dst_vertex->tangent[1] = src_vertex[1];
-							dst_vertex->tangent[2] = src_vertex[2];
-							dst_vertex->tangent[3] = src_vertex[3];
+							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->tangent, 4);
 						}
+						// ASSERT(accessor->stride == 16);
+						// float *vertices = arena_push_array_zero(scratch.arena, float, 4 * accessor->count);
+						// ASSERT(accessor->count == dst_mesh->vertex_count);
+						// for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
+						// 	vertices[(vertex_index * 4) + 0] = dst_mesh->vertices[vertex_index].tangent[0];
+						// 	vertices[(vertex_index * 4) + 1] = dst_mesh->vertices[vertex_index].tangent[1];
+						// 	vertices[(vertex_index * 4) + 2] = dst_mesh->vertices[vertex_index].tangent[2];
+						// 	vertices[(vertex_index * 4) + 3] = dst_mesh->vertices[vertex_index].tangent[3];
+						// }
+						// ASSERT(memcmp(vertices, vertex_buffer_data, view->size) == 0);
 					} break;
 					case cgltf_attribute_type_invalid:
 					case cgltf_attribute_type_color:
@@ -257,8 +306,8 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 				}
 			}
 
-			if (has_tangents == false)
-				calculate_tangents(dst_mesh->vertices, dst_mesh->vertex_count, dst_mesh->indices, dst_mesh->index_count);
+			// if (has_tangents == false)
+			// 	calculate_tangents(dst_mesh->vertices, dst_mesh->vertex_count, dst_mesh->indices, dst_mesh->index_count);
 
 			if (src_mesh->material) {
 				uint32_t index = src_mesh->material - data->materials;
@@ -317,39 +366,39 @@ ImageSource *find_loaded_texture(const cgltf_data *data, ModelSource *source, co
 	return NULL;
 }
 
-void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count) {
-	for (uint32_t i = 0; i < vertex_count; i++) {
-		memset(vertices[i].tangent, 0, sizeof(vec4));
-	}
-
-	for (uint32_t index = 0; index < index_count; index += 3) {
-		uint32_t triangle[3] = { indices[index + 0], indices[index + 1], indices[index + 2] };
-		Vertex *points[3] = { &vertices[triangle[0]], &vertices[triangle[1]], &vertices[triangle[2]] };
-
-		vec3 edge1 = { 0 }, edge2 = { 0 };
-		glm_vec3_sub(points[1]->position, points[0]->position, edge1);
-		glm_vec3_sub(points[2]->position, points[0]->position, edge2);
-
-		vec2 delta_1 = { 0 }, delta_2 = { 0 };
-		glm_vec2_sub(points[1]->uv, points[0]->uv, delta_1);
-		glm_vec2_sub(points[2]->uv, points[0]->uv, delta_2);
-
-		float f = 1.0f / (delta_1[0] * delta_2[1] - delta_2[0] * delta_1[1]);
-
-		vec3 tangent;
-		tangent[0] = f * (delta_2[1] * edge1[0] - delta_1[1] * edge2[0]);
-		tangent[1] = f * (delta_2[1] * edge1[1] - delta_1[1] * edge2[1]);
-		tangent[2] = f * (delta_2[1] * edge1[2] - delta_1[1] * edge2[2]);
-
-		glm_vec3_add(points[0]->tangent, tangent, points[0]->tangent);
-		glm_vec3_add(points[1]->tangent, tangent, points[1]->tangent);
-		glm_vec3_add(points[2]->tangent, tangent, points[2]->tangent);
-
-		points[0]->tangent[3] = 1.0f;
-		points[1]->tangent[3] = 1.0f;
-		points[2]->tangent[3] = 1.0f;
-	}
-}
+// void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count) {
+// 	for (uint32_t i = 0; i < vertex_count; i++) {
+// 		memset(vertices[i].tangent, 0, sizeof(vec4));
+// 	}
+//
+// 	for (uint32_t index = 0; index < index_count; index += 3) {
+// 		uint32_t triangle[3] = { indices[index + 0], indices[index + 1], indices[index + 2] };
+// 		Vertex *points[3] = { &vertices[triangle[0]], &vertices[triangle[1]], &vertices[triangle[2]] };
+//
+// 		vec3 edge1 = { 0 }, edge2 = { 0 };
+// 		glm_vec3_sub(points[1]->position, points[0]->position, edge1);
+// 		glm_vec3_sub(points[2]->position, points[0]->position, edge2);
+//
+// 		vec2 delta_1 = { 0 }, delta_2 = { 0 };
+// 		glm_vec2_sub(points[1]->uv, points[0]->uv, delta_1);
+// 		glm_vec2_sub(points[2]->uv, points[0]->uv, delta_2);
+//
+// 		float f = 1.0f / (delta_1[0] * delta_2[1] - delta_2[0] * delta_1[1]);
+//
+// 		vec3 tangent;
+// 		tangent[0] = f * (delta_2[1] * edge1[0] - delta_1[1] * edge2[0]);
+// 		tangent[1] = f * (delta_2[1] * edge1[1] - delta_1[1] * edge2[1]);
+// 		tangent[2] = f * (delta_2[1] * edge1[2] - delta_1[1] * edge2[2]);
+//
+// 		glm_vec3_add(points[0]->tangent, tangent, points[0]->tangent);
+// 		glm_vec3_add(points[1]->tangent, tangent, points[1]->tangent);
+// 		glm_vec3_add(points[2]->tangent, tangent, points[2]->tangent);
+//
+// 		points[0]->tangent[3] = 1.0f;
+// 		points[1]->tangent[3] = 1.0f;
+// 		points[2]->tangent[3] = 1.0f;
+// 	}
+// }
 
 // TODO: Move these to the material system for reflection
 
