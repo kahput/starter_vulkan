@@ -151,26 +151,3 @@ void vulkan_image_transition_inline(VulkanContext *context, VkCommandBuffer comm
 		1, &image_barrier);
 }
 
-bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
-	VkCommandBuffer command_buffer;
-	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
-
-	VkBufferImageCopy region = {
-		.bufferOffset = 0,
-		.bufferRowLength = 0,
-		.bufferImageHeight = 0,
-		.imageSubresource = {
-		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-		  .mipLevel = 0,
-		  .baseArrayLayer = 0,
-		  .layerCount = 1,
-		},
-		.imageOffset = { 0 },
-		.imageExtent = { .width = width, .height = height, .depth = 1 },
-	};
-
-	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
-	return true;
-}

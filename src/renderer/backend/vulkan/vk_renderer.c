@@ -84,7 +84,7 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	}
 
 	vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, NULL);
-	// vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, NULL);
+	vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, NULL);
 
 	for (uint32_t index = 0; index < context->swapchain.images.count; ++index) {
 		vkDestroyImageView(context->device.logical, context->swapchain.images.views[index], NULL);

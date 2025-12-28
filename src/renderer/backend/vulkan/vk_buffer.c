@@ -3,6 +3,7 @@
 
 #include "core/debug.h"
 #include "core/logger.h"
+#include <vulkan/vulkan_core.h>
 
 // static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 
@@ -31,8 +32,10 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 
 	logger_indent();
 
-	buffer->count = 1;
+	buffer->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);
+	buffer->memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 	buffer->size = size;
+	buffer->count = 1;
 
 	if (type == BUFFER_TYPE_UNIFORM) {
 		buffer->count = MAX_FRAMES_IN_FLIGHT;
@@ -42,13 +45,11 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 	}
 
 	if (data == NULL) {
-		bool result = vulkan_buffer_create(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
+		ASSERT(false);
+		bool result = vulkan_buffer_create(context, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 		logger_dedent();
 		return result;
 	}
-
-	buffer->usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type);
-	buffer->memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
 	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -58,22 +59,26 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 
 	LOG_DEBUG("Creating staging buffer...");
 	logger_indent();
-	vulkan_buffer_create(context, context->device.graphics_index, buffer->size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
+	vulkan_buffer_create(context, buffer->size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
 	logger_dedent();
 
 	void *mapped_memory;
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &mapped_memory);
+	vkMapMemory(context->device.logical, staging_buffer_memory, 0, buffer->size, 0, &mapped_memory);
+	memset(mapped_memory, 0, buffer->size);
 	memcpy(mapped_memory, data, buffer->size);
 	vkUnmapMemory(context->device.logical, staging_buffer_memory);
 
-	LOG_DEBUG("Creating buffer...");
+	LOG_DEBUG("Creating local buffer...");
 	logger_indent();
-	vulkan_buffer_create(context, context->device.graphics_index, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
+	vulkan_buffer_create(context, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 	logger_dedent();
 
+	LOG_INFO("Staging buffer = %p, Staging memory: %p", staging_buffer, staging_buffer_memory);
+	LOG_INFO("Device local buffer = %p, Device local memory = %p", buffer->handle[0], buffer->memory[0]);
+
 	vulkan_buffer_to_buffer(context, staging_buffer, buffer->handle[0], buffer->size);
-	// vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
-	// vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
+	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
+	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
 
 	LOG_INFO("%s resource created", stringify[type]);
 
@@ -102,6 +107,7 @@ bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_in
 
 			buffer->handle[index] = NULL;
 			buffer->memory[index] = NULL;
+			buffer->mapped[index] = NULL;
 		}
 	}
 
@@ -200,7 +206,7 @@ bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size
 	buffer->memory_property_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-		vulkan_buffer_create(context, context->device.graphics_index, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[index], &buffer->memory[index]);
+		vulkan_buffer_create(context, size, buffer->usage, buffer->memory_property_flags, &buffer->handle[index], &buffer->memory[index]);
 
 		vkMapMemory(context->device.logical, buffer->memory[index], 0, size, 0, &buffer->mapped[index]);
 
@@ -214,20 +220,17 @@ bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size
 
 bool vulkan_buffer_create(
 	VulkanContext *context,
-	uint32_t queue_family_index,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkBuffer *buffer, VkDeviceMemory *buffer_memory) {
-	uint32_t family_indices[] = { queue_family_index };
+	uint32_t family_indices[] = { context->device.graphics_index };
 
 	VkBufferCreateInfo vb_create_info = {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.size = size,
 		.usage = usage,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		// .queueFamilyIndexCount = 1,
-		// .pQueueFamilyIndices = family_indices
-		// .queueFamilyIndexCount = countof(family_indices),
-		// .pQueueFamilyIndices = family_indices
+		.queueFamilyIndexCount = 1,
+		.pQueueFamilyIndices = family_indices
 	};
 
 	if (vkCreateBuffer(context->device.logical, &vb_create_info, NULL, buffer) != VK_SUCCESS) {
@@ -241,7 +244,7 @@ bool vulkan_buffer_create(
 	uint32_t memory_type_index = vulkan_memory_type_find(context->device.physical, memory_requirements.memoryTypeBits, properties);
 	size_t allocation_size = memory_requirements.size;
 
-	LOG_INFO("SIZE = %llu, REQUIREMENT = %llu", size, memory_requirements.size);
+	LOG_DEBUG("SIZE = %llu, REQUIREMENT = %llu", size, memory_requirements.size);
 
 	VkMemoryAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -250,11 +253,14 @@ bool vulkan_buffer_create(
 	};
 
 	if (vkAllocateMemory(context->device.logical, &allocate_info, NULL, buffer_memory) != VK_SUCCESS) {
-		LOG_ERROR("Failed to allocate vertex buffer memory");
+		LOG_ERROR("Failed to allocate buffer memory");
 		return false;
 	}
 
-	vkBindBufferMemory(context->device.logical, *buffer, *buffer_memory, 0);
+	if (vkBindBufferMemory(context->device.logical, *buffer, *buffer_memory, 0) != VK_SUCCESS) {
+		LOG_ERROR("Failed to bind buffer memory");
+		return false;
+	}
 
 	LOG_DEBUG("VkBuffer created");
 
@@ -265,8 +271,45 @@ bool vulkan_buffer_to_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst,
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
+	LOG_DEBUG("Copying region of %llu from %p to %p", size, src, dst);
 	VkBufferCopy copy_region = { .size = size };
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
+
+	VkBufferMemoryBarrier barrier = {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+		.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+		.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.buffer = dst,
+		.offset = 0,
+		.size = size
+	};
+
+	vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, NULL, 1, &barrier, 0, NULL);
+	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
+	return true;
+}
+
+bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
+	VkCommandBuffer command_buffer;
+	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
+
+	VkBufferImageCopy region = {
+		.bufferOffset = 0,
+		.bufferRowLength = 0,
+		.bufferImageHeight = 0,
+		.imageSubresource = {
+		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		  .mipLevel = 0,
+		  .baseArrayLayer = 0,
+		  .layerCount = 1,
+		},
+		.imageOffset = { 0 },
+		.imageExtent = { .width = width, .height = height, .depth = 1 },
+	};
+
+	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 	return true;

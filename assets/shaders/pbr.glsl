@@ -10,6 +10,7 @@ layout(set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 projection;
     vec3 camera_position;
+    float _pad0;
 } u_scene;
 
 layout(push_constant) uniform constants {
@@ -27,12 +28,12 @@ layout(location = 1) out vec3 out_normal;
 void main() {
     gl_Position = u_scene.projection * u_scene.view * push_constants.model * vec4(in_position, 1.0f);
 
-    vec3 T = normalize(vec3(push_constants.model * vec4(in_tangent.xyz, 0.0)));
-    vec3 N = normalize(vec3(push_constants.model * vec4(in_normal, 0.0)));
-    T = normalize(T - dot(T, N) * N);
-    vec3 B = cross(N, T) * in_tangent.w;
-
-    mat3 TBN = mat3(T, B, N);
+    // vec3 T = normalize(vec3(push_constants.model * vec4(in_tangent.xyz, 0.0)));
+    // vec3 N = normalize(vec3(push_constants.model * vec4(in_normal, 0.0)));
+    // T = normalize(T - dot(T, N) * N);
+    // vec3 B = cross(N, T) * in_tangent.w;
+    //
+    // mat3 TBN = mat3(T, B, N);
 
     out_uv = in_uv;
     out_normal = in_normal;
@@ -67,7 +68,7 @@ layout(location = 0) out vec4 out_color;
 void main() {
     // TODO: PBR
     vec4 albedo = texture(u_base_color_texture, uv) * u_material.base_color_factor;
-    vec3 normal = texture(u_normal_texture, uv).rgb * 2.0 - 1.0;
+    vec3 normal_sample = texture(u_normal_texture, uv).rgb * 2.0 - 1.0;
 
     vec4 mr_sample = texture(u_metallic_roughness_texture, uv);
     float roughness = mr_sample.g * u_material.roughness_factor;

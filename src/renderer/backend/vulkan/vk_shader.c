@@ -678,10 +678,6 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 
 			dst->name = string_duplicate(arena, string_wrap_cstring(spv->name));
 
-			if (dst != out_reflection->bindings) {
-				LOG_INFO("Current name: %.*s", FS(dst->name));
-				LOG_INFO("Last name %.*s", FS(out_reflection->bindings[index - 1].name));
-			}
 			dst->frequency = spv->set;
 			dst->binding = spv->binding;
 			dst->count = spv->count;

@@ -9,6 +9,7 @@
 #include "core/logger.h"
 
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 static const char *layers[] = {
 	"VK_LAYER_KHRONOS_validation",
@@ -69,6 +70,7 @@ bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
 	};
 
 #ifndef NDEBUG
+
 	uint32_t requested_layers = sizeof(layers) / sizeof(*layers), available_layers = 0;
 	vkEnumerateInstanceLayerProperties(&available_layers, NULL);
 
@@ -98,6 +100,19 @@ bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
 
 	create_info.enabledExtensionCount = sizeof(debug_extensions) / sizeof(*debug_extensions);
 	create_info.ppEnabledExtensionNames = debug_extensions;
+
+	// VkValidationFeaturesEXT features = {
+	// 	.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT
+	// };
+	//
+	// VkValidationFeatureEnableEXT enables[] = {
+	// 	VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
+	// 	VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT
+	// };
+	//
+	// features.enabledValidationFeatureCount = 2;
+	// features.pEnabledValidationFeatures = enables;
+	// debug_utils_create_info.pNext = &features;
 
 	create_info.pNext = &debug_utils_create_info;
 #endif

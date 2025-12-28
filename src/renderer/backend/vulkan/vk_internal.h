@@ -127,7 +127,6 @@ uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type
 
 bool vulkan_buffer_create(
 	struct vulkan_context *ctx,
-	uint32_t queue_family_index,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkBuffer *buffer, VkDeviceMemory *buffer_memory);
 bool vulkan_buffer_to_buffer(struct vulkan_context *ctx, VkBuffer src, VkBuffer dst, VkDeviceSize size);

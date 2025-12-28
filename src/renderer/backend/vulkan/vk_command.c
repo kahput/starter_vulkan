@@ -19,12 +19,12 @@ bool vulkan_command_pool_create(VulkanContext *context) {
 		return false;
 	}
 
-	// cp_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-	// cp_create_info.queueFamilyIndex = context->device.transfer_index;
-	// if (vkCreateCommandPool(context->device.logical, &cp_create_info, NULL, &context->transfer_command_pool) != VK_SUCCESS) {
-	// 	LOG_ERROR("Failed to create command pool");
-	// 	return false;
-	// }
+	cp_create_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	cp_create_info.queueFamilyIndex = context->device.transfer_index;
+	if (vkCreateCommandPool(context->device.logical, &cp_create_info, NULL, &context->transfer_command_pool) != VK_SUCCESS) {
+		LOG_ERROR("Failed to create command pool");
+		return false;
+	}
 
 	LOG_INFO("Vulkan Command Pool created");
 

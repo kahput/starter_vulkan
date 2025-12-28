@@ -5,6 +5,8 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 # set(CMAKE_C_EXTENSIONS OFF)
 
+set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
@@ -26,6 +28,10 @@ find_package(Vulkan REQUIRED)
 
 file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "deps/*/*.c" "deps/*/*.h")
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+
+add_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+add_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
 
 target_include_directories(${PROJECT_NAME} PUBLIC "src/" "deps/")
 target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${CMAKE_BINARY_DIR} )

@@ -12,7 +12,6 @@
 #include "renderer.h"
 
 #include "common.h"
-#include "core/debug.h"
 #include "core/logger.h"
 #include "core/astring.h"
 #include "allocators/arena.h"
@@ -66,7 +65,7 @@ int main(void) {
 	state.permanent_arena = arena_create(MiB(512));
 	state.frame_arena = arena_create(MiB(4));
 
-	logger_set_level(LOG_LEVEL_DEBUG);
+	// logger_set_level(LOG_LEVLE_T);
 
 	event_system_startup();
 	input_system_startup();
