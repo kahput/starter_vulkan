@@ -134,7 +134,7 @@ bool vulkan_create_depth_image(VulkanContext *context) {
 		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		&context->depth_attachment);
 
-	vulkan_image_transition(
+	vulkan_image_transition_oneshot(
 		context, context->depth_attachment.handle, VK_IMAGE_ASPECT_DEPTH_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,

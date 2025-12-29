@@ -12,7 +12,7 @@ static uint32_t image_index = 0;
 bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext **out_context) {
 	*out_context = arena_push_struct(arena, VulkanContext);
 
-	VulkanContext *ctx = *out_context;
+	VulkanContext *context = *out_context;
 
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
@@ -20,41 +20,51 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
 	// Index into these
-	ctx->image_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
-	ctx->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
-	ctx->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
-	ctx->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
+	context->image_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
+	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
+	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
+	context->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
 
-	if (vulkan_instance_create(ctx, platform) == false)
+	if (vulkan_instance_create(context, platform) == false)
 		return false;
 
-	if (vulkan_surface_create(platform, ctx) == false)
+	if (vulkan_surface_create(platform, context) == false)
 		return false;
 
-	if (vulkan_device_create(arena, ctx) == false)
+	if (vulkan_device_create(arena, context) == false)
 		return false;
 
-	if (vulkan_command_pool_create(ctx) == false)
+	if (vulkan_command_pool_create(context) == false)
 		return false;
 
-	if (vulkan_command_buffer_create(ctx) == false)
+	if (vulkan_command_buffer_create(context) == false)
 		return false;
 
-	if (vulkan_descriptor_pool_create(ctx) == false)
+	if (vulkan_descriptor_pool_create(context) == false)
 		return false;
 
-	if (vulkan_sync_objects_create(ctx) == false)
+	if (vulkan_sync_objects_create(context) == false)
 		return false;
 
-	if (vulkan_swapchain_create(ctx, platform->physical_width, platform->physical_height) == false)
+	if (vulkan_swapchain_create(context, platform->physical_width, platform->physical_height) == false)
 		return false;
 
-	if (vulkan_create_depth_image(ctx) == false)
+	if (vulkan_create_depth_image(context) == false)
 		return false;
 
 	// TODO: Let the user decide
-	if (vulkan_descriptor_global_create(ctx) == false)
+	if (vulkan_descriptor_global_create(context) == false)
 		return false;
+
+	context->staging_buffer.size = MiB(32);
+	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
+		if (vulkan_buffer_create(
+				context, context->staging_buffer.size,
+				VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+				&context->staging_buffer.handle[frame_index], &context->staging_buffer.memory[frame_index]) == false)
+			return false;
+	}
 
 	return true;
 }
@@ -100,6 +110,16 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 		vkDestroySemaphore(context->device.logical, context->render_finished_semaphores[index], NULL);
 		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[index], NULL);
 		vkDestroyFence(context->device.logical, context->in_flight_fences[index], NULL);
+
+		if (context->staging_buffer.handle[index] != NULL) {
+			vkDestroyBuffer(context->device.logical, context->staging_buffer.handle[index], NULL);
+			vkFreeMemory(context->device.logical, context->staging_buffer.memory[index], NULL);
+
+			context->staging_buffer.size = 0;
+			context->staging_buffer.handle[index] = NULL;
+			context->staging_buffer.memory[index] = NULL;
+			context->staging_buffer.mapped[index] = NULL;
+		}
 	}
 
 #ifndef NDEBUG
@@ -140,6 +160,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 	vkResetFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame]);
 
 	vkResetCommandBuffer(context->command_buffers[context->current_frame], 0);
+	context->staging_buffer.offset = 0;
 
 	VkCommandBufferBeginInfo cb_begin_info = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -153,7 +174,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 	VkClearValue clear_color = { .color = { .float32 = { 1.00f, 1.00f, 1.00f, 1.0f } } };
 	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
 
-	vulkan_image_transition_inline(
+	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
 		context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -213,7 +234,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 bool Vulkan_renderer_frame_end(VulkanContext *context) {
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
 
-	vulkan_image_transition_inline(
+	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
 		context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -267,11 +288,6 @@ bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count) {
 }
 
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count) {
-	static uint32_t last_frame = UINT32_MAX;
-	if (last_frame != UINT32_MAX && context->current_frame == last_frame) {
-		LOG_WARN("Drawing in same frame twice without advancing!");
-	}
-	last_frame = context->current_frame;
 	vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_count, 1, 0, 0, 0);
 	return true;
 }

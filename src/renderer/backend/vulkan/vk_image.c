@@ -90,7 +90,7 @@ bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat fo
 	return true;
 }
 
-void vulkan_image_transition(VulkanContext *context, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
+void vulkan_image_transition_oneshot(VulkanContext *context, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
@@ -123,7 +123,7 @@ void vulkan_image_transition(VulkanContext *context, VkImage image, VkImageAspec
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 }
 
-void vulkan_image_transition_inline(VulkanContext *context, VkCommandBuffer command_buffer, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
+void vulkan_image_transition(VulkanContext *context, VkCommandBuffer command_buffer, VkImage image, VkImageAspectFlags aspect, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
 	VkImageMemoryBarrier image_barrier = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		.srcAccessMask = src_access,

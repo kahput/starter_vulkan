@@ -1,11 +1,10 @@
+#include "common.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
-
-// static bool create_buffer(VulkanContext *, uint32_t, VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer *, VkDeviceMemory *);
 
 int32_t to_vulkan_usage(BufferType type);
 
@@ -23,7 +22,7 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 
 	VulkanBuffer *buffer = &context->buffer_pool[store_index];
 	if (buffer->handle[0] != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocate buffer at index %d, but index is already in use", store_index);
+		LOG_FATAL("Vulkan: buffer at index %d is already in use, aborting vulkan_renderer_buffer_create", store_index);
 		ASSERT(false);
 		return false;
 	}
@@ -45,41 +44,31 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 	}
 
 	if (data == NULL) {
-		ASSERT(false);
 		bool result = vulkan_buffer_create(context, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 		logger_dedent();
 		return result;
 	}
 
-	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-	VkBuffer staging_buffer;
-	VkDeviceMemory staging_buffer_memory;
-
-	LOG_DEBUG("Creating staging buffer...");
-	logger_indent();
-	vulkan_buffer_create(context, buffer->size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
-	logger_dedent();
+	size_t copy_start = context->staging_buffer.offset;
+	size_t copy_end = aligned_address(context->staging_buffer.offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
+	if (copy_end >= context->staging_buffer.size) {
+		LOG_ERROR("Max staging buffer size exceeded, aborting vulkan_buffer_create");
+		ASSERT(false);
+		return false;
+	}
 
 	void *mapped_memory;
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, buffer->size, 0, &mapped_memory);
-	memset(mapped_memory, 0, buffer->size);
+	vkMapMemory(context->device.logical, context->staging_buffer.memory[context->current_frame], context->staging_buffer.offset, buffer->size, 0, &mapped_memory);
 	memcpy(mapped_memory, data, buffer->size);
-	vkUnmapMemory(context->device.logical, staging_buffer_memory);
+	vkUnmapMemory(context->device.logical, context->staging_buffer.memory[context->current_frame]);
+	context->staging_buffer.offset = copy_end;
 
 	LOG_DEBUG("Creating local buffer...");
 	logger_indent();
 	vulkan_buffer_create(context, buffer->size, buffer->usage, buffer->memory_property_flags, &buffer->handle[0], &buffer->memory[0]);
 	logger_dedent();
 
-	LOG_INFO("Staging buffer = %p, Staging memory: %p", staging_buffer, staging_buffer_memory);
-	LOG_INFO("Device local buffer = %p, Device local memory = %p", buffer->handle[0], buffer->memory[0]);
-
-	vulkan_buffer_to_buffer(context, staging_buffer, buffer->handle[0], buffer->size);
-	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
-	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
-
+	vulkan_buffer_to_buffer(context, copy_start, context->staging_buffer.handle[context->current_frame], 0, buffer->handle[0], buffer->size);
 	LOG_INFO("%s resource created", stringify[type]);
 
 	logger_dedent();
@@ -267,12 +256,12 @@ bool vulkan_buffer_create(
 	return true;
 }
 
-bool vulkan_buffer_to_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
+bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size) {
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
 	LOG_DEBUG("Copying region of %llu from %p to %p", size, src, dst);
-	VkBufferCopy copy_region = { .size = size };
+	VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
 
 	VkBufferMemoryBarrier barrier = {
@@ -294,6 +283,11 @@ bool vulkan_buffer_to_buffer(VulkanContext *context, VkBuffer src, VkBuffer dst,
 bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
+	vulkan_image_transition(
+		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
 	VkBufferImageCopy region = {
 		.bufferOffset = 0,
@@ -311,7 +305,17 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkBuffer src, VkImage dst, u
 
 	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
+	vulkan_image_transition(
+		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
+	return true;
+}
+
+bool vulkan_buffer_allocate(struct vulkan_context *ctx, VkDeviceSize size) {
 	return true;
 }
 
@@ -319,13 +323,14 @@ uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type
 	VkPhysicalDeviceMemoryProperties memory_properties;
 	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 
-	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
-		if ((type_filter & (1 << i)) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
-			return i;
+	for (uint32_t index = 0; index < memory_properties.memoryTypeCount; ++index) {
+		if ((type_filter & (1 << index)) && (memory_properties.memoryTypes[index].propertyFlags & properties) == properties) {
+			return index;
 		}
 	}
 
 	LOG_ERROR("Failed to find suitable memory type!");
+	ASSERT(false);
 	return 0;
 }
 

@@ -12,68 +12,6 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define SWAPCHAIN_IMAGE_COUNT 3
 
-typedef struct vulkan_buffer {
-	VkBuffer handle[MAX_FRAMES_IN_FLIGHT];
-	VkDeviceMemory memory[MAX_FRAMES_IN_FLIGHT];
-	void *mapped[MAX_FRAMES_IN_FLIGHT];
-
-	uint32_t count;
-	VkDeviceSize size;
-
-	VkBufferUsageFlags usage;
-	VkMemoryPropertyFlags memory_property_flags;
-} VulkanBuffer;
-
-typedef struct vulkan_image {
-	VkImage handle;
-	VkImageView view;
-	VkDeviceMemory memory;
-
-	VkFormat format;
-} VulkanImage;
-
-typedef struct vulkan_sampler {
-	VkSampler handle;
-	VkSamplerCreateInfo info;
-} VulkanSampler;
-
-typedef struct swapchain_support_details {
-	VkSurfaceCapabilitiesKHR capabilities;
-
-	VkSurfaceFormatKHR *formats;
-	uint32_t format_count;
-
-	VkPresentModeKHR *present_modes;
-	uint32_t present_mode_count;
-} SwapchainSupportDetails;
-
-typedef struct vulkan_device {
-	VkPhysicalDevice physical;
-	VkDevice logical;
-	SwapchainSupportDetails swapchain_details;
-
-	int32_t graphics_index, transfer_index, present_index;
-	VkQueue graphics_queue, transfer_queue, present_queue;
-
-	VkPhysicalDeviceProperties properties;
-	VkPhysicalDeviceFeatures features;
-
-} VulkanDevice;
-
-typedef struct VulkanSwapchain {
-	VkSwapchainKHR handle;
-
-	struct {
-		VkImage handles[SWAPCHAIN_IMAGE_COUNT];
-		VkImageView views[SWAPCHAIN_IMAGE_COUNT];
-		uint32_t count;
-	} images;
-
-	VkSurfaceFormatKHR format;
-	VkPresentModeKHR present_mode;
-	VkExtent2D extent;
-} VulkanSwapchain;
-
 #define MAX_SETS 3
 #define MAX_INPUT_ATTRIBUTES 16
 #define MAX_INPUT_BINDINGS 16
@@ -116,27 +54,81 @@ struct vulkan_context;
 struct platform;
 struct arena;
 
+typedef struct swapchain_support_details {
+	VkSurfaceCapabilitiesKHR capabilities;
+
+	VkSurfaceFormatKHR *formats;
+	uint32_t format_count;
+
+	VkPresentModeKHR *present_modes;
+	uint32_t present_mode_count;
+} SwapchainSupportDetails;
+
+typedef struct vulkan_device {
+	VkPhysicalDevice physical;
+	VkDevice logical;
+	SwapchainSupportDetails swapchain_details;
+
+	int32_t graphics_index, transfer_index, present_index;
+	VkQueue graphics_queue, transfer_queue, present_queue;
+
+	VkPhysicalDeviceProperties properties;
+	VkPhysicalDeviceFeatures features;
+
+} VulkanDevice;
+
 bool vulkan_instance_create(struct vulkan_context *ctx, struct platform *platform);
 bool vulkan_surface_create(struct platform *platform, struct vulkan_context *ctx);
 bool vulkan_device_create(struct arena *arena, struct vulkan_context *ctx);
 
+typedef struct VulkanSwapchain {
+	VkSwapchainKHR handle;
+
+	struct {
+		VkImage handles[SWAPCHAIN_IMAGE_COUNT];
+		VkImageView views[SWAPCHAIN_IMAGE_COUNT];
+		uint32_t count;
+	} images;
+
+	VkSurfaceFormatKHR format;
+	VkPresentModeKHR present_mode;
+	VkExtent2D extent;
+} VulkanSwapchain;
 bool vulkan_swapchain_create(struct vulkan_context *ctx, uint32_t width, uint32_t height);
 bool vulkan_swapchain_recreate(struct vulkan_context *ctx, uint32_t width, uint32_t height);
 
 uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
+typedef struct vulkan_buffer {
+	VkBuffer handle[MAX_FRAMES_IN_FLIGHT];
+	VkDeviceMemory memory[MAX_FRAMES_IN_FLIGHT];
+	void *mapped[MAX_FRAMES_IN_FLIGHT];
+
+	uint32_t count;
+	VkDeviceSize offset, size;
+
+	VkBufferUsageFlags usage;
+	VkMemoryPropertyFlags memory_property_flags;
+} VulkanBuffer;
 bool vulkan_buffer_create(
 	struct vulkan_context *ctx,
 	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VkBuffer *buffer, VkDeviceMemory *buffer_memory);
-bool vulkan_buffer_to_buffer(struct vulkan_context *ctx, VkBuffer src, VkBuffer dst, VkDeviceSize size);
+bool vulkan_buffer_to_buffer(struct vulkan_context *ctx, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
 bool vulkan_buffer_to_image(struct vulkan_context *ctx, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 bool vulkan_buffer_ubo_create(struct vulkan_context *ctx, VulkanBuffer *buffer, size_t size, void *data);
 
+typedef struct vulkan_image {
+	VkImage handle;
+	VkImageView view;
+	VkDeviceMemory memory;
+
+	VkFormat format;
+} VulkanImage;
 bool vulkan_image_create(struct vulkan_context *ctx, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
 bool vulkan_image_view_create(struct vulkan_context *ctx, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
-void vulkan_image_transition(struct vulkan_context *ctx, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
-void vulkan_image_transition_inline(struct vulkan_context *ctx, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void vulkan_image_transition_oneshot(struct vulkan_context *ctx, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void vulkan_image_transition(struct vulkan_context *ctx, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 
 bool vulkan_create_depth_image(struct vulkan_context *ctx);
 
@@ -154,21 +146,10 @@ bool vulkan_descriptor_global_create(struct vulkan_context *ctx);
 
 bool vulkan_sync_objects_create(struct vulkan_context *ctx);
 
-// EXTENSIONS
-#define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \
-	VKAPI_ATTR VkResult VKAPI_CALL name(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pMessenger)
-VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default);
-
-typedef VK_CREATE_UTIL_DEBUG_MESSENGER(fn_create_utils_debug_messenger);
-static fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messneger_default;
-
-// EXTENSIONS
-#define VK_DESTROY_UTIL_DEBUG_MESSENGER(name) \
-	VKAPI_ATTR void VKAPI_CALL name(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks *pAllocator)
-VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messneger_default);
-
-typedef VK_DESTROY_UTIL_DEBUG_MESSENGER(fn_destroy_utils_debug_messenger);
-static fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger = vulkan_destroy_utils_debug_messneger_default;
+typedef struct vulkan_sampler {
+	VkSampler handle;
+	VkSamplerCreateInfo info;
+} VulkanSampler;
 
 struct vulkan_context {
 	VkInstance instance;
@@ -189,6 +170,8 @@ struct vulkan_context {
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
 
+	VulkanBuffer staging_buffer;
+
 	// NOTE: Maybe make backend handle indices?
 	// IndexRecycler shader_indices;
 	// IndexRecycler buffer_indices;
@@ -207,3 +190,19 @@ struct vulkan_context {
 	VkDebugUtilsMessengerEXT debug_messenger;
 #endif
 };
+
+// EXTENSIONS
+#define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \
+	VKAPI_ATTR VkResult VKAPI_CALL name(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pMessenger)
+VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default);
+
+typedef VK_CREATE_UTIL_DEBUG_MESSENGER(fn_create_utils_debug_messenger);
+static fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messneger_default;
+
+// EXTENSIONS
+#define VK_DESTROY_UTIL_DEBUG_MESSENGER(name) \
+	VKAPI_ATTR void VKAPI_CALL name(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks *pAllocator)
+VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messneger_default);
+
+typedef VK_DESTROY_UTIL_DEBUG_MESSENGER(fn_destroy_utils_debug_messenger);
+static fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger = vulkan_destroy_utils_debug_messneger_default;

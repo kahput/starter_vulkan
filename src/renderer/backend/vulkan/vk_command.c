@@ -74,16 +74,23 @@ bool vulkan_command_oneshot_begin(VulkanContext *context, VkCommandPool pool, Vk
 bool vulkan_command_oneshot_end(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *buffer) {
 	vkEndCommandBuffer(*buffer);
 
+	VkFence fence;
+	VkFenceCreateInfo fence_info = {
+		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+	};
+	vkCreateFence(context->device.logical, &fence_info, NULL, &fence);
+
 	VkSubmitInfo submit_info = {
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 		.commandBufferCount = 1,
 		.pCommandBuffers = buffer
 	};
 
-	vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(queue);
+	vkQueueSubmit(queue, 1, &submit_info, fence);
+	vkWaitForFences(context->device.logical, 1, &fence, VK_TRUE, UINT64_MAX);
 
 	vkFreeCommandBuffers(context->device.logical, pool, 1, buffer);
+	vkDestroyFence(context->device.logical, fence, NULL);
 
 	return true;
 }

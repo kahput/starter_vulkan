@@ -83,8 +83,8 @@ int main(void) {
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
 	state.editor_camera = (Camera){
-		.position = { 27.0f, 15.0f, -3.0f },
-		.target = { 0.0f, 0.0f, -3.0f },
+		.position = { 27.0f, 15.0f, 0.0f },
+		.target = { 0.0f, 0.0f, 0.0f },
 		.up = { 0.0f, 1.0f, 0.0f },
 		.fov = 45.f,
 		.projection = CAMERA_PROJECTION_PERSPECTIVE
@@ -148,7 +148,7 @@ int main(void) {
 
 	// glTF Mesh
 	ModelSource *model_src = NULL;
-	Arena unique_completely_new_memory = arena_create(MiB(500));
+	Arena unique_completely_new_memory = arena_create(MiB(512));
 	UUID model_id = asset_library_load_model(&unique_completely_new_memory, S("room-large.glb"), &model_src, true);
 
 	RMesh large_room = INVALID_HANDLE;
@@ -218,7 +218,7 @@ int main(void) {
 			renderer_draw_mesh(plane, mat_instance2, transform);
 
 			glm_mat4_identity(transform);
-			glm_translate(transform, (vec3){ 0.0f, 0.0f, -3.0f });
+			glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
 			renderer_draw_mesh(large_room, large_room_mat, transform);
 
 			renderer_end_frame();
