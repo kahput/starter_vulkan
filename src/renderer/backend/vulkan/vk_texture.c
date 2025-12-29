@@ -24,19 +24,19 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 
 	VkDeviceSize size = width * height * channels;
 
-	VkBufferUsageFlags staging_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	VkMemoryPropertyFlags staging_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	VkBuffer staging_buffer;
-	VkDeviceMemory staging_buffer_memory;
-
 	uint32_t indices[] = { context->device.graphics_index };
-	vulkan_buffer_create(context, size, staging_usage, staging_properties, &staging_buffer, &staging_buffer_memory);
-	LOG_DEBUG("Staging buffer = %p, Staging memory = %p", staging_buffer, staging_buffer_memory);
 
-	void *data;
-	vkMapMemory(context->device.logical, staging_buffer_memory, 0, size, 0, &data);
-	memcpy(data, pixels, (size_t)size);
-	vkUnmapMemory(context->device.logical, staging_buffer_memory);
+	VulkanBuffer *staging_buffer = &context->staging_buffer;
+	size_t copy_end = aligned_address(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
+	size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
+	if (copy_end >= staging_buffer->size) {
+		LOG_ERROR("Max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
+		ASSERT(false);
+		return false;
+	}
+
+	vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, pixels);
+	staging_buffer->offset = copy_end;
 
 	vulkan_image_create(
 		context, indices, countof(indices),
@@ -44,10 +44,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		texture);
 
-	vulkan_buffer_to_image(context, staging_buffer, texture->handle, width, height);
-
-	vkDestroyBuffer(context->device.logical, staging_buffer, NULL);
-	vkFreeMemory(context->device.logical, staging_buffer_memory, NULL);
+	vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, texture->handle, width, height);
 
 	if (vulkan_image_view_create(context, texture->handle, texture->format, VK_IMAGE_ASPECT_COLOR_BIT, &texture->view) == false) {
 		LOG_ERROR("Failed to create VkImageView");

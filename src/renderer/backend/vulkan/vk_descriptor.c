@@ -10,22 +10,23 @@
 
 bool vulkan_renderer_global_resource_set_buffer(VulkanContext *context, uint32_t buffer_index) {
 	VulkanBuffer *uniform_buffer = &context->buffer_pool[buffer_index];
-	if (uniform_buffer->handle[0] == NULL) {
-		ASSERT_FORMAT(false, "Vulkan: Buffer target at index %d is not in use", buffer_index);
+	if (uniform_buffer->handle == NULL) {
+		ASSERT_FORMAT(false, "Vulkan: Buffer at index %d is not in use, aborting vulkan_renderer_global_resource_set_buffer", buffer_index);
 		return false;
 	}
 
-	for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+	size_t aligned_size = aligned_address(uniform_buffer->size, uniform_buffer->required_alignment);
+	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
 		VkDescriptorBufferInfo buffer_info = {
-			.buffer = uniform_buffer->handle[frame],
-			.offset = 0,
-			.range = VK_WHOLE_SIZE,
+			.buffer = uniform_buffer->handle,
+			.offset = frame_index * aligned_size,
+			.range = aligned_size,
 		};
 
 		// TODO: Do not hard-code
 		VkWriteDescriptorSet descriptor_write = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = context->global_set.sets[frame],
+			.dstSet = context->global_set.sets[frame_index],
 			.dstBinding = SHADER_UNIFORM_FREQUENCY_PER_FRAME,
 			.dstArrayElement = 0,
 			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,

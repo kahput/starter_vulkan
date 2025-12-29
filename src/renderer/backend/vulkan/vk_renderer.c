@@ -56,15 +56,12 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 	if (vulkan_descriptor_global_create(context) == false)
 		return false;
 
-	context->staging_buffer.size = MiB(32);
-	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
-		if (vulkan_buffer_create(
-				context, context->staging_buffer.size,
-				VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-				&context->staging_buffer.handle[frame_index], &context->staging_buffer.memory[frame_index]) == false)
-			return false;
-	}
+	if (vulkan_buffer_create(
+			context, MiB(32), MAX_FRAMES_IN_FLIGHT,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&context->staging_buffer) == false)
+		return false;
+	vulkan_buffer_memory_map(context, &context->staging_buffer);
 
 	return true;
 }
@@ -89,9 +86,15 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	}
 
 	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
-		if (context->buffer_pool[index].handle[0] != NULL)
+		if (context->buffer_pool[index].handle != NULL)
 			vulkan_renderer_buffer_destroy(context, index);
 	}
+	vkDestroyBuffer(context->device.logical, context->staging_buffer.handle, NULL);
+	vkFreeMemory(context->device.logical, context->staging_buffer.memory, NULL);
+
+	context->staging_buffer.handle = NULL;
+	context->staging_buffer.memory = NULL;
+	context->staging_buffer.mapped = NULL;
 
 	vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, NULL);
 	vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, NULL);
@@ -110,16 +113,6 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 		vkDestroySemaphore(context->device.logical, context->render_finished_semaphores[index], NULL);
 		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[index], NULL);
 		vkDestroyFence(context->device.logical, context->in_flight_fences[index], NULL);
-
-		if (context->staging_buffer.handle[index] != NULL) {
-			vkDestroyBuffer(context->device.logical, context->staging_buffer.handle[index], NULL);
-			vkFreeMemory(context->device.logical, context->staging_buffer.memory[index], NULL);
-
-			context->staging_buffer.size = 0;
-			context->staging_buffer.handle[index] = NULL;
-			context->staging_buffer.memory[index] = NULL;
-			context->staging_buffer.mapped[index] = NULL;
-		}
 	}
 
 #ifndef NDEBUG

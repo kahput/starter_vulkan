@@ -51,7 +51,7 @@ bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_i
 
 bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
 bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_index);
-bool vulkan_renderer_buffer_update(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data);
+bool vulkan_renderer_buffer_write(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data);
 bool vulkan_renderer_buffer_bind(VulkanContext *context, uint32_t retrieve_index, size_t index_size);
 bool vulkan_renderer_buffers_bind(VulkanContext *context, uint32_t *buffers, uint32_t count);
 

@@ -288,7 +288,7 @@ static bool renderer_material_instance_set(Handle instance_handle, String name, 
 	if (member == NULL)
 		return false;
 
-	vulkan_renderer_buffer_update(renderer->context, instance->override_ubo_id, member->offset, member->size, value);
+	vulkan_renderer_buffer_write(renderer->context, instance->override_ubo_id, member->offset, member->size, value);
 	return true;
 }
 
@@ -380,7 +380,7 @@ bool renderer_begin_frame(Camera *camera) {
 
 		glm_vec3_dup(camera->position, data.camera_position);
 
-		vulkan_renderer_buffer_update(renderer->context, renderer->frame_uniform_buffer, 0, sizeof(FrameData), &data);
+		vulkan_renderer_buffer_write(renderer->context, renderer->frame_uniform_buffer, 0, sizeof(FrameData), &data);
 	}
 
 	return true;

@@ -77,9 +77,9 @@ typedef struct vulkan_device {
 
 } VulkanDevice;
 
-bool vulkan_instance_create(struct vulkan_context *ctx, struct platform *platform);
-bool vulkan_surface_create(struct platform *platform, struct vulkan_context *ctx);
-bool vulkan_device_create(struct arena *arena, struct vulkan_context *ctx);
+bool vulkan_instance_create(VulkanContext *context, struct platform *platform);
+bool vulkan_surface_create(struct platform *platform, VulkanContext *context);
+bool vulkan_device_create(struct arena *arena, VulkanContext *context);
 
 typedef struct VulkanSwapchain {
 	VkSwapchainKHR handle;
@@ -94,29 +94,34 @@ typedef struct VulkanSwapchain {
 	VkPresentModeKHR present_mode;
 	VkExtent2D extent;
 } VulkanSwapchain;
-bool vulkan_swapchain_create(struct vulkan_context *ctx, uint32_t width, uint32_t height);
-bool vulkan_swapchain_recreate(struct vulkan_context *ctx, uint32_t width, uint32_t height);
-
-uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
+bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t height);
+bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t width, uint32_t height);
 
 typedef struct vulkan_buffer {
-	VkBuffer handle[MAX_FRAMES_IN_FLIGHT];
-	VkDeviceMemory memory[MAX_FRAMES_IN_FLIGHT];
-	void *mapped[MAX_FRAMES_IN_FLIGHT];
+	VkBuffer handle;
+	VkDeviceMemory memory;
+	void *mapped;
 
 	uint32_t count;
+
+	VkDeviceSize required_alignment, stride;
 	VkDeviceSize offset, size;
 
 	VkBufferUsageFlags usage;
 	VkMemoryPropertyFlags memory_property_flags;
 } VulkanBuffer;
 bool vulkan_buffer_create(
-	struct vulkan_context *ctx,
-	VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-	VkBuffer *buffer, VkDeviceMemory *buffer_memory);
-bool vulkan_buffer_to_buffer(struct vulkan_context *ctx, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
-bool vulkan_buffer_to_image(struct vulkan_context *ctx, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
-bool vulkan_buffer_ubo_create(struct vulkan_context *ctx, VulkanBuffer *buffer, size_t size, void *data);
+	VulkanContext *context,
+	VkDeviceSize size, uint32_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+	VulkanBuffer *out_buffer);
+
+bool vulkan_buffer_memory_map(VulkanContext *context, VulkanBuffer *buffer);
+void vulkan_buffer_memory_unmap(VulkanContext *context, VulkanBuffer *buffer);
+void vulkan_buffer_write(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
+void vulkan_buffer_write_indexed(VulkanBuffer *buffer, uint32_t index, size_t offset, size_t size, void *data);
+bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
+bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
+bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data);
 
 typedef struct vulkan_image {
 	VkImage handle;
@@ -125,26 +130,29 @@ typedef struct vulkan_image {
 
 	VkFormat format;
 } VulkanImage;
-bool vulkan_image_create(struct vulkan_context *ctx, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
-bool vulkan_image_view_create(struct vulkan_context *ctx, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
-void vulkan_image_transition_oneshot(struct vulkan_context *ctx, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
-void vulkan_image_transition(struct vulkan_context *ctx, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+bool vulkan_image_create(VulkanContext *context, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
+bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
+void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 
-bool vulkan_create_depth_image(struct vulkan_context *ctx);
+bool vulkan_create_depth_image(VulkanContext *context);
 
-bool vulkan_command_pool_create(struct vulkan_context *ctx);
-bool vulkan_command_buffer_create(struct vulkan_context *ctx);
-bool vulkan_command_oneshot_begin(struct vulkan_context *ctx, VkCommandPool pool, VkCommandBuffer *oneshot);
-bool vulkan_command_oneshot_end(struct vulkan_context *ctx, VkQueue queue, VkCommandPool pool, VkCommandBuffer *oneshot);
+bool vulkan_command_pool_create(VulkanContext *context);
+bool vulkan_command_buffer_create(VulkanContext *context);
+bool vulkan_command_oneshot_begin(VulkanContext *context, VkCommandPool pool, VkCommandBuffer *oneshot);
+bool vulkan_command_oneshot_end(VulkanContext *context, VkQueue queue, VkCommandPool pool, VkCommandBuffer *oneshot);
 
-void vulkan_load_extensions(struct vulkan_context *ctx);
+void vulkan_load_extensions(VulkanContext *context);
 
-bool vulkan_descriptor_pool_create(struct vulkan_context *ctx);
-bool vulkan_descriptor_layout_create(struct vulkan_context *ctx, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout);
-bool vulkan_descriptor_global_create(struct vulkan_context *ctx);
+bool vulkan_descriptor_pool_create(VulkanContext *context);
+bool vulkan_descriptor_layout_create(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout);
+bool vulkan_descriptor_global_create(VulkanContext *context);
 // bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader);
 
-bool vulkan_sync_objects_create(struct vulkan_context *ctx);
+bool vulkan_sync_objects_create(VulkanContext *context);
+
+size_t vulkan_memory_required_alignment(VulkanContext *context, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties);
+uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
 typedef struct vulkan_sampler {
 	VkSampler handle;
