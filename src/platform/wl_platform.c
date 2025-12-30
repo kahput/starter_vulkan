@@ -280,8 +280,20 @@ bool wl_should_close(Platform *platform) {
 	return platform->should_close;
 }
 
-void wl_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {}
-void wl_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {}
+void wl_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
+	*width = platform->logical_width;
+	*height = platform->logical_height;
+}
+void wl_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height) {
+	struct platform_internal *internal = (struct platform_internal *)platform->internal;
+	WLPlatform *wl = &internal->wl;
+
+	*width = platform->physical_width;
+	*height = platform->physical_height;
+}
 
 void relative_pointer_relative_motion(void *data, struct zwp_relative_pointer_v1 *zwp_relative_pointer_v1, uint32_t utime_hi, uint32_t utime_lo, wl_fixed_t dx, wl_fixed_t dy, wl_fixed_t dx_unaccel, wl_fixed_t dy_unaccel);
 static const struct zwp_relative_pointer_v1_listener relative_pointer_listener = {

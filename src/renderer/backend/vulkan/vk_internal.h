@@ -20,39 +20,50 @@
 #define MAX_UNIFORMS 32
 #define MAX_VARIANTS 8
 
+typedef struct vulkan_buffer {
+	VkBuffer handle;
+	VkDeviceMemory memory;
+	void *mapped;
+
+	uint32_t count;
+
+	VkDeviceSize required_alignment, stride;
+	VkDeviceSize offset, size;
+
+	VkBufferUsageFlags usage;
+	VkMemoryPropertyFlags memory_property_flags;
+} VulkanBuffer;
+
+typedef struct vulkan_group_resource {
+	VulkanBuffer buffer;
+	VkDescriptorSet set;
+
+	struct {
+		uint32_t texture_index;
+		uint32_t binding;
+	} texture_bindings;
+
+	uint32_t shader_index, max_instance_count;
+} VulkanGroupResource;
+
+typedef struct vulkan_global_resource {
+	VulkanBuffer buffer;
+
+	VkDescriptorSetLayoutBinding set_binding;
+	VkDescriptorSetLayout set_layout;
+	VkDescriptorSet set;
+
+	VkPipelineLayout pipeline_layout;
+} VulkanGlobalResource;
+
 typedef struct vulkan_resource_set {
 	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
-
-	ShaderBinding bindings[MAX_BINDINGS_PER_RESOURCE];
 } VulkanResourceSet;
 
 typedef struct vulkan_pipeline {
 	VkPipeline handle;
 	PipelineDesc description;
 } VulkanPipeline;
-
-typedef struct vulkan_shader {
-	VkShaderModule vertex_shader, fragment_shader;
-
-	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];
-	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
-	uint32_t attribute_count, binding_count;
-
-	VkDescriptorSetLayout material_set_layout;
-	VulkanResourceSet material_sets[MAX_RESOURCE_SETS];
-
-	VkPushConstantRange push_constant_ranges[MAX_PUSH_CONSTANT_RANGES];
-	uint32_t ps_count;
-
-	VkPipelineLayout pipeline_layout;
-
-	VulkanPipeline variants[MAX_VARIANTS];
-	uint32_t variant_count, current_variant;
-} VulkanShader;
-struct vulkan_context;
-
-struct platform;
-struct arena;
 
 typedef struct swapchain_support_details {
 	VkSurfaceCapabilitiesKHR capabilities;
@@ -77,9 +88,9 @@ typedef struct vulkan_device {
 
 } VulkanDevice;
 
-bool vulkan_instance_create(VulkanContext *context, struct platform *platform);
-bool vulkan_surface_create(struct platform *platform, VulkanContext *context);
-bool vulkan_device_create(struct arena *arena, VulkanContext *context);
+bool vulkan_instance_create(VulkanContext *context, void *display);
+bool vulkan_surface_create(VulkanContext *context, void *display);
+bool vulkan_device_create(Arena *arena, VulkanContext *context);
 
 typedef struct VulkanSwapchain {
 	VkSwapchainKHR handle;
@@ -97,19 +108,6 @@ typedef struct VulkanSwapchain {
 bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t height);
 bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t width, uint32_t height);
 
-typedef struct vulkan_buffer {
-	VkBuffer handle;
-	VkDeviceMemory memory;
-	void *mapped;
-
-	uint32_t count;
-
-	VkDeviceSize required_alignment, stride;
-	VkDeviceSize offset, size;
-
-	VkBufferUsageFlags usage;
-	VkMemoryPropertyFlags memory_property_flags;
-} VulkanBuffer;
 bool vulkan_buffer_create(
 	VulkanContext *context,
 	VkDeviceSize size, uint32_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
@@ -154,6 +152,22 @@ bool vulkan_sync_objects_create(VulkanContext *context);
 size_t vulkan_memory_required_alignment(VulkanContext *context, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties);
 uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
+typedef struct vulkan_shader {
+	VkShaderModule vertex_shader, fragment_shader;
+
+	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];
+	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
+	uint32_t attribute_count, binding_count;
+
+	VkDescriptorSetLayout group_layout;
+	uint32_t group_ubo_binding;
+	VkDeviceSize instance_size;
+	VkPipelineLayout pipeline_layout;
+
+	VulkanPipeline variants[MAX_VARIANTS];
+	uint32_t variant_count, bind_variant;
+} VulkanShader;
+
 typedef struct vulkan_sampler {
 	VkSampler handle;
 	VkSamplerCreateInfo info;
@@ -161,6 +175,7 @@ typedef struct vulkan_sampler {
 
 struct vulkan_context {
 	VkInstance instance;
+	void *display;
 
 	VkSurfaceKHR surface;
 	VulkanDevice device;
@@ -170,22 +185,18 @@ struct vulkan_context {
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
-	VkDescriptorSetLayout globa_set_layout;
-	VulkanResourceSet global_set;
+	VkPushConstantRange global_range;
 
 	VulkanShader *shader_pool;
 	VulkanBuffer *buffer_pool;
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
 
+	VulkanGlobalResource *global_resources;
+	VulkanGroupResource *group_resources;
+
 	VulkanBuffer staging_buffer;
-
-	// NOTE: Maybe make backend handle indices?
-	// IndexRecycler shader_indices;
-	// IndexRecycler buffer_indices;
-	// IndexRecycler image_indices;
-	// IndexRecycler sampler_indices;
-
+	VulkanShader *bound_shader;
 	VkDescriptorPool descriptor_pool;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];

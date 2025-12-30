@@ -112,7 +112,6 @@ bool vulkan_renderer_buffer_write(VulkanContext *context, uint32_t retrieve_inde
 	size_t aligned_size = aligned_address(buffer->size, buffer->required_alignment);
 	uint8_t *dest = (uint8_t *)buffer->mapped + (aligned_size * context->current_frame) + offset;
 	memcpy(dest, data, copy_size);
-	return true;
 
 	return true;
 }

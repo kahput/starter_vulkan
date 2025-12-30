@@ -30,7 +30,7 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 };
 void create_debug_messenger(VulkanContext *context);
 
-bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
+bool vulkan_instance_create(VulkanContext *context, void *display) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",
@@ -41,7 +41,7 @@ bool vulkan_instance_create(VulkanContext *context, Platform *platform) {
 	};
 
 	uint32_t platform_extension_count = 0, extension_count = 0;
-	const char **extensions = platform_vulkan_extensions(platform, &platform_extension_count);
+	const char **extensions = platform_vulkan_extensions(display, &platform_extension_count);
 	vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL);
 
 	ArenaTemp scratch = arena_scratch(NULL);

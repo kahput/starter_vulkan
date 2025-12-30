@@ -1,11 +1,11 @@
 #include "renderer.h"
+#include "platform.h"
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "allocators/arena.h"
 #include "allocators/pool.h"
 
-#include "assets/asset_types.h"
 #include "common.h"
 #include "core/astring.h"
 #include "core/debug.h"
@@ -15,6 +15,7 @@
 
 #include "platform/filesystem.h"
 
+#include <cglm/io.h>
 #include <cglm/vec3.h>
 #include <math.h>
 #include <stdint.h>
@@ -40,13 +41,11 @@ typedef struct model {
 typedef struct renderer {
 	Arena *arena;
 	VulkanContext *context;
-	void *display;
+	Platform *display;
 
 	uint32_t width, height;
 
-	uint32_t global_set;
-
-	uint32_t frame_uniform_buffer;
+	uint32_t global_resource;
 
 	RShader default_shader;
 	RMaterial default_material;
@@ -71,7 +70,9 @@ typedef struct renderer {
 	IndexRecycler buffer_indices;
 	IndexRecycler image_indices;
 	IndexRecycler sampler_indices;
-	IndexRecycler set_indices;
+
+	IndexRecycler group_indices;
+	IndexRecycler global_indices;
 } Renderer;
 
 static Renderer *renderer = { 0 };
@@ -117,7 +118,9 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 	index_recycler_create(renderer->arena, &renderer->buffer_indices, MAX_BUFFERS);
 	index_recycler_create(renderer->arena, &renderer->image_indices, MAX_TEXTURES);
 	index_recycler_create(renderer->arena, &renderer->sampler_indices, MAX_SAMPLERS);
-	index_recycler_create(renderer->arena, &renderer->set_indices, MAX_RESOURCE_SETS);
+
+	index_recycler_create(renderer->arena, &renderer->group_indices, MAX_GROUP_RESOURCES);
+	index_recycler_create(renderer->arena, &renderer->global_indices, MAX_GLOBAL_RESOURCES);
 
 	renderer->mesh_allocator = allocator_pool_from_arena(renderer->arena, 1024, sizeof(Mesh), alignof(Mesh));
 	renderer->texture_allocator = allocator_pool_from_arena(renderer->arena, 1024, sizeof(Texture), alignof(Texture));
@@ -125,9 +128,8 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 	renderer->material_allocator = allocator_pool_from_arena(renderer->arena, 1024, sizeof(Material), alignof(Material));
 
 	// ========================= DEFAULT ======================================
-	renderer->frame_uniform_buffer = recycler_new_index(&renderer->buffer_indices);
-	vulkan_renderer_buffer_create(renderer->context, renderer->frame_uniform_buffer, BUFFER_TYPE_UNIFORM, sizeof(FrameData), NULL);
-	vulkan_renderer_global_resource_set_buffer(renderer->context, renderer->frame_uniform_buffer);
+	renderer->global_resource = recycler_new_index(&renderer->global_indices);
+	vulkan_renderer_resource_global_create(renderer->context, renderer->global_resource, sizeof(FrameData));
 
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
 	TextureConfig config = { .pixels = WHITE, .width = 1, .height = 1, .channels = 4, .is_srgb = false };
@@ -219,37 +221,11 @@ Handle renderer_material_create(Handle base_material_handle) {
 
 	instance->shader = shader->handle;
 
-	// TODO: Do lazy override instead
-	instance->override_resource_id = shader->instance_count++;
-	vulkan_renderer_shader_resource_create(renderer->context, instance->override_resource_id, shader->handle.index);
+	instance->group_resource_id = recycler_new_index(&renderer->group_indices);
+	vulkan_renderer_resource_group_create(renderer->context, instance->group_resource_id, shader->handle.index, 256);
 
-	if (shader->ubo_size > 0) {
-		instance->override_ubo_id = recycler_new_index(&renderer->buffer_indices);
-
-		vulkan_renderer_buffer_create(
-			renderer->context,
-			instance->override_ubo_id,
-			BUFFER_TYPE_UNIFORM,
-			shader->ubo_size,
-			shader->default_ubo_data);
-
-		// TODO: Store ubo_binding_index in MaterialBase to avoid this loop
-		uint32_t ubo_binding = 0;
-		for (uint32_t i = 0; i < shader->reflection.binding_count; ++i) {
-			if (shader->reflection.bindings[i].type == SHADER_BINDING_UNIFORM_BUFFER &&
-				shader->reflection.bindings[i].frequency == SHADER_UNIFORM_FREQUENCY_PER_MATERIAL) {
-				ubo_binding = shader->reflection.bindings[i].binding;
-				break;
-			}
-		}
-
-		vulkan_renderer_shader_resource_set_buffer(
-			renderer->context,
-			shader->handle.index,
-			instance->override_resource_id,
-			ubo_binding,
-			instance->override_ubo_id);
-	}
+	if (shader->default_ubo_data && shader->ubo_size > 0)
+		vulkan_renderer_resource_group_write(renderer->context, instance->group_resource_id, 0, 0, shader->ubo_size, shader->default_ubo_data, true);
 
 	for (uint32_t i = 0; i < shader->reflection.binding_count; ++i) {
 		ShaderBinding *b = &shader->reflection.bindings[i];
@@ -257,14 +233,7 @@ Handle renderer_material_create(Handle base_material_handle) {
 			RTexture rtexture = shader->default_textures[b->binding];
 			Texture *texture = ((Texture *)renderer->texture_allocator->slots) + rtexture.index;
 
-			vulkan_renderer_shader_resource_set_texture_sampler(
-				renderer->context,
-				shader->handle.index,
-				instance->override_resource_id,
-				b->binding,
-				texture->handle,
-				renderer->nearest_sampler // Default sampler, maybe allow override later
-			);
+			vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, b->binding, texture->handle, renderer->nearest_sampler);
 		}
 	}
 
@@ -288,7 +257,7 @@ static bool renderer_material_instance_set(Handle instance_handle, String name, 
 	if (member == NULL)
 		return false;
 
-	vulkan_renderer_buffer_write(renderer->context, instance->override_ubo_id, member->offset, member->size, value);
+	vulkan_renderer_resource_group_write(renderer->context, instance->group_resource_id, 0, member->offset, member->size, value, false);
 	return true;
 }
 
@@ -335,7 +304,8 @@ bool renderer_material_set_texture(Handle instance_handle, String name, UUID tex
 		return false;
 	}
 
-	vulkan_renderer_shader_resource_set_texture_sampler(renderer->context, shader->handle.index, instance->override_resource_id, texture_binding, texture->handle, renderer->nearest_sampler);
+	LOG_WARN("No changing of textures implemented");
+	vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, texture_binding, texture->handle, renderer->nearest_sampler);
 	return true;
 }
 
@@ -366,7 +336,7 @@ bool renderer_unload_mesh(UUID id) {
 }
 
 bool renderer_begin_frame(Camera *camera) {
-	if (vulkan_renderer_frame_begin(renderer->context, renderer->display) == false)
+	if (vulkan_renderer_frame_begin(renderer->context, renderer->display->physical_width, renderer->display->logical_height) == false)
 		return false;
 
 	if (camera) {
@@ -380,7 +350,8 @@ bool renderer_begin_frame(Camera *camera) {
 
 		glm_vec3_dup(camera->position, data.camera_position);
 
-		vulkan_renderer_buffer_write(renderer->context, renderer->frame_uniform_buffer, 0, sizeof(FrameData), &data);
+		vulkan_renderer_resource_global_write(renderer->context, renderer->global_resource, 0, sizeof(FrameData), &data);
+		vulkan_renderer_resource_global_bind(renderer->context, renderer->global_resource);
 	}
 
 	return true;
@@ -393,14 +364,15 @@ bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, m
 	Mesh *mesh = ((Mesh *)renderer->mesh_allocator->slots) + mesh_handle.index;
 	Material *instance = ((Material *)renderer->material_allocator->slots) + material_instance_handle.index; // This doesn't draw
 
-	for (uint32_t i =0; i < 16; i++) {
-		float val = ((float*)transform)[i];
+	for (uint32_t i = 0; i < 16; i++) {
+		float val = ((float *)transform)[i];
 		ASSERT(isnan(val) == false || isinf(val) == false);
 	}
 
-	vulkan_renderer_shader_bind(renderer->context, instance->shader.index, instance->override_resource_id);
-	vulkan_renderer_push_constants(renderer->context, 0, 0, sizeof(mat4), transform);
+	vulkan_renderer_shader_bind(renderer->context, instance->shader.index);
+	vulkan_renderer_resource_group_bind(renderer->context, instance->group_resource_id, 0);
 
+	vulkan_renderer_resource_local_write(renderer->context, 0, sizeof(mat4), transform);
 	vulkan_renderer_buffer_bind(renderer->context, mesh->vertex_buffer, 0);
 	if (mesh->index_count) {
 		vulkan_renderer_buffer_bind(renderer->context, mesh->index_buffer, mesh->index_size);
@@ -496,7 +468,7 @@ uint32_t resolve_shader(UUID id, ShaderConfig *config) {
 	desc.cull_mode = CULL_MODE_NONE;
 	vulkan_renderer_shader_create(
 		renderer->arena, renderer->context,
-		shader->handle.index, config,
+		shader->handle.index, renderer->global_resource, config,
 		desc,
 		&shader->reflection);
 

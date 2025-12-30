@@ -228,7 +228,7 @@ typedef struct {
 
 typedef struct {
 	Handle shader;
-	uint32_t override_resource_id, override_ubo_id;
+	uint32_t group_resource_id;
 
 	MaterialStateFlag flags;
 } Material;

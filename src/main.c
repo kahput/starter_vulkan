@@ -224,15 +224,6 @@ int main(void) {
 			renderer_end_frame();
 		}
 
-		// if (input_key_pressed(SV_KEY_L)) {
-		// 	current_texture = current_texture == sprite_id_1 ? sprite_id : sprite_id_1;
-		// 	renderer_material_set_texture(mat_instance2, S("u_texture"), current_texture);
-		// 	renderer_material_set_texture(mat_instance, S("u_texture"), current_texture == sprite_id_1 ? sprite_id : sprite_id_1);
-		// }
-
-		// LOG_INFO("CameraPosition { %.2f, %.2f, %.2f }, target = { %.2f, %.2f, %.2f }",
-		// 	state.editor_camera.position[0], state.editor_camera.position[1], state.editor_camera.position[2],
-		// 	state.editor_camera.target[0], state.editor_camera.target[1], state.editor_camera.target[2]);
 		static bool wireframe = false;
 		if (input_key_pressed(SV_KEY_ENTER)) {
 			wireframe = wireframe ? false : true;

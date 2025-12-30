@@ -1,5 +1,5 @@
-#include "renderer/backend/vulkan_api.h"
 #include "vk_internal.h"
+#include "renderer/backend/vulkan_api.h"
 
 #include "platform.h"
 
@@ -9,10 +9,11 @@
 
 static uint32_t image_index = 0;
 
-bool vulkan_renderer_create(struct arena *arena, struct platform *platform, VulkanContext **out_context) {
+bool vulkan_renderer_create(struct arena *arena, struct platform *display, VulkanContext **out_context) {
 	*out_context = arena_push_struct(arena, VulkanContext);
 
 	VulkanContext *context = *out_context;
+	context->display = display;
 
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
@@ -25,10 +26,13 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
 	context->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
 
-	if (vulkan_instance_create(context, platform) == false)
+	context->group_resources = arena_push_array_zero(arena, VulkanGroupResource, MAX_GROUP_RESOURCES);
+	context->global_resources = arena_push_array_zero(arena, VulkanGlobalResource, MAX_GLOBAL_RESOURCES);
+
+	if (vulkan_instance_create(context, context->display) == false)
 		return false;
 
-	if (vulkan_surface_create(platform, context) == false)
+	if (vulkan_surface_create(context, context->display) == false)
 		return false;
 
 	if (vulkan_device_create(arena, context) == false)
@@ -46,14 +50,12 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 	if (vulkan_sync_objects_create(context) == false)
 		return false;
 
-	if (vulkan_swapchain_create(context, platform->physical_width, platform->physical_height) == false)
+	uint32_t width, height;
+	platform_get_physical_dimensions(context->display, &width, &height);
+	if (vulkan_swapchain_create(context, width, height) == false)
 		return false;
 
 	if (vulkan_create_depth_image(context) == false)
-		return false;
-
-	// TODO: Let the user decide
-	if (vulkan_descriptor_global_create(context) == false)
 		return false;
 
 	if (vulkan_buffer_create(
@@ -62,6 +64,12 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *platform, Vulk
 			&context->staging_buffer) == false)
 		return false;
 	vulkan_buffer_memory_map(context, &context->staging_buffer);
+
+	context->global_range = (VkPushConstantRange){
+		.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
+		.offset = 0,
+		.size = 128
+	};
 
 	return true;
 }
@@ -137,13 +145,13 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 	return true;
 }
 
-bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platform) {
+bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_t height) {
 	vkWaitForFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame], VK_TRUE, UINT64_MAX);
 
 	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		vulkan_swapchain_recreate(context, platform->physical_width, platform->physical_height);
+		vulkan_swapchain_recreate(context, width, height);
 		LOG_INFO("Recreating Swapchain");
 		return false;
 	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -203,6 +211,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, struct platform *platfo
 		.pDepthAttachment = &depth_attachment,
 	};
 
+	// TODO: Make renderpasses first class resources
 	vkCmdBeginRendering(context->command_buffers[context->current_frame], &r_info);
 
 	VkViewport viewport = {
