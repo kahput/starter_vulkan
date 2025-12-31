@@ -172,7 +172,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 		return false;
 	}
 
-	VkClearValue clear_color = { .color = { .float32 = { 1.00f, 1.00f, 1.00f, 1.0f } } };
+	VkClearValue clear_color = { .color = { .float32 = { 0, 0, 0, 1.0f } } };
 	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
 
 	vulkan_image_transition(

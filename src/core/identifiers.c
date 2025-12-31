@@ -33,14 +33,15 @@ Handle handle_create_with_uuid(uint32_t index, UUID id) {
 	return (Handle){ .id = id, .index = index };
 }
 
-bool handle_valid(Handle handle) {
+bool handle_is_valid(Handle handle) {
 	return handle.index != INVALID_INDEX && handle.id != INVALID_UUID;
 }
 
-void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t capacity) {
+void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t start_offset, uint32_t capacity) {
 	recycler->free_indices = arena_push_array_zero(arena, uint32_t, capacity);
 	recycler->free_count = recycler->next_unused = 0;
 	recycler->capacity = capacity;
+	recycler->next_unused = start_offset;
 }
 
 uint32_t recycler_new_index(IndexRecycler *recycler) {

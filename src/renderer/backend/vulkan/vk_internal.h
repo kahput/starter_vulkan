@@ -38,11 +38,6 @@ typedef struct vulkan_group_resource {
 	VulkanBuffer buffer;
 	VkDescriptorSet set;
 
-	struct {
-		uint32_t texture_index;
-		uint32_t binding;
-	} texture_bindings;
-
 	uint32_t shader_index, max_instance_count;
 } VulkanGroupResource;
 

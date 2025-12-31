@@ -418,7 +418,6 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 
 	if (shader->attribute_count) {
 		shader->bindings[0].binding = 0;
-		ASSERT(stride == 48);
 		shader->bindings[0].stride = stride;
 		shader->bindings[0]
 			.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;

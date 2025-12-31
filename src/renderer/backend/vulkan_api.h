@@ -13,14 +13,14 @@ struct platform;
 
 typedef struct vulkan_context VulkanContext;
 
-#define MAX_BUFFERS 2048
+#define MAX_BUFFERS 1024
 #define MAX_TEXTURES 512
 #define MAX_SAMPLERS 32
-#define MAX_SHADERS 32
-#define MAX_PIPELINES 32
 
+#define MAX_SHADERS 32
 #define MAX_GLOBAL_RESOURCES 32
 #define MAX_GROUP_RESOURCES 256
+#define MAX_GEOMETRY_RESOURCES 1024
 
 bool vulkan_renderer_create(Arena *arena, struct platform *platform, VulkanContext **out_context);
 void vulkan_renderer_destroy(VulkanContext *context);
@@ -56,9 +56,9 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index);
 
 // TODO: Geometry as first class resources
-// bool vulkan_renderer_geometry_create(VulkanContext *ctx, uint32_t geom_index, void *verts, size_t v_size, void *indices, size_t i_size);
-// bool vulkan_renderer_geometry_destroy(VulkanContext *ctx, uint32_t geom_index);
-// bool vulkan_renderer_geometry_draw(VulkanContext *ctx, uint32_t geom_index);
+// bool vulkan_renderer_geometry_create(VulkanContext *context, uint32_t store_index, void *vertices, size_t vertex_size, void *indices, size_t i_size);
+// bool vulkan_renderer_geometry_destroy(VulkanContext *context, uint32_t retrieve_index);
+// bool vulkan_renderer_geometry_draw(VulkanContext *context, uint32_t retrieve_index);
 
 bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
 bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_index);

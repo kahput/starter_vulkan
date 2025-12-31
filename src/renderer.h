@@ -1,20 +1,28 @@
 #pragma once
 
-#include "assets/asset_types.h"
-#include "core/identifiers.h"
-
+#include "core/r_types.h"
 #include "renderer/r_internal.h"
+
 #include "scene.h"
 
-typedef Handle RTexture;
-typedef Handle RShader;
-typedef Handle RMaterial;
-typedef Handle RMesh;
+#include "core/identifiers.h"
+
+enum {
+	RENDERER_DEFAULT_TEXTURE_WHITE,
+	RENDERER_DEFAULT_TEXTURE_NORMAL,
+	RENDERER_DEFAULT_TEXTURE_BLACK,
+	RENDERER_DEFAULT_TEXTURE_COUNT,
+};
+
+enum {
+	RENDERER_DEFAULT_MATERIAL_PBR,
+	RENDERER_DEFAULT_MATERIAL_COUNT
+};
 
 bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t width, uint32_t height);
 void renderer_system_shutdown(void);
 
-bool renderer_begin_frame(Camera *camera);
+bool renderer_begin_frame(Camera *camera, PointLight *light);
 bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, mat4 transform);
 bool renderer_end_frame(void);
 
@@ -22,13 +30,6 @@ void renderer_state_global_wireframe_set(bool active);
 
 bool renderer_on_resize(uint32_t width, uint32_t height);
 
-typedef struct {
-	void *pixels;
-	uint32_t width;
-	uint32_t height;
-	uint32_t channels;
-	bool is_srgb;
-} TextureConfig;
 RTexture renderer_texture_create(UUID id, TextureConfig *config);
 bool renderer_texture_destroy(RTexture);
 
@@ -60,7 +61,7 @@ RShader renderer_shader_create(UUID id, ShaderConfig *config);
 RShader renderer_shader_default(void);
 bool renderer_shader_destroy(RShader shader);
 
-RMaterial renderer_material_create(RShader base);
+RMaterial renderer_material_create(RShader shader, ShaderParameter *parameters, uint32_t parameter_count);
 RMaterial renderer_material_default(void);
 bool renderer_material_destroy(RMaterial material);
 
@@ -68,6 +69,10 @@ bool renderer_material_setf(RMaterial material, String name, float value);
 bool renderer_material_set2fv(RMaterial material, String name, vec2 value);
 bool renderer_material_set3fv(RMaterial material, String name, vec3 value);
 bool renderer_material_set4fv(RMaterial material, String name, vec4 value);
+bool renderer_material_set_texture(RMaterial material, String name, UUID texture); // TODO: Bindless descriptors
 
-bool renderer_material_set_texture(Handle instance, String name, UUID texture);
-// bool renderer_material_instance_commit(Handle instance);
+// bool renderer_mesh_override_setf(RMesh mesh, String name, float value);
+// bool renderer_mesh_override_set2fv(RMesh mesh, String name, vec2 value);
+// bool renderer_mesh_override_set3fv(RMesh mesh, String name, vec3 value);
+// bool renderer_mesh_override_set4fv(RMesh mesh, String name, vec4 value);
+// bool renderer_mesh_override_set_texture(RMesh mesh, String name, UUID texture); // TODO: Bindless descriptors

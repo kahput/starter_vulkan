@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/r_types.h"
+
 #include "common.h"
 #include "core/astring.h"
 #include "core/identifiers.h"
@@ -87,19 +89,9 @@ typedef struct shader_binding {
 	ShaderBuffer *buffer_layout;
 } ShaderBinding;
 
-typedef struct shader_constant {
-	String name;
-	ShaderStageFlag stage;
-
-	ShaderBuffer *buffer;
-} ShaderPushConstant;
-
 typedef struct {
 	ShaderBinding *bindings;
 	uint32_t binding_count;
-
-	ShaderPushConstant *push_constants;
-	uint32_t push_constant_count;
 } ShaderReflection;
 
 typedef enum cull_mode {
@@ -221,13 +213,10 @@ typedef struct {
 
 	void *default_ubo_data;
 	size_t ubo_size;
-
-	Handle default_textures[16];
-	uint32_t instance_count;
 } Shader;
 
 typedef struct {
-	Handle shader;
+	RShader shader;
 	uint32_t group_resource_id;
 
 	MaterialStateFlag flags;
@@ -236,6 +225,7 @@ typedef struct {
 typedef struct {
 	mat4 view;
 	mat4 projection;
+	PointLight light;
 	vec3 camera_position;
 	float _pad0;
 } FrameData;
@@ -256,6 +246,4 @@ typedef struct mesh {
 	uint32_t vertex_buffer, index_buffer;
 	uint32_t vertex_count, index_count;
 	size_t index_size;
-
-	Handle material;
 } Mesh;

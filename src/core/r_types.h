@@ -35,9 +35,9 @@ typedef enum {
 	// SPT_INT3,
 	// SPT_INT4,
 
-	SPT_COLOR,
-	SPT_TEXTURE,
-	SPT_STRUCT,
+	SHADER_PARAMETER_TYPE_COLOR,
+	SHADER_PARAMETER_TYPE_TEXTURE,
+	SHADER_PARAMETER_TYPE_STRUCT,
 } ShaderParameterType;
 
 typedef struct {
@@ -65,3 +65,8 @@ typedef struct {
 		void *raw;
 	} as;
 } ShaderParameter;
+
+typedef struct {
+	vec4 position;
+	vec4 color;
+} PointLight;

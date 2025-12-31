@@ -1,9 +1,6 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 
-// -----------------------------------------------------------------------------
-// VERTEX SHADER
-// -----------------------------------------------------------------------------
 #ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
@@ -19,8 +16,6 @@ layout(location = 2) in vec2 in_uv;
 layout(location = 3) in vec4 in_tangent;
 
 layout(location = 0) out vec2 out_uv;
-layout(location = 1) out vec3 out_normal;
-layout(location = 2) out vec3 out_world_position;
 
 void main() {
     vec3 world_position = vec3(push_constants.model[3][0], push_constants.model[3][1], push_constants.model[3][2]);
@@ -35,53 +30,40 @@ void main() {
     vec3 right = normalize(cross(up, camera_direction));
     vec3 forward = normalize(camera_direction);
 
-    mat3 billboard_matrix = mat3(right * scale_x, up * scale_y, forward);
-    mat3 normal_matrix = mat3(right, up, forward);
+    mat3 billboard_rotation = mat3(right * scale_x, up * scale_y, forward);
 
-    vec3 vertex_position = (billboard_matrix * in_position) + world_position;
+    vec3 vertex_position = (billboard_rotation * in_position) + world_position;
 
     gl_Position = u_scene.projection * u_scene.view * vec4(vertex_position, 1.0f);
 
     out_uv = in_uv;
-    out_normal = normal_matrix * in_normal;
-    out_world_position = world_position;
 }
-
 #endif
 
 // -----------------------------------------------------------------------------
 // FRAGMENT SHADER
 // -----------------------------------------------------------------------------
 #ifdef SHADER_STAGE_FRAGMENT
+
 #pragma shader_stage(fragment)
 
-layout(set = 1, binding = 0) uniform sampler2D u_texture;
-
-layout(set = 1, binding = 1) uniform material {
-    vec4 tint;
-} u_material;
+layout(set = 1, binding = 0) uniform MaterialParameters {
+    vec4 color;
+} material;
 
 #include "global.shared"
 
 layout(location = 0) in vec2 in_uv;
-layout(location = 1) in vec3 in_normal;
-layout(location = 2) in vec3 in_world_position;
-
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    vec4 albedo = texture(u_texture, in_uv) * u_material.tint;
-    if (albedo.a < 0.1) discard;
+    vec2 center_offset = in_uv * 2.0 - 1.0;
 
-    float ambient_factor = 0.1f;
-    vec3 ambient = ambient_factor * u_scene.light.color.rgb;
-    vec3 normal = normalize(in_normal);
-    vec3 light_direction = normalize(u_scene.light.position.xyz - in_world_position);
+    float dist_squared = dot(center_offset, center_offset);
 
-    float diffuse_factor = max(dot(normal, light_direction), 0.0);
-    vec3 diffuse = diffuse_factor * u_scene.light.color.rgb;
+    if (dist_squared > 1.0)
+        discard;
 
-    vec3 color = (ambient + diffuse) * albedo.rgb;
-    out_color = vec4(color, 1.0f);
+    out_color = material.color;
 }
 #endif

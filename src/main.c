@@ -45,6 +45,7 @@ typedef struct layer {
 
 void editor_update(float dt);
 bool resize_event(Event *event);
+RShader create_shader(String name, size_t ubo_size, void *ubo_data);
 UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation, MeshSource **out_mesh);
 
 static struct State {
@@ -52,8 +53,6 @@ static struct State {
 	Platform display;
 
 	Camera editor_camera;
-
-	UUID small_room_id;
 
 	Layer layers[1];
 	Layer *current_layer;
@@ -65,7 +64,7 @@ int main(void) {
 	state.permanent_arena = arena_create(MiB(512));
 	state.frame_arena = arena_create(MiB(4));
 
-	// logger_set_level(LOG_LEVLE_T);
+	logger_set_level(LOG_LEVEL_DEBUG);
 
 	event_system_startup();
 	input_system_startup();
@@ -94,25 +93,7 @@ int main(void) {
 	float last_frame = 0.0f;
 
 	asset_library_track_directory(S("assets"));
-
-	ShaderSource *shader_src = NULL;
-	UUID shader_id = asset_library_request_shader(S("sprite.glsl"), &shader_src);
-
-	// MaterialProperty properties[] = {
-	// 	(MaterialProperty){ .name = S("u_texture"), .type = PROPERTY_TYPE_IMAGE, .as.image = image_src },
-	// 	(MaterialProperty){ .name = S("tint"), .type = PROPERTY_TYPE_COLOR, .as.vec3f = { 1.0f, 1.0f, 0.0f } },
-	// };
-
-	ShaderConfig shader_config = {
-		.vertex_code = shader_src->vertex_shader.content,
-		.vertex_code_size = shader_src->vertex_shader.size,
-		.fragment_code = shader_src->fragment_shader.content,
-		.fragment_code_size = shader_src->fragment_shader.size,
-		.default_ubo_data = (vec4){ 1.0f, 1.0f, 1.0f, 1.0f },
-		.ubo_size = sizeof(vec4)
-	};
-
-	RShader shader = renderer_shader_create(shader_src->id, &shader_config);
+	RShader sprite_shader = create_shader(S("sprite.glsl"), sizeof(vec4), (vec4){ 1.0f, 1.0f, 1.0f, 1.0f });
 
 	ArenaTemp scratch = arena_scratch(NULL);
 	MeshSource *plane_src = NULL;
@@ -135,7 +116,7 @@ int main(void) {
 	TextureConfig sprite_tex = { .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
 	renderer_texture_create(sprite_id, &sprite_tex);
 
-	Handle mat_instance = renderer_material_create(shader);
+	Handle mat_instance = renderer_material_create(sprite_shader, NULL, 0);
 	renderer_material_set_texture(mat_instance, S("u_texture"), sprite_id);
 
 	// Sprite 1
@@ -143,7 +124,7 @@ int main(void) {
 	sprite_tex = (TextureConfig){ .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
 	renderer_texture_create(sprite_id_1, &sprite_tex);
 
-	Handle mat_instance2 = renderer_material_create(shader);
+	Handle mat_instance2 = renderer_material_create(sprite_shader, NULL, 0);
 	renderer_material_set_texture(mat_instance2, S("u_texture"), sprite_id_1);
 
 	// glTF Mesh
@@ -172,7 +153,7 @@ int main(void) {
 
 		renderer_texture_create(model_src->images->id, &config);
 
-		large_room_mat = renderer_material_create(renderer_shader_default());
+		large_room_mat = renderer_material_create(renderer_shader_default(), NULL, 0);
 		renderer_material_set_texture(large_room_mat, model_src->materials->properties[0].name, model_src->images->id);
 	}
 
@@ -181,10 +162,17 @@ int main(void) {
 	float timer_accumulator = 0.0f;
 	uint32_t frames = 0;
 
+	PointLight light = {
+		.position = { 0.0f, 3.0f, 1.5f },
+		.color = { 1.0f, 1.0f, 1.0f, 1.0f }
+	};
+	RShader light_shader = create_shader(S("light_debug.glsl"), sizeof(vec4), light.color);
+	RMaterial light_mat = renderer_material_create(light_shader, NULL, 0);
+
 	while (platform_should_close(&state.display) == false) {
-		float current_frame = platform_time_seconds(&state.display);
-		delta_time = current_frame - last_frame;
-		last_frame = current_frame;
+		float time = platform_time_seconds(&state.display);
+		delta_time = time - last_frame;
+		last_frame = time;
 		delta_time = max(delta_time, 0.0016f);
 
 		platform_poll_events(&state.display);
@@ -203,9 +191,13 @@ int main(void) {
 
 		static float tint = 0.0f;
 		tint += delta_time;
+		float tint_normalized = (cos(tint) + 1.0f) * 0.5f;
 
-		if (renderer_begin_frame(&state.editor_camera)) {
-			renderer_material_set4fv(mat_instance, S("tint"), (vec4){ (cos(tint) + 1.0f) / 2.f, 1.0f, 1.0f, 1.0f });
+		light.position[0] = cos(time) * 5;
+		light.position[2] = sin(time) * 5;
+
+		if (renderer_begin_frame(&state.editor_camera, &light)) {
+			// renderer_material_set3fv(mat_instance, S("tint"), (vec3){ tint_normalized, 1.0f, 1.0f });
 
 			mat4 transform = GLM_MAT4_IDENTITY_INIT;
 			glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
@@ -221,6 +213,9 @@ int main(void) {
 			glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
 			renderer_draw_mesh(large_room, large_room_mat, transform);
 
+			glm_mat4_identity(transform);
+			glm_translate(transform, light.position);
+			renderer_draw_mesh(plane, light_mat, transform);
 			renderer_end_frame();
 		}
 
@@ -369,4 +364,20 @@ UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivid
 	(*out_mesh)->material = NULL;
 
 	return id;
+}
+
+RShader create_shader(String name, size_t ubo_size, void *ubo_data) {
+	ShaderSource *shader_src = NULL;
+	UUID shader_id = asset_library_request_shader(name, &shader_src);
+
+	ShaderConfig shader_config = {
+		.vertex_code = shader_src->vertex_shader.content,
+		.vertex_code_size = shader_src->vertex_shader.size,
+		.fragment_code = shader_src->fragment_shader.content,
+		.fragment_code_size = shader_src->fragment_shader.size,
+		.default_ubo_data = ubo_data,
+		.ubo_size = ubo_size
+	};
+
+	return renderer_shader_create(shader_src->id, &shader_config);
 }

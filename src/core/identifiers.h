@@ -16,7 +16,7 @@ typedef struct {
 #define INVALID_HANDLE ((Handle){ .id = INVALID_UUID, INVALID_INDEX })
 Handle handle_create(uint32_t index);
 Handle handle_create_with_uuid(uint32_t index, UUID id);
-bool handle_valid(Handle handle);
+bool handle_is_valid(Handle handle);
 
 typedef struct index_recycler {
 	uint32_t *free_indices;
@@ -25,6 +25,6 @@ typedef struct index_recycler {
 	uint32_t capacity;
 } IndexRecycler;
 
-void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t capacity);
+void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t start_offset, uint32_t capacity);
 uint32_t recycler_new_index(IndexRecycler *recycler);
 void recycler_free_index(IndexRecycler *recycler, uint32_t index);
