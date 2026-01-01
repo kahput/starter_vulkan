@@ -24,8 +24,6 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 
 	VkDeviceSize size = width * height * channels;
 
-	uint32_t indices[] = { context->device.graphics_index };
-
 	VulkanBuffer *staging_buffer = &context->staging_buffer;
 	size_t copy_end = aligned_address(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
 	size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
@@ -39,7 +37,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 	staging_buffer->offset = copy_end;
 
 	vulkan_image_create(
-		context, indices, countof(indices),
+		context, VK_SAMPLE_COUNT_1_BIT,
 		width, height, to_vulkan_format(channels, is_srgb), VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		texture);

@@ -76,11 +76,25 @@ bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t new_width, uint3
 		vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
 		vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
 		vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
+
+		context->depth_attachment.view = NULL;
+		context->depth_attachment.handle = NULL;
+		context->depth_attachment.memory = NULL;
+	}
+
+	if (context->color_attachment.handle) {
+		vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
+		vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
+		vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
+
+		context->color_attachment.view = NULL;
+		context->color_attachment.handle = NULL;
+		context->color_attachment.memory = NULL;
 	}
 
 	if (vulkan_swapchain_create(context, new_width, new_height) == false)
 		return false;
-	if (vulkan_create_depth_image(context) == false)
+	if (vulkan_image_default_attachments_create(context) == false)
 		return false;
 
 	return true;
@@ -120,27 +134,6 @@ bool create_swapchain_image_views(VulkanContext *context) {
 			return false;
 		}
 	}
-
-	return true;
-}
-
-bool vulkan_create_depth_image(VulkanContext *context) {
-	uint32_t index = context->device.graphics_index;
-
-	vulkan_image_create(
-		context, &index, 1,
-		context->swapchain.extent.width, context->swapchain.extent.height,
-		VK_FORMAT_D32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&context->depth_attachment);
-
-	vulkan_image_transition_oneshot(
-		context, context->depth_attachment.handle, VK_IMAGE_ASPECT_DEPTH_BIT,
-		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		0, 0);
-
-	vulkan_image_view_create(context, context->depth_attachment.handle, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &context->depth_attachment.view);
 
 	return true;
 }

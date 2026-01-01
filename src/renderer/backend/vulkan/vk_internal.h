@@ -123,12 +123,12 @@ typedef struct vulkan_image {
 
 	VkFormat format;
 } VulkanImage;
-bool vulkan_image_create(VulkanContext *context, uint32_t *, uint32_t, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
+bool vulkan_image_create(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
 bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
 void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 
-bool vulkan_create_depth_image(VulkanContext *context);
+bool vulkan_image_default_attachments_create(VulkanContext *context);
 
 bool vulkan_command_pool_create(VulkanContext *context);
 bool vulkan_command_buffer_create(VulkanContext *context);
@@ -146,6 +146,8 @@ bool vulkan_sync_objects_create(VulkanContext *context);
 
 size_t vulkan_memory_required_alignment(VulkanContext *context, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties);
 uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
+
+VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 
 typedef struct vulkan_shader {
 	VkShaderModule vertex_shader, fragment_shader;
@@ -176,9 +178,12 @@ struct vulkan_context {
 	VulkanDevice device;
 
 	VulkanSwapchain swapchain;
-	VulkanImage depth_attachment;
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
+
+	VkSampleCountFlags sample_count;
+	VulkanImage depth_attachment;
+	VulkanImage color_attachment;
 
 	VkPushConstantRange global_range;
 

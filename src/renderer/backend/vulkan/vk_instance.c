@@ -1,15 +1,12 @@
-#include "common.h"
-#include "core/debug.h"
+#include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
-#include "platform.h"
-#include "vk_internal.h"
-
-#include "allocators/arena.h"
+#include "common.h"
+#include "core/debug.h"
 #include "core/logger.h"
+#include "allocators/arena.h"
 
-#include <string.h>
-#include <vulkan/vulkan_core.h>
+#include "platform.h"
 
 static const char *layers[] = {
 	"VK_LAYER_KHRONOS_validation",

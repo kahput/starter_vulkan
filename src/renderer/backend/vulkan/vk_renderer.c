@@ -55,7 +55,8 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	if (vulkan_swapchain_create(context, width, height) == false)
 		return false;
 
-	if (vulkan_create_depth_image(context) == false)
+	context->sample_count = vulkan_utils_max_sample_count(context);
+	if (vulkan_image_default_attachments_create(context) == false)
 		return false;
 
 	if (vulkan_buffer_create(
@@ -114,6 +115,18 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
 	vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
 	vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
+
+	context->depth_attachment.view = NULL;
+	context->depth_attachment.handle = NULL;
+	context->depth_attachment.memory = NULL;
+
+	vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
+	vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
+	vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
+
+	context->color_attachment.view = NULL;
+	context->color_attachment.handle = NULL;
+	context->color_attachment.memory = NULL;
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
 
@@ -184,12 +197,21 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 
 	VkRenderingAttachmentInfo color_attachment = {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 		.imageView = context->swapchain.images.views[image_index],
 		.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+		.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 		.clearValue = clear_color,
 	};
+
+	if ((context->sample_count & VK_SAMPLE_COUNT_1_BIT) != VK_SAMPLE_COUNT_1_BIT) {
+		color_attachment.imageView = context->color_attachment.view,
+		color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		color_attachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+		color_attachment.resolveImageView = context->swapchain.images.views[image_index];
+		color_attachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
+
 	VkRenderingAttachmentInfo depth_attachment = {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 		.imageView = context->depth_attachment.view,

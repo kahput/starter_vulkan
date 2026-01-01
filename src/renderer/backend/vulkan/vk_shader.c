@@ -198,7 +198,7 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	VkPipelineMultisampleStateCreateInfo mss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 		.sampleShadingEnable = VK_FALSE,
-		.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+		.rasterizationSamples = context->sample_count,
 		.minSampleShading = 1.0f,
 	};
 
