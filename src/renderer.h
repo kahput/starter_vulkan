@@ -22,9 +22,10 @@ enum {
 bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t width, uint32_t height);
 void renderer_system_shutdown(void);
 
-bool renderer_begin_frame(Camera *camera, PointLight *light);
-bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, mat4 transform);
-bool renderer_end_frame(void);
+bool renderer_frame_begin(Camera *camera, uint32_t point_light_count, Light *lights);
+bool renderer_frame_end(void);
+
+bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material, uint32_t material_instance, mat4 transform);
 
 void renderer_state_global_wireframe_set(bool active);
 
@@ -33,35 +34,14 @@ bool renderer_on_resize(uint32_t width, uint32_t height);
 RTexture renderer_texture_create(UUID id, TextureConfig *config);
 bool renderer_texture_destroy(RTexture);
 
-typedef struct {
-	void *vertices;
-	uint32_t vertex_size;
-	uint32_t vertex_count;
-
-	void *indices;
-	uint32_t index_size;
-	uint32_t index_count;
-} MeshConfig;
 RMesh renderer_mesh_create(UUID id, MeshConfig *config);
 bool renderer_mesh_destroy(RMesh mesh);
 
-typedef struct {
-	void *vertex_code;
-	size_t vertex_code_size;
-
-	void *fragment_code;
-	size_t fragment_code_size;
-
-	// PipelineDesc pipeline_desc;
-
-	void *default_ubo_data;
-	size_t ubo_size;
-} ShaderConfig;
 RShader renderer_shader_create(UUID id, ShaderConfig *config);
 RShader renderer_shader_default(void);
 bool renderer_shader_destroy(RShader shader);
 
-RMaterial renderer_material_create(RShader shader, ShaderParameter *parameters, uint32_t parameter_count);
+RMaterial renderer_material_create(RShader shader, uint32_t parameter_count, ShaderParameter *parameters);
 RMaterial renderer_material_default(void);
 bool renderer_material_destroy(RMaterial material);
 
@@ -71,6 +51,12 @@ bool renderer_material_set3fv(RMaterial material, String name, vec3 value);
 bool renderer_material_set4fv(RMaterial material, String name, vec4 value);
 bool renderer_material_set_texture(RMaterial material, String name, UUID texture); // TODO: Bindless descriptors
 
+bool renderer_material_instance_setf(RMaterial material, uint32_t material_instance, String name, float value);
+bool renderer_material_instance_set2fv(RMaterial material, uint32_t material_instance, String name, vec2 value);
+bool renderer_material_instance_set3fv(RMaterial material, uint32_t material_instance, String name, vec3 value);
+bool renderer_material_instance_set4fv(RMaterial material, uint32_t material_instance, String name, vec4 value);
+
+// TODO: Maybe override on mesh instance basis
 // bool renderer_mesh_override_setf(RMesh mesh, String name, float value);
 // bool renderer_mesh_override_set2fv(RMesh mesh, String name, vec2 value);
 // bool renderer_mesh_override_set3fv(RMesh mesh, String name, vec3 value);

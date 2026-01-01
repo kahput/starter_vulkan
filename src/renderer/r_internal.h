@@ -222,12 +222,14 @@ typedef struct {
 	MaterialStateFlag flags;
 } Material;
 
+#define MAX_POINT_LIGHTS 10
 typedef struct {
 	mat4 view;
 	mat4 projection;
-	PointLight light;
+	Light directional_light;
+	Light lights[MAX_POINT_LIGHTS];
 	vec3 camera_position;
-	float _pad0;
+	int light_count;
 } FrameData;
 
 typedef struct material_paramters {

@@ -1,3 +1,4 @@
+#include "core/r_types.h"
 #include "input/input_types.h"
 #include "platform.h"
 
@@ -17,11 +18,7 @@
 #include "allocators/arena.h"
 #include "core/identifiers.h"
 
-#include <cglm/affine-pre.h>
-#include <cglm/affine.h>
 #include <cglm/cglm.h>
-#include <cglm/mat4.h>
-#include <cglm/vec3.h>
 
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
 #define GATE_DOOR_FILE_PATH "assets/models/modular_dungeon/gate-door.glb"
@@ -82,7 +79,7 @@ int main(void) {
 	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
 
 	state.editor_camera = (Camera){
-		.position = { 27.0f, 15.0f, 0.0f },
+		.position = { 0.0f, 15.0f, -27.f },
 		.target = { 0.0f, 0.0f, 0.0f },
 		.up = { 0.0f, 1.0f, 0.0f },
 		.fov = 45.f,
@@ -116,7 +113,7 @@ int main(void) {
 	TextureConfig sprite_tex = { .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
 	renderer_texture_create(sprite_id, &sprite_tex);
 
-	Handle mat_instance = renderer_material_create(sprite_shader, NULL, 0);
+	Handle mat_instance = renderer_material_create(sprite_shader, 0, NULL);
 	renderer_material_set_texture(mat_instance, S("u_texture"), sprite_id);
 
 	// Sprite 1
@@ -124,7 +121,7 @@ int main(void) {
 	sprite_tex = (TextureConfig){ .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
 	renderer_texture_create(sprite_id_1, &sprite_tex);
 
-	Handle mat_instance2 = renderer_material_create(sprite_shader, NULL, 0);
+	Handle mat_instance2 = renderer_material_create(sprite_shader, 0, NULL);
 	renderer_material_set_texture(mat_instance2, S("u_texture"), sprite_id_1);
 
 	// glTF Mesh
@@ -153,7 +150,7 @@ int main(void) {
 
 		renderer_texture_create(model_src->images->id, &config);
 
-		large_room_mat = renderer_material_create(renderer_shader_default(), NULL, 0);
+		large_room_mat = renderer_material_create(renderer_shader_default(), 0, NULL);
 		renderer_material_set_texture(large_room_mat, model_src->materials->properties[0].name, model_src->images->id);
 	}
 
@@ -162,12 +159,16 @@ int main(void) {
 	float timer_accumulator = 0.0f;
 	uint32_t frames = 0;
 
-	PointLight light = {
-		.position = { 0.0f, 3.0f, 1.5f },
-		.color = { 1.0f, 1.0f, 1.0f, 1.0f }
+	float sun_theta = 2 * GLM_PI / 3.f;
+	float sun_azimuth = 0;
+
+	Light lights[] = {
+		[0] = { .type = LIGHT_TYPE_DIRECTIONAL, .color = { 0.2f, 0.2f, 1.0f, 0.1f }, .as.direction = { 0.0f, 0.0f, 0.0f } },
+		[1] = { .type = LIGHT_TYPE_POINT, .color = { 1.0f, 0.5f, 0.2f, 0.8f }, .as.position = { 0.0f, 3.0f, 1.0f } }
 	};
-	RShader light_shader = create_shader(S("light_debug.glsl"), sizeof(vec4), light.color);
-	RMaterial light_mat = renderer_material_create(light_shader, NULL, 0);
+	RShader light_shader = create_shader(S("light_debug.glsl"), 0, NULL);
+	ShaderParameter light_parameters[] = { [0] = { .name = S("material"), .type = SHADER_PARAMETER_TYPE_STRUCT, .as.vec4f = { 1.0f, 1.0f, 1.0f, 1.0f } } };
+	RMaterial light_mat = renderer_material_create(light_shader, countof(light_parameters), light_parameters);
 
 	while (platform_should_close(&state.display) == false) {
 		float time = platform_time_seconds(&state.display);
@@ -193,30 +194,40 @@ int main(void) {
 		tint += delta_time;
 		float tint_normalized = (cos(tint) + 1.0f) * 0.5f;
 
-		light.position[0] = cos(time) * 5;
-		light.position[2] = sin(time) * 5;
+		lights[0].as.direction[0] = sin(sun_theta) * cos(sun_azimuth);
+		lights[0].as.direction[1] = cos(sun_theta);
+		lights[0].as.direction[2] = sin(sun_theta) * sin(sun_azimuth);
 
-		if (renderer_begin_frame(&state.editor_camera, &light)) {
+		lights[1].as.position[0] = cos(time) * 5;
+		lights[1].as.position[2] = sin(time) * 5;
+
+		if (renderer_frame_begin(&state.editor_camera, countof(lights), lights)) {
 			// renderer_material_set3fv(mat_instance, S("tint"), (vec3){ tint_normalized, 1.0f, 1.0f });
 
 			mat4 transform = GLM_MAT4_IDENTITY_INIT;
 			glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
 			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
-			renderer_draw_mesh(plane, mat_instance, transform);
+			renderer_draw_mesh(plane, mat_instance, 0, transform);
 
 			glm_mat4_identity(transform);
 			glm_translate(transform, (vec3){ 0.0f, 0.75f, 0.0f });
 			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
-			renderer_draw_mesh(plane, mat_instance2, transform);
+			renderer_draw_mesh(plane, mat_instance2, 0, transform);
 
 			glm_mat4_identity(transform);
 			glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
-			renderer_draw_mesh(large_room, large_room_mat, transform);
+			renderer_draw_mesh(large_room, large_room_mat, 0, transform);
 
-			glm_mat4_identity(transform);
-			glm_translate(transform, light.position);
-			renderer_draw_mesh(plane, light_mat, transform);
-			renderer_end_frame();
+			for (uint32_t index = 0; index < countof(lights); ++index) {
+				if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
+					continue;
+
+				glm_mat4_identity(transform);
+				glm_translate(transform, lights[index].as.position);
+				renderer_material_instance_set4fv(light_mat, index + 1, S("color"), lights[index].color);
+				renderer_draw_mesh(plane, light_mat, index + 1, transform);
+			}
+			renderer_frame_end();
 		}
 
 		static bool wireframe = false;

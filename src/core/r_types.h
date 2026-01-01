@@ -19,6 +19,28 @@ typedef struct {
 	bool is_srgb;
 } TextureConfig;
 
+typedef struct {
+	void *vertices;
+	uint32_t vertex_size;
+	uint32_t vertex_count;
+
+	void *indices;
+	uint32_t index_size;
+	uint32_t index_count;
+} MeshConfig;
+
+typedef struct {
+	void *vertex_code;
+	size_t vertex_code_size;
+
+	void *fragment_code;
+	size_t fragment_code_size;
+
+	// PipelineDesc pipeline_desc;
+
+	void *default_ubo_data;
+	size_t ubo_size;
+} ShaderConfig;
 typedef enum {
 	// SPT_FLOAT,
 	// SPT_FLOAT2,
@@ -66,7 +88,17 @@ typedef struct {
 	} as;
 } ShaderParameter;
 
+typedef enum {
+	LIGHT_TYPE_DIRECTIONAL,
+	LIGHT_TYPE_POINT,
+} LightType;
+
 typedef struct {
-	vec4 position;
+	LightType type;
+	ivec3 _pad0;
+	union {
+		vec4 position;
+		vec4 direction;
+	} as;
 	vec4 color;
-} PointLight;
+} Light;

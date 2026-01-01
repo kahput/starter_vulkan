@@ -426,7 +426,7 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 
 	for (uint32_t index = 0; index < shader->attribute_count; ++index) {
 		VkVertexInputAttributeDescription *attr = &shader->attributes[index];
-		LOG_INFO("ATTRIBUTE[0] = { location = %llu, binding = %llu, format = %llu, offset = %llu }", attr->location, attr->binding, attr->format, attr->offset);
+		LOG_DEBUG("VERTEX_ATTRIBUTE[%d] = { location = %llu, binding = %llu, format = %llu, offset = %llu }", index, attr->location, attr->binding, attr->format, attr->offset);
 
 		if (attr->location == 0) {
 			ASSERT(attr->format == VK_FORMAT_R32G32B32_SFLOAT);

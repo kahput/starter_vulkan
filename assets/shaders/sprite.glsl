@@ -11,7 +11,7 @@
 
 layout(push_constant) uniform constants {
     mat4 model;
-} push_constants;
+} push;
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
@@ -23,12 +23,12 @@ layout(location = 1) out vec3 out_normal;
 layout(location = 2) out vec3 out_world_position;
 
 void main() {
-    vec3 world_position = vec3(push_constants.model[3][0], push_constants.model[3][1], push_constants.model[3][2]);
+    vec3 world_position = vec3(push.model[3][0], push.model[3][1], push.model[3][2]);
 
-    float scale_x = length(vec3(push_constants.model[0]));
-    float scale_y = length(vec3(push_constants.model[1]));
+    float scale_x = length(vec3(push.model[0]));
+    float scale_y = length(vec3(push.model[1]));
 
-    vec3 camera_direction = normalize(u_scene.camera_position - world_position);
+    vec3 camera_direction = normalize(global.camera_position - world_position);
     camera_direction.y = 0.0f;
 
     vec3 up = vec3(0.0f, 1.0f, 0.0f);
@@ -40,7 +40,7 @@ void main() {
 
     vec3 vertex_position = (billboard_matrix * in_position) + world_position;
 
-    gl_Position = u_scene.projection * u_scene.view * vec4(vertex_position, 1.0f);
+    gl_Position = global.projection * global.view * vec4(vertex_position, 1.0f);
 
     out_uv = in_uv;
     out_normal = normal_matrix * in_normal;
@@ -57,9 +57,9 @@ void main() {
 
 layout(set = 1, binding = 0) uniform sampler2D u_texture;
 
-layout(set = 1, binding = 1) uniform material {
+layout(set = 1, binding = 1) uniform MaterialParameters {
     vec4 tint;
-} u_material;
+} material;
 
 #include "global.shared"
 
@@ -69,19 +69,59 @@ layout(location = 2) in vec3 in_world_position;
 
 layout(location = 0) out vec4 out_color;
 
-void main() {
-    vec4 albedo = texture(u_texture, in_uv) * u_material.tint;
-    if (albedo.a < 0.1) discard;
+vec3 calculate_directional_light(DirectionalLight light, vec4 albedo, vec3 normal, vec3 view_direction);
+vec3 calculate_point_light(PointLight light, vec4 albedo, vec3 normal, vec3 world_position, vec3 view_direction);
 
-    float ambient_factor = 0.1f;
-    vec3 ambient = ambient_factor * u_scene.light.color.rgb;
+void main() {
+    vec4 albedo = texture(u_texture, in_uv) * material.tint;
+    if (albedo.a < 0.1) discard;
+    PointLight light = global.point_lights[0];
+
     vec3 normal = normalize(in_normal);
-    vec3 light_direction = normalize(u_scene.light.position.xyz - in_world_position);
+    vec3 view_direction = normalize(global.camera_position - in_world_position);
+
+    vec3 result = calculate_directional_light(global.directional_light, albedo, normal, view_direction);
+
+    for (uint index = 0; index < global.light_count; ++index)
+        result += calculate_point_light(global.point_lights[index], albedo, normal, in_world_position, view_direction);
+
+    out_color = vec4(result, 1.0f);
+}
+
+vec3 calculate_point_light(PointLight light, vec4 albedo, vec3 normal, vec3 world_position, vec3 view_direction) {
+    vec3 light_direction = normalize(light.position.xyz - world_position);
 
     float diffuse_factor = max(dot(normal, light_direction), 0.0);
-    vec3 diffuse = diffuse_factor * u_scene.light.color.rgb;
 
-    vec3 color = (ambient + diffuse) * albedo.rgb;
-    out_color = vec4(color, 1.0f);
+    vec3 reflection = reflect(-light_direction, normal);
+    float specular_factor = pow(max(dot(view_direction, reflection), 0.0), 32);
+
+    vec3 ambient = light.color.rgb * light.color.a * AMBIENT_STRENGTH * albedo.rgb;
+    vec3 diffuse = light.color.rgb * light.color.a * diffuse_factor * albedo.rgb;
+    vec3 specular = light.color.rgb * light.color.a * specular_factor * SPECULAR_STRENGTH;
+
+    float distance = length(light.position.xyz - world_position);
+    float attenuation = 1.0f / (ATTENUATION_CONSTANT + ATTENUATION_LINEAR * distance + ATTENUATION_QUADRATIC * (distance * distance));
+
+    ambient *= attenuation;
+    diffuse *= attenuation;
+    specular *= attenuation;
+
+    return ambient + diffuse + specular;
+}
+
+vec3 calculate_directional_light(DirectionalLight light, vec4 albedo, vec3 normal, vec3 view_direction) {
+    vec3 light_direction = normalize(-light.direction.xyz);
+
+    float diffuse_factor = max(dot(normal, light_direction), 0.0);
+
+    vec3 reflection = reflect(-light_direction, normal);
+    float specular_factor = pow(max(dot(view_direction, reflection), 0.0), 32);
+
+    vec3 ambient = light.color.rgb * light.color.a * AMBIENT_STRENGTH * albedo.rgb;
+    vec3 diffuse = light.color.rgb * light.color.a * diffuse_factor * albedo.rgb;
+    vec3 specular = light.color.rgb * light.color.a * specular_factor * SPECULAR_STRENGTH;
+
+    return ambient + diffuse + specular;
 }
 #endif

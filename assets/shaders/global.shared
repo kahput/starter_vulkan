@@ -1,16 +1,27 @@
-// global.h
-#define AMBIENT_STRENGTH 0.f
-
-struct PointLight {
-	vec4 position;
-	vec4 color;
+struct DirectionalLight {
+    ivec4 _pad0;
+    vec4 direction;
+    vec4 color;
 };
 
-layout(set = 0, binding = 0) uniform SceneData {
-	mat4 view;
-	mat4 projection;
-	PointLight light;
-	vec3 camera_position;
-	float _pad0;
-}
-u_scene;
+struct PointLight {
+    ivec4 _pad0;
+    vec4 position;
+    vec4 color;
+};
+
+layout(set = 0, binding = 0) uniform GlobalParameters {
+    mat4 view;
+    mat4 projection;
+    DirectionalLight directional_light;
+    PointLight point_lights[10];
+    vec3 camera_position;
+    int light_count;
+} global;
+
+const float ATTENUATION_CONSTANT = 1.0f;
+const float ATTENUATION_LINEAR = 0.09f;
+const float ATTENUATION_QUADRATIC = 0.032f;
+
+const float AMBIENT_STRENGTH = 0.05f;
+const float SPECULAR_STRENGTH = 0.0f;

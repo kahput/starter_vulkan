@@ -23,7 +23,7 @@ void main() {
     float scale_x = length(vec3(push_constants.model[0]));
     float scale_y = length(vec3(push_constants.model[1]));
 
-    vec3 camera_direction = normalize(u_scene.camera_position - world_position);
+    vec3 camera_direction = normalize(global.camera_position - world_position);
     camera_direction.y = 0.0f;
 
     vec3 up = vec3(0.0f, 1.0f, 0.0f);
@@ -34,7 +34,7 @@ void main() {
 
     vec3 vertex_position = (billboard_rotation * in_position) + world_position;
 
-    gl_Position = u_scene.projection * u_scene.view * vec4(vertex_position, 1.0f);
+    gl_Position = global.projection * global.view * vec4(vertex_position, 1.0f);
 
     out_uv = in_uv;
 }

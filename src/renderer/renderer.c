@@ -181,7 +181,7 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 		(ShaderParameter){ .name = S("u_occlusion_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_white },
 		(ShaderParameter){ .name = S("u_emissive_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_black },
 	};
-	renderer->default_material = renderer_material_create(renderer->default_shader, parameters, countof(parameters));
+	renderer->default_material = renderer_material_create(renderer->default_shader, countof(parameters), parameters);
 	return true;
 }
 
@@ -212,7 +212,7 @@ Handle renderer_mesh_create(UUID id, MeshConfig *config) {
 	return INVALID_HANDLE;
 }
 
-Handle renderer_material_create(RShader rshader, ShaderParameter *parameters, uint32_t parameter_count) {
+Handle renderer_material_create(RShader rshader, uint32_t parameter_count, ShaderParameter *parameters) {
 	if (handle_is_valid(rshader) == false)
 		return INVALID_HANDLE;
 
@@ -257,33 +257,33 @@ RMaterial renderer_material_default(void) {
 
 bool renderer_material_destroy(Handle instance) { return false; }
 
-static bool renderer_material_instance_set(Handle instance_handle, String name, void *value) {
-	if (handle_is_valid(instance_handle) == false)
+static bool renderer_material_instance_set(Handle material_handle, uint32_t instance, String name, void *value) {
+	if (handle_is_valid(material_handle) == false)
 		return false;
 
-	Material *instance = ((Material *)renderer->material_allocator->slots) + instance_handle.index;
-	Shader *shader = ((Shader *)renderer->shader_allocator->slots) + instance->shader.index;
+	Material *material = ((Material *)renderer->material_allocator->slots) + material_handle.index;
+	Shader *shader = ((Shader *)renderer->shader_allocator->slots) + material->shader.index;
 
 	ShaderMember *member = shader_reflection_find_member(&shader->reflection, name, SHADER_UNIFORM_FREQUENCY_PER_MATERIAL);
 	if (member == NULL)
 		return false;
 
-	vulkan_renderer_resource_group_write(renderer->context, instance->group_resource_id, 0, member->offset, member->size, value, false);
+	vulkan_renderer_resource_group_write(renderer->context, material->group_resource_id, instance, member->offset, member->size, value, false);
 	return true;
 }
 
-bool renderer_material_setf(Handle instance_handle, String name, float value) {
-	return renderer_material_instance_set(instance_handle, name, &value);
+bool renderer_material_setf(RMaterial material, String name, float value) {
+	return renderer_material_instance_set(material, 0, name, &value);
 }
 
-bool renderer_material_set2fv(Handle instance, String name, vec2 value) {
-	return renderer_material_instance_set(instance, name, value);
+bool renderer_material_set2fv(RMaterial instance, String name, vec2 value) {
+	return renderer_material_instance_set(instance, 0, name, value);
 }
-bool renderer_material_set3fv(Handle instance, String name, vec3 value) {
-	return renderer_material_instance_set(instance, name, value);
+bool renderer_material_set3fv(RMaterial instance, String name, vec3 value) {
+	return renderer_material_instance_set(instance, 0, name, value);
 }
-bool renderer_material_set4fv(Handle instance, String name, vec4 value) {
-	return renderer_material_instance_set(instance, name, value);
+bool renderer_material_set4fv(RMaterial instance, String name, vec4 value) {
+	return renderer_material_instance_set(instance, 0, name, value);
 }
 
 bool renderer_material_set_texture(Handle instance_handle, String name, UUID texture_id) {
@@ -319,9 +319,19 @@ bool renderer_material_set_texture(Handle instance_handle, String name, UUID tex
 	return true;
 }
 
-// bool renderer_material_instance_commit(Handle instance_handle) {
-// 	return true;
-// }
+bool renderer_material_instance_setf(RMaterial material, uint32_t material_instance, String name, float value) {
+	return renderer_material_instance_set(material, material_instance, name, &value);
+}
+
+bool renderer_material_instance_set2fv(RMaterial instance, uint32_t material_instance, String name, vec2 value) {
+	return renderer_material_instance_set(instance, material_instance, name, value);
+}
+bool renderer_material_instance_set3fv(RMaterial instance, uint32_t material_instance, String name, vec3 value) {
+	return renderer_material_instance_set(instance, material_instance, name, value);
+}
+bool renderer_material_instance_set4fv(RMaterial instance, uint32_t material_instance, String name, vec4 value) {
+	return renderer_material_instance_set(instance, material_instance, name, value);
+}
 
 bool renderer_unload_mesh(UUID id) {
 	ResourceEntry *entry = hash_trie_lookup_hash(&renderer->mesh_map, id, ResourceEntry);
@@ -345,12 +355,13 @@ bool renderer_unload_mesh(UUID id) {
 	return false;
 }
 
-bool renderer_begin_frame(Camera *camera, PointLight *light) {
+bool renderer_frame_begin(Camera *camera, uint32_t light_count, Light *lights) {
 	if (vulkan_renderer_frame_begin(renderer->context, renderer->display->physical_width, renderer->display->logical_height) == false)
 		return false;
 
 	if (camera) {
 		FrameData data = { 0 };
+
 		glm_mat4_identity(data.view);
 		glm_lookat(camera->position, camera->target, camera->up, data.view);
 
@@ -358,8 +369,17 @@ bool renderer_begin_frame(Camera *camera, PointLight *light) {
 		glm_perspective(glm_rad(camera->fov), (float)renderer->width / (float)renderer->height, 0.1f, 1000.f, data.projection);
 		data.projection[1][1] *= -1;
 
+		uint32_t point_light_count = 0;
+		for (uint32_t light_index = 0; light_index < light_count; ++light_index) {
+			if (lights[light_index].type == LIGHT_TYPE_DIRECTIONAL)
+				memcpy(&data.directional_light, lights + light_index, sizeof(Light));
+			else
+				memcpy(data.lights + point_light_count++, lights + light_index, sizeof(Light));
+		}
 		glm_vec3_dup(camera->position, data.camera_position);
-		memcpy(&data.light, light, sizeof(PointLight));
+		data.light_count = point_light_count;
+
+		ASSERT(point_light_count != light_count);
 
 		vulkan_renderer_resource_global_write(renderer->context, renderer->global_resource, 0, sizeof(FrameData), &data);
 		vulkan_renderer_resource_global_bind(renderer->context, renderer->global_resource);
@@ -368,12 +388,12 @@ bool renderer_begin_frame(Camera *camera, PointLight *light) {
 	return true;
 }
 
-bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, mat4 transform) {
-	if (handle_is_valid(mesh_handle) == false || handle_is_valid(material_instance_handle) == false)
+bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material, uint32_t material_instance, mat4 transform) {
+	if (handle_is_valid(mesh_handle) == false || handle_is_valid(material) == false)
 		return false;
 
 	Mesh *mesh = ((Mesh *)renderer->mesh_allocator->slots) + mesh_handle.index;
-	Material *instance = ((Material *)renderer->material_allocator->slots) + material_instance_handle.index; // This doesn't draw
+	Material *instance = ((Material *)renderer->material_allocator->slots) + material.index; // This doesn't draw
 
 	for (uint32_t i = 0; i < 16; i++) {
 		float val = ((float *)transform)[i];
@@ -381,7 +401,7 @@ bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, m
 	}
 
 	vulkan_renderer_shader_bind(renderer->context, instance->shader.index);
-	vulkan_renderer_resource_group_bind(renderer->context, instance->group_resource_id, 0);
+	vulkan_renderer_resource_group_bind(renderer->context, instance->group_resource_id, material_instance);
 
 	vulkan_renderer_resource_local_write(renderer->context, 0, sizeof(mat4), transform);
 	vulkan_renderer_buffer_bind(renderer->context, mesh->vertex_buffer, 0);
@@ -396,7 +416,7 @@ bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material_instance_handle, m
 	return true;
 }
 
-bool renderer_end_frame(void) {
+bool renderer_frame_end(void) {
 	return Vulkan_renderer_frame_end(renderer->context);
 }
 
