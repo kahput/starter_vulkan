@@ -82,6 +82,8 @@ void main() {
         result += calculate_point_light(global.point_lights[index], albedo, normal, in_world_position, view_direction);
 
     vec3 debug_normal = in_normal * 0.5 + 0.5;
+    vec3 debug_depth = vec3(((2.0 * 0.1f * 1000.f) / (1000.f + 0.1f - gl_FragCoord.z * (1000.f - 0.1f))) / 100.f);
+
     out_color = vec4(result, albedo.a);
 }
 
@@ -92,8 +94,8 @@ vec3 calculate_point_light(PointLight light, vec4 albedo, vec3 normal, vec3 worl
 
     float diffuse_factor = max(dot(normal, light_direction), 0.0);
 
-    vec3 reflection = reflect(-light_direction, normal);
-    float specular_factor = pow(max(dot(view_direction, reflection), 0.0), 32) * SPECULAR_STRENGTH;
+    vec3 halfway = normalize(light_direction + view_direction);
+    float specular_factor = pow(max(dot(normal, halfway), 0.0), 32) * SPECULAR_STRENGTH;
 
     vec3 ambient = light.color.rgb * light.color.a * AMBIENT_STRENGTH * albedo.rgb;
     vec3 diffuse = light.color.rgb * light.color.a * diffuse_factor * albedo.rgb;
@@ -116,8 +118,8 @@ vec3 calculate_directional_light(DirectionalLight light, vec4 albedo, vec3 norma
 
     float diffuse_factor = max(dot(normal, light_direction), 0.0);
 
-    vec3 reflection = reflect(-light_direction, normal);
-    float specular_factor = pow(max(dot(view_direction, reflection), 0.0), 32) * SPECULAR_STRENGTH;
+    vec3 halfway = normalize(light_direction + view_direction);
+    float specular_factor = pow(max(dot(normal, halfway), 0.0), 32) * SPECULAR_STRENGTH;
 
     vec3 ambient = light.color.rgb * light.color.a * AMBIENT_STRENGTH * albedo.rgb;
     vec3 diffuse = light.color.rgb * light.color.a * diffuse_factor * albedo.rgb;

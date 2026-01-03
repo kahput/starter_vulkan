@@ -5,7 +5,6 @@
 #include "common.h"
 #include "core/debug.h"
 #include "core/logger.h"
-#include <vulkan/vulkan_core.h>
 
 bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t store_index, size_t size) {
 	if (store_index >= MAX_GLOBAL_RESOURCES) {
@@ -21,7 +20,7 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 	}
 	VulkanBuffer *buffer = &global->buffer;
 
-	global->set_binding = (VkDescriptorSetLayoutBinding){
+	global->binding = (VkDescriptorSetLayoutBinding){
 		.binding = 0,
 		.descriptorCount = 1,
 		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
@@ -31,7 +30,7 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 	VkDescriptorSetLayoutCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		.bindingCount = 1,
-		.pBindings = &global->set_binding,
+		.pBindings = &global->binding,
 	};
 
 	if (vkCreateDescriptorSetLayout(context->device.logical, &create_info, NULL, &global->set_layout) != VK_SUCCESS) {

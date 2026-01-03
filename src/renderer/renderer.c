@@ -18,9 +18,33 @@
 
 #include <cglm/io.h>
 #include <cglm/vec3.h>
+#include <cglm/vec4.h>
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+
+typedef enum {
+	COLOR_ATTACHMENT_NONE,
+	COLOR_ATTACHMENT_SWAPCHAIN,
+} ColorAttachment;
+
+typedef enum {
+	DEPTH_ATTACHMENT_NONE,
+	DEPTH_ATTACHMENT_ZPRE,
+	DEPTH_ATTACHMENT_SHADOW
+
+} DepthAttachment;
+
+enum {
+	RENDERER_PASS_SHADOW,
+	RENDERER_PASS_ZPRE,
+	RENDERER_PASS_MAIN,
+};
+
+enum {
+	GLOBAL_VIEW,
+	SHADOW_VIEW,
+};
 
 typedef struct {
 	HashTrieNode node;
@@ -79,6 +103,7 @@ typedef struct renderer {
 static Renderer *renderer = { 0 };
 
 static ShaderMember *shader_reflection_find_member(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency);
+static uint32_t shader_reflection_find_binding(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency);
 
 static uint32_t resolve_mesh(UUID id, MeshConfig *config);
 static uint32_t resolve_texture(UUID id, TextureConfig *config);
@@ -182,6 +207,30 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 		(ShaderParameter){ .name = S("u_emissive_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_black },
 	};
 	renderer->default_material = renderer_material_create(renderer->default_shader, countof(parameters), parameters);
+
+	// RenderPassDesc shadow_config = {
+	// 	.depth_attachment = { .source = RENDER_TARGET_SOURCE_NEW, .load_op = CLEAR, .store_op = STORE, .clear = { .depth = 1.0f } },
+	//
+	// 	.width = 2048,
+	// 	.height = 2048
+	// };
+	//
+	Shader *shader = ((Shader *)renderer->shader_allocator->slots) + renderer->default_shader.index;
+	uint32_t shadow_map = shader_reflection_find_binding(&shader->reflection, S("g_shadow_map"), SHADER_UNIFORM_FREQUENCY_PER_FRAME);
+	// PassSampleDesc samples[] = {
+	// 	(PassSampleDesc){ .source_pass = RENDERER_PASS_SHADOW, .source_output = PASS_OUTPUT_DEPTH, .binding = shadow_map },
+	// };
+	RenderPassDesc main_config = {
+		.color_attachments = { [0] = { .source = RENDER_TARGET_SOURCE_NEW, .present = true, .load_op = CLEAR, .store_op = STORE, .clear = { .color = GLM_VEC4_BLACK_INIT } } },
+		.color_count = 1,
+		.depth_attachment = { .source = RENDER_TARGET_SOURCE_NEW, .load_op = CLEAR, .store_op = DONT_CARE, .clear = { .depth = 1.0f } },
+		// .samples = samples,
+		// countof(samples)
+	};
+
+	// vulkan_renderer_pass_create(renderer->context, RENDERER_PASS_SHADOW, SHADOW_VIEW, &shadow_config);
+	vulkan_renderer_pass_create(renderer->context, RENDERER_PASS_MAIN, GLOBAL_VIEW, &main_config);
+
 	return true;
 }
 
@@ -358,6 +407,7 @@ bool renderer_unload_mesh(UUID id) {
 bool renderer_frame_begin(Camera *camera, uint32_t light_count, Light *lights) {
 	if (vulkan_renderer_frame_begin(renderer->context, renderer->display->physical_width, renderer->display->logical_height) == false)
 		return false;
+	vulkan_renderer_pass_begin(renderer->context, RENDERER_PASS_MAIN);
 
 	if (camera) {
 		FrameData data = { 0 };
@@ -417,6 +467,7 @@ bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material, uint32_t material
 }
 
 bool renderer_frame_end(void) {
+	vulkan_renderer_pass_end(renderer->context);
 	return Vulkan_renderer_frame_end(renderer->context);
 }
 
@@ -534,4 +585,20 @@ ShaderMember *shader_reflection_find_member(ShaderReflection *reflection, String
 		}
 	}
 	return NULL;
+}
+
+static uint32_t shader_reflection_find_binding(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency) {
+	for (uint32_t index = 0; index < reflection->binding_count; ++index) {
+		ShaderBinding *binding = &reflection->bindings[index];
+		if (binding->frequency != frequency)
+			continue;
+
+		for (uint32_t member_index = 0; member_index < binding->buffer_layout->member_count; ++member_index) {
+			if (string_equals(binding->buffer_layout->members[member_index].name, name)) {
+				return binding->binding;
+			}
+		}
+	}
+
+	return INVALID_INDEX;
 }

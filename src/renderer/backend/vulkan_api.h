@@ -1,12 +1,8 @@
 #pragma once
 
-#include "common.h"
-
-// TODO: Maybe move need structs to core_renderer_types.h
-#include "renderer.h"
-
 #include "renderer/r_internal.h"
 
+#include "common.h"
 #include "core/astring.h"
 
 struct platform;
@@ -16,11 +12,13 @@ typedef struct vulkan_context VulkanContext;
 #define MAX_BUFFERS 1024
 #define MAX_TEXTURES 512
 #define MAX_SAMPLERS 32
+#define MAX_RENDER_TARGETS 32
 
 #define MAX_SHADERS 32
 #define MAX_GLOBAL_RESOURCES 32
 #define MAX_GROUP_RESOURCES 256
 #define MAX_GEOMETRY_RESOURCES 1024
+#define MAX_RENDER_PASSES 8
 
 bool vulkan_renderer_create(Arena *arena, struct platform *platform, VulkanContext **out_context);
 void vulkan_renderer_destroy(VulkanContext *context);
@@ -29,10 +27,14 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_t height);
 bool Vulkan_renderer_frame_end(VulkanContext *context);
 
+bool vulkan_renderer_render_target_depth_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height);
+bool vulkan_renderer_render_target_color_craete(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height);
+
 // TODO: Render passes
-// bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, RenderPassConfig *config);
-// bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index);
-// bool vulkan_renderer_pass_end(VulkanContext *context);
+bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, uint32_t global_resource, RenderPassDesc *desc);
+void vulkan_renderer_pass_destroy(VulkanContext *context, uint32_t retrieve_index);
+bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index);
+bool vulkan_renderer_pass_end(VulkanContext *context);
 
 bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);

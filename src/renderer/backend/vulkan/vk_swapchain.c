@@ -72,25 +72,25 @@ bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t new_width, uint3
 		vkDestroyImageView(context->device.logical, context->swapchain.images.views[i], NULL);
 	}
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
-	if (context->depth_attachment.handle) {
-		vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
-		vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
-		vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
-
-		context->depth_attachment.view = NULL;
-		context->depth_attachment.handle = NULL;
-		context->depth_attachment.memory = NULL;
-	}
-
-	if (context->color_attachment.handle) {
-		vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
-		vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
-		vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
-
-		context->color_attachment.view = NULL;
-		context->color_attachment.handle = NULL;
-		context->color_attachment.memory = NULL;
-	}
+	// if (context->depth_attachment.handle) {
+	// 	vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
+	// 	vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
+	// 	vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
+	//
+	// 	context->depth_attachment.view = NULL;
+	// 	context->depth_attachment.handle = NULL;
+	// 	context->depth_attachment.memory = NULL;
+	// }
+	//
+	// if (context->color_attachment.handle) {
+	// 	vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
+	// 	vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
+	// 	vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
+	//
+	// 	context->color_attachment.view = NULL;
+	// 	context->color_attachment.handle = NULL;
+	// 	context->color_attachment.memory = NULL;
+	// }
 
 	if (vulkan_swapchain_create(context, new_width, new_height) == false)
 		return false;

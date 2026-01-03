@@ -228,7 +228,7 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
 		.colorAttachmentCount = 1,
 		.pColorAttachmentFormats = &context->swapchain.format.format,
-		.depthAttachmentFormat = context->depth_attachment.format
+		.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT
 	};
 
 	VkGraphicsPipelineCreateInfo gp_create_info = {

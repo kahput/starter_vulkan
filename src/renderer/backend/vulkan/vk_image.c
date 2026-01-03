@@ -149,32 +149,32 @@ void vulkan_image_transition(VulkanContext *context, VkCommandBuffer command_buf
 }
 
 bool vulkan_image_default_attachments_create(VulkanContext *context) {
-	vulkan_image_create(
-		context, context->sample_count,
-		context->swapchain.extent.width, context->swapchain.extent.height,
-		context->swapchain.format.format, VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&context->color_attachment);
-	vulkan_image_view_create(context, context->color_attachment.handle, context->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &context->color_attachment.view);
-	vulkan_image_transition_oneshot(
-		context, context->color_attachment.handle, VK_IMAGE_ASPECT_COLOR_BIT,
-		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		0, 0);
-
-	vulkan_image_create(
-		context, context->sample_count,
-		context->swapchain.extent.width, context->swapchain.extent.height,
-		VK_FORMAT_D32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&context->depth_attachment);
-	vulkan_image_view_create(context, context->depth_attachment.handle, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &context->depth_attachment.view);
-
-	vulkan_image_transition_oneshot(
-		context, context->depth_attachment.handle, VK_IMAGE_ASPECT_DEPTH_BIT,
-		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		0, 0);
+	// vulkan_image_create(
+	// 	context, context->sample_count,
+	// 	context->swapchain.extent.width, context->swapchain.extent.height,
+	// 	context->swapchain.format.format, VK_IMAGE_TILING_OPTIMAL,
+	// 	VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	// 	&context->color_attachment);
+	// vulkan_image_view_create(context, context->color_attachment.handle, context->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &context->color_attachment.view);
+	// vulkan_image_transition_oneshot(
+	// 	context, context->color_attachment.handle, VK_IMAGE_ASPECT_COLOR_BIT,
+	// 	VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	// 	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+	// 	0, 0);
+	//
+	// vulkan_image_create(
+	// 	context, context->sample_count,
+	// 	context->swapchain.extent.width, context->swapchain.extent.height,
+	// 	VK_FORMAT_D32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
+	// 	VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	// 	&context->depth_attachment);
+	// vulkan_image_view_create(context, context->depth_attachment.handle, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &context->depth_attachment.view);
+	//
+	// vulkan_image_transition_oneshot(
+	// 	context, context->depth_attachment.handle, VK_IMAGE_ASPECT_DEPTH_BIT,
+	// 	VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+	// 	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+	// 	0, 0);
 
 	return true;
 }

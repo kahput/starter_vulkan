@@ -44,7 +44,8 @@ typedef struct vulkan_group_resource {
 typedef struct vulkan_global_resource {
 	VulkanBuffer buffer;
 
-	VkDescriptorSetLayoutBinding set_binding;
+	VkDescriptorSetLayoutBinding binding;
+	uint32_t binding_count;
 	VkDescriptorSetLayout set_layout;
 	VkDescriptorSet set;
 
@@ -59,6 +60,34 @@ typedef struct vulkan_pipeline {
 	VkPipeline handle;
 	PipelineDesc description;
 } VulkanPipeline;
+
+typedef struct vulkan_image {
+	VkImage handle;
+	VkImageView view;
+	VkDeviceMemory memory;
+
+	VkFormat format;
+} VulkanImage;
+
+typedef struct vulkan_attachment {
+	VulkanImage image;
+	bool present;
+
+	VkAttachmentLoadOp load_op;
+	VkAttachmentStoreOp store_op;
+	VkClearValue clear;
+} VulkanAttachment;
+
+typedef struct vulkan_pass {
+	VulkanAttachment color_attachments[4];
+	uint32_t color_attachment_count;
+	VulkanAttachment depth_attachment;
+
+	uint32_t width, height;
+
+	uint32_t global_resource;
+	RenderPassDesc desc;
+} VulkanPass;
 
 typedef struct swapchain_support_details {
 	VkSurfaceCapabilitiesKHR capabilities;
@@ -116,13 +145,8 @@ bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, Vk
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data);
 
-typedef struct vulkan_image {
-	VkImage handle;
-	VkImageView view;
-	VkDeviceMemory memory;
+bool vulkan_pass_on_resize(VulkanContext *context, VulkanPass *pass);
 
-	VkFormat format;
-} VulkanImage;
 bool vulkan_image_create(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
 bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
 void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
@@ -182,8 +206,8 @@ struct vulkan_context {
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
 	VkSampleCountFlags sample_count;
-	VulkanImage depth_attachment;
-	VulkanImage color_attachment;
+	// VulkanImage depth_attachment;
+	// VulkanImage color_attachment;
 
 	VkPushConstantRange global_range;
 
@@ -191,6 +215,7 @@ struct vulkan_context {
 	VulkanBuffer *buffer_pool;
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
+	VulkanPass *pass_pool;
 
 	VulkanGlobalResource *global_resources;
 	VulkanGroupResource *group_resources;
@@ -203,7 +228,7 @@ struct vulkan_context {
 	VkSemaphore render_finished_semaphores[SWAPCHAIN_IMAGE_COUNT];
 	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
 
-	uint32_t current_frame;
+	uint32_t current_frame, image_index;
 
 #ifndef NDEBUG
 	VkDebugUtilsMessengerEXT debug_messenger;

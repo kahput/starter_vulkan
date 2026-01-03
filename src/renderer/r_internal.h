@@ -166,6 +166,59 @@ typedef struct sampler_desc {
 	bool anisotropy_enable;
 } SamplerDesc;
 
+typedef enum {
+	RENDER_TARGET_SOURCE_UNUSED,
+	RENDER_TARGET_SOURCE_NEW,
+	RENDER_TARGET_SOURCE_PASS_OUTPUT,
+	RENDER_TARGET_SOURCE_TEXTURE,
+} RenderTargetSource;
+
+typedef enum {
+	PASS_OUTPUT_COLOR0,
+	PASS_OUTPUT_COLOR1,
+	PASS_OUTPUT_COLOR2,
+	PASS_OUTPUT_COLOR3,
+	PASS_OUTPUT_DEPTH,
+} RenderPassOutput;
+
+typedef struct {
+	RenderTargetSource source;
+	struct {
+		uint32_t index;
+		RenderPassOutput output;
+	} source_info;
+
+	enum { LOAD,
+		CLEAR } load_op;
+	enum { STORE,
+		DONT_CARE } store_op;
+
+	union {
+		float color[4];
+		float depth;
+	} clear;
+
+	bool present;
+} AttachmentDesc;
+
+typedef struct {
+	uint32_t source_pass;
+	uint32_t source_output;
+
+	uint32_t binding;
+} PassSampleDesc;
+
+typedef struct {
+	AttachmentDesc color_attachments[4];
+	uint32_t color_count;
+	AttachmentDesc depth_attachment;
+
+	uint32_t width, height;
+
+	PassSampleDesc *samples;
+	uint32_t sample_count;
+} RenderPassDesc;
+
 // TODO: Move these
 #define DEFAULT_PIPELINE()                          \
 	(PipelineDesc) {                                \

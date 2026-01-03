@@ -7,8 +7,6 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-static uint32_t image_index = 0;
-
 bool vulkan_renderer_create(struct arena *arena, struct platform *display, VulkanContext **out_context) {
 	*out_context = arena_push_struct(arena, VulkanContext);
 
@@ -25,6 +23,7 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
 	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
 	context->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
+	context->pass_pool = arena_push_array_zero(arena, VulkanPass, MAX_RENDER_PASSES);
 
 	context->group_resources = arena_push_array_zero(arena, VulkanGroupResource, MAX_GROUP_RESOURCES);
 	context->global_resources = arena_push_array_zero(arena, VulkanGlobalResource, MAX_GLOBAL_RESOURCES);
@@ -112,21 +111,21 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 		vkDestroyImageView(context->device.logical, context->swapchain.images.views[index], NULL);
 	}
 
-	vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
-	vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
-	vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
-
-	context->depth_attachment.view = NULL;
-	context->depth_attachment.handle = NULL;
-	context->depth_attachment.memory = NULL;
-
-	vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
-	vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
-	vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
-
-	context->color_attachment.view = NULL;
-	context->color_attachment.handle = NULL;
-	context->color_attachment.memory = NULL;
+	// vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
+	// vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
+	// vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
+	//
+	// context->depth_attachment.view = NULL;
+	// context->depth_attachment.handle = NULL;
+	// context->depth_attachment.memory = NULL;
+	//
+	// vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
+	// vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
+	// vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
+	//
+	// context->color_attachment.view = NULL;
+	// context->color_attachment.handle = NULL;
+	// context->color_attachment.memory = NULL;
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
 
@@ -154,6 +153,11 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 		LOG_WARN("Failed to recreate swapchain");
 	}
 
+	for (uint32_t pass_index = 0; pass_index < MAX_RENDER_PASSES; ++pass_index) {
+		VulkanPass *pass = &context->pass_pool[pass_index];
+		vulkan_pass_on_resize(context, pass);
+	}
+
 	logger_dedent();
 	return true;
 }
@@ -161,7 +165,7 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_t height) {
 	vkWaitForFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame], VK_TRUE, UINT64_MAX);
 
-	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
+	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &context->image_index);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		vulkan_swapchain_recreate(context, width, height);
@@ -185,82 +189,20 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 		return false;
 	}
 
-	VkClearValue clear_color = { .color = { .float32 = { 0, 0, 0, 1.0f } } };
-	VkClearValue clear_depth = { .depthStencil = { .depth = 1.0f, .stencil = 0 } };
-
 	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
-		context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-
-	VkRenderingAttachmentInfo color_attachment = {
-		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.imageView = context->swapchain.images.views[image_index],
-		.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		.clearValue = clear_color,
-	};
-
-	if ((context->sample_count & VK_SAMPLE_COUNT_1_BIT) != VK_SAMPLE_COUNT_1_BIT) {
-		color_attachment.imageView = context->color_attachment.view,
-		color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		color_attachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-		color_attachment.resolveImageView = context->swapchain.images.views[image_index];
-		color_attachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	}
-
-	VkRenderingAttachmentInfo depth_attachment = {
-		.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-		.imageView = context->depth_attachment.view,
-		.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-		.clearValue = clear_depth,
-	};
-
-	VkRenderingInfo r_info = {
-		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-		.renderArea = {
-		  .offset = { 0, 0 },
-		  .extent = context->swapchain.extent,
-		},
-		.layerCount = 1,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = &depth_attachment,
-	};
-
-	// TODO: Make renderpasses first class resources
-	vkCmdBeginRendering(context->command_buffers[context->current_frame], &r_info);
-
-	VkViewport viewport = {
-		.x = 0,
-		.y = 0,
-		.width = context->swapchain.extent.width,
-		.height = context->swapchain.extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f
-	};
-	vkCmdSetViewport(context->command_buffers[context->current_frame], 0, 1, &viewport);
-
-	VkRect2D scissor = {
-		.offset = { 0.0f, 0.0f },
-		.extent = context->swapchain.extent
-	};
-	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
 
 	return true;
 }
 
 bool Vulkan_renderer_frame_end(VulkanContext *context) {
-	vkCmdEndRendering(context->command_buffers[context->current_frame]);
-
 	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
-		context->swapchain.images.handles[image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0);
@@ -271,7 +213,7 @@ bool Vulkan_renderer_frame_end(VulkanContext *context) {
 	}
 
 	VkSemaphore wait_semaphores[] = { context->image_available_semaphores[context->current_frame] };
-	VkSemaphore signal_semaphores[] = { context->render_finished_semaphores[image_index] };
+	VkSemaphore signal_semaphores[] = { context->render_finished_semaphores[context->image_index] };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info = {
@@ -297,7 +239,7 @@ bool Vulkan_renderer_frame_end(VulkanContext *context) {
 		.pWaitSemaphores = signal_semaphores,
 		.swapchainCount = 1,
 		.pSwapchains = swapchains,
-		.pImageIndices = &image_index,
+		.pImageIndices = &context->image_index,
 	};
 
 	context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
