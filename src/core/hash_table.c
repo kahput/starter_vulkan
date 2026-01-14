@@ -1,6 +1,6 @@
 #include "hash_table.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "core/logger.h"
 
 #include <math.h>
@@ -42,7 +42,7 @@ HashTable *ht_create(Arena *arena, size_t type_size, size_t alignment) {
 
 	ht->item_size = HT_MAX_KEY_SIZE + ht->type_size;
 
-	ht->items = arena_push_zero(arena, ht->item_size * ht->capacity, alignment);
+	ht->items = arena_push(arena, ht->item_size * ht->capacity, alignment, true);
 	return ht;
 }
 

@@ -18,6 +18,7 @@ layout(set = 0, binding = 0) uniform GlobalParameters {
     vec3 camera_position;
     int light_count;
 } global;
+layout(set = 0, binding = 1) uniform sampler2D shadow_map;
 
 const float ATTENUATION_CONSTANT = 1.0f;
 const float ATTENUATION_LINEAR = 0.09f;

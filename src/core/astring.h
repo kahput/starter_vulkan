@@ -2,7 +2,7 @@
 
 #include "common.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "string.h"
 
 struct arena;

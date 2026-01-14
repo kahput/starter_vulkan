@@ -1,94 +1,120 @@
+#include "common.h"
+#include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
-#include "allocators/pool.h"
+#include "core/pool.h"
 
 #include <vulkan/vulkan_core.h>
 
 static VkFormat to_vulkan_format(uint32_t channels, bool is_srgb);
 
-bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, bool is_srgb, uint8_t *pixels) {
+bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, bool is_srgb, TextureUsageFlags usage, uint8_t *pixels) {
 	if (store_index >= MAX_TEXTURES) {
-		LOG_ERROR("Vulkan: Texture index %d out of bounds", store_index);
+		LOG_ERROR("Vulkan: texture index %d out of bounds, aborting vulkan_renderer_texture_create", store_index);
 		return false;
 	}
-
-	VulkanImage *texture = &context->image_pool[store_index];
-	if (texture->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocate texture at index %d, but index is already in use", store_index);
+	if (FLAG_GET(usage, TEXTURE_USAGE_COLOR_ATTACHMENT) && FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT)) {
+		LOG_ERROR("Vulkan: texture cannot be both Color and Depth attachment, aborting vulkan_renderer_texture_create");
 		ASSERT(false);
 		return false;
 	}
 
-	VkDeviceSize size = width * height * channels;
-
-	VulkanBuffer *staging_buffer = &context->staging_buffer;
-	size_t copy_end = aligned_address(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
-	size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
-	if (copy_end >= staging_buffer->size) {
-		LOG_ERROR("Max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
+	VulkanImage *image = &context->image_pool[store_index];
+	if (image->handle != NULL) {
+		LOG_FATAL("Vulkan: texture at index %d index is already in use, aborting vulkan_renderer_texture_create", store_index);
 		ASSERT(false);
 		return false;
 	}
 
-	vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, pixels);
-	staging_buffer->offset = copy_end;
+	image->width = width, image->height = height;
+	uint32_t functional_width = image->width == MATCH_SWAPCHAIN ? context->swapchain.extent.width : width;
+	uint32_t functional_height = image->height == MATCH_SWAPCHAIN ? context->swapchain.extent.height : height;
+
+	VkDeviceSize size = functional_width * functional_height * channels;
+
+	VkImageUsageFlags vk_usage = 0;
+	VkImageAspectFlags aspect = FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+	VkFormat format = to_vulkan_format(channels, is_srgb);
+	VkSampleCountFlags sample_count = VK_SAMPLE_COUNT_1_BIT;
+	bool is_attachment = FLAG_GET(usage, TEXTURE_USAGE_COLOR_ATTACHMENT) || FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT);
+	if (is_attachment) {
+		format = FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT) ? context->device.depth_format : context->swapchain.format.format;
+		sample_count = context->sample_count;
+	} else
+		vk_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+	if (FLAG_GET(usage, TEXTURE_USAGE_SAMPLED))
+		vk_usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	if (FLAG_GET(usage, TEXTURE_USAGE_COLOR_ATTACHMENT))
+		vk_usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+	if (FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT))
+		vk_usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
 	vulkan_image_create(
-		context, VK_SAMPLE_COUNT_1_BIT,
-		width, height, to_vulkan_format(channels, is_srgb), VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		texture);
+		context, sample_count,
+		functional_width, functional_height, format, VK_IMAGE_TILING_OPTIMAL,
+		vk_usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		image);
 
-	vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, texture->handle, width, height);
+	if (pixels) {
+		VulkanBuffer *staging_buffer = &context->staging_buffer;
+		size_t copy_end = aligned_address(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
+		size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
+		if (copy_end >= staging_buffer->size) {
+			LOG_ERROR("Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
+			ASSERT(false);
+			return false;
+		}
 
-	if (vulkan_image_view_create(context, texture->handle, texture->format, VK_IMAGE_ASPECT_COLOR_BIT, &texture->view) == false) {
+		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, pixels);
+		staging_buffer->offset = copy_end;
+		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, functional_width, functional_height);
+	}
+
+	if (vulkan_image_view_create(context, aspect, image) == false) {
 		LOG_ERROR("Failed to create VkImageView");
 		return false;
 	}
 
 	LOG_INFO("Vulkan Texture created");
+	image->state = VULKAN_RESOURCE_STATE_INITIALIZED;
+	return true;
+}
+
+bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_index, uint32_t width, uint32_t height) {
+	VulkanImage *image = NULL;
+	VK_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+
+	vkDestroyImageView(context->device.logical, image->view, NULL);
+	vkDestroyImage(context->device.logical, image->handle, NULL);
+	vkFreeMemory(context->device.logical, image->memory, NULL);
+
+	vulkan_image_create(context, image->info.samples, width, height, image->info.format, VK_IMAGE_TILING_OPTIMAL, image->info.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image);
+	vulkan_image_view_create(context, image->aspect, image);
+
 	return true;
 }
 
 bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index) {
-	if (retrieve_index >= MAX_TEXTURES) {
-		LOG_ERROR("Vulkan: Texture index %d out of bounds", retrieve_index);
-		return false;
-	}
+	VulkanImage *image = NULL;
+	VK_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
 
-	VulkanImage *texture = &context->image_pool[retrieve_index];
-	if (texture->handle == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to destroy texture at index %d, but index is not in use", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+	vkDestroyImageView(context->device.logical, image->view, NULL);
+	vkDestroyImage(context->device.logical, image->handle, NULL);
+	vkFreeMemory(context->device.logical, image->memory, NULL);
 
-	vkDestroyImageView(context->device.logical, texture->view, NULL);
-	vkDestroyImage(context->device.logical, texture->handle, NULL);
-	vkFreeMemory(context->device.logical, texture->memory, NULL);
-
-	texture->handle = NULL;
-	texture->memory = NULL;
-	texture->view = NULL;
-
+	*image = (VulkanImage){ 0 };
 	return true;
 }
 
 bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index, SamplerDesc description) {
-	if (store_index >= MAX_SAMPLERS) {
-		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
-		return false;
-	}
-
-	VulkanSampler *sampler = &context->sampler_pool[store_index];
-	if (sampler->handle != NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to allocatetexture at index %d, but index is already in use", store_index);
-		ASSERT(false);
-		return false;
-	}
+	VulkanSampler *sampler = NULL;
+	VK_GET_OR_RETURN(sampler, context->sampler_pool, store_index, MAX_SAMPLERS, false);
 
 	sampler->info = (VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -115,25 +141,17 @@ bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index
 	}
 
 	LOG_INFO("VkSampler created");
+	sampler->state = VULKAN_RESOURCE_STATE_INITIALIZED;
+
 	return true;
 }
 
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_index) {
-	if (retrieve_index >= MAX_SAMPLERS) {
-		LOG_ERROR("Vulkan: Sampler index %d out of bounds", retrieve_index);
-		return false;
-	}
-
-	VulkanSampler *sampler = &context->sampler_pool[retrieve_index];
-	if (sampler->handle == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to destroy sampler at index %d, but index is not in use", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+	VulkanSampler *sampler = NULL;
+	VK_GET_OR_RETURN(sampler, context->sampler_pool, retrieve_index, MAX_SAMPLERS, true);
 
 	vkDestroySampler(context->device.logical, sampler->handle, NULL);
-
-	sampler->handle = NULL;
+	*sampler = (VulkanSampler){ 0 };
 
 	return true;
 }

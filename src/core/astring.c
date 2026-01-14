@@ -1,6 +1,6 @@
 #include "astring.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 
 #include <stdio.h>
 #include <string.h>

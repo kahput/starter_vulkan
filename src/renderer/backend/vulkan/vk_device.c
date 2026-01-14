@@ -1,8 +1,9 @@
+#include "core/debug.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "vk_internal.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "common.h"
 #include "core/logger.h"
 
@@ -15,6 +16,7 @@ static const char *extensions[] = {
 
 static bool select_physical_device(Arena *arena, VulkanContext *context);
 static bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface, VulkanDevice *device);
+static VkFormat find_supported_depth_format(VulkanDevice *device);
 
 bool vulkan_device_create(Arena *arena, VulkanContext *context) {
 	if (select_physical_device(arena, context) == false)
@@ -70,6 +72,7 @@ bool vulkan_device_create(Arena *arena, VulkanContext *context) {
 	vkGetDeviceQueue(context->device.logical, context->device.transfer_index, 0, &context->device.transfer_queue);
 	vkGetDeviceQueue(context->device.logical, context->device.present_index, 0, &context->device.present_queue);
 
+	context->device.depth_format = find_supported_depth_format(&context->device);
 	LOG_INFO("Logical device created");
 
 	return true;
@@ -182,4 +185,21 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	LOG_INFO("Device '%s' selected", device->properties.deviceName);
 
 	return true;
+}
+VkFormat find_supported_depth_format(VulkanDevice *device) {
+	VkFormat options[] = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+	VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL;
+	VkFormatFeatureFlags feature = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+	for (uint32_t format_index = 0; format_index < countof(options); ++format_index) {
+		VkFormat format = options[format_index];
+		VkFormatProperties properties;
+		vkGetPhysicalDeviceFormatProperties(device->physical, format, &properties);
+
+		if (FLAG_GET(properties.optimalTilingFeatures, feature)) {
+			return format;
+		}
+	}
+
+	ASSERT(false);
 }

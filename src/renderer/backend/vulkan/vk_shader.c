@@ -10,7 +10,7 @@
 #include "core/debug.h"
 #include "core/logger.h"
 #include "core/astring.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -84,6 +84,7 @@ bool vulkan_renderer_shader_create(
 
 	description.polygon_mode = POLYGON_MODE_LINE;
 	create_shader_variant(context, shader, &shader->variants[1], description);
+	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	return true;
 }
@@ -104,9 +105,6 @@ bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_in
 	vkDestroyShaderModule(context->device.logical, shader->vertex_shader, NULL);
 	vkDestroyShaderModule(context->device.logical, shader->fragment_shader, NULL);
 
-	shader->vertex_shader = NULL;
-	shader->fragment_shader = NULL;
-
 	vkDestroyDescriptorSetLayout(context->device.logical, shader->group_layout, NULL);
 	vkDestroyPipelineLayout(context->device.logical, shader->pipeline_layout, NULL);
 
@@ -119,6 +117,7 @@ bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_in
 		}
 	}
 
+	*shader = (VulkanShader){ 0 };
 	return true;
 }
 
@@ -568,14 +567,27 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	}
 
 	SetInfo *global_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_FRAME];
-	VkDescriptorSetLayoutBinding *binding = &global_reflect_info->vk_binding[0];
-	if (global_reflect_info->binding_count != 1 || binding->descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-		spvReflectDestroyShaderModule(&vertex_module);
-		spvReflectDestroyShaderModule(&fragment_module);
-		arena_release_scratch(scratch);
-		LOG_ERROR("Vulkan: Shader is incompatible, aborting");
-		ASSERT(false);
-		return false;
+	for (uint32_t binding_index = 0; binding_index < global->binding_count; ++binding_index) {
+		VkDescriptorSetLayoutBinding *global_binding = &global->bindings[binding_index];
+
+		bool valid = false;
+		for (uint32_t reflect_index = 0; reflect_index < global_reflect_info->binding_count; ++reflect_index) {
+			VkDescriptorSetLayoutBinding *reflect_binding = &global_reflect_info->vk_binding[reflect_index];
+			VkDescriptorType type =
+				global_binding->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+				? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+				: global_binding->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+				? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+				: global_binding->descriptorType;
+
+			if (reflect_binding->binding == global_binding->binding && reflect_binding->descriptorType == type)
+				valid = true;
+		}
+
+		if (valid == false) {
+			LOG_WARN("Vulkan: shader is not compatible with passed global resource");
+			ASSERT(false);
+		}
 	}
 
 	SetInfo *material_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL];

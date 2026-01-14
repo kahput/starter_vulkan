@@ -69,30 +69,33 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 
 bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_index) {
 	if (retrieve_index >= MAX_BUFFERS) {
-		LOG_ERROR("Vulkan: Buffer index %d out of bounds", retrieve_index);
+		LOG_WARN("Vulkan: buffer index %d out of bounds, aborting vulkan_renderer_buffer_destroy", retrieve_index);
 		return false;
 	}
 
 	VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle == NULL) {
-		LOG_FATAL("buffer at index %d is not in use, aborting vulkan_renderer_buffer_destroy", retrieve_index);
+		LOG_WARN("Vulkan: buffer at index %d is not in use, aborting vulkan_renderer_buffer_destroy", retrieve_index);
 		ASSERT(false);
 		return false;
 	}
+
 	vkDestroyBuffer(context->device.logical, buffer->handle, NULL);
 	vkFreeMemory(context->device.logical, buffer->memory, NULL);
-
-	buffer->handle = NULL;
-	buffer->memory = NULL;
-	buffer->mapped = NULL;
+	*buffer = (VulkanBuffer){ 0 };
 
 	return true;
 }
 
 bool vulkan_renderer_buffer_write(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data) {
+	if (retrieve_index >= MAX_BUFFERS) {
+		LOG_WARN("Vulkan: buffer index %d out of bounds, aborting vulkan_renderer_buffer_write", retrieve_index);
+		return false;
+	}
+
 	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
 	if (buffer->handle == NULL) {
-		LOG_ERROR("Vulkan: buffer at index %d not in use, aborting vulkan_renderer_buffer_update", retrieve_index);
+		LOG_ERROR("Vulkan: buffer at index %d not in use, aborting vulkan_renderer_buffer_write", retrieve_index);
 		ASSERT(false);
 		return false;
 	}

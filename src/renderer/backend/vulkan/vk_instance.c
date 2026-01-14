@@ -4,7 +4,7 @@
 #include "common.h"
 #include "core/debug.h"
 #include "core/logger.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
 
 #include "platform.h"
 

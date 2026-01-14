@@ -1,7 +1,7 @@
 #include "platform.h"
 #include "platform/internal.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "core/logger.h"
 
 #include "common.h"

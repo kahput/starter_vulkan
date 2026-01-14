@@ -4,8 +4,8 @@
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
-#include "allocators/arena.h"
-#include "allocators/pool.h"
+#include "core/arena.h"
+#include "core/pool.h"
 
 #include "common.h"
 #include "core/astring.h"
@@ -24,21 +24,21 @@
 #include <string.h>
 
 typedef enum {
-	COLOR_ATTACHMENT_NONE,
-	COLOR_ATTACHMENT_SWAPCHAIN,
-} ColorAttachment;
+	RENDER_TARGET_TEXTURE_SHADOW_DEPTH = RENDERER_DEFAULT_TEXTURE_COUNT,
+	RENDER_TARGET_TEXTURE_MAIN_DEPTH,
+	RENDER_TARGET_TEXTURE_MAIN_COLOR,
 
-typedef enum {
-	DEPTH_ATTACHMENT_NONE,
-	DEPTH_ATTACHMENT_ZPRE,
-	DEPTH_ATTACHMENT_SHADOW
-
+	RENDER_TARGET_TEXTURE_COUNT,
 } DepthAttachment;
 
 enum {
-	RENDERER_PASS_SHADOW,
-	RENDERER_PASS_ZPRE,
-	RENDERER_PASS_MAIN,
+	SHADOW_SAMPLER = RENDERER_DEFAULT_SAMPLER_COUNT
+};
+
+enum {
+	RENDER_PASS_SHADOW,
+	RENDER_PASS_ZPRE,
+	RENDER_PASS_MAIN,
 };
 
 enum {
@@ -70,16 +70,8 @@ typedef struct renderer {
 
 	uint32_t width, height;
 
-	uint32_t global_resource;
-
 	RShader default_shader;
 	RMaterial default_material;
-
-	RTexture default_texture_white;
-	RTexture default_texture_black;
-	RTexture default_texture_normal;
-
-	uint32_t linear_sampler, nearest_sampler;
 
 	ResourceEntry *texture_map;
 	Pool *texture_allocator;
@@ -103,7 +95,7 @@ typedef struct renderer {
 static Renderer *renderer = { 0 };
 
 static ShaderMember *shader_reflection_find_member(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency);
-static uint32_t shader_reflection_find_binding(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency);
+// static uint32_t shader_reflection_find_binding(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency);
 
 static uint32_t resolve_mesh(UUID id, MeshConfig *config);
 static uint32_t resolve_texture(UUID id, TextureConfig *config);
@@ -142,11 +134,11 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 
 	index_recycler_create(renderer->arena, &renderer->shader_indices, 0, MAX_SHADERS);
 	index_recycler_create(renderer->arena, &renderer->buffer_indices, 0, MAX_BUFFERS);
-	index_recycler_create(renderer->arena, &renderer->image_indices, RENDERER_DEFAULT_TEXTURE_COUNT, MAX_TEXTURES);
+	index_recycler_create(renderer->arena, &renderer->image_indices, 0, MAX_TEXTURES);
 	index_recycler_create(renderer->arena, &renderer->sampler_indices, 0, MAX_SAMPLERS);
 
 	index_recycler_create(renderer->arena, &renderer->group_indices, 0, MAX_GROUP_RESOURCES);
-	index_recycler_create(renderer->arena, &renderer->global_indices, 0, MAX_GLOBAL_RESOURCES);
+	index_recycler_create(renderer->arena, &renderer->global_indices, SHADOW_VIEW, MAX_GLOBAL_RESOURCES);
 
 	renderer->mesh_allocator = allocator_pool_from_arena(renderer->arena, 1024, sizeof(Mesh), alignof(Mesh));
 	renderer->texture_allocator = allocator_pool_from_arena(renderer->arena, 1024, sizeof(Texture), alignof(Texture));
@@ -154,26 +146,64 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 	renderer->material_allocator = allocator_pool_from_arena(renderer->arena, 1024, sizeof(Material), alignof(Material));
 
 	// ========================= DEFAULT ======================================
-	renderer->global_resource = recycler_new_index(&renderer->global_indices);
-	vulkan_renderer_resource_global_create(renderer->context, renderer->global_resource, sizeof(FrameData));
-
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
-	TextureConfig config = { .pixels = WHITE, .width = 1, .height = 1, .channels = 4, .is_srgb = false };
-	renderer->default_texture_white = renderer_texture_create(identifier_generate(), &config);
+	renderer_texture_create(identifier_generate(), (TextureConfig[]){ (TextureConfig){ .width = 1, .height = 1, .channels = 4, .is_srgb = true, .pixels = WHITE } });
+	// vulkan_renderer_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, WHITE);
 
 	uint8_t BLACK[4] = { 0, 0, 0, 255 };
-	config = (TextureConfig){ .pixels = BLACK, .width = 1, .height = 1, .channels = 4, .is_srgb = false };
-	renderer->default_texture_black = renderer_texture_create(identifier_generate(), &config);
+	renderer_texture_create(identifier_generate(), (TextureConfig[]){ (TextureConfig){ .width = 1, .height = 1, .channels = 4, .is_srgb = true, .pixels = BLACK } });
+	// vulkan_renderer_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, BLACK);
 
 	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
-	config = (TextureConfig){ .pixels = FLAT_NORMAL, .width = 1, .height = 1, .channels = 4, .is_srgb = false };
-	renderer->default_texture_normal = renderer_texture_create(identifier_generate(), &config);
+	renderer_texture_create(identifier_generate(), (TextureConfig[]){ (TextureConfig){ .width = 1, .height = 1, .channels = 4, .is_srgb = false, .pixels = FLAT_NORMAL } });
+	// vulkan_renderer_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1, 4, false, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
 
-	renderer->linear_sampler = recycler_new_index(&renderer->sampler_indices);
-	vulkan_renderer_sampler_create(renderer->context, renderer->linear_sampler, LINEAR_SAMPLER);
+	vulkan_renderer_sampler_create(renderer->context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
+	vulkan_renderer_sampler_create(renderer->context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
 
-	renderer->nearest_sampler = recycler_new_index(&renderer->sampler_indices);
-	vulkan_renderer_sampler_create(renderer->context, renderer->nearest_sampler, NEAREST_SAMPLER);
+    recycler_new_index(&renderer->image_indices);
+	vulkan_renderer_texture_create(
+		renderer->context, RENDER_TARGET_TEXTURE_MAIN_DEPTH,
+		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 1, false,
+		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
+
+    recycler_new_index(&renderer->image_indices);
+	vulkan_renderer_texture_create(
+		renderer->context, RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
+		2048, 2048, 1, false,
+		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
+
+    recycler_new_index(&renderer->image_indices);
+	vulkan_renderer_texture_create(
+		renderer->context, RENDER_TARGET_TEXTURE_MAIN_COLOR,
+		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 4, true,
+		TEXTURE_USAGE_COLOR_ATTACHMENT, NULL);
+
+	RenderPassDesc shadow = {
+		.name = S("Shadow"),
+		.depth_attachment = { .texture = RENDER_TARGET_TEXTURE_SHADOW_DEPTH, .clear = { .depth = 1.0f }, .load = CLEAR, .store = STORE },
+		.use_depth = true
+	};
+
+	RenderPassDesc main = {
+		.name = S("Main"),
+		.color_attachments = { { .texture = RENDER_TARGET_TEXTURE_MAIN_COLOR, .clear = { .color = GLM_VEC4_BLACK_INIT }, .load = CLEAR, .store = STORE, .present = true } },
+		.color_attachment_count = 1,
+		.depth_attachment = { .texture = RENDER_TARGET_TEXTURE_MAIN_DEPTH, .clear = { .depth = 1.0f }, .load = CLEAR, .store = DONT_CARE },
+		.use_depth = true
+	};
+
+	vulkan_renderer_resource_global_create(renderer->context, GLOBAL_VIEW,
+		(ResourceBinding[]){
+		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(FrameData), .count = 1 },
+		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
+		  { .binding = 1, .type = SHADER_BINDING_SAMPLER, .size = 0, .count = 1 }, // Same binding == COMBINED_IMAGE_SAMPLER
+		},
+		3);
+	// vulkan_renderer_resource_global_set_texture_sampler(renderer->context, GLOBAL_VIEW, 1, RENDER_TARGET_TEXTURE_SHADOW_DEPTH, RENDERER_DEFAULT_SAMPLER_LINEAR);
+
+	vulkan_renderer_pass_create(renderer->context, RENDER_PASS_SHADOW, SHADOW_VIEW, &shadow);
+	vulkan_renderer_pass_create(renderer->context, RENDER_PASS_MAIN, GLOBAL_VIEW, &main);
 
 	ArenaTemp scratch = arena_scratch(NULL);
 	{
@@ -200,36 +230,13 @@ bool renderer_system_startup(void *memory, size_t size, void *display, uint32_t 
 	arena_release_scratch(scratch);
 
 	ShaderParameter parameters[] = {
-		(ShaderParameter){ .name = S("u_base_color_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_white },
-		(ShaderParameter){ .name = S("u_metallic_roughness_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_white },
-		(ShaderParameter){ .name = S("u_normal_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_normal },
-		(ShaderParameter){ .name = S("u_occlusion_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_white },
-		(ShaderParameter){ .name = S("u_emissive_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture = renderer->default_texture_black },
+		(ShaderParameter){ .name = S("u_base_color_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
+		(ShaderParameter){ .name = S("u_metallic_roughness_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
+		(ShaderParameter){ .name = S("u_normal_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_NORMAL },
+		(ShaderParameter){ .name = S("u_occlusion_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
+		(ShaderParameter){ .name = S("u_emissive_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_BLACK },
 	};
 	renderer->default_material = renderer_material_create(renderer->default_shader, countof(parameters), parameters);
-
-	// RenderPassDesc shadow_config = {
-	// 	.depth_attachment = { .source = RENDER_TARGET_SOURCE_NEW, .load_op = CLEAR, .store_op = STORE, .clear = { .depth = 1.0f } },
-	//
-	// 	.width = 2048,
-	// 	.height = 2048
-	// };
-	//
-	Shader *shader = ((Shader *)renderer->shader_allocator->slots) + renderer->default_shader.index;
-	uint32_t shadow_map = shader_reflection_find_binding(&shader->reflection, S("g_shadow_map"), SHADER_UNIFORM_FREQUENCY_PER_FRAME);
-	// PassSampleDesc samples[] = {
-	// 	(PassSampleDesc){ .source_pass = RENDERER_PASS_SHADOW, .source_output = PASS_OUTPUT_DEPTH, .binding = shadow_map },
-	// };
-	RenderPassDesc main_config = {
-		.color_attachments = { [0] = { .source = RENDER_TARGET_SOURCE_NEW, .present = true, .load_op = CLEAR, .store_op = STORE, .clear = { .color = GLM_VEC4_BLACK_INIT } } },
-		.color_count = 1,
-		.depth_attachment = { .source = RENDER_TARGET_SOURCE_NEW, .load_op = CLEAR, .store_op = DONT_CARE, .clear = { .depth = 1.0f } },
-		// .samples = samples,
-		// countof(samples)
-	};
-
-	// vulkan_renderer_pass_create(renderer->context, RENDERER_PASS_SHADOW, SHADOW_VIEW, &shadow_config);
-	vulkan_renderer_pass_create(renderer->context, RENDERER_PASS_MAIN, GLOBAL_VIEW, &main_config);
 
 	return true;
 }
@@ -289,11 +296,11 @@ Handle renderer_material_create(RShader rshader, uint32_t parameter_count, Shade
 					texture_handle = parameter->as.texture;
 			}
 
-			if (handle_is_valid(texture_handle) == false)
-				texture_handle = renderer->default_texture_white;
+			uint32_t handle = RENDERER_DEFAULT_TEXTURE_WHITE;
+			if (handle_is_valid(texture_handle))
+				handle = (((Texture *)renderer->texture_allocator->slots) + texture_handle.index)->handle;
 
-			Texture *texture = ((Texture *)renderer->texture_allocator->slots) + texture_handle.index;
-			vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, binding->binding, texture->handle, renderer->nearest_sampler);
+			vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, binding->binding, handle, RENDERER_DEFAULT_SAMPLER_NEAREST);
 		}
 	}
 
@@ -364,7 +371,7 @@ bool renderer_material_set_texture(Handle instance_handle, String name, UUID tex
 		return false;
 	}
 
-	vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, texture_binding, texture->handle, renderer->nearest_sampler);
+	vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, texture_binding, texture->handle, RENDERER_DEFAULT_SAMPLER_NEAREST);
 	return true;
 }
 
@@ -407,7 +414,7 @@ bool renderer_unload_mesh(UUID id) {
 bool renderer_frame_begin(Camera *camera, uint32_t light_count, Light *lights) {
 	if (vulkan_renderer_frame_begin(renderer->context, renderer->display->physical_width, renderer->display->logical_height) == false)
 		return false;
-	vulkan_renderer_pass_begin(renderer->context, RENDERER_PASS_MAIN);
+	vulkan_renderer_pass_begin(renderer->context, RENDER_PASS_MAIN);
 
 	if (camera) {
 		FrameData data = { 0 };
@@ -431,8 +438,8 @@ bool renderer_frame_begin(Camera *camera, uint32_t light_count, Light *lights) {
 
 		ASSERT(point_light_count != light_count);
 
-		vulkan_renderer_resource_global_write(renderer->context, renderer->global_resource, 0, sizeof(FrameData), &data);
-		vulkan_renderer_resource_global_bind(renderer->context, renderer->global_resource);
+		vulkan_renderer_resource_global_write(renderer->context, GLOBAL_VIEW, 0, sizeof(FrameData), &data);
+		vulkan_renderer_resource_global_bind(renderer->context, GLOBAL_VIEW);
 	}
 
 	return true;
@@ -529,7 +536,7 @@ uint32_t resolve_texture(UUID id, TextureConfig *config) {
 	uint32_t pool_index = texture - (Texture *)renderer->texture_allocator->slots;
 	entry->pool_index = pool_index;
 
-	vulkan_renderer_texture_create(renderer->context, texture->handle, config->width, config->height, config->channels, config->is_srgb, config->pixels);
+	vulkan_renderer_texture_create(renderer->context, texture->handle, config->width, config->height, config->channels, config->is_srgb, TEXTURE_USAGE_SAMPLED, config->pixels);
 	return pool_index;
 }
 
@@ -549,7 +556,7 @@ uint32_t resolve_shader(UUID id, ShaderConfig *config) {
 	desc.cull_mode = CULL_MODE_BACK;
 	vulkan_renderer_shader_create(
 		renderer->arena, renderer->context,
-		shader->handle.index, renderer->global_resource, config,
+		shader->handle.index, GLOBAL_VIEW, config,
 		desc,
 		&shader->reflection);
 
@@ -563,7 +570,7 @@ uint32_t resolve_shader(UUID id, ShaderConfig *config) {
 
 		if (binding->type == SHADER_BINDING_UNIFORM_BUFFER) {
 			shader->ubo_size = binding->buffer_layout->size;
-			shader->default_ubo_data = arena_push_zero(renderer->arena, shader->ubo_size, 16);
+			shader->default_ubo_data = arena_push(renderer->arena, shader->ubo_size, 16, true);
 			if (config->default_ubo_data)
 				memcpy(shader->default_ubo_data, config->default_ubo_data, shader->ubo_size);
 		}
@@ -587,7 +594,7 @@ ShaderMember *shader_reflection_find_member(ShaderReflection *reflection, String
 	return NULL;
 }
 
-static uint32_t shader_reflection_find_binding(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency) {
+uint32_t shader_reflection_find_binding(ShaderReflection *reflection, String name, ShaderUniformFrequency frequency) {
 	for (uint32_t index = 0; index < reflection->binding_count; ++index) {
 		ShaderBinding *binding = &reflection->bindings[index];
 		if (binding->frequency != frequency)

@@ -2,7 +2,7 @@
 
 #include "vk_internal.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 

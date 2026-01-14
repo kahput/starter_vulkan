@@ -5,7 +5,8 @@
 
 #include "common.h"
 #include "core/logger.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
+#include <vulkan/vulkan_core.h>
 
 VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, uint32_t count);
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count);
@@ -101,9 +102,9 @@ bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t new_width, uint3
 }
 
 VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, uint32_t count) {
-	for (uint32_t i = 0; i < count; i++) {
-		if (formats[i].format == VK_FORMAT_B8G8R8A8_SRGB && formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-			return formats[i];
+	for (uint32_t format_index = 0; format_index < count; format_index++) {
+		if (formats[format_index].format == VK_FORMAT_B8G8R8A8_SRGB && formats[format_index].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+			return formats[format_index];
 	}
 
 	return formats[0];
@@ -128,8 +129,28 @@ VkExtent2D swapchain_select_extent(uint32_t window_width, uint32_t window_height
 }
 
 bool create_swapchain_image_views(VulkanContext *context) {
-	for (uint32_t i = 0; i < context->swapchain.images.count; ++i) {
-		if (vulkan_image_view_create(context, context->swapchain.images.handles[i], context->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &context->swapchain.images.views[i]) == false) {
+	for (uint32_t image_index = 0; image_index < context->swapchain.images.count; ++image_index) {
+		VkImageViewCreateInfo iv_create_info = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = context->swapchain.images.handles[image_index],
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = context->swapchain.format.format,
+			.components = {
+			  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+			  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+			  .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+			  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+			},
+			.subresourceRange = {
+			  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			  .baseMipLevel = 0,
+			  .levelCount = 1,
+			  .baseArrayLayer = 0,
+			  .layerCount = 1,
+			}
+		};
+
+		if (vkCreateImageView(context->device.logical, &iv_create_info, NULL, &context->swapchain.images.views[image_index]) != VK_SUCCESS) {
 			LOG_ERROR("Failed to create Swapchain VkImageView");
 			return false;
 		}

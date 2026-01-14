@@ -1,7 +1,7 @@
 #ifndef POOL_H
 #define POOL_H
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "common.h"
 
 struct arena;

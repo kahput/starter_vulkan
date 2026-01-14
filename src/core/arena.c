@@ -1,9 +1,11 @@
 #include "arena.h"
+
 #include "common.h"
+
 #include "core/debug.h"
 #include "core/logger.h"
+#include "core/memory.h"
 
-#include <string.h>
 #include <stdlib.h>
 
 static Arena scratch_arenas[2] = { 0 };
@@ -31,7 +33,7 @@ void arena_free(Arena *arena) {
 	arena->capacity = 0;
 }
 
-void *arena_push(Arena *arena, size_t size, size_t alignment) {
+void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) {
 	ASSERT(alignment > 0 && ((alignment & (alignment - 1)) == 0));
 	uintptr_t current = (uintptr_t)arena->memory + arena->offset;
 	uintptr_t aligned = aligned_address(current, alignment);
@@ -43,16 +45,11 @@ void *arena_push(Arena *arena, size_t size, size_t alignment) {
 		return NULL;
 	}
 
+	if (zero_memory)
+		memory_zero((void *)aligned, size);
+
 	arena->offset += padding + size;
 	return (void *)aligned;
-}
-
-void *arena_push_zero(Arena *arena, size_t size, size_t alignment) {
-	void *pointer = arena_push(arena, size, alignment);
-	if (pointer)
-		memset(pointer, 0, size);
-
-	return pointer;
 }
 
 void arena_pop(Arena *arena, size_t size) {

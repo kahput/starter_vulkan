@@ -3,7 +3,7 @@
 
 #include "platform.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
@@ -18,7 +18,6 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	// Index into these
 	context->image_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
 	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
 	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
@@ -97,12 +96,10 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 		if (context->buffer_pool[index].handle != NULL)
 			vulkan_renderer_buffer_destroy(context, index);
 	}
+
 	vkDestroyBuffer(context->device.logical, context->staging_buffer.handle, NULL);
 	vkFreeMemory(context->device.logical, context->staging_buffer.memory, NULL);
-
-	context->staging_buffer.handle = NULL;
-	context->staging_buffer.memory = NULL;
-	context->staging_buffer.mapped = NULL;
+	context->staging_buffer = (VulkanBuffer){ 0 };
 
 	vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, NULL);
 	vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, NULL);
@@ -110,22 +107,6 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	for (uint32_t index = 0; index < context->swapchain.images.count; ++index) {
 		vkDestroyImageView(context->device.logical, context->swapchain.images.views[index], NULL);
 	}
-
-	// vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
-	// vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
-	// vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
-	//
-	// context->depth_attachment.view = NULL;
-	// context->depth_attachment.handle = NULL;
-	// context->depth_attachment.memory = NULL;
-	//
-	// vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
-	// vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
-	// vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
-	//
-	// context->color_attachment.view = NULL;
-	// context->color_attachment.handle = NULL;
-	// context->color_attachment.memory = NULL;
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
 
@@ -153,9 +134,17 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 		LOG_WARN("Failed to recreate swapchain");
 	}
 
-	for (uint32_t pass_index = 0; pass_index < MAX_RENDER_PASSES; ++pass_index) {
-		VulkanPass *pass = &context->pass_pool[pass_index];
-		vulkan_pass_on_resize(context, pass);
+	for (uint32_t image_index = 0; image_index < MAX_TEXTURES; ++image_index) {
+		VulkanImage *image = &context->image_pool[image_index];
+		if (
+			image->state == VULKAN_RESOURCE_STATE_UNINITIALIZED ||
+			(image->width != MATCH_SWAPCHAIN || image->height != MATCH_SWAPCHAIN))
+			continue;
+
+		uint32_t width = image->width == MATCH_SWAPCHAIN ? context->swapchain.extent.width : image->width;
+		uint32_t height = image->height == MATCH_SWAPCHAIN ? context->swapchain.extent.height : image->height;
+
+		vulkan_renderer_texture_resize(context, image_index, width, height);
 	}
 
 	logger_dedent();

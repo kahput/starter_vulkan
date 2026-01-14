@@ -3,7 +3,7 @@
 
 #include "common.h"
 #include "core/logger.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include <vulkan/vulkan_core.h>
 
 bool vulkan_image_create(
@@ -11,12 +11,10 @@ bool vulkan_image_create(
 	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
 	VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
 	VulkanImage *image) {
-	image->format = format;
-
-	VkImageCreateInfo image_info = (VkImageCreateInfo){
+	image->info = (VkImageCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType = VK_IMAGE_TYPE_2D,
-		.format = image->format,
+		.format = format,
 		.extent = {
 		  .width = width,
 		  .height = height,
@@ -30,8 +28,9 @@ bool vulkan_image_create(
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
+	image->layout = image->info.initialLayout;
 
-	if (vkCreateImage(context->device.logical, &image_info, NULL, &image->handle) != VK_SUCCESS) {
+	if (vkCreateImage(context->device.logical, &image->info, NULL, &image->handle) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan Texture");
 		return false;
 	}
@@ -59,12 +58,12 @@ bool vulkan_image_create(
 	return true;
 }
 
-bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view) {
+bool vulkan_image_view_create(VulkanContext *context, VkImageAspectFlags aspect_flags, VulkanImage *image) {
 	VkImageViewCreateInfo iv_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = image,
+		.image = image->handle,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
-		.format = format,
+		.format = image->info.format,
 		.components = {
 		  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
 		  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -79,8 +78,9 @@ bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat fo
 		  .layerCount = 1,
 		}
 	};
+    image->aspect = aspect_flags;
 
-	if (vkCreateImageView(context->device.logical, &iv_create_info, NULL, view) != VK_SUCCESS) {
+	if (vkCreateImageView(context->device.logical, &iv_create_info, NULL, &image->view) != VK_SUCCESS) {
 		return false;
 	}
 

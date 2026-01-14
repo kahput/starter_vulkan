@@ -2,7 +2,7 @@
 #include "assets/asset_types.h"
 #include "assets/importer.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 
 #include "common.h"
 #include "core/astring.h"

@@ -1,5 +1,5 @@
 #include "platform/wl_platform.h"
-#include "core/debug.h"
+
 #include "platform.h"
 #include "platform/internal.h"
 
@@ -240,10 +240,12 @@ bool wl_startup(Platform *platform) {
 	xdg_surface_add_listener(wl->xdg.surface, &surface_listener, platform);
 
 	wl->xdg.toplevel = xdg_surface_get_toplevel(wl->xdg.surface);
+	xdg_toplevel_set_app_id(wl->xdg.toplevel, "vulkan-debug");
+
 	// xdg_toplevel_set_fullscreen(wl->xdg.toplevel, wl->output);
-	// xdg_surface_set_window_geometry(wl->xdg.surface, 0, 0, platform->width, platform->height)
-	// xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
-	// xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	xdg_surface_set_window_geometry(wl->xdg.surface, 0, 0, platform->physical_width, platform->physical_height);
+	xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
 
 	xdg_toplevel_add_listener(wl->xdg.toplevel, &toplevel_listener, platform);
 

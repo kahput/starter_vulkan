@@ -7,7 +7,7 @@
 #include "renderer/backend/vulkan_api.h"
 
 #include "common.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define SWAPCHAIN_IMAGE_COUNT 3
@@ -19,6 +19,36 @@
 #define MAX_PUSH_CONSTANT_RANGES 3
 #define MAX_UNIFORMS 32
 #define MAX_VARIANTS 8
+
+typedef enum {
+	VULKAN_RESOURCE_STATE_UNINITIALIZED,
+	VULKAN_RESOURCE_STATE_INITIALIZED,
+} VulkanResourceState;
+#define VK_GET_OR_RETURN(ptr_var, pool_array, index, max_limit, expect_initialized)             \
+	do {                                                                                        \
+		if ((index) >= (max_limit)) {                                                           \
+			LOG_ERROR("Vulkan: %s index %u out of bounds (max %u), aborting %s",                \
+				#ptr_var, (uint32_t)(index), (uint32_t)(max_limit), __func__);                  \
+			return false;                                                                       \
+		}                                                                                       \
+                                                                                                \
+		(ptr_var) = &(pool_array)[index];                                                       \
+		if ((expect_initialized)) {                                                             \
+			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_INITIALIZED) {                        \
+				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s", \
+					#ptr_var, (uint32_t)(index), (ptr_var)->state, __func__);                   \
+				ASSERT(false);                                                                  \
+				return false;                                                                   \
+			}                                                                                   \
+		} else {                                                                                \
+			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                      \
+				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",  \
+					#ptr_var, (uint32_t)(index), (ptr_var)->state, __func__);                   \
+				ASSERT(false);                                                                  \
+				return false;                                                                   \
+			}                                                                                   \
+		}                                                                                       \
+	} while (0)
 
 typedef struct vulkan_buffer {
 	VkBuffer handle;
@@ -35,6 +65,8 @@ typedef struct vulkan_buffer {
 } VulkanBuffer;
 
 typedef struct vulkan_group_resource {
+	VulkanResourceState state;
+
 	VulkanBuffer buffer;
 	VkDescriptorSet set;
 
@@ -42,10 +74,13 @@ typedef struct vulkan_group_resource {
 } VulkanGroupResource;
 
 typedef struct vulkan_global_resource {
+    VulkanResourceState state;
+
 	VulkanBuffer buffer;
 
-	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutBinding bindings[MAX_BINDINGS_PER_RESOURCE];
 	uint32_t binding_count;
+
 	VkDescriptorSetLayout set_layout;
 	VkDescriptorSet set;
 
@@ -62,31 +97,35 @@ typedef struct vulkan_pipeline {
 } VulkanPipeline;
 
 typedef struct vulkan_image {
+	VulkanResourceState state;
+
 	VkImage handle;
 	VkImageView view;
 	VkDeviceMemory memory;
 
-	VkFormat format;
+	VkImageLayout layout;
+	VkImageAspectFlags aspect;
+	VkImageCreateInfo info;
+	uint32_t width, height;
 } VulkanImage;
 
 typedef struct vulkan_attachment {
-	VulkanImage image;
+	VulkanResourceState state;
+	uint32_t image_index;
 	bool present;
 
-	VkAttachmentLoadOp load_op;
-	VkAttachmentStoreOp store_op;
-	VkClearValue clear;
+	VkRenderingAttachmentInfo info;
 } VulkanAttachment;
 
 typedef struct vulkan_pass {
+	VulkanResourceState state;
+
 	VulkanAttachment color_attachments[4];
 	uint32_t color_attachment_count;
 	VulkanAttachment depth_attachment;
 
 	uint32_t width, height;
-
 	uint32_t global_resource;
-	RenderPassDesc desc;
 } VulkanPass;
 
 typedef struct swapchain_support_details {
@@ -103,6 +142,8 @@ typedef struct vulkan_device {
 	VkPhysicalDevice physical;
 	VkDevice logical;
 	SwapchainSupportDetails swapchain_details;
+
+	VkFormat depth_format;
 
 	int32_t graphics_index, transfer_index, present_index;
 	VkQueue graphics_queue, transfer_queue, present_queue;
@@ -145,10 +186,10 @@ bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, Vk
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
 bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data);
 
-bool vulkan_pass_on_resize(VulkanContext *context, VulkanPass *pass);
+// bool vulkan_pass_on_resize(VulkanContext *context, VulkanPass *pass);
 
 bool vulkan_image_create(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
-bool vulkan_image_view_create(VulkanContext *context, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView *view);
+bool vulkan_image_view_create(VulkanContext *context, VkImageAspectFlags aspect_flags, VulkanImage *image);
 void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 
@@ -174,6 +215,7 @@ uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 
 typedef struct vulkan_shader {
+	VulkanResourceState state;
 	VkShaderModule vertex_shader, fragment_shader;
 
 	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];
@@ -190,6 +232,8 @@ typedef struct vulkan_shader {
 } VulkanShader;
 
 typedef struct vulkan_sampler {
+	VulkanResourceState state;
+
 	VkSampler handle;
 	VkSamplerCreateInfo info;
 } VulkanSampler;
@@ -206,9 +250,6 @@ struct vulkan_context {
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
 	VkSampleCountFlags sample_count;
-	// VulkanImage depth_attachment;
-	// VulkanImage color_attachment;
-
 	VkPushConstantRange global_range;
 
 	VulkanShader *shader_pool;

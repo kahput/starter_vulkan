@@ -34,7 +34,7 @@ Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_siz
 	}
 
 	Pool *pool = arena_push_struct(arena, Pool);
-	pool->slots = pool->free_slots = arena_push(arena, slot_size * capacity, alignment);
+	pool->slots = pool->free_slots = arena_push(arena, slot_size * capacity, alignment, true);
 	pool->slot_size = slot_size;
 
 	for (uint32_t index = 0; index < capacity; ++index) {

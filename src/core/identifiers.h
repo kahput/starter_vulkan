@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
 
 typedef uint64_t UUID;
 

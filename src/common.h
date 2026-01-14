@@ -20,13 +20,14 @@
 #endif
 
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
-
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 #define clamp(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
+
+#define FLAG_GET(flags, flag) ((flags & flag) == flag)
 
 #define INVALID_INDEX UINT32_MAX
 #define INVALID_UUID UINT64_MAX
@@ -49,6 +50,8 @@
 static inline uint64_t aligned_address(uint64_t address, uint64_t alignment) {
 	return ((address + (alignment - 1)) & ~(alignment - 1));
 }
+
+typedef uint32_t Flag;
 
 // TODO: Move this?
 typedef struct {

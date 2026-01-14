@@ -2,7 +2,6 @@
 
 #include "core/r_types.h"
 
-#include "common.h"
 #include "core/astring.h"
 #include "core/identifiers.h"
 
@@ -34,6 +33,14 @@ typedef enum shader_attribute_format {
 	SHADER_ATTRIBUTE_TYPE_LAST
 } ShaderAttributeType;
 
+typedef enum {
+	TEXTURE_USAGE_NONE = 0,
+	TEXTURE_USAGE_SAMPLED = 1 << 0,
+	TEXTURE_USAGE_COLOR_ATTACHMENT = 1 << 1,
+	TEXTURE_USAGE_DEPTH_ATTACHMENT = 1 << 2,
+} TextureUsageFlagBits;
+typedef Flag TextureUsageFlags;
+
 typedef struct {
 	ShaderAttributeType type;
 	uint32_t count;
@@ -63,7 +70,8 @@ typedef enum {
 	SHADER_BINDING_UNIFORM_BUFFER,
 	SHADER_BINDING_STORAGE_BUFFER,
 
-	SHADER_BINDING_TEXTURE_2D
+	SHADER_BINDING_TEXTURE_2D,
+	SHADER_BINDING_SAMPLER,
 } ShaderBindingType;
 
 typedef struct shader_member {
@@ -166,32 +174,13 @@ typedef struct sampler_desc {
 	bool anisotropy_enable;
 } SamplerDesc;
 
-typedef enum {
-	RENDER_TARGET_SOURCE_UNUSED,
-	RENDER_TARGET_SOURCE_NEW,
-	RENDER_TARGET_SOURCE_PASS_OUTPUT,
-	RENDER_TARGET_SOURCE_TEXTURE,
-} RenderTargetSource;
-
-typedef enum {
-	PASS_OUTPUT_COLOR0,
-	PASS_OUTPUT_COLOR1,
-	PASS_OUTPUT_COLOR2,
-	PASS_OUTPUT_COLOR3,
-	PASS_OUTPUT_DEPTH,
-} RenderPassOutput;
-
 typedef struct {
-	RenderTargetSource source;
-	struct {
-		uint32_t index;
-		RenderPassOutput output;
-	} source_info;
+	uint32_t texture;
 
 	enum { LOAD,
-		CLEAR } load_op;
+		CLEAR } load;
 	enum { STORE,
-		DONT_CARE } store_op;
+		DONT_CARE } store;
 
 	union {
 		float color[4];
@@ -202,20 +191,14 @@ typedef struct {
 } AttachmentDesc;
 
 typedef struct {
-	uint32_t source_pass;
-	uint32_t source_output;
-
-	uint32_t binding;
-} PassSampleDesc;
-
-typedef struct {
+	String name;
 	AttachmentDesc color_attachments[4];
-	uint32_t color_count;
+	uint32_t color_attachment_count;
+
 	AttachmentDesc depth_attachment;
+	bool use_depth;
 
 	uint32_t width, height;
-
-	PassSampleDesc *samples;
 	uint32_t sample_count;
 } RenderPassDesc;
 
@@ -302,3 +285,11 @@ typedef struct mesh {
 	uint32_t vertex_count, index_count;
 	size_t index_size;
 } Mesh;
+
+typedef struct {
+	uint32_t binding;
+	ShaderBindingType type;
+
+	size_t size;
+	uint32_t count;
+} ResourceBinding;

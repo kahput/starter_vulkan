@@ -5,7 +5,7 @@
 #include "common.h"
 #include "core/hash_trie.h"
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 
 typedef struct {
 	HashTrieNode node;

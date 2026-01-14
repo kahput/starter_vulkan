@@ -15,7 +15,7 @@
 #include "common.h"
 #include "core/logger.h"
 #include "core/astring.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "core/identifiers.h"
 
 #include <cglm/cglm.h>
@@ -65,11 +65,11 @@ int main(void) {
 
 	event_system_startup();
 	input_system_startup();
-	asset_library_startup(arena_push_zero(&state.permanent_arena, MiB(128), 1), MiB(128));
+	asset_library_startup(arena_push(&state.permanent_arena, MiB(128), 1, true), MiB(128));
 
 	// TODO: Rework platform layer when starting on Windows
 	platform_startup(&state.permanent_arena, 1280, 720, "Starter Vulkan", &state.display);
-	renderer_system_startup(arena_push_zero(&state.permanent_arena, MiB(16), 1), MiB(16), &state.display, state.display.physical_width, state.display.physical_height);
+	renderer_system_startup(arena_push(&state.permanent_arena, MiB(16), 1, true), MiB(16), &state.display, state.display.physical_width, state.display.physical_height);
 
 	state.layers[0] = (Layer){ .update = editor_update };
 	state.current_layer = &state.layers[0];

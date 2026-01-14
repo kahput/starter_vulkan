@@ -1,5 +1,5 @@
 #include "hash_trie.h"
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "core/astring.h"
 
 void *hash_trie_traverse_key(Arena *arena, HashTrieNode **root, String key, size_t node_size) {
@@ -16,7 +16,7 @@ void *hash_trie_traverse_key(Arena *arena, HashTrieNode **root, String key, size
 	if (!arena)
 		return NULL;
 
-	*node = arena_push_zero(arena, node_size, 1);
+	*node = arena_push(arena, node_size, 1, true);
 	(*node)->key = string_duplicate(arena, key);
 	(*node)->hash = hash;
 
@@ -36,7 +36,7 @@ void *hash_trie_traverse_hash(Arena *arena, HashTrieNode **root, uint64_t hash, 
 	if (!arena)
 		return NULL;
 
-	*node = arena_push_zero(arena, node_size, 1);
+	*node = arena_push(arena, node_size, 1, true);
 	(*node)->key = string_format(arena, S("%d"), hash);
 	(*node)->hash = hash;
 

@@ -11,7 +11,7 @@
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
 
-#include "allocators/arena.h"
+#include "core/arena.h"
 #include "core/logger.h"
 
 #include <stdio.h>
@@ -202,7 +202,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 			);
 			ASSERT(src_mesh->indices->buffer_view->size == (src_mesh->indices->count * src_mesh->indices->stride));
 
-			dst_mesh->indices = arena_push_zero(arena, src_mesh->indices->buffer_view->size, dst_mesh->index_size);
+			dst_mesh->indices = arena_push(arena, src_mesh->indices->buffer_view->size, dst_mesh->index_size, true);
 			cgltf_size unpacked = cgltf_accessor_unpack_indices(iaccessor, dst_mesh->indices, dst_mesh->index_size, dst_mesh->index_count);
 			ASSERT(unpacked == dst_mesh->index_count);
 

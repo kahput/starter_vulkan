@@ -1,7 +1,7 @@
 #pragma once
 
-#include "astring.h"
 #include "common.h"
+#include "core/astring.h"
 
 typedef struct hash_trie_node {
 	struct hash_trie_node *child[4];
