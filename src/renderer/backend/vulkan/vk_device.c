@@ -73,6 +73,8 @@ bool vulkan_device_create(Arena *arena, VulkanContext *context) {
 	vkGetDeviceQueue(context->device.logical, context->device.present_index, 0, &context->device.present_queue);
 
 	context->device.depth_format = find_supported_depth_format(&context->device);
+	context->device.sample_count = vulkan_utils_max_sample_count(context);
+
 	LOG_INFO("Logical device created");
 
 	return true;

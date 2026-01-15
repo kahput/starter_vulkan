@@ -2,6 +2,10 @@
 #include "input/input_types.h"
 #include "platform.h"
 
+#include "renderer/r_internal.h"
+#include "scene.h"
+#include "renderer/backend/vulkan_api.h"
+
 #include "event.h"
 #include "events/platform_events.h"
 
@@ -10,13 +14,13 @@
 #include "assets.h"
 #include "assets/asset_types.h"
 
-#include "renderer.h"
-
 #include "common.h"
 #include "core/logger.h"
 #include "core/astring.h"
 #include "core/arena.h"
 #include "core/identifiers.h"
+
+#include "platform/filesystem.h"
 
 #include <cglm/cglm.h>
 
@@ -24,6 +28,31 @@
 #define GATE_DOOR_FILE_PATH "assets/models/modular_dungeon/gate-door.glb"
 #define BOT_FILE_PATH "assets/models/characters/gdbot.glb"
 #define MAGE_FILE_PATH "assets/models/characters/mage.glb"
+
+typedef enum {
+	RENDERER_DEFAULT_TEXTURE_WHITE,
+	RENDERER_DEFAULT_TEXTURE_BLACK,
+	RENDERER_DEFAULT_TEXTURE_NORMAL,
+	RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
+	RENDER_TARGET_TEXTURE_MAIN_DEPTH,
+	RENDER_TARGET_TEXTURE_MAIN_COLOR,
+	RENDER_TARGET_TEXTURE_COUNT,
+} TextureIndex;
+
+typedef enum {
+	RENDERER_DEFAULT_SAMPLER_LINEAR,
+	RENDERER_DEFAULT_SAMPLER_NEAREST,
+} SamplerIndex;
+
+typedef enum {
+	RENDERER_DEFAULT_PASS_SHADOW,
+	RENDERER_DEFAULT_PASS_MAIN,
+} RenderPassIndex;
+
+typedef enum {
+	GLOBAL_VIEW,
+	SHADOW_VIEW,
+} GlobalResourceIndex;
 
 typedef enum {
 	ORIENTATION_Y,
@@ -34,20 +63,18 @@ typedef enum {
 static const float CAMERA_MOVE_SPEED = 5.f;
 static const float CAMERA_SENSITIVITY = .001f;
 
-static const float PLAYER_MOVE_SPEED = 5.f;
-
 typedef struct layer {
 	void (*update)(float dt);
 } Layer;
 
 void editor_update(float dt);
 bool resize_event(Event *event);
-RShader create_shader(String name, size_t ubo_size, void *ubo_data);
 UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivide_depth, Orientation orientation, MeshSource **out_mesh);
 
 static struct State {
 	Arena permanent_arena, frame_arena;
 	Platform display;
+	VulkanContext *context;
 
 	Camera editor_camera;
 
@@ -55,6 +82,13 @@ static struct State {
 	Layer *current_layer;
 
 	uint64_t start_time;
+
+	uint32_t width, height;
+
+	uint32_t next_buffer_index;
+	uint32_t next_shader_index;
+	uint32_t next_image_index;
+	uint32_t next_group_index;
 } state;
 
 int main(void) {
@@ -67,9 +101,120 @@ int main(void) {
 	input_system_startup();
 	asset_library_startup(arena_push(&state.permanent_arena, MiB(128), 1, true), MiB(128));
 
-	// TODO: Rework platform layer when starting on Windows
 	platform_startup(&state.permanent_arena, 1280, 720, "Starter Vulkan", &state.display);
-	renderer_system_startup(arena_push(&state.permanent_arena, MiB(16), 1, true), MiB(16), &state.display, state.display.physical_width, state.display.physical_height);
+
+	state.width = state.display.physical_width;
+	state.height = state.display.physical_height;
+
+	if (vulkan_renderer_create(&state.permanent_arena, &state.display, &state.context) == false) {
+		LOG_ERROR("Failed to create vulkan context");
+		return 1;
+	}
+
+	state.next_buffer_index = 0;
+	state.next_shader_index = 0;
+	state.next_image_index = RENDER_TARGET_TEXTURE_COUNT;
+	state.next_group_index = 0;
+
+	// Create default textures
+	uint8_t WHITE[4] = { 255, 255, 255, 255 };
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, WHITE);
+
+	uint8_t BLACK[4] = { 0, 0, 0, 255 };
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, BLACK);
+
+	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1, 4, false, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
+
+	// Create default samplers
+	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
+	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
+
+	// Create render target textures
+	vulkan_renderer_texture_create(state.context, RENDER_TARGET_TEXTURE_MAIN_DEPTH,
+		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 1, false,
+		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
+
+	vulkan_renderer_texture_create(state.context, RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
+		2048, 2048, 1, false,
+		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
+
+	vulkan_renderer_texture_create(state.context, RENDER_TARGET_TEXTURE_MAIN_COLOR,
+		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 4, true,
+		TEXTURE_USAGE_COLOR_ATTACHMENT, NULL);
+
+	// Create global resources
+	vulkan_renderer_resource_global_create(
+		state.context, SHADOW_VIEW,
+		(ResourceBinding[]){
+		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(mat4) * 2, .count = 1 },
+		},
+		1);
+	vulkan_renderer_resource_global_create(
+		state.context, GLOBAL_VIEW,
+		(ResourceBinding[]){
+		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(FrameData), .count = 1 },
+		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
+		  { .binding = 1, .type = SHADER_BINDING_SAMPLER, .size = 0, .count = 1 },
+		},
+		3);
+	vulkan_renderer_resource_global_set_texture_sampler(state.context, GLOBAL_VIEW, 1,
+		RENDER_TARGET_TEXTURE_SHADOW_DEPTH, RENDERER_DEFAULT_SAMPLER_LINEAR);
+
+	// Create render passes
+	RenderPassDesc shadow = {
+		.name = S("Shadow"),
+		.depth_attachment = {
+		  .texture = RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
+		  .clear = { .depth = 1.0f },
+		  .load = CLEAR,
+		  .store = STORE },
+		.use_depth = true,
+		.msaa = false
+	};
+
+	RenderPassDesc main_pass = {
+		.name = S("Main"),
+		.color_attachments = {
+		  { .clear = { .color = GLM_VEC4_BLACK_INIT }, .load = CLEAR, .store = STORE, .present = true } },
+		.color_attachment_count = 1,
+		.depth_attachment = { .texture = RENDER_TARGET_TEXTURE_MAIN_DEPTH, .clear = { .depth = 1.0f }, .load = CLEAR, .store = DONT_CARE },
+		.use_depth = true,
+		.msaa = true
+	};
+
+	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_SHADOW, shadow);
+	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_MAIN, main_pass);
+
+	MaterialParameters default_material_parameters = (MaterialParameters){
+		.base_color_factor = { 0.8f, 0.8f, 0.8f, 1.0f },
+		.emissive_factor = { 0.0f, 0.0f, 0.0f, 0.0f },
+		.roughness_factor = 0.5f,
+		.metallic_factor = 0.0f,
+	};
+
+	// Create default PBR shader
+	uint32_t default_shader_index = state.next_shader_index++;
+	ArenaTemp scratch = arena_scratch(NULL);
+	{
+		FileContent vsc = filesystem_read(scratch.arena, S("./assets/shaders/pbr.vert.spv"));
+		FileContent fsc = filesystem_read(scratch.arena, S("./assets/shaders/pbr.frag.spv"));
+
+		ShaderConfig shader_config = {
+			.vertex_code = vsc.content,
+			.vertex_code_size = vsc.size,
+			.fragment_code = fsc.content,
+			.fragment_code_size = fsc.size,
+		};
+
+		PipelineDesc desc = DEFAULT_PIPELINE();
+		desc.cull_mode = CULL_MODE_BACK;
+
+		ShaderReflection reflection;
+		vulkan_renderer_shader_create(&state.permanent_arena, state.context,
+			default_shader_index, GLOBAL_VIEW, RENDERER_DEFAULT_PASS_MAIN, &shader_config, desc, &reflection);
+	}
+	arena_release_scratch(scratch);
 
 	state.layers[0] = (Layer){ .update = editor_update };
 	state.current_layer = &state.layers[0];
@@ -90,71 +235,165 @@ int main(void) {
 	float last_frame = 0.0f;
 
 	asset_library_track_directory(S("assets"));
-	RShader sprite_shader = create_shader(S("sprite.glsl"), sizeof(vec4), (vec4){ 1.0f, 1.0f, 1.0f, 1.0f });
 
-	ArenaTemp scratch = arena_scratch(NULL);
-	MeshSource *plane_src = NULL;
-	UUID plane_id = create_plane_mesh(scratch.arena, 0, 0, ORIENTATION_Z, &plane_src);
-	MeshConfig mconfig = {
-		.vertices = plane_src->vertices,
-		.vertex_size = (sizeof *plane_src->vertices),
-		.vertex_count = plane_src->vertex_count,
-		.indices = plane_src->indices,
-		.index_size = plane_src->index_size,
-		.index_count = plane_src->index_count,
-	};
-	RMesh plane = renderer_mesh_create(plane_id, &mconfig);
-	arena_release_scratch(scratch);
+	// Create sprite shader
+	ShaderSource *sprite_shader_src = NULL;
+	UUID sprite_shader_id = asset_library_request_shader(S("sprite.glsl"), &sprite_shader_src);
+	vec4 sprite_color = { 1.0f, 1.0f, 1.0f, 1.0f };
+	uint32_t sprite_shader_index = state.next_shader_index++;
 
-	ImageSource *sprite_src = NULL;
-
-	// Sprite 0
-	UUID sprite_id = asset_library_request_image(S("tile_0085.png"), &sprite_src);
-	TextureConfig sprite_tex = { .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
-	renderer_texture_create(sprite_id, &sprite_tex);
-
-	Handle mat_instance = renderer_material_create(sprite_shader, 0, NULL);
-	renderer_material_set_texture(mat_instance, S("u_texture"), sprite_id);
-
-	// Sprite 1
-	UUID sprite_id_1 = asset_library_request_image(S("tile_0086.png"), &sprite_src);
-	sprite_tex = (TextureConfig){ .pixels = sprite_src->pixels, .width = sprite_src->width, .height = sprite_src->height, .channels = sprite_src->channels, .is_srgb = true };
-	renderer_texture_create(sprite_id_1, &sprite_tex);
-
-	Handle mat_instance2 = renderer_material_create(sprite_shader, 0, NULL);
-	renderer_material_set_texture(mat_instance2, S("u_texture"), sprite_id_1);
-
-	// glTF Mesh
-	ModelSource *model_src = NULL;
-	Arena unique_completely_new_memory = arena_create(MiB(512));
-	UUID model_id = asset_library_load_model(&unique_completely_new_memory, S("room-large.glb"), &model_src, true);
-
-	RMesh large_room = INVALID_HANDLE;
-	RMaterial large_room_mat = INVALID_HANDLE;
-	if (model_src) {
-		mconfig = (MeshConfig){
-			.vertices = model_src->meshes[0].vertices,
-			.vertex_size = sizeof(Vertex),
-			.vertex_count = model_src->meshes[0].vertex_count,
-			.indices = model_src->meshes[0].indices,
-			.index_size = model_src->meshes[0].index_size,
-			.index_count = model_src->meshes[0].index_count,
+	{
+		ShaderConfig sprite_config = {
+			.vertex_code = sprite_shader_src->vertex_shader.content,
+			.vertex_code_size = sprite_shader_src->vertex_shader.size,
+			.fragment_code = sprite_shader_src->fragment_shader.content,
+			.fragment_code_size = sprite_shader_src->fragment_shader.size,
 		};
 
-		LOG_INFO("Model loaded: %d meshes, %d materials, %d images",
-			model_src->mesh_count,
-			model_src->material_count,
-			model_src->image_count);
-		large_room = renderer_mesh_create(model_id, &mconfig);
-		TextureConfig config = { .pixels = model_src->images->pixels, .width = model_src->images->width, .height = model_src->images->height, .channels = model_src->images->channels, .is_srgb = true };
+		PipelineDesc desc = DEFAULT_PIPELINE();
+		desc.cull_mode = CULL_MODE_NONE;
 
-		renderer_texture_create(model_src->images->id, &config);
-
-		large_room_mat = renderer_material_create(renderer_shader_default(), 0, NULL);
-		renderer_material_set_texture(large_room_mat, model_src->materials->properties[0].name, model_src->images->id);
+		ShaderReflection reflection;
+		vulkan_renderer_shader_create(&state.permanent_arena, state.context,
+			sprite_shader_index, GLOBAL_VIEW, RENDERER_DEFAULT_PASS_MAIN, &sprite_config, desc, &reflection);
 	}
 
-	UUID current_texture = sprite_id_1;
+	// Create plane mesh
+	scratch = arena_scratch(NULL);
+	MeshSource *plane_src = NULL;
+	UUID plane_id = create_plane_mesh(scratch.arena, 0, 0, ORIENTATION_Z, &plane_src);
+
+	uint32_t plane_vb = state.next_buffer_index++;
+	uint32_t plane_vertex_count = plane_src->vertex_count;
+	vulkan_renderer_buffer_create(state.context, plane_vb, BUFFER_TYPE_VERTEX,
+		sizeof(Vertex) * plane_src->vertex_count, plane_src->vertices);
+	arena_release_scratch(scratch);
+
+	// Load sprite textures
+	ImageSource *sprite_src = NULL;
+	UUID sprite_id_0 = asset_library_request_image(S("tile_0085.png"), &sprite_src);
+	uint32_t sprite_texture_0 = state.next_image_index++;
+	vulkan_renderer_texture_create(state.context, sprite_texture_0,
+		sprite_src->width, sprite_src->height, sprite_src->channels, true,
+		TEXTURE_USAGE_SAMPLED, sprite_src->pixels);
+
+	UUID sprite_id_1 = asset_library_request_image(S("tile_0086.png"), &sprite_src);
+	uint32_t sprite_texture_1 = state.next_image_index++;
+	vulkan_renderer_texture_create(state.context, sprite_texture_1,
+		sprite_src->width, sprite_src->height, sprite_src->channels, true,
+		TEXTURE_USAGE_SAMPLED, sprite_src->pixels);
+
+	// Create material instances for sprites
+	uint32_t sprite_mat_0 = state.next_group_index++;
+	vulkan_renderer_resource_group_create(state.context, sprite_mat_0, sprite_shader_index, 256);
+	vulkan_renderer_resource_group_write(state.context, sprite_mat_0, 0, 0, sizeof(vec4), &sprite_color, true);
+	vulkan_renderer_resource_group_set_texture_sampler(state.context, sprite_mat_0, 0,
+		sprite_texture_0, RENDERER_DEFAULT_SAMPLER_NEAREST);
+
+	uint32_t sprite_mat_1 = state.next_group_index++;
+	vulkan_renderer_resource_group_create(state.context, sprite_mat_1, sprite_shader_index, 256);
+	vulkan_renderer_resource_group_write(state.context, sprite_mat_1, 0, 0, sizeof(vec4), &sprite_color, true);
+	vulkan_renderer_resource_group_set_texture_sampler(state.context, sprite_mat_1, 0,
+		sprite_texture_1, RENDERER_DEFAULT_SAMPLER_NEAREST);
+
+	// Load glTF model
+	ModelSource *model_src = NULL;
+	Arena model_arena = arena_create(MiB(512));
+	UUID model_id = asset_library_load_model(&model_arena, S("room-large.glb"), &model_src, true);
+
+	uint32_t room_vb = INVALID_INDEX;
+	uint32_t room_ib = INVALID_INDEX;
+	uint32_t room_vertex_count = 0;
+	uint32_t room_index_count = 0;
+	uint32_t room_index_size = 0;
+	uint32_t room_texture = INVALID_INDEX;
+	uint32_t room_material = INVALID_INDEX;
+
+	if (model_src) {
+		LOG_INFO("Model loaded: %d meshes, %d materials, %d images",
+			model_src->mesh_count, model_src->material_count, model_src->image_count);
+
+		room_vb = state.next_buffer_index++;
+		room_vertex_count = model_src->meshes[0].vertex_count;
+		vulkan_renderer_buffer_create(state.context, room_vb, BUFFER_TYPE_VERTEX,
+			sizeof(Vertex) * model_src->meshes[0].vertex_count, model_src->meshes[0].vertices);
+
+		if (model_src->meshes[0].index_count > 0) {
+			room_ib = state.next_buffer_index++;
+			room_index_count = model_src->meshes[0].index_count;
+			room_index_size = model_src->meshes[0].index_size;
+			vulkan_renderer_buffer_create(state.context, room_ib, BUFFER_TYPE_INDEX,
+				model_src->meshes[0].index_size * model_src->meshes[0].index_count,
+				model_src->meshes[0].indices);
+		}
+
+		room_texture = state.next_image_index++;
+		vulkan_renderer_texture_create(state.context, room_texture,
+			model_src->images->width, model_src->images->height, model_src->images->channels, true,
+			TEXTURE_USAGE_SAMPLED, model_src->images->pixels);
+
+		room_material = state.next_group_index++;
+		vulkan_renderer_resource_group_create(state.context, room_material, default_shader_index, 256);
+		vulkan_renderer_resource_group_write(state.context, room_material, 0, 0, sizeof(MaterialParameters), &default_material_parameters, true);
+		vulkan_renderer_resource_group_set_texture_sampler(state.context, room_material, 0,
+			room_texture, RENDERER_DEFAULT_SAMPLER_NEAREST);
+		vulkan_renderer_resource_group_set_texture_sampler(state.context, room_material, 1,
+			RENDERER_DEFAULT_TEXTURE_WHITE, RENDERER_DEFAULT_SAMPLER_LINEAR);
+		vulkan_renderer_resource_group_set_texture_sampler(state.context, room_material, 2,
+			RENDERER_DEFAULT_TEXTURE_NORMAL, RENDERER_DEFAULT_SAMPLER_LINEAR);
+		vulkan_renderer_resource_group_set_texture_sampler(state.context, room_material, 3,
+			RENDERER_DEFAULT_TEXTURE_WHITE, RENDERER_DEFAULT_SAMPLER_LINEAR);
+		vulkan_renderer_resource_group_set_texture_sampler(state.context, room_material, 4,
+			RENDERER_DEFAULT_TEXTURE_BLACK, RENDERER_DEFAULT_SAMPLER_LINEAR);
+	}
+
+	// Create light debug shader
+	ShaderSource *light_shader_src = NULL;
+	UUID light_shader_id = asset_library_request_shader(S("light_debug.glsl"), &light_shader_src);
+	uint32_t light_shader_index = state.next_shader_index++;
+
+	{
+		ShaderConfig light_config = {
+			.vertex_code = light_shader_src->vertex_shader.content,
+			.vertex_code_size = light_shader_src->vertex_shader.size,
+			.fragment_code = light_shader_src->fragment_shader.content,
+			.fragment_code_size = light_shader_src->fragment_shader.size,
+		};
+
+		PipelineDesc desc = DEFAULT_PIPELINE();
+		desc.cull_mode = CULL_MODE_NONE;
+
+		ShaderReflection reflection;
+		vulkan_renderer_shader_create(
+			&state.permanent_arena, state.context,
+			light_shader_index, GLOBAL_VIEW, RENDERER_DEFAULT_PASS_MAIN, &light_config, desc, &reflection);
+	}
+
+	ShaderSource *shadow_shader_src = NULL;
+	UUID shadow_shader_id = asset_library_request_shader(S("shadow_caster.glsl"), &shadow_shader_src);
+	uint32_t shadow_shader_index = state.next_shader_index++;
+	{
+		ShaderConfig shadow_config = {
+			.vertex_code = shadow_shader_src->vertex_shader.content,
+			.vertex_code_size = shadow_shader_src->vertex_shader.size,
+			.fragment_code = shadow_shader_src->fragment_shader.content,
+			.fragment_code_size = shadow_shader_src->fragment_shader.size,
+		};
+
+		PipelineDesc desc = DEFAULT_PIPELINE();
+		desc.cull_mode = CULL_MODE_NONE;
+
+		ShaderReflection reflection;
+		vulkan_renderer_shader_create(
+			&state.permanent_arena, state.context,
+			shadow_shader_index, SHADOW_VIEW, RENDERER_DEFAULT_PASS_SHADOW, &shadow_config, desc, &reflection);
+	}
+
+	uint32_t light_materials[16];
+	for (uint32_t light_material = 0; light_material < 16; ++light_material) {
+		light_materials[light_material] = state.next_group_index++;
+		vulkan_renderer_resource_group_create(state.context, light_materials[light_material], light_shader_index, 256);
+	}
 
 	float timer_accumulator = 0.0f;
 	uint32_t frames = 0;
@@ -166,9 +405,6 @@ int main(void) {
 		[0] = { .type = LIGHT_TYPE_DIRECTIONAL, .color = { 0.2f, 0.2f, 1.0f, 0.1f }, .as.direction = { 0.0f, 0.0f, 0.0f } },
 		[1] = { .type = LIGHT_TYPE_POINT, .color = { 1.0f, 0.5f, 0.2f, 0.8f }, .as.position = { 0.0f, 3.0f, 1.0f } }
 	};
-	RShader light_shader = create_shader(S("light_debug.glsl"), 0, NULL);
-	ShaderParameter light_parameters[] = { [0] = { .name = S("material"), .type = SHADER_PARAMETER_TYPE_STRUCT, .as.vec4f = { 1.0f, 1.0f, 1.0f, 1.0f } } };
-	RMaterial light_mat = renderer_material_create(light_shader, countof(light_parameters), light_parameters);
 
 	while (platform_should_close(&state.display) == false) {
 		float time = platform_time_seconds(&state.display);
@@ -181,18 +417,15 @@ int main(void) {
 		timer_accumulator += delta_time;
 		frames++;
 
+		float tint = (cos(timer_accumulator) + 1.0f) * 0.5f;
+
 		if (timer_accumulator >= 1.0f) {
 			LOG_INFO("FPS: %d", frames);
-
 			frames = 0;
 			timer_accumulator = 0;
 		}
 
 		state.current_layer->update(delta_time);
-
-		static float tint = 0.0f;
-		tint += delta_time;
-		float tint_normalized = (cos(tint) + 1.0f) * 0.5f;
 
 		lights[0].as.direction[0] = sin(sun_theta) * cos(sun_azimuth);
 		lights[0].as.direction[1] = cos(sun_theta);
@@ -201,39 +434,96 @@ int main(void) {
 		lights[1].as.position[0] = cos(time) * 5;
 		lights[1].as.position[2] = sin(time) * 5;
 
-		if (renderer_frame_begin(&state.editor_camera, countof(lights), lights)) {
-			// renderer_material_set3fv(mat_instance, S("tint"), (vec3){ tint_normalized, 1.0f, 1.0f });
+		if (vulkan_renderer_frame_begin(state.context, state.display.physical_width,
+				state.display.physical_height)) {
+			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_MAIN);
 
+			FrameData frame_data = { 0 };
+			glm_mat4_identity(frame_data.view);
+			glm_lookat(state.editor_camera.position, state.editor_camera.target,
+				state.editor_camera.up, frame_data.view);
+
+			glm_mat4_identity(frame_data.projection);
+			glm_perspective(glm_rad(state.editor_camera.fov),
+				(float)state.width / (float)state.height, 0.1f, 1000.f, frame_data.projection);
+			frame_data.projection[1][1] *= -1;
+
+			uint32_t point_light_count = 0;
+			for (uint32_t light_index = 0; light_index < countof(lights); ++light_index) {
+				if (lights[light_index].type == LIGHT_TYPE_DIRECTIONAL)
+					memcpy(&frame_data.directional_light, lights + light_index, sizeof(Light));
+				else
+					memcpy(frame_data.lights + point_light_count++, lights + light_index, sizeof(Light));
+			}
+			glm_vec3_dup(state.editor_camera.position, frame_data.camera_position);
+			frame_data.light_count = point_light_count;
+
+			vulkan_renderer_resource_global_write(state.context, GLOBAL_VIEW, 0,
+				sizeof(FrameData), &frame_data);
+			vulkan_renderer_resource_global_bind(state.context, GLOBAL_VIEW);
+
+			// Draw sprites
 			mat4 transform = GLM_MAT4_IDENTITY_INIT;
 			glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
 			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
-			renderer_draw_mesh(plane, mat_instance, 0, transform);
+
+			vulkan_renderer_shader_bind(state.context, sprite_shader_index);
+			vulkan_renderer_resource_group_bind(state.context, sprite_mat_0, 0);
+			vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+			vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
+			vulkan_renderer_draw(state.context, plane_vertex_count);
 
 			glm_mat4_identity(transform);
 			glm_translate(transform, (vec3){ 0.0f, 0.75f, 0.0f });
 			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
-			renderer_draw_mesh(plane, mat_instance2, 0, transform);
 
-			glm_mat4_identity(transform);
-			glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
-			renderer_draw_mesh(large_room, large_room_mat, 0, transform);
+			vulkan_renderer_resource_group_bind(state.context, sprite_mat_1, 0);
+			vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+			vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
+			vulkan_renderer_draw(state.context, plane_vertex_count);
 
+			if (room_vb != INVALID_INDEX) {
+				glm_mat4_identity(transform);
+				glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
+
+				vulkan_renderer_shader_bind(state.context, default_shader_index);
+				vulkan_renderer_resource_group_bind(state.context, room_material, 0);
+				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+				vulkan_renderer_buffer_bind(state.context, room_vb, 0);
+
+				if (room_index_count > 0) {
+					vulkan_renderer_buffer_bind(state.context, room_ib, room_index_size);
+					vulkan_renderer_draw_indexed(state.context, room_index_count);
+				} else {
+					vulkan_renderer_draw(state.context, room_vertex_count);
+				}
+			}
+
+			// Draw light debug
+			vulkan_renderer_shader_bind(state.context, light_shader_index);
 			for (uint32_t index = 0; index < countof(lights); ++index) {
 				if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
 					continue;
 
 				glm_mat4_identity(transform);
 				glm_translate(transform, lights[index].as.position);
-				renderer_material_instance_set4fv(light_mat, index + 1, S("color"), lights[index].color);
-				renderer_draw_mesh(plane, light_mat, index + 1, transform);
+
+				vulkan_renderer_resource_group_write(state.context, light_materials[index],
+					0, 0, sizeof(vec4), lights[index].color, true);
+				vulkan_renderer_resource_group_bind(state.context, light_materials[index], 0);
+				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+				vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
+				vulkan_renderer_draw(state.context, plane_vertex_count);
 			}
-			renderer_frame_end();
+
+			vulkan_renderer_pass_end(state.context);
+			Vulkan_renderer_frame_end(state.context);
 		}
 
 		static bool wireframe = false;
 		if (input_key_pressed(SV_KEY_ENTER)) {
-			wireframe = wireframe ? false : true;
-			renderer_state_global_wireframe_set(wireframe);
+			wireframe = !wireframe;
+			vulkan_renderer_shader_global_state_wireframe_set(state.context, wireframe);
 		}
 
 		if (input_key_down(SV_KEY_LEFTCTRL))
@@ -244,6 +534,7 @@ int main(void) {
 		input_system_update();
 	}
 
+	vulkan_renderer_destroy(state.context);
 	input_system_shutdown();
 	event_system_shutdown();
 
@@ -291,7 +582,10 @@ void editor_update(float dt) {
 bool resize_event(Event *event) {
 	WindowResizeEvent *wr_event = (WindowResizeEvent *)event;
 
-	renderer_on_resize(wr_event->width, wr_event->height);
+	if (vulkan_renderer_on_resize(state.context, wr_event->width, wr_event->height)) {
+		state.width = wr_event->width;
+		state.height = wr_event->height;
+	}
 	return true;
 }
 
@@ -375,20 +669,4 @@ UUID create_plane_mesh(Arena *arena, uint32_t subdivide_width, uint32_t subdivid
 	(*out_mesh)->material = NULL;
 
 	return id;
-}
-
-RShader create_shader(String name, size_t ubo_size, void *ubo_data) {
-	ShaderSource *shader_src = NULL;
-	UUID shader_id = asset_library_request_shader(name, &shader_src);
-
-	ShaderConfig shader_config = {
-		.vertex_code = shader_src->vertex_shader.content,
-		.vertex_code_size = shader_src->vertex_shader.size,
-		.fragment_code = shader_src->fragment_shader.content,
-		.fragment_code_size = shader_src->fragment_shader.size,
-		.default_ubo_data = ubo_data,
-		.ubo_size = ubo_size
-	};
-
-	return renderer_shader_create(shader_src->id, &shader_config);
 }

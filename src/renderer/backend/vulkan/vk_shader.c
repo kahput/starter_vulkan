@@ -17,24 +17,21 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant, PipelineDesc description);
+bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, PipelineDesc description, VulkanPipeline *variant);
 bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, VulkanGlobalResource *global, ShaderConfig *config, ShaderReflection *out_reflection);
 
 bool vulkan_renderer_shader_create(
-	Arena *arena,
-	VulkanContext *context,
-	uint32_t store_index, uint32_t compatible_global_resource,
+	Arena *arena, VulkanContext *context,
+	uint32_t store_index, uint32_t compatible_global, uint32_t pass_interface,
 	ShaderConfig *config, PipelineDesc description, ShaderReflection *out_reflection) {
-	if (store_index >= MAX_SHADERS) {
-		LOG_ERROR("Vulkan: Shader index %d out of bounds, aborting create", store_index);
-		return false;
-	}
+	VulkanShader *shader = NULL;
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, store_index, MAX_SHADERS, false);
 
-	VulkanShader *shader = &context->shader_pool[store_index];
-	if (shader->vertex_shader != NULL || shader->fragment_shader != NULL) {
-		ASSERT_FORMAT(false, "Vulkan: shader at index %d already in use, aborting vulkan_renderer_shader_create", store_index);
-		return false;
-	}
+	VulkanPass *pass = NULL;
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, pass_interface, MAX_RENDER_PASSES, true);
+
+	VulkanGlobalResource *global = NULL;
+	VULKAN_GET_OR_RETURN(global, context->global_resources, compatible_global, MAX_GLOBAL_RESOURCES, true);
 
 	if (config->vertex_code == NULL || config->vertex_code_size == 0 || config->fragment_code == NULL || config->fragment_code_size == 0) {
 		LOG_ERROR("Vulkan: Invalid shader code passed to vulkan_renderer_shader_craete");
@@ -63,27 +60,14 @@ bool vulkan_renderer_shader_create(
 		return false;
 	}
 
-	if (compatible_global_resource >= MAX_GLOBAL_RESOURCES) {
-		LOG_ERROR("Vulkan: global resource index %d out of bounds, aborting vulkan_renderer_shader_create", compatible_global_resource);
-		return false;
-	}
-
-	VulkanGlobalResource *global = &context->global_resources[compatible_global_resource];
-	if (global->set == NULL) {
-		LOG_FATAL("Vulkan: global resource at index %d is not in use, aborting vulkan_renderer_shader_create", compatible_global_resource);
-		ASSERT(false);
-		return false;
-	}
-
 	reflect_shader_interface(arena, context, shader, global, config, out_reflection);
-
 	shader->bind_variant = description.polygon_mode == POLYGON_MODE_FILL ? 0 : 1;
 
 	description.polygon_mode = POLYGON_MODE_FILL;
-	create_shader_variant(context, shader, &shader->variants[0], description);
+	create_shader_variant(context, shader, pass, description, &shader->variants[0]);
 
 	description.polygon_mode = POLYGON_MODE_LINE;
-	create_shader_variant(context, shader, &shader->variants[1], description);
+	create_shader_variant(context, shader, pass, description, &shader->variants[1]);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	return true;
@@ -129,7 +113,10 @@ struct vertex_input_state {
 };
 
 static bool override_attributes(struct vertex_input_state *state, ShaderAttribute *attributes, uint32_t attribute_count);
-bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant, PipelineDesc description) {
+// static void resolve_pass_formats(VulkanContext *context, uint32_t pass_id,
+// 	uint32_t *out_color_count, VkFormat *out_color_formats,
+// 	VkFormat *out_depth_format);
+bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, PipelineDesc description, VulkanPipeline *variant) {
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -197,9 +184,11 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	VkPipelineMultisampleStateCreateInfo mss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 		.sampleShadingEnable = VK_FALSE,
-		.rasterizationSamples = context->sample_count,
+		.rasterizationSamples = pass->enable_msaa ? context->device.sample_count : VK_SAMPLE_COUNT_1_BIT,
 		.minSampleShading = 1.0f,
 	};
+
+	VkPipelineColorBlendAttachmentState color_blend_attachments[4];
 
 	VkPipelineColorBlendAttachmentState color_blend_attachment = {
 		.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
@@ -603,7 +592,6 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 			shader->group_ubo_binding = binding->binding;
 		}
 	}
-	ASSERT(shader->instance_size != 0);
 
 	if (vulkan_descriptor_layout_create(context, material_reflect_info->vk_binding, material_reflect_info->binding_count, &shader->group_layout) == false) {
 		spvReflectDestroyShaderModule(&vertex_module);
@@ -749,3 +737,22 @@ size_t to_bytes(ShaderAttributeFormat format) {
 	}
 	return type_size * format.count;
 }
+
+// void resolve_pass_formats(VulkanContext *context, uint32_t pass_id,
+// 	uint32_t *out_color_count, VkFormat *out_color_formats,
+// 	VkFormat *out_depth_format) {
+// 	VulkanPass *pass = &context->pass_pool[pass_id];
+//
+// 	*out_color_count = pass->color_attachment_count;
+// 	for (uint32_t color_index = 0; color_index < pass->color_attachment_count; ++color_index) {
+// 		if (pass->color_attachments[color_index].present)
+// 			out_color_formats[color_index] = context->swapchain.format.format;
+// 		else
+// 			out_color_formats[color_index] = context->image_pool[pass->color_attachments[color_index].image_index].info.format;
+// 	}
+//
+// 	if (pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED) {
+// 		*out_depth_format = context->image_pool[pass->depth_attachment.image_index].info.format;
+// 	} else
+// 		*out_depth_format = VK_FORMAT_UNDEFINED;
+// }

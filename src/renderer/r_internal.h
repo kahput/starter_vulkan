@@ -7,6 +7,8 @@
 
 #include <cglm/cglm.h>
 
+#define MAX_COLOR_ATTACHMENTS 4
+
 typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
 	BUFFER_TYPE_INDEX,
@@ -145,7 +147,6 @@ typedef struct pipeline_desc {
 	PipelineCompareOp depth_compare_op;
 
 	bool blend_enable;
-
 	bool topology_line_list;
 } PipelineDesc;
 
@@ -192,14 +193,14 @@ typedef struct {
 
 typedef struct {
 	String name;
-	AttachmentDesc color_attachments[4];
+	AttachmentDesc color_attachments[MAX_COLOR_ATTACHMENTS];
 	uint32_t color_attachment_count;
 
 	AttachmentDesc depth_attachment;
 	bool use_depth;
 
 	uint32_t width, height;
-	uint32_t sample_count;
+	bool msaa;
 } RenderPassDesc;
 
 // TODO: Move these

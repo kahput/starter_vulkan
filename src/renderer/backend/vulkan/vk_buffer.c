@@ -9,23 +9,14 @@
 int32_t to_vulkan_usage(BufferType type);
 
 bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, store_index, MAX_BUFFERS, false);
+
 	const char *stringify[] = {
 		"Vertex buffer",
 		"Index buffer",
 		"Uniform buffer",
 	};
-
-	if (store_index >= MAX_BUFFERS) {
-		LOG_ERROR("Vulkan: Buffer index %d out of bounds", store_index);
-		return false;
-	}
-
-	VulkanBuffer *buffer = &context->buffer_pool[store_index];
-	if (buffer->handle != NULL) {
-		LOG_FATAL("Vulkan: buffer at index %d is already in use, aborting vulkan_renderer_buffer_create", store_index);
-		ASSERT(false);
-		return false;
-	}
 
 	LOG_INFO("Vulkan: Creating %s resource...", stringify[type]);
 
@@ -61,6 +52,7 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
 	staging_buffer->offset = copy_end;
 	LOG_INFO("%s resource created", stringify[type]);
+	buffer->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	logger_dedent();
 
@@ -68,17 +60,8 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 }
 
 bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_index) {
-	if (retrieve_index >= MAX_BUFFERS) {
-		LOG_WARN("Vulkan: buffer index %d out of bounds, aborting vulkan_renderer_buffer_destroy", retrieve_index);
-		return false;
-	}
-
-	VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
-	if (buffer->handle == NULL) {
-		LOG_WARN("Vulkan: buffer at index %d is not in use, aborting vulkan_renderer_buffer_destroy", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, retrieve_index, MAX_BUFFERS, true);
 
 	vkDestroyBuffer(context->device.logical, buffer->handle, NULL);
 	vkFreeMemory(context->device.logical, buffer->memory, NULL);

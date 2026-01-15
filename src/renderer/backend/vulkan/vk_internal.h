@@ -1,5 +1,6 @@
 #pragma once
 
+#include "renderer/r_internal.h"
 #define CGLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <cglm/cglm.h>
 #include <vulkan/vulkan_core.h>
@@ -24,7 +25,7 @@ typedef enum {
 	VULKAN_RESOURCE_STATE_UNINITIALIZED,
 	VULKAN_RESOURCE_STATE_INITIALIZED,
 } VulkanResourceState;
-#define VK_GET_OR_RETURN(ptr_var, pool_array, index, max_limit, expect_initialized)             \
+#define VULKAN_GET_OR_RETURN(ptr_var, pool_array, index, max_limit, expect_initialized)         \
 	do {                                                                                        \
 		if ((index) >= (max_limit)) {                                                           \
 			LOG_ERROR("Vulkan: %s index %u out of bounds (max %u), aborting %s",                \
@@ -51,6 +52,8 @@ typedef enum {
 	} while (0)
 
 typedef struct vulkan_buffer {
+	VulkanResourceState state;
+
 	VkBuffer handle;
 	VkDeviceMemory memory;
 	void *mapped;
@@ -74,7 +77,7 @@ typedef struct vulkan_group_resource {
 } VulkanGroupResource;
 
 typedef struct vulkan_global_resource {
-    VulkanResourceState state;
+	VulkanResourceState state;
 
 	VulkanBuffer buffer;
 
@@ -114,7 +117,9 @@ typedef struct vulkan_attachment {
 	uint32_t image_index;
 	bool present;
 
-	VkRenderingAttachmentInfo info;
+	VkAttachmentStoreOp store;
+	VkAttachmentLoadOp load;
+	VkClearValue clear;
 } VulkanAttachment;
 
 typedef struct vulkan_pass {
@@ -124,8 +129,11 @@ typedef struct vulkan_pass {
 	uint32_t color_attachment_count;
 	VulkanAttachment depth_attachment;
 
-	uint32_t width, height;
-	uint32_t global_resource;
+	VkFormat color_formats[4];
+	VkFormat depth_format;
+
+	RenderPassDesc desc;
+	bool enable_msaa;
 } VulkanPass;
 
 typedef struct swapchain_support_details {
@@ -150,6 +158,9 @@ typedef struct vulkan_device {
 
 	VkPhysicalDeviceProperties properties;
 	VkPhysicalDeviceFeatures features;
+
+	VkSampleCountFlags sample_count;
+	bool multi_sample;
 
 } VulkanDevice;
 
@@ -189,11 +200,14 @@ bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size
 // bool vulkan_pass_on_resize(VulkanContext *context, VulkanPass *pass);
 
 bool vulkan_image_create(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
+void vulkan_image_destroy(VulkanContext *context, VulkanImage *image);
+
 bool vulkan_image_view_create(VulkanContext *context, VkImageAspectFlags aspect_flags, VulkanImage *image);
 void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout);
 
-bool vulkan_image_default_attachments_create(VulkanContext *context);
+bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkImageAspectFlags aspect);
 
 bool vulkan_command_pool_create(VulkanContext *context);
 bool vulkan_command_buffer_create(VulkanContext *context);
@@ -246,10 +260,13 @@ struct vulkan_context {
 	VulkanDevice device;
 
 	VulkanSwapchain swapchain;
+
+	VulkanImage msaa_colors[MAX_COLOR_ATTACHMENTS];
+	VulkanImage msaa_depth;
+
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
-	VkSampleCountFlags sample_count;
 	VkPushConstantRange global_range;
 
 	VulkanShader *shader_pool;

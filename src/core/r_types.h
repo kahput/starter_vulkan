@@ -80,11 +80,6 @@ typedef struct {
 
 	void *fragment_code;
 	size_t fragment_code_size;
-
-	// PipelineDesc pipeline_desc;
-
-	void *default_ubo_data;
-	size_t ubo_size;
 } ShaderConfig;
 
 typedef enum {

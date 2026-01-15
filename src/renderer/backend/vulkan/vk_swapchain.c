@@ -95,8 +95,6 @@ bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t new_width, uint3
 
 	if (vulkan_swapchain_create(context, new_width, new_height) == false)
 		return false;
-	if (vulkan_image_default_attachments_create(context) == false)
-		return false;
 
 	return true;
 }

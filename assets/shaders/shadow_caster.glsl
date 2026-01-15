@@ -7,15 +7,18 @@
 #ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
-layout(push_constant) uniform constants {
+layout(set = 0, binding = 0) uniform GlobalParameters {
     mat4 light_matrix;
+} global;
+
+layout(push_constant) uniform constants {
     mat4 object;
 } push;
 
 layout(location = 0) in vec3 in_position;
 
 void main() {
-    gl_Position = push.light_matrix * push.object * vec4(in_position, 1.0f);
+    gl_Position = global.light_matrix * push.object * vec4(in_position, 1.0f);
 }
 
 #endif

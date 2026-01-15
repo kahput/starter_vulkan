@@ -1,3 +1,5 @@
+#include "core/debug.h"
+#include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
@@ -58,6 +60,16 @@ bool vulkan_image_create(
 	return true;
 }
 
+void vulkan_image_destroy(VulkanContext *context, VulkanImage *image) {
+	if (!image || image->handle == VK_NULL_HANDLE)
+		return;
+
+	vkDestroyImageView(context->device.logical, image->view, NULL);
+	vkDestroyImage(context->device.logical, image->handle, NULL);
+	vkFreeMemory(context->device.logical, image->memory, NULL);
+	*image = (VulkanImage){ 0 };
+}
+
 bool vulkan_image_view_create(VulkanContext *context, VkImageAspectFlags aspect_flags, VulkanImage *image) {
 	VkImageViewCreateInfo iv_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -78,7 +90,7 @@ bool vulkan_image_view_create(VulkanContext *context, VkImageAspectFlags aspect_
 		  .layerCount = 1,
 		}
 	};
-    image->aspect = aspect_flags;
+	image->aspect = aspect_flags;
 
 	if (vkCreateImageView(context->device.logical, &iv_create_info, NULL, &image->view) != VK_SUCCESS) {
 		return false;
@@ -148,33 +160,151 @@ void vulkan_image_transition(VulkanContext *context, VkCommandBuffer command_buf
 		1, &image_barrier);
 }
 
-bool vulkan_image_default_attachments_create(VulkanContext *context) {
-	// vulkan_image_create(
-	// 	context, context->sample_count,
-	// 	context->swapchain.extent.width, context->swapchain.extent.height,
-	// 	context->swapchain.format.format, VK_IMAGE_TILING_OPTIMAL,
-	// 	VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	// 	&context->color_attachment);
-	// vulkan_image_view_create(context, context->color_attachment.handle, context->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT, &context->color_attachment.view);
-	// vulkan_image_transition_oneshot(
-	// 	context, context->color_attachment.handle, VK_IMAGE_ASPECT_COLOR_BIT,
-	// 	VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-	// 	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-	// 	0, 0);
-	//
-	// vulkan_image_create(
-	// 	context, context->sample_count,
-	// 	context->swapchain.extent.width, context->swapchain.extent.height,
-	// 	VK_FORMAT_D32_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-	// 	VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	// 	&context->depth_attachment);
-	// vulkan_image_view_create(context, context->depth_attachment.handle, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, &context->depth_attachment.view);
-	//
-	// vulkan_image_transition_oneshot(
-	// 	context, context->depth_attachment.handle, VK_IMAGE_ASPECT_DEPTH_BIT,
-	// 	VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-	// 	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-	// 	0, 0);
+void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout) {
+	if (image->layout == new_layout)
+		return;
+	VkPipelineStageFlags src_stage = 0;
+	VkPipelineStageFlags dst_stage = 0;
+	VkAccessFlags src_access = 0;
+	VkAccessFlags dst_access = 0;
 
+	switch (image->layout) {
+		case VK_IMAGE_LAYOUT_UNDEFINED:
+		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			src_access = 0;
+			break;
+
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+			src_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+			src_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			src_access = VK_ACCESS_TRANSFER_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+			src_access = VK_ACCESS_SHADER_READ_BIT;
+			break;
+
+		default:
+			LOG_WARN("Vuklan: unhandled old layout in %s, defaulting to ALL_COMMANDS", __func__);
+			src_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+			src_access = VK_ACCESS_MEMORY_WRITE_BIT;
+			break;
+	}
+
+	switch (new_layout) {
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+			dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+			dst_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			dst_access = VK_ACCESS_TRANSFER_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+			dst_access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+			dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+			dst_access = 0;
+			break;
+
+		default:
+			LOG_WARN("Vuklan: unhandled new layout in %s, defaulting to ALL_COMMANDS", __func__);
+			dst_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+			dst_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+			break;
+	}
+
+	VkImageMemoryBarrier image_barrier = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.srcAccessMask = src_access,
+		.dstAccessMask = dst_access,
+		.oldLayout = image->layout,
+		.newLayout = new_layout,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image = image->handle,
+		.subresourceRange = {
+		  .aspectMask = image->aspect,
+		  .baseMipLevel = 0,
+		  .levelCount = 1,
+		  .baseArrayLayer = 0,
+		  .layerCount = 1,
+		}
+	};
+
+	vkCmdPipelineBarrier(
+		command_buffer,
+		src_stage, dst_stage,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &image_barrier);
+
+	image->layout = new_layout;
+}
+
+bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkImageAspectFlags aspect) {
+	bool recreate = false;
+
+	if (msaa->info.extent.width != extent.width)
+		recreate = true;
+	if (msaa->info.extent.height != extent.height)
+		recreate = true;
+	if (msaa->info.samples != context->device.sample_count)
+		recreate = true;
+	if (msaa->info.format != format)
+		recreate = true;
+
+	if (recreate == false)
+		return true;
+
+	vulkan_image_destroy(context, msaa);
+
+	VkImageUsageFlags usage =
+		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
+		? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+		: VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	VkImageLayout layout =
+		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
+		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	if (!vulkan_image_create(
+			context, context->device.sample_count,
+			extent.width, extent.height,
+			format, VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			msaa)) {
+		LOG_ERROR("Vulkan: failed to create MSAA color scratch image, aborting %s", __func__);
+		return false;
+	}
+
+	if (!vulkan_image_view_create(context, aspect, msaa)) {
+		LOG_ERROR("Vulkan: failed to create MSAA color scratch image view, aborting %s", __func__);
+		return false;
+	}
+	vulkan_image_transition_auto(msaa, context->command_buffers[context->current_frame], layout);
 	return true;
 }

@@ -1,3 +1,4 @@
+#include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
@@ -53,10 +54,6 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	if (vulkan_swapchain_create(context, width, height) == false)
 		return false;
 
-	context->sample_count = vulkan_utils_max_sample_count(context);
-	if (vulkan_image_default_attachments_create(context) == false)
-		return false;
-
 	if (vulkan_buffer_create(
 			context, MiB(32), MAX_FRAMES_IN_FLIGHT,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -75,26 +72,36 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 
 void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDeviceWaitIdle(context->device.logical);
-
 	vkDestroyDescriptorPool(context->device.logical, context->descriptor_pool, NULL);
+
 	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
-		if (context->shader_pool[index].vertex_shader != NULL)
+		if (context->shader_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
 			vulkan_renderer_shader_destroy(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
-		if (context->image_pool[index].handle)
+		if (context->image_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
 			vulkan_renderer_texture_destroy(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
-		if (context->sampler_pool[index].handle)
+		if (context->sampler_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
 			vulkan_renderer_sampler_destroy(context, index);
 	}
 
 	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
-		if (context->buffer_pool[index].handle != NULL)
+		if (context->buffer_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
 			vulkan_renderer_buffer_destroy(context, index);
+	}
+
+	for (uint32_t index = 0; index < MAX_GLOBAL_RESOURCES; ++index) {
+		if (context->global_resources[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
+			vulkan_renderer_resource_global_destroy(context, index);
+	}
+
+	for (uint32_t index = 0; index < MAX_GROUP_RESOURCES; ++index) {
+		if (context->group_resources[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
+			vulkan_renderer_resource_group_destroy(context, index);
 	}
 
 	vkDestroyBuffer(context->device.logical, context->staging_buffer.handle, NULL);
@@ -109,12 +116,17 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	}
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
+	for (uint32_t color_index = 0; color_index < MAX_COLOR_ATTACHMENTS; ++color_index)
+		vulkan_image_destroy(context, &context->msaa_colors[color_index]);
+	vulkan_image_destroy(context, &context->msaa_depth);
 
 	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-		vkDestroySemaphore(context->device.logical, context->render_finished_semaphores[index], NULL);
 		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[index], NULL);
 		vkDestroyFence(context->device.logical, context->in_flight_fences[index], NULL);
 	}
+
+	for (uint32_t index = 0; index < SWAPCHAIN_IMAGE_COUNT; ++index)
+		vkDestroySemaphore(context->device.logical, context->render_finished_semaphores[index], NULL);
 
 #ifndef NDEBUG
 	vkDestroyDebugUtilsMessenger(context->instance, context->debug_messenger, NULL);
@@ -182,7 +194,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 		context, context->command_buffers[context->current_frame],
 		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
 
 	return true;

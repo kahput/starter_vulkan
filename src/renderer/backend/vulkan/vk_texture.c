@@ -38,12 +38,11 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 	VkImageUsageFlags vk_usage = 0;
 	VkImageAspectFlags aspect = FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 	VkFormat format = to_vulkan_format(channels, is_srgb);
-	VkSampleCountFlags sample_count = VK_SAMPLE_COUNT_1_BIT;
 	bool is_attachment = FLAG_GET(usage, TEXTURE_USAGE_COLOR_ATTACHMENT) || FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT);
-	if (is_attachment) {
+
+	if (is_attachment)
 		format = FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT) ? context->device.depth_format : context->swapchain.format.format;
-		sample_count = context->sample_count;
-	} else
+	else
 		vk_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
 	if (FLAG_GET(usage, TEXTURE_USAGE_SAMPLED))
@@ -56,7 +55,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 		vk_usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
 	vulkan_image_create(
-		context, sample_count,
+		context, VK_SAMPLE_COUNT_1_BIT,
 		functional_width, functional_height, format, VK_IMAGE_TILING_OPTIMAL,
 		vk_usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		image);
@@ -74,6 +73,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, pixels);
 		staging_buffer->offset = copy_end;
 		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, functional_width, functional_height);
+		image->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	}
 
 	if (vulkan_image_view_create(context, aspect, image) == false) {
@@ -86,9 +86,43 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 	return true;
 }
 
+bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index) {
+	VulkanImage *image = NULL;
+	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+
+	vkDestroyImageView(context->device.logical, image->view, NULL);
+	vkDestroyImage(context->device.logical, image->handle, NULL);
+	vkFreeMemory(context->device.logical, image->memory, NULL);
+
+	*image = (VulkanImage){ 0 };
+	return true;
+}
+
+bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, uint32_t retrieve_index) {
+	VulkanImage *image = NULL;
+	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+
+	VkImageLayout new_layout =
+		image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
+		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
+
+	return true;
+}
+bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, uint32_t retrieve_index) {
+	VulkanImage *image = NULL;
+	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+
+	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	return true;
+}
+
 bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_index, uint32_t width, uint32_t height) {
 	VulkanImage *image = NULL;
-	VK_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
 
 	vkDestroyImageView(context->device.logical, image->view, NULL);
 	vkDestroyImage(context->device.logical, image->handle, NULL);
@@ -100,21 +134,9 @@ bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_in
 	return true;
 }
 
-bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index) {
-	VulkanImage *image = NULL;
-	VK_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
-
-	vkDestroyImageView(context->device.logical, image->view, NULL);
-	vkDestroyImage(context->device.logical, image->handle, NULL);
-	vkFreeMemory(context->device.logical, image->memory, NULL);
-
-	*image = (VulkanImage){ 0 };
-	return true;
-}
-
 bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index, SamplerDesc description) {
 	VulkanSampler *sampler = NULL;
-	VK_GET_OR_RETURN(sampler, context->sampler_pool, store_index, MAX_SAMPLERS, false);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, store_index, MAX_SAMPLERS, false);
 
 	sampler->info = (VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -148,7 +170,7 @@ bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index
 
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_index) {
 	VulkanSampler *sampler = NULL;
-	VK_GET_OR_RETURN(sampler, context->sampler_pool, retrieve_index, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, retrieve_index, MAX_SAMPLERS, true);
 
 	vkDestroySampler(context->device.logical, sampler->handle, NULL);
 	*sampler = (VulkanSampler){ 0 };

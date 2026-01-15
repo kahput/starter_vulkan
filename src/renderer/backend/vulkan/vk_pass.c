@@ -6,13 +6,15 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, uint32_t global_resource, RenderPassDesc *desc) {
+bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, RenderPassDesc desc) {
 	VulkanPass *pass = NULL;
-	VK_GET_OR_RETURN(pass, context->pass_pool, store_index, MAX_RENDER_PASSES, VULKAN_RESOURCE_STATE_UNINITIALIZED);
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, store_index, MAX_RENDER_PASSES, VULKAN_RESOURCE_STATE_UNINITIALIZED);
 
-	pass->color_attachment_count = desc->color_attachment_count;
+	pass->color_attachment_count = desc.color_attachment_count;
+	pass->enable_msaa = desc.msaa;
+
 	for (uint32_t color_index = 0; color_index < pass->color_attachment_count; ++color_index) {
-		AttachmentDesc *src = &desc->color_attachments[color_index];
+		AttachmentDesc *src = &desc.color_attachments[color_index];
 		VulkanAttachment *attachment = &pass->color_attachments[color_index];
 
 		VulkanImage *color_image = &context->image_pool[src->texture];
@@ -20,36 +22,25 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, u
 		attachment->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 		attachment->image_index = src->texture;
 		attachment->present = src->present;
-		attachment->info = (VkRenderingAttachmentInfo){
-			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-			.imageView = color_image->view,
-			.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			.loadOp = (VkAttachmentLoadOp)src->load,
-			.storeOp = (VkAttachmentStoreOp)src->store,
-			.clearValue.color.float32 = {
-			  src->clear.color[0],
-			  src->clear.color[1],
-			  src->clear.color[2],
-			  src->clear.color[3],
-			},
-		};
+
+		attachment->load = (VkAttachmentLoadOp)src->load,
+		attachment->store = (VkAttachmentStoreOp)src->store,
+		attachment->clear.color.float32[0] = src->clear.color[0];
+		attachment->clear.color.float32[1] = src->clear.color[1];
+		attachment->clear.color.float32[2] = src->clear.color[2];
+		attachment->clear.color.float32[3] = src->clear.color[3];
 	}
 
-	VulkanImage *depth_image = &context->image_pool[desc->depth_attachment.texture];
-	if (desc->use_depth) {
-		AttachmentDesc *src = &desc->depth_attachment;
+	VulkanImage *depth_image = &context->image_pool[desc.depth_attachment.texture];
+	if (desc.use_depth) {
+		AttachmentDesc *src = &desc.depth_attachment;
 		VulkanAttachment *attachment = &pass->depth_attachment;
 
 		attachment->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 		attachment->image_index = src->texture;
-		attachment->info = (VkRenderingAttachmentInfo){
-			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-			.imageView = depth_image->view,
-			.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-			.loadOp = (VkAttachmentLoadOp)src->load,
-			.storeOp = (VkAttachmentStoreOp)src->store,
-			.clearValue.depthStencil.depth = src->clear.depth,
-		};
+		attachment->load = (VkAttachmentLoadOp)src->load;
+		attachment->store = (VkAttachmentStoreOp)src->store;
+		attachment->clear.depthStencil.depth = src->clear.depth;
 	}
 
 	pass->state = VULKAN_RESOURCE_STATE_INITIALIZED;
@@ -58,7 +49,7 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, u
 
 bool vulkan_renderer_pass_destroy(VulkanContext *context, uint32_t retrieve_index) {
 	VulkanPass *pass = NULL;
-	VK_GET_OR_RETURN(pass, context->pass_pool, retrieve_index, MAX_RENDER_PASSES, true);
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, retrieve_index, MAX_RENDER_PASSES, true);
 
 	*pass = (VulkanPass){ 0 };
 	return true;
@@ -66,78 +57,119 @@ bool vulkan_renderer_pass_destroy(VulkanContext *context, uint32_t retrieve_inde
 
 bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index) {
 	VulkanPass *pass = NULL;
-	VK_GET_OR_RETURN(pass, context->pass_pool, retrieve_index, MAX_RENDER_PASSES, true);
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, retrieve_index, MAX_RENDER_PASSES, true);
 
 	VkExtent2D extent = {
-		.width = pass->width == 0 ? context->swapchain.extent.width : pass->width,
-		.height = pass->height == 0 ? context->swapchain.extent.height : pass->height
+		context->swapchain.extent.width,
+		context->swapchain.extent.height
 	};
 
+	bool use_msaa = pass->enable_msaa && context->device.sample_count > VK_SAMPLE_COUNT_1_BIT;
+
 	VkRenderingAttachmentInfo color_attachments[4] = { 0 };
+	ASSERT(pass->color_attachment_count <= 4);
 	for (uint32_t color_index = 0; color_index < pass->color_attachment_count; ++color_index) {
 		VulkanAttachment *cached = &pass->color_attachments[color_index];
-		VulkanImage *image = &context->image_pool[cached->image_index];
-
-		if (cached->present) {
-			cached->info.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-			cached->info.resolveImageView = context->swapchain.images.views[context->image_index];
-			cached->info.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		}
-
-		if ((image->width != MATCH_SWAPCHAIN && image->width < extent.width) ||
-			(image->height != MATCH_SWAPCHAIN && image->height < extent.height)) {
-			LOG_WARN("Vulkan: pass attachment is smaller than draw area, resizing down");
-			extent.width = image->width;
-			extent.height = image->height;
-		}
-
 		VkRenderingAttachmentInfo *info = &color_attachments[color_index];
 		info->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-		info->imageView = image->view;
 		info->imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		info->loadOp = cached->info.loadOp;
-		info->storeOp = cached->info.storeOp;
-		info->clearValue = cached->info.clearValue;
+		info->loadOp = cached->load;
+		info->storeOp = cached->store;
+		info->clearValue = cached->clear;
 
-		if (cached->present) {
+		if (use_msaa) {
 			info->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 			info->resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			info->resolveImageView = context->swapchain.images.views[context->image_index];
+
+			if (cached->present) {
+				if (vulkan_image_msaa_scratch_ensure(
+						context, &context->msaa_colors[color_index],
+						context->swapchain.extent, context->swapchain.format.format, VK_IMAGE_ASPECT_COLOR_BIT) == false) {
+					info->resolveMode = VK_RESOLVE_MODE_NONE;
+					info->resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+					info->imageView = context->swapchain.images.views[context->image_index];
+					continue;
+				}
+
+				info->imageView = context->msaa_colors[color_index].view;
+				info->resolveImageView = context->swapchain.images.views[context->image_index];
+			} else {
+				VulkanImage *image = &context->image_pool[cached->image_index];
+				vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+				if (image->width != MATCH_SWAPCHAIN)
+					extent.width = min(extent.width, image->width);
+				if (image->height != MATCH_SWAPCHAIN)
+					extent.height = min(extent.height, image->height);
+
+				if (vulkan_image_msaa_scratch_ensure(
+						context, &context->msaa_colors[color_index],
+						extent, image->info.format, VK_IMAGE_ASPECT_COLOR_BIT) == false) {
+					info->resolveMode = VK_RESOLVE_MODE_NONE;
+					info->resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					info->imageView = image->view;
+					continue;
+				}
+
+				info->imageView = context->msaa_colors[color_index].view;
+				info->resolveImageView = image->view;
+			}
+		} else {
+			if (cached->present)
+				info->imageView = context->swapchain.images.views[context->image_index];
+			else {
+				VulkanImage *image = &context->image_pool[cached->image_index];
+				vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+				if (image->width != MATCH_SWAPCHAIN)
+					extent.width = min(extent.width, image->width);
+				if (image->height != MATCH_SWAPCHAIN)
+					extent.height = min(extent.height, image->height);
+
+				info->imageView = image->view;
+			}
 		}
-
-		vulkan_image_transition(
-			context, context->command_buffers[context->current_frame],
-			image->handle, VK_IMAGE_ASPECT_COLOR_BIT,
-			image->layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-
-		image->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
 
 	VkRenderingAttachmentInfo depth_info = { 0 };
 	if (pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED) {
-		VulkanAttachment *chached = &pass->depth_attachment;
-		VulkanImage *image = &context->image_pool[chached->image_index];
+		VulkanAttachment *cached = &pass->depth_attachment;
+		VulkanImage *image = &context->image_pool[cached->image_index];
+
+		if (image->width != MATCH_SWAPCHAIN)
+			extent.width = min(extent.width, image->width);
+		if (image->height != MATCH_SWAPCHAIN)
+			extent.height = min(extent.height, image->height);
 
 		depth_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-		depth_info.imageView = image->view;
 		depth_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		depth_info.loadOp = chached->info.loadOp;
-		depth_info.storeOp = chached->info.storeOp;
-		depth_info.clearValue = chached->info.clearValue;
+		depth_info.loadOp = cached->load;
+		depth_info.storeOp = cached->store;
+		depth_info.clearValue = cached->clear;
 
-		vulkan_image_transition(context, context->command_buffers[context->current_frame],
-			image->handle, VK_IMAGE_ASPECT_DEPTH_BIT,
-			image->layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-			0, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+		if (use_msaa) {
+			depth_info.resolveMode = VK_RESOLVE_MODE_NONE;
+			// depth_info.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+			// depth_info.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		image->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			if (vulkan_image_msaa_scratch_ensure(
+					context, &context->msaa_depth,
+					extent, image->info.format, VK_IMAGE_ASPECT_DEPTH_BIT)) {
+				// LOG_WARN("Vulkan: MSAA turned on for pass, passed in depth texture ignored");
+				depth_info.imageView = context->msaa_depth.view;
+			} else {
+				depth_info.resolveMode = VK_RESOLVE_MODE_NONE;
+				depth_info.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+				vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+				depth_info.imageView = image->view;
+			}
+		} else {
+			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+			depth_info.imageView = image->view;
+		}
 	}
-
-	VulkanImage *depth_image = &context->image_pool[pass->depth_attachment.image_index];
 
 	VkRenderingInfo pass_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,

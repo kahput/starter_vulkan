@@ -11,7 +11,7 @@ VkDescriptorType to_vulkan_descriptor_type(ShaderBindingType type);
 
 bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t store_index, ResourceBinding *bindings, uint32_t binding_count) {
 	VulkanGlobalResource *global = NULL;
-	VK_GET_OR_RETURN(global, context->global_resources, store_index, MAX_GLOBAL_RESOURCES, false);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, store_index, MAX_GLOBAL_RESOURCES, false);
 	VulkanBuffer *buffer = &global->buffer;
 
 	ASSERT(bindings[0].type == SHADER_BINDING_UNIFORM_BUFFER);
@@ -107,16 +107,30 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 	return true;
 }
 
+bool vulkan_renderer_resource_global_destroy(VulkanContext *context, uint32_t retrieve_index) {
+	VulkanGlobalResource *global = NULL;
+	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GLOBAL_RESOURCES, true);
+
+	vkDestroyBuffer(context->device.logical, global->buffer.handle, NULL);
+	vkFreeMemory(context->device.logical, global->buffer.memory, NULL);
+	global->buffer = (VulkanBuffer){ 0 };
+
+	vkDestroyPipelineLayout(context->device.logical, global->pipeline_layout, NULL);
+    vkDestroyDescriptorSetLayout(context->device.logical, global->set_layout, NULL);
+
+	return true;
+}
+
 bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context, uint32_t retrieve_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index) {
 	VulkanGlobalResource *global = NULL;
-	VK_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
 	VulkanBuffer *buffer = &global->buffer;
 
 	VulkanImage *image = NULL;
-	VK_GET_OR_RETURN(image, context->image_pool, texture_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture_index, MAX_TEXTURES, true);
 
 	VulkanSampler *sampler = NULL;
-	VK_GET_OR_RETURN(sampler, context->sampler_pool, sampler_index, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_index, MAX_SAMPLERS, true);
 
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,
@@ -182,10 +196,10 @@ bool vulkan_renderer_resource_global_bind(VulkanContext *context, uint32_t retri
 
 bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t store_index, uint32_t shader_index, uint32_t max_instance_count) {
 	VulkanShader *shader = NULL;
-	VK_GET_OR_RETURN(shader, context->shader_pool, shader_index, MAX_SHADERS, true);
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, shader_index, MAX_SHADERS, true);
 
 	VulkanGroupResource *group = NULL;
-	VK_GET_OR_RETURN(group, context->group_resources, store_index, MAX_GROUP_RESOURCES, false);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, store_index, MAX_GROUP_RESOURCES, false);
 	VulkanBuffer *buffer = &group->buffer;
 
 	group->shader_index = shader_index;
@@ -231,6 +245,17 @@ bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t stor
 
 	LOG_INFO("Vulkan: VkDescriptorSet created");
 	group->state = VULKAN_RESOURCE_STATE_INITIALIZED;
+
+	return true;
+}
+
+bool vulkan_renderer_resource_group_destroy(VulkanContext *context, uint32_t retrieve_index) {
+	VulkanGroupResource *group = NULL;
+	VULKAN_GET_OR_RETURN(group, context->group_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
+
+	vkDestroyBuffer(context->device.logical, group->buffer.handle, NULL);
+	vkFreeMemory(context->device.logical, group->buffer.memory, NULL);
+	group->buffer = (VulkanBuffer){ 0 };
 
 	return true;
 }
@@ -294,14 +319,14 @@ bool vulkan_renderer_resource_group_bind(VulkanContext *context, uint32_t retrie
 
 bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, uint32_t retrieve_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index) {
 	VulkanGroupResource *group = NULL;
-	VK_GET_OR_RETURN(group, context->group_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
 	VulkanBuffer *buffer = &group->buffer;
 
 	VulkanImage *image = NULL;
-	VK_GET_OR_RETURN(image, context->image_pool, texture_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture_index, MAX_TEXTURES, true);
 
 	VulkanSampler *sampler = NULL;
-	VK_GET_OR_RETURN(sampler, context->sampler_pool, sampler_index, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_index, MAX_SAMPLERS, true);
 
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,
