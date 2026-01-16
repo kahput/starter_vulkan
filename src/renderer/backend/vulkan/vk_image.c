@@ -13,6 +13,9 @@ bool vulkan_image_create(
 	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
 	VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
 	VulkanImage *image) {
+	image->width = width, image->height = height;
+	image->layout = image->info.initialLayout;
+
 	image->info = (VkImageCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType = VK_IMAGE_TYPE_2D,
@@ -30,7 +33,6 @@ bool vulkan_image_create(
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
-	image->layout = image->info.initialLayout;
 
 	if (vkCreateImage(context->device.logical, &image->info, NULL, &image->handle) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan Texture");
@@ -161,8 +163,6 @@ void vulkan_image_transition(VulkanContext *context, VkCommandBuffer command_buf
 }
 
 void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout) {
-	if (image->layout == new_layout)
-		return;
 	VkPipelineStageFlags src_stage = 0;
 	VkPipelineStageFlags dst_stage = 0;
 	VkAccessFlags src_access = 0;
@@ -191,6 +191,7 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 			break;
 
 		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
 			src_stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 			src_access = VK_ACCESS_SHADER_READ_BIT;
 			break;
@@ -219,6 +220,7 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 			break;
 
 		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
 			dst_stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 			dst_access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 			break;
@@ -290,13 +292,13 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-	if (!vulkan_image_create(
+	if (vulkan_image_create(
 			context, context->device.sample_count,
 			extent.width, extent.height,
 			format, VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			msaa)) {
+			msaa) == false) {
 		LOG_ERROR("Vulkan: failed to create MSAA color scratch image, aborting %s", __func__);
 		return false;
 	}

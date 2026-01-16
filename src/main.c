@@ -22,7 +22,10 @@
 
 #include "platform/filesystem.h"
 
+#include <cglm/cam.h>
 #include <cglm/cglm.h>
+#include <cglm/mat4.h>
+#include <cglm/vec3.h>
 
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
 #define GATE_DOOR_FILE_PATH "assets/models/modular_dungeon/gate-door.glb"
@@ -33,10 +36,10 @@ typedef enum {
 	RENDERER_DEFAULT_TEXTURE_WHITE,
 	RENDERER_DEFAULT_TEXTURE_BLACK,
 	RENDERER_DEFAULT_TEXTURE_NORMAL,
-	RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
-	RENDER_TARGET_TEXTURE_MAIN_DEPTH,
-	RENDER_TARGET_TEXTURE_MAIN_COLOR,
-	RENDER_TARGET_TEXTURE_COUNT,
+	RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
+	RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP,
+	RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
+	RENDERER_DEFAULT_SURFACE_COUNT,
 } TextureIndex;
 
 typedef enum {
@@ -47,11 +50,13 @@ typedef enum {
 typedef enum {
 	RENDERER_DEFAULT_PASS_SHADOW,
 	RENDERER_DEFAULT_PASS_MAIN,
+	RENDERER_DEFAULT_PASS_POSTFX
 } RenderPassIndex;
 
 typedef enum {
-	GLOBAL_VIEW,
-	SHADOW_VIEW,
+	RENDERER_GLOBAL_RESOURCE_SHADOW,
+	RENDERER_GLOBAL_RESOURCE_MAIN,
+	RENDERER_GLOBAL_RESOURCE_POSTFX,
 } GlobalResourceIndex;
 
 typedef enum {
@@ -82,6 +87,7 @@ static struct State {
 	Layer *current_layer;
 
 	uint64_t start_time;
+	uint32_t final_texture;
 
 	uint32_t width, height;
 
@@ -94,6 +100,7 @@ static struct State {
 int main(void) {
 	state.permanent_arena = arena_create(MiB(512));
 	state.frame_arena = arena_create(MiB(4));
+	state.final_texture = RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP;
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
@@ -113,7 +120,7 @@ int main(void) {
 
 	state.next_buffer_index = 0;
 	state.next_shader_index = 0;
-	state.next_image_index = RENDER_TARGET_TEXTURE_COUNT;
+	state.next_image_index = RENDERER_DEFAULT_SURFACE_COUNT;
 	state.next_group_index = 0;
 
 	// Create default textures
@@ -131,60 +138,80 @@ int main(void) {
 	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
 
 	// Create render target textures
-	vulkan_renderer_texture_create(state.context, RENDER_TARGET_TEXTURE_MAIN_DEPTH,
-		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 1, false,
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
+		state.width, state.height, 1, false,
 		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
 
-	vulkan_renderer_texture_create(state.context, RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
-		2048, 2048, 1, false,
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP,
+		state.width, state.height, 1, false,
 		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
 
-	vulkan_renderer_texture_create(state.context, RENDER_TARGET_TEXTURE_MAIN_COLOR,
-		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 4, true,
-		TEXTURE_USAGE_COLOR_ATTACHMENT, NULL);
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
+		state.width, state.height, 4, true,
+		TEXTURE_USAGE_COLOR_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
 
 	// Create global resources
 	vulkan_renderer_resource_global_create(
-		state.context, SHADOW_VIEW,
+		state.context, RENDERER_GLOBAL_RESOURCE_SHADOW,
 		(ResourceBinding[]){
-		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(mat4) * 2, .count = 1 },
+		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(mat4), .count = 1 },
 		},
 		1);
 	vulkan_renderer_resource_global_create(
-		state.context, GLOBAL_VIEW,
+		state.context, RENDERER_GLOBAL_RESOURCE_MAIN,
 		(ResourceBinding[]){
 		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(FrameData), .count = 1 },
 		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 		  { .binding = 1, .type = SHADER_BINDING_SAMPLER, .size = 0, .count = 1 },
 		},
 		3);
-	vulkan_renderer_resource_global_set_texture_sampler(state.context, GLOBAL_VIEW, 1,
-		RENDER_TARGET_TEXTURE_SHADOW_DEPTH, RENDERER_DEFAULT_SAMPLER_LINEAR);
+	vulkan_renderer_resource_global_set_texture_sampler(state.context, RENDERER_GLOBAL_RESOURCE_MAIN, 1,
+		RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP, RENDERER_DEFAULT_SAMPLER_LINEAR);
+
+	vulkan_renderer_resource_global_create(
+		state.context, RENDERER_GLOBAL_RESOURCE_POSTFX,
+		(ResourceBinding[]){
+		  { .binding = 0, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
+		  { .binding = 0, .type = SHADER_BINDING_SAMPLER, .size = 0, .count = 1 },
+		},
+		2);
+	vulkan_renderer_resource_global_set_texture_sampler(state.context, RENDERER_GLOBAL_RESOURCE_POSTFX, 0,
+		state.final_texture, RENDERER_DEFAULT_SAMPLER_LINEAR);
 
 	// Create render passes
-	RenderPassDesc shadow = {
+	RenderPassDesc shadow_pass = {
 		.name = S("Shadow"),
 		.depth_attachment = {
-		  .texture = RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
+		  .texture = RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
 		  .clear = { .depth = 1.0f },
 		  .load = CLEAR,
-		  .store = STORE },
+		  .store = STORE,
+		},
 		.use_depth = true,
-		.msaa = false
+		.enable_msaa = false
 	};
 
 	RenderPassDesc main_pass = {
 		.name = S("Main"),
 		.color_attachments = {
-		  { .clear = { .color = GLM_VEC4_BLACK_INIT }, .load = CLEAR, .store = STORE, .present = true } },
+		  { .texture = RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP, .clear = { .color = GLM_VEC4_BLACK_INIT }, .load = CLEAR, .store = STORE } },
 		.color_attachment_count = 1,
-		.depth_attachment = { .texture = RENDER_TARGET_TEXTURE_MAIN_DEPTH, .clear = { .depth = 1.0f }, .load = CLEAR, .store = DONT_CARE },
+		.depth_attachment = { .texture = RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP, .clear = { .depth = 1.0f }, .load = CLEAR, .store = DONT_CARE },
 		.use_depth = true,
-		.msaa = true
+		.enable_msaa = true
 	};
 
-	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_SHADOW, shadow);
+	RenderPassDesc postfx_pass = {
+		.name = S("Post"),
+		.color_attachments = {
+		  { .present = true, .clear = { .color = GLM_VEC4_BLACK_INIT }, .load = CLEAR, .store = STORE } },
+		.color_attachment_count = 1,
+		.enable_msaa = false
+	};
+
+	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_SHADOW, shadow_pass);
 	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_MAIN, main_pass);
+	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_POSTFX, postfx_pass);
 
 	MaterialParameters default_material_parameters = (MaterialParameters){
 		.base_color_factor = { 0.8f, 0.8f, 0.8f, 1.0f },
@@ -212,7 +239,7 @@ int main(void) {
 
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(&state.permanent_arena, state.context,
-			default_shader_index, GLOBAL_VIEW, RENDERER_DEFAULT_PASS_MAIN, &shader_config, desc, &reflection);
+			default_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, RENDERER_DEFAULT_PASS_MAIN, &shader_config, desc, &reflection);
 	}
 	arena_release_scratch(scratch);
 
@@ -255,7 +282,7 @@ int main(void) {
 
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(&state.permanent_arena, state.context,
-			sprite_shader_index, GLOBAL_VIEW, RENDERER_DEFAULT_PASS_MAIN, &sprite_config, desc, &reflection);
+			sprite_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, RENDERER_DEFAULT_PASS_MAIN, &sprite_config, desc, &reflection);
 	}
 
 	// Create plane mesh
@@ -366,7 +393,7 @@ int main(void) {
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(
 			&state.permanent_arena, state.context,
-			light_shader_index, GLOBAL_VIEW, RENDERER_DEFAULT_PASS_MAIN, &light_config, desc, &reflection);
+			light_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, RENDERER_DEFAULT_PASS_MAIN, &light_config, desc, &reflection);
 	}
 
 	ShaderSource *shadow_shader_src = NULL;
@@ -381,13 +408,50 @@ int main(void) {
 		};
 
 		PipelineDesc desc = DEFAULT_PIPELINE();
+		desc.override_attributes = (ShaderAttribute[]){
+			(ShaderAttribute){ .name = S("in_position"), .binding = 0, .format = { .type = SHADER_ATTRIBUTE_TYPE_FLOAT32, .count = 3 } },
+			(ShaderAttribute){ .name = S("in_normal"), .binding = 0, .format = { .type = SHADER_ATTRIBUTE_TYPE_FLOAT32, .count = 3 } },
+			(ShaderAttribute){ .name = S("in_uv"), .binding = 0, .format = { .type = SHADER_ATTRIBUTE_TYPE_FLOAT32, .count = 3 } },
+			(ShaderAttribute){ .name = S("in_tangent"), .binding = 0, .format = { .type = SHADER_ATTRIBUTE_TYPE_FLOAT32, .count = 3 } },
+		};
+		desc.override_count = 4;
 		desc.cull_mode = CULL_MODE_NONE;
 
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(
 			&state.permanent_arena, state.context,
-			shadow_shader_index, SHADOW_VIEW, RENDERER_DEFAULT_PASS_SHADOW, &shadow_config, desc, &reflection);
+			shadow_shader_index, RENDERER_GLOBAL_RESOURCE_SHADOW, RENDERER_DEFAULT_PASS_SHADOW, &shadow_config, desc, &reflection);
 	}
+
+	ShaderSource *postfx_shader_src = NULL;
+	UUID postfx_shader_id = asset_library_request_shader(S("postfx.glsl"), &postfx_shader_src);
+	uint32_t postfx_shader_index = state.next_shader_index++;
+	{
+		ShaderConfig postfx_config = {
+			.vertex_code = postfx_shader_src->vertex_shader.content,
+			.vertex_code_size = postfx_shader_src->vertex_shader.size,
+			.fragment_code = postfx_shader_src->fragment_shader.content,
+			.fragment_code_size = postfx_shader_src->fragment_shader.size,
+		};
+
+		PipelineDesc desc = DEFAULT_PIPELINE();
+		desc.cull_mode = CULL_MODE_NONE;
+		ShaderReflection reflection;
+		vulkan_renderer_shader_create(
+			&state.permanent_arena, state.context,
+			postfx_shader_index, RENDERER_GLOBAL_RESOURCE_POSTFX, RENDERER_DEFAULT_PASS_POSTFX, &postfx_config, desc, &reflection);
+	}
+	float quadVertices[] = {
+		-1.0f, 1.0f, 0.0f, 1.0f,
+		-1.0f, -1.0f, 0.0f, 0.0f,
+		1.0f, -1.0f, 1.0f, 0.0f,
+
+		-1.0f, 1.0f, 0.0f, 1.0f,
+		1.0f, -1.0f, 1.0f, 0.0f,
+		1.0f, 1.0f, 1.0f, 1.0f
+	};
+	uint32_t quadBuffer = state.next_buffer_index++;
+	vulkan_renderer_buffer_create(state.context, quadBuffer, BUFFER_TYPE_VERTEX, sizeof(quadVertices), quadVertices);
 
 	uint32_t light_materials[16];
 	for (uint32_t light_material = 0; light_material < 16; ++light_material) {
@@ -400,11 +464,14 @@ int main(void) {
 
 	float sun_theta = 2 * GLM_PI / 3.f;
 	float sun_azimuth = 0;
-
 	Light lights[] = {
 		[0] = { .type = LIGHT_TYPE_DIRECTIONAL, .color = { 0.2f, 0.2f, 1.0f, 0.1f }, .as.direction = { 0.0f, 0.0f, 0.0f } },
 		[1] = { .type = LIGHT_TYPE_POINT, .color = { 1.0f, 0.5f, 0.2f, 0.8f }, .as.position = { 0.0f, 3.0f, 1.0f } }
 	};
+
+	lights[0].as.direction[0] = sin(sun_theta) * cos(sun_azimuth);
+	lights[0].as.direction[1] = cos(sun_theta);
+	lights[0].as.direction[2] = sin(sun_theta) * sin(sun_azimuth);
 
 	while (platform_should_close(&state.display) == false) {
 		float time = platform_time_seconds(&state.display);
@@ -427,96 +494,167 @@ int main(void) {
 
 		state.current_layer->update(delta_time);
 
-		lights[0].as.direction[0] = sin(sun_theta) * cos(sun_azimuth);
-		lights[0].as.direction[1] = cos(sun_theta);
-		lights[0].as.direction[2] = sin(sun_theta) * sin(sun_azimuth);
+		LOG_INFO("Sun direction = { %.2f, %.2f, %.2f }", lights[0].as.direction[0], lights[0].as.direction[1], lights[0].as.direction[2]);
 
 		lights[1].as.position[0] = cos(time) * 5;
 		lights[1].as.position[2] = sin(time) * 5;
 
 		if (vulkan_renderer_frame_begin(state.context, state.display.physical_width,
 				state.display.physical_height)) {
-			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_MAIN);
+			// Shadow pass
+			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_SHADOW);
+			{
+				mat4 light_projection;
+				float scene_radius = 30.0f;
+				glm_ortho(-scene_radius, scene_radius, scene_radius, -scene_radius,
+					1.0f, scene_radius * 2.0f, light_projection);
 
-			FrameData frame_data = { 0 };
-			glm_mat4_identity(frame_data.view);
-			glm_lookat(state.editor_camera.position, state.editor_camera.target,
-				state.editor_camera.up, frame_data.view);
+				mat4 light_view;
+				vec3 light_position;
+				vec3 light_target = { 0.0f, 0.0f, 0.0f }; // Looking at scene center
 
-			glm_mat4_identity(frame_data.projection);
-			glm_perspective(glm_rad(state.editor_camera.fov),
-				(float)state.width / (float)state.height, 0.1f, 1000.f, frame_data.projection);
-			frame_data.projection[1][1] *= -1;
+				glm_vec3_scale(lights[0].as.direction, -scene_radius - 15.0f, light_position);
+				glm_lookat(light_position, light_target, (vec3){ 0.0f, 1.0f, 0.0f }, light_view);
 
-			uint32_t point_light_count = 0;
-			for (uint32_t light_index = 0; light_index < countof(lights); ++light_index) {
-				if (lights[light_index].type == LIGHT_TYPE_DIRECTIONAL)
-					memcpy(&frame_data.directional_light, lights + light_index, sizeof(Light));
-				else
-					memcpy(frame_data.lights + point_light_count++, lights + light_index, sizeof(Light));
-			}
-			glm_vec3_dup(state.editor_camera.position, frame_data.camera_position);
-			frame_data.light_count = point_light_count;
+				LOG_INFO("Light position: { %.2f, %.2f, %.2f }", light_position[0], light_position[1], light_position[2]);
 
-			vulkan_renderer_resource_global_write(state.context, GLOBAL_VIEW, 0,
-				sizeof(FrameData), &frame_data);
-			vulkan_renderer_resource_global_bind(state.context, GLOBAL_VIEW);
+				mat4 light_matrix;
+				glm_mat4_mul(light_projection, light_view, light_matrix);
 
-			// Draw sprites
-			mat4 transform = GLM_MAT4_IDENTITY_INIT;
-			glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
-			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
+				vulkan_renderer_resource_global_write(state.context, RENDERER_GLOBAL_RESOURCE_SHADOW, 0,
+					sizeof(mat4), &light_matrix);
+				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_SHADOW);
+				vulkan_renderer_shader_bind(state.context, shadow_shader_index);
 
-			vulkan_renderer_shader_bind(state.context, sprite_shader_index);
-			vulkan_renderer_resource_group_bind(state.context, sprite_mat_0, 0);
-			vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
-			vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
-			vulkan_renderer_draw(state.context, plane_vertex_count);
+				// Draw sprites
+				mat4 transform = GLM_MAT4_IDENTITY_INIT;
+				glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
+				glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
 
-			glm_mat4_identity(transform);
-			glm_translate(transform, (vec3){ 0.0f, 0.75f, 0.0f });
-			glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
-
-			vulkan_renderer_resource_group_bind(state.context, sprite_mat_1, 0);
-			vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
-			vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
-			vulkan_renderer_draw(state.context, plane_vertex_count);
-
-			if (room_vb != INVALID_INDEX) {
-				glm_mat4_identity(transform);
-				glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
-
-				vulkan_renderer_shader_bind(state.context, default_shader_index);
-				vulkan_renderer_resource_group_bind(state.context, room_material, 0);
-				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
-				vulkan_renderer_buffer_bind(state.context, room_vb, 0);
-
-				if (room_index_count > 0) {
-					vulkan_renderer_buffer_bind(state.context, room_ib, room_index_size);
-					vulkan_renderer_draw_indexed(state.context, room_index_count);
-				} else {
-					vulkan_renderer_draw(state.context, room_vertex_count);
-				}
-			}
-
-			// Draw light debug
-			vulkan_renderer_shader_bind(state.context, light_shader_index);
-			for (uint32_t index = 0; index < countof(lights); ++index) {
-				if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
-					continue;
-
-				glm_mat4_identity(transform);
-				glm_translate(transform, lights[index].as.position);
-
-				vulkan_renderer_resource_group_write(state.context, light_materials[index],
-					0, 0, sizeof(vec4), lights[index].color, true);
-				vulkan_renderer_resource_group_bind(state.context, light_materials[index], 0);
 				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
 				vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
 				vulkan_renderer_draw(state.context, plane_vertex_count);
-			}
 
+				glm_mat4_identity(transform);
+				glm_translate(transform, (vec3){ 0.0f, 0.75f, 0.0f });
+				glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
+
+				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+				vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
+				vulkan_renderer_draw(state.context, plane_vertex_count);
+
+				if (room_vb != INVALID_INDEX) {
+					glm_mat4_identity(transform);
+					glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
+
+					vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+					vulkan_renderer_buffer_bind(state.context, room_vb, 0);
+
+					if (room_index_count > 0) {
+						vulkan_renderer_buffer_bind(state.context, room_ib, room_index_size);
+						vulkan_renderer_draw_indexed(state.context, room_index_count);
+					} else {
+						vulkan_renderer_draw(state.context, room_vertex_count);
+					}
+				}
+			}
 			vulkan_renderer_pass_end(state.context);
+			vulkan_renderer_texture_prepare_sample(state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP);
+
+			// Main pass
+			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_MAIN);
+			{
+				FrameData frame_data = { 0 };
+				glm_mat4_identity(frame_data.view);
+				glm_lookat(state.editor_camera.position, state.editor_camera.target,
+					state.editor_camera.up, frame_data.view);
+
+				glm_mat4_identity(frame_data.projection);
+				glm_perspective(glm_rad(state.editor_camera.fov),
+					(float)state.width / (float)state.height, 0.1f, 1000.f, frame_data.projection);
+				frame_data.projection[1][1] *= -1;
+
+				uint32_t point_light_count = 0;
+				for (uint32_t light_index = 0; light_index < countof(lights); ++light_index) {
+					if (lights[light_index].type == LIGHT_TYPE_DIRECTIONAL)
+						memcpy(&frame_data.directional_light, lights + light_index, sizeof(Light));
+					else
+						memcpy(frame_data.lights + point_light_count++, lights + light_index, sizeof(Light));
+				}
+				glm_vec3_dup(state.editor_camera.position, frame_data.camera_position);
+				frame_data.light_count = point_light_count;
+
+				vulkan_renderer_resource_global_write(state.context, RENDERER_GLOBAL_RESOURCE_MAIN, 0,
+					sizeof(FrameData), &frame_data);
+				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_MAIN);
+
+				// Draw sprites
+				mat4 transform = GLM_MAT4_IDENTITY_INIT;
+				glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
+				glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
+
+				vulkan_renderer_shader_bind(state.context, sprite_shader_index);
+				vulkan_renderer_resource_group_bind(state.context, sprite_mat_0, 0);
+				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+				vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
+				vulkan_renderer_draw(state.context, plane_vertex_count);
+
+				glm_mat4_identity(transform);
+				glm_translate(transform, (vec3){ 0.0f, 0.75f, 0.0f });
+				glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
+
+				vulkan_renderer_resource_group_bind(state.context, sprite_mat_1, 0);
+				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+				vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
+				vulkan_renderer_draw(state.context, plane_vertex_count);
+
+				if (room_vb != INVALID_INDEX) {
+					glm_mat4_identity(transform);
+					glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
+
+					vulkan_renderer_shader_bind(state.context, default_shader_index);
+					vulkan_renderer_resource_group_bind(state.context, room_material, 0);
+					vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+					vulkan_renderer_buffer_bind(state.context, room_vb, 0);
+
+					if (room_index_count > 0) {
+						vulkan_renderer_buffer_bind(state.context, room_ib, room_index_size);
+						vulkan_renderer_draw_indexed(state.context, room_index_count);
+					} else {
+						vulkan_renderer_draw(state.context, room_vertex_count);
+					}
+				}
+
+				// Draw light debug
+				vulkan_renderer_shader_bind(state.context, light_shader_index);
+				for (uint32_t index = 0; index < countof(lights); ++index) {
+					if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
+						continue;
+
+					glm_mat4_identity(transform);
+					glm_translate(transform, lights[index].as.position);
+
+					vulkan_renderer_resource_group_write(state.context, light_materials[index],
+						0, 0, sizeof(vec4), lights[index].color, true);
+					vulkan_renderer_resource_group_bind(state.context, light_materials[index], 0);
+					vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+					vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
+					vulkan_renderer_draw(state.context, plane_vertex_count);
+				}
+			}
+			vulkan_renderer_pass_end(state.context);
+			vulkan_renderer_texture_prepare_sample(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP);
+
+			// Postfx pass
+			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_POSTFX);
+			{
+				vulkan_renderer_shader_bind(state.context, postfx_shader_index);
+				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_POSTFX);
+				vulkan_renderer_buffer_bind(state.context, quadBuffer, 0);
+				vulkan_renderer_draw(state.context, 6);
+			}
+			vulkan_renderer_pass_end(state.context);
+
 			Vulkan_renderer_frame_end(state.context);
 		}
 
@@ -586,6 +724,11 @@ bool resize_event(Event *event) {
 		state.width = wr_event->width;
 		state.height = wr_event->height;
 	}
+	vulkan_renderer_texture_resize(state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP, state.width, state.height);
+	vulkan_renderer_texture_resize(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP, state.width, state.height);
+	vulkan_renderer_texture_resize(state.context, RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP, state.width, state.height);
+	vulkan_renderer_resource_global_set_texture_sampler(state.context, RENDERER_GLOBAL_RESOURCE_POSTFX, 0, state.final_texture, RENDERER_DEFAULT_SAMPLER_NEAREST);
+
 	return true;
 }
 

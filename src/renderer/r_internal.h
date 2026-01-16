@@ -52,7 +52,6 @@ typedef struct shader_attribute {
 	String name;
 	ShaderAttributeFormat format;
 	uint32_t binding;
-	size_t offset;
 } ShaderAttribute;
 
 typedef enum shader_stage {
@@ -200,7 +199,7 @@ typedef struct {
 	bool use_depth;
 
 	uint32_t width, height;
-	bool msaa;
+	bool enable_msaa;
 } RenderPassDesc;
 
 // TODO: Move these

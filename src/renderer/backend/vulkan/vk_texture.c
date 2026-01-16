@@ -29,11 +29,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 		return false;
 	}
 
-	image->width = width, image->height = height;
-	uint32_t functional_width = image->width == MATCH_SWAPCHAIN ? context->swapchain.extent.width : width;
-	uint32_t functional_height = image->height == MATCH_SWAPCHAIN ? context->swapchain.extent.height : height;
-
-	VkDeviceSize size = functional_width * functional_height * channels;
+	VkDeviceSize size = width * height * channels;
 
 	VkImageUsageFlags vk_usage = 0;
 	VkImageAspectFlags aspect = FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
@@ -56,7 +52,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 
 	vulkan_image_create(
 		context, VK_SAMPLE_COUNT_1_BIT,
-		functional_width, functional_height, format, VK_IMAGE_TILING_OPTIMAL,
+		width, height, format, VK_IMAGE_TILING_OPTIMAL,
 		vk_usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		image);
 
@@ -72,7 +68,7 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 
 		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, pixels);
 		staging_buffer->offset = copy_end;
-		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, functional_width, functional_height);
+		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, width, height);
 		image->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	}
 
@@ -115,7 +111,12 @@ bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, uint32_t ret
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
 
-	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	VkImageLayout new_layout =
+		image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
+		? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
 
 	return true;
 }

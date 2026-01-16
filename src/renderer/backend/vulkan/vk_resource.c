@@ -14,9 +14,13 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 	VULKAN_GET_OR_RETURN(global, context->global_resources, store_index, MAX_GLOBAL_RESOURCES, false);
 	VulkanBuffer *buffer = &global->buffer;
 
-	ASSERT(bindings[0].type == SHADER_BINDING_UNIFORM_BUFFER);
+	uint32_t buffer_binding = -1;
 	for (uint32_t binding_index = 0; binding_index < binding_count; ++binding_index) {
 		ResourceBinding *binding = &bindings[binding_index];
+		if (binding->type == SHADER_BINDING_UNIFORM_BUFFER) {
+			ASSERT(buffer_binding == (uint32_t)-1);
+			buffer_binding = binding->binding;
+		}
 
 		for (uint32_t descriptor_binding_index = 0; descriptor_binding_index < binding_count; ++descriptor_binding_index) {
 			VkDescriptorSetLayoutBinding *vk_binding = &global->bindings[descriptor_binding_index];
@@ -63,7 +67,7 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 	};
 
 	if (vkCreatePipelineLayout(context->device.logical, &pipeline_layout_info, NULL, &global->pipeline_layout) != VK_SUCCESS) {
-		LOG_ERROR("Vulkan: failed to create VkPipelineLayout for global resource, aborting vulkan_renderer_global_resource_create");
+		LOG_ERROR("Vulkan: failed to create VkPipelineLayout for global resource, aborting %s", __func__);
 		return false;
 	}
 
@@ -75,31 +79,33 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 	};
 
 	if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, &global->set) != VK_SUCCESS) {
-		LOG_ERROR("Vulkan: failed to create VkDescriptorSet for global resource, aborting vulkan_renderer_global_resource_create");
+		LOG_ERROR("Vulkan: failed to create VkDescriptorSet for global resource, aborting %s", __func__);
 		return false;
 	}
 
-	if (vulkan_buffer_ubo_create(context, buffer, bindings[0].size, NULL) == false) {
-		LOG_ERROR("Vulkan: failed to create VkBuffer for global resource, aborting vulkan_renderer_global_resource_create");
-		return false;
+	if (buffer_binding != (uint32_t)-1) {
+		if (vulkan_buffer_ubo_create(context, buffer, bindings[buffer_binding].size, NULL) == false) {
+			LOG_ERROR("Vulkan: failed to create VkBuffer for global resource, aborting %s", __func__);
+			return false;
+		}
+
+		VkDescriptorBufferInfo buffer_info = {
+			.buffer = buffer->handle,
+			.offset = 0,
+			.range = buffer->stride,
+		};
+
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = global->set,
+			.dstBinding = bindings[0].binding,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+			.descriptorCount = 1,
+			.pBufferInfo = &buffer_info,
+		};
+		vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
 	}
-
-	VkDescriptorBufferInfo buffer_info = {
-		.buffer = buffer->handle,
-		.offset = 0,
-		.range = buffer->stride,
-	};
-
-	VkWriteDescriptorSet descriptor_write = {
-		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		.dstSet = global->set,
-		.dstBinding = bindings[0].binding,
-		.dstArrayElement = 0,
-		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-		.descriptorCount = 1,
-		.pBufferInfo = &buffer_info,
-	};
-	vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
 
 	LOG_INFO("Vulkan: Global resource created");
 	global->state = VULKAN_RESOURCE_STATE_INITIALIZED;
@@ -111,12 +117,14 @@ bool vulkan_renderer_resource_global_destroy(VulkanContext *context, uint32_t re
 	VulkanGlobalResource *global = NULL;
 	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GLOBAL_RESOURCES, true);
 
-	vkDestroyBuffer(context->device.logical, global->buffer.handle, NULL);
-	vkFreeMemory(context->device.logical, global->buffer.memory, NULL);
-	global->buffer = (VulkanBuffer){ 0 };
+	if (global->buffer.state) {
+		vkDestroyBuffer(context->device.logical, global->buffer.handle, NULL);
+		vkFreeMemory(context->device.logical, global->buffer.memory, NULL);
+		global->buffer = (VulkanBuffer){ 0 };
+	}
 
 	vkDestroyPipelineLayout(context->device.logical, global->pipeline_layout, NULL);
-    vkDestroyDescriptorSetLayout(context->device.logical, global->set_layout, NULL);
+	vkDestroyDescriptorSetLayout(context->device.logical, global->set_layout, NULL);
 
 	return true;
 }
@@ -135,7 +143,7 @@ bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context,
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,
 		.imageView = image->view,
-		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		.imageLayout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
 	};
 
 	VkWriteDescriptorSet descriptor_write = {
@@ -153,43 +161,33 @@ bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context,
 }
 
 bool vulkan_renderer_resource_global_write(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data) {
-	if (retrieve_index >= MAX_GLOBAL_RESOURCES) {
-		LOG_ERROR("Vulkan: global resource index %d out of bounds, aborting vulkan_renderer_resource_global_write", retrieve_index);
-		return false;
-	}
-
-	VulkanGlobalResource *global = &context->global_resources[retrieve_index];
-	if (global->set == NULL) {
-		LOG_ERROR("Vulkan: global resource at index %d is not in use, aborting vulkan_renderer_resource_global_write", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
-
+	VulkanGlobalResource *global = NULL;
+	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GLOBAL_RESOURCES, true);
 	VulkanBuffer *buffer = &global->buffer;
+
+	if (buffer->state == VULKAN_RESOURCE_STATE_UNINITIALIZED) {
+		LOG_WARN("Vulkan: global resource at %d does not have a buffer, aborting %s", __func__);
+	}
 
 	vulkan_buffer_write_indexed(buffer, context->current_frame, offset, size, data);
 	return true;
 }
 bool vulkan_renderer_resource_global_bind(VulkanContext *context, uint32_t retrieve_index) {
-	if (retrieve_index >= MAX_GLOBAL_RESOURCES) {
-		LOG_ERROR("Vulkan: global resource index %d out of bounds, aborting vulkan_renderer_global_resource_bind", retrieve_index);
-		return false;
-	}
-
-	VulkanGlobalResource *global = &context->global_resources[retrieve_index];
-	if (global->set == NULL) {
-		LOG_ERROR("Vulkan: global resource at index %d is not in use, aborting vulkan_renderer_global_resource_bind", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
-
+	VulkanGlobalResource *global = NULL;
+	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GLOBAL_RESOURCES, true);
 	VulkanBuffer *buffer = &global->buffer;
 
-	uint32_t pass_offsets[] = { buffer->stride * context->current_frame };
-	vkCmdBindDescriptorSets(
-		context->command_buffers[context->current_frame],
-		VK_PIPELINE_BIND_POINT_GRAPHICS, global->pipeline_layout,
-		SHADER_UNIFORM_FREQUENCY_PER_FRAME, 1, &global->set, 1, pass_offsets);
+	if (buffer->state) {
+		uint32_t pass_offsets[] = { buffer->stride * context->current_frame };
+		vkCmdBindDescriptorSets(
+			context->command_buffers[context->current_frame],
+			VK_PIPELINE_BIND_POINT_GRAPHICS, global->pipeline_layout,
+			SHADER_UNIFORM_FREQUENCY_PER_FRAME, 1, &global->set, 1, pass_offsets);
+	} else
+		vkCmdBindDescriptorSets(
+			context->command_buffers[context->current_frame],
+			VK_PIPELINE_BIND_POINT_GRAPHICS, global->pipeline_layout,
+			SHADER_UNIFORM_FREQUENCY_PER_FRAME, 1, &global->set, 0, NULL);
 
 	return true;
 }
@@ -331,7 +329,7 @@ bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, 
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,
 		.imageView = image->view,
-		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		.imageLayout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
 	};
 
 	VkWriteDescriptorSet descriptor_write = {

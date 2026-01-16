@@ -146,19 +146,6 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 		LOG_WARN("Failed to recreate swapchain");
 	}
 
-	for (uint32_t image_index = 0; image_index < MAX_TEXTURES; ++image_index) {
-		VulkanImage *image = &context->image_pool[image_index];
-		if (
-			image->state == VULKAN_RESOURCE_STATE_UNINITIALIZED ||
-			(image->width != MATCH_SWAPCHAIN || image->height != MATCH_SWAPCHAIN))
-			continue;
-
-		uint32_t width = image->width == MATCH_SWAPCHAIN ? context->swapchain.extent.width : image->width;
-		uint32_t height = image->height == MATCH_SWAPCHAIN ? context->swapchain.extent.height : image->height;
-
-		vulkan_renderer_texture_resize(context, image_index, width, height);
-	}
-
 	logger_dedent();
 	return true;
 }

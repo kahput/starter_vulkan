@@ -52,7 +52,6 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
 	staging_buffer->offset = copy_end;
 	LOG_INFO("%s resource created", stringify[type]);
-	buffer->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	logger_dedent();
 
@@ -231,7 +230,7 @@ bool vulkan_buffer_create(
 	}
 
 	LOG_DEBUG("VkBuffer created");
-
+	out_buffer->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 	return true;
 }
 

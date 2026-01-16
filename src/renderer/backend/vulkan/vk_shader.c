@@ -113,9 +113,7 @@ struct vertex_input_state {
 };
 
 static bool override_attributes(struct vertex_input_state *state, ShaderAttribute *attributes, uint32_t attribute_count);
-// static void resolve_pass_formats(VulkanContext *context, uint32_t pass_id,
-// 	uint32_t *out_color_count, VkFormat *out_color_formats,
-// 	VkFormat *out_depth_format);
+static void resolve_pass_formats(VulkanContext *context, VulkanPass *pass, VkFormat *out_color_formats, VkFormat *out_depth_format);
 bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, PipelineDesc description, VulkanPipeline *variant) {
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -188,35 +186,46 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		.minSampleShading = 1.0f,
 	};
 
-	VkPipelineColorBlendAttachmentState color_blend_attachments[4];
-
 	VkPipelineColorBlendAttachmentState color_blend_attachment = {
 		.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
 		.blendEnable = VK_FALSE,
 	};
 
+	VkPipelineColorBlendAttachmentState color_blend_attachments[4];
+	for (uint32_t index = 0; index < countof(color_blend_attachments); ++index) {
+		color_blend_attachments[index] = (VkPipelineColorBlendAttachmentState){
+			.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+			.blendEnable = VK_FALSE,
+		};
+	}
+
 	VkPipelineColorBlendStateCreateInfo cbs_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
 		.logicOpEnable = VK_FALSE,
-		.attachmentCount = 1,
-		.pAttachments = &color_blend_attachment,
+		.attachmentCount = pass->color_attachment_count,
+		.pAttachments = color_blend_attachments,
 	};
 
+	// NOTE: This should be handled by the pass, and not the pipeline description?
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		.depthTestEnable = description.depth_test_enable ? VK_TRUE : VK_FALSE,
-		.depthWriteEnable = description.depth_write_enable ? VK_TRUE : VK_FALSE,
+		.depthTestEnable = pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED,
+		.depthWriteEnable = pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED,
 		.depthCompareOp = (VkCompareOp)description.depth_compare_op,
 		.depthBoundsTestEnable = VK_FALSE,
 		.minDepthBounds = 0.0f,
 		.maxDepthBounds = 1.0f
 	};
 
+	VkFormat color_formats[4];
+	VkFormat depth_format;
+	resolve_pass_formats(context, pass, color_formats, &depth_format);
+
 	VkPipelineRenderingCreateInfo r_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-		.colorAttachmentCount = 1,
-		.pColorAttachmentFormats = &context->swapchain.format.format,
-		.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT
+		.colorAttachmentCount = pass->color_attachment_count,
+		.pColorAttachmentFormats = color_formats,
+		.depthAttachmentFormat = depth_format
 	};
 
 	VkGraphicsPipelineCreateInfo gp_create_info = {
@@ -410,31 +419,6 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 		shader->bindings[0]
 			.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 		shader->binding_count = 1;
-	}
-
-	for (uint32_t index = 0; index < shader->attribute_count; ++index) {
-		VkVertexInputAttributeDescription *attr = &shader->attributes[index];
-		LOG_DEBUG("VERTEX_ATTRIBUTE[%d] = { location = %llu, binding = %llu, format = %llu, offset = %llu }", index, attr->location, attr->binding, attr->format, attr->offset);
-
-		if (attr->location == 0) {
-			ASSERT(attr->format == VK_FORMAT_R32G32B32_SFLOAT);
-			ASSERT(attr->offset == offsetof(Vertex, position));
-		}
-
-		if (attr->location == 1) {
-			ASSERT(attr->format == VK_FORMAT_R32G32B32_SFLOAT);
-			ASSERT(attr->offset == offsetof(Vertex, normal));
-		}
-
-		if (attr->location == 2) {
-			ASSERT(attr->format == VK_FORMAT_R32G32_SFLOAT);
-			ASSERT(attr->offset == offsetof(Vertex, uv));
-		}
-
-		if (attr->location == 3) {
-			ASSERT(attr->format == VK_FORMAT_R32G32B32A32_SFLOAT);
-			ASSERT(attr->offset == offsetof(Vertex, tangent));
-		}
 	}
 
 	uint32_t vs_set_count = 0, fs_set_count = 0;
@@ -738,21 +722,18 @@ size_t to_bytes(ShaderAttributeFormat format) {
 	return type_size * format.count;
 }
 
-// void resolve_pass_formats(VulkanContext *context, uint32_t pass_id,
-// 	uint32_t *out_color_count, VkFormat *out_color_formats,
-// 	VkFormat *out_depth_format) {
-// 	VulkanPass *pass = &context->pass_pool[pass_id];
-//
-// 	*out_color_count = pass->color_attachment_count;
-// 	for (uint32_t color_index = 0; color_index < pass->color_attachment_count; ++color_index) {
-// 		if (pass->color_attachments[color_index].present)
-// 			out_color_formats[color_index] = context->swapchain.format.format;
-// 		else
-// 			out_color_formats[color_index] = context->image_pool[pass->color_attachments[color_index].image_index].info.format;
-// 	}
-//
-// 	if (pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED) {
-// 		*out_depth_format = context->image_pool[pass->depth_attachment.image_index].info.format;
-// 	} else
-// 		*out_depth_format = VK_FORMAT_UNDEFINED;
-// }
+void resolve_pass_formats(VulkanContext *context, VulkanPass *pass, VkFormat *out_color_formats, VkFormat *out_depth_format) {
+	ASSERT(pass->color_attachment_count <= 4);
+
+	for (uint32_t color_index = 0; color_index < pass->color_attachment_count; ++color_index) {
+		if (pass->color_attachments[color_index].present)
+			out_color_formats[color_index] = context->swapchain.format.format;
+		else
+			out_color_formats[color_index] = context->image_pool[pass->color_attachments[color_index].image_index].info.format;
+	}
+
+	if (pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED) {
+		*out_depth_format = context->image_pool[pass->depth_attachment.image_index].info.format;
+	} else
+		*out_depth_format = VK_FORMAT_UNDEFINED;
+}

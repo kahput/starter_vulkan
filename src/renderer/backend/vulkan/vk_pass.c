@@ -11,13 +11,13 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, R
 	VULKAN_GET_OR_RETURN(pass, context->pass_pool, store_index, MAX_RENDER_PASSES, VULKAN_RESOURCE_STATE_UNINITIALIZED);
 
 	pass->color_attachment_count = desc.color_attachment_count;
-	pass->enable_msaa = desc.msaa;
+	pass->enable_msaa = desc.enable_msaa;
 
 	for (uint32_t color_index = 0; color_index < pass->color_attachment_count; ++color_index) {
 		AttachmentDesc *src = &desc.color_attachments[color_index];
 		VulkanAttachment *attachment = &pass->color_attachments[color_index];
 
-		VulkanImage *color_image = &context->image_pool[src->texture];
+		VulkanImage *image = &context->image_pool[src->texture];
 
 		attachment->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 		attachment->image_index = src->texture;
@@ -29,10 +29,12 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, R
 		attachment->clear.color.float32[1] = src->clear.color[1];
 		attachment->clear.color.float32[2] = src->clear.color[2];
 		attachment->clear.color.float32[3] = src->clear.color[3];
+
+		pass->color_formats[color_index] = image->info.format;
 	}
 
-	VulkanImage *depth_image = &context->image_pool[desc.depth_attachment.texture];
 	if (desc.use_depth) {
+		VulkanImage *image = &context->image_pool[desc.depth_attachment.texture];
 		AttachmentDesc *src = &desc.depth_attachment;
 		VulkanAttachment *attachment = &pass->depth_attachment;
 
@@ -41,6 +43,8 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, R
 		attachment->load = (VkAttachmentLoadOp)src->load;
 		attachment->store = (VkAttachmentStoreOp)src->store;
 		attachment->clear.depthStencil.depth = src->clear.depth;
+
+		pass->depth_format = image->info.format;
 	}
 
 	pass->state = VULKAN_RESOURCE_STATE_INITIALIZED;
@@ -98,10 +102,8 @@ bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index)
 				VulkanImage *image = &context->image_pool[cached->image_index];
 				vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-				if (image->width != MATCH_SWAPCHAIN)
-					extent.width = min(extent.width, image->width);
-				if (image->height != MATCH_SWAPCHAIN)
-					extent.height = min(extent.height, image->height);
+				extent.width = min(extent.width, image->width);
+				extent.height = min(extent.height, image->height);
 
 				if (vulkan_image_msaa_scratch_ensure(
 						context, &context->msaa_colors[color_index],
@@ -122,10 +124,8 @@ bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index)
 				VulkanImage *image = &context->image_pool[cached->image_index];
 				vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-				if (image->width != MATCH_SWAPCHAIN)
-					extent.width = min(extent.width, image->width);
-				if (image->height != MATCH_SWAPCHAIN)
-					extent.height = min(extent.height, image->height);
+				extent.width = min(extent.width, image->width);
+				extent.height = min(extent.height, image->height);
 
 				info->imageView = image->view;
 			}
@@ -137,10 +137,8 @@ bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index)
 		VulkanAttachment *cached = &pass->depth_attachment;
 		VulkanImage *image = &context->image_pool[cached->image_index];
 
-		if (image->width != MATCH_SWAPCHAIN)
-			extent.width = min(extent.width, image->width);
-		if (image->height != MATCH_SWAPCHAIN)
-			extent.height = min(extent.height, image->height);
+		extent.width = min(extent.width, image->width);
+		extent.height = min(extent.height, image->height);
 
 		depth_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 		depth_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
