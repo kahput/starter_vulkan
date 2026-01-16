@@ -50,7 +50,7 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index);
 
 void vulkan_renderer_shader_global_state_wireframe_set(VulkanContext *context, bool active);
 
-bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, bool is_srgb, TextureUsageFlags usage, uint8_t *pixels);
+bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, TextureFormat, TextureUsageFlags usage, uint8_t *pixels);
 bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index);
 bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, uint32_t retrieve_index);

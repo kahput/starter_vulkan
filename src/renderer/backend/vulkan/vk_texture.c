@@ -9,50 +9,23 @@
 
 #include <vulkan/vulkan_core.h>
 
-static VkFormat to_vulkan_format(uint32_t channels, bool is_srgb);
+static VkFormat to_vulkan_format(VulkanContext *context, TextureFormat format);
+static VkImageAspectFlags to_aspect(TextureFormat format);
+static uint32_t to_stride(TextureFormat format);
+static VkImageUsageFlags to_usage_flags(TextureFormat fmt, TextureUsageFlags usage, bool has_pixels);
 
-bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, uint32_t channels, bool is_srgb, TextureUsageFlags usage, uint8_t *pixels) {
-	if (store_index >= MAX_TEXTURES) {
-		LOG_ERROR("Vulkan: texture index %d out of bounds, aborting vulkan_renderer_texture_create", store_index);
-		return false;
-	}
-	if (FLAG_GET(usage, TEXTURE_USAGE_COLOR_ATTACHMENT) && FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT)) {
-		LOG_ERROR("Vulkan: texture cannot be both Color and Depth attachment, aborting vulkan_renderer_texture_create");
-		ASSERT(false);
-		return false;
-	}
+bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, TextureFormat format, TextureUsageFlags usage, uint8_t *pixels) {
+	VulkanImage *image = NULL;
+	VULKAN_GET_OR_RETURN(image, context->image_pool, store_index, MAX_TEXTURES, false);
 
-	VulkanImage *image = &context->image_pool[store_index];
-	if (image->handle != NULL) {
-		LOG_FATAL("Vulkan: texture at index %d index is already in use, aborting vulkan_renderer_texture_create", store_index);
-		ASSERT(false);
-		return false;
-	}
-
-	VkDeviceSize size = width * height * channels;
-
-	VkImageUsageFlags vk_usage = 0;
-	VkImageAspectFlags aspect = FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-	VkFormat format = to_vulkan_format(channels, is_srgb);
-	bool is_attachment = FLAG_GET(usage, TEXTURE_USAGE_COLOR_ATTACHMENT) || FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT);
-
-	if (is_attachment)
-		format = FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT) ? context->device.depth_format : context->swapchain.format.format;
-	else
-		vk_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-
-	if (FLAG_GET(usage, TEXTURE_USAGE_SAMPLED))
-		vk_usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-
-	if (FLAG_GET(usage, TEXTURE_USAGE_COLOR_ATTACHMENT))
-		vk_usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-	if (FLAG_GET(usage, TEXTURE_USAGE_DEPTH_ATTACHMENT))
-		vk_usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	VkDeviceSize size = width * height * to_stride(format);
+	VkImageUsageFlags vk_usage = to_usage_flags(format, usage, pixels != NULL);
+	VkFormat vk_format = to_vulkan_format(context, format);
+	VkImageAspectFlags aspect = to_aspect(format);
 
 	vulkan_image_create(
 		context, VK_SAMPLE_COUNT_1_BIT,
-		width, height, format, VK_IMAGE_TILING_OPTIMAL,
+		width, height, vk_format, VK_IMAGE_TILING_OPTIMAL,
 		vk_usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		image);
 
@@ -179,35 +152,71 @@ bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_i
 	return true;
 }
 
-static VkFormat to_vulkan_format(uint32_t channels, bool is_srgb) {
-	if (is_srgb)
-		switch (channels) {
-			case 1:
-				return VK_FORMAT_R8_SRGB;
-			case 2:
-				return VK_FORMAT_R8G8_SRGB;
-			case 3:
-				return VK_FORMAT_R8G8B8_SRGB;
-			case 4:
-				return VK_FORMAT_R8G8B8A8_SRGB;
-			default: {
-				LOG_WARN("Image channels must be in 1-4 range, defaulting to 3");
-				return VK_FORMAT_R8G8B8A8_SRGB;
-			} break;
-		}
-	else
-		switch (channels) {
-			case 1:
-				return VK_FORMAT_R8_UNORM;
-			case 2:
-				return VK_FORMAT_R8G8_UNORM;
-			case 3:
-				return VK_FORMAT_R8G8B8_UNORM;
-			case 4:
-				return VK_FORMAT_R8G8B8A8_UNORM;
-			default: {
-				LOG_WARN("Image channels must be in 1-4 range, defaulting to 3");
-				return VK_FORMAT_R8G8B8A8_UNORM;
-			} break;
-		}
+VkFormat to_vulkan_format(VulkanContext *context, TextureFormat format) {
+	switch (format) {
+		case TEXTURE_FORMAT_RGBA8:
+			return VK_FORMAT_R8G8B8A8_UNORM;
+		case TEXTURE_FORMAT_RGBA16F:
+			return VK_FORMAT_R16G16B16A16_SFLOAT;
+		case TEXTURE_FORMAT_R8:
+			return VK_FORMAT_R8_UNORM;
+		case TEXTURE_FORMAT_DEPTH:
+			return context->device.depth_format;
+		case TEXTURE_FORMAT_RGBA8_SRGB:
+			return VK_FORMAT_R8G8B8A8_SRGB;
+		default:
+			ASSERT(false);
+			return VK_FORMAT_UNDEFINED;
+	}
+}
+
+uint32_t to_stride(TextureFormat format) {
+	switch (format) {
+		case TEXTURE_FORMAT_RGBA8:
+			return 4;
+		case TEXTURE_FORMAT_RGBA16F:
+			return 8;
+		case TEXTURE_FORMAT_R8:
+			return 1;
+		case TEXTURE_FORMAT_DEPTH:
+			return 4;
+		default:
+			return 4;
+	}
+}
+
+VkImageAspectFlags to_aspect(TextureFormat format) {
+	switch (format) {
+		case TEXTURE_FORMAT_DEPTH:
+			return VK_IMAGE_ASPECT_DEPTH_BIT;
+		case TEXTURE_FORMAT_DEPTH_STENCIL:
+			return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+		default:
+			return VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+}
+
+VkImageUsageFlags to_usage_flags(TextureFormat format, TextureUsageFlags usage, bool has_pixels) {
+	VkImageUsageFlags vk_usage = 0;
+
+	if (has_pixels)
+		vk_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+	if (FLAG_GET(usage, TEXTURE_USAGE_SAMPLED))
+		vk_usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	if (FLAG_GET(usage, TEXTURE_USAGE_RENDER_TARGET)) {
+		if (format == TEXTURE_FORMAT_DEPTH || format == TEXTURE_FORMAT_DEPTH_STENCIL)
+			vk_usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		else
+			vk_usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	}
+
+	if (vk_usage == 0) {
+		LOG_ERROR("Vulkan: texture created with neither SAMPLED nor RENDER_TARGET usage");
+		ASSERT(false);
+		return 0;
+	}
+
+	return vk_usage;
 }

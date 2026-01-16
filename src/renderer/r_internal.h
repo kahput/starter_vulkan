@@ -35,30 +35,15 @@ typedef enum shader_attribute_format {
 	SHADER_ATTRIBUTE_TYPE_LAST
 } ShaderAttributeType;
 
-typedef enum {
-	TEXTURE_USAGE_NONE = 0,
-	TEXTURE_USAGE_SAMPLED = 1 << 0,
-	TEXTURE_USAGE_COLOR_ATTACHMENT = 1 << 1,
-	TEXTURE_USAGE_DEPTH_ATTACHMENT = 1 << 2,
-} TextureUsageFlagBits;
-typedef Flag TextureUsageFlags;
-
 typedef struct {
 	ShaderAttributeType type;
 	uint32_t count;
 } ShaderAttributeFormat;
 
-typedef struct shader_attribute {
-	String name;
-	ShaderAttributeFormat format;
-	uint32_t binding;
-} ShaderAttribute;
-
 typedef enum shader_stage {
 	SHADER_STAGE_VERTEX = 1 << 0,
 	SHADER_STAGE_FRAGMENT = 1 << 1,
-} ShaderStageFlagBits;
-typedef uint32_t ShaderStageFlag;
+} ShaderStageFlags;
 
 typedef enum {
 	SHADER_UNIFORM_FREQUENCY_PER_FRAME,
@@ -74,6 +59,29 @@ typedef enum {
 	SHADER_BINDING_TEXTURE_2D,
 	SHADER_BINDING_SAMPLER,
 } ShaderBindingType;
+
+typedef enum {
+	TEXTURE_USAGE_SAMPLED = 1u << 0,
+	TEXTURE_USAGE_RENDER_TARGET = 1u << 1,
+} TextureUsageFlags;
+
+typedef enum {
+	TEXTURE_FORMAT_RGBA8_SRGB,
+	TEXTURE_FORMAT_RGBA8,
+
+	TEXTURE_FORMAT_R8,
+
+	TEXTURE_FORMAT_RGBA16F,
+
+	TEXTURE_FORMAT_DEPTH,
+	TEXTURE_FORMAT_DEPTH_STENCIL
+} TextureFormat;
+
+typedef struct shader_attribute {
+	String name;
+	ShaderAttributeFormat format;
+	uint32_t binding;
+} ShaderAttribute;
 
 typedef struct shader_member {
 	String name;
@@ -91,7 +99,7 @@ typedef struct shader_buffer {
 typedef struct shader_binding {
 	String name;
 	ShaderBindingType type;
-	ShaderStageFlag stage;
+	ShaderStageFlags stage;
 	ShaderUniformFrequency frequency;
 	uint32_t binding, count;
 
@@ -246,9 +254,6 @@ typedef uint32_t MaterialStateFlag;
 typedef struct {
 	Handle handle;
 	ShaderReflection reflection;
-
-	void *default_ubo_data;
-	size_t ubo_size;
 } Shader;
 
 typedef struct {
@@ -257,24 +262,6 @@ typedef struct {
 
 	MaterialStateFlag flags;
 } Material;
-
-#define MAX_POINT_LIGHTS 10
-typedef struct {
-	mat4 view;
-	mat4 projection;
-	Light directional_light;
-	Light lights[MAX_POINT_LIGHTS];
-	vec3 camera_position;
-	int light_count;
-} FrameData;
-
-typedef struct material_paramters {
-	vec4 base_color_factor;
-	float metallic_factor;
-	float roughness_factor;
-	vec2 _pad0;
-	vec4 emissive_factor;
-} MaterialParameters;
 
 typedef struct texture {
 	uint32_t handle, sampler;

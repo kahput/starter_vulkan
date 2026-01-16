@@ -125,13 +125,13 @@ int main(void) {
 
 	// Create default textures
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, WHITE);
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, WHITE);
 
 	uint8_t BLACK[4] = { 0, 0, 0, 255 };
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, BLACK);
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, BLACK);
 
 	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1, 4, false, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
+	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
 
 	// Create default samplers
 	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
@@ -139,16 +139,16 @@ int main(void) {
 
 	// Create render target textures
 	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
-		state.width, state.height, 1, false,
-		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
+		state.width, state.height, TEXTURE_FORMAT_DEPTH,
+		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
 	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP,
-		state.width, state.height, 1, false,
-		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
+		state.width, state.height, TEXTURE_FORMAT_DEPTH,
+		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
 	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
-		state.width, state.height, 4, true,
-		TEXTURE_USAGE_COLOR_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
+		state.width, state.height, TEXTURE_FORMAT_RGBA16F,
+		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
 	// Create global resources
 	vulkan_renderer_resource_global_create(
@@ -301,13 +301,13 @@ int main(void) {
 	UUID sprite_id_0 = asset_library_request_image(S("tile_0085.png"), &sprite_src);
 	uint32_t sprite_texture_0 = state.next_image_index++;
 	vulkan_renderer_texture_create(state.context, sprite_texture_0,
-		sprite_src->width, sprite_src->height, sprite_src->channels, true,
+		sprite_src->width, sprite_src->height, TEXTURE_FORMAT_RGBA8_SRGB,
 		TEXTURE_USAGE_SAMPLED, sprite_src->pixels);
 
 	UUID sprite_id_1 = asset_library_request_image(S("tile_0086.png"), &sprite_src);
 	uint32_t sprite_texture_1 = state.next_image_index++;
 	vulkan_renderer_texture_create(state.context, sprite_texture_1,
-		sprite_src->width, sprite_src->height, sprite_src->channels, true,
+		sprite_src->width, sprite_src->height, TEXTURE_FORMAT_RGBA8_SRGB,
 		TEXTURE_USAGE_SAMPLED, sprite_src->pixels);
 
 	// Create material instances for sprites
@@ -356,7 +356,7 @@ int main(void) {
 
 		room_texture = state.next_image_index++;
 		vulkan_renderer_texture_create(state.context, room_texture,
-			model_src->images->width, model_src->images->height, model_src->images->channels, true,
+			model_src->images->width, model_src->images->height, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED, model_src->images->pixels);
 
 		room_material = state.next_group_index++;
@@ -724,9 +724,11 @@ bool resize_event(Event *event) {
 		state.width = wr_event->width;
 		state.height = wr_event->height;
 	}
+
 	vulkan_renderer_texture_resize(state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP, state.width, state.height);
 	vulkan_renderer_texture_resize(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP, state.width, state.height);
 	vulkan_renderer_texture_resize(state.context, RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP, state.width, state.height);
+
 	vulkan_renderer_resource_global_set_texture_sampler(state.context, RENDERER_GLOBAL_RESOURCE_POSTFX, 0, state.final_texture, RENDERER_DEFAULT_SAMPLER_NEAREST);
 
 	return true;
