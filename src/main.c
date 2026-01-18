@@ -48,6 +48,11 @@ typedef enum {
 } SamplerIndex;
 
 typedef enum {
+	RENDERER_DEFAULT_SHADER_VARIANT_STANDARD,
+	RENDERER_DEFAULT_SHADER_VARIANT_WIREFRAME
+} ShaderVariant;
+
+typedef enum {
 	RENDERER_DEFAULT_PASS_SHADOW,
 	RENDERER_DEFAULT_PASS_MAIN,
 	RENDERER_DEFAULT_PASS_POSTFX
@@ -96,6 +101,8 @@ static struct State {
 	uint32_t next_image_index;
 	uint32_t next_group_index;
 } state;
+
+static bool wireframe = false;
 
 int main(void) {
 	state.permanent_arena = arena_create(MiB(512));
@@ -238,8 +245,19 @@ int main(void) {
 		desc.cull_mode = CULL_MODE_BACK;
 
 		ShaderReflection reflection;
-		vulkan_renderer_shader_create(&state.permanent_arena, state.context,
-			default_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, RENDERER_DEFAULT_PASS_MAIN, &shader_config, desc, &reflection);
+		vulkan_renderer_shader_create(
+			&state.permanent_arena, state.context,
+			default_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN,
+			&shader_config, &reflection);
+		vulkan_renderer_shader_variant_create(
+			state.context, default_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_MAIN,
+			desc);
+		desc.polygon_mode = POLYGON_MODE_LINE;
+		vulkan_renderer_shader_variant_create(
+			state.context, default_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_WIREFRAME, RENDERER_DEFAULT_PASS_MAIN,
+			desc);
 	}
 	arena_release_scratch(scratch);
 
@@ -282,7 +300,16 @@ int main(void) {
 
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(&state.permanent_arena, state.context,
-			sprite_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, RENDERER_DEFAULT_PASS_MAIN, &sprite_config, desc, &reflection);
+			sprite_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, &sprite_config, &reflection);
+		vulkan_renderer_shader_variant_create(
+			state.context, sprite_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_MAIN,
+			desc);
+		desc.polygon_mode = POLYGON_MODE_LINE;
+		vulkan_renderer_shader_variant_create(
+			state.context, sprite_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_WIREFRAME, RENDERER_DEFAULT_PASS_MAIN,
+			desc);
 	}
 
 	// Create plane mesh
@@ -393,7 +420,16 @@ int main(void) {
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(
 			&state.permanent_arena, state.context,
-			light_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, RENDERER_DEFAULT_PASS_MAIN, &light_config, desc, &reflection);
+			light_shader_index, RENDERER_GLOBAL_RESOURCE_MAIN, &light_config, &reflection);
+		vulkan_renderer_shader_variant_create(
+			state.context, light_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_MAIN,
+			desc);
+		desc.polygon_mode = POLYGON_MODE_LINE;
+		vulkan_renderer_shader_variant_create(
+			state.context, light_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_WIREFRAME, RENDERER_DEFAULT_PASS_MAIN,
+			desc);
 	}
 
 	ShaderSource *shadow_shader_src = NULL;
@@ -420,7 +456,11 @@ int main(void) {
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(
 			&state.permanent_arena, state.context,
-			shadow_shader_index, RENDERER_GLOBAL_RESOURCE_SHADOW, RENDERER_DEFAULT_PASS_SHADOW, &shadow_config, desc, &reflection);
+			shadow_shader_index, RENDERER_GLOBAL_RESOURCE_SHADOW, &shadow_config, &reflection);
+		vulkan_renderer_shader_variant_create(
+			state.context, shadow_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_SHADOW,
+			desc);
 	}
 
 	ShaderSource *postfx_shader_src = NULL;
@@ -439,7 +479,11 @@ int main(void) {
 		ShaderReflection reflection;
 		vulkan_renderer_shader_create(
 			&state.permanent_arena, state.context,
-			postfx_shader_index, RENDERER_GLOBAL_RESOURCE_POSTFX, RENDERER_DEFAULT_PASS_POSTFX, &postfx_config, desc, &reflection);
+			postfx_shader_index, RENDERER_GLOBAL_RESOURCE_POSTFX, &postfx_config, &reflection);
+		vulkan_renderer_shader_variant_create(
+			state.context, postfx_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_POSTFX,
+			desc);
 	}
 	float quadVertices[] = {
 		-1.0f, 1.0f, 0.0f, 1.0f,
@@ -494,8 +538,6 @@ int main(void) {
 
 		state.current_layer->update(delta_time);
 
-		LOG_INFO("Sun direction = { %.2f, %.2f, %.2f }", lights[0].as.direction[0], lights[0].as.direction[1], lights[0].as.direction[2]);
-
 		lights[1].as.position[0] = cos(time) * 5;
 		lights[1].as.position[2] = sin(time) * 5;
 
@@ -516,15 +558,13 @@ int main(void) {
 				glm_vec3_scale(lights[0].as.direction, -scene_radius - 15.0f, light_position);
 				glm_lookat(light_position, light_target, (vec3){ 0.0f, 1.0f, 0.0f }, light_view);
 
-				LOG_INFO("Light position: { %.2f, %.2f, %.2f }", light_position[0], light_position[1], light_position[2]);
-
 				mat4 light_matrix;
 				glm_mat4_mul(light_projection, light_view, light_matrix);
 
 				vulkan_renderer_resource_global_write(state.context, RENDERER_GLOBAL_RESOURCE_SHADOW, 0,
 					sizeof(mat4), &light_matrix);
 				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_SHADOW);
-				vulkan_renderer_shader_bind(state.context, shadow_shader_index);
+				vulkan_renderer_shader_bind(state.context, shadow_shader_index, RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
 
 				// Draw sprites
 				mat4 transform = GLM_MAT4_IDENTITY_INIT;
@@ -593,7 +633,7 @@ int main(void) {
 				glm_translate(transform, (vec3){ 1.0f, 0.75f, 1.0f });
 				glm_scale(transform, (vec3){ 1.5f, 1.5f, 1.5f });
 
-				vulkan_renderer_shader_bind(state.context, sprite_shader_index);
+				vulkan_renderer_shader_bind(state.context, sprite_shader_index, wireframe);
 				vulkan_renderer_resource_group_bind(state.context, sprite_mat_0, 0);
 				vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
 				vulkan_renderer_buffer_bind(state.context, plane_vb, 0);
@@ -612,7 +652,7 @@ int main(void) {
 					glm_mat4_identity(transform);
 					glm_translate(transform, (vec3){ 0.0f, 0.0f, 0.0f });
 
-					vulkan_renderer_shader_bind(state.context, default_shader_index);
+					vulkan_renderer_shader_bind(state.context, default_shader_index, wireframe);
 					vulkan_renderer_resource_group_bind(state.context, room_material, 0);
 					vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
 					vulkan_renderer_buffer_bind(state.context, room_vb, 0);
@@ -626,7 +666,7 @@ int main(void) {
 				}
 
 				// Draw light debug
-				vulkan_renderer_shader_bind(state.context, light_shader_index);
+				vulkan_renderer_shader_bind(state.context, light_shader_index, wireframe);
 				for (uint32_t index = 0; index < countof(lights); ++index) {
 					if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
 						continue;
@@ -648,7 +688,7 @@ int main(void) {
 			// Postfx pass
 			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_POSTFX);
 			{
-				vulkan_renderer_shader_bind(state.context, postfx_shader_index);
+				vulkan_renderer_shader_bind(state.context, postfx_shader_index, RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
 				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_POSTFX);
 				vulkan_renderer_buffer_bind(state.context, quadBuffer, 0);
 				vulkan_renderer_draw(state.context, 6);
@@ -658,11 +698,8 @@ int main(void) {
 			Vulkan_renderer_frame_end(state.context);
 		}
 
-		static bool wireframe = false;
-		if (input_key_pressed(SV_KEY_ENTER)) {
+		if (input_key_pressed(SV_KEY_ENTER))
 			wireframe = !wireframe;
-			vulkan_renderer_shader_global_state_wireframe_set(state.context, wireframe);
-		}
 
 		if (input_key_down(SV_KEY_LEFTCTRL))
 			platform_pointer_mode(&state.display, PLATFORM_POINTER_NORMAL);

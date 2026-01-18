@@ -15,6 +15,7 @@ typedef struct vulkan_context VulkanContext;
 #define MAX_RENDER_TARGETS 32
 
 #define MAX_SHADERS 32
+#define MAX_SHADER_VARIANTS 8
 #define MAX_GLOBAL_RESOURCES 32
 #define MAX_GROUP_RESOURCES 256
 #define MAX_GEOMETRY_RESOURCES 1024
@@ -27,7 +28,6 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_t height);
 bool Vulkan_renderer_frame_end(VulkanContext *context);
 
-// TODO: Render passes
 bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, RenderPassDesc desc);
 bool vulkan_renderer_pass_destroy(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index);
@@ -36,19 +36,12 @@ bool vulkan_renderer_pass_end(VulkanContext *context);
 bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-bool vulkan_renderer_shader_create(
-	Arena *arena, VulkanContext *context,
-	uint32_t store_index, uint32_t compatible_global, uint32_t pass_interface,
-	ShaderConfig *config, PipelineDesc description, ShaderReflection *out_reflection);
+bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, uint32_t compatible_global, ShaderConfig *config, ShaderReflection *out_reflection);
 bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index);
-bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index);
-// TODO: Variants
-// bool vulkan_renderer_shader_variant_create(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, uint32_t compatible_pass, PipelineDesc description);
-// bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, PipelineDesc description);
-// bool vulkan_renderer_shader_variant_set(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
-// bool vulkan_renderer_shader_variant_lock(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
+bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
 
-void vulkan_renderer_shader_global_state_wireframe_set(VulkanContext *context, bool active);
+bool vulkan_renderer_shader_variant_create(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, uint32_t compatible_pass, PipelineDesc description);
+bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
 
 bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, TextureFormat, TextureUsageFlags usage, uint8_t *pixels);
 bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index);

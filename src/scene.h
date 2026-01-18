@@ -1,6 +1,8 @@
 #pragma once
 #include <cglm/cglm.h>
 
+#include "common.h"
+
 typedef enum {
 	CAMERA_PROJECTION_PERSPECTIVE = 0,
 	CAMERA_PROJECTION_ORTHOGRAPHIC

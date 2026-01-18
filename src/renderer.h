@@ -1,4 +1,4 @@
-#pragma once
+// #pragma once
 //
 // #include "core/r_types.h"
 // #include "renderer/r_internal.h"

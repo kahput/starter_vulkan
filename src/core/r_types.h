@@ -6,6 +6,16 @@
 
 #include <cglm/cglm.h>
 
+// clang-format off
+typedef struct { uint32_t index; } RhiBuffer;
+typedef struct { uint32_t index; } RhiTexture;
+typedef struct { uint32_t index; } RhiSampler;
+typedef struct { uint32_t index; } RhiShader;
+typedef struct { uint32_t index; } RhiPass;
+typedef struct { uint32_t index; } RhiGlobalResource;
+typedef struct { uint32_t index; } RhiGroupResource;
+// clang-format on
+
 typedef Handle RTexture;
 typedef Handle RShader;
 typedef Handle RMaterial;

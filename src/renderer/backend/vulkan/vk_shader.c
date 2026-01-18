@@ -18,17 +18,16 @@
 #include <vulkan/vulkan_core.h>
 
 bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, PipelineDesc description, VulkanPipeline *variant);
+bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant);
+
 bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, VulkanGlobalResource *global, ShaderConfig *config, ShaderReflection *out_reflection);
 
 bool vulkan_renderer_shader_create(
 	Arena *arena, VulkanContext *context,
-	uint32_t store_index, uint32_t compatible_global, uint32_t pass_interface,
-	ShaderConfig *config, PipelineDesc description, ShaderReflection *out_reflection) {
+	uint32_t store_index, uint32_t compatible_global,
+	ShaderConfig *config, ShaderReflection *out_reflection) {
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, store_index, MAX_SHADERS, false);
-
-	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN(pass, context->pass_pool, pass_interface, MAX_RENDER_PASSES, true);
 
 	VulkanGlobalResource *global = NULL;
 	VULKAN_GET_OR_RETURN(global, context->global_resources, compatible_global, MAX_GLOBAL_RESOURCES, true);
@@ -61,30 +60,14 @@ bool vulkan_renderer_shader_create(
 	}
 
 	reflect_shader_interface(arena, context, shader, global, config, out_reflection);
-	shader->bind_variant = description.polygon_mode == POLYGON_MODE_FILL ? 0 : 1;
-
-	description.polygon_mode = POLYGON_MODE_FILL;
-	create_shader_variant(context, shader, pass, description, &shader->variants[0]);
-
-	description.polygon_mode = POLYGON_MODE_LINE;
-	create_shader_variant(context, shader, pass, description, &shader->variants[1]);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	return true;
 }
 
 bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index) {
-	if (retrieve_index >= MAX_SHADERS) {
-		LOG_ERROR("Vulkan: Shader index %d out of bounds", retrieve_index);
-		return false;
-	}
-
-	VulkanShader *shader = &context->shader_pool[retrieve_index];
-	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
-		LOG_FATAL("Engine: Frontend renderer tried to destroy shader at index %d, but index is not in use", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+	VulkanShader *shader = NULL;
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, retrieve_index, MAX_SHADERS, true);
 
 	vkDestroyShaderModule(context->device.logical, shader->vertex_shader, NULL);
 	vkDestroyShaderModule(context->device.logical, shader->fragment_shader, NULL);
@@ -95,10 +78,7 @@ bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_in
 	for (uint32_t index = 0; index < shader->variant_count; ++index) {
 		VulkanPipeline *pipeline = &shader->variants[index];
 
-		if (pipeline->handle) {
-			vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
-			pipeline->handle = NULL;
-		}
+		destroy_shader_variant(context, shader, pipeline);
 	}
 
 	*shader = (VulkanShader){ 0 };
@@ -253,36 +233,58 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	shader->variant_count++;
 
 	LOG_INFO("Vulkan: VkPipeline created");
+	variant->state = VULKAN_RESOURCE_STATE_INITIALIZED;
+
 	return true;
 }
 
-bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index) {
-	if (shader_index >= MAX_SHADERS) {
-		LOG_ERROR("Vulkan: shader index %d out of bounds, aborting vulkan_renderer_shader_bind", shader_index);
-		return false;
+bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant) {
+	if (variant->state == VULKAN_RESOURCE_STATE_INITIALIZED) {
+		vkDestroyPipeline(context->device.logical, variant->handle, NULL);
+		*variant = (VulkanPipeline){ 0 };
+
+		return true;
 	}
 
-	VulkanShader *shader = &context->shader_pool[shader_index];
-	VulkanPipeline *pipeline = &shader->variants[shader->bind_variant];
-	if (pipeline->handle == NULL) {
-		ASSERT_FORMAT(false, "Engine: Frontend renderer tried to bind shader at index %d, but index is not in use", shader_index);
-		return false;
-	}
+	return false;
+}
+
+bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t variant_index) {
+	VulkanShader *shader = NULL;
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, shader_index, MAX_SHADERS, true);
+
+	VulkanPipeline *pipeline = NULL;
+	VULKAN_GET_OR_RETURN(pipeline, shader->variants, variant_index, countof(shader->variants), true);
+
 	context->bound_shader = shader;
-
 	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
 	return true;
 }
 
-void vulkan_renderer_shader_global_state_wireframe_set(VulkanContext *context, bool active) {
-	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
-		VulkanShader *shader = &context->shader_pool[index];
-		if (shader == NULL)
-			continue;
+bool vulkan_renderer_shader_variant_create(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, uint32_t compatible_pass, PipelineDesc description) {
+	VulkanShader *shader = NULL;
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, shader_index, MAX_SHADERS, true);
 
-		shader->bind_variant = active ? 1 : shader->bind_variant == 1 ? 0
-																	  : shader->bind_variant;
-	}
+	VulkanPass *pass = NULL;
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, compatible_pass, MAX_RENDER_PASSES, true);
+
+	VulkanPipeline *pipeline = NULL;
+	VULKAN_GET_OR_RETURN(pipeline, shader->variants, variant_index, MAX_SHADER_VARIANTS, false);
+
+	if (create_shader_variant(context, shader, pass, description, pipeline))
+		return false;
+
+	return true;
+}
+
+bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, uint32_t shader_index, uint32_t variant_index) {
+	VulkanShader *shader = NULL;
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, shader_index, MAX_SHADERS, true);
+
+	VulkanPipeline *pipeline = NULL;
+	VULKAN_GET_OR_RETURN(pipeline, shader->variants, variant_index, countof(shader->variants), true);
+
+	return destroy_shader_variant(context, shader, pipeline);
 }
 
 static uint32_t count_shader_members(SpvReflectBlockVariable *var) {

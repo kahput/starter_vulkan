@@ -19,7 +19,6 @@
 #define MAX_BINDINGS_PER_RESOURCE 16
 #define MAX_PUSH_CONSTANT_RANGES 3
 #define MAX_UNIFORMS 32
-#define MAX_VARIANTS 8
 
 typedef enum {
 	VULKAN_RESOURCE_STATE_UNINITIALIZED,
@@ -95,6 +94,8 @@ typedef struct vulkan_resource_set {
 } VulkanResourceSet;
 
 typedef struct vulkan_pipeline {
+	VulkanResourceState state;
+
 	VkPipeline handle;
 	PipelineDesc description;
 } VulkanPipeline;
@@ -241,8 +242,8 @@ typedef struct vulkan_shader {
 	VkDeviceSize instance_size;
 	VkPipelineLayout pipeline_layout;
 
-	VulkanPipeline variants[MAX_VARIANTS];
-	uint32_t variant_count, bind_variant;
+	VulkanPipeline variants[MAX_SHADER_VARIANTS];
+	uint32_t variant_count;
 } VulkanShader;
 
 typedef struct vulkan_sampler {
