@@ -244,9 +244,9 @@ bool wl_startup(Platform *platform) {
 
 	// xdg_toplevel_set_fullscreen(wl->xdg.toplevel, wl->output);
 	xdg_surface_set_window_geometry(wl->xdg.surface, 0, 0, platform->physical_width, platform->physical_height);
-	xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
-	xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
-
+	// xdg_toplevel_set_min_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	// xdg_toplevel_set_max_size(wl->xdg.toplevel, platform->logical_width, platform->logical_height);
+	//
 	xdg_toplevel_add_listener(wl->xdg.toplevel, &toplevel_listener, platform);
 
 	wl->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(wl->fractional_scale_manager, wl->surface);

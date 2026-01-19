@@ -4,10 +4,12 @@
 #include "core/logger.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "dirent.h"
 
@@ -37,6 +39,30 @@ FileContent filesystem_read(Arena *arena, String path) {
 	fclose(file);
 
 	return (FileContent){ .size = size, .content = byte_content };
+}
+
+bool filesystem_file_copy(String from, String to) {
+	int input = open(from.data, O_RDONLY);
+	if (input == -1)
+		return false;
+
+	// 0666 = Read/Write permissions
+	int output = open(to.data, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (output == -1) {
+		close(input);
+		return false;
+	}
+
+	// Simple buffer copy
+	char buffer[4096];
+	ssize_t bytes;
+	while ((bytes = read(input, buffer, sizeof(buffer))) > 0) {
+		write(output, buffer, bytes);
+	}
+
+	close(input);
+	close(output);
+	return true;
 }
 
 FileNode *filesystem_load_directory_files(Arena *arena, String directory_path, bool recursive) {
@@ -91,8 +117,9 @@ FileNode *filesystem_load_directory_files(Arena *arena, String directory_path, b
 }
 
 uint64_t filesystem_last_modified(String path) {
-	struct stat attr;
-	stat((const char *)path.data, &attr);
-
-	return (uint64_t)(attr.st_mtim.tv_sec * 1000ULL + attr.st_mtim.tv_nsec / 1000000ULL);
+	struct stat attrib;
+	if (stat(path.data, &attrib) == 0) {
+		return (uint64_t)attrib.st_mtime;
+	}
+	return 0;
 }

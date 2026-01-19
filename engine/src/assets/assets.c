@@ -119,7 +119,7 @@ UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shad
 		return INVALID_UUID;
 	}
 
-	(*out_shader)->path = string_format(arena, S("%s/%s"), string_directory_from_path(scratch.arena, vs_entry->full_path).data, key.data);
+	(*out_shader)->path = string_format(arena, "%s/%s", string_directory_from_path(scratch.arena, vs_entry->full_path).data, key.data);
 	(*out_shader)->id = string_hash64((*out_shader)->path);
 
 	arena_release_scratch(scratch);
@@ -127,7 +127,8 @@ UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shad
 }
 
 UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model, bool use_cached_textures) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry); if (entry == NULL) {
+	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
+	if (entry == NULL) {
 		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
 		*out_model = NULL;
 		return INVALID_UUID;

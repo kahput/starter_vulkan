@@ -10,6 +10,14 @@ build() {
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR" || exit 1
     cmake -GNinja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=99 "$PROJECT_ROOT"
+    cmake --build .
+    cp compile_commands.json ..
+}
+
+run() {
+    echo "[INFO] running..."
+    cd "${BUILD_DIR}/bin/Debug"
+    "./program"
 }
 
 # Function to clean the build directory
@@ -22,6 +30,9 @@ clean() {
 case "$1" in
     build)
         build
+        ;;
+    run)
+        run
         ;;
     clean)
         clean

@@ -35,7 +35,7 @@ String string_concat(Arena *arena, String head, String tail);
 String string_insert_at(Arena *arena, String into, String insert, uint32_t index);
 String string_find_and_replace(Arena *arena, String string, String find, String replace);
 
-String string_format(Arena *arena, String format, ...);
+String string_format(Arena *arena, const char *, ...);
 
 String string_directory_from_path(Arena *arena, String path);
 String string_filename_from_path(Arena *arena, String path);

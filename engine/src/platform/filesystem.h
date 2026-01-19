@@ -19,6 +19,7 @@ typedef struct file_path_node {
 bool filesystem_file_exists(String path);
 FileContent filesystem_read(struct arena *arena, String path);
 
+bool filesystem_file_copy(String from, String to);
 FileNode *filesystem_load_directory_files(Arena *arena, String directory_path, bool recursive);
 
 uint64_t filesystem_last_modified(String path);

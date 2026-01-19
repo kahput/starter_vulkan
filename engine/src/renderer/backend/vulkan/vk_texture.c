@@ -1,7 +1,7 @@
 #include "common.h"
+#include "renderer/backend/vulkan_api.h"
 #include "renderer/r_internal.h"
 #include "vk_internal.h"
-#include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
@@ -12,9 +12,12 @@
 static VkFormat to_vulkan_format(VulkanContext *context, TextureFormat format);
 static VkImageAspectFlags to_aspect(TextureFormat format);
 static uint32_t to_stride(TextureFormat format);
-static VkImageUsageFlags to_usage_flags(TextureFormat fmt, TextureUsageFlags usage, bool has_pixels);
+static VkImageUsageFlags to_usage_flags(TextureFormat fmt, TextureUsageFlags usage,
+	bool has_pixels);
 
-bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, TextureFormat format, TextureUsageFlags usage, uint8_t *pixels) {
+bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width,
+	uint32_t height, TextureFormat format, TextureUsageFlags usage,
+	uint8_t *pixels) {
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, store_index, MAX_TEXTURES, false);
 
@@ -23,25 +26,27 @@ bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index
 	VkFormat vk_format = to_vulkan_format(context, format);
 	VkImageAspectFlags aspect = to_aspect(format);
 
-	vulkan_image_create(
-		context, VK_SAMPLE_COUNT_1_BIT,
-		width, height, vk_format, VK_IMAGE_TILING_OPTIMAL,
-		vk_usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	vulkan_image_create(context, VK_SAMPLE_COUNT_1_BIT, width, height, vk_format,
+		VK_IMAGE_TILING_OPTIMAL, vk_usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		image);
 
 	if (pixels) {
 		VulkanBuffer *staging_buffer = &context->staging_buffer;
-		size_t copy_end = aligned_address(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
+		size_t copy_end = aligned_address(staging_buffer->offset + size,
+			context->device.properties.limits.minMemoryMapAlignment);
 		size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
 		if (copy_end >= staging_buffer->size) {
-			LOG_ERROR("Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
+			LOG_ERROR(
+				"Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
 			ASSERT(false);
 			return false;
 		}
 
-		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, pixels);
+		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset,
+			size, pixels);
 		staging_buffer->offset = copy_end;
-		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, width, height);
+		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, width,
+			height);
 		image->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	}
 
@@ -71,8 +76,7 @@ bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, uint32_
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
 
-	VkImageLayout new_layout =
-		image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
+	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
@@ -84,8 +88,7 @@ bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, uint32_t ret
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
 
-	VkImageLayout new_layout =
-		image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
+	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
@@ -94,7 +97,8 @@ bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, uint32_t ret
 	return true;
 }
 
-bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_index, uint32_t width, uint32_t height) {
+bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_index, uint32_t width,
+	uint32_t height) {
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
 
@@ -102,13 +106,16 @@ bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_in
 	vkDestroyImage(context->device.logical, image->handle, NULL);
 	vkFreeMemory(context->device.logical, image->memory, NULL);
 
-	vulkan_image_create(context, image->info.samples, width, height, image->info.format, VK_IMAGE_TILING_OPTIMAL, image->info.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image);
+	vulkan_image_create(context, image->info.samples, width, height, image->info.format,
+		VK_IMAGE_TILING_OPTIMAL, image->info.usage,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image);
 	vulkan_image_view_create(context, image->aspect, image);
 
 	return true;
 }
 
-bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index, SamplerDesc description) {
+bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index,
+	SamplerDesc description) {
 	VulkanSampler *sampler = NULL;
 	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, store_index, MAX_SAMPLERS, false);
 
@@ -122,7 +129,9 @@ bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index
 		.addressModeW = (VkSamplerAddressMode)description.address_mode_w,
 		.mipLodBias = 0.0f,
 		.anisotropyEnable = description.anisotropy_enable,
-		.maxAnisotropy = description.anisotropy_enable ? context->device.properties.limits.maxSamplerAnisotropy : 0.0f,
+		.maxAnisotropy = description.anisotropy_enable
+			? context->device.properties.limits.maxSamplerAnisotropy
+			: 0.0f,
 		.compareEnable = VK_FALSE,
 		.compareOp = VK_COMPARE_OP_ALWAYS,
 		.minLod = 0.0f,
@@ -131,7 +140,8 @@ bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index
 		.unnormalizedCoordinates = VK_FALSE
 	};
 
-	if (vkCreateSampler(context->device.logical, &sampler->info, NULL, &sampler->handle) != VK_SUCCESS) {
+	if (vkCreateSampler(context->device.logical, &sampler->info, NULL, &sampler->handle) !=
+		VK_SUCCESS) {
 		LOG_ERROR("Failed to create VkSampler");
 		return false;
 	}

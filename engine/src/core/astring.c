@@ -153,7 +153,7 @@ String string_directory_from_path(Arena *arena, String path) {
 	return directory;
 }
 
-String string_format(Arena *arena, String format, ...) {
+String string_format(Arena *arena, const char *format, ...) {
 	va_list args;
 	va_start(args, format);
 
@@ -164,7 +164,7 @@ String string_format(Arena *arena, String format, ...) {
 
 	// 1. Pass One: Determine the required length (excluding null terminator)
 	// We assume format.data is null-terminated (Safe if using SLITERAL or S macros)
-	int length = vsnprintf(NULL, 0, format.data, args);
+	int length = vsnprintf(NULL, 0, format, args);
 
 	if (length < 0) {
 		// Handle encoding errors (optional)
@@ -179,7 +179,7 @@ String string_format(Arena *arena, String format, ...) {
 	char *buffer = arena_push_array_zero(arena, char, size);
 
 	// 3. Pass Two: Write the formatted string to the buffer
-	vsnprintf(buffer, size, format.data, args_copy);
+	vsnprintf(buffer, size, format, args_copy);
 
 	va_end(args_copy);
 	va_end(args);

@@ -54,7 +54,7 @@ void logger_dedent(void) {
 		g_logger.indent--;
 }
 
-void logger_log(LogLevel level, const char *file, int line, const char *format, ...) {
+ENGINE_API void logger_log(LogLevel level, const char *file, int line, const char *format, ...) {
 	if (level < g_logger.level) {
 		return;
 	}

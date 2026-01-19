@@ -5,8 +5,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifndef offsetof
-	#define offsetof(type, member) (size_t)(&(((type *)0)->member))
+#if defined(__linux__) || defined(__APPLE__)
+	#define ENGINE_API __attribute__((visibility("default")))
+#elif defined(_WIN32)
+	#ifdef ENGINE_EXPORT
+		#define ENGINE_API __declspec(dllexport)
+	#else
+		#define ENGINE_API __declspec(dllimport)
+	#endif
+#else
+	#define ENGINE_API
 #endif
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L

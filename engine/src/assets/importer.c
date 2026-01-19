@@ -117,16 +117,16 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 			String mime_type = string_wrap_cstring(src->mime_type);
 
 			String filename = string_find_and_replace(scratch.arena, string_filename_from_path(scratch.arena, path), S(".glb"), S(""));
-			String name = string_format(scratch.arena, S("%s_%s"), filename.data, (src->name ? src->name : "image"));
+			String name = string_format(scratch.arena, "%s_%s", filename.data, (src->name ? src->name : "image"));
 			if (string_contains(string_wrap_cstring(src->mime_type), S("png")) != -1) {
-				dst->path = string_format(arena, S("%s/%s.png"), base_directory.data, name.data);
+				dst->path = string_format(arena, "%s/%s.png", base_directory.data, name.data);
 				if (filesystem_file_exists(dst->path) == false) {
 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 					stbi_write_png(dst->path.data, dst->width, dst->height, 4, pixels, STBI_default);
 					stbi_image_free(pixels);
 				}
 			} else if (string_contains(mime_type, S("jpg")) != -1 || string_contains(mime_type, S("jpeg")) != -1) {
-				dst->path = string_format(arena, S("%s/%s.jpg"), base_directory.data, name.data);
+				dst->path = string_format(arena, "%s/%s.jpg", base_directory.data, name.data);
 				if (filesystem_file_exists(dst->path) == false) {
 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 					stbi_write_jpg(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
@@ -134,7 +134,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 				}
 			}
 		} else if (src->uri) {
-			dst->path = string_format(arena, S("%s/%s"), base_directory.data, src->uri);
+			dst->path = string_format(arena, "%s/%s", base_directory.data, src->uri);
 		}
 	}
 
