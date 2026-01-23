@@ -7,13 +7,13 @@
 #ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
-layout(location = 0) in vec2 in_position;
+layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec2 in_uv;
 
 layout(location = 0) out vec2 out_uv;
 
 void main() {
-    gl_Position = vec4(in_position, 0.0f, 1.0f);
+    gl_Position = vec4(in_position.xy, 0.0f, 1.0f);
     out_uv = in_uv;
 }
 

@@ -6,7 +6,7 @@
 typedef uint64_t UUID;
 
 UUID identifier_generate(void);
-UUID identifier_create_from_u64(uint64_t uuid);
+ENGINE_API UUID identifier_create_from_u64(uint64_t uuid);
 
 typedef struct {
 	UUID id;
@@ -15,7 +15,7 @@ typedef struct {
 
 #define INVALID_HANDLE ((Handle){ .id = INVALID_UUID, INVALID_INDEX })
 Handle handle_create(uint32_t index);
-Handle handle_create_with_uuid(uint32_t index, UUID id);
+ENGINE_API Handle handle_create_with_uuid(uint32_t index, UUID id);
 bool handle_is_valid(Handle handle);
 
 typedef struct index_recycler {

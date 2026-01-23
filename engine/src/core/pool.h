@@ -2,7 +2,6 @@
 #define POOL_H
 
 #include "core/arena.h"
-#include "common.h"
 
 struct arena;
 
@@ -15,6 +14,8 @@ typedef struct pool {
 	size_t slot_size;
 } Pool;
 
+void *pool_create(size_t slot_size, uint32_t capcity);
+void *pool_create_frm_arena(Arena *arena, uint32_t capacity, size_t slot_size, size_t alignment);
 Pool *allocator_pool(size_t slot_size, uint32_t capacity);
 Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_size, size_t alignment);
 void pool_destroy(Pool *pool);

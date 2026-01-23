@@ -102,12 +102,8 @@ bool vulkan_renderer_buffer_write(VulkanContext *context, uint32_t retrieve_inde
 }
 
 bool vulkan_renderer_buffer_bind(VulkanContext *context, uint32_t retrieve_index, size_t index_size) {
-	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
-	if (buffer->handle == NULL) {
-		LOG_ERROR("Vulkan: Buffer at index %d not in use, aborting vulkan_renderer_buffer_bind", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+	const VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, retrieve_index, MAX_BUFFERS, true);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffer[] = { buffer->handle };

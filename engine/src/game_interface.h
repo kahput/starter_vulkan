@@ -1,13 +1,16 @@
 #pragma once
 
+#include "assets.h"
 #include "common.h"
 #include "core/arena.h"
 #include "renderer/backend/vulkan_api.h"
 
 typedef struct {
-	Arena arena;
+	void* game_memory;
+    size_t game_memory_size;
 
 	VulkanContext *vk_context;
+	AssetLibrary *asset_library;
 } GameContext;
 
 typedef struct {

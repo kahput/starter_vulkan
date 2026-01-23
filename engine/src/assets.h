@@ -25,19 +25,19 @@ typedef struct asset_library {
 	uint32_t tracked_file_count;
 } AssetLibrary;
 
-bool asset_library_startup(void *memory, size_t size);
+bool asset_library_startup(AssetLibrary *library, void *memory, size_t size);
 
-bool asset_library_track_directory(String directory);
-bool asset_library_track_file(String file_path);
+bool asset_library_track_directory(AssetLibrary *library, String directory);
+bool asset_library_track_file(AssetLibrary *library, String file_path);
 
-UUID asset_library_model_mesh_id(String key, uint32_t index);
+UUID asset_library_model_mesh_id(AssetLibrary *library, String key, uint32_t index);
 
-UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shader);
-UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model, bool use_cached_textures);
-UUID asset_library_load_image(Arena *arena, String key, ImageSource **out_texture);
+UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, ShaderSource **out_shader);
+UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, ModelSource **out_model, bool use_cached_textures);
+UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, ImageSource **out_texture);
 
-UUID asset_library_request_shader(String key, ShaderSource **out_shader);
-UUID asset_library_request_model(String key, ModelSource **out_model);
-UUID asset_library_request_image(String key, ImageSource **out_image);
+ENGINE_API UUID asset_library_request_shader(AssetLibrary *library, String key, ShaderSource **out_shader);
+UUID asset_library_request_model(AssetLibrary *library, String key, ModelSource **out_model);
+ENGINE_API UUID asset_library_request_image(AssetLibrary *library, String key, ImageSource **out_image);
 
-bool asset_library_clear_cache(void);
+bool asset_library_clear_cache(AssetLibrary *library);

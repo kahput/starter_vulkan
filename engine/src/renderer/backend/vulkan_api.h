@@ -33,14 +33,14 @@ bool vulkan_renderer_pass_destroy(VulkanContext *context, uint32_t retrieve_inde
 bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_pass_end(VulkanContext *context);
 
-bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
+ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, uint32_t compatible_global, ShaderConfig *config, ShaderReflection *out_reflection);
+ENGINE_API bool vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, uint32_t store_index, uint32_t compatible_global, ShaderConfig *config, ShaderReflection *out_reflection);
 bool vulkan_renderer_shader_destroy(VulkanContext *context, uint32_t retrieve_index);
-bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
+ENGINE_API bool vulkan_renderer_shader_bind(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
 
-bool vulkan_renderer_shader_variant_create(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, uint32_t compatible_pass, PipelineDesc description);
+ENGINE_API bool vulkan_renderer_shader_variant_create(VulkanContext *context, uint32_t shader_index, uint32_t variant_index, uint32_t compatible_pass, PipelineDesc description);
 bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, uint32_t shader_index, uint32_t variant_index);
 
 ENGINE_API bool vulkan_renderer_texture_create(VulkanContext *context, uint32_t store_index, uint32_t width, uint32_t height, TextureFormat, TextureUsageFlags usage, uint8_t *pixels);
@@ -54,11 +54,11 @@ bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_in
 // bool vulkan_renderer_geometry_destroy(VulkanContext *context, uint32_t retrieve_index);
 // bool vulkan_renderer_geometry_draw(VulkanContext *context, uint32_t retrieve_index);
 
-bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
+ENGINE_API bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data);
 bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_buffer_write(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data);
-bool vulkan_renderer_buffer_bind(VulkanContext *context, uint32_t retrieve_index, size_t index_size);
-bool vulkan_renderer_buffers_bind(VulkanContext *context, uint32_t *buffers, uint32_t count);
+ENGINE_API bool vulkan_renderer_buffer_bind(VulkanContext *context, uint32_t retrieve_index, size_t index_size);
+ENGINE_API bool vulkan_renderer_buffers_bind(VulkanContext *context, uint32_t *buffers, uint32_t count);
 
 bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index, SamplerDesc description);
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_index);
@@ -69,10 +69,10 @@ bool vulkan_renderer_resource_global_write(VulkanContext *context, uint32_t retr
 bool vulkan_renderer_resource_global_bind(VulkanContext *context, uint32_t retrieve_index);
 bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context, uint32_t retrieve_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index);
 
-bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t store_index, uint32_t shader_index, uint32_t max_instance_count);
+ENGINE_API bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t store_index, uint32_t shader_index, uint32_t max_instance_count);
 bool vulkan_renderer_resource_group_destroy(VulkanContext *context, uint32_t retrieve_index);
 ENGINE_API bool vulkan_renderer_resource_group_write(VulkanContext *context, uint32_t retrieve_index, uint32_t instance_index, size_t offset, size_t size, void *data, bool all_frames);
-bool vulkan_renderer_resource_group_bind(VulkanContext *context, uint32_t retrieve_index, uint32_t instance_index);
-bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, uint32_t retrieve_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index);
+ENGINE_API bool vulkan_renderer_resource_group_bind(VulkanContext *context, uint32_t retrieve_index, uint32_t instance_index);
+ENGINE_API bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, uint32_t retrieve_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index);
 
-bool vulkan_renderer_resource_local_write(VulkanContext *context, size_t offset, size_t size, void *data);
+ENGINE_API bool vulkan_renderer_resource_local_write(VulkanContext *context, size_t offset, size_t size, void *data);

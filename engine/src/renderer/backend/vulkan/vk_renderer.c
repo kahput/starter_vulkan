@@ -1,3 +1,4 @@
+#include "core/pool.h"
 #include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"

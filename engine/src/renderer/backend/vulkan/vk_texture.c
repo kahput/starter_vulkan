@@ -5,7 +5,6 @@
 
 #include "core/debug.h"
 #include "core/logger.h"
-#include "core/pool.h"
 
 #include <vulkan/vulkan_core.h>
 

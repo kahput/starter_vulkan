@@ -7,13 +7,19 @@
 #include <cglm/cglm.h>
 
 // clang-format off
-typedef struct { uint32_t index; } RhiBuffer;
-typedef struct { uint32_t index; } RhiTexture;
-typedef struct { uint32_t index; } RhiSampler;
-typedef struct { uint32_t index; } RhiShader;
-typedef struct { uint32_t index; } RhiPass;
-typedef struct { uint32_t index; } RhiGlobalResource;
-typedef struct { uint32_t index; } RhiGroupResource;
+typedef struct { uint32_t id; } RhiBuffer;
+typedef struct { uint32_t id; } RhiGeometry;
+
+typedef struct { uint32_t id; } RhiTexture;
+typedef struct { uint32_t id; } RhiSampler;
+
+typedef struct { uint32_t id; } RhiShader;
+typedef struct { uint32_t id; } RhiShaderVariant;
+typedef struct { uint32_t id; } RhiGlobalResource;
+typedef struct { uint32_t id; } RhiGroupResource;
+
+typedef struct { uint32_t id; } RhiPass;
+
 // clang-format on
 
 typedef Handle RTexture;

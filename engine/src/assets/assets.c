@@ -21,12 +21,10 @@ static const char *extensions[ASSET_TYPE_COUNT][8] = {
 	[ASSET_TYPE_SHADER] = { "glsl", "spv" },
 };
 
-static AssetLibrary *library = { 0 };
-
 static AssetType file_extension_to_asset_type(String extension);
 
-bool asset_library_startup(void *memory, size_t size) {
-	size_t minimum_footprint = sizeof(AssetLibrary) + sizeof(Arena);
+bool asset_library_startup(AssetLibrary *library, void *memory, size_t size) {
+	size_t minimum_footprint = sizeof(Arena);
 
 	uintptr_t base_addr = (uintptr_t)memory;
 	uintptr_t aligned_addr = aligned_address((uintptr_t)memory, alignof(Arena));
@@ -37,6 +35,7 @@ bool asset_library_startup(void *memory, size_t size) {
 		return false;
 	}
 	Arena *arena = (Arena *)aligned_addr;
+	library->arena = arena;
 
 	*arena = (Arena){
 		.memory = arena + 1,
@@ -44,20 +43,17 @@ bool asset_library_startup(void *memory, size_t size) {
 		.capacity = size - sizeof(Arena)
 	};
 
-	library = arena_push_struct_zero(arena, AssetLibrary);
-	library->arena = arena;
-
 	return true;
 }
 
-bool asset_library_track_directory(String directory) {
+bool asset_library_track_directory(AssetLibrary *library, String directory) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
 	FileNode *head = filesystem_load_directory_files(scratch.arena, directory, true);
 	uint32_t count = 0;
 
 	while (head) {
-		asset_library_track_file(head->path);
+		asset_library_track_file(library, head->path);
 		count++;
 
 		head = head->next;
@@ -68,7 +64,7 @@ bool asset_library_track_directory(String directory) {
 	return true;
 }
 
-bool asset_library_track_file(String file_path) {
+bool asset_library_track_file(AssetLibrary *library, String file_path) {
 	ArenaTemp scratch = arena_scratch(NULL);
 	String name = string_filename_from_path(scratch.arena, file_path);
 	AssetEntry *entry = hash_trie_insert(library->arena, &library->root, name, AssetEntry);
@@ -91,7 +87,7 @@ bool asset_library_track_file(String file_path) {
 	return false;
 }
 
-UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shader) {
+UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, ShaderSource **out_shader) {
 	ArenaTemp scratch = arena_scratch(arena);
 
 	String vertex_shader_key = string_find_and_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
@@ -126,7 +122,7 @@ UUID asset_library_load_shader(Arena *arena, String key, ShaderSource **out_shad
 	return (*out_shader)->id;
 }
 
-UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model, bool use_cached_textures) {
+UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, ModelSource **out_model, bool use_cached_textures) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 	if (entry == NULL) {
 		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
@@ -153,14 +149,14 @@ UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model,
 
 		AssetEntry *entry = hash_trie_lookup(&library->root, name, AssetEntry);
 		if (entry == NULL) {
-			asset_library_track_file(path);
+			asset_library_track_file(library, path);
 		}
 
 		ImageSource *image = NULL;
 		if (use_cached_textures)
-			asset_library_request_image(name, &image);
+			asset_library_request_image(library, name, &image);
 		else
-			asset_library_load_image(arena, name, &image);
+			asset_library_load_image(arena, library, name, &image);
 
 		(*out_model)->images[image_index] = *image;
 	}
@@ -169,7 +165,7 @@ UUID asset_library_load_model(Arena *arena, String key, ModelSource **out_model,
 	return entry->node.hash;
 }
 
-UUID asset_library_load_image(Arena *arena, String key, ImageSource **out_texture) {
+UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, ImageSource **out_texture) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 
 	if (entry == NULL) {
@@ -192,7 +188,7 @@ UUID asset_library_load_image(Arena *arena, String key, ImageSource **out_textur
 }
 
 // TODO: Request functions call load functions which searches up entry agian, make use of internal load function that takes entry
-UUID asset_library_request_shader(String key, ShaderSource **out_shader) {
+UUID asset_library_request_shader(AssetLibrary *library, String key, ShaderSource **out_shader) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
 	String vertex_shader_key = string_find_and_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
@@ -220,7 +216,7 @@ UUID asset_library_request_shader(String key, ShaderSource **out_shader) {
 		return vs_entry->node.hash;
 	}
 
-	if (asset_library_load_shader(library->arena, key, out_shader) == INVALID_UUID) {
+	if (asset_library_load_shader(library->arena, library, key, out_shader) == INVALID_UUID) {
 		LOG_WARN("AssetLibrary: Failed to load shader '%s'", key.data);
 		return INVALID_UUID;
 	}
@@ -237,7 +233,7 @@ UUID asset_library_request_shader(String key, ShaderSource **out_shader) {
 	return vs_entry->node.hash;
 }
 
-UUID asset_library_request_model(String key, ModelSource **out_model) {
+UUID asset_library_request_model(AssetLibrary *library, String key, ModelSource **out_model) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 	if (entry == NULL)
 		return INVALID_UUID;
@@ -252,7 +248,7 @@ UUID asset_library_request_model(String key, ModelSource **out_model) {
 		return entry->node.hash;
 	}
 
-	if (asset_library_load_model(library->arena, key, out_model, true) == INVALID_UUID) {
+	if (asset_library_load_model(library->arena, library, key, out_model, true) == INVALID_UUID) {
 		LOG_ERROR("Failed to load '%s'", key.data);
 		return INVALID_UUID;
 	}
@@ -262,7 +258,7 @@ UUID asset_library_request_model(String key, ModelSource **out_model) {
 	return entry->node.hash;
 }
 
-UUID asset_library_request_image(String key, ImageSource **out_image) {
+UUID asset_library_request_image(AssetLibrary *library, String key, ImageSource **out_image) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 	if (entry == NULL) {
 		LOG_WARN("AssetLibrary: No image '%s'", key);
@@ -279,7 +275,7 @@ UUID asset_library_request_image(String key, ImageSource **out_image) {
 		return entry->node.hash;
 	}
 
-	if (asset_library_load_image(library->arena, key, out_image) == INVALID_UUID) {
+	if (asset_library_load_image(library->arena, library, key, out_image) == INVALID_UUID) {
 		LOG_WARN("AssetLibrary: Failed to load image '%s'", key.data);
 		return INVALID_UUID;
 	}
@@ -289,7 +285,7 @@ UUID asset_library_request_image(String key, ImageSource **out_image) {
 	return entry->node.hash;
 }
 
-bool asset_library_clear_cache(void) {
+bool asset_library_clear_cache(AssetLibrary *library) {
 	arena_clear(library->arena);
 
 	library->root = NULL;

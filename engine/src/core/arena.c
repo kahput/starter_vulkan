@@ -68,7 +68,7 @@ void arena_clear(Arena *arena) {
 	arena->offset = 0;
 }
 
-ArenaTemp arena_begin_temp(Arena *arena) {
+ENGINE_API ArenaTemp arena_begin_temp(Arena *arena) {
 	return (ArenaTemp){ .arena = arena, .position = arena_size(arena) };
 }
 
@@ -76,7 +76,7 @@ void arena_end_temp(ArenaTemp temp) {
 	arena_set(temp.arena, temp.position);
 }
 
-ArenaTemp arena_scratch(Arena *conflict) {
+ENGINE_API ArenaTemp arena_scratch(Arena *conflict) {
 	if (scratch_arenas[0].memory == NULL) {
 		scratch_arenas[0] = arena_create(MiB(4));
 		scratch_arenas[1] = arena_create(MiB(4));
