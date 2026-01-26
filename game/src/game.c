@@ -6,6 +6,7 @@
 #include "assets/asset_types.h"
 #include "core/arena.h"
 #include "core/logger.h"
+#include "renderer/r_internal.h"
 
 #include <cglm/cglm.h>
 
@@ -54,19 +55,19 @@ bool game_on_update(GameContext *context, float dt) {
 		};
 
 		// Initialize resource indices (start after engine defaults)
-		state->next_buffer_index = 1;
-		state->next_shader_index = 2;
+		state->next_buffer_index = 2;
+		state->next_shader_index = 3;
 		state->next_image_index = RENDERER_DEFAULT_SURFACE_COUNT;
-		state->next_group_index = 1;
+		state->next_group_index = 2;
 
 		// Load sprite shader
 		ShaderSource *sprite_shader_src = NULL;
 
-		UUID sprite_shader_id = asset_library_request_shader(context->asset_library, S("sprite.glsl"), &sprite_shader_src);
+		UUID sprite_shader_id = asset_library_request_shader(context->asset_library, str_lit("sprite.glsl"), &sprite_shader_src);
 		if (!sprite_shader_src) {
 			LOG_ERROR("Failed to load sprite shader");
 			return false;
-		}
+		} 
 
 		state->sprite_shader = state->next_shader_index++;
 		ShaderConfig sprite_config = {
@@ -85,6 +86,9 @@ bool game_on_update(GameContext *context, float dt) {
 			RENDERER_GLOBAL_RESOURCE_MAIN, &sprite_config, &reflection);
 		vulkan_renderer_shader_variant_create(context->vk_context, state->sprite_shader,
 			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_MAIN, desc);
+		desc.polygon_mode = POLYGON_MODE_LINE;
+		vulkan_renderer_shader_variant_create(context->vk_context, state->sprite_shader,
+			RENDERER_DEFAULT_SHADER_VARIANT_WIREFRAME, RENDERER_DEFAULT_PASS_MAIN, desc);
 
 		// Create quad mesh (simple plane facing camera)
 		ArenaTemp scratch = arena_scratch(NULL);
@@ -100,7 +104,7 @@ bool game_on_update(GameContext *context, float dt) {
 
 		// Load sprite texture
 		ImageSource *sprite_src = NULL;
-		UUID sprite_id = asset_library_request_image(context->asset_library, S("tile_0085.png"), &sprite_src);
+		UUID sprite_id = asset_library_request_image(context->asset_library, str_lit("tile_0085.png"), &sprite_src);
 
 		if (!sprite_src) {
 			LOG_ERROR("Failed to load sprite texture");
@@ -109,7 +113,8 @@ bool game_on_update(GameContext *context, float dt) {
 
 		state->sprite_texture = state->next_image_index++;
 		vulkan_renderer_texture_create(context->vk_context, state->sprite_texture,
-			sprite_src->width, sprite_src->height, TEXTURE_FORMAT_RGBA8_SRGB,
+			sprite_src->width, sprite_src->height,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED, sprite_src->pixels);
 
 		// Create material
@@ -128,7 +133,11 @@ bool game_on_update(GameContext *context, float dt) {
 	// Render the sprite at origin
 	mat4 transform = GLM_MAT4_IDENTITY_INIT;
 	glm_translate(transform, (vec3){ 0.0f, 1.0f, 0.0f });
-	glm_scale(transform, (vec3){ 2.0f, 2.0f, 2.0f });
+	glm_scale(transform, (vec3){
+						   2.0f,
+						   2.0f,
+						   2.0f,
+						 });
 
 	vulkan_renderer_shader_bind(
 		context->vk_context, state->sprite_shader,
@@ -137,7 +146,7 @@ bool game_on_update(GameContext *context, float dt) {
 	vulkan_renderer_resource_group_write(
 		context->vk_context, state->sprite_material,
 		0, 0, sizeof(vec4),
-		(vec4){1.0f, 1.0f, 1.0f, 1.0f }, false);
+		(vec4){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
 
 	vulkan_renderer_resource_group_bind(context->vk_context, state->sprite_material, 0);
 	vulkan_renderer_resource_local_write(context->vk_context, 0, sizeof(mat4), transform);

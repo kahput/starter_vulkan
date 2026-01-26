@@ -109,6 +109,7 @@ typedef struct vulkan_image {
 
 	VkImageLayout layout;
 	VkImageAspectFlags aspect;
+	TextureType type;
 	VkImageCreateInfo info;
 	uint32_t width, height;
 } VulkanImage;
@@ -195,17 +196,17 @@ void vulkan_buffer_memory_unmap(VulkanContext *context, VulkanBuffer *buffer);
 void vulkan_buffer_write(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
 void vulkan_buffer_write_indexed(VulkanBuffer *buffer, uint32_t index, size_t offset, size_t size, void *data);
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
-bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height);
+bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size);
 bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data);
 
 // bool vulkan_pass_on_resize(VulkanContext *context, VulkanPass *pass);
 
-bool vulkan_image_create(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, VkMemoryPropertyFlags, VulkanImage *);
+bool vulkan_image_create(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, TextureType, VkMemoryPropertyFlags, VulkanImage *);
 void vulkan_image_destroy(VulkanContext *context, VulkanImage *image);
 
-bool vulkan_image_view_create(VulkanContext *context, VkImageAspectFlags aspect_flags, VulkanImage *image);
-void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
-void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+bool vulkan_image_view_create(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image);
+void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout);
 
 bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkImageAspectFlags aspect);
@@ -238,8 +239,10 @@ typedef struct vulkan_shader {
 	uint32_t attribute_count, binding_count;
 
 	VkDescriptorSetLayout group_layout;
+
 	uint32_t group_ubo_binding;
 	VkDeviceSize instance_size;
+
 	VkPipelineLayout pipeline_layout;
 
 	VulkanPipeline variants[MAX_SHADER_VARIANTS];

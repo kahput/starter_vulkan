@@ -49,15 +49,18 @@ bool asset_library_startup(AssetLibrary *library, void *memory, size_t size) {
 bool asset_library_track_directory(AssetLibrary *library, String directory) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
-	FileNode *head = filesystem_load_directory_files(scratch.arena, directory, true);
+	StringList file_list = filesystem_list_files(scratch.arena, directory, true);
+	StringNode *file = file_list.first;
 	uint32_t count = 0;
 
-	while (head) {
-		asset_library_track_file(library, head->path);
+	logger_indent();
+	while (file) {
+		asset_library_track_file(library, file->string);
 		count++;
 
-		head = head->next;
+		file = file->next;
 	}
+	logger_dedent();
 
 	LOG_INFO("AssetLibrary: %d files tracked", count);
 	arena_release_scratch(scratch);
@@ -66,12 +69,13 @@ bool asset_library_track_directory(AssetLibrary *library, String directory) {
 
 bool asset_library_track_file(AssetLibrary *library, String file_path) {
 	ArenaTemp scratch = arena_scratch(NULL);
-	String name = string_filename_from_path(scratch.arena, file_path);
+	String name = string_push_copy(scratch.arena, string_path_filename(file_path));
 	AssetEntry *entry = hash_trie_insert(library->arena, &library->root, name, AssetEntry);
 
 	if (entry->full_path.length == 0) {
-		entry->full_path = string_duplicate(library->arena, file_path);
-		entry->type = file_extension_to_asset_type(string_extension_from_path(scratch.arena, file_path));
+		entry->full_path = string_push_copy(library->arena, file_path);
+		entry->type = file_extension_to_asset_type(
+			string_push_copy(scratch.arena, string_path_extension(file_path)));
 		entry->source_data = NULL;
 
 		entry->is_loaded = false;
@@ -90,20 +94,20 @@ bool asset_library_track_file(AssetLibrary *library, String file_path) {
 UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, ShaderSource **out_shader) {
 	ArenaTemp scratch = arena_scratch(arena);
 
-	String vertex_shader_key = string_find_and_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
-	String fragment_shader_key = string_find_and_replace(scratch.arena, key, S("glsl"), S("frag.spv"));
+	String vertex_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("vert.spv"));
+	String fragment_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("frag.spv"));
 
 	AssetEntry *vs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
 	AssetEntry *fs_entry = hash_trie_lookup(&library->root, fragment_shader_key, AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
-		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
+		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
 		*out_shader = NULL;
 		arena_release_scratch(scratch);
 		return INVALID_UUID;
 	}
 
 	if (vs_entry->type != ASSET_TYPE_SHADER || fs_entry->type != ASSET_TYPE_SHADER) {
-		LOG_ERROR("Assets: Key '%s' is not geometry");
+		LOG_ERROR("Assets: Key '%.*s' is not a shader", str_expand(key));
 		*out_shader = NULL;
 		arena_release_scratch(scratch);
 		return INVALID_UUID;
@@ -115,7 +119,8 @@ UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, 
 		return INVALID_UUID;
 	}
 
-	(*out_shader)->path = string_format(arena, "%s/%s", string_directory_from_path(scratch.arena, vs_entry->full_path).data, key.data);
+	(*out_shader)->path = string_push_path_join(arena,
+		string_path_folder(vs_entry->full_path), key);
 	(*out_shader)->id = string_hash64((*out_shader)->path);
 
 	arena_release_scratch(scratch);
@@ -125,13 +130,13 @@ UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, 
 UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, ModelSource **out_model, bool use_cached_textures) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 	if (entry == NULL) {
-		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
+		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
 		*out_model = NULL;
 		return INVALID_UUID;
 	}
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {
-		LOG_ERROR("Assets: Key '%s' is not geometry");
+		LOG_ERROR("Assets: Key '%.*s' is not geometry", str_expand(key));
 		*out_model = NULL;
 		return INVALID_UUID;
 	}
@@ -145,7 +150,7 @@ UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, M
 	ArenaTemp scratch = arena_scratch(arena);
 	for (uint32_t image_index = 0; image_index < (*out_model)->image_count; ++image_index) {
 		String path = (*out_model)->images[image_index].path;
-		String name = string_filename_from_path(scratch.arena, path);
+		String name = string_push_copy(scratch.arena, string_path_filename(path));
 
 		AssetEntry *entry = hash_trie_lookup(&library->root, name, AssetEntry);
 		if (entry == NULL) {
@@ -169,13 +174,13 @@ UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, I
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 
 	if (entry == NULL) {
-		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
+		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
 		*out_texture = NULL;
 		return INVALID_UUID;
 	}
 
 	if (entry->type != ASSET_TYPE_IMAGE) {
-		LOG_ERROR("Assets: Key '%s' is not a image");
+		LOG_ERROR("Assets: Key '%.*s' is not a image", str_expand(key));
 		*out_texture = NULL;
 		return INVALID_UUID;
 	}
@@ -191,20 +196,20 @@ UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, I
 UUID asset_library_request_shader(AssetLibrary *library, String key, ShaderSource **out_shader) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
-	String vertex_shader_key = string_find_and_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
-	String fragment_shader_key = string_find_and_replace(scratch.arena, key, S("glsl"), S("frag.spv"));
+	String vertex_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("vert.spv"));
+	String fragment_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("frag.spv"));
 
 	AssetEntry *vs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
 	AssetEntry *fs_entry = hash_trie_lookup(&library->root, fragment_shader_key, AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
-		LOG_WARN("Assets: Key '%s' is not tracked", key.data);
+		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
 		*out_shader = NULL;
 		arena_release_scratch(scratch);
 		return INVALID_UUID;
 	}
 
 	if (vs_entry->type != ASSET_TYPE_SHADER || fs_entry->type != ASSET_TYPE_SHADER) {
-		LOG_ERROR("Assets: Key '%s' is not geometry");
+		LOG_ERROR("Assets: Key '%.*s' is not a shader", str_expand(key));
 		*out_shader = NULL;
 		arena_release_scratch(scratch);
 		return INVALID_UUID;
@@ -217,7 +222,7 @@ UUID asset_library_request_shader(AssetLibrary *library, String key, ShaderSourc
 	}
 
 	if (asset_library_load_shader(library->arena, library, key, out_shader) == INVALID_UUID) {
-		LOG_WARN("AssetLibrary: Failed to load shader '%s'", key.data);
+		LOG_WARN("AssetLibrary: Failed to load shader '%s'", key.memory);
 		return INVALID_UUID;
 	}
 
@@ -229,7 +234,7 @@ UUID asset_library_request_shader(AssetLibrary *library, String key, ShaderSourc
 	fs_entry->is_loaded = true;
 	fs_entry->node.hash = vs_entry->node.hash;
 	arena_release_scratch(scratch);
-	LOG_INFO("Shader '%.*s' loaded to memory", FS(key));
+	LOG_INFO("Shader '%.*s' loaded to memory", str_expand(key));
 	return vs_entry->node.hash;
 }
 
@@ -239,7 +244,7 @@ UUID asset_library_request_model(AssetLibrary *library, String key, ModelSource 
 		return INVALID_UUID;
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {
-		LOG_ERROR("AssetLibrary: Requested asset '%s' is type %d", key.data, entry->type);
+		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", str_expand(key), entry->type);
 		return INVALID_UUID;
 	}
 
@@ -249,7 +254,7 @@ UUID asset_library_request_model(AssetLibrary *library, String key, ModelSource 
 	}
 
 	if (asset_library_load_model(library->arena, library, key, out_model, true) == INVALID_UUID) {
-		LOG_ERROR("Failed to load '%s'", key.data);
+		LOG_ERROR("Failed to load '%.*s'", str_expand(key));
 		return INVALID_UUID;
 	}
 
@@ -261,12 +266,12 @@ UUID asset_library_request_model(AssetLibrary *library, String key, ModelSource 
 UUID asset_library_request_image(AssetLibrary *library, String key, ImageSource **out_image) {
 	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
 	if (entry == NULL) {
-		LOG_WARN("AssetLibrary: No image '%s'", key);
+		LOG_WARN("AssetLibrary: No image '%.*s'", str_expand(key));
 		return INVALID_UUID;
 	}
 
 	if (entry->type != ASSET_TYPE_IMAGE) {
-		LOG_ERROR("AssetLibrary: Requested asset '%s' is type %d", key.data, entry->type);
+		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", str_expand(key), entry->type);
 		return INVALID_UUID;
 	}
 
@@ -276,7 +281,7 @@ UUID asset_library_request_image(AssetLibrary *library, String key, ImageSource 
 	}
 
 	if (asset_library_load_image(library->arena, library, key, out_image) == INVALID_UUID) {
-		LOG_WARN("AssetLibrary: Failed to load image '%s'", key.data);
+		LOG_WARN("AssetLibrary: Failed to load image '%s'", key.memory);
 		return INVALID_UUID;
 	}
 
@@ -301,7 +306,7 @@ AssetType file_extension_to_asset_type(String extension) {
 		uint32_t index = 0;
 		const char *ext = extensions[asset_index][index];
 		while (ext) {
-			if (string_equals(extension, string_wrap_cstring(ext)))
+			if (string_equals(extension, string_from_cstr(ext)))
 				return asset_index;
 
 			ext = extensions[asset_index][++index];

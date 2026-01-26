@@ -174,13 +174,13 @@
 // 		TEXTURE_USAGE_COLOR_ATTACHMENT, NULL);
 //
 // 	RenderPassDesc shadow = {
-// 		.name = S("Shadow"),
+// 		.name = str_lit("Shadow"),
 // 		.depth_attachment = { .texture = RENDER_TARGET_TEXTURE_SHADOW_DEPTH, .clear = { .depth = 1.0f }, .load = CLEAR, .store = STORE },
 // 		.use_depth = true
 // 	};
 //
 // 	RenderPassDesc main = {
-// 		.name = S("Main"),
+// 		.name = str_lit("Main"),
 // 		.color_attachments = { { .clear = { .color = GLM_VEC4_BLACK_INIT }, .load = CLEAR, .store = STORE, .present = true } },
 // 		.color_attachment_count = 1,
 // 		.depth_attachment = { .texture = RENDER_TARGET_TEXTURE_MAIN_DEPTH, .clear = { .depth = 1.0f }, .load = CLEAR, .store = DONT_CARE },
@@ -201,8 +201,8 @@
 //
 // 	ArenaTemp scratch = arena_scratch(NULL);
 // 	{
-// 		FileContent vsc = filesystem_read(scratch.arena, S("./assets/shaders/pbr.vert.spv"));
-// 		FileContent fsc = filesystem_read(scratch.arena, S("./assets/shaders/pbr.frag.spv"));
+// 		FileContent vsc = filesystem_read(scratch.arena, str_lit("./assets/shaders/pbr.vert.spv"));
+// 		FileContent fsc = filesystem_read(scratch.arena, str_lit("./assets/shaders/pbr.frag.spv"));
 //
 // 		MaterialParameters default_material_parameters = (MaterialParameters){
 // 			.base_color_factor = { 0.8f, 0.8f, 0.8f, 1.0f },
@@ -224,11 +224,11 @@
 // 	arena_release_scratch(scratch);
 //
 // 	ShaderParameter parameters[] = {
-// 		(ShaderParameter){ .name = S("u_base_color_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
-// 		(ShaderParameter){ .name = S("u_metallic_roughness_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
-// 		(ShaderParameter){ .name = S("u_normal_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_NORMAL },
-// 		(ShaderParameter){ .name = S("u_occlusion_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
-// 		(ShaderParameter){ .name = S("u_emissive_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_BLACK },
+// 		(ShaderParameter){ .name = str_lit("u_base_color_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
+// 		(ShaderParameter){ .name = str_lit("u_metallic_roughness_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
+// 		(ShaderParameter){ .name = str_lit("u_normal_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_NORMAL },
+// 		(ShaderParameter){ .name = str_lit("u_occlusion_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_WHITE },
+// 		(ShaderParameter){ .name = str_lit("u_emissive_texture"), .size = sizeof(RTexture), .type = SHADER_PARAMETER_TYPE_TEXTURE, .as.texture.index = RENDERER_DEFAULT_TEXTURE_BLACK },
 // 	};
 // 	renderer->default_material = renderer_material_create(renderer->default_shader, countof(parameters), parameters);
 //

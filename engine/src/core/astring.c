@@ -1,264 +1,450 @@
 #include "astring.h"
 
-#include "core/arena.h"
-
-#include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h> // For strtod/strtoll logic if needed, though we implement custom mostly
 
-String string_wrap_cstring(const char *string) {
-	String rv = (String){ .data = (char *)string, .length = cstring_length(string) };
-	rv.size = rv.length + 1;
-
-	return rv;
-}
-
-String string_create_from_arena(Arena *arena, size_t size) {
-	if (size == 0)
+String string_from_cstr(const char *s) {
+	if (s == NULL)
 		return (String){ 0 };
 
-	String rv = {
-		.length = size - 1,
-		.size = size,
-		.data = arena_push_array_zero(arena, char, size),
+	return (String){
+		.memory = (char *)s,
+		.length = strlen(s)
 	};
+}
 
-	rv.data[rv.length] = '\0';
-	return rv;
+String string_from_range(char *start, char *end) {
+	if (end < start)
+		return (String){ 0 };
+
+	return (String){
+		.memory = start,
+		.length = (size_t)(end - start)
+	};
 }
 
 bool string_equals(String a, String b) {
 	if (a.length != b.length)
 		return false;
+	if (a.length == 0)
+		return true;
+	if (a.memory == b.memory)
+		return true;
 
-	return !a.size || !memcmp(a.data, b.data, a.length);
+	return memcmp(a.memory, b.memory, a.length) == 0;
 }
 
-int32_t string_contains(String a, String b) {
-	if (a.length < b.length)
+bool string_equals_ignore_case(String a, String b) {
+	if (a.length != b.length)
 		return false;
 
-	for (uint32_t index = 0; index + b.length < a.size; ++index) {
-		if (memcmp(a.data + index, b.data, b.length) == 0) {
-			return index;
+	for (size_t index = 0; index < a.length; index++) {
+		if (tolower(a.memory[index]) != tolower(b.memory[index]))
+			return false;
+	}
+
+	return true;
+}
+
+bool string_has_prefix(String str, String prefix) {
+	if (prefix.length > str.length)
+		return false;
+
+	return memcmp(str.memory, prefix.memory, prefix.length) == 0;
+}
+
+bool string_has_suffix(String str, String suffix) {
+	if (suffix.length > str.length)
+		return false;
+
+	return memcmp(str.memory + (str.length - suffix.length), suffix.memory, suffix.length) == 0;
+}
+
+int64_t string_find_first(String haystack, String needle) {
+	if (needle.length == 0)
+		return (int64_t)haystack.length;
+	if (haystack.length < needle.length)
+		return -1;
+
+	for (size_t index = 0; index <= haystack.length - needle.length; index++) {
+		if (memcmp(haystack.memory + index, needle.memory, needle.length) == 0) {
+			return (int64_t)index;
 		}
 	}
 
 	return -1;
 }
 
+int64_t string_find_last(String haystack, String needle) {
+	if (needle.length == 0)
+		return (int64_t)haystack.length;
+	if (haystack.length < needle.length)
+		return -1;
+
+	// Iterate backwards
+	for (int64_t index = haystack.length - needle.length; index >= 0; index--) {
+		if (memcmp(haystack.memory + index, needle.memory, needle.length) == 0) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+String string_slice(String str, uint32_t start, uint32_t length) {
+	if (start >= str.length)
+		return (String){ 0 };
+	if (start + length > str.length)
+		length = str.length - start;
+
+	return (String){ .memory = str.memory + start, .length = length };
+}
+
+String string_chop_left(String str, uint32_t n) {
+	if (n >= str.length)
+		return (String){ 0 };
+
+	return (String){ .memory = str.memory + n, .length = str.length - n };
+}
+
+String string_chop_right(String str, uint32_t n) {
+	if (n >= str.length)
+		return (String){ 0 };
+	return (String){ .memory = str.memory, .length = str.length - n };
+}
+
+String string_trim_left(String str) {
+	size_t index = 0;
+	while (index < str.length && isspace(str.memory[index])) {
+		index++;
+	}
+	return string_chop_left(str, (uint32_t)index);
+}
+
+String string_trim_right(String str) {
+	size_t i = 0;
+	while (i < str.length && isspace(str.memory[str.length - 1 - i])) {
+		i++;
+	}
+	return string_chop_right(str, (uint32_t)i);
+}
+
+String string_trim(String s) {
+	return string_trim_right(string_trim_left(s));
+}
+
 uint64_t string_hash64(String string) {
 	uint64_t h = 0x100;
 
 	for (uint32_t index = 0; index < string.length; ++index) {
-		h ^= string.data[index] & 255;
+		h ^= string.memory[index] & 255;
 		h *= 1111111111111111111;
 	}
 
 	return h;
 }
 
-String string_duplicate(struct arena *arena, String target) {
-	String copy = target;
-	copy.data = arena_push_array_zero(arena, char, target.size);
+// ==========================================
+// Parsing
+// ==========================================
 
-	if (copy.size)
-		memcpy(copy.data, target.data, copy.size);
-	return copy;
-}
+int64_t string_to_i64(String str) {
+	if (str.length == 0)
+		return 0;
 
-String string_duplicate_by_length(struct arena *arena, String target) {
-	String copy = target;
-	copy.data = arena_push_array_zero(arena, char, target.length);
+	int64_t result = 0;
+	int sign = 1;
+	size_t index = 0;
 
-	if (copy.length)
-		memcpy(copy.data, target.data, copy.length);
-	return copy;
-}
-
-String string_slice(Arena *arena, String a, uint32_t start, uint32_t length) {
-	start = start % a.size;
-	if (length == STRING_END || length > a.length) {
-		length = a.length - start;
+	str = string_trim_left(str);
+	if (index < str.length && (str.memory[index] == '+' || str.memory[index] == '-')) {
+		sign = (str.memory[index] == '-') ? -1 : 1;
+		index++;
 	}
 
-	String slice = {
-		.length = length,
-		.size = length + 1,
-		.data = a.data + start
-	};
+	while (index < str.length && isdigit(str.memory[index])) {
+		result = result * 10 + (str.memory[index] - '0');
+		index++;
+	}
 
-	slice = string_duplicate(arena, slice);
-	slice.data[slice.length] = '\0';
-	return slice;
+	return result * sign;
 }
 
-String string_concat(struct arena *arena, String head, String tail) {
-	head = string_duplicate_by_length(arena, head);
-	head.length += string_duplicate(arena, tail).length;
-	head.size = head.length + 1;
-	return head;
+double string_to_f64(String str) {
+	char buffer[128];
+	if (str.length >= sizeof(buffer))
+		return 0.0;
+
+	memcpy(buffer, str.memory, str.length);
+	buffer[str.length] = '\0';
+
+	return strtod(buffer, NULL);
 }
 
-String string_insert_at(Arena *arena, String into, String insert, uint32_t index) {
-	index = index % into.length;
-
-	String rv = string_create_from_arena(arena, into.length + insert.length + 1);
-
-	memcpy(rv.data, into.data, index);
-	memcpy(rv.data + index, insert.data, insert.length);
-	memcpy(rv.data + index + insert.length, into.data + index, into.length - index);
-
-	return rv;
+static bool is_path_separator(char c) {
+	return c == '/' || c == '\\';
 }
 
-String string_find_and_replace(Arena *arena, String string, String find, String replace) {
-	int32_t find_offset = 0;
-	if ((find_offset = string_contains(string, find)) == -1)
-		return string;
+String string_path_folder(String path) {
+	if (path.length == 0)
+		return (String){ 0 };
 
-	uint32_t find_length = find.length;
-	uint32_t new_length = replace.length + (string.length - find.length);
-
-	arena_scratch(arena);
-
-	String rv = string_create_from_arena(arena, new_length + 1);
-
-	memcpy(rv.data, string.data, find_offset);
-	memcpy(rv.data + find_offset, replace.data, replace.length);
-
-	memcpy(rv.data + find_offset + replace.length, string.data + (find_offset + find_length), string.length - (find_offset + find_length));
-
-	return rv;
-}
-
-String string_directory_from_path(Arena *arena, String path) {
-	uint32_t final = 0, length = 0;
-	uint8_t c;
-
-	while ((c = path.data[length++])) {
-		if (c == '/' || c == '\\') {
-			final = length - 1;
+	for (int64_t index = path.length - 1; index >= 0; index--) {
+		if (is_path_separator(path.memory[index])) {
+			return string_slice(path, 0, (uint32_t)index);
 		}
 	}
 
-	String directory = {
-		.length = final,
-		.size = final + 1,
-	};
-
-	directory.data = arena_push_array_zero(arena, char, path.size);
-
-	memcpy(directory.data, path.data, directory.size);
-	directory.data[directory.length] = '\0';
-	return directory;
+	return (String){ 0 };
 }
 
-String string_format(Arena *arena, const char *format, ...) {
-	va_list args;
-	va_start(args, format);
+String string_path_filename(String path) {
+	if (path.length == 0)
+		return (String){ 0 };
 
-	// We must copy the args because vsnprintf consumes them.
-	// We need to use them twice (once for sizing, once for writing).
+	for (int64_t index = path.length - 1; index >= 0; index--) {
+		if (is_path_separator(path.memory[index])) {
+			return string_slice(path, (uint32_t)(index + 1), (uint32_t)(path.length - index - 1));
+		}
+	}
+	return path;
+}
+
+String string_path_extension(String path) {
+	if (path.length == 0)
+		return (String){ 0 };
+
+	// Scan backwards, but stop if we hit a path separator
+	for (int64_t index = path.length - 1; index >= 0; index--) {
+		if (is_path_separator(path.memory[index]))
+			break;
+		if (path.memory[index] == '.') {
+			return string_slice(path, (uint32_t)(index + 1), (uint32_t)(path.length - index - 1));
+		}
+	}
+
+	return (String){ 0 };
+}
+
+String string_push_copy(Arena *arena, String str) {
+	if (str.length == 0)
+		return (String){ 0 };
+
+	// Allocate length + 1 for implicit null termination convenience
+	char *data = arena_push_array(arena, char, str.length + 1);
+	memcpy(data, str.memory, str.length);
+	data[str.length] = '\0';
+
+	return (String){ .memory = data, .length = str.length };
+}
+
+String string_pushfv(Arena *arena, const char *format, va_list args) {
 	va_list args_copy;
 	va_copy(args_copy, args);
 
-	// 1. Pass One: Determine the required length (excluding null terminator)
-	// We assume format.data is null-terminated (Safe if using SLITERAL or S macros)
+	// Pass 1: Measure
 	int length = vsnprintf(NULL, 0, format, args);
-
 	if (length < 0) {
-		// Handle encoding errors (optional)
 		va_end(args_copy);
-		va_end(args);
 		return (String){ 0 };
 	}
 
-	// 2. Allocate exact memory
-	// +1 for the null terminator
-	size_t size = length + 1;
-	char *buffer = arena_push_array_zero(arena, char, size);
-
-	// 3. Pass Two: Write the formatted string to the buffer
-	vsnprintf(buffer, size, format, args_copy);
-
+	// Pass 2: Write
+	char *data = arena_push_array(arena, char, length + 1);
+	vsnprintf(data, length + 1, format, args_copy);
 	va_end(args_copy);
+
+	return (String){ .memory = data, .length = (size_t)length };
+}
+
+String string_pushf(Arena *arena, const char *fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+	String result = string_pushfv(arena, fmt, args);
 	va_end(args);
-
-	return (String){
-		.data = buffer,
-		.length = (size_t)length,
-		.size = size
-	};
+	return result;
 }
 
-String string_filename_from_path(Arena *arena, String path) {
-	int32_t start = 0;
-	uint32_t length = 0;
-	uint8_t c;
+String string_push_concat(Arena *arena, String head, String tail) {
+	size_t new_length = head.length + tail.length;
+	char *data = arena_push_array(arena, char, new_length + 1);
 
-	while (length < path.length && (c = path.data[length++])) {
-		if (c == '/' || c == '\\') {
-			start = length;
+	memcpy(data, head.memory, head.length);
+	memcpy(data + head.length, tail.memory, tail.length);
+	data[new_length] = '\0';
+
+	return (String){ .memory = data, .length = new_length };
+}
+
+String string_push_replace(Arena *arena, String source, String find, String replace) {
+	if (find.length == 0)
+		return string_push_copy(arena, source);
+
+	size_t count = 0;
+	size_t offset = 0;
+	while (offset < source.length) {
+		int64_t index = string_find_first(
+			(String){ .memory = source.memory + offset, .length = source.length - offset },
+			find);
+		if (index == -1)
+			break;
+
+		count++;
+		offset = index + find.length;
+	}
+
+	size_t new_length = source.length + count * (replace.length - find.length);
+	char *data = arena_push_array(arena, char, new_length + 1);
+
+	// Pass 2: Build string
+	size_t src_offset = 0;
+	size_t dst_offset = 0;
+	while (src_offset < source.length) {
+		int64_t index = string_find_first(
+			(String){ .memory = source.memory + src_offset, .length = source.length - src_offset },
+			find);
+
+		if (index == -1) {
+			// Copy remaining
+			size_t remain = source.length - src_offset;
+			memcpy(data + dst_offset, source.memory + src_offset, remain);
+			dst_offset += remain;
+			break;
 		}
+
+		// Copy segment before match
+		size_t seg_len = index - src_offset;
+		memcpy(data + dst_offset, source.memory + src_offset, seg_len);
+		dst_offset += seg_len;
+		src_offset += seg_len;
+
+		// Copy replacement
+		memcpy(data + dst_offset, replace.memory, replace.length);
+		dst_offset += replace.length;
+		src_offset += find.length;
 	}
 
-	String name = {
-		.length = length - start,
-		.size = (length + 1) - start
-	};
-	name.data = arena_push_array_zero(arena, char, name.size);
-	memcpy(name.data, path.data + start, name.length);
-	name.data[length] = '\0';
-
-	return name;
+	data[new_length] = '\0';
+	return (String){ .memory = data, .length = new_length };
 }
-String string_extension_from_path(struct arena *arena, String name) {
-	int32_t start = 0;
-	uint32_t length = 0;
-	uint8_t c;
 
-	while (length < name.length && (c = name.data[length++])) {
-		if (c == '.') {
-			start = length;
+String string_push_upper(Arena *arena, String s) {
+	String copy = string_push_copy(arena, s);
+	for (size_t index = 0; index < copy.length; index++)
+		copy.memory[index] = toupper(copy.memory[index]);
+
+	return copy;
+}
+
+String string_push_lower(Arena *arena, String s) {
+	String copy = string_push_copy(arena, s);
+	for (size_t index = 0; index < copy.length; index++)
+		copy.memory[index] = tolower(copy.memory[index]);
+
+	return copy;
+}
+String string_push_path_join(Arena *arena, String head, String tail) {
+	if (head.length == 0)
+		return string_push_copy(arena, tail);
+	if (tail.length == 0)
+		return string_push_copy(arena, head);
+
+	bool head_has_sep = is_path_separator(head.memory[head.length - 1]);
+	bool tail_has_sep = is_path_separator(tail.memory[0]);
+
+	if (head_has_sep && tail_has_sep) {
+		// "folder/" + "/file" -> "folder//file" (need to remove one)
+		return string_push_concat(arena, head, string_chop_left(tail, 1));
+	} else if (!head_has_sep && !tail_has_sep) {
+		// "folder" + "file" -> "folder/file" (need to add one)
+		// Manual construction to avoid double allocation of concat(concat)
+		size_t new_length = head.length + 1 + tail.length;
+		char *data = arena_push_array(arena, char, new_length + 1);
+		memcpy(data, head.memory, head.length);
+		data[head.length] = '/';
+		memcpy(data + head.length + 1, tail.memory, tail.length);
+		data[new_length] = '\0';
+		return (String){ .memory = data, .length = new_length };
+	} else
+		// "folder/" + "file" OR "folder" + "/file" -> Clean concat
+		return string_push_concat(arena, head, tail);
+}
+
+char *string_push_cstring(Arena *arena, String s) {
+	char *cstr = arena_push_array(arena, char, s.length + 1);
+	memcpy(cstr, s.memory, s.length);
+	cstr[s.length] = '\0';
+	return cstr;
+}
+
+void string_list_push(Arena *arena, StringList *list, String s) {
+	StringNode *node = arena_push_struct(arena, StringNode);
+	node->string = s;
+	node->next = NULL;
+
+	if (list->first == NULL) {
+		list->first = node;
+		list->last = node;
+	} else {
+		list->last->next = node;
+		list->last = node;
+	}
+
+	list->node_count++;
+	list->total_length += s.length;
+}
+
+StringList string_list_split(Arena *arena, String str, String separator) {
+	StringList list = { 0 };
+	uint32_t cursor = 0;
+
+	while (cursor < str.length) {
+		int64_t index = string_find_first(
+			(String){ .memory = str.memory + cursor, str.length - cursor },
+			separator);
+
+		if (index == -1) {
+			// Push remainder
+			string_list_push(arena, &list, string_slice(str, cursor, str.length - cursor));
+			break;
 		}
+
+		string_list_push(arena, &list, string_slice(str, cursor, (uint32_t)index - cursor));
+		cursor = (uint32_t)index + (uint32_t)separator.length;
 	}
 
-	String extension = {
-		.length = length - start,
-		.size = (length + 1) - start
-	};
-	extension.data = arena_push_array_zero(arena, char, extension.size);
-	memcpy(extension.data, name.data + start, extension.length);
-	extension.data[length] = '\0';
+	// Edge case: if string ends with separator, do we push empty string?
+	// Standard split behavior usually says yes.
+	if (cursor == str.length && str.length > 0)
+		string_list_push(arena, &list, (String){ 0 });
 
-	return extension;
+	return list;
 }
+String string_list_join(Arena *arena, StringList *list, String separator) {
+	if (list->node_count == 0)
+		return (String){ 0 };
 
-size_t cstring_length(const char *string) {
-	uint8_t c;
-	size_t length = 0;
-	while ((c = string[length++])) {
+	// Calculate exact size needed
+	size_t total_length = list->total_length + (list->node_count - 1) * separator.length;
+
+	char *data = arena_push_array(arena, char, total_length + 1);
+	size_t cursor = 0;
+
+	StringNode *node = list->first;
+	while (node) {
+		memcpy(data + cursor, node->string.memory, node->string.length);
+		cursor += node->string.length;
+
+		if (node->next) {
+			memcpy(data + cursor, separator.memory, separator.length);
+			cursor += separator.length;
+		}
+
+		node = node->next;
 	}
 
-	return length - 1;
-}
-
-size_t cstring_nlength(const char *string, size_t max_length) {
-	uint8_t c;
-	size_t length = 0;
-	while (length < max_length && (c = string[length++])) {
-	}
-
-	return length - 1;
-}
-
-char *cstring_null_terminated(struct arena *arena, String string) {
-	if (string.data[string.length] == '\0')
-		return (char *)string.data;
-
-	char *null_termianted = arena_push_array_zero(arena, char, string.length + 1);
-	mempcpy(null_termianted, string.data, string.length + 1);
-	null_termianted[string.length] = '\0';
-
-	return null_termianted;
+	data[total_length] = '\0';
+	return (String){ .memory = data, .length = total_length };
 }

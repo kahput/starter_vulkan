@@ -35,13 +35,13 @@ bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path
 bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
 	ArenaTemp scratch = arena_scratch(arena);
 
-	String filename = string_filename_from_path(scratch.arena, path);
-	LOG_INFO("Loading %s...", filename.data);
+	String filename = string_push_copy(scratch.arena, string_path_filename(path));
+	LOG_INFO("Loading %s...", filename.memory);
 
 	logger_indent();
-	uint8_t *pixels = stbi_load(path.data, &out_texture->width, &out_texture->height, &out_texture->channels, 4);
+	uint8_t *pixels = stbi_load(path.memory, &out_texture->width, &out_texture->height, &out_texture->channels, 4);
 	if (pixels == NULL) {
-		LOG_ERROR("Failed to load image [ %s ]", path.data);
+		LOG_ERROR("Failed to load image [ %s ]", path.memory);
 		static uint8_t magenta[] = { 255, 0, 255, 255 };
 		out_texture->width = out_texture->height = 1;
 		out_texture->channels = 4;
@@ -55,8 +55,8 @@ bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
 	memcpy(out_texture->pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.data, out_texture->width, out_texture->height, out_texture->channels);
-	LOG_INFO("%s loaded", filename.data);
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.memory, out_texture->width, out_texture->height, out_texture->channels);
+	LOG_INFO("%s loaded", filename.memory);
 	logger_dedent();
 
 	arena_release_scratch(scratch);
@@ -64,25 +64,25 @@ bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
 }
 
 static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
-	{ .name = { .data = "u_base_color_texture", .length = 20, .size = 21 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .data = "u_metallic_roughness_texture", .length = 28, .size = 29 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .data = "u_normal_texture", .length = 16, .size = 17 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .data = "u_occlusion_texture", .length = 19, .size = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .data = "u_emissive_texture", .length = 18, .size = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .memory = "u_base_color_texture", .length = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .memory = "u_metallic_roughness_texture", .length = 28 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .memory = "u_normal_texture", .length = 16 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .memory = "u_occlusion_texture", .length = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .memory = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
 
-	{ .name = { .data = "base_color_factor", .length = 17, .size = 18 }, .type = PROPERTY_TYPE_FLOAT4, .as.vec4f = { 1.0f, 1.0f, 1.0f, 1.0f } },
-	{ .name = { .data = "metallic_factor", .length = 15, .size = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.0f },
-	{ .name = { .data = "roughness_factor", .length = 16, .size = 17 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.5f },
-	{ .name = { .data = "emissive_factor", .length = 15, .size = 16 }, .type = PROPERTY_TYPE_FLOAT3, .as.vec3f = { 1.0f, 1.0f, 1.0f } },
+	{ .name = { .memory = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.vec4f = { 1.0f, 1.0f, 1.0f, 1.0f } },
+	{ .name = { .memory = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.0f },
+	{ .name = { .memory = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.5f },
+	{ .name = { .memory = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.vec3f = { 1.0f, 1.0f, 1.0f } },
 };
 
 bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
-	cgltf_result result = cgltf_parse_file(&options, path.data, &data);
+	cgltf_result result = cgltf_parse_file(&options, path.memory, &data);
 
 	if (result == cgltf_result_success)
-		result = cgltf_load_buffers(&options, data, path.data);
+		result = cgltf_load_buffers(&options, data, path.memory);
 
 	if (result == cgltf_result_success)
 		result = cgltf_validate(data);
@@ -99,11 +99,11 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 			return false;
 		}
 	}
-	LOG_INFO("Loading %s...", path.data);
+	LOG_INFO("Loading %s...", path.memory);
 	logger_indent();
 
 	ArenaTemp scratch = arena_scratch(arena);
-	String base_directory = string_directory_from_path(scratch.arena, path);
+	String base_directory = string_push_copy(scratch.arena, string_path_folder(path));
 
 	out_model->image_count = data->images_count;
 	out_model->images = arena_push_array_zero(arena, ImageSource, out_model->image_count);
@@ -114,27 +114,27 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 		if (src->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
-			String mime_type = string_wrap_cstring(src->mime_type);
+			String mime_type = string_from_cstr(src->mime_type);
 
-			String filename = string_find_and_replace(scratch.arena, string_filename_from_path(scratch.arena, path), S(".glb"), S(""));
-			String name = string_format(scratch.arena, "%s_%s", filename.data, (src->name ? src->name : "image"));
-			if (string_contains(string_wrap_cstring(src->mime_type), S("png")) != -1) {
-				dst->path = string_format(arena, "%s/%s.png", base_directory.data, name.data);
+			String filename = string_push_replace(scratch.arena, string_path_filename(path), str_lit(".glb"), str_lit(""));
+			String name = string_pushf(scratch.arena, "%s_%s", filename.memory, (src->name ? src->name : "image"));
+			if (string_find_first(string_from_cstr(src->mime_type), str_lit("png")) != -1) {
+				dst->path = string_pushf(arena, "%s/%s.png", base_directory.memory, name.memory);
 				if (filesystem_file_exists(dst->path) == false) {
 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
-					stbi_write_png(dst->path.data, dst->width, dst->height, 4, pixels, STBI_default);
+					stbi_write_png(dst->path.memory, dst->width, dst->height, 4, pixels, STBI_default);
 					stbi_image_free(pixels);
 				}
-			} else if (string_contains(mime_type, S("jpg")) != -1 || string_contains(mime_type, S("jpeg")) != -1) {
-				dst->path = string_format(arena, "%s/%s.jpg", base_directory.data, name.data);
+			} else if (string_find_first(mime_type, str_lit("jpg")) != -1 || string_find_first(mime_type, str_lit("jpeg")) != -1) {
+				dst->path = string_pushf(arena, "%s/%s.jpg", base_directory.memory, name.memory);
 				if (filesystem_file_exists(dst->path) == false) {
 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
-					stbi_write_jpg(dst->path.data, dst->width, dst->height, dst->channels, pixels, 0);
+					stbi_write_jpg(dst->path.memory, dst->width, dst->height, dst->channels, pixels, 0);
 					stbi_image_free(pixels);
 				}
 			}
 		} else if (src->uri) {
-			dst->path = string_format(arena, "%s/%s", base_directory.data, src->uri);
+			dst->path = string_pushf(arena, "%s/%s", base_directory.memory, src->uri);
 		}
 	}
 

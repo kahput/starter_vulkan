@@ -2,6 +2,7 @@
 #include "input/input_types.h"
 #include "platform.h"
 
+#include "renderer/r_internal.h"
 #include "scene.h"
 
 #include "renderer.h"
@@ -23,7 +24,9 @@
 #include "platform/filesystem.h"
 
 #include <cglm/cglm.h>
+#include <cglm/mat4.h>
 #include <dlfcn.h>
+#include <string.h>
 #include <time.h>
 
 #define GATE_FILE_PATH "assets/models/modular_dungeon/gate.glb"
@@ -67,6 +70,7 @@ bool game_on_unload(GameContext *context) {
 
 void editor_update(float dt);
 bool resize_event(Event *event);
+void load_cubemap(String path);
 
 static struct State {
 	Arena permanent, transient, game;
@@ -108,31 +112,37 @@ int main(void) {
 	// Create default textures
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
 	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1,
-		TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, WHITE);
+		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, WHITE);
 
 	uint8_t BLACK[4] = { 0, 0, 0, 255 };
+
 	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1,
-		TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, BLACK);
+		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, BLACK);
 
 	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
 	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1,
-		TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
+		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
 
 	// Create default samplers
 	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
 	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
 
 	// Create render target textures
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
-		state.width, state.height, TEXTURE_FORMAT_DEPTH,
-		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
+	vulkan_renderer_texture_create(
+		state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
+		state.width, state.height,
+		TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH, TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP,
-		state.width, state.height, TEXTURE_FORMAT_DEPTH,
-		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
+	vulkan_renderer_texture_create(
+		state.context, RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP,
+		state.width, state.height,
+		TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH,
+		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED,
+		NULL);
 
 	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
-		state.width, state.height, TEXTURE_FORMAT_RGBA16F,
+		state.width, state.height,
+		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
 		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
 	// Create global resources
@@ -150,24 +160,23 @@ int main(void) {
 			.size = sizeof(FrameData),
 			.count = 1 },
 		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
-		  { .binding = 1, .type = SHADER_BINDING_SAMPLER, .size = 0, .count = 1 },
 		},
-		3);
+		2);
 	vulkan_renderer_resource_global_set_texture_sampler(state.context, RENDERER_GLOBAL_RESOURCE_MAIN, 1, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP, RENDERER_DEFAULT_SAMPLER_LINEAR);
 
 	vulkan_renderer_resource_global_create(
 		state.context, RENDERER_GLOBAL_RESOURCE_POSTFX,
 		(ResourceBinding[]){
 		  { .binding = 0, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
-		  { .binding = 0, .type = SHADER_BINDING_SAMPLER, .size = 0, .count = 1 },
 		},
-		2);
+		1);
 	vulkan_renderer_resource_global_set_texture_sampler(
 		state.context, RENDERER_GLOBAL_RESOURCE_POSTFX, 0, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
 		RENDERER_DEFAULT_SAMPLER_LINEAR);
 
 	// Create render passes
-	RenderPassDesc shadow_pass = { .name = S("Shadow"),
+	RenderPassDesc shadow_pass = {
+		.name = str_lit("Shadow"),
 		.depth_attachment = {
 		  .texture = RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
 		  .clear = { .depth = 1.0f },
@@ -175,9 +184,11 @@ int main(void) {
 		  .store = STORE,
 		},
 		.use_depth = true,
-		.enable_msaa = false };
+		.enable_msaa = false
+	};
 
-	RenderPassDesc main_pass = { .name = S("Main"),
+	RenderPassDesc main_pass = {
+		.name = str_lit("Main"),
 		.color_attachments = { {
 		  .texture = RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
 		  .clear = { .color = GLM_VEC4_BLACK_INIT },
@@ -192,15 +203,18 @@ int main(void) {
 		  .store = DONT_CARE,
 		},
 		.use_depth = true,
-		.enable_msaa = true };
+		.enable_msaa = true
+	};
 
-	RenderPassDesc postfx_pass = { .name = S("Post"),
+	RenderPassDesc postfx_pass = {
+		.name = str_lit("Post"),
 		.color_attachments = { { .present = true,
 		  .clear = { .color = GLM_VEC4_BLACK_INIT },
 		  .load = CLEAR,
 		  .store = STORE } },
 		.color_attachment_count = 1,
-		.enable_msaa = false };
+		.enable_msaa = false
+	};
 
 	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_SHADOW, shadow_pass);
 	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_MAIN, main_pass);
@@ -222,7 +236,8 @@ int main(void) {
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
-	asset_library_track_directory(&state.library, S("assets"));
+	asset_library_track_directory(&state.library, str_lit("assets"));
+	load_cubemap(str_lit("assets/textures/skybox/"));
 
 	GameContext game_context = { .game_memory = state.game.memory, .game_memory_size = state.game.capacity, .vk_context = state.context, &state.library };
 	game_load(&game_context);
@@ -233,7 +248,7 @@ int main(void) {
 
 	// Create light debug shader
 	ShaderSource *light_shader_src = NULL;
-	UUID light_shader_id = asset_library_request_shader(&state.library, S("light_debug.glsl"), &light_shader_src);
+	UUID light_shader_id = asset_library_request_shader(&state.library, str_lit("light_debug.glsl"), &light_shader_src);
 	uint32_t light_shader_index = 0;
 	uint32_t light_material = 0;
 
@@ -262,7 +277,7 @@ int main(void) {
 	}
 
 	ShaderSource *postfx_shader_src = NULL;
-	UUID postfx_shader_id = asset_library_request_shader(&state.library, S("postfx.glsl"), &postfx_shader_src);
+	UUID postfx_shader_id = asset_library_request_shader(&state.library, str_lit("postfx.glsl"), &postfx_shader_src);
 	uint32_t postfx_shader_index = 1;
 	{
 		ShaderConfig postfx_config = {
@@ -282,6 +297,32 @@ int main(void) {
 			RENDERER_DEFAULT_PASS_POSTFX, desc);
 	}
 
+	ShaderSource *skybox_shader_src = NULL;
+	UUID skybox_shader_id = asset_library_request_shader(&state.library, str_lit("skybox.glsl"), &skybox_shader_src);
+	uint32_t skybox_shader_index = 2;
+	uint32_t skybox_material = 1;
+	{
+		ShaderConfig skybox_config = {
+			.vertex_code = skybox_shader_src->vertex_shader.content,
+			.vertex_code_size = skybox_shader_src->vertex_shader.size,
+			.fragment_code = skybox_shader_src->fragment_shader.content,
+			.fragment_code_size = skybox_shader_src->fragment_shader.size,
+		};
+
+		PipelineDesc desc = DEFAULT_PIPELINE();
+		desc.cull_mode = CULL_MODE_NONE;
+		desc.depth_compare_op = COMPARE_OP_LESS_OR_EQUAL;
+		ShaderReflection reflection;
+		vulkan_renderer_shader_create(&state.permanent, state.context, skybox_shader_index,
+			RENDERER_GLOBAL_RESOURCE_MAIN, &skybox_config, &reflection);
+		vulkan_renderer_shader_variant_create(state.context, skybox_shader_index,
+			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD,
+			RENDERER_DEFAULT_PASS_MAIN, desc);
+
+		vulkan_renderer_resource_group_create(state.context, skybox_material, skybox_shader_index, 1);
+		vulkan_renderer_resource_group_set_texture_sampler(state.context, skybox_material, 0, RENDERER_DEFAULT_TEXTURE_SKYBOX, RENDERER_DEFAULT_SAMPLER_LINEAR);
+	}
+
 	// clang-format off
 	float quadVertices[] = {
 		-1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
@@ -293,10 +334,9 @@ int main(void) {
 		 1.0f,  1.0f, 0.0f, 1.0f, 1.0f
 	};
 	// clang-format on
-
-	uint32_t quadBuffer = 0;
+	uint32_t quad_vb = 0, cube_vb = 1;
 	vulkan_renderer_buffer_create(
-		state.context, quadBuffer, BUFFER_TYPE_VERTEX, sizeof(quadVertices), quadVertices);
+		state.context, quad_vb, BUFFER_TYPE_VERTEX, sizeof(quadVertices), quadVertices);
 
 	float sun_theta = 2 * GLM_PI / 3.f;
 	float sun_azimuth = 0;
@@ -317,7 +357,7 @@ int main(void) {
 		last_frame = time;
 		delta_time = max(delta_time, 0.0016f);
 
-		uint64_t current_write_time = filesystem_last_modified(S("libgame.so"));
+		uint64_t current_write_time = filesystem_last_modified(str_lit("libgame.so"));
 		if (current_write_time != game_library.last_write && current_write_time != 0) {
 			LOG_INFO("Game file change detected. Reloading...");
 			struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 }; // 100ms
@@ -376,9 +416,14 @@ int main(void) {
 						0, sizeof(vec4), lights[index].color, true);
 					vulkan_renderer_resource_group_bind(state.context, light_material, 0);
 					vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
-					vulkan_renderer_buffer_bind(state.context, quadBuffer, 0);
+					vulkan_renderer_buffer_bind(state.context, quad_vb, 0);
 					vulkan_renderer_draw(state.context, 6);
 				}
+
+				// Draw skybox
+				vulkan_renderer_shader_bind(state.context, skybox_shader_index, RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
+                vulkan_renderer_resource_group_bind(state.context, skybox_material, 0);
+				vulkan_renderer_draw(state.context, 36);
 			}
 			vulkan_renderer_pass_end(state.context);
 			vulkan_renderer_texture_prepare_sample(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP);
@@ -390,7 +435,7 @@ int main(void) {
 					state.context, postfx_shader_index,
 					RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
 				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_POSTFX);
-				vulkan_renderer_buffer_bind(state.context, quadBuffer, 0);
+				vulkan_renderer_buffer_bind(state.context, quad_vb, 0);
 				vulkan_renderer_draw(state.context, 6);
 			}
 			vulkan_renderer_pass_end(state.context);
@@ -481,8 +526,8 @@ bool game_load(GameContext *context) {
 	}
 	ArenaTemp scratch = arena_scratch(NULL);
 
-	String path = S("./libgame.so");
-	String temp_path = string_format(scratch.arena, "./loaded_%s.so", "game");
+	String path = str_lit("./libgame.so");
+	String temp_path = string_pushf(scratch.arena, "./loaded_%s.so", "game");
 
 	if (filesystem_file_copy(path, temp_path) == false) {
 		LOG_ERROR("failed to copy file");
@@ -490,7 +535,7 @@ bool game_load(GameContext *context) {
 		return false;
 	}
 
-	void *handle = dlopen(temp_path.data, RTLD_NOW);
+	void *handle = dlopen(temp_path.memory, RTLD_NOW);
 	if (handle == NULL) {
 		LOG_ERROR("dlopen failed: %s", dlerror());
 		ASSERT(false);
@@ -512,4 +557,68 @@ bool game_load(GameContext *context) {
 
 	game = hookup();
 	return true;
+}
+
+void load_cubemap(String path) {
+	ArenaTemp scratch = arena_scratch(NULL);
+
+	StringList files = filesystem_list_files(scratch.arena, path, false);
+
+	LOG_INFO("Scratch size used so after file_list: %llu", scratch.arena->offset);
+
+	if (files.node_count != 6) {
+		LOG_ERROR("Cubemap error: Found %llu files in '%.*s', expected 6.", files.node_count, str_expand(path));
+		arena_release_scratch(scratch);
+	}
+
+	ImageSource *loaded_images[6];
+
+	int32_t width = 0, height = 0;
+	int32_t channels = 0;
+	size_t single_image_size = 0;
+
+	static const char *order[6] = {
+		"right.",
+		"left.",
+		"top.",
+		"bottom.",
+		"front.",
+		"back.",
+	};
+
+	StringNode *file_node = files.first;
+	String extension = string_path_extension(file_node->string);
+	for (int index = 0; index < 6; index++) {
+		ImageSource *img = NULL;
+
+		String key = string_push_concat(scratch.arena, string_from_cstr(order[index]), extension);
+		asset_library_load_image(scratch.arena, &state.library, key, &img);
+		LOG_INFO("Scratch size used so after image %d: %llu", index, scratch.arena->offset);
+
+		loaded_images[index] = img;
+
+		if (index == 0) {
+			width = img->width;
+			height = img->height;
+			channels = img->channels;
+			single_image_size = width * height * channels;
+		} else
+			ASSERT(img->width == width && img->height == height);
+
+		file_node = file_node->next;
+	}
+
+	uint8_t *final_pixels = arena_push_array(scratch.arena, uint8_t, single_image_size * 6);
+
+	for (int index = 0; index < 6; index++) {
+		memcpy(final_pixels + (index * single_image_size), loaded_images[index]->pixels, single_image_size);
+	}
+
+	vulkan_renderer_texture_create(
+		state.context, RENDERER_DEFAULT_TEXTURE_SKYBOX,
+		width, height,
+		TEXTURE_TYPE_CUBE, TEXTURE_FORMAT_RGBA8_SRGB,
+		TEXTURE_USAGE_SAMPLED, final_pixels);
+
+	arena_release_scratch(scratch);
 }

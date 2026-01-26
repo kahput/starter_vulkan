@@ -1,9 +1,11 @@
 #include "common.h"
+#include "core/arena.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
+#include <string.h>
 #include <vulkan/vulkan_core.h>
 
 int32_t to_vulkan_usage(BufferType type);
@@ -276,38 +278,45 @@ bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, Vk
 	return true;
 }
 
-bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height) {
+bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size) {
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 	vulkan_image_transition(
-		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT,
+		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT, layer_count,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
-	VkBufferImageCopy region = {
-		.bufferOffset = src_offset,
-		.bufferRowLength = 0,
-		.bufferImageHeight = 0,
-		.imageSubresource = {
-		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-		  .mipLevel = 0,
-		  .baseArrayLayer = 0,
-		  .layerCount = 1,
-		},
-		.imageOffset = { 0 },
-		.imageExtent = { .width = width, .height = height, .depth = 1 },
-	};
+	ArenaTemp scratch = arena_scratch(NULL);
+	VkBufferImageCopy *regions = arena_push_array_zero(scratch.arena, VkBufferImageCopy, layer_count);
 
-	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+	for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
+		regions[layer_index] = (VkBufferImageCopy){
+			.bufferOffset = src_offset + layer_index * layer_size,
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource = {
+			  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			  .mipLevel = 0,
+			  .baseArrayLayer = layer_index,
+			  .layerCount = 1,
+			},
+			.imageOffset = { 0 },
+			.imageExtent = { .width = width, .height = height, .depth = 1 },
+		};
+	}
+
+	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layer_count, regions);
 
 	vulkan_image_transition(
-		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT,
+		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT, layer_count,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 		VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
+	arena_release_scratch(scratch);
+
 	return true;
 }
 

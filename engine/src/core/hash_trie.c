@@ -17,7 +17,7 @@ void *hash_trie_traverse_key(Arena *arena, HashTrieNode **root, String key, size
 		return NULL;
 
 	*node = arena_push(arena, node_size, 1, true);
-	(*node)->key = string_duplicate(arena, key);
+	(*node)->key = string_push_copy(arena, key);
 	(*node)->hash = hash;
 
 	return *node;
@@ -37,7 +37,7 @@ void *hash_trie_traverse_hash(Arena *arena, HashTrieNode **root, uint64_t hash, 
 		return NULL;
 
 	*node = arena_push(arena, node_size, 1, true);
-	(*node)->key = string_format(arena, "%d", hash);
+	(*node)->key = string_pushf(arena, "%llu", hash);
 	(*node)->hash = hash;
 
 	return *node;

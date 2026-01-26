@@ -2,7 +2,6 @@
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
-#include "common.h"
 #include "core/debug.h"
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
@@ -33,15 +32,6 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 					.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS
 				};
 				global->binding_count++;
-				break;
-			}
-
-			if (vk_binding->binding == binding->binding) {
-				bool valid_overlap =
-					(vk_binding->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE && binding->type == SHADER_BINDING_SAMPLER) ||
-					(vk_binding->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER && binding->type == SHADER_BINDING_TEXTURE_2D);
-				ASSERT(valid_overlap);
-				vk_binding->descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 				break;
 			}
 		}
@@ -218,28 +208,30 @@ bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t stor
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 	VkMemoryPropertyFlags memory_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-	if (vulkan_buffer_create(context, shader->instance_size, max_instance_count * MAX_FRAMES_IN_FLIGHT, usage, memory_properties, buffer) == false) {
-		LOG_ERROR("Vulkan: failed to create VkBuffer for group resource, aborting vulkan_renderer_group_create");
-		return false;
+	if (shader->instance_size != 0) {
+		if (vulkan_buffer_create(context, shader->instance_size, max_instance_count * MAX_FRAMES_IN_FLIGHT, usage, memory_properties, buffer) == false) {
+			LOG_ERROR("Vulkan: failed to create VkBuffer for group resource, aborting vulkan_renderer_group_create");
+			return false;
+		}
+		vulkan_buffer_memory_map(context, buffer);
+
+		VkDescriptorBufferInfo buffer_info = {
+			.buffer = buffer->handle,
+			.offset = 0,
+			.range = buffer->stride,
+		};
+
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = group->set,
+			.dstBinding = shader->group_ubo_binding,
+			.dstArrayElement = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+			.descriptorCount = 1,
+			.pBufferInfo = &buffer_info,
+		};
+		vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
 	}
-	vulkan_buffer_memory_map(context, buffer);
-
-	VkDescriptorBufferInfo buffer_info = {
-		.buffer = buffer->handle,
-		.offset = 0,
-		.range = buffer->stride,
-	};
-
-	VkWriteDescriptorSet descriptor_write = {
-		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		.dstSet = group->set,
-		.dstBinding = shader->group_ubo_binding,
-		.dstArrayElement = 0,
-		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-		.descriptorCount = 1,
-		.pBufferInfo = &buffer_info,
-	};
-	vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
 
 	LOG_INFO("Vulkan: VkDescriptorSet created");
 	group->state = VULKAN_RESOURCE_STATE_INITIALIZED;
@@ -305,12 +297,19 @@ bool vulkan_renderer_resource_group_bind(VulkanContext *context, uint32_t retrie
 		return false;
 	}
 
-	uint32_t frame_offset = context->current_frame * group->max_instance_count;
-	uint32_t pass_offsets[] = { buffer->stride * (frame_offset + instance_index) };
-	vkCmdBindDescriptorSets(
-		context->command_buffers[context->current_frame],
-		VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
-		SHADER_UNIFORM_FREQUENCY_PER_MATERIAL, 1, &group->set, 1, pass_offsets);
+	if (buffer->state) {
+		uint32_t frame_offset = context->current_frame * group->max_instance_count;
+		uint32_t pass_offsets[] = { buffer->stride * (frame_offset + instance_index) };
+
+		vkCmdBindDescriptorSets(
+			context->command_buffers[context->current_frame],
+			VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+			SHADER_UNIFORM_FREQUENCY_PER_MATERIAL, 1, &group->set, 1, pass_offsets);
+	} else
+		vkCmdBindDescriptorSets(
+			context->command_buffers[context->current_frame],
+			VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+			SHADER_UNIFORM_FREQUENCY_PER_MATERIAL, 1, &group->set, 0, NULL);
 
 	return true;
 }
@@ -366,7 +365,7 @@ VkDescriptorType to_vulkan_descriptor_type(ShaderBindingType type) {
 			return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 		} break;
 		case SHADER_BINDING_TEXTURE_2D: {
-			return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+			return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		} break;
 		case SHADER_BINDING_SAMPLER: {
 			return VK_DESCRIPTOR_TYPE_SAMPLER;

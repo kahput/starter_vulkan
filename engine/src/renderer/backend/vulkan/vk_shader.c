@@ -301,14 +301,14 @@ static uint32_t count_shader_members(SpvReflectBlockVariable *var) {
 static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, String prefix, ShaderMember **cursor) {
 	char full_name[128];
 	if (prefix.length > 0)
-		snprintf(full_name, sizeof(full_name), "%s.%s", prefix.data, var->name);
+		snprintf(full_name, sizeof(full_name), "%s.%s", prefix.memory, var->name);
 	else
 		snprintf(full_name, sizeof(full_name), "%s", var->name);
 
 	if (var->member_count == 0) {
 		// This is a leaf node
 		ShaderMember *m = *cursor;
-		m->name = string_duplicate(arena, string_wrap_cstring(full_name));
+		m->name = string_push_copy(arena, string_from_cstr(full_name));
 		m->offset = var->absolute_offset;
 		m->size = var->size;
 
@@ -316,14 +316,14 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 	} else {
 		// Recurse
 		for (uint32_t i = 0; i < var->member_count; ++i) {
-			fill_shader_members(arena, &var->members[i], S(full_name), cursor);
+			fill_shader_members(arena, &var->members[i], str_lit(full_name), cursor);
 		}
 	}
 }
 
 static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *block) {
 	ShaderBuffer *buffer = arena_push_struct_zero(arena, ShaderBuffer);
-	buffer->name = string_duplicate(arena, string_wrap_cstring(block->name));
+	buffer->name = string_push_copy(arena, string_from_cstr(block->name));
 	buffer->size = block->size;
 
 	buffer->member_count = count_shader_members(block);
@@ -331,7 +331,7 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 
 	ShaderMember *cursor = buffer->members;
 	for (uint32_t i = 0; i < block->member_count; ++i) {
-		fill_shader_members(arena, &block->members[i], S(""), &cursor);
+		fill_shader_members(arena, &block->members[i], str_lit(""), &cursor);
 	}
 
 	return buffer;
@@ -516,7 +516,7 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 
 			ShaderBinding *dst = &out_reflection->bindings[index];
 
-			dst->name = string_duplicate(arena, string_wrap_cstring(spv->name));
+			dst->name = string_push_copy(arena, string_from_cstr(spv->name));
 
 			dst->frequency = spv->set;
 			dst->binding = spv->binding;

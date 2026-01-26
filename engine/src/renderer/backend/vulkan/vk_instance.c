@@ -7,6 +7,7 @@
 #include "core/arena.h"
 
 #include "platform.h"
+#include <string.h>
 
 static const char *layers[] = {
 	"VK_LAYER_KHRONOS_validation",

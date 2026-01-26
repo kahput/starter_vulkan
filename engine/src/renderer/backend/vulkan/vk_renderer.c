@@ -55,8 +55,9 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	if (vulkan_swapchain_create(context, width, height) == false)
 		return false;
 
+	// TODO: Lower this back down to 32?
 	if (vulkan_buffer_create(
-			context, MiB(32), MAX_FRAMES_IN_FLIGHT,
+			context, MiB(256), MAX_FRAMES_IN_FLIGHT,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			&context->staging_buffer) == false)
 		return false;
@@ -180,7 +181,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 
 	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
-		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT, 1,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
@@ -191,7 +192,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 bool Vulkan_renderer_frame_end(VulkanContext *context) {
 	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
-		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT,
+		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT, 1,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0);
