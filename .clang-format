@@ -7,7 +7,11 @@ AlignAfterOpenBracket: DontAlign
 BracedInitializerIndentWidth: 2
 AlignOperands: DontAlign
 AlignTrailingComments: false
+
 AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortEnumsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Always
+
 BreakConstructorInitializers: AfterColon
 ColumnLimit: 0
 ConstructorInitializerIndentWidth: 4
