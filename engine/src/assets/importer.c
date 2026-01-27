@@ -178,7 +178,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 	}
 
 	out_model->mesh_count = mesh_count;
-	out_model->meshes = arena_push_array_zero(arena, MeshSource, out_model->mesh_count);
+	out_model->meshes = arena_push_array_zero(arena, MeshSource2, out_model->mesh_count);
 
 	mesh_count = 0;
 	for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
@@ -186,7 +186,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
 			cgltf_primitive *src_mesh = &mesh->primitives[primitive_index];
-			MeshSource *dst_mesh = &out_model->meshes[mesh_count++];
+			MeshSource2 *dst_mesh = &out_model->meshes[mesh_count++];
 
 			// bool has_tangents = false;
 

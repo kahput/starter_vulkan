@@ -111,21 +111,26 @@ int main(void) {
 
 	// Create default textures
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1,
+	vulkan_renderer_texture_create(
+		state.context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, WHITE);
 
 	uint8_t BLACK[4] = { 0, 0, 0, 255 };
 
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1,
+	vulkan_renderer_texture_create(
+		state.context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, BLACK);
 
 	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1,
+	vulkan_renderer_texture_create(
+		state.context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
 
 	// Create default samplers
-	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
-	vulkan_renderer_sampler_create(state.context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
+	vulkan_renderer_sampler_create(
+		state.context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
+	vulkan_renderer_sampler_create(
+		state.context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
 
 	// Create render target textures
 	vulkan_renderer_texture_create(
@@ -171,8 +176,8 @@ int main(void) {
 		},
 		1);
 	vulkan_renderer_resource_global_set_texture_sampler(
-		state.context, RENDERER_GLOBAL_RESOURCE_POSTFX, 0, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
-		RENDERER_DEFAULT_SAMPLER_LINEAR);
+		state.context, RENDERER_GLOBAL_RESOURCE_POSTFX, 0,
+		RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP, RENDERER_DEFAULT_SAMPLER_LINEAR);
 
 	// Create render passes
 	RenderPassDesc shadow_pass = {
@@ -422,7 +427,7 @@ int main(void) {
 
 				// Draw skybox
 				vulkan_renderer_shader_bind(state.context, skybox_shader_index, RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
-                vulkan_renderer_resource_group_bind(state.context, skybox_material, 0);
+				vulkan_renderer_resource_group_bind(state.context, skybox_material, 0);
 				vulkan_renderer_draw(state.context, 36);
 			}
 			vulkan_renderer_pass_end(state.context);

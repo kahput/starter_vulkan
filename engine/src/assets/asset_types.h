@@ -81,7 +81,7 @@ typedef struct {
 	vec4 tangent;
 } Vertex;
 
-typedef struct mesh_source {
+typedef struct mesh_source2 {
 	UUID id;
 
 	Vertex *vertices;
@@ -92,10 +92,10 @@ typedef struct mesh_source {
 	uint32_t index_count;
 
 	MaterialSource *material;
-} MeshSource;
+} MeshSource2;
 
 typedef struct model_source {
-	MeshSource *meshes;
+	MeshSource2 *meshes;
 	uint32_t mesh_count;
 
 	MaterialSource *materials;

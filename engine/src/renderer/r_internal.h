@@ -127,8 +127,8 @@ typedef enum cull_mode {
 } PipelineCullMode;
 
 typedef enum front_face {
-	FRONT_FACE_COUNTER_CLOCKWISE = 0, // Default in most engines
-	FRONT_FACE_CLOCKWISE = 1 // Default in Vulkan coordinate system
+	FRONT_FACE_COUNTER_CLOCKWISE = 0, 
+	FRONT_FACE_CLOCKWISE = 1 
 } PipelineFrontFace;
 
 typedef enum polygon_mode {
