@@ -1,10 +1,10 @@
-#include "core/pool.h"
 #include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "platform.h"
 
+#include "core/pool.h"
 #include "core/arena.h"
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
@@ -20,14 +20,14 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	context->image_pool = arena_push_array_zero(arena, VulkanImage, MAX_TEXTURES);
-	context->buffer_pool = arena_push_array_zero(arena, VulkanBuffer, MAX_BUFFERS);
-	context->sampler_pool = arena_push_array_zero(arena, VulkanSampler, MAX_SAMPLERS);
-	context->shader_pool = arena_push_array_zero(arena, VulkanShader, MAX_SHADERS);
-	context->pass_pool = arena_push_array_zero(arena, VulkanPass, MAX_RENDER_PASSES);
+	context->image_pool = arena_push_pool_zero(arena, VulkanImage, MAX_TEXTURES);
+	context->buffer_pool = arena_push_pool_zero(arena, VulkanBuffer, MAX_BUFFERS);
+	context->sampler_pool = arena_push_pool_zero(arena, VulkanSampler, MAX_SAMPLERS);
+	context->shader_pool = arena_push_pool_zero(arena, VulkanShader, MAX_SHADERS);
+	context->pass_pool = arena_push_pool_zero(arena, VulkanPass, MAX_RENDER_PASSES);
 
-	context->group_resources = arena_push_array_zero(arena, VulkanGroupResource, MAX_GROUP_RESOURCES);
-	context->global_resources = arena_push_array_zero(arena, VulkanGlobalResource, MAX_GLOBAL_RESOURCES);
+	context->group_resources = arena_push_pool_zero(arena, VulkanGroupResource, MAX_GROUP_RESOURCES);
+	context->global_resources = arena_push_pool_zero(arena, VulkanGlobalResource, MAX_GLOBAL_RESOURCES);
 
 	if (vulkan_instance_create(context, context->display) == false)
 		return false;
@@ -78,32 +78,32 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 
 	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
 		if (context->shader_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_shader_destroy(context, index);
+			vulkan_renderer_shader_destroy(context, (RhiShader){ index, 0 });
 	}
 
 	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
 		if (context->image_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_texture_destroy(context, index);
+			vulkan_renderer_texture_destroy(context, (RhiTexture){ index, 0 });
 	}
 
 	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
 		if (context->sampler_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_sampler_destroy(context, index);
+			vulkan_renderer_sampler_destroy(context, (RhiSampler){ index, 0 });
 	}
 
 	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
 		if (context->buffer_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_buffer_destroy(context, index);
+			vulkan_renderer_buffer_destroy(context, (RhiBuffer){ index, 0 });
 	}
 
 	for (uint32_t index = 0; index < MAX_GLOBAL_RESOURCES; ++index) {
 		if (context->global_resources[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_resource_global_destroy(context, index);
+			vulkan_renderer_resource_global_destroy(context, (RhiGlobalResource){ index, 0 });
 	}
 
 	for (uint32_t index = 0; index < MAX_GROUP_RESOURCES; ++index) {
 		if (context->group_resources[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_resource_group_destroy(context, index);
+			vulkan_renderer_resource_group_destroy(context, (RhiGroupResource){ index, 0 });
 	}
 
 	vkDestroyBuffer(context->device.logical, context->staging_buffer.handle, NULL);

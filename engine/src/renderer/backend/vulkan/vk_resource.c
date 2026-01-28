@@ -1,3 +1,5 @@
+#include "core/pool.h"
+#include "core/r_types.h"
 #include "vk_internal.h"
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
@@ -8,9 +10,8 @@
 
 VkDescriptorType to_vulkan_descriptor_type(ShaderBindingType type);
 
-bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t store_index, ResourceBinding *bindings, uint32_t binding_count) {
-	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, store_index, MAX_GLOBAL_RESOURCES, false);
+RhiGlobalResource vulkan_renderer_resource_global_create(VulkanContext *context, ResourceBinding *bindings, uint32_t binding_count) {
+	VulkanGlobalResource *global = pool_alloc_struct(context->global_resources, VulkanGlobalResource);
 	VulkanBuffer *buffer = &global->buffer;
 
 	uint32_t buffer_binding = -1;
@@ -45,7 +46,7 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 
 	if (vkCreateDescriptorSetLayout(context->device.logical, &create_info, NULL, &global->set_layout) != VK_SUCCESS) {
 		LOG_ERROR("Vulkan: Failed to create global VkDescriptorSetLayout");
-		return false;
+		return INVALID_RHI(RhiGlobalResource);
 	}
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {
@@ -58,7 +59,7 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 
 	if (vkCreatePipelineLayout(context->device.logical, &pipeline_layout_info, NULL, &global->pipeline_layout) != VK_SUCCESS) {
 		LOG_ERROR("Vulkan: failed to create VkPipelineLayout for global resource, aborting %s", __func__);
-		return false;
+		return INVALID_RHI(RhiGlobalResource);
 	}
 
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
@@ -70,13 +71,13 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 
 	if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, &global->set) != VK_SUCCESS) {
 		LOG_ERROR("Vulkan: failed to create VkDescriptorSet for global resource, aborting %s", __func__);
-		return false;
+		return INVALID_RHI(RhiGlobalResource);
 	}
 
 	if (buffer_binding != (uint32_t)-1) {
 		if (vulkan_buffer_ubo_create(context, buffer, bindings[buffer_binding].size, NULL) == false) {
 			LOG_ERROR("Vulkan: failed to create VkBuffer for global resource, aborting %s", __func__);
-			return false;
+			return INVALID_RHI(RhiGlobalResource);
 		}
 
 		VkDescriptorBufferInfo buffer_info = {
@@ -100,12 +101,12 @@ bool vulkan_renderer_resource_global_create(VulkanContext *context, uint32_t sto
 	LOG_INFO("Vulkan: Global resource created");
 	global->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-	return true;
+	return (RhiGlobalResource){ pool_index_of(context->global_resources, global), 0 };
 }
 
-bool vulkan_renderer_resource_global_destroy(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_resource_global_destroy(VulkanContext *context, RhiGlobalResource handle) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GLOBAL_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true);
 
 	if (global->buffer.state) {
 		vkDestroyBuffer(context->device.logical, global->buffer.handle, NULL);
@@ -116,19 +117,21 @@ bool vulkan_renderer_resource_global_destroy(VulkanContext *context, uint32_t re
 	vkDestroyPipelineLayout(context->device.logical, global->pipeline_layout, NULL);
 	vkDestroyDescriptorSetLayout(context->device.logical, global->set_layout, NULL);
 
+	pool_free(context->global_resources, global);
+
 	return true;
 }
 
-bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context, uint32_t retrieve_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index) {
+bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context, RhiGlobalResource handle, uint32_t binding, RhiTexture rtexture, RhiSampler rsampler) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GROUP_RESOURCES, true);
 	VulkanBuffer *buffer = &global->buffer;
 
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, rtexture, MAX_TEXTURES, true);
 
 	VulkanSampler *sampler = NULL;
-	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_index, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, rsampler, MAX_SAMPLERS, true);
 
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,
@@ -150,9 +153,9 @@ bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context,
 	return true;
 }
 
-bool vulkan_renderer_resource_global_write(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data) {
+bool vulkan_renderer_resource_global_write(VulkanContext *context, RhiGlobalResource handle, size_t offset, size_t size, void *data) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GLOBAL_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true);
 	VulkanBuffer *buffer = &global->buffer;
 
 	if (buffer->state == VULKAN_RESOURCE_STATE_UNINITIALIZED) {
@@ -162,9 +165,9 @@ bool vulkan_renderer_resource_global_write(VulkanContext *context, uint32_t retr
 	vulkan_buffer_write_indexed(buffer, context->current_frame, offset, size, data);
 	return true;
 }
-bool vulkan_renderer_resource_global_bind(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_resource_global_bind(VulkanContext *context, RhiGlobalResource handle) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, retrieve_index, MAX_GLOBAL_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true);
 	VulkanBuffer *buffer = &global->buffer;
 
 	if (buffer->state) {
@@ -182,15 +185,25 @@ bool vulkan_renderer_resource_global_bind(VulkanContext *context, uint32_t retri
 	return true;
 }
 
-bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t store_index, uint32_t shader_index, uint32_t max_instance_count) {
+RhiGroupResource vulkan_renderer_resource_group_create(VulkanContext *context, RhiShader rshader, uint32_t max_instance_count) {
 	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN(shader, context->shader_pool, shader_index, MAX_SHADERS, true);
+	if (rshader.id >= MAX_SHADERS) {
+		LOG_ERROR("Vulkan: shader index %u out of bounds (max %u), aborting %s",
+			(uint32_t)(rshader.id), (uint32_t)(MAX_SHADERS), __func__);
+		return INVALID_RHI(RhiGroupResource);
+	}
 
-	VulkanGroupResource *group = NULL;
-	VULKAN_GET_OR_RETURN(group, context->group_resources, store_index, MAX_GROUP_RESOURCES, false);
+	shader = &context->shader_pool[rshader.id];
+	if (shader->state != VULKAN_RESOURCE_STATE_INITIALIZED) {
+		LOG_ERROR("Vulkan: shader at index %u is not initialized (State: %d), aborting %s",
+			(uint32_t)(rshader.id), (shader)->state, __func__);
+		ASSERT(false);
+		return INVALID_RHI(RhiGroupResource);
+	}
+	VulkanGroupResource *group = pool_alloc(context->group_resources);
 	VulkanBuffer *buffer = &group->buffer;
 
-	group->shader_index = shader_index;
+	group->shader = rshader;
 	group->max_instance_count = max_instance_count;
 
 	VkDescriptorSetAllocateInfo ds_allocate_info = {
@@ -202,7 +215,7 @@ bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t stor
 
 	if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, &group->set) != VK_SUCCESS) {
 		LOG_ERROR("Failed to create Vulkan DescriptorSets");
-		return false;
+		return INVALID_RHI(RhiGroupResource);
 	}
 
 	VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
@@ -211,7 +224,7 @@ bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t stor
 	if (shader->instance_size != 0) {
 		if (vulkan_buffer_create(context, shader->instance_size, max_instance_count * MAX_FRAMES_IN_FLIGHT, usage, memory_properties, buffer) == false) {
 			LOG_ERROR("Vulkan: failed to create VkBuffer for group resource, aborting vulkan_renderer_group_create");
-			return false;
+			return INVALID_RHI(RhiGroupResource);
 		}
 		vulkan_buffer_memory_map(context, buffer);
 
@@ -236,32 +249,25 @@ bool vulkan_renderer_resource_group_create(VulkanContext *context, uint32_t stor
 	LOG_INFO("Vulkan: VkDescriptorSet created");
 	group->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-	return true;
+	return (RhiGroupResource){ pool_index_of(context->group_resources, group), 0 };
 }
 
-bool vulkan_renderer_resource_group_destroy(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_resource_group_destroy(VulkanContext *context, RhiGroupResource handle) {
 	VulkanGroupResource *group = NULL;
-	VULKAN_GET_OR_RETURN(group, context->group_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
 
 	vkDestroyBuffer(context->device.logical, group->buffer.handle, NULL);
 	vkFreeMemory(context->device.logical, group->buffer.memory, NULL);
 	group->buffer = (VulkanBuffer){ 0 };
 
+	pool_free(context->group_resources, group);
+
 	return true;
 }
 
-bool vulkan_renderer_resource_group_write(VulkanContext *context, uint32_t retrieve_index, uint32_t instance_index, size_t offset, size_t size, void *data, bool all_frames) {
-	if (retrieve_index >= MAX_GROUP_RESOURCES) {
-		LOG_ERROR("Vulkan: group resource index %d out of bounds, aborting vulkan_renderer_resource_group_write", retrieve_index);
-		return false;
-	}
-
-	VulkanGroupResource *group = &context->group_resources[retrieve_index];
-	if (group->set == NULL) {
-		LOG_ERROR("Vulkan: group resource at index %d is not in use, aborting vulkan_renderer_resource_group_write", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+bool vulkan_renderer_resource_group_write(VulkanContext *context, RhiGroupResource handle, uint32_t instance_index, size_t offset, size_t size, void *data, bool all_frames) {
+	VulkanGroupResource *group = NULL;
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
 	VulkanBuffer *buffer = &group->buffer;
 
 	if (all_frames) {
@@ -276,26 +282,13 @@ bool vulkan_renderer_resource_group_write(VulkanContext *context, uint32_t retri
 	return true;
 }
 
-bool vulkan_renderer_resource_group_bind(VulkanContext *context, uint32_t retrieve_index, uint32_t instance_index) {
-	if (retrieve_index >= MAX_GROUP_RESOURCES) {
-		LOG_ERROR("Vulkan: group resource index %d out of bounds, aborting vulkan_renderer_resource_group_bind", retrieve_index);
-		return false;
-	}
-
-	VulkanGroupResource *group = &context->group_resources[retrieve_index];
-	if (group->set == NULL) {
-		LOG_ERROR("Vulkan: group resource at index %d is not in use, aborting vulkan_renderer_resource_group_bind", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+bool vulkan_renderer_resource_group_bind(VulkanContext *context, RhiGroupResource handle, uint32_t instance_index) {
+	VulkanGroupResource *group = NULL;
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
 	VulkanBuffer *buffer = &group->buffer;
 
-	VulkanShader *shader = &context->shader_pool[group->shader_index];
-	if (shader->vertex_shader == NULL || shader->fragment_shader == NULL) {
-		LOG_ERROR("Vulkan: shader at index %d not in use, aborting vulkan_renderer_resource_group_bind");
-		ASSERT(false);
-		return false;
-	}
+	VulkanShader *shader = NULL;
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, group->shader, MAX_SHADERS, true);
 
 	if (buffer->state) {
 		uint32_t frame_offset = context->current_frame * group->max_instance_count;
@@ -314,16 +307,16 @@ bool vulkan_renderer_resource_group_bind(VulkanContext *context, uint32_t retrie
 	return true;
 }
 
-bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, uint32_t retrieve_index, uint32_t binding, uint32_t texture_index, uint32_t sampler_index) {
+bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, RhiGroupResource handle, uint32_t binding, RhiTexture rtexture, RhiSampler rsampler) {
 	VulkanGroupResource *group = NULL;
-	VULKAN_GET_OR_RETURN(group, context->group_resources, retrieve_index, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
 	VulkanBuffer *buffer = &group->buffer;
 
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, rtexture, MAX_TEXTURES, true);
 
 	VulkanSampler *sampler = NULL;
-	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_index, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, rsampler, MAX_SAMPLERS, true);
 
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,

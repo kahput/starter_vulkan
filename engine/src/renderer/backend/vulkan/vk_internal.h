@@ -24,26 +24,52 @@ typedef enum {
 	VULKAN_RESOURCE_STATE_UNINITIALIZED,
 	VULKAN_RESOURCE_STATE_INITIALIZED,
 } VulkanResourceState;
-#define VULKAN_GET_OR_RETURN(ptr_var, pool_array, index, max_limit, expect_initialized)         \
+#define VULKAN_GET_OR_RETURN_TYPE(ptr_var, pool_array, handle, max_limit, expect_initialized, return_type) \
+	do {                                                                                                   \
+		if ((handle.id) >= (max_limit)) {                                                                  \
+			LOG_ERROR("Vulkan: %s index %u out of bounds (max %u), aborting %s",                           \
+				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                         \
+			return return_type;                                                                            \
+		}                                                                                                  \
+                                                                                                           \
+		(ptr_var) = &(pool_array)[handle.id];                                                              \
+		if ((expect_initialized)) {                                                                        \
+			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_INITIALIZED) {                                   \
+				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s",            \
+					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                          \
+				ASSERT(false);                                                                             \
+				return return_type;                                                                        \
+			}                                                                                              \
+		} else {                                                                                           \
+			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                                 \
+				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",             \
+					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                          \
+				ASSERT(false);                                                                             \
+				return return_type;                                                                        \
+			}                                                                                              \
+		}                                                                                                  \
+	} while (0)
+
+#define VULKAN_GET_OR_RETURN(ptr_var, pool_array, handle, max_limit, expect_initialized)        \
 	do {                                                                                        \
-		if ((index) >= (max_limit)) {                                                           \
+		if ((handle.id) >= (max_limit)) {                                                       \
 			LOG_ERROR("Vulkan: %s index %u out of bounds (max %u), aborting %s",                \
-				#ptr_var, (uint32_t)(index), (uint32_t)(max_limit), __func__);                  \
+				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);              \
 			return false;                                                                       \
 		}                                                                                       \
                                                                                                 \
-		(ptr_var) = &(pool_array)[index];                                                       \
+		(ptr_var) = &(pool_array)[handle.id];                                                   \
 		if ((expect_initialized)) {                                                             \
 			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_INITIALIZED) {                        \
 				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s", \
-					#ptr_var, (uint32_t)(index), (ptr_var)->state, __func__);                   \
+					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);               \
 				ASSERT(false);                                                                  \
 				return false;                                                                   \
 			}                                                                                   \
 		} else {                                                                                \
 			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                      \
 				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",  \
-					#ptr_var, (uint32_t)(index), (ptr_var)->state, __func__);                   \
+					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);               \
 				ASSERT(false);                                                                  \
 				return false;                                                                   \
 			}                                                                                   \
@@ -72,7 +98,8 @@ typedef struct vulkan_group_resource {
 	VulkanBuffer buffer;
 	VkDescriptorSet set;
 
-	uint32_t shader_index, max_instance_count;
+	uint32_t max_instance_count;
+	RhiShader shader;
 } VulkanGroupResource;
 
 typedef struct vulkan_global_resource {

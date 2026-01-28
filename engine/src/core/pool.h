@@ -1,28 +1,14 @@
-#ifndef POOL_H
-#define POOL_H
+#ifndef POOL_H_
+#define POOL_H_
 
-#include "core/arena.h"
+#include "arena.h"
 
-struct arena;
+void *pool_create(Arena *arena, uint32_t stride, uint32_t align, uint32_t capacity, bool zero_memory);
 
-typedef struct pool_slot {
-	struct pool_slot *next;
-} PoolSlot;
+#define pool_alloc_struct(pool, type) (type *)pool_alloc(pool)
 
-typedef struct pool {
-	PoolSlot *slots, *free_slots;
-	size_t slot_size;
-} Pool;
-
-void *pool_create(size_t slot_size, uint32_t capcity);
-void *pool_create_frm_arena(Arena *arena, uint32_t capacity, size_t slot_size, size_t alignment);
-Pool *allocator_pool(size_t slot_size, uint32_t capacity);
-Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_size, size_t alignment);
-void pool_destroy(Pool *pool);
-
-void *pool_alloc(Pool *pool);
-void *pool_alloc_zeroed(Pool *pool);
-
-void pool_free(Pool *pool, void *element);
+void *pool_alloc(void *pool);
+uint32_t pool_index_of(void *pool, void *slot);
+void pool_free(void *pool, void *slot);
 
 #endif

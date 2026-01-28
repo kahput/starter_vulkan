@@ -7,19 +7,20 @@
 #include <cglm/cglm.h>
 
 // clang-format off
-typedef struct { uint32_t id; } RhiBuffer;
-typedef struct { uint32_t id; } RhiGeometry;
+#define RHI_HANDLE(name) typedef struct name { uint32_t id, generation; } name
+#define INVALID_RHI(type) (type){ INVALID_INDEX, INVALID_INDEX }
+RHI_HANDLE(RhiBuffer);
+RHI_HANDLE(RhiGeometry);
 
-typedef struct { uint32_t id; } RhiTexture;
-typedef struct { uint32_t id; } RhiSampler;
+RHI_HANDLE(RhiTexture);
+RHI_HANDLE(RhiSampler);
 
-typedef struct { uint32_t id; } RhiShader;
-typedef struct { uint32_t id; } RhiShaderVariant;
-typedef struct { uint32_t id; } RhiGlobalResource;
-typedef struct { uint32_t id; } RhiGroupResource;
+RHI_HANDLE(RhiShader);
+RHI_HANDLE(RhiShaderVariant);
+RHI_HANDLE(RhiGlobalResource);
+RHI_HANDLE(RhiGroupResource);
 
-typedef struct { uint32_t id; } RhiPass;
-
+RHI_HANDLE(RhiPass);
 // clang-format on
 
 typedef Handle RTexture;

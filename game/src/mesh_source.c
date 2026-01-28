@@ -28,7 +28,7 @@ void mesh_list_push(Arena *arena, MeshList *list, MeshSource source) {
 	list->index_count += source.index_count;
 }
 
-MeshSource mesh_list_join(Arena *arena, MeshList *list) {
+MeshSource mesh_list_flatten(Arena *arena, MeshList *list) {
 	MeshSource rv = { 0 };
 	if (list->node_count == 0)
 		return rv;

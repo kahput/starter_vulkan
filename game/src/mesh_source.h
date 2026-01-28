@@ -34,6 +34,6 @@ typedef struct MeshList {
 } MeshList;
 
 void mesh_list_push(Arena *arena, MeshList *list, MeshSource source);
-MeshSource mesh_list_join(Arena *arena, MeshList *list);
+MeshSource mesh_list_flatten(Arena *arena, MeshList *list);
 
 #endif /* MESH_SOURCE_H_ */

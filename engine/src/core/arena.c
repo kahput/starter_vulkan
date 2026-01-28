@@ -78,7 +78,7 @@ void arena_end_temp(ArenaTemp temp) {
 
 ENGINE_API ArenaTemp arena_scratch(Arena *conflict) {
 	if (scratch_arenas[0].memory == NULL) {
-        // TODO: Lower this back down
+		// TODO: Lower this back down
 		scratch_arenas[0] = arena_create(MiB(256));
 		scratch_arenas[1] = arena_create(MiB(256));
 	}

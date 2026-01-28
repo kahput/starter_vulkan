@@ -1,14 +1,12 @@
+#include "core/pool.h"
 #include "vk_internal.h"
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
-#include "core/logger.h"
-#include <vulkan/vulkan_core.h>
 
-bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, RenderPassDesc desc) {
-	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN(pass, context->pass_pool, store_index, MAX_RENDER_PASSES, VULKAN_RESOURCE_STATE_UNINITIALIZED);
+RhiPass vulkan_renderer_pass_create(VulkanContext *context, RenderPassDesc desc) {
+	VulkanPass *pass = pool_alloc_struct(context->pass_pool, VulkanPass);
 
 	pass->color_attachment_count = desc.color_attachment_count;
 	pass->enable_msaa = desc.enable_msaa;
@@ -17,10 +15,10 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, R
 		AttachmentDesc *src = &desc.color_attachments[color_index];
 		VulkanAttachment *attachment = &pass->color_attachments[color_index];
 
-		VulkanImage *image = &context->image_pool[src->texture];
+		VulkanImage *image = &context->image_pool[src->texture.id];
 
 		attachment->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-		attachment->image_index = src->texture;
+		attachment->image_index = src->texture.id;
 		attachment->present = src->present;
 
 		attachment->load = (VkAttachmentLoadOp)src->load,
@@ -34,12 +32,12 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, R
 	}
 
 	if (desc.use_depth) {
-		VulkanImage *image = &context->image_pool[desc.depth_attachment.texture];
+		VulkanImage *image = &context->image_pool[desc.depth_attachment.texture.id];
 		AttachmentDesc *src = &desc.depth_attachment;
 		VulkanAttachment *attachment = &pass->depth_attachment;
 
 		attachment->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-		attachment->image_index = src->texture;
+		attachment->image_index = src->texture.id;
 		attachment->load = (VkAttachmentLoadOp)src->load;
 		attachment->store = (VkAttachmentStoreOp)src->store;
 		attachment->clear.depthStencil.depth = src->clear.depth;
@@ -48,20 +46,20 @@ bool vulkan_renderer_pass_create(VulkanContext *context, uint32_t store_index, R
 	}
 
 	pass->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-	return true;
+	return (RhiPass){ pool_index_of(context->pass_pool, pass), 0 };
 }
 
-bool vulkan_renderer_pass_destroy(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_pass_destroy(VulkanContext *context, RhiPass rpass) {
 	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN(pass, context->pass_pool, retrieve_index, MAX_RENDER_PASSES, true);
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true);
 
 	*pass = (VulkanPass){ 0 };
 	return true;
 }
 
-bool vulkan_renderer_pass_begin(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_pass_begin(VulkanContext *context, RhiPass rpass) {
 	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN(pass, context->pass_pool, retrieve_index, MAX_RENDER_PASSES, true);
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true);
 
 	VkExtent2D extent = {
 		context->swapchain.extent.width,

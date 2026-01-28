@@ -18,30 +18,30 @@
 static GameInterface interface;
 
 typedef struct {
+	RhiBuffer vb;
+	uint32_t vertex_count;
+} Terrain;
+
+typedef struct {
 	Arena arena;
 	// Sprite shader
-	uint32_t sprite_shader;
-	uint32_t sprite_material;
+	RhiShader sprite_shader;
+	RhiGroupResource sprite_material;
 
-	uint32_t terrain_shader;
-	uint32_t terrain_material;
+	RhiShader terrain_shader;
+	RhiGroupResource terrain_material;
 
 	// Quad mesh
-	uint32_t quad_vb;
+	RhiBuffer quad_vb;
 	uint32_t quad_vertex_count;
 
-	uint32_t cube_vb;
-	uint32_t cube_vertex_count;
+	Terrain terrain[2];
+
+	uint32_t current_frame;
 
 	// Texture
-	uint32_t sprite_texture;
-	uint32_t checkered_texture;
-
-	// Resource indices
-	uint32_t next_buffer_index;
-	uint32_t next_shader_index;
-	uint32_t next_image_index;
-	uint32_t next_group_index;
+	RhiTexture sprite_texture;
+	RhiTexture checkered_texture;
 
 	bool is_initialized;
 } GameState;
@@ -56,9 +56,10 @@ typedef enum {
 	FRONT,
 	BACK
 } Orientation;
+
 MeshSource create_quad_mesh(Arena *arena, float x, float y, float z, Orientation orientation);
-uint32_t create_shader(GameContext *context, String filename);
-uint32_t create_texture(GameContext *context, String filename);
+RhiShader create_shader(GameContext *context, String filename);
+RhiTexture create_texture(GameContext *context, String filename);
 
 bool game_on_load(GameContext *context) {
 	LOG_INFO("Game loading...");
@@ -69,6 +70,7 @@ bool game_on_load(GameContext *context) {
 bool game_on_update(GameContext *context, float dt) {
 	state = (GameState *)context->game_memory;
 
+	ArenaTemp scratch = arena_scratch(NULL);
 	if (state->is_initialized == false) {
 		state->arena = (Arena){
 			.memory = state + 1,
@@ -76,48 +78,19 @@ bool game_on_update(GameContext *context, float dt) {
 			.capacity = context->game_memory_size - sizeof(GameState)
 		};
 
-		// Initialize resource indices (start after engine defaults)
-		state->next_buffer_index = 2;
-		state->next_shader_index = 3;
-		state->next_image_index = RENDERER_DEFAULT_SURFACE_COUNT;
-		state->next_group_index = 2;
+		state->current_frame = 0;
+		for (uint32_t index = 0; index < countof(state->terrain); ++index)
+			state->terrain[index].vb.id = INVALID_INDEX;
 
 		state->sprite_shader = create_shader(context, str_lit("sprite.glsl"));
 		state->terrain_shader = create_shader(context, str_lit("terrain.glsl"));
 
-		ArenaTemp scratch = arena_scratch(NULL);
 		MeshSource plane_src = create_quad_mesh(scratch.arena, 0, 0, 0, FRONT);
 
-		MeshList list = { 0 };
-
-		for (int32_t z = 0; z < 16; ++z) {
-			for (int32_t x = 0; x < 16; x++) {
-				for (int32_t face_index = 0; face_index < 6; ++face_index) {
-					float x_offset = (float)x - ((float)16 * .5f);
-					float z_offset = (float)z - ((float)16 * .5f);
-
-					MeshSource source = create_quad_mesh(
-						scratch.arena, x_offset, -1.f, z_offset, face_index);
-					mesh_list_push(scratch.arena, &list, source);
-				}
-			}
-		}
-
-		MeshSource cube_src = mesh_list_join(scratch.arena, &list);
-
-		state->quad_vb = state->next_buffer_index++;
 		state->quad_vertex_count = plane_src.vertex_count;
 
-		state->cube_vb = state->next_buffer_index++;
-		state->cube_vertex_count = cube_src.vertex_count;
-
-		vulkan_renderer_buffer_create(context->vk_context, state->quad_vb, BUFFER_TYPE_VERTEX,
+		state->quad_vb = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_VERTEX,
 			plane_src.vertex_size * plane_src.vertex_count, plane_src.vertices);
-
-		vulkan_renderer_buffer_create(context->vk_context, state->cube_vb, BUFFER_TYPE_VERTEX,
-			cube_src.vertex_size * cube_src.vertex_count, cube_src.vertices);
-
-		arena_release_scratch(scratch);
 
 		// Load sprite texture
 		state->sprite_texture = create_texture(context, str_lit("tile_0085.png"));
@@ -125,26 +98,56 @@ bool game_on_update(GameContext *context, float dt) {
 
 		// Create material
 		vec4 sprite_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
-		state->sprite_material = state->next_group_index++;
-		vulkan_renderer_resource_group_create(context->vk_context, state->sprite_material,
+
+		state->sprite_material = vulkan_renderer_resource_group_create(context->vk_context,
 			state->sprite_shader, 1);
+
 		vulkan_renderer_resource_group_write(context->vk_context, state->sprite_material,
 			0, 0, sizeof(vec4), &sprite_tint, true);
+
 		vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
-			state->sprite_material, 0, state->sprite_texture, RENDERER_DEFAULT_SAMPLER_NEAREST);
+			state->sprite_material, 0, state->sprite_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_NEAREST, 0 });
 
 		vec4 terrain_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
-		state->terrain_material = state->next_group_index++;
-		vulkan_renderer_resource_group_create(context->vk_context, state->terrain_material,
+
+		state->terrain_material = vulkan_renderer_resource_group_create(context->vk_context,
 			state->terrain_shader, 1);
+
 		vulkan_renderer_resource_group_write(
 			context->vk_context, state->terrain_material,
 			0, 0, sizeof(vec4), &terrain_tint, true);
+
 		vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
-			state->terrain_material, 0, state->checkered_texture, RENDERER_DEFAULT_SAMPLER_LINEAR);
+			state->terrain_material, 0, state->checkered_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_LINEAR, 0 });
 
 		state->is_initialized = true;
 	}
+
+	Terrain *terrain = &state->terrain[state->current_frame];
+	if (terrain->vb.id != INVALID_INDEX) {
+		vulkan_renderer_buffer_destroy(context->vk_context, terrain->vb);
+		terrain->vb.id = INVALID_INDEX;
+	}
+
+	MeshList list = { 0 };
+
+	for (int32_t z = 0; z < 16; ++z) {
+		for (int32_t x = 0; x < 16; x++) {
+			for (int32_t face_index = 0; face_index < 6; ++face_index) {
+				float x_offset = (float)x - ((float)16 * .5f);
+				float z_offset = (float)z - ((float)16 * .5f);
+
+				MeshSource source = create_quad_mesh(
+					scratch.arena, x_offset, -1.f, z_offset, face_index);
+				mesh_list_push(scratch.arena, &list, source);
+			}
+		}
+	}
+	MeshSource cube_src = mesh_list_flatten(scratch.arena, &list);
+	terrain->vertex_count = cube_src.vertex_count;
+
+	terrain->vb = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_VERTEX,
+		cube_src.vertex_size * cube_src.vertex_count, cube_src.vertices);
 
 	// Render the sprite at origin
 	mat4 transform = GLM_MAT4_IDENTITY_INIT;
@@ -158,6 +161,7 @@ bool game_on_update(GameContext *context, float dt) {
 		context->vk_context, state->sprite_material,
 		0, 0, sizeof(vec4),
 		(vec4){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
+
 	vulkan_renderer_resource_group_write(
 		context->vk_context, state->terrain_material,
 		0, 0, sizeof(vec4),
@@ -176,8 +180,11 @@ bool game_on_update(GameContext *context, float dt) {
 	vulkan_renderer_resource_group_bind(context->vk_context, state->terrain_material, 0);
 
 	vulkan_renderer_resource_local_write(context->vk_context, 0, sizeof(mat4), transform);
-	vulkan_renderer_buffer_bind(context->vk_context, state->cube_vb, 0);
-	vulkan_renderer_draw(context->vk_context, state->cube_vertex_count);
+	vulkan_renderer_buffer_bind(context->vk_context, terrain->vb, 0);
+	vulkan_renderer_draw(context->vk_context, terrain->vertex_count);
+
+	arena_release_scratch(scratch);
+	state->current_frame = (state->current_frame + 1) % 2;
 
 	return true;
 }
@@ -206,12 +213,12 @@ MeshSource create_quad_mesh(Arena *arena, float x, float y, float z, Orientation
 	rv.vertices = (uint8_t *)vertices;
 
 	/**
-			   5---4
-			  /|  /|
-			 0---1 |
-			 | 7-|-6
-			 |/  |/
-			 2---3
+				5---4
+			   /|  /|
+			  0---1 |
+			  | 7-|-6
+			  |/  |/
+			  2---3
 	**/
 
 	const vec3 positions[8] = {
@@ -263,17 +270,16 @@ MeshSource create_quad_mesh(Arena *arena, float x, float y, float z, Orientation
 	return rv;
 }
 
-uint32_t create_shader(GameContext *context, String filename) {
+RhiShader create_shader(GameContext *context, String filename) {
 	// Load sprite shader
 	ShaderSource *shader_src = NULL;
 	asset_library_request_shader(context->asset_library, filename, &shader_src);
 	if (shader_src == NULL) {
 		LOG_ERROR("Failed to load %.*s shader", str_expand(filename));
 		ASSERT(false);
-		return false;
+		return (RhiShader){ 0 };
 	}
 
-	uint32_t shader = state->next_shader_index++;
 	ShaderConfig config = {
 		.vertex_code = shader_src->vertex_shader.content,
 		.vertex_code_size = shader_src->vertex_shader.size,
@@ -286,29 +292,30 @@ uint32_t create_shader(GameContext *context, String filename) {
 	desc.front_face = FRONT_FACE_COUNTER_CLOCKWISE;
 
 	ShaderReflection reflection;
-	LOG_INFO("Creating shader at index %d", shader);
-	vulkan_renderer_shader_create(&state->arena, context->vk_context, shader,
-		RENDERER_GLOBAL_RESOURCE_MAIN, &config, &reflection);
+
+	RhiShader shader = vulkan_renderer_shader_create(&state->arena, context->vk_context,
+		(RhiGlobalResource){ RENDERER_GLOBAL_RESOURCE_MAIN, 0 }, &config, &reflection);
+
 	vulkan_renderer_shader_variant_create(context->vk_context, shader,
-		RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_MAIN, desc);
+		(RhiPass){ RENDERER_DEFAULT_PASS_MAIN, 0 }, desc);
+
 	desc.polygon_mode = POLYGON_MODE_LINE;
 	vulkan_renderer_shader_variant_create(context->vk_context, shader,
-		RENDERER_DEFAULT_SHADER_VARIANT_WIREFRAME, RENDERER_DEFAULT_PASS_MAIN, desc);
+		(RhiPass){ RENDERER_DEFAULT_PASS_MAIN, 0 }, desc);
 
 	return shader;
 }
 
-uint32_t create_texture(GameContext *context, String filename) {
+RhiTexture create_texture(GameContext *context, String filename) {
 	ImageSource *texture_src = NULL;
 	UUID texture_id = asset_library_request_image(context->asset_library, filename, &texture_src);
 
 	if (!texture_src) {
 		LOG_ERROR("Failed to load texture texture");
-		return false;
+		return (RhiTexture){ 0 };
 	}
 
-	uint32_t texture = state->next_image_index++;
-	vulkan_renderer_texture_create(context->vk_context, texture,
+	RhiTexture texture = vulkan_renderer_texture_create(context->vk_context,
 		texture_src->width, texture_src->height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 		TEXTURE_USAGE_SAMPLED, texture_src->pixels);

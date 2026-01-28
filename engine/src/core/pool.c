@@ -1,96 +1,80 @@
 #include "pool.h"
-
-#include "arena.h"
-#include "core/logger.h"
-
+#include "core/arena.h"
 #include "core/debug.h"
-#include <stdlib.h>
-#include <string.h>
 
-Pool *allocator_pool(size_t slot_size, uint32_t capacity) {
-	if (capacity == 0 || slot_size < sizeof(size_t)) {
-		LOG_WARN("Allocator: pool size must fit size_t pointer");
-		return NULL;
-	}
+#define POOL_HEADER(ptr) ((Pool *)ptr - 1)
 
-	Pool *pool = malloc(sizeof(struct pool) + slot_size * capacity);
-	pool->slots = pool->free_slots = (PoolSlot *)(pool + 1);
-	pool->slot_size = slot_size;
+typedef struct Pool {
+	uint32_t *free_indices;
+	void *slots;
 
-	for (uint32_t index = 0; index < capacity - 1; ++index) {
-		PoolSlot *element = (PoolSlot *)((uint8_t *)pool->slots + slot_size * index);
-		element->next = (PoolSlot *)((uint8_t *)element + slot_size);
-	}
-	PoolSlot *last = (PoolSlot *)((uint8_t *)pool->slots + (slot_size * (capacity - 1)));
-	last->next = NULL;
+	uint32_t free_count;
+	uint32_t capacity;
+	uint32_t stride;
+	uint32_t used_count;
+} Pool;
 
-	return pool;
-}
+void *pool_create(Arena *arena, uint32_t stride, uint32_t align, uint32_t capacity, bool zero_memory) {
+	ASSERT(sizeof(Pool) % align == 0);
 
-Pool *allocator_pool_from_arena(Arena *arena, uint32_t capacity, size_t slot_size, size_t alignment) {
-	if (capacity == 0 || slot_size < sizeof(size_t)) {
-		LOG_WARN("Allocator: pool size must fit size_t pointer");
-		return NULL;
-	}
-
+	arena_push(arena, 0, align, false);
 	Pool *pool = arena_push_struct(arena, Pool);
-	pool->slots = pool->free_slots = arena_push(arena, slot_size * capacity, alignment, true);
-	pool->slot_size = slot_size;
+	pool->slots = arena_push(arena, stride * capacity, align, zero_memory);
+	pool->free_indices = arena_push(arena, sizeof(*pool->free_indices) * capacity, alignof(uint32_t), true);
 
-	for (uint32_t index = 0; index < capacity; ++index) {
-		PoolSlot *element = (PoolSlot *)((uint8_t *)pool->slots + slot_size * index);
-		PoolSlot *next = (PoolSlot *)((uint8_t *)element + slot_size);
+	pool->capacity = capacity;
+	pool->free_count = capacity;
+	pool->stride = stride;
+	pool->used_count = 0;
 
-		element->next = next;
-	}
-	PoolSlot *last = (PoolSlot *)((uint8_t *)pool->slots + (slot_size * (capacity - 1)));
-	last->next = NULL;
+	for (uint32_t i = 0; i < capacity; i++)
+		pool->free_indices[i] = (capacity - 1) - i;
 
-	return pool;
+	return pool->slots;
 }
 
-void pool_destroy(Pool *pool) {
-	if (pool) {
-		free(pool->slots);
-		free(pool);
-	}
-}
+void *pool_alloc(void *ptr) {
+	Pool *pool = POOL_HEADER(ptr);
 
-void *pool_alloc(Pool *pool) {
-	if (pool == NULL || pool->free_slots == NULL) {
-		LOG_WARN("Allocator: pool invalid or out of space");
-		ASSERT(false);
+	if (pool->free_count == 0) {
+		ASSERT_MESSAGE(false, "POOL_OUT_OF_MEMORY");
 		return NULL;
 	}
 
-	PoolSlot *element = pool->free_slots;
-	pool->free_slots = element->next;
+	// Pop from stack
+	pool->free_count--;
+	uint32_t slot_index = pool->free_indices[pool->free_count];
 
-	return element;
+	pool->used_count++;
+
+	return (uint8_t *)pool->slots + (slot_index * pool->stride);
 }
 
-void *pool_alloc_zeroed(Pool *pool) {
-	if (pool == NULL || pool->free_slots == NULL) {
-		LOG_WARN("Allocator: invalid parameter or out of space");
-		return NULL;
-	}
+uint32_t pool_index_of(void *ptr, void *slot) {
+	Pool *pool = POOL_HEADER(ptr);
 
-	PoolSlot *element = pool->free_slots;
-	pool->free_slots = pool->free_slots->next;
+	uint32_t offset = (uint32_t)((uint8_t *)slot - (uint8_t *)pool->slots);
+	uint32_t index = offset / pool->stride;
 
-	memset(element, 0, pool->slot_size);
+	ASSERT(index < pool->capacity);
 
-	return element;
+	return index;
 }
 
-void pool_free(Pool *pool, void *element) {
-	if (pool == NULL || element == NULL) {
-		LOG_WARN("Allocator: invalid paramters");
+void pool_free(void *ptr, void *slot) {
+	if (slot == NULL)
 		return;
-	}
+	Pool *pool = POOL_HEADER(ptr);
 
-	PoolSlot *freed_element = element;
+	uint32_t offset = (uint32_t)((uint8_t *)slot - (uint8_t *)pool->slots);
+	uint32_t index = offset / pool->stride;
 
-	freed_element->next = pool->free_slots;
-	pool->free_slots = freed_element;
+	ASSERT(index < pool->capacity);
+
+	if (index >= pool->capacity)
+		return;
+
+	pool->free_indices[pool->free_count] = index;
+	pool->free_count++;
+	pool->used_count--;
 }

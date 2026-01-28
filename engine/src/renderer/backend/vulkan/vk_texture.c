@@ -1,4 +1,6 @@
 #include "common.h"
+#include "core/pool.h"
+#include "core/r_types.h"
 #include "renderer/backend/vulkan_api.h"
 #include "renderer/r_internal.h"
 #include "vk_internal.h"
@@ -15,13 +17,12 @@ static VkImageViewType to_view_type(TextureType type);
 static VkImageUsageFlags to_usage_flags(TextureFormat format, TextureUsageFlags usage,
 	bool has_pixels);
 
-bool vulkan_renderer_texture_create(
+RhiTexture vulkan_renderer_texture_create(
 	VulkanContext *context,
-	uint32_t store_index, uint32_t width, uint32_t height,
+	uint32_t width, uint32_t height,
 	TextureType type, TextureFormat format, TextureUsageFlags usage,
 	uint8_t *pixels) {
-	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, store_index, MAX_TEXTURES, false);
+	VulkanImage *image = pool_alloc_struct(context->image_pool, VulkanImage);
 
 	uint32_t layer_count = type == TEXTURE_TYPE_CUBE ? 6 : 1;
 
@@ -45,7 +46,7 @@ bool vulkan_renderer_texture_create(
 			LOG_ERROR(
 				"Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
 			ASSERT(false);
-			return false;
+			return INVALID_RHI(RhiTexture);
 		}
 
 		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset,
@@ -58,29 +59,32 @@ bool vulkan_renderer_texture_create(
 
 	if (vulkan_image_view_create(context, to_view_type(type), aspect, image) == false) {
 		LOG_ERROR("Failed to create VkImageView");
-		return false;
+		return INVALID_RHI(RhiTexture);
 	}
 
 	LOG_INFO("Vulkan Texture created");
 	image->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-	return true;
+	return (RhiTexture){ pool_index_of(context->image_pool, image), 0 };
 }
 
-bool vulkan_renderer_texture_destroy(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_texture_destroy(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
 
 	vkDestroyImageView(context->device.logical, image->view, NULL);
 	vkDestroyImage(context->device.logical, image->handle, NULL);
 	vkFreeMemory(context->device.logical, image->memory, NULL);
 
 	*image = (VulkanImage){ 0 };
+
+	pool_free(context->image_pool, image);
+
 	return true;
 }
 
-bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, uint32_t retrieve_index) {
+bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
@@ -90,9 +94,9 @@ bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, uint32_
 
 	return true;
 }
-bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -103,10 +107,10 @@ bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, uint32_t ret
 	return true;
 }
 
-bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_index, uint32_t width,
+bool vulkan_renderer_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width,
 	uint32_t height) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, retrieve_index, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
 
 	vkDestroyImageView(context->device.logical, image->view, NULL);
 	vkDestroyImage(context->device.logical, image->handle, NULL);
@@ -120,10 +124,8 @@ bool vulkan_renderer_texture_resize(VulkanContext *context, uint32_t retrieve_in
 	return true;
 }
 
-bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index,
-	SamplerDesc description) {
-	VulkanSampler *sampler = NULL;
-	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, store_index, MAX_SAMPLERS, false);
+RhiSampler vulkan_renderer_sampler_create(VulkanContext *context, SamplerDesc description) {
+	VulkanSampler *sampler = pool_alloc(context->sampler_pool);
 
 	sampler->info = (VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -149,21 +151,23 @@ bool vulkan_renderer_sampler_create(VulkanContext *context, uint32_t store_index
 	if (vkCreateSampler(context->device.logical, &sampler->info, NULL, &sampler->handle) !=
 		VK_SUCCESS) {
 		LOG_ERROR("Failed to create VkSampler");
-		return false;
+		return INVALID_RHI(RhiSampler);
 	}
 
 	LOG_INFO("VkSampler created");
 	sampler->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-	return true;
+	return (RhiSampler){ pool_index_of(context->sampler_pool, sampler), 0 };
 }
 
-bool vulkan_renderer_sampler_destroy(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_sampler_destroy(VulkanContext *context, RhiSampler handle) {
 	VulkanSampler *sampler = NULL;
-	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, retrieve_index, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, handle, MAX_SAMPLERS, true);
 
 	vkDestroySampler(context->device.logical, sampler->handle, NULL);
 	*sampler = (VulkanSampler){ 0 };
+
+	pool_free(context->sampler_pool, sampler);
 
 	return true;
 }

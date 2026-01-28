@@ -36,10 +36,10 @@
 
 static const float CAMERA_MOVE_SPEED = 5.f;
 static const float CAMERA_SENSITIVITY = .001f;
+
 typedef struct {
 	String path;
 	void *handle;
-
 	uint64_t last_write;
 } DynamicLibrary;
 
@@ -70,7 +70,7 @@ bool game_on_unload(GameContext *context) {
 
 void editor_update(float dt);
 bool resize_event(Event *event);
-void load_cubemap(String path);
+RhiTexture load_cubemap(String path); // CHANGED: Returns handle
 
 static struct State {
 	Arena permanent, transient, game;
@@ -85,9 +85,37 @@ static struct State {
 
 	uint64_t start_time;
 	uint32_t width, height;
+
+	// --- Resources Handles ---
+	RhiTexture white_tex, black_tex, flat_normal_tex;
+	RhiSampler linear_sampler, nearest_sampler;
+
+	RhiTexture shadow_depth_tex;
+	RhiTexture main_depth_tex;
+	RhiTexture main_color_tex;
+	RhiTexture skybox_tex;
+
+	RhiGlobalResource global_shadow;
+	RhiGlobalResource global_main;
+	RhiGlobalResource global_postfx;
+
+	RhiPass pass_shadow;
+	RhiPass pass_main;
+	RhiPass pass_postfx;
+
+	RhiBuffer quad_vb;
+
+	RhiShader light_shader;
+	RhiGroupResource light_material;
+
+	RhiShader postfx_shader;
+
+	RhiShader skybox_shader;
+	RhiGroupResource skybox_material;
 } state;
 
 static bool wireframe = false;
+
 int main(void) {
 	state.permanent = arena_create(MiB(512));
 	state.transient = arena_create(MiB(4));
@@ -111,54 +139,54 @@ int main(void) {
 
 	// Create default textures
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
-	vulkan_renderer_texture_create(
-		state.context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1,
+	state.white_tex = vulkan_renderer_texture_create(
+		state.context, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, WHITE);
 
 	uint8_t BLACK[4] = { 0, 0, 0, 255 };
-
-	vulkan_renderer_texture_create(
-		state.context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1,
+	state.black_tex = vulkan_renderer_texture_create(
+		state.context, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, BLACK);
 
 	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
-	vulkan_renderer_texture_create(
-		state.context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1,
+	state.flat_normal_tex = vulkan_renderer_texture_create(
+		state.context, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
 
 	// Create default samplers
-	vulkan_renderer_sampler_create(
-		state.context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
-	vulkan_renderer_sampler_create(
-		state.context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
+	state.linear_sampler = vulkan_renderer_sampler_create(
+		state.context, LINEAR_SAMPLER);
+	state.nearest_sampler = vulkan_renderer_sampler_create(
+		state.context, NEAREST_SAMPLER);
 
 	// Create render target textures
-	vulkan_renderer_texture_create(
-		state.context, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
+	state.shadow_depth_tex = vulkan_renderer_texture_create(
+		state.context,
 		state.width, state.height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH, TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
-	vulkan_renderer_texture_create(
-		state.context, RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP,
+	state.main_depth_tex = vulkan_renderer_texture_create(
+		state.context,
 		state.width, state.height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH,
 		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED,
 		NULL);
 
-	vulkan_renderer_texture_create(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
+	state.main_color_tex = vulkan_renderer_texture_create(state.context,
 		state.width, state.height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
 		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
 	// Create global resources
-	vulkan_renderer_resource_global_create(
-		state.context, RENDERER_GLOBAL_RESOURCE_SHADOW,
+	state.global_shadow = vulkan_renderer_resource_global_create(
+		state.context,
 		(ResourceBinding[]){
 		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(mat4), .count = 1 },
 		},
 		1);
-	vulkan_renderer_resource_global_create(
-		state.context, RENDERER_GLOBAL_RESOURCE_MAIN,
+
+	state.global_main = vulkan_renderer_resource_global_create(
+		state.context,
 		(ResourceBinding[]){
 		  { .binding = 0,
 			.type = SHADER_BINDING_UNIFORM_BUFFER,
@@ -167,23 +195,26 @@ int main(void) {
 		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 		},
 		2);
-	vulkan_renderer_resource_global_set_texture_sampler(state.context, RENDERER_GLOBAL_RESOURCE_MAIN, 1, RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP, RENDERER_DEFAULT_SAMPLER_LINEAR);
 
-	vulkan_renderer_resource_global_create(
-		state.context, RENDERER_GLOBAL_RESOURCE_POSTFX,
+	vulkan_renderer_resource_global_set_texture_sampler(
+		state.context, state.global_main, 1, state.shadow_depth_tex, state.linear_sampler);
+
+	state.global_postfx = vulkan_renderer_resource_global_create(
+		state.context,
 		(ResourceBinding[]){
 		  { .binding = 0, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 		},
 		1);
+
 	vulkan_renderer_resource_global_set_texture_sampler(
-		state.context, RENDERER_GLOBAL_RESOURCE_POSTFX, 0,
-		RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP, RENDERER_DEFAULT_SAMPLER_LINEAR);
+		state.context, state.global_postfx, 0,
+		state.main_color_tex, state.linear_sampler);
 
 	// Create render passes
 	RenderPassDesc shadow_pass = {
 		.name = str_lit("Shadow"),
 		.depth_attachment = {
-		  .texture = RENDERER_DEFAULT_TARGET_SHADOW_DEPTH_MAP,
+		  .texture = state.shadow_depth_tex,
 		  .clear = { .depth = 1.0f },
 		  .load = CLEAR,
 		  .store = STORE,
@@ -195,14 +226,14 @@ int main(void) {
 	RenderPassDesc main_pass = {
 		.name = str_lit("Main"),
 		.color_attachments = { {
-		  .texture = RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP,
+		  .texture = state.main_color_tex,
 		  .clear = { .color = GLM_VEC4_BLACK_INIT },
 		  .load = CLEAR,
 		  .store = STORE,
 		} },
 		.color_attachment_count = 1,
 		.depth_attachment = {
-		  .texture = RENDERER_DEFAULT_TARGET_MAIN_DEPTH_MAP,
+		  .texture = state.main_depth_tex,
 		  .clear = { .depth = 1.0f },
 		  .load = CLEAR,
 		  .store = DONT_CARE,
@@ -221,9 +252,9 @@ int main(void) {
 		.enable_msaa = false
 	};
 
-	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_SHADOW, shadow_pass);
-	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_MAIN, main_pass);
-	vulkan_renderer_pass_create(state.context, RENDERER_DEFAULT_PASS_POSTFX, postfx_pass);
+	state.pass_shadow = vulkan_renderer_pass_create(state.context, shadow_pass);
+	state.pass_main = vulkan_renderer_pass_create(state.context, main_pass);
+	state.pass_postfx = vulkan_renderer_pass_create(state.context, postfx_pass);
 
 	state.layers[0] = (Layer){ .update = editor_update };
 	state.current_layer = &state.layers[0];
@@ -242,7 +273,7 @@ int main(void) {
 	float last_frame = 0.0f;
 
 	asset_library_track_directory(&state.library, str_lit("assets"));
-	load_cubemap(str_lit("assets/textures/skybox/"));
+	state.skybox_tex = load_cubemap(str_lit("assets/textures/skybox/"));
 
 	GameContext game_context = { .game_memory = state.game.memory, .game_memory_size = state.game.capacity, .vk_context = state.context, &state.library };
 	game_load(&game_context);
@@ -254,8 +285,6 @@ int main(void) {
 	// Create light debug shader
 	ShaderSource *light_shader_src = NULL;
 	UUID light_shader_id = asset_library_request_shader(&state.library, str_lit("light_debug.glsl"), &light_shader_src);
-	uint32_t light_shader_index = 0;
-	uint32_t light_material = 0;
 
 	{
 		ShaderConfig light_config = {
@@ -269,21 +298,23 @@ int main(void) {
 		desc.cull_mode = CULL_MODE_NONE;
 
 		ShaderReflection reflection;
-		vulkan_renderer_shader_create(&state.permanent, state.context, light_shader_index,
-			RENDERER_GLOBAL_RESOURCE_MAIN, &light_config, &reflection);
-		vulkan_renderer_shader_variant_create(state.context, light_shader_index,
-			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD, RENDERER_DEFAULT_PASS_MAIN, desc);
-		desc.polygon_mode = POLYGON_MODE_LINE;
-		vulkan_renderer_shader_variant_create(state.context, light_shader_index,
-			RENDERER_DEFAULT_SHADER_VARIANT_WIREFRAME, RENDERER_DEFAULT_PASS_MAIN, desc);
+		state.light_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
+			state.global_main, &light_config, &reflection);
 
-		vulkan_renderer_resource_group_create(
-			state.context, light_material, light_shader_index, 256);
+		// Variants
+		vulkan_renderer_shader_variant_create(state.context, state.light_shader,
+			state.pass_main, desc);
+
+		desc.polygon_mode = POLYGON_MODE_LINE;
+		vulkan_renderer_shader_variant_create(state.context, state.light_shader,
+			state.pass_main, desc);
+
+		state.light_material = vulkan_renderer_resource_group_create(
+			state.context, state.light_shader, 256);
 	}
 
 	ShaderSource *postfx_shader_src = NULL;
 	UUID postfx_shader_id = asset_library_request_shader(&state.library, str_lit("postfx.glsl"), &postfx_shader_src);
-	uint32_t postfx_shader_index = 1;
 	{
 		ShaderConfig postfx_config = {
 			.vertex_code = postfx_shader_src->vertex_shader.content,
@@ -295,17 +326,16 @@ int main(void) {
 		PipelineDesc desc = DEFAULT_PIPELINE();
 		desc.cull_mode = CULL_MODE_NONE;
 		ShaderReflection reflection;
-		vulkan_renderer_shader_create(&state.permanent, state.context, postfx_shader_index,
-			RENDERER_GLOBAL_RESOURCE_POSTFX, &postfx_config, &reflection);
-		vulkan_renderer_shader_variant_create(state.context, postfx_shader_index,
-			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD,
-			RENDERER_DEFAULT_PASS_POSTFX, desc);
+
+		state.postfx_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
+			state.global_postfx, &postfx_config, &reflection);
+
+		vulkan_renderer_shader_variant_create(state.context, state.postfx_shader,
+			state.pass_postfx, desc);
 	}
 
 	ShaderSource *skybox_shader_src = NULL;
 	UUID skybox_shader_id = asset_library_request_shader(&state.library, str_lit("skybox.glsl"), &skybox_shader_src);
-	uint32_t skybox_shader_index = 2;
-	uint32_t skybox_material = 1;
 	{
 		ShaderConfig skybox_config = {
 			.vertex_code = skybox_shader_src->vertex_shader.content,
@@ -318,30 +348,31 @@ int main(void) {
 		desc.cull_mode = CULL_MODE_NONE;
 		desc.depth_compare_op = COMPARE_OP_LESS_OR_EQUAL;
 		ShaderReflection reflection;
-		vulkan_renderer_shader_create(&state.permanent, state.context, skybox_shader_index,
-			RENDERER_GLOBAL_RESOURCE_MAIN, &skybox_config, &reflection);
-		vulkan_renderer_shader_variant_create(state.context, skybox_shader_index,
-			RENDERER_DEFAULT_SHADER_VARIANT_STANDARD,
-			RENDERER_DEFAULT_PASS_MAIN, desc);
 
-		vulkan_renderer_resource_group_create(state.context, skybox_material, skybox_shader_index, 1);
-		vulkan_renderer_resource_group_set_texture_sampler(state.context, skybox_material, 0, RENDERER_DEFAULT_TEXTURE_SKYBOX, RENDERER_DEFAULT_SAMPLER_LINEAR);
+		state.skybox_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
+			state.global_main, &skybox_config, &reflection);
+
+		vulkan_renderer_shader_variant_create(state.context, state.skybox_shader,
+			state.pass_main, desc);
+
+		state.skybox_material = vulkan_renderer_resource_group_create(state.context, state.skybox_shader, 1);
+
+		vulkan_renderer_resource_group_set_texture_sampler(state.context, state.skybox_material, 0, state.skybox_tex, state.linear_sampler);
 	}
 
 	// clang-format off
-	float quadVertices[] = {
-		-1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-		-1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-		 1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+    float quadVertices[] = {
+        -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+         1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
 
-		-1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-		 1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-		 1.0f,  1.0f, 0.0f, 1.0f, 1.0f
-	};
+        -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+         1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f, 1.0f, 1.0f
+    };
 	// clang-format on
-	uint32_t quad_vb = 0, cube_vb = 1;
-	vulkan_renderer_buffer_create(
-		state.context, quad_vb, BUFFER_TYPE_VERTEX, sizeof(quadVertices), quadVertices);
+	state.quad_vb = vulkan_renderer_buffer_create(
+		state.context, BUFFER_TYPE_VERTEX, sizeof(quadVertices), quadVertices);
 
 	float sun_theta = 2 * GLM_PI / 3.f;
 	float sun_azimuth = 0;
@@ -380,7 +411,7 @@ int main(void) {
 		if (vulkan_renderer_frame_begin(state.context, state.display.physical_width,
 				state.display.physical_height)) {
 			// Main pass
-			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_MAIN);
+			vulkan_renderer_pass_begin(state.context, state.pass_main);
 			{
 				FrameData frame_data = { 0 };
 				glm_mat4_identity(frame_data.view);
@@ -402,14 +433,14 @@ int main(void) {
 				glm_vec3_dup(state.editor_camera.position, frame_data.camera_position);
 				frame_data.light_count = point_light_count;
 
-				vulkan_renderer_resource_global_write(state.context, RENDERER_GLOBAL_RESOURCE_MAIN, 0,
+				vulkan_renderer_resource_global_write(state.context, state.global_main, 0,
 					sizeof(FrameData), &frame_data);
-				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_MAIN);
+				vulkan_renderer_resource_global_bind(state.context, state.global_main);
 
 				game_on_update(&game_context, delta_time);
 
 				// Draw light debug
-				vulkan_renderer_shader_bind(state.context, light_shader_index, wireframe);
+				vulkan_renderer_shader_bind(state.context, state.light_shader, wireframe); // Assuming variant index passed
 				for (uint32_t index = 0; index < countof(lights); ++index) {
 					if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
 						continue;
@@ -417,30 +448,30 @@ int main(void) {
 					mat4 transform = GLM_MAT4_IDENTITY_INIT;
 					glm_translate(transform, lights[index].as.position);
 
-					vulkan_renderer_resource_group_write(state.context, light_material, 0,
+					vulkan_renderer_resource_group_write(state.context, state.light_material, 0,
 						0, sizeof(vec4), lights[index].color, true);
-					vulkan_renderer_resource_group_bind(state.context, light_material, 0);
+					vulkan_renderer_resource_group_bind(state.context, state.light_material, 0);
 					vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
-					vulkan_renderer_buffer_bind(state.context, quad_vb, 0);
+					vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 					vulkan_renderer_draw(state.context, 6);
 				}
 
 				// Draw skybox
-				vulkan_renderer_shader_bind(state.context, skybox_shader_index, RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
-				vulkan_renderer_resource_group_bind(state.context, skybox_material, 0);
+				vulkan_renderer_shader_bind(state.context, state.skybox_shader, RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
+				vulkan_renderer_resource_group_bind(state.context, state.skybox_material, 0);
 				vulkan_renderer_draw(state.context, 36);
 			}
 			vulkan_renderer_pass_end(state.context);
-			vulkan_renderer_texture_prepare_sample(state.context, RENDERER_DEFAULT_TARGET_MAIN_COLOR_MAP);
+			vulkan_renderer_texture_prepare_sample(state.context, state.main_color_tex);
 
 			// Postfx pass
-			vulkan_renderer_pass_begin(state.context, RENDERER_DEFAULT_PASS_POSTFX);
+			vulkan_renderer_pass_begin(state.context, state.pass_postfx);
 			{
 				vulkan_renderer_shader_bind(
-					state.context, postfx_shader_index,
+					state.context, state.postfx_shader,
 					RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
-				vulkan_renderer_resource_global_bind(state.context, RENDERER_GLOBAL_RESOURCE_POSTFX);
-				vulkan_renderer_buffer_bind(state.context, quad_vb, 0);
+				vulkan_renderer_resource_global_bind(state.context, state.global_postfx);
+				vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 				vulkan_renderer_draw(state.context, 6);
 			}
 			vulkan_renderer_pass_end(state.context);
@@ -516,6 +547,9 @@ bool resize_event(Event *event) {
 	if (vulkan_renderer_on_resize(state.context, wr_event->width, wr_event->height)) {
 		state.width = wr_event->width;
 		state.height = wr_event->height;
+		vulkan_renderer_texture_resize(state.context, state.main_depth_tex, state.width, state.height);
+		vulkan_renderer_texture_resize(state.context, state.main_color_tex, state.width, state.height);
+		vulkan_renderer_resource_global_set_texture_sampler(state.context, state.global_postfx, 0, state.main_color_tex, state.linear_sampler);
 	}
 
 	return true;
@@ -564,7 +598,7 @@ bool game_load(GameContext *context) {
 	return true;
 }
 
-void load_cubemap(String path) {
+RhiTexture load_cubemap(String path) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
 	StringList files = filesystem_list_files(scratch.arena, path, false);
@@ -574,6 +608,7 @@ void load_cubemap(String path) {
 	if (files.node_count != 6) {
 		LOG_ERROR("Cubemap error: Found %llu files in '%.*s', expected 6.", files.node_count, str_expand(path));
 		arena_release_scratch(scratch);
+		return (RhiTexture){ 0 }; // Return invalid handle
 	}
 
 	ImageSource *loaded_images[6];
@@ -619,11 +654,12 @@ void load_cubemap(String path) {
 		memcpy(final_pixels + (index * single_image_size), loaded_images[index]->pixels, single_image_size);
 	}
 
-	vulkan_renderer_texture_create(
-		state.context, RENDERER_DEFAULT_TEXTURE_SKYBOX,
+	RhiTexture result = vulkan_renderer_texture_create(
+		state.context,
 		width, height,
 		TEXTURE_TYPE_CUBE, TEXTURE_FORMAT_RGBA8_SRGB,
 		TEXTURE_USAGE_SAMPLED, final_pixels);
 
 	arena_release_scratch(scratch);
+	return result;
 }

@@ -1,5 +1,7 @@
 #include "common.h"
 #include "core/arena.h"
+#include "core/pool.h"
+#include "core/r_types.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
@@ -10,9 +12,8 @@
 
 int32_t to_vulkan_usage(BufferType type);
 
-bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index, BufferType type, size_t size, void *data) {
-	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, store_index, MAX_BUFFERS, false);
+RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type, size_t size, void *data) {
+	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
 
 	const char *stringify[] = {
 		"Vertex buffer",
@@ -20,7 +21,7 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 		"Uniform buffer",
 	};
 
-	LOG_INFO("Vulkan: Creating %s resource...", stringify[type]);
+	LOG_TRACE("Vulkan: Creating %s resource...", stringify[type]);
 
 	logger_indent();
 
@@ -28,61 +29,58 @@ bool vulkan_renderer_buffer_create(VulkanContext *context, uint32_t store_index,
 		buffer->count = MAX_FRAMES_IN_FLIGHT;
 		bool result = vulkan_buffer_ubo_create(context, buffer, size, data);
 		logger_dedent();
-		return result;
+		if (result == false)
+			return INVALID_RHI(RhiBuffer);
+
+		goto successful_return;
 	}
 
-	LOG_DEBUG("Creating local buffer...");
+	LOG_TRACE("Creating local buffer...");
 	logger_indent();
 	bool result = vulkan_buffer_create(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
 	logger_dedent();
 	if (data == NULL) {
 		logger_dedent();
-		return result;
+		goto successful_return;
 	}
 
 	VulkanBuffer *staging_buffer = &context->staging_buffer;
 	size_t copy_end = aligned_address(staging_buffer->offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
 	size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
 	if (copy_end >= staging_buffer->size) {
-		LOG_ERROR("Max staging buffer size exceeded, aborting vulkan_buffer_create");
+		LOG_TRACE("Max staging buffer size exceeded, aborting vulkan_buffer_create");
 		ASSERT(false);
-		return false;
+		return INVALID_RHI(RhiBuffer);
 	}
 
 	vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, data);
 
 	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
 	staging_buffer->offset = copy_end;
-	LOG_INFO("%s resource created", stringify[type]);
+	LOG_TRACE("%s resource created", stringify[type]);
 
 	logger_dedent();
 
-	return true;
+successful_return:
+	return (RhiBuffer){ pool_index_of(context->buffer_pool, buffer), 0 };
 }
 
-bool vulkan_renderer_buffer_destroy(VulkanContext *context, uint32_t retrieve_index) {
+bool vulkan_renderer_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, retrieve_index, MAX_BUFFERS, true);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true);
 
 	vkDestroyBuffer(context->device.logical, buffer->handle, NULL);
 	vkFreeMemory(context->device.logical, buffer->memory, NULL);
 	*buffer = (VulkanBuffer){ 0 };
 
+	pool_free(context->buffer_pool, buffer);
+
 	return true;
 }
 
-bool vulkan_renderer_buffer_write(VulkanContext *context, uint32_t retrieve_index, size_t offset, size_t size, void *data) {
-	if (retrieve_index >= MAX_BUFFERS) {
-		LOG_WARN("Vulkan: buffer index %d out of bounds, aborting vulkan_renderer_buffer_write", retrieve_index);
-		return false;
-	}
-
-	const VulkanBuffer *buffer = &context->buffer_pool[retrieve_index];
-	if (buffer->handle == NULL) {
-		LOG_ERROR("Vulkan: buffer at index %d not in use, aborting vulkan_renderer_buffer_write", retrieve_index);
-		ASSERT(false);
-		return false;
-	}
+bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true);
 
 	if ((buffer->memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
 		LOG_ERROR("Vulkan: Updating device local buffers not supported, aborting vulkan_renderer_buffer_update");
@@ -103,9 +101,9 @@ bool vulkan_renderer_buffer_write(VulkanContext *context, uint32_t retrieve_inde
 	return true;
 }
 
-bool vulkan_renderer_buffer_bind(VulkanContext *context, uint32_t retrieve_index, size_t index_size) {
+bool vulkan_renderer_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t index_size) {
 	const VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, retrieve_index, MAX_BUFFERS, true);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffer[] = { buffer->handle };
@@ -126,24 +124,15 @@ bool vulkan_renderer_buffer_bind(VulkanContext *context, uint32_t retrieve_index
 	return false;
 }
 
-bool vulkan_renderer_buffers_bind(VulkanContext *context, uint32_t *buffers, uint32_t count) {
-	if (buffers == NULL || count <= 0) {
-		LOG_ERROR("Vulkan: Invalid arguments passed, aborting vulkan_renderer_buffers_bind");
-		return false;
-	}
-
-	const VulkanBuffer *buffer = &context->buffer_pool[buffers[0]];
-	if (buffer->handle == NULL) {
-		LOG_ERROR("Vulkan: Buffer at index %d not in use, aborting vulkan_renderer_buffers_bind", buffers[0]);
-		ASSERT(false);
-		return false;
-	}
+bool vulkan_renderer_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, uint32_t count) {
+	const VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffers[0], MAX_BUFFERS, true);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffers[16] = { 0 };
 		VkDeviceSize offsets[16] = { 0 };
 		for (uint32_t index = 0; index < count; ++index) {
-			vertex_buffers[index] = context->buffer_pool[buffers[index]].handle;
+			vertex_buffers[index] = context->buffer_pool[rbuffers[index].id].handle;
 			offsets[index] = 0;
 		}
 
@@ -209,7 +198,7 @@ bool vulkan_buffer_create(
 	uint32_t memory_type_index = vulkan_memory_type_find(context->device.physical, memory_requirements.memoryTypeBits, properties);
 	size_t allocation_size = memory_requirements.size;
 
-	LOG_DEBUG("SIZE = %llu, REQUIREMENT = %llu", size, memory_requirements.size);
+	LOG_TRACE("SIZE = %llu, REQUIREMENT = %llu", size, memory_requirements.size);
 
 	VkMemoryAllocateInfo allocate_info = {
 		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -227,7 +216,7 @@ bool vulkan_buffer_create(
 		return false;
 	}
 
-	LOG_DEBUG("VkBuffer created");
+	LOG_TRACE("VkBuffer created");
 	out_buffer->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 	return true;
 }
@@ -258,7 +247,7 @@ bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, Vk
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
-	LOG_DEBUG("Copying region of %llu from %p to %p", size, src, dst);
+	LOG_TRACE("Copying region of %llu from %p to %p", size, src, dst);
 	VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
 

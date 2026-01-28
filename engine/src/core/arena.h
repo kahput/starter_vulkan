@@ -32,3 +32,8 @@ ENGINE_API ArenaTemp arena_scratch(Arena *conflict);
 #define arena_push_array_zero(arena, type, count) ((type *)arena_push((arena), sizeof(type) * (count), alignof(type), true))
 #define arena_push_struct(arena, type) ((type *)arena_push((arena), sizeof(type), alignof(type), false))
 #define arena_push_struct_zero(arena, type) ((type *)arena_push((arena), sizeof(type), alignof(type), true))
+
+#define arena_push_pool(arena, type, capacity) \
+	pool_create(arena, sizeof(type), alignof(type), capacity, false)
+#define arena_push_pool_zero(arena, type, capacity) \
+	pool_create(arena, sizeof(type), alignof(type), capacity, true)
