@@ -428,10 +428,10 @@ void toplevel_configure(void *data, struct xdg_toplevel *xdg_toplevel, int32_t w
 		platform->physical_width = platform->logical_width * wl->scale_factor, platform->physical_height = platform->logical_height * wl->scale_factor;
 		wp_viewport_set_destination(wl->viewport, platform->logical_width, platform->logical_height);
 
-		WindowResizeEvent event = event_create(WindowResizeEvent, SV_EVENT_WINDOW_RESIZED);
+		WindowResizeEvent event = { 0 };
 		event.width = platform->physical_width, event.height = platform->physical_height;
 
-		event_emit((Event *)&event);
+		event_emit_struct(EVENT_PLATFORM_WINDOW_RESIZED, &event);
 	}
 }
 void toplevel_close(void *data, struct xdg_toplevel *xdg_toplevel) {
@@ -493,13 +493,13 @@ void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 		// LOG_TRACE("leave");
 	}
 	if (pointer_event->event_mask & POINTER_EVENT_MOTION) {
-		MouseMotionEvent event = event_create(MouseMotionEvent, SV_EVENT_MOUSE_MOTION);
+		MouseMotionEvent event = { 0 };
 		event.x = wl_fixed_to_double(pointer_event->surface_x);
 		event.y = wl_fixed_to_double(pointer_event->surface_y);
 		event.dx = wl_fixed_to_double(pointer_event->delta_surface_x);
 		event.dy = wl_fixed_to_double(pointer_event->delta_surface_y);
 
-		event_emit((Event *)&event);
+		event_emit_struct(EVENT_PLATFORM_MOUSE_MOTION, &event);
 		// LOG_TRACE("motion %d, %d ",
 		// 	wl_fixed_to_int(pointer_event->surface_x),
 		// 	wl_fixed_to_int(pointer_event->surface_y));
@@ -507,13 +507,13 @@ void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 	if (pointer_event->event_mask & POINTER_EVENT_BUTTON) {
 		char *state = pointer_event->state == WL_POINTER_BUTTON_STATE_RELEASED ? "released" : "pressed";
 
-		MouseButtonEvent event = event_create(MouseButtonEvent, pointer_event->state == WL_POINTER_BUTTON_STATE_PRESSED ? SV_EVENT_MOUSE_BUTTON_PRESSED : SV_EVENT_MOUSE_BUTTON_RELEASED);
+		MouseButtonEvent event = { 0 };
 		event.mods = wl->xkb.modifiers;
 		event.button = pointer_event->button - BTN_LEFT;
 		event.x = wl_fixed_to_int(pointer_event->surface_x);
 		event.y = wl_fixed_to_int(pointer_event->surface_y);
 
-		event_emit((Event *)&event);
+		event_emit_struct(pointer_event->state == WL_POINTER_BUTTON_STATE_PRESSED ? EVENT_PLATFORM_MOUSE_BUTTON_PRESSED : EVENT_PLATFORM_MOUSE_BUTTON_RELEASED, &event);
 		// LOG_TRACE("button %d %s ", pointer_event->button, state);
 	}
 	uint32_t axis_events = POINTER_EVENT_AXIS | POINTER_EVENT_AXIS_SOURCE | POINTER_EVENT_AXIS_STOP | POINTER_EVENT_AXIS_DISCRETE;
@@ -678,10 +678,10 @@ void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial
 	Platform *platform = (Platform *)data;
 	WLPlatform *wl = &((struct platform_internal *)platform->internal)->wl;
 
-	KeyEvent event = event_create(KeyEvent, SV_EVENT_KEY_RELEASED);
+	KeyEvent event = { 0 };
 	event.leave = true;
 
-	event_emit((Event *)&event);
+	event_emit_struct(EVENT_PLATFORM_KEY_RELEASED, &event);
 }
 void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t scancode, uint32_t state) {
 	Platform *platform = (Platform *)data;
@@ -692,16 +692,13 @@ void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, 
 	const xkb_keycode_t keycode = scancode + XKB_KEYCODE_OFFSET;
 	const char *action = state == WL_KEYBOARD_KEY_STATE_PRESSED ? "pressed" : "released";
 
-	// Event event = {
-	// 	.header = { .type = WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED, .size = sizeof(KeyEvent) },
-	// };
-
-	KeyEvent event = event_create(KeyEvent, state == WL_KEYBOARD_KEY_STATE_PRESSED ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED);
-	event.key = scancode < countof(wl->keycodes) ? wl->keycodes[scancode] : SV_KEY_UNKOWN;
+	KeyEvent event = { 0 };
+	event.key = scancode < countof(wl->keycodes) ? wl->keycodes[scancode] : KEY_CODE_UNKOWN;
 	event.mods = wl->xkb.modifiers;
+	LOG_INFO("Key %d", event.key);
 	// event.is_repeat = false;
 
-	event_emit((Event *)&event);
+	event_emit_struct(state == WL_KEYBOARD_KEY_STATE_PRESSED ? EVENT_PLATFORM_KEY_PRESSED : EVENT_PLATFORM_KEY_RELEASED, &event);
 
 	const xkb_keysym_t key_symbol = xkb_state_key_get_one_sym(wl->xkb.state, keycode);
 
@@ -722,12 +719,12 @@ void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard, uint32_t se
 		xkb_mod_index_t index;
 		unsigned int bit;
 	} modifiers[] = {
-		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Control"), SV_MOD_KEY_CONTROL },
-		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod1"), SV_MOD_KEY_ALT },
-		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Shift"), SV_MOD_KEY_SHIFT },
-		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod4"), SV_MOD_KEY_SUPER },
-		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Lock"), SV_MOD_KEY_CAPSLOCK },
-		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod2"), SV_MOD_KEY_NUMLOCK }
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Control"), MOD_KEY_CONTROL },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod1"), MOD_KEY_ALT },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Shift"), MOD_KEY_SHIFT },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod4"), MOD_KEY_SUPER },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Lock"), MOD_KEY_CAPSLOCK },
+		{ xkb_keymap_mod_get_index(wl->xkb.keymap, "Mod2"), MOD_KEY_NUMLOCK }
 	};
 
 	for (size_t index = 0; index < countof(modifiers); ++index) {
@@ -768,13 +765,13 @@ void relative_pointer_relative_motion(void *data, struct zwp_relative_pointer_v1
 	wl->virtual_pointer_x += wl_fixed_to_double(dx_unaccel);
 	wl->virtual_pointer_y += wl_fixed_to_double(dy_unaccel);
 
-	MouseMotionEvent event = event_create(MouseMotionEvent, SV_EVENT_MOUSE_MOTION);
+	MouseMotionEvent event = { 0 };
 
 	event.x = wl->virtual_pointer_x;
 	event.y = wl->virtual_pointer_y;
 	event.virtual_cursor = true;
 
-	event_emit((Event *)&event);
+	event_emit_struct(EVENT_PLATFORM_MOUSE_MOTION, &event);
 
 	// LOG_INFO("Relative motion: { dx = %.2f, dy = %.2f }", wl_fixed_to_double(dx), wl_fixed_to_double(dy));
 }
@@ -826,122 +823,122 @@ struct wl_buffer *create_shm_buffer(Platform *platform) {
 void create_key_table(WLPlatform *wl) {
 	memset(wl->keycodes, -1, sizeof(wl->keycodes));
 
-	wl->keycodes[KEY_GRAVE] = SV_KEY_GRAVE;
-	wl->keycodes[KEY_1] = SV_KEY_1;
-	wl->keycodes[KEY_2] = SV_KEY_2;
-	wl->keycodes[KEY_3] = SV_KEY_3;
-	wl->keycodes[KEY_4] = SV_KEY_4;
-	wl->keycodes[KEY_5] = SV_KEY_5;
-	wl->keycodes[KEY_6] = SV_KEY_6;
-	wl->keycodes[KEY_7] = SV_KEY_7;
-	wl->keycodes[KEY_8] = SV_KEY_8;
-	wl->keycodes[KEY_9] = SV_KEY_9;
-	wl->keycodes[KEY_0] = SV_KEY_0;
-	wl->keycodes[KEY_SPACE] = SV_KEY_SPACE;
-	wl->keycodes[KEY_MINUS] = SV_KEY_MINUS;
-	wl->keycodes[KEY_EQUAL] = SV_KEY_EQUAL;
-	wl->keycodes[KEY_Q] = SV_KEY_Q;
-	wl->keycodes[KEY_W] = SV_KEY_W;
-	wl->keycodes[KEY_E] = SV_KEY_E;
-	wl->keycodes[KEY_R] = SV_KEY_R;
-	wl->keycodes[KEY_T] = SV_KEY_T;
-	wl->keycodes[KEY_Y] = SV_KEY_Y;
-	wl->keycodes[KEY_U] = SV_KEY_U;
-	wl->keycodes[KEY_I] = SV_KEY_I;
-	wl->keycodes[KEY_O] = SV_KEY_O;
-	wl->keycodes[KEY_P] = SV_KEY_P;
-	wl->keycodes[KEY_LEFTBRACE] = SV_KEY_LEFTBRACKET;
-	wl->keycodes[KEY_RIGHTBRACE] = SV_KEY_RIGHTBRACKET;
-	wl->keycodes[KEY_A] = SV_KEY_A;
-	wl->keycodes[KEY_S] = SV_KEY_S;
-	wl->keycodes[KEY_D] = SV_KEY_D;
-	wl->keycodes[KEY_F] = SV_KEY_F;
-	wl->keycodes[KEY_G] = SV_KEY_G;
-	wl->keycodes[KEY_H] = SV_KEY_H;
-	wl->keycodes[KEY_J] = SV_KEY_J;
-	wl->keycodes[KEY_K] = SV_KEY_K;
-	wl->keycodes[KEY_L] = SV_KEY_L;
-	wl->keycodes[KEY_SEMICOLON] = SV_KEY_SEMICOLON;
-	wl->keycodes[KEY_APOSTROPHE] = SV_KEY_APOSTROPHE;
-	wl->keycodes[KEY_Z] = SV_KEY_Z;
-	wl->keycodes[KEY_X] = SV_KEY_X;
-	wl->keycodes[KEY_C] = SV_KEY_C;
-	wl->keycodes[KEY_V] = SV_KEY_V;
-	wl->keycodes[KEY_B] = SV_KEY_B;
-	wl->keycodes[KEY_N] = SV_KEY_N;
-	wl->keycodes[KEY_M] = SV_KEY_M;
-	wl->keycodes[KEY_COMMA] = SV_KEY_COMMA;
-	wl->keycodes[KEY_DOT] = SV_KEY_PERIOD;
-	wl->keycodes[KEY_SLASH] = SV_KEY_SLASH;
-	wl->keycodes[KEY_BACKSLASH] = SV_KEY_BACKSLASH;
-	wl->keycodes[KEY_ESC] = SV_KEY_ESCAPE;
-	wl->keycodes[KEY_TAB] = SV_KEY_TAB;
-	wl->keycodes[KEY_LEFTSHIFT] = SV_KEY_LEFTSHIFT;
-	wl->keycodes[KEY_RIGHTSHIFT] = SV_KEY_RIGHTSHIFT;
-	wl->keycodes[KEY_LEFTCTRL] = SV_KEY_LEFTCTRL;
-	wl->keycodes[KEY_RIGHTCTRL] = SV_KEY_RIGHTCTRL;
-	wl->keycodes[KEY_LEFTALT] = SV_KEY_LEFTALT;
-	wl->keycodes[KEY_RIGHTALT] = SV_KEY_RIGHTALT;
-	wl->keycodes[KEY_LEFTMETA] = SV_KEY_LEFTMETA;
-	wl->keycodes[KEY_RIGHTMETA] = SV_KEY_RIGHTMETA;
-	wl->keycodes[KEY_COMPOSE] = SV_KEY_MENU;
-	wl->keycodes[KEY_NUMLOCK] = SV_KEY_NUMLOCK;
-	wl->keycodes[KEY_CAPSLOCK] = SV_KEY_CAPSLOCK;
-	wl->keycodes[KEY_PRINT] = SV_KEY_PRINT;
-	wl->keycodes[KEY_SCROLLLOCK] = SV_KEY_SCROLLLOCK;
-	wl->keycodes[KEY_PAUSE] = SV_KEY_PAUSE;
-	wl->keycodes[KEY_DELETE] = SV_KEY_DELETE;
-	wl->keycodes[KEY_BACKSPACE] = SV_KEY_BACKSPACE;
-	wl->keycodes[KEY_ENTER] = SV_KEY_ENTER;
-	wl->keycodes[KEY_HOME] = SV_KEY_HOME;
-	wl->keycodes[KEY_END] = SV_KEY_END;
-	wl->keycodes[KEY_PAGEUP] = SV_KEY_PAGEUP;
-	wl->keycodes[KEY_PAGEDOWN] = SV_KEY_PAGEDOWN;
-	wl->keycodes[KEY_INSERT] = SV_KEY_INSERT;
-	wl->keycodes[KEY_LEFT] = SV_KEY_LEFT;
-	wl->keycodes[KEY_RIGHT] = SV_KEY_RIGHT;
-	wl->keycodes[KEY_DOWN] = SV_KEY_DOWN;
-	wl->keycodes[KEY_UP] = SV_KEY_UP;
-	wl->keycodes[KEY_F1] = SV_KEY_F1;
-	wl->keycodes[KEY_F2] = SV_KEY_F2;
-	wl->keycodes[KEY_F3] = SV_KEY_F3;
-	wl->keycodes[KEY_F4] = SV_KEY_F4;
-	wl->keycodes[KEY_F5] = SV_KEY_F5;
-	wl->keycodes[KEY_F6] = SV_KEY_F6;
-	wl->keycodes[KEY_F7] = SV_KEY_F7;
-	wl->keycodes[KEY_F8] = SV_KEY_F8;
-	wl->keycodes[KEY_F9] = SV_KEY_F9;
-	wl->keycodes[KEY_F10] = SV_KEY_F10;
-	wl->keycodes[KEY_F11] = SV_KEY_F11;
-	wl->keycodes[KEY_F12] = SV_KEY_F12;
-	wl->keycodes[KEY_F13] = SV_KEY_F13;
-	wl->keycodes[KEY_F14] = SV_KEY_F14;
-	wl->keycodes[KEY_F15] = SV_KEY_F15;
-	wl->keycodes[KEY_F16] = SV_KEY_F16;
-	wl->keycodes[KEY_F17] = SV_KEY_F17;
-	wl->keycodes[KEY_F18] = SV_KEY_F18;
-	wl->keycodes[KEY_F19] = SV_KEY_F19;
-	wl->keycodes[KEY_F20] = SV_KEY_F20;
-	wl->keycodes[KEY_F21] = SV_KEY_F21;
-	wl->keycodes[KEY_F22] = SV_KEY_F22;
-	wl->keycodes[KEY_F23] = SV_KEY_F23;
-	wl->keycodes[KEY_F24] = SV_KEY_F24;
-	wl->keycodes[KEY_KPSLASH] = SV_KEY_KPSLASH;
-	wl->keycodes[KEY_KPASTERISK] = SV_KEY_KPASTERISK;
-	wl->keycodes[KEY_KPMINUS] = SV_KEY_KPMINUS;
-	wl->keycodes[KEY_KPPLUS] = SV_KEY_KPPLUS;
-	wl->keycodes[KEY_KP0] = SV_KEY_KP0;
-	wl->keycodes[KEY_KP1] = SV_KEY_KP1;
-	wl->keycodes[KEY_KP2] = SV_KEY_KP2;
-	wl->keycodes[KEY_KP3] = SV_KEY_KP3;
-	wl->keycodes[KEY_KP4] = SV_KEY_KP4;
-	wl->keycodes[KEY_KP5] = SV_KEY_KP5;
-	wl->keycodes[KEY_KP6] = SV_KEY_KP6;
-	wl->keycodes[KEY_KP7] = SV_KEY_KP7;
-	wl->keycodes[KEY_KP8] = SV_KEY_KP8;
-	wl->keycodes[KEY_KP9] = SV_KEY_KP9;
-	wl->keycodes[KEY_KPDOT] = SV_KEY_KPDOT;
-	wl->keycodes[KEY_KPEQUAL] = SV_KEY_KPEQUAL;
-	wl->keycodes[KEY_KPENTER] = SV_KEY_KPENTER;
-	wl->keycodes[KEY_102ND] = SV_KEY_WORLD_1;
+	wl->keycodes[KEY_GRAVE] = KEY_CODE_GRAVE;
+	wl->keycodes[KEY_1] = KEY_CODE_1;
+	wl->keycodes[KEY_2] = KEY_CODE_2;
+	wl->keycodes[KEY_3] = KEY_CODE_3;
+	wl->keycodes[KEY_4] = KEY_CODE_4;
+	wl->keycodes[KEY_5] = KEY_CODE_5;
+	wl->keycodes[KEY_6] = KEY_CODE_6;
+	wl->keycodes[KEY_7] = KEY_CODE_7;
+	wl->keycodes[KEY_8] = KEY_CODE_8;
+	wl->keycodes[KEY_9] = KEY_CODE_9;
+	wl->keycodes[KEY_0] = KEY_CODE_0;
+	wl->keycodes[KEY_SPACE] = KEY_CODE_SPACE;
+	wl->keycodes[KEY_MINUS] = KEY_CODE_MINUS;
+	wl->keycodes[KEY_EQUAL] = KEY_CODE_EQUAL;
+	wl->keycodes[KEY_Q] = KEY_CODE_Q;
+	wl->keycodes[KEY_W] = KEY_CODE_W;
+	wl->keycodes[KEY_E] = KEY_CODE_E;
+	wl->keycodes[KEY_R] = KEY_CODE_R;
+	wl->keycodes[KEY_T] = KEY_CODE_T;
+	wl->keycodes[KEY_Y] = KEY_CODE_Y;
+	wl->keycodes[KEY_U] = KEY_CODE_U;
+	wl->keycodes[KEY_I] = KEY_CODE_I;
+	wl->keycodes[KEY_O] = KEY_CODE_O;
+	wl->keycodes[KEY_P] = KEY_CODE_P;
+	wl->keycodes[KEY_LEFTBRACE] = KEY_CODE_LEFTBRACKET;
+	wl->keycodes[KEY_RIGHTBRACE] = KEY_CODE_RIGHTBRACKET;
+	wl->keycodes[KEY_A] = KEY_CODE_A;
+	wl->keycodes[KEY_S] = KEY_CODE_S;
+	wl->keycodes[KEY_D] = KEY_CODE_D;
+	wl->keycodes[KEY_F] = KEY_CODE_F;
+	wl->keycodes[KEY_G] = KEY_CODE_G;
+	wl->keycodes[KEY_H] = KEY_CODE_H;
+	wl->keycodes[KEY_J] = KEY_CODE_J;
+	wl->keycodes[KEY_K] = KEY_CODE_K;
+	wl->keycodes[KEY_L] = KEY_CODE_L;
+	wl->keycodes[KEY_SEMICOLON] = KEY_CODE_SEMICOLON;
+	wl->keycodes[KEY_APOSTROPHE] = KEY_CODE_APOSTROPHE;
+	wl->keycodes[KEY_Z] = KEY_CODE_Z;
+	wl->keycodes[KEY_X] = KEY_CODE_X;
+	wl->keycodes[KEY_C] = KEY_CODE_C;
+	wl->keycodes[KEY_V] = KEY_CODE_V;
+	wl->keycodes[KEY_B] = KEY_CODE_B;
+	wl->keycodes[KEY_N] = KEY_CODE_N;
+	wl->keycodes[KEY_M] = KEY_CODE_M;
+	wl->keycodes[KEY_COMMA] = KEY_CODE_COMMA;
+	wl->keycodes[KEY_DOT] = KEY_CODE_PERIOD;
+	wl->keycodes[KEY_SLASH] = KEY_CODE_SLASH;
+	wl->keycodes[KEY_BACKSLASH] = KEY_CODE_BACKSLASH;
+	wl->keycodes[KEY_ESC] = KEY_CODE_ESCAPE;
+	wl->keycodes[KEY_TAB] = KEY_CODE_TAB;
+	wl->keycodes[KEY_LEFTSHIFT] = KEY_CODE_LEFTSHIFT;
+	wl->keycodes[KEY_RIGHTSHIFT] = KEY_CODE_RIGHTSHIFT;
+	wl->keycodes[KEY_LEFTCTRL] = KEY_CODE_LEFTCTRL;
+	wl->keycodes[KEY_RIGHTCTRL] = KEY_CODE_RIGHTCTRL;
+	wl->keycodes[KEY_LEFTALT] = KEY_CODE_LEFTALT;
+	wl->keycodes[KEY_RIGHTALT] = KEY_CODE_RIGHTALT;
+	wl->keycodes[KEY_LEFTMETA] = KEY_CODE_LEFTMETA;
+	wl->keycodes[KEY_RIGHTMETA] = KEY_CODE_RIGHTMETA;
+	wl->keycodes[KEY_COMPOSE] = KEY_CODE_MENU;
+	wl->keycodes[KEY_NUMLOCK] = KEY_CODE_NUMLOCK;
+	wl->keycodes[KEY_CAPSLOCK] = KEY_CODE_CAPSLOCK;
+	wl->keycodes[KEY_PRINT] = KEY_CODE_PRINT;
+	wl->keycodes[KEY_SCROLLLOCK] = KEY_CODE_SCROLLLOCK;
+	wl->keycodes[KEY_PAUSE] = KEY_CODE_PAUSE;
+	wl->keycodes[KEY_DELETE] = KEY_CODE_DELETE;
+	wl->keycodes[KEY_BACKSPACE] = KEY_CODE_BACKSPACE;
+	wl->keycodes[KEY_ENTER] = KEY_CODE_ENTER;
+	wl->keycodes[KEY_HOME] = KEY_CODE_HOME;
+	wl->keycodes[KEY_END] = KEY_CODE_END;
+	wl->keycodes[KEY_PAGEUP] = KEY_CODE_PAGEUP;
+	wl->keycodes[KEY_PAGEDOWN] = KEY_CODE_PAGEDOWN;
+	wl->keycodes[KEY_INSERT] = KEY_CODE_INSERT;
+	wl->keycodes[KEY_LEFT] = KEY_CODE_LEFT;
+	wl->keycodes[KEY_RIGHT] = KEY_CODE_RIGHT;
+	wl->keycodes[KEY_DOWN] = KEY_CODE_DOWN;
+	wl->keycodes[KEY_UP] = KEY_CODE_UP;
+	wl->keycodes[KEY_F1] = KEY_CODE_F1;
+	wl->keycodes[KEY_F2] = KEY_CODE_F2;
+	wl->keycodes[KEY_F3] = KEY_CODE_F3;
+	wl->keycodes[KEY_F4] = KEY_CODE_F4;
+	wl->keycodes[KEY_F5] = KEY_CODE_F5;
+	wl->keycodes[KEY_F6] = KEY_CODE_F6;
+	wl->keycodes[KEY_F7] = KEY_CODE_F7;
+	wl->keycodes[KEY_F8] = KEY_CODE_F8;
+	wl->keycodes[KEY_F9] = KEY_CODE_F9;
+	wl->keycodes[KEY_F10] = KEY_CODE_F10;
+	wl->keycodes[KEY_F11] = KEY_CODE_F11;
+	wl->keycodes[KEY_F12] = KEY_CODE_F12;
+	wl->keycodes[KEY_F13] = KEY_CODE_F13;
+	wl->keycodes[KEY_F14] = KEY_CODE_F14;
+	wl->keycodes[KEY_F15] = KEY_CODE_F15;
+	wl->keycodes[KEY_F16] = KEY_CODE_F16;
+	wl->keycodes[KEY_F17] = KEY_CODE_F17;
+	wl->keycodes[KEY_F18] = KEY_CODE_F18;
+	wl->keycodes[KEY_F19] = KEY_CODE_F19;
+	wl->keycodes[KEY_F20] = KEY_CODE_F20;
+	wl->keycodes[KEY_F21] = KEY_CODE_F21;
+	wl->keycodes[KEY_F22] = KEY_CODE_F22;
+	wl->keycodes[KEY_F23] = KEY_CODE_F23;
+	wl->keycodes[KEY_F24] = KEY_CODE_F24;
+	wl->keycodes[KEY_KPSLASH] = KEY_CODE_KPSLASH;
+	wl->keycodes[KEY_KPASTERISK] = KEY_CODE_KPASTERISK;
+	wl->keycodes[KEY_KPMINUS] = KEY_CODE_KPMINUS;
+	wl->keycodes[KEY_KPPLUS] = KEY_CODE_KPPLUS;
+	wl->keycodes[KEY_KP0] = KEY_CODE_KP0;
+	wl->keycodes[KEY_KP1] = KEY_CODE_KP1;
+	wl->keycodes[KEY_KP2] = KEY_CODE_KP2;
+	wl->keycodes[KEY_KP3] = KEY_CODE_KP3;
+	wl->keycodes[KEY_KP4] = KEY_CODE_KP4;
+	wl->keycodes[KEY_KP5] = KEY_CODE_KP5;
+	wl->keycodes[KEY_KP6] = KEY_CODE_KP6;
+	wl->keycodes[KEY_KP7] = KEY_CODE_KP7;
+	wl->keycodes[KEY_KP8] = KEY_CODE_KP8;
+	wl->keycodes[KEY_KP9] = KEY_CODE_KP9;
+	wl->keycodes[KEY_KPDOT] = KEY_CODE_KPDOT;
+	wl->keycodes[KEY_KPEQUAL] = KEY_CODE_KPEQUAL;
+	wl->keycodes[KEY_KPENTER] = KEY_CODE_KPENTER;
+	wl->keycodes[KEY_102ND] = KEY_CODE_WORLD_1;
 }

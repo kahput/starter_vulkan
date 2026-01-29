@@ -1,15 +1,20 @@
-#include "common.h"
-#include "core/astring.h"
-#include "core/debug.h"
+#include "input.h"
 #include "mesh_source.h"
-#include "renderer.h"
-#include "renderer/backend/vulkan_api.h"
-#include "game_interface.h"
-#include "assets.h"
-#include "assets/asset_types.h"
-#include "core/arena.h"
-#include "core/logger.h"
-#include "renderer/r_internal.h"
+
+#include <game_interface.h>
+
+#include <common.h>
+#include <core/arena.h>
+#include <core/debug.h>
+#include <core/logger.h>
+#include <core/astring.h>
+
+#include <renderer.h>
+#include <renderer/r_internal.h>
+#include <renderer/backend/vulkan_api.h>
+
+#include <assets.h>
+#include <assets/asset_types.h>
 
 #include <cglm/cglm.h>
 #include <cglm/mat4.h>
@@ -42,6 +47,8 @@ typedef struct {
 	// Texture
 	RhiTexture sprite_texture;
 	RhiTexture checkered_texture;
+
+	uint32_t variant_index;
 
 	bool is_initialized;
 } GameState;
@@ -131,19 +138,20 @@ bool game_on_update(GameContext *context, float dt) {
 
 	MeshList list = { 0 };
 
-	for (int32_t z = 0; z < 16; ++z) {
-		for (int32_t x = 0; x < 16; x++) {
-			for (int32_t face_index = 0; face_index < 6; ++face_index) {
-				float x_offset = (float)x - ((float)16 * .5f);
-				float z_offset = (float)z - ((float)16 * .5f);
+	uint32_t size = 128;
+	for (uint32_t z = 0; z < size; ++z) {
+		for (uint32_t x = 0; x < size; x++) {
+			for (int32_t face_index = TOP; face_index <= TOP; ++face_index) {
+				float x_offset = (float)x - ((float)size * .5f);
+				float z_offset = (float)z - ((float)size * .5f);
 
 				MeshSource source = create_quad_mesh(
 					scratch.arena, x_offset, -1.f, z_offset, face_index);
-				mesh_list_push(scratch.arena, &list, source);
+				mesh_source_list_push(scratch.arena, &list, source);
 			}
 		}
 	}
-	MeshSource cube_src = mesh_list_flatten(scratch.arena, &list);
+	MeshSource cube_src = mesh_source_list_flatten(scratch.arena, &list);
 	terrain->vertex_count = cube_src.vertex_count;
 
 	terrain->vb = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_VERTEX,
@@ -176,7 +184,7 @@ bool game_on_update(GameContext *context, float dt) {
 
 	vulkan_renderer_shader_bind(
 		context->vk_context, state->terrain_shader,
-		RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
+		state->variant_index);
 	vulkan_renderer_resource_group_bind(context->vk_context, state->terrain_material, 0);
 
 	vulkan_renderer_resource_local_write(context->vk_context, 0, sizeof(mat4), transform);
@@ -186,21 +194,15 @@ bool game_on_update(GameContext *context, float dt) {
 	arena_release_scratch(scratch);
 	state->current_frame = (state->current_frame + 1) % 2;
 
+	if (input_key_pressed(KEY_CODE_SPACE))
+		state->variant_index = !state->variant_index;
+
 	return true;
 }
 
 bool game_on_unload(GameContext *context) {
 	LOG_INFO("Game unloading...");
 	return true;
-}
-
-GameInterface *game_hookup(void) {
-	interface = (GameInterface){
-		.on_load = game_on_load,
-		.on_update = game_on_update,
-		.on_unload = game_on_unload,
-	};
-	return &interface;
 }
 
 MeshSource create_quad_mesh(Arena *arena, float x, float y, float z, Orientation orientation) {
@@ -321,4 +323,13 @@ RhiTexture create_texture(GameContext *context, String filename) {
 		TEXTURE_USAGE_SAMPLED, texture_src->pixels);
 
 	return texture;
+}
+
+GameInterface *game_hookup(void) {
+	interface = (GameInterface){
+		.on_load = game_on_load,
+		.on_update = game_on_update,
+		.on_unload = game_on_unload,
+	};
+	return &interface;
 }

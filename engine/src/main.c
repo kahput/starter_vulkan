@@ -69,7 +69,7 @@ bool game_on_unload(GameContext *context) {
 }
 
 void editor_update(float dt);
-bool resize_event(Event *event);
+bool resize_event(EventCode code, void *event, void *receiver);
 RhiTexture load_cubemap(String path); // CHANGED: Returns handle
 
 static struct State {
@@ -78,7 +78,11 @@ static struct State {
 	VulkanContext *context;
 
 	Camera editor_camera;
-	AssetLibrary library;
+
+	AssetLibrary asset_system;
+	InputState *input_system;
+
+	EventState *event_system;
 
 	Layer layers[1];
 	Layer *current_layer;
@@ -123,9 +127,9 @@ int main(void) {
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
-	event_system_startup();
-	input_system_startup();
-	asset_library_startup(&state.library, arena_push(&state.permanent, MiB(128), 1, true), MiB(128));
+	state.event_system = event_system_startup(&state.permanent);
+	state.input_system = input_system_startup(&state.permanent);
+	asset_library_startup(&state.asset_system, arena_push(&state.permanent, MiB(128), 1, true), MiB(128));
 
 	platform_startup(&state.permanent, 1280, 720, "Starter Vulkan", &state.display);
 
@@ -261,7 +265,7 @@ int main(void) {
 
 	platform_pointer_mode(&state.display, PLATFORM_POINTER_DISABLED);
 	state.start_time = platform_time_ms(&state.display);
-	event_subscribe(SV_EVENT_WINDOW_RESIZED, resize_event);
+	event_subscribe(EVENT_PLATFORM_WINDOW_RESIZED, resize_event, NULL);
 
 	state.editor_camera = (Camera){ .position = { 0.0f, 15.0f, -27.f },
 		.target = { 0.0f, 0.0f, 0.0f },
@@ -272,10 +276,15 @@ int main(void) {
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
-	asset_library_track_directory(&state.library, str_lit("assets"));
+	asset_library_track_directory(&state.asset_system, str_lit("assets"));
 	state.skybox_tex = load_cubemap(str_lit("assets/textures/skybox/"));
 
-	GameContext game_context = { .game_memory = state.game.memory, .game_memory_size = state.game.capacity, .vk_context = state.context, &state.library };
+	GameContext game_context = {
+		.game_memory = state.game.memory,
+		.game_memory_size = state.game.capacity,
+		.vk_context = state.context,
+		&state.asset_system,
+	};
 	game_load(&game_context);
 	game_on_load(&game_context);
 
@@ -284,7 +293,7 @@ int main(void) {
 
 	// Create light debug shader
 	ShaderSource *light_shader_src = NULL;
-	UUID light_shader_id = asset_library_request_shader(&state.library, str_lit("light_debug.glsl"), &light_shader_src);
+	UUID light_shader_id = asset_library_request_shader(&state.asset_system, str_lit("light_debug.glsl"), &light_shader_src);
 
 	{
 		ShaderConfig light_config = {
@@ -314,7 +323,7 @@ int main(void) {
 	}
 
 	ShaderSource *postfx_shader_src = NULL;
-	UUID postfx_shader_id = asset_library_request_shader(&state.library, str_lit("postfx.glsl"), &postfx_shader_src);
+	UUID postfx_shader_id = asset_library_request_shader(&state.asset_system, str_lit("postfx.glsl"), &postfx_shader_src);
 	{
 		ShaderConfig postfx_config = {
 			.vertex_code = postfx_shader_src->vertex_shader.content,
@@ -335,7 +344,7 @@ int main(void) {
 	}
 
 	ShaderSource *skybox_shader_src = NULL;
-	UUID skybox_shader_id = asset_library_request_shader(&state.library, str_lit("skybox.glsl"), &skybox_shader_src);
+	UUID skybox_shader_id = asset_library_request_shader(&state.asset_system, str_lit("skybox.glsl"), &skybox_shader_src);
 	{
 		ShaderConfig skybox_config = {
 			.vertex_code = skybox_shader_src->vertex_shader.content,
@@ -479,10 +488,10 @@ int main(void) {
 			Vulkan_renderer_frame_end(state.context);
 		}
 
-		if (input_key_pressed(SV_KEY_ENTER))
+		if (input_key_pressed(KEY_CODE_ENTER))
 			wireframe = !wireframe;
 
-		if (input_key_down(SV_KEY_LEFTCTRL))
+		if (input_key_down(KEY_CODE_LEFTCTRL))
 			platform_pointer_mode(&state.display, PLATFORM_POINTER_NORMAL);
 		else
 			platform_pointer_mode(&state.display, PLATFORM_POINTER_DISABLED);
@@ -527,13 +536,13 @@ void editor_update(float dt) {
 	glm_vec3_normalize(camera_right);
 
 	glm_vec3_muladds(camera_right,
-		(input_key_down(SV_KEY_D) - input_key_down(SV_KEY_A)) * CAMERA_MOVE_SPEED * dt,
+		(input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A)) * CAMERA_MOVE_SPEED * dt,
 		move);
 	glm_vec3_muladds(
 		camera_down,
-		(input_key_down(SV_KEY_SPACE) - input_key_down(SV_KEY_C)) * CAMERA_MOVE_SPEED * dt, move);
+		(input_key_down(KEY_CODE_SPACE) - input_key_down(KEY_CODE_C)) * CAMERA_MOVE_SPEED * dt, move);
 	glm_vec3_muladds(target_position,
-		(input_key_down(SV_KEY_S) - input_key_down(SV_KEY_W)) * CAMERA_MOVE_SPEED * dt,
+		(input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W)) * CAMERA_MOVE_SPEED * dt,
 		move);
 
 	glm_vec3_negate(move);
@@ -541,7 +550,7 @@ void editor_update(float dt) {
 	glm_vec3_add(state.editor_camera.position, target_position, state.editor_camera.target);
 }
 
-bool resize_event(Event *event) {
+bool resize_event(EventCode code, void *event, void *receiver) {
 	WindowResizeEvent *wr_event = (WindowResizeEvent *)event;
 
 	if (vulkan_renderer_on_resize(state.context, wr_event->width, wr_event->height)) {
@@ -632,7 +641,7 @@ RhiTexture load_cubemap(String path) {
 		ImageSource *img = NULL;
 
 		String key = string_push_concat(scratch.arena, string_from_cstr(order[index]), extension);
-		asset_library_load_image(scratch.arena, &state.library, key, &img);
+		asset_library_load_image(scratch.arena, &state.asset_system, key, &img);
 		LOG_INFO("Scratch size used so after image %d: %llu", index, scratch.arena->offset);
 
 		loaded_images[index] = img;

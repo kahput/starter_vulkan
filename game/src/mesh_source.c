@@ -4,7 +4,7 @@
 
 #include <string.h>
 
-void mesh_list_push(Arena *arena, MeshList *list, MeshSource source) {
+void mesh_source_list_push(Arena *arena, MeshList *list, MeshSource source) {
 	MeshNode *node = arena_push_struct(arena, MeshNode);
 	node->source = source;
 	node->next = NULL;
@@ -28,7 +28,7 @@ void mesh_list_push(Arena *arena, MeshList *list, MeshSource source) {
 	list->index_count += source.index_count;
 }
 
-MeshSource mesh_list_flatten(Arena *arena, MeshList *list) {
+MeshSource mesh_source_list_flatten(Arena *arena, MeshList *list) {
 	MeshSource rv = { 0 };
 	if (list->node_count == 0)
 		return rv;

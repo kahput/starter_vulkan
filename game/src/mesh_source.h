@@ -14,6 +14,8 @@ typedef struct mesh_source {
 	uint32_t index_count;
 } MeshSource;
 
+MeshSource mesh_source_quad_create(Arena *arena);
+
 typedef struct MeshNode {
 	struct MeshNode *next;
 	MeshSource source;
@@ -33,7 +35,7 @@ typedef struct MeshList {
 	uint32_t index_count;
 } MeshList;
 
-void mesh_list_push(Arena *arena, MeshList *list, MeshSource source);
-MeshSource mesh_list_flatten(Arena *arena, MeshList *list);
+void mesh_source_list_push(Arena *arena, MeshList *list, MeshSource source);
+MeshSource mesh_source_list_flatten(Arena *arena, MeshList *list);
 
 #endif /* MESH_SOURCE_H_ */

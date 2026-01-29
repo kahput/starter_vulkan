@@ -1,3 +1,4 @@
+#include "event.h"
 #include "events/platform_events.h"
 #include "platform/internal.h"
 
@@ -244,17 +245,19 @@ void x11_poll_events(Platform *platform) {
 					platform->physical_width = cfg->width; // X11 usually 1:1 unless using XRandR scaling logic
 					platform->physical_height = cfg->height;
 
-					WindowResizeEvent e = event_create(WindowResizeEvent, SV_EVENT_WINDOW_RESIZED);
-					e.width = cfg->width;
-					e.height = cfg->height;
-					event_emit((Event *)&e);
+					WindowResizeEvent e = {
+						.width = cfg->width,
+						.height = cfg->height,
+
+					};
+					event_emit_struct(EVENT_PLATFORM_WINDOW_RESIZED, &e);
 				}
 			} break;
 
 			case XCB_MOTION_NOTIFY: {
 				xcb_motion_notify_event_t *motion = (xcb_motion_notify_event_t *)event;
 
-				MouseMotionEvent e = event_create(MouseMotionEvent, SV_EVENT_MOUSE_MOTION);
+				MouseMotionEvent e = { 0 };
 
 				if (x11->pointer_mode == PLATFORM_POINTER_DISABLED) {
 					// Locked Mode Logic (Fake raw input)
@@ -283,7 +286,7 @@ void x11_poll_events(Platform *platform) {
 					// Note: Calculating DX/DY in standard mode requires storing last_mouse_x/y
 				}
 
-				event_emit((Event *)&e);
+				event_emit_struct(EVENT_PLATFORM_MOUSE_MOTION, &e);
 			} break;
 
 			case XCB_BUTTON_PRESS:
@@ -291,8 +294,7 @@ void x11_poll_events(Platform *platform) {
 				xcb_button_press_event_t *bp = (xcb_button_press_event_t *)event;
 				bool pressed = (event->response_type & ~0x80) == XCB_BUTTON_PRESS;
 
-				MouseButtonEvent e = event_create(MouseButtonEvent,
-					pressed ? SV_EVENT_MOUSE_BUTTON_PRESSED : SV_EVENT_MOUSE_BUTTON_RELEASED);
+				MouseButtonEvent e = { 0 };
 
 				e.x = bp->event_x;
 				e.y = bp->event_y;
@@ -319,7 +321,7 @@ void x11_poll_events(Platform *platform) {
 
 				// If it's a standard button, emit event
 				if (bp->detail <= 3) {
-					event_emit((Event *)&e);
+					event_emit_struct(pressed ? EVENT_PLATFORM_MOUSE_BUTTON_PRESSED : EVENT_PLATFORM_MOUSE_BUTTON_RELEASED, &e);
 				}
 			} break;
 
@@ -328,8 +330,7 @@ void x11_poll_events(Platform *platform) {
 				xcb_key_press_event_t *kp = (xcb_key_press_event_t *)event;
 				bool pressed = (event->response_type & ~0x80) == XCB_KEY_PRESS;
 
-				KeyEvent e = event_create(KeyEvent,
-					pressed ? SV_EVENT_KEY_PRESSED : SV_EVENT_KEY_RELEASED);
+				KeyEvent e = { 0 };
 
 				// X11 Keycodes are Linux Scancodes + 8
 				uint32_t scancode_index = kp->detail - 8;
@@ -337,13 +338,13 @@ void x11_poll_events(Platform *platform) {
 				if (scancode_index < 256) {
 					e.key = x11->keycodes[scancode_index];
 				} else {
-					e.key = SV_KEY_UNKOWN;
+					e.key = KEY_CODE_UNKOWN;
 				}
 
 				// You can add modifier logic here by checking kp->state
 				// e.mods = ...
 
-				event_emit((Event *)&e);
+				event_emit_struct(pressed ? EVENT_PLATFORM_KEY_PRESSED : EVENT_PLATFORM_KEY_RELEASED, &e);
 			} break;
 
 			default:
@@ -472,122 +473,122 @@ const char **x11_vulkan_extensions(uint32_t *count) {
 void create_key_table(X11Platform *x11) {
 	memset(x11->keycodes, -1, sizeof(x11->keycodes));
 
-	x11->keycodes[KEY_GRAVE] = SV_KEY_GRAVE;
-	x11->keycodes[KEY_1] = SV_KEY_1;
-	x11->keycodes[KEY_2] = SV_KEY_2;
-	x11->keycodes[KEY_3] = SV_KEY_3;
-	x11->keycodes[KEY_4] = SV_KEY_4;
-	x11->keycodes[KEY_5] = SV_KEY_5;
-	x11->keycodes[KEY_6] = SV_KEY_6;
-	x11->keycodes[KEY_7] = SV_KEY_7;
-	x11->keycodes[KEY_8] = SV_KEY_8;
-	x11->keycodes[KEY_9] = SV_KEY_9;
-	x11->keycodes[KEY_0] = SV_KEY_0;
-	x11->keycodes[KEY_SPACE] = SV_KEY_SPACE;
-	x11->keycodes[KEY_MINUS] = SV_KEY_MINUS;
-	x11->keycodes[KEY_EQUAL] = SV_KEY_EQUAL;
-	x11->keycodes[KEY_Q] = SV_KEY_Q;
-	x11->keycodes[KEY_W] = SV_KEY_W;
-	x11->keycodes[KEY_E] = SV_KEY_E;
-	x11->keycodes[KEY_R] = SV_KEY_R;
-	x11->keycodes[KEY_T] = SV_KEY_T;
-	x11->keycodes[KEY_Y] = SV_KEY_Y;
-	x11->keycodes[KEY_U] = SV_KEY_U;
-	x11->keycodes[KEY_I] = SV_KEY_I;
-	x11->keycodes[KEY_O] = SV_KEY_O;
-	x11->keycodes[KEY_P] = SV_KEY_P;
-	x11->keycodes[KEY_LEFTBRACE] = SV_KEY_LEFTBRACKET;
-	x11->keycodes[KEY_RIGHTBRACE] = SV_KEY_RIGHTBRACKET;
-	x11->keycodes[KEY_A] = SV_KEY_A;
-	x11->keycodes[KEY_S] = SV_KEY_S;
-	x11->keycodes[KEY_D] = SV_KEY_D;
-	x11->keycodes[KEY_F] = SV_KEY_F;
-	x11->keycodes[KEY_G] = SV_KEY_G;
-	x11->keycodes[KEY_H] = SV_KEY_H;
-	x11->keycodes[KEY_J] = SV_KEY_J;
-	x11->keycodes[KEY_K] = SV_KEY_K;
-	x11->keycodes[KEY_L] = SV_KEY_L;
-	x11->keycodes[KEY_SEMICOLON] = SV_KEY_SEMICOLON;
-	x11->keycodes[KEY_APOSTROPHE] = SV_KEY_APOSTROPHE;
-	x11->keycodes[KEY_Z] = SV_KEY_Z;
-	x11->keycodes[KEY_X] = SV_KEY_X;
-	x11->keycodes[KEY_C] = SV_KEY_C;
-	x11->keycodes[KEY_V] = SV_KEY_V;
-	x11->keycodes[KEY_B] = SV_KEY_B;
-	x11->keycodes[KEY_N] = SV_KEY_N;
-	x11->keycodes[KEY_M] = SV_KEY_M;
-	x11->keycodes[KEY_COMMA] = SV_KEY_COMMA;
-	x11->keycodes[KEY_DOT] = SV_KEY_PERIOD;
-	x11->keycodes[KEY_SLASH] = SV_KEY_SLASH;
-	x11->keycodes[KEY_BACKSLASH] = SV_KEY_BACKSLASH;
-	x11->keycodes[KEY_ESC] = SV_KEY_ESCAPE;
-	x11->keycodes[KEY_TAB] = SV_KEY_TAB;
-	x11->keycodes[KEY_LEFTSHIFT] = SV_KEY_LEFTSHIFT;
-	x11->keycodes[KEY_RIGHTSHIFT] = SV_KEY_RIGHTSHIFT;
-	x11->keycodes[KEY_LEFTCTRL] = SV_KEY_LEFTCTRL;
-	x11->keycodes[KEY_RIGHTCTRL] = SV_KEY_RIGHTCTRL;
-	x11->keycodes[KEY_LEFTALT] = SV_KEY_LEFTALT;
-	x11->keycodes[KEY_RIGHTALT] = SV_KEY_RIGHTALT;
-	x11->keycodes[KEY_LEFTMETA] = SV_KEY_LEFTMETA;
-	x11->keycodes[KEY_RIGHTMETA] = SV_KEY_RIGHTMETA;
-	x11->keycodes[KEY_COMPOSE] = SV_KEY_MENU;
-	x11->keycodes[KEY_NUMLOCK] = SV_KEY_NUMLOCK;
-	x11->keycodes[KEY_CAPSLOCK] = SV_KEY_CAPSLOCK;
-	x11->keycodes[KEY_PRINT] = SV_KEY_PRINT;
-	x11->keycodes[KEY_SCROLLLOCK] = SV_KEY_SCROLLLOCK;
-	x11->keycodes[KEY_PAUSE] = SV_KEY_PAUSE;
-	x11->keycodes[KEY_DELETE] = SV_KEY_DELETE;
-	x11->keycodes[KEY_BACKSPACE] = SV_KEY_BACKSPACE;
-	x11->keycodes[KEY_ENTER] = SV_KEY_ENTER;
-	x11->keycodes[KEY_HOME] = SV_KEY_HOME;
-	x11->keycodes[KEY_END] = SV_KEY_END;
-	x11->keycodes[KEY_PAGEUP] = SV_KEY_PAGEUP;
-	x11->keycodes[KEY_PAGEDOWN] = SV_KEY_PAGEDOWN;
-	x11->keycodes[KEY_INSERT] = SV_KEY_INSERT;
-	x11->keycodes[KEY_LEFT] = SV_KEY_LEFT;
-	x11->keycodes[KEY_RIGHT] = SV_KEY_RIGHT;
-	x11->keycodes[KEY_DOWN] = SV_KEY_DOWN;
-	x11->keycodes[KEY_UP] = SV_KEY_UP;
-	x11->keycodes[KEY_F1] = SV_KEY_F1;
-	x11->keycodes[KEY_F2] = SV_KEY_F2;
-	x11->keycodes[KEY_F3] = SV_KEY_F3;
-	x11->keycodes[KEY_F4] = SV_KEY_F4;
-	x11->keycodes[KEY_F5] = SV_KEY_F5;
-	x11->keycodes[KEY_F6] = SV_KEY_F6;
-	x11->keycodes[KEY_F7] = SV_KEY_F7;
-	x11->keycodes[KEY_F8] = SV_KEY_F8;
-	x11->keycodes[KEY_F9] = SV_KEY_F9;
-	x11->keycodes[KEY_F10] = SV_KEY_F10;
-	x11->keycodes[KEY_F11] = SV_KEY_F11;
-	x11->keycodes[KEY_F12] = SV_KEY_F12;
-	x11->keycodes[KEY_F13] = SV_KEY_F13;
-	x11->keycodes[KEY_F14] = SV_KEY_F14;
-	x11->keycodes[KEY_F15] = SV_KEY_F15;
-	x11->keycodes[KEY_F16] = SV_KEY_F16;
-	x11->keycodes[KEY_F17] = SV_KEY_F17;
-	x11->keycodes[KEY_F18] = SV_KEY_F18;
-	x11->keycodes[KEY_F19] = SV_KEY_F19;
-	x11->keycodes[KEY_F20] = SV_KEY_F20;
-	x11->keycodes[KEY_F21] = SV_KEY_F21;
-	x11->keycodes[KEY_F22] = SV_KEY_F22;
-	x11->keycodes[KEY_F23] = SV_KEY_F23;
-	x11->keycodes[KEY_F24] = SV_KEY_F24;
-	x11->keycodes[KEY_KPSLASH] = SV_KEY_KPSLASH;
-	x11->keycodes[KEY_KPASTERISK] = SV_KEY_KPASTERISK;
-	x11->keycodes[KEY_KPMINUS] = SV_KEY_KPMINUS;
-	x11->keycodes[KEY_KPPLUS] = SV_KEY_KPPLUS;
-	x11->keycodes[KEY_KP0] = SV_KEY_KP0;
-	x11->keycodes[KEY_KP1] = SV_KEY_KP1;
-	x11->keycodes[KEY_KP2] = SV_KEY_KP2;
-	x11->keycodes[KEY_KP3] = SV_KEY_KP3;
-	x11->keycodes[KEY_KP4] = SV_KEY_KP4;
-	x11->keycodes[KEY_KP5] = SV_KEY_KP5;
-	x11->keycodes[KEY_KP6] = SV_KEY_KP6;
-	x11->keycodes[KEY_KP7] = SV_KEY_KP7;
-	x11->keycodes[KEY_KP8] = SV_KEY_KP8;
-	x11->keycodes[KEY_KP9] = SV_KEY_KP9;
-	x11->keycodes[KEY_KPDOT] = SV_KEY_KPDOT;
-	x11->keycodes[KEY_KPEQUAL] = SV_KEY_KPEQUAL;
-	x11->keycodes[KEY_KPENTER] = SV_KEY_KPENTER;
-	x11->keycodes[KEY_102ND] = SV_KEY_WORLD_1;
+	x11->keycodes[KEY_GRAVE] = KEY_CODE_GRAVE;
+	x11->keycodes[KEY_1] = KEY_CODE_1;
+	x11->keycodes[KEY_2] = KEY_CODE_2;
+	x11->keycodes[KEY_3] = KEY_CODE_3;
+	x11->keycodes[KEY_4] = KEY_CODE_4;
+	x11->keycodes[KEY_5] = KEY_CODE_5;
+	x11->keycodes[KEY_6] = KEY_CODE_6;
+	x11->keycodes[KEY_7] = KEY_CODE_7;
+	x11->keycodes[KEY_8] = KEY_CODE_8;
+	x11->keycodes[KEY_9] = KEY_CODE_9;
+	x11->keycodes[KEY_0] = KEY_CODE_0;
+	x11->keycodes[KEY_SPACE] = KEY_CODE_SPACE;
+	x11->keycodes[KEY_MINUS] = KEY_CODE_MINUS;
+	x11->keycodes[KEY_EQUAL] = KEY_CODE_EQUAL;
+	x11->keycodes[KEY_Q] = KEY_CODE_Q;
+	x11->keycodes[KEY_W] = KEY_CODE_W;
+	x11->keycodes[KEY_E] = KEY_CODE_E;
+	x11->keycodes[KEY_R] = KEY_CODE_R;
+	x11->keycodes[KEY_T] = KEY_CODE_T;
+	x11->keycodes[KEY_Y] = KEY_CODE_Y;
+	x11->keycodes[KEY_U] = KEY_CODE_U;
+	x11->keycodes[KEY_I] = KEY_CODE_I;
+	x11->keycodes[KEY_O] = KEY_CODE_O;
+	x11->keycodes[KEY_P] = KEY_CODE_P;
+	x11->keycodes[KEY_LEFTBRACE] = KEY_CODE_LEFTBRACKET;
+	x11->keycodes[KEY_RIGHTBRACE] = KEY_CODE_RIGHTBRACKET;
+	x11->keycodes[KEY_A] = KEY_CODE_A;
+	x11->keycodes[KEY_S] = KEY_CODE_S;
+	x11->keycodes[KEY_D] = KEY_CODE_D;
+	x11->keycodes[KEY_F] = KEY_CODE_F;
+	x11->keycodes[KEY_G] = KEY_CODE_G;
+	x11->keycodes[KEY_H] = KEY_CODE_H;
+	x11->keycodes[KEY_J] = KEY_CODE_J;
+	x11->keycodes[KEY_K] = KEY_CODE_K;
+	x11->keycodes[KEY_L] = KEY_CODE_L;
+	x11->keycodes[KEY_SEMICOLON] = KEY_CODE_SEMICOLON;
+	x11->keycodes[KEY_APOSTROPHE] = KEY_CODE_APOSTROPHE;
+	x11->keycodes[KEY_Z] = KEY_CODE_Z;
+	x11->keycodes[KEY_X] = KEY_CODE_X;
+	x11->keycodes[KEY_C] = KEY_CODE_C;
+	x11->keycodes[KEY_V] = KEY_CODE_V;
+	x11->keycodes[KEY_B] = KEY_CODE_B;
+	x11->keycodes[KEY_N] = KEY_CODE_N;
+	x11->keycodes[KEY_M] = KEY_CODE_M;
+	x11->keycodes[KEY_COMMA] = KEY_CODE_COMMA;
+	x11->keycodes[KEY_DOT] = KEY_CODE_PERIOD;
+	x11->keycodes[KEY_SLASH] = KEY_CODE_SLASH;
+	x11->keycodes[KEY_BACKSLASH] = KEY_CODE_BACKSLASH;
+	x11->keycodes[KEY_ESC] = KEY_CODE_ESCAPE;
+	x11->keycodes[KEY_TAB] = KEY_CODE_TAB;
+	x11->keycodes[KEY_LEFTSHIFT] = KEY_CODE_LEFTSHIFT;
+	x11->keycodes[KEY_RIGHTSHIFT] = KEY_CODE_RIGHTSHIFT;
+	x11->keycodes[KEY_LEFTCTRL] = KEY_CODE_LEFTCTRL;
+	x11->keycodes[KEY_RIGHTCTRL] = KEY_CODE_RIGHTCTRL;
+	x11->keycodes[KEY_LEFTALT] = KEY_CODE_LEFTALT;
+	x11->keycodes[KEY_RIGHTALT] = KEY_CODE_RIGHTALT;
+	x11->keycodes[KEY_LEFTMETA] = KEY_CODE_LEFTMETA;
+	x11->keycodes[KEY_RIGHTMETA] = KEY_CODE_RIGHTMETA;
+	x11->keycodes[KEY_COMPOSE] = KEY_CODE_MENU;
+	x11->keycodes[KEY_NUMLOCK] = KEY_CODE_NUMLOCK;
+	x11->keycodes[KEY_CAPSLOCK] = KEY_CODE_CAPSLOCK;
+	x11->keycodes[KEY_PRINT] = KEY_CODE_PRINT;
+	x11->keycodes[KEY_SCROLLLOCK] = KEY_CODE_SCROLLLOCK;
+	x11->keycodes[KEY_PAUSE] = KEY_CODE_PAUSE;
+	x11->keycodes[KEY_DELETE] = KEY_CODE_DELETE;
+	x11->keycodes[KEY_BACKSPACE] = KEY_CODE_BACKSPACE;
+	x11->keycodes[KEY_ENTER] = KEY_CODE_ENTER;
+	x11->keycodes[KEY_HOME] = KEY_CODE_HOME;
+	x11->keycodes[KEY_END] = KEY_CODE_END;
+	x11->keycodes[KEY_PAGEUP] = KEY_CODE_PAGEUP;
+	x11->keycodes[KEY_PAGEDOWN] = KEY_CODE_PAGEDOWN;
+	x11->keycodes[KEY_INSERT] = KEY_CODE_INSERT;
+	x11->keycodes[KEY_LEFT] = KEY_CODE_LEFT;
+	x11->keycodes[KEY_RIGHT] = KEY_CODE_RIGHT;
+	x11->keycodes[KEY_DOWN] = KEY_CODE_DOWN;
+	x11->keycodes[KEY_UP] = KEY_CODE_UP;
+	x11->keycodes[KEY_F1] = KEY_CODE_F1;
+	x11->keycodes[KEY_F2] = KEY_CODE_F2;
+	x11->keycodes[KEY_F3] = KEY_CODE_F3;
+	x11->keycodes[KEY_F4] = KEY_CODE_F4;
+	x11->keycodes[KEY_F5] = KEY_CODE_F5;
+	x11->keycodes[KEY_F6] = KEY_CODE_F6;
+	x11->keycodes[KEY_F7] = KEY_CODE_F7;
+	x11->keycodes[KEY_F8] = KEY_CODE_F8;
+	x11->keycodes[KEY_F9] = KEY_CODE_F9;
+	x11->keycodes[KEY_F10] = KEY_CODE_F10;
+	x11->keycodes[KEY_F11] = KEY_CODE_F11;
+	x11->keycodes[KEY_F12] = KEY_CODE_F12;
+	x11->keycodes[KEY_F13] = KEY_CODE_F13;
+	x11->keycodes[KEY_F14] = KEY_CODE_F14;
+	x11->keycodes[KEY_F15] = KEY_CODE_F15;
+	x11->keycodes[KEY_F16] = KEY_CODE_F16;
+	x11->keycodes[KEY_F17] = KEY_CODE_F17;
+	x11->keycodes[KEY_F18] = KEY_CODE_F18;
+	x11->keycodes[KEY_F19] = KEY_CODE_F19;
+	x11->keycodes[KEY_F20] = KEY_CODE_F20;
+	x11->keycodes[KEY_F21] = KEY_CODE_F21;
+	x11->keycodes[KEY_F22] = KEY_CODE_F22;
+	x11->keycodes[KEY_F23] = KEY_CODE_F23;
+	x11->keycodes[KEY_F24] = KEY_CODE_F24;
+	x11->keycodes[KEY_KPSLASH] = KEY_CODE_KPSLASH;
+	x11->keycodes[KEY_KPASTERISK] = KEY_CODE_KPASTERISK;
+	x11->keycodes[KEY_KPMINUS] = KEY_CODE_KPMINUS;
+	x11->keycodes[KEY_KPPLUS] = KEY_CODE_KPPLUS;
+	x11->keycodes[KEY_KP0] = KEY_CODE_KP0;
+	x11->keycodes[KEY_KP1] = KEY_CODE_KP1;
+	x11->keycodes[KEY_KP2] = KEY_CODE_KP2;
+	x11->keycodes[KEY_KP3] = KEY_CODE_KP3;
+	x11->keycodes[KEY_KP4] = KEY_CODE_KP4;
+	x11->keycodes[KEY_KP5] = KEY_CODE_KP5;
+	x11->keycodes[KEY_KP6] = KEY_CODE_KP6;
+	x11->keycodes[KEY_KP7] = KEY_CODE_KP7;
+	x11->keycodes[KEY_KP8] = KEY_CODE_KP8;
+	x11->keycodes[KEY_KP9] = KEY_CODE_KP9;
+	x11->keycodes[KEY_KPDOT] = KEY_CODE_KPDOT;
+	x11->keycodes[KEY_KPEQUAL] = KEY_CODE_KPEQUAL;
+	x11->keycodes[KEY_KPENTER] = KEY_CODE_KPENTER;
+	x11->keycodes[KEY_102ND] = KEY_CODE_WORLD_1;
 }

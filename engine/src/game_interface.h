@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assets.h"
+#include "input.h"
 #include "renderer/backend/vulkan_api.h"
 
 typedef struct {
