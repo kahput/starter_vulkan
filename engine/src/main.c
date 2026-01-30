@@ -57,10 +57,10 @@ bool game_on_load(GameContext *context) {
 		return game->on_load(context);
 	return false;
 }
-bool game_on_update(GameContext *context, float dt) {
+FrameInfo game_on_update(GameContext *context, float dt) {
 	if (game->on_update)
 		return game->on_update(context, dt);
-	return false;
+	return (FrameInfo){ 0 };
 }
 bool game_on_unload(GameContext *context) {
 	if (game->on_unload)
@@ -86,6 +86,8 @@ static struct State {
 
 	Layer layers[1];
 	Layer *current_layer;
+
+	bool editor;
 
 	uint64_t start_time;
 	uint32_t width, height;
@@ -113,7 +115,6 @@ static struct State {
 	RhiGroupResource light_material;
 
 	RhiShader postfx_shader;
-
 	RhiShader skybox_shader;
 	RhiGroupResource skybox_material;
 } state;
@@ -123,7 +124,6 @@ static bool wireframe = false;
 int main(void) {
 	state.permanent = arena_create(MiB(512));
 	state.transient = arena_create(MiB(4));
-	state.game = arena_create(MiB(32));
 
 	logger_set_level(LOG_LEVEL_DEBUG);
 
@@ -280,8 +280,8 @@ int main(void) {
 	state.skybox_tex = load_cubemap(str_lit("assets/textures/skybox/"));
 
 	GameContext game_context = {
-		.game_memory = state.game.memory,
-		.game_memory_size = state.game.capacity,
+		.permanent_memory = arena_push(&state.permanent, MiB(32), 1, true),
+		.permanent_memory_size = MiB(32),
 		.vk_context = state.context,
 		&state.asset_system,
 	};
@@ -386,7 +386,7 @@ int main(void) {
 	float sun_theta = 2 * GLM_PI / 3.f;
 	float sun_azimuth = 0;
 	Light lights[] = { [0] = { .type = LIGHT_TYPE_DIRECTIONAL,
-						 .color = { 0.2f, 0.2f, 1.0f, 0.1f },
+						 .color = { 1.0f, 1.0f, 1.0f, 1.0f },
 						 .as.direction = { 0.0f, 0.0f, 0.0f } },
 		[1] = { .type = LIGHT_TYPE_POINT,
 		  .color = { 1.0f, 0.5f, 0.2f, 0.8f },
@@ -405,14 +405,12 @@ int main(void) {
 		uint64_t current_write_time = filesystem_last_modified(str_lit("libgame.so"));
 		if (current_write_time != game_library.last_write && current_write_time != 0) {
 			LOG_INFO("Game file change detected. Reloading...");
-			struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 }; // 100ms
+			struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
 			nanosleep(&ts, NULL);
 			game_load(&game_context);
 		}
 
 		platform_poll_events(&state.display);
-
-		state.current_layer->update(delta_time);
 
 		lights[1].as.position[0] = cos(time) * 5;
 		lights[1].as.position[2] = sin(time) * 5;
@@ -423,9 +421,8 @@ int main(void) {
 			vulkan_renderer_pass_begin(state.context, state.pass_main);
 			{
 				FrameData frame_data = { 0 };
+
 				glm_mat4_identity(frame_data.view);
-				glm_lookat(state.editor_camera.position, state.editor_camera.target, state.editor_camera.up,
-					frame_data.view);
 
 				glm_mat4_identity(frame_data.projection);
 				glm_perspective(glm_rad(state.editor_camera.fov), (float)state.width / (float)state.height,
@@ -439,15 +436,25 @@ int main(void) {
 					else
 						memcpy(frame_data.lights + point_light_count++, lights + light_index, sizeof(Light));
 				}
-				glm_vec3_dup(state.editor_camera.position, frame_data.camera_position);
 				frame_data.light_count = point_light_count;
+
+				vulkan_renderer_resource_global_bind(state.context, state.global_main);
+
+				FrameInfo game_frame = game_on_update(&game_context, delta_time);
+
+				if (state.editor) {
+					state.current_layer->update(delta_time);
+					glm_lookat(state.editor_camera.position, state.editor_camera.target, state.editor_camera.up,
+						frame_data.view);
+					glm_vec3_dup(state.editor_camera.position, frame_data.camera_position);
+				} else {
+					glm_lookat(game_frame.camera.position, game_frame.camera.target, game_frame.camera.up,
+						frame_data.view);
+					glm_vec3_dup(game_frame.camera.position, frame_data.camera_position);
+				}
 
 				vulkan_renderer_resource_global_write(state.context, state.global_main, 0,
 					sizeof(FrameData), &frame_data);
-				vulkan_renderer_resource_global_bind(state.context, state.global_main);
-
-				game_on_update(&game_context, delta_time);
-
 				// Draw light debug
 				vulkan_renderer_shader_bind(state.context, state.light_shader, wireframe); // Assuming variant index passed
 				for (uint32_t index = 0; index < countof(lights); ++index) {
@@ -490,6 +497,9 @@ int main(void) {
 
 		if (input_key_pressed(KEY_CODE_ENTER))
 			wireframe = !wireframe;
+
+		if (input_key_pressed(KEY_CODE_TAB))
+			state.editor = !state.editor;
 
 		if (input_key_down(KEY_CODE_LEFTCTRL))
 			platform_pointer_mode(&state.display, PLATFORM_POINTER_NORMAL);

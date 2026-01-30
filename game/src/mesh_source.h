@@ -14,7 +14,19 @@ typedef struct mesh_source {
 	uint32_t index_count;
 } MeshSource;
 
-MeshSource mesh_source_quad_create(Arena *arena);
+enum {
+	CUBE_FACE_RIGHT,
+	CUBE_FACE_LEFT,
+	CUBE_FACE_TOP,
+	CUBE_FACE_BOTTOM,
+	CUBE_FACE_FRONT,
+	CUBE_FACE_BACK
+};
+
+// MeshSource mesh_source_cube_create(Arena *arena);
+MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z, uint8_t face_index);
+
+MeshSource mesh_source_sphere_create(Arena *arena, float radius);
 
 typedef struct MeshNode {
 	struct MeshNode *next;

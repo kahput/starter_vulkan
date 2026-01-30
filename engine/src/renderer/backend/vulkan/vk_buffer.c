@@ -28,40 +28,31 @@ RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type,
 	if (type == BUFFER_TYPE_UNIFORM) {
 		buffer->count = MAX_FRAMES_IN_FLIGHT;
 		bool result = vulkan_buffer_ubo_create(context, buffer, size, data);
-		logger_dedent();
 		if (result == false)
 			return INVALID_RHI(RhiBuffer);
-
-		goto successful_return;
+	} else {
+		bool result = vulkan_buffer_create(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
 	}
 
-	LOG_TRACE("Creating local buffer...");
-	logger_indent();
-	bool result = vulkan_buffer_create(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
-	logger_dedent();
-	if (data == NULL) {
-		logger_dedent();
-		goto successful_return;
+	if (data != NULL) {
+		VulkanBuffer *staging_buffer = &context->staging_buffer;
+		size_t copy_end = aligned_address(staging_buffer->offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
+		size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
+		if (copy_end >= staging_buffer->size) {
+			LOG_TRACE("Max staging buffer size exceeded, aborting vulkan_buffer_create");
+			ASSERT(false);
+			return INVALID_RHI(RhiBuffer);
+		}
+
+		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, data);
+
+		vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
+		staging_buffer->offset = copy_end;
 	}
-
-	VulkanBuffer *staging_buffer = &context->staging_buffer;
-	size_t copy_end = aligned_address(staging_buffer->offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
-	size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
-	if (copy_end >= staging_buffer->size) {
-		LOG_TRACE("Max staging buffer size exceeded, aborting vulkan_buffer_create");
-		ASSERT(false);
-		return INVALID_RHI(RhiBuffer);
-	}
-
-	vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, data);
-
-	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
-	staging_buffer->offset = copy_end;
 	LOG_TRACE("%s resource created", stringify[type]);
 
 	logger_dedent();
 
-successful_return:
 	return (RhiBuffer){ pool_index_of(context->buffer_pool, buffer), 0 };
 }
 
@@ -83,14 +74,26 @@ bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer rbuffer, siz
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true);
 
 	if ((buffer->memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-		LOG_ERROR("Vulkan: Updating device local buffers not supported, aborting vulkan_renderer_buffer_update");
-		ASSERT(false);
-		return false;
+		VulkanBuffer *staging_buffer = &context->staging_buffer;
+		size_t copy_end = aligned_address(staging_buffer->offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
+		size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
+		if (copy_end >= staging_buffer->size) {
+			LOG_TRACE("Vulkan: staging buffer size exceeded for frame %d, aborting %s", context->current_frame, __func__);
+			ASSERT(false);
+			return false;
+		}
+
+		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, data);
+
+		vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
+		staging_buffer->offset = copy_end;
+
+		return true;
 	}
 
 	size_t copy_size = size;
 	if (offset + copy_size > buffer->size) {
-		LOG_WARN("Update size bigger than allocation size, ignoring difference of %dB", size - buffer->size);
+		LOG_WARN("Vulkan: write size greater than allocation size, ignoring difference of %dB", size - buffer->size);
 		copy_size = buffer->size - offset;
 	}
 

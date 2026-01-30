@@ -1,20 +1,27 @@
 #pragma once
 
 #include "assets.h"
-#include "input.h"
 #include "renderer/backend/vulkan_api.h"
+#include "scene.h"
 
 typedef struct {
-	void *game_memory;
-	size_t game_memory_size;
+	void *permanent_memory;
+	size_t permanent_memory_size;
+
+	void *transient_memory;
+	size_t transient_memory_size;
 
 	VulkanContext *vk_context;
 	AssetLibrary *asset_library;
 } GameContext;
 
+typedef struct FrameInfo {
+	Camera camera;
+} FrameInfo;
+
 typedef struct {
 	bool (*on_load)(GameContext *);
-	bool (*on_update)(GameContext *, float dt);
+	FrameInfo (*on_update)(GameContext *, float dt);
 	bool (*on_unload)(GameContext *);
 } GameInterface;
 

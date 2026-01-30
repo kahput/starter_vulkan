@@ -9,6 +9,7 @@
 #include <core/logger.h>
 #include <core/astring.h>
 
+#include <pthread.h>
 #include <renderer.h>
 #include <renderer/r_internal.h>
 #include <renderer/backend/vulkan_api.h>
@@ -44,6 +45,9 @@ typedef struct {
 
 	uint32_t current_frame;
 
+	vec3 player_position;
+	Camera camera;
+
 	// Texture
 	RhiTexture sprite_texture;
 	RhiTexture checkered_texture;
@@ -55,18 +59,14 @@ typedef struct {
 
 static GameState *state = NULL;
 
-typedef enum {
-	RIGHT,
-	LEFT,
-	TOP,
-	BOTTOM,
-	FRONT,
-	BACK
-} Orientation;
-
-MeshSource create_quad_mesh(Arena *arena, float x, float y, float z, Orientation orientation);
 RhiShader create_shader(GameContext *context, String filename);
 RhiTexture create_texture(GameContext *context, String filename);
+
+void player_update(vec3 player_position, float dt, Camera *camera);
+
+#define CAMERA_SENSITIVITY .001f
+#define MOVE_SPEED 5.f
+#define SPRING_LENGTH 16.f
 
 bool game_on_load(GameContext *context) {
 	LOG_INFO("Game loading...");
@@ -74,15 +74,15 @@ bool game_on_load(GameContext *context) {
 	return true;
 }
 
-bool game_on_update(GameContext *context, float dt) {
-	state = (GameState *)context->game_memory;
+FrameInfo game_on_update(GameContext *context, float dt) {
+	state = (GameState *)context->permanent_memory;
 
 	ArenaTemp scratch = arena_scratch(NULL);
 	if (state->is_initialized == false) {
 		state->arena = (Arena){
 			.memory = state + 1,
 			.offset = 0,
-			.capacity = context->game_memory_size - sizeof(GameState)
+			.capacity = context->permanent_memory_size - sizeof(GameState)
 		};
 
 		state->current_frame = 0;
@@ -92,7 +92,7 @@ bool game_on_update(GameContext *context, float dt) {
 		state->sprite_shader = create_shader(context, str_lit("sprite.glsl"));
 		state->terrain_shader = create_shader(context, str_lit("terrain.glsl"));
 
-		MeshSource plane_src = create_quad_mesh(scratch.arena, 0, 0, 0, FRONT);
+		MeshSource plane_src = mesh_source_cube_face_create(scratch.arena, 0, 0, 0, CUBE_FACE_FRONT);
 
 		state->quad_vertex_count = plane_src.vertex_count;
 
@@ -127,39 +127,58 @@ bool game_on_update(GameContext *context, float dt) {
 		vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
 			state->terrain_material, 0, state->checkered_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_LINEAR, 0 });
 
+		state->camera = (Camera){
+			.position = { SPRING_LENGTH * cos(1), SPRING_LENGTH * .5f, SPRING_LENGTH * sin(1) },
+			.target = { 0.0f, 0.0f, 0.0f },
+			.up = { 0.0f, 1.0f, 0.0f },
+			.fov = 45.f,
+			.projection = CAMERA_PROJECTION_PERSPECTIVE
+		};
+
 		state->is_initialized = true;
 	}
 
 	Terrain *terrain = &state->terrain[state->current_frame];
-	if (terrain->vb.id != INVALID_INDEX) {
-		vulkan_renderer_buffer_destroy(context->vk_context, terrain->vb);
-		terrain->vb.id = INVALID_INDEX;
-	}
 
 	MeshList list = { 0 };
 
-	uint32_t size = 128;
+	uint32_t size = 32;
 	for (uint32_t z = 0; z < size; ++z) {
 		for (uint32_t x = 0; x < size; x++) {
-			for (int32_t face_index = TOP; face_index <= TOP; ++face_index) {
+			for (int32_t face_index = 0; face_index < 6; ++face_index) {
 				float x_offset = (float)x - ((float)size * .5f);
 				float z_offset = (float)z - ((float)size * .5f);
 
-				MeshSource source = create_quad_mesh(
+				MeshSource source = mesh_source_cube_face_create(
 					scratch.arena, x_offset, -1.f, z_offset, face_index);
 				mesh_source_list_push(scratch.arena, &list, source);
+
+				if (x == 0 || x + 1 == size || z == 0 || z + 1 == size) {
+					for (uint32_t y = 0; y < 3; ++y) {
+						MeshSource wall = mesh_source_cube_face_create(
+							scratch.arena, x_offset, y, z_offset, face_index);
+						mesh_source_list_push(scratch.arena, &list, wall);
+					}
+				}
 			}
 		}
 	}
 	MeshSource cube_src = mesh_source_list_flatten(scratch.arena, &list);
-	terrain->vertex_count = cube_src.vertex_count;
 
-	terrain->vb = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_VERTEX,
-		cube_src.vertex_size * cube_src.vertex_count, cube_src.vertices);
+	if (terrain->vb.id != INVALID_INDEX || terrain->vertex_count < cube_src.vertex_count) {
+		vulkan_renderer_buffer_destroy(context->vk_context, terrain->vb);
+		terrain->vb.id = INVALID_INDEX;
+		terrain->vb = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_VERTEX,
+			cube_src.vertex_size * cube_src.vertex_count, cube_src.vertices);
+	} else
+		vulkan_renderer_buffer_write(context->vk_context, terrain->vb,
+			0, cube_src.vertex_size * cube_src.vertex_count, cube_src.vertices);
+
+	terrain->vertex_count = cube_src.vertex_count;
 
 	// Render the sprite at origin
 	mat4 transform = GLM_MAT4_IDENTITY_INIT;
-	glm_scale(transform, (vec3){ 1.0f, 1.0f, 1.0f });
+	glm_translate(transform, state->player_position);
 
 	vulkan_renderer_shader_bind(
 		context->vk_context, state->sprite_shader,
@@ -194,82 +213,21 @@ bool game_on_update(GameContext *context, float dt) {
 	arena_release_scratch(scratch);
 	state->current_frame = (state->current_frame + 1) % 2;
 
-	if (input_key_pressed(KEY_CODE_SPACE))
+	if (input_key_pressed(KEY_CODE_ENTER))
 		state->variant_index = !state->variant_index;
 
-	return true;
+	player_update(state->player_position, dt, &state->camera);
+
+	FrameInfo info = {
+		.camera = state->camera,
+	};
+
+	return info;
 }
 
 bool game_on_unload(GameContext *context) {
 	LOG_INFO("Game unloading...");
 	return true;
-}
-
-MeshSource create_quad_mesh(Arena *arena, float x, float y, float z, Orientation orientation) {
-	MeshSource rv = {
-		.vertex_size = sizeof(Vertex),
-		.vertex_count = 6,
-	};
-
-	Vertex *vertices = arena_push_array_zero(arena, Vertex, rv.vertex_count);
-	rv.vertices = (uint8_t *)vertices;
-
-	/**
-				5---4
-			   /|  /|
-			  0---1 |
-			  | 7-|-6
-			  |/  |/
-			  2---3
-	**/
-
-	const vec3 positions[8] = {
-		[0] = { x + -0.5f, y + 0.5f, z + 0.5f },
-		[1] = { x + 0.5f, y + 0.5f, z + 0.5f },
-		[2] = { x + -0.5f, y + -0.5f, z + 0.5f },
-		[3] = { x + 0.5f, y + -0.5f, z + 0.5f },
-		[4] = { x + 0.5f, y + 0.5f, z + -0.5f },
-		[5] = { x + -0.5f, y + 0.5f, z + -0.5f },
-		[6] = { x + 0.5f, y + -0.5f, z + -0.5f },
-		[7] = { x + -0.5f, y + -0.5f, z + -0.5f }
-	};
-
-	const vec3 normals[6] = {
-		[RIGHT] = { 1.0f, 0.0f, 0.0f },
-		[LEFT] = { -1.0f, 0.0f, 0.0f },
-		[TOP] = { 0.0f, 1.0f, 0.0f },
-		[BOTTOM] = { 0.0f, -1.0f, 0.0f },
-		[FRONT] = { 0.0f, 0.0f, 1.0f },
-		[BACK] = { 0.0f, 0.0f, -1.0f }
-	};
-
-	const vec2 uvs[6] = {
-		{ 0.0f, 0.0f },
-		{ 0.0f, 1.0f },
-		{ 1.0f, 0.0f },
-		{ 1.0f, 0.0f },
-		{ 0.0f, 1.0f },
-		{ 1.0f, 1.0f }
-	};
-
-	const uint8_t indices[6][6] = {
-		[RIGHT] = { 1, 3, 4, 4, 3, 6 },
-		[LEFT] = { 5, 7, 0, 0, 7, 2 },
-		[TOP] = { 1, 4, 0, 0, 4, 5 },
-		[BOTTOM] = { 2, 7, 3, 3, 7, 6 },
-		[FRONT] = { 0, 2, 1, 1, 2, 3 },
-		[BACK] = { 4, 6, 5, 5, 6, 7 }
-	};
-
-	for (int face_index = 0; face_index < 6; face_index++) {
-		int index = indices[orientation][face_index];
-
-		memcpy(vertices[face_index].position, positions[index], sizeof(vec3));
-		memcpy(vertices[face_index].normal, normals[orientation], sizeof(vec3));
-		memcpy(vertices[face_index].uv, uvs[face_index], sizeof(vec2));
-	}
-
-	return rv;
 }
 
 RhiShader create_shader(GameContext *context, String filename) {
@@ -323,6 +281,55 @@ RhiTexture create_texture(GameContext *context, String filename) {
 		TEXTURE_USAGE_SAMPLED, texture_src->pixels);
 
 	return texture;
+}
+
+void player_update(vec3 player_position, float dt, Camera *camera) {
+	float yaw_delta = input_mouse_dx() * CAMERA_SENSITIVITY;
+	float pitch_delta = input_mouse_dy() * CAMERA_SENSITIVITY;
+
+	static float azimuth = GLM_PIf * 3 / 2.f;
+	static float thetha = GLM_PIf / 3.f;
+
+	LOG_INFO("Theta = %.2f", thetha);
+
+	azimuth += yaw_delta;
+	thetha = clamp(thetha - pitch_delta, GLM_PIf / 6.f, GLM_PIf / 2.f);
+
+	camera->position[0] = (SPRING_LENGTH * sinf(thetha) * cosf(azimuth)) + player_position[0];
+	camera->position[1] = SPRING_LENGTH * cosf(thetha);
+	camera->position[2] = (SPRING_LENGTH * sinf(thetha) * sinf(azimuth)) + player_position[2];
+
+	vec3 camera_position, camera_target;
+	glm_vec3_copy(camera->position, camera_position);
+	camera_position[1] = 0.0f;
+	glm_vec3_copy(camera->target, camera_target);
+	camera_target[1] = 0.0f;
+
+	vec3 forward, right;
+
+	glm_vec3_sub(
+		camera_target,
+		camera_position, forward);
+	glm_vec3_normalize(forward);
+	glm_vec3_cross(forward, camera->up, right);
+	glm_vec3_normalize(right);
+
+	LOG_INFO("Forward is { %.2f, %.2f }",
+		forward[0], forward[2]);
+	LOG_INFO("Right is { %.2f, %.2f }",
+		right[0], right[2]);
+
+	vec3 direction = { 0, 0, 0 };
+	glm_vec3_muladds(forward, (input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S)), direction);
+	glm_vec3_muladds(right, (input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A)), direction);
+	glm_vec3_normalize(direction);
+
+	LOG_INFO("Direction is { %.2f, %.2f, %.2f }",
+		direction[0], direction[1], direction[2]);
+
+	glm_vec3_muladds(direction, MOVE_SPEED * dt, player_position);
+	camera->target[0] = player_position[0];
+	camera->target[2] = player_position[2];
 }
 
 GameInterface *game_hookup(void) {

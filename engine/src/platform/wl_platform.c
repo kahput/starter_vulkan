@@ -695,7 +695,6 @@ void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, 
 	KeyEvent event = { 0 };
 	event.key = scancode < countof(wl->keycodes) ? wl->keycodes[scancode] : KEY_CODE_UNKOWN;
 	event.mods = wl->xkb.modifiers;
-	LOG_INFO("Key %d", event.key);
 	// event.is_repeat = false;
 
 	event_emit_struct(state == WL_KEYBOARD_KEY_STATE_PRESSED ? EVENT_PLATFORM_KEY_PRESSED : EVENT_PLATFORM_KEY_RELEASED, &event);

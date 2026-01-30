@@ -50,7 +50,7 @@ bool vulkan_renderer_texture_resize(VulkanContext *context, RhiTexture texture, 
 
 ENGINE_API RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type, size_t size, void *data);
 ENGINE_API bool vulkan_renderer_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
-bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
+ENGINE_API bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
 ENGINE_API bool vulkan_renderer_buffer_bind(VulkanContext *context, RhiBuffer buffer, size_t index_size);
 ENGINE_API bool vulkan_renderer_buffers_bind(VulkanContext *context, RhiBuffer *buffers, uint32_t count);
 

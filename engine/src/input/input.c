@@ -135,18 +135,18 @@ bool on_key_event(EventCode code, void *event, void *receiver) {
 	}
 
 	if (key_event->mods & MOD_KEY_SHIFT) {
-		LOG_INFO("Mod Key SHIFT held");
+		LOG_TRACE("Mod Key SHIFT held");
 	}
 
 	if (code == EVENT_PLATFORM_KEY_PRESSED) {
 		input_state->keys[key_event->key].state = true;
 		if (key_event->key <= 100) {
-			LOG_INFO("Printable key %c pressed", key_event->key);
+			LOG_TRACE("Printable key %c pressed", key_event->key);
 		}
 	} else if (code == EVENT_PLATFORM_KEY_RELEASED) {
 		input_state->keys[key_event->key].state = false;
 		if (key_event->key <= 100) {
-			LOG_INFO("Printable key %c released", key_event->key);
+			LOG_TRACE("Printable key %c released", key_event->key);
 		}
 	}
 
