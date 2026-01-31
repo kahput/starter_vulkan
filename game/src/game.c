@@ -1,6 +1,8 @@
 #include "input.h"
 #include "mesh_source.h"
 
+#include <cglm/vec3-ext.h>
+#include <cglm/vec3.h>
 #include <game_interface.h>
 
 #include <common.h>
@@ -127,8 +129,15 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 		vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
 			state->terrain_material, 0, state->checkered_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_LINEAR, 0 });
 
+		float azimuth = GLM_PIf * 3 / 2.f;
+		float thetha = GLM_PIf / 3.f;
+
 		state->camera = (Camera){
-			.position = { SPRING_LENGTH * cos(1), SPRING_LENGTH * .5f, SPRING_LENGTH * sin(1) },
+			.position = {
+			  (SPRING_LENGTH * sinf(thetha) * cosf(azimuth)) + state->player_position[0],
+			  SPRING_LENGTH * cosf(thetha),
+			  (SPRING_LENGTH * sinf(thetha) * sinf(azimuth)) + state->player_position[2],
+			},
 			.target = { 0.0f, 0.0f, 0.0f },
 			.up = { 0.0f, 1.0f, 0.0f },
 			.fov = 45.f,
@@ -176,7 +185,6 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 
 	terrain->vertex_count = cube_src.vertex_count;
 
-	// Render the sprite at origin
 	mat4 transform = GLM_MAT4_IDENTITY_INIT;
 	glm_translate(transform, state->player_position);
 
@@ -284,21 +292,54 @@ RhiTexture create_texture(GameContext *context, String filename) {
 }
 
 void player_update(vec3 player_position, float dt, Camera *camera) {
+	static float azimuth = GLM_PIf * 3 / 2.f;
+	static float theta = GLM_PIf / 3.f;
+
 	float yaw_delta = input_mouse_dx() * CAMERA_SENSITIVITY;
 	float pitch_delta = input_mouse_dy() * CAMERA_SENSITIVITY;
 
-	static float azimuth = GLM_PIf * 3 / 2.f;
-	static float thetha = GLM_PIf / 3.f;
+	azimuth = fmodf(azimuth + yaw_delta, GLM_PI * 2.f);
+	if (azimuth < 0)
+		azimuth += GLM_PI * 2.f;
 
-	LOG_INFO("Theta = %.2f", thetha);
+	theta = clamp(theta - pitch_delta, GLM_PIf / 4.f, GLM_PIf / 2.f);
 
-	azimuth += yaw_delta;
-	thetha = clamp(thetha - pitch_delta, GLM_PIf / 6.f, GLM_PIf / 2.f);
+	vec3 offset;
+	glm_vec3_sub(camera->position, player_position, offset);
 
-	camera->position[0] = (SPRING_LENGTH * sinf(thetha) * cosf(azimuth)) + player_position[0];
-	camera->position[1] = SPRING_LENGTH * cosf(thetha);
-	camera->position[2] = (SPRING_LENGTH * sinf(thetha) * sinf(azimuth)) + player_position[2];
+	float r = glm_vec3_norm(offset);
+	if (r < 1e-6f)
+		r = 1e-6f;
 
+	float current_theta = acosf(offset[1] / r);
+	float current_azimuth = atan2f(offset[2], offset[0]); // [-pi, pi]
+
+	if (current_azimuth < 0)
+		current_azimuth += GLM_PI * 2.f;
+
+	float da = azimuth - current_azimuth;
+	if (da > GLM_PI)
+		da -= GLM_PI * 2.f;
+	if (da < -GLM_PI)
+		da += GLM_PI * 2.f;
+
+	float lerp = 5.0f * dt;
+
+	current_azimuth += lerp * da;
+	current_theta += lerp * (theta - current_theta);
+
+	LOG_INFO("a - ca = %.2f", lerp * (azimuth - current_azimuth));
+
+	glm_vec3_copy(
+		(vec3){
+		  (SPRING_LENGTH * sinf(current_theta) * cosf(current_azimuth)) + player_position[0],
+		  SPRING_LENGTH * cosf(current_theta),
+		  (SPRING_LENGTH * sinf(current_theta) * sinf(current_azimuth)) + player_position[2],
+		},
+		camera->position);
+	LOG_INFO("Position after = { %.2f, %.2f, %.2f }",
+
+		camera->position[0], camera->position[1], camera->position[2]);
 	vec3 camera_position, camera_target;
 	glm_vec3_copy(camera->position, camera_position);
 	camera_position[1] = 0.0f;
@@ -314,18 +355,11 @@ void player_update(vec3 player_position, float dt, Camera *camera) {
 	glm_vec3_cross(forward, camera->up, right);
 	glm_vec3_normalize(right);
 
-	LOG_INFO("Forward is { %.2f, %.2f }",
-		forward[0], forward[2]);
-	LOG_INFO("Right is { %.2f, %.2f }",
-		right[0], right[2]);
-
 	vec3 direction = { 0, 0, 0 };
 	glm_vec3_muladds(forward, (input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S)), direction);
 	glm_vec3_muladds(right, (input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A)), direction);
-	glm_vec3_normalize(direction);
-
-	LOG_INFO("Direction is { %.2f, %.2f, %.2f }",
-		direction[0], direction[1], direction[2]);
+	if (glm_vec3_norm(direction) > 1e-6f)
+		glm_vec3_normalize(direction);
 
 	glm_vec3_muladds(direction, MOVE_SPEED * dt, player_position);
 	camera->target[0] = player_position[0];
