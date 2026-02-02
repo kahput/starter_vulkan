@@ -1,13 +1,6 @@
 file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "deps/*/*.c" "deps/*/*.h")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# TEMP
-include(FetchContent)
-FetchContent_Declare(
-  cglm
-  GIT_REPOSITORY https://github.com/recp/cglm.git
-  FIND_PACKAGE_ARGS NAMES cglm)
-
 find_package(Vulkan REQUIRED)
 
 add_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
@@ -23,7 +16,7 @@ target_include_directories(
 if(WIN32)
   target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
   target_compile_options(${PROJECT_NAME} PRIVATE /W4)
-  target_link_libraries(${PROJECT_NAME} Vulkan::Vulkan cglm)
+  target_link_libraries(${PROJECT_NAME} Vulkan::Vulkan)
 elseif(UNIX AND NOT APPLE)
   find_program(WAYLAND_SCANNER_EXECUTABLE NAMES wayland-scanner)
   if(NOT WAYLAND_SCANNER_EXECUTABLE)
@@ -78,7 +71,7 @@ elseif(UNIX AND NOT APPLE)
             -Wno-unused-variable)
 
   target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-dynamic)
-  target_link_libraries(${PROJECT_NAME} dl Vulkan::Vulkan cglm m)
+  target_link_libraries(${PROJECT_NAME} dl Vulkan::Vulkan m)
 
 else()
   message(FATAL_ERROR "Windows and Linux only supported platforms")

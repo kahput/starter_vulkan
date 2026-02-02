@@ -1,30 +1,24 @@
 #include "game_interface.h"
 #include "input/input_types.h"
 #include "platform.h"
-
 #include "scene.h"
-
 #include "renderer.h"
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
-
 #include "event.h"
 #include "events/platform_events.h"
-
 #include "input.h"
-
 #include "assets.h"
-
 #include "common.h"
 #include "core/arena.h"
 #include "core/astring.h"
 #include "core/debug.h"
 #include "core/logger.h"
-
 #include "platform/filesystem.h"
 
-#include <cglm/cglm.h>
-#include <cglm/mat4.h>
+#include <math.h>
+#include "core/cmath.h" 
+
 #include <dlfcn.h>
 #include <string.h>
 #include <time.h>
@@ -51,17 +45,18 @@ static DynamicLibrary game_library = { 0 };
 static GameInterface *game = NULL;
 
 bool game_load(GameContext *context);
-
 bool game_on_load(GameContext *context) {
 	if (game->on_load)
 		return game->on_load(context);
 	return false;
 }
+
 FrameInfo game_on_update(GameContext *context, float dt) {
 	if (game->on_update)
 		return game->on_update(context, dt);
 	return (FrameInfo){ 0 };
 }
+
 bool game_on_unload(GameContext *context) {
 	if (game->on_unload)
 		return game->on_unload(context);
@@ -70,50 +65,36 @@ bool game_on_unload(GameContext *context) {
 
 void editor_update(float dt);
 bool resize_event(EventCode code, void *event, void *receiver);
-RhiTexture load_cubemap(String path); // CHANGED: Returns handle
+RhiTexture load_cubemap(String path);
 
 static struct State {
 	Arena permanent, transient, game;
 	Platform display;
 	VulkanContext *context;
-
 	Camera editor_camera;
-
 	AssetLibrary asset_system;
 	InputState *input_system;
-
 	EventState *event_system;
-
 	Layer layers[1];
 	Layer *current_layer;
-
 	bool editor;
-
 	uint64_t start_time;
 	uint32_t width, height;
-
-	// --- Resources Handles ---
 	RhiTexture white_tex, black_tex, flat_normal_tex;
 	RhiSampler linear_sampler, nearest_sampler;
-
 	RhiTexture shadow_depth_tex;
 	RhiTexture main_depth_tex;
 	RhiTexture main_color_tex;
 	RhiTexture skybox_tex;
-
 	RhiGlobalResource global_shadow;
 	RhiGlobalResource global_main;
 	RhiGlobalResource global_postfx;
-
 	RhiPass pass_shadow;
 	RhiPass pass_main;
 	RhiPass pass_postfx;
-
 	RhiBuffer quad_vb;
-
 	RhiShader light_shader;
 	RhiGroupResource light_material;
-
 	RhiShader postfx_shader;
 	RhiShader skybox_shader;
 	RhiGroupResource skybox_material;
@@ -124,7 +105,6 @@ static bool wireframe = false;
 int main(void) {
 	state.permanent = arena_create(MiB(512));
 	state.transient = arena_create(MiB(4));
-
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	state.event_system = event_system_startup(&state.permanent);
@@ -132,7 +112,6 @@ int main(void) {
 	asset_library_startup(&state.asset_system, arena_push(&state.permanent, MiB(128), 1, true), MiB(128));
 
 	platform_startup(&state.permanent, 1280, 720, "Starter Vulkan", &state.display);
-
 	state.width = state.display.physical_width;
 	state.height = state.display.physical_height;
 
@@ -168,14 +147,12 @@ int main(void) {
 		state.context,
 		state.width, state.height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH, TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
-
 	state.main_depth_tex = vulkan_renderer_texture_create(
 		state.context,
 		state.width, state.height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH,
 		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED,
 		NULL);
-
 	state.main_color_tex = vulkan_renderer_texture_create(state.context,
 		state.width, state.height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
@@ -185,7 +162,7 @@ int main(void) {
 	state.global_shadow = vulkan_renderer_resource_global_create(
 		state.context,
 		(ResourceBinding[]){
-		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(mat4), .count = 1 },
+		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(Matrix4f), .count = 1 }, // Changed sizeof(mat4)
 		},
 		1);
 
@@ -199,7 +176,6 @@ int main(void) {
 		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 		},
 		2);
-
 	vulkan_renderer_resource_global_set_texture_sampler(
 		state.context, state.global_main, 1, state.shadow_depth_tex, state.linear_sampler);
 
@@ -209,7 +185,6 @@ int main(void) {
 		  { .binding = 0, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 		},
 		1);
-
 	vulkan_renderer_resource_global_set_texture_sampler(
 		state.context, state.global_postfx, 0,
 		state.main_color_tex, state.linear_sampler);
@@ -231,7 +206,7 @@ int main(void) {
 		.name = str_lit("Main"),
 		.color_attachments = { {
 		  .texture = state.main_color_tex,
-		  .clear = { .color = GLM_VEC4_BLACK_INIT },
+		  .clear = { .color = { 0.0f, 0.0f, 0.0f, 1.0f } },
 		  .load = CLEAR,
 		  .store = STORE,
 		} },
@@ -249,7 +224,7 @@ int main(void) {
 	RenderPassDesc postfx_pass = {
 		.name = str_lit("Post"),
 		.color_attachments = { { .present = true,
-		  .clear = { .color = GLM_VEC4_BLACK_INIT },
+		  .clear = { .color = { 0.0f, 0.0f, 0.0f, 1.0f } },
 		  .load = CLEAR,
 		  .store = STORE } },
 		.color_attachment_count = 1,
@@ -265,6 +240,7 @@ int main(void) {
 
 	platform_pointer_mode(&state.display, PLATFORM_POINTER_DISABLED);
 	state.start_time = platform_time_ms(&state.display);
+
 	event_subscribe(EVENT_PLATFORM_WINDOW_RESIZED, resize_event, NULL);
 
 	state.editor_camera = (Camera){ .position = { 0.0f, 15.0f, -27.f },
@@ -285,6 +261,7 @@ int main(void) {
 		.vk_context = state.context,
 		&state.asset_system,
 	};
+
 	game_load(&game_context);
 	game_on_load(&game_context);
 
@@ -294,7 +271,6 @@ int main(void) {
 	// Create light debug shader
 	ShaderSource *light_shader_src = NULL;
 	UUID light_shader_id = asset_library_request_shader(&state.asset_system, str_lit("light_debug.glsl"), &light_shader_src);
-
 	{
 		ShaderConfig light_config = {
 			.vertex_code = light_shader_src->vertex_shader.content,
@@ -302,14 +278,11 @@ int main(void) {
 			.fragment_code = light_shader_src->fragment_shader.content,
 			.fragment_code_size = light_shader_src->fragment_shader.size,
 		};
-
 		PipelineDesc desc = DEFAULT_PIPELINE();
 		desc.cull_mode = CULL_MODE_NONE;
-
 		ShaderReflection reflection;
 		state.light_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
 			state.global_main, &light_config, &reflection);
-
 		// Variants
 		vulkan_renderer_shader_variant_create(state.context, state.light_shader,
 			state.pass_main, desc);
@@ -317,7 +290,6 @@ int main(void) {
 		desc.polygon_mode = POLYGON_MODE_LINE;
 		vulkan_renderer_shader_variant_create(state.context, state.light_shader,
 			state.pass_main, desc);
-
 		state.light_material = vulkan_renderer_resource_group_create(
 			state.context, state.light_shader, 256);
 	}
@@ -331,14 +303,11 @@ int main(void) {
 			.fragment_code = postfx_shader_src->fragment_shader.content,
 			.fragment_code_size = postfx_shader_src->fragment_shader.size,
 		};
-
 		PipelineDesc desc = DEFAULT_PIPELINE();
 		desc.cull_mode = CULL_MODE_NONE;
 		ShaderReflection reflection;
-
 		state.postfx_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
 			state.global_postfx, &postfx_config, &reflection);
-
 		vulkan_renderer_shader_variant_create(state.context, state.postfx_shader,
 			state.pass_postfx, desc);
 	}
@@ -352,20 +321,15 @@ int main(void) {
 			.fragment_code = skybox_shader_src->fragment_shader.content,
 			.fragment_code_size = skybox_shader_src->fragment_shader.size,
 		};
-
 		PipelineDesc desc = DEFAULT_PIPELINE();
 		desc.cull_mode = CULL_MODE_NONE;
 		desc.depth_compare_op = COMPARE_OP_LESS_OR_EQUAL;
 		ShaderReflection reflection;
-
 		state.skybox_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
 			state.global_main, &skybox_config, &reflection);
-
 		vulkan_renderer_shader_variant_create(state.context, state.skybox_shader,
 			state.pass_main, desc);
-
 		state.skybox_material = vulkan_renderer_resource_group_create(state.context, state.skybox_shader, 1);
-
 		vulkan_renderer_resource_group_set_texture_sampler(state.context, state.skybox_material, 0, state.skybox_tex, state.linear_sampler);
 	}
 
@@ -374,7 +338,6 @@ int main(void) {
         -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
         -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
          1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-
         -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
          1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
          1.0f,  1.0f, 0.0f, 1.0f, 1.0f
@@ -383,18 +346,24 @@ int main(void) {
 	state.quad_vb = vulkan_renderer_buffer_create(
 		state.context, BUFFER_TYPE_VERTEX, sizeof(quadVertices), quadVertices);
 
-	float sun_theta = 2 * GLM_PI / 3.f;
+	// --- CHANGED: Updated math constants and array access ---
+	float sun_theta = 2 * C_PI / 3.f;
 	float sun_azimuth = 0;
-	Light lights[] = { [0] = { .type = LIGHT_TYPE_DIRECTIONAL,
-						 .color = { 1.0f, 1.0f, 1.0f, 1.0f },
-						 .as.direction = { 0.0f, 0.0f, 0.0f } },
+	
+	// Assuming Light struct is updated to use Vector3f, or we cast. 
+	// Accessing via .x .y .z instead of array indices.
+	Light lights[] = { 
+		[0] = { .type = LIGHT_TYPE_DIRECTIONAL,
+				.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+				.as.direction = { 0.0f, 0.0f, 0.0f, 0.0f } },
 		[1] = { .type = LIGHT_TYPE_POINT,
-		  .color = { 1.0f, 0.5f, 0.2f, 0.8f },
-		  .as.position = { 0.0f, 3.0f, 1.0f } } };
+				.color = { 1.0f, 0.5f, 0.2f, 0.8f },
+				.as.position = { 0.0f, 3.0f, 1.0f , 0.0f} } 
+	};
 
-	lights[0].as.direction[0] = sin(sun_theta) * cos(sun_azimuth);
-	lights[0].as.direction[1] = cos(sun_theta);
-	lights[0].as.direction[2] = sin(sun_theta) * sin(sun_azimuth);
+	lights[0].as.direction.x = sinf(sun_theta) * cosf(sun_azimuth);
+	lights[0].as.direction.y = cosf(sun_theta);
+	lights[0].as.direction.z = sinf(sun_theta) * sinf(sun_azimuth);
 
 	while (platform_should_close(&state.display) == false) {
 		float time = platform_time_seconds(&state.display);
@@ -412,8 +381,8 @@ int main(void) {
 
 		platform_poll_events(&state.display);
 
-		lights[1].as.position[0] = cos(time) * 5;
-		lights[1].as.position[2] = sin(time) * 5;
+		lights[1].as.position.x = cosf(time) * 5;
+		lights[1].as.position.z = sinf(time) * 5;
 
 		if (vulkan_renderer_frame_begin(state.context, state.display.physical_width,
 				state.display.physical_height)) {
@@ -421,13 +390,20 @@ int main(void) {
 			vulkan_renderer_pass_begin(state.context, state.pass_main);
 			{
 				FrameData frame_data = { 0 };
+				
+				// --- CHANGED: Matrix math using cmath functions ---
+				frame_data.view = mat4f_identity();
+				frame_data.projection = mat4f_identity();
 
-				glm_mat4_identity(frame_data.view);
-
-				glm_mat4_identity(frame_data.projection);
-				glm_perspective(glm_rad(state.editor_camera.fov), (float)state.width / (float)state.height,
-					0.1f, 1000.f, frame_data.projection);
-				frame_data.projection[1][1] *= -1;
+				frame_data.projection = mat4f_perspective(
+					DEG2RAD(state.editor_camera.fov), 
+					(float)state.width / (float)state.height,
+					0.1f, 
+					1000.f
+				);
+				
+				// Flip Y for Vulkan (element 5 is y,y in 4x4)
+				frame_data.projection.elements[5] *= -1;
 
 				uint32_t point_light_count = 0;
 				for (uint32_t light_index = 0; light_index < countof(lights); ++light_index) {
@@ -444,30 +420,37 @@ int main(void) {
 
 				if (state.editor) {
 					state.current_layer->update(delta_time);
-					glm_lookat(state.editor_camera.position, state.editor_camera.target, state.editor_camera.up,
-						frame_data.view);
-					glm_vec3_dup(state.editor_camera.position, frame_data.camera_position);
+					frame_data.view = mat4f_lookat(
+						state.editor_camera.position, 
+						state.editor_camera.target, 
+						state.editor_camera.up
+					);
+					frame_data.camera_position = state.editor_camera.position;
 				} else {
-					glm_lookat(game_frame.camera.position, game_frame.camera.target, game_frame.camera.up,
-						frame_data.view);
-					glm_vec3_dup(game_frame.camera.position, frame_data.camera_position);
+					frame_data.view = mat4f_lookat(
+						game_frame.camera.position, 
+						game_frame.camera.target, 
+						game_frame.camera.up
+					);
+					frame_data.camera_position = game_frame.camera.position;
 				}
 
 				vulkan_renderer_resource_global_write(state.context, state.global_main, 0,
 					sizeof(FrameData), &frame_data);
+
 				// Draw light debug
-				vulkan_renderer_shader_bind(state.context, state.light_shader, wireframe); // Assuming variant index passed
+				vulkan_renderer_shader_bind(state.context, state.light_shader, wireframe); 
 				for (uint32_t index = 0; index < countof(lights); ++index) {
 					if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
 						continue;
-
-					mat4 transform = GLM_MAT4_IDENTITY_INIT;
-					glm_translate(transform, lights[index].as.position);
+					
+					// --- CHANGED: Transform logic ---
+					Matrix4f transform = mat4f_translated(*(Vector3f*)vec4f_elements(&lights[index].as.position));
 
 					vulkan_renderer_resource_group_write(state.context, state.light_material, 0,
-						0, sizeof(vec4), lights[index].color, true);
+						0, sizeof(Vector4f), &lights[index].color, true); // Changed vec4 to Vector4f
 					vulkan_renderer_resource_group_bind(state.context, state.light_material, 0);
-					vulkan_renderer_resource_local_write(state.context, 0, sizeof(mat4), transform);
+					vulkan_renderer_resource_local_write(state.context, 0, sizeof(Matrix4f), &transform); // Changed mat4 to Matrix4f
 					vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 					vulkan_renderer_draw(state.context, 6);
 				}
@@ -478,6 +461,7 @@ int main(void) {
 				vulkan_renderer_draw(state.context, 36);
 			}
 			vulkan_renderer_pass_end(state.context);
+
 			vulkan_renderer_texture_prepare_sample(state.context, state.main_color_tex);
 
 			// Postfx pass
@@ -491,16 +475,13 @@ int main(void) {
 				vulkan_renderer_draw(state.context, 6);
 			}
 			vulkan_renderer_pass_end(state.context);
-
 			Vulkan_renderer_frame_end(state.context);
 		}
 
 		if (input_key_pressed(KEY_CODE_ENTER))
 			wireframe = !wireframe;
-
 		if (input_key_pressed(KEY_CODE_TAB))
 			state.editor = !state.editor;
-
 		if (input_key_down(KEY_CODE_LEFTCTRL))
 			platform_pointer_mode(&state.display, PLATFORM_POINTER_NORMAL);
 		else
@@ -516,53 +497,58 @@ int main(void) {
 	return 0;
 }
 
+// --- CHANGED: Editor update totally refactored for new math lib ---
 void editor_update(float dt) {
 	float yaw_delta = -input_mouse_dx() * CAMERA_SENSITIVITY;
 	float pitch_delta = -input_mouse_dy() * CAMERA_SENSITIVITY;
 
-	vec3 target_position, camera_right;
+	Vector3f target_position = vec3f_normalize(
+		vec3f_subtract(state.editor_camera.target, state.editor_camera.position));
 
-	glm_vec3_sub(state.editor_camera.target, state.editor_camera.position, target_position);
-	glm_vec3_normalize(target_position);
+	// Yaw rotation (around up)
+	target_position = vec3f_rotate(target_position, yaw_delta, state.editor_camera.up);
 
-	glm_vec3_rotate(target_position, yaw_delta, state.editor_camera.up);
+	// Calc right
+	Vector3f camera_right = vec3f_cross(target_position, state.editor_camera.up);
+	camera_right = vec3f_normalize(camera_right);
 
-	glm_vec3_cross(target_position, state.editor_camera.up, camera_right);
-	glm_vec3_normalize(camera_right);
+	// Calc down
+	Vector3f camera_down = vec3f_negate(state.editor_camera.up);
 
-	vec3 camera_down;
-	glm_vec3_negate_to(state.editor_camera.up, camera_down);
+	// Pitch clamping
+	float max_angle = vec3f_angle(state.editor_camera.up, target_position) - 0.001f;
+	float min_angle = -vec3f_angle(camera_down, target_position) + 0.001f;
+	
+	// Helper to clamp float
+	if (pitch_delta > max_angle) pitch_delta = max_angle;
+	if (pitch_delta < min_angle) pitch_delta = min_angle;
 
-	float max_angle = glm_vec3_angle(state.editor_camera.up, target_position) - 0.001f;
-	float min_angle = -glm_vec3_angle(camera_down, target_position) + 0.001f;
+	// Pitch rotation (around right)
+	target_position = vec3f_rotate(target_position, pitch_delta, camera_right);
 
-	pitch_delta = clamp(pitch_delta, min_angle, max_angle);
+	Vector3f move = {0,0,0};
 
-	glm_vec3_rotate(target_position, pitch_delta, camera_right);
+	// Re-calculate right after rotation for movement
+	camera_right = vec3f_cross(state.editor_camera.up, target_position);
+	camera_right = vec3f_normalize(camera_right);
 
-	vec3 move = GLM_VEC3_ZERO_INIT;
+	float right_amount = (input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A)) * CAMERA_MOVE_SPEED * dt;
+	float up_amount = (input_key_down(KEY_CODE_SPACE) - input_key_down(KEY_CODE_C)) * CAMERA_MOVE_SPEED * dt;
+	float forward_amount = (input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W)) * CAMERA_MOVE_SPEED * dt;
 
-	glm_vec3_cross(state.editor_camera.up, target_position, camera_right);
-	glm_vec3_normalize(camera_right);
+	move = vec3f_add(move, vec3f_scale(camera_right, right_amount));
+	move = vec3f_add(move, vec3f_scale(camera_down, up_amount));
+	move = vec3f_add(move, vec3f_scale(target_position, forward_amount));
 
-	glm_vec3_muladds(camera_right,
-		(input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A)) * CAMERA_MOVE_SPEED * dt,
-		move);
-	glm_vec3_muladds(
-		camera_down,
-		(input_key_down(KEY_CODE_SPACE) - input_key_down(KEY_CODE_C)) * CAMERA_MOVE_SPEED * dt, move);
-	glm_vec3_muladds(target_position,
-		(input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W)) * CAMERA_MOVE_SPEED * dt,
-		move);
+	move = vec3f_negate(move);
 
-	glm_vec3_negate(move);
-	glm_vec3_add(move, state.editor_camera.position, state.editor_camera.position);
-	glm_vec3_add(state.editor_camera.position, target_position, state.editor_camera.target);
+	// Apply move
+	state.editor_camera.position = vec3f_add(move, state.editor_camera.position);
+	state.editor_camera.target = vec3f_add(state.editor_camera.position, target_position);
 }
 
 bool resize_event(EventCode code, void *event, void *receiver) {
 	WindowResizeEvent *wr_event = (WindowResizeEvent *)event;
-
 	if (vulkan_renderer_on_resize(state.context, wr_event->width, wr_event->height)) {
 		state.width = wr_event->width;
 		state.height = wr_event->height;
@@ -570,7 +556,6 @@ bool resize_event(EventCode code, void *event, void *receiver) {
 		vulkan_renderer_texture_resize(state.context, state.main_color_tex, state.width, state.height);
 		vulkan_renderer_resource_global_set_texture_sampler(state.context, state.global_postfx, 0, state.main_color_tex, state.linear_sampler);
 	}
-
 	return true;
 }
 
@@ -578,12 +563,11 @@ bool game_load(GameContext *context) {
 	if (game_library.handle) {
 		if (game && game->on_unload)
 			game->on_unload(context);
-
 		dlclose(game_library.handle);
 		game_library.handle = NULL;
 	}
-	ArenaTemp scratch = arena_scratch(NULL);
 
+	ArenaTemp scratch = arena_scratch(NULL);
 	String path = str_lit("./libgame.so");
 	String temp_path = string_pushf(scratch.arena, "./loaded_%s.so", "game");
 
@@ -619,9 +603,7 @@ bool game_load(GameContext *context) {
 
 RhiTexture load_cubemap(String path) {
 	ArenaTemp scratch = arena_scratch(NULL);
-
 	StringList files = filesystem_list_files(scratch.arena, path, false);
-
 	LOG_INFO("Scratch size used so after file_list: %llu", scratch.arena->offset);
 
 	if (files.node_count != 6) {
@@ -631,7 +613,6 @@ RhiTexture load_cubemap(String path) {
 	}
 
 	ImageSource *loaded_images[6];
-
 	int32_t width = 0, height = 0;
 	int32_t channels = 0;
 	size_t single_image_size = 0;
@@ -647,13 +628,12 @@ RhiTexture load_cubemap(String path) {
 
 	StringNode *file_node = files.first;
 	String extension = string_path_extension(file_node->string);
+
 	for (int index = 0; index < 6; index++) {
 		ImageSource *img = NULL;
-
 		String key = string_push_concat(scratch.arena, string_from_cstr(order[index]), extension);
 		asset_library_load_image(scratch.arena, &state.asset_system, key, &img);
 		LOG_INFO("Scratch size used so after image %d: %llu", index, scratch.arena->offset);
-
 		loaded_images[index] = img;
 
 		if (index == 0) {
@@ -668,7 +648,6 @@ RhiTexture load_cubemap(String path) {
 	}
 
 	uint8_t *final_pixels = arena_push_array(scratch.arena, uint8_t, single_image_size * 6);
-
 	for (int index = 0; index < 6; index++) {
 		memcpy(final_pixels + (index * single_image_size), loaded_images[index]->pixels, single_image_size);
 	}

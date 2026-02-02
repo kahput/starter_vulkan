@@ -1,8 +1,6 @@
 #pragma once
 
 #include "renderer/r_internal.h"
-#define CGLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <cglm/cglm.h>
 #include <vulkan/vulkan_core.h>
 
 #include "renderer/backend/vulkan_api.h"

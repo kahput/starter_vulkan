@@ -1,10 +1,9 @@
 #pragma once
 
 #include "common.h"
+#include "cmath.h"
 #include "astring.h"
 #include "identifiers.h"
-
-#include <cglm/cglm.h>
 
 // clang-format off
 #define RHI_HANDLE(name) typedef struct name { uint32_t id, generation; } name
@@ -83,19 +82,9 @@ typedef struct {
 		RTexture texture;
 
 		float f32;
-		vec2 vec2f;
-		vec3 vec3f;
-		vec4 vec4f;
-
-		double d64;
-		vec2 vec2d;
-		vec3 vec3d;
-		vec4 vec4d;
-
-		uint32_t i32;
-		ivec2 vec2i;
-		ivec3 vec3i;
-		ivec4 vec4i;
+		Vector2f vec2f;
+		Vector3f vec3f;
+		Vector4f vec4f;
 
 		void *raw;
 	} as;

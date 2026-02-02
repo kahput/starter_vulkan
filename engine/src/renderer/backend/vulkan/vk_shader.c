@@ -15,6 +15,7 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -301,8 +302,9 @@ static uint32_t count_shader_members(SpvReflectBlockVariable *var) {
 
 static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, String prefix, ShaderMember **cursor) {
 	char full_name[128];
-	if (prefix.length > 0)
+	if (prefix.length > 0) {
 		snprintf(full_name, sizeof(full_name), "%s.%s", prefix.memory, var->name);
+    }
 	else
 		snprintf(full_name, sizeof(full_name), "%s", var->name);
 

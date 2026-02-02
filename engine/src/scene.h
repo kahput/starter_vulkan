@@ -1,7 +1,7 @@
 #pragma once
-#include <cglm/cglm.h>
 
 #include "common.h"
+#include "core/cmath.h"
 
 typedef enum {
 	CAMERA_PROJECTION_PERSPECTIVE = 0,
@@ -9,18 +9,18 @@ typedef enum {
 } CameraProjection;
 
 typedef struct camera {
-	vec3 position, target, up;
+	Vector3f position, target, up;
 	float fov;
 
 	CameraProjection projection;
 } Camera;
 
 typedef struct material_paramters {
-	vec4 base_color_factor;
+	Vector4f base_color_factor;
 	float metallic_factor;
 	float roughness_factor;
-	vec2 _pad0;
-	vec4 emissive_factor;
+	Vector2f _pad0;
+	Vector4f emissive_factor;
 } MaterialParameters;
 
 typedef enum {
@@ -30,20 +30,20 @@ typedef enum {
 
 typedef struct {
 	LightType type;
-	ivec3 _pad0;
+	Vector3u _pad0;
 	union {
-		vec4 position;
-		vec4 direction;
+		Vector4f position;
+		Vector4f direction;
 	} as;
-	vec4 color;
+	Vector4f color;
 } Light;
 
 #define MAX_POINT_LIGHTS 10
 typedef struct {
-	mat4 view;
-	mat4 projection;
+	Matrix4f view;
+	Matrix4f projection;
 	Light directional_light;
 	Light lights[MAX_POINT_LIGHTS];
-	vec3 camera_position;
+	Vector3f camera_position;
 	int light_count;
 } FrameData;

@@ -16,9 +16,6 @@
 //
 // #include "platform/filesystem.h"
 //
-// #include <cglm/io.h>
-// #include <cglm/vec3.h>
-// #include <cglm/vec4.h>
 // #include <math.h>
 // #include <stdint.h>
 // #include <string.h>

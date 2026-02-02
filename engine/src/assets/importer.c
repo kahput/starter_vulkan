@@ -153,8 +153,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 		if (src->has_pbr_metallic_roughness) {
 			cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
-
-			memcpy(dst->properties[5].as.vec4f, pbr->base_color_factor, sizeof(vec4));
+			memcpy(&dst->properties[5].as.vec4f, pbr->base_color_factor, sizeof(Vector4f));
 
 			dst->properties[6].as.f = pbr->metallic_factor;
 			dst->properties[7].as.f = pbr->roughness_factor;
@@ -166,7 +165,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		dst->properties[2].as.image = find_loaded_texture(data, out_model, src->normal_texture.texture);
 		dst->properties[3].as.image = find_loaded_texture(data, out_model, src->occlusion_texture.texture);
 
-		memcpy(dst->properties[8].as.vec3f, src->emissive_factor, sizeof(vec3));
+		memcpy(&dst->properties[8].as.vec3f, src->emissive_factor, sizeof(Vector3f));
 		dst->properties[4].as.image = find_loaded_texture(data, out_model, src->emissive_texture.texture);
 	}
 
@@ -222,7 +221,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
 							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
 
-							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->position, 3);
+							cgltf_accessor_read_float(accessor, vertex_index, vec3f_elements(&dst_vertex->position), 3);
 						}
 						ASSERT(accessor->stride == 12);
 					} break;
@@ -231,7 +230,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
 							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
 
-							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->uv, 2);
+							cgltf_accessor_read_float(accessor, vertex_index, vec2f_elements(&dst_vertex->uv), 2);
 						}
 					} break;
 					case cgltf_attribute_type_normal: {
@@ -239,7 +238,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
 							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
 
-							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->normal, 3);
+							cgltf_accessor_read_float(accessor, vertex_index, vec3f_elements(&dst_vertex->normal), 3);
 						}
 					} break;
 					case cgltf_attribute_type_tangent: {
@@ -249,8 +248,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 							// has_tangents = true;
 
-							cgltf_accessor_read_float(accessor, vertex_index, dst_vertex->tangent, 4);
-							memset(dst_mesh->vertices[vertex_index].tangent, 0, sizeof(vec4));
+							cgltf_accessor_read_float(accessor, vertex_index, vec4f_elements(&dst_vertex->tangent), 4);
 						}
 					} break;
 					case cgltf_attribute_type_invalid:

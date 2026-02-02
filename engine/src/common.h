@@ -27,6 +27,12 @@
 	#define alignof(type) offsetof(struct { char c; type member; }, member)
 #endif
 
+#if defined(_MSC_VER)
+	#define ALIGN(X) __declspec(align(X))
+#else
+	#define ALIGN(X) __attribute((aligned(X)))
+#endif
+
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 
@@ -39,8 +45,6 @@
 
 #define INVALID_INDEX UINT32_MAX
 #define INVALID_UUID UINT64_MAX
-
-#define STATIC_ASSERT_(COND, LINE)
 
 #define STATIC_ASSERT_PASTE_(a, b) a##b
 #define STATIC_ASSERT_PASTE(a, b) STATIC_ASSERT_PASTE_(a, b)

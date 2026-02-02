@@ -1,10 +1,9 @@
 #pragma once
 
 #include "common.h"
+#include "core/cmath.h"
 #include "core/astring.h"
 #include "core/identifiers.h"
-
-#include <cglm/cglm.h>
 
 typedef enum {
 	ASSET_TYPE_UNDEFINED,
@@ -50,14 +49,9 @@ typedef struct {
 	PropertyType type;
 	union {
 		float f;
-		vec2 vec2f;
-		vec3 vec3f;
-		vec4 vec4f;
-
-		int32_t i;
-		ivec2 vec2i;
-		ivec3 vec3i;
-		ivec4 vec4i;
+		Vector2f vec2f;
+		Vector3f vec3f;
+		Vector4f vec4f;
 
 		uint32_t u;
 
@@ -75,10 +69,10 @@ typedef struct material_source {
 } MaterialSource;
 
 typedef struct {
-	vec3 position;
-	vec3 normal;
-	vec2 uv;
-	vec4 tangent;
+	Vector3f position;
+	Vector3f normal;
+	Vector2f uv;
+	Vector4f tangent;
 } Vertex;
 
 typedef struct mesh_source2 {

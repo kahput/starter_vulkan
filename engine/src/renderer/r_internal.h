@@ -1,11 +1,10 @@
 #pragma once
 
+#include "core/cmath.h"
 #include "core/r_types.h"
 
 #include "core/astring.h"
 #include "core/identifiers.h"
-
-#include <cglm/cglm.h>
 
 #define MAX_COLOR_ATTACHMENTS 4
 
@@ -199,7 +198,7 @@ typedef struct {
 		DONT_CARE } store;
 
 	union {
-		float color[4];
+		Vector4f color;
 		float depth;
 	} clear;
 

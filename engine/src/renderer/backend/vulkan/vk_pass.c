@@ -23,10 +23,10 @@ RhiPass vulkan_renderer_pass_create(VulkanContext *context, RenderPassDesc desc)
 
 		attachment->load = (VkAttachmentLoadOp)src->load,
 		attachment->store = (VkAttachmentStoreOp)src->store,
-		attachment->clear.color.float32[0] = src->clear.color[0];
-		attachment->clear.color.float32[1] = src->clear.color[1];
-		attachment->clear.color.float32[2] = src->clear.color[2];
-		attachment->clear.color.float32[3] = src->clear.color[3];
+		attachment->clear.color.float32[0] = src->clear.color.x;
+		attachment->clear.color.float32[1] = src->clear.color.y;
+		attachment->clear.color.float32[2] = src->clear.color.z;
+		attachment->clear.color.float32[3] = src->clear.color.w;
 
 		pass->color_formats[color_index] = image->info.format;
 	}

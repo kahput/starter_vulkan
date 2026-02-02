@@ -1,4 +1,5 @@
 #include "mesh_source.h"
+#include "core/cmath.h"
 
 #include <core/debug.h>
 #include <assets/asset_types.h>
@@ -23,7 +24,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 			  2---3
 	**/
 
-	const vec3 positions[8] = {
+	const Vector3f positions[8] = {
 		[0] = { x + -0.5f, y + 0.5f, z + 0.5f },
 		[1] = { x + 0.5f, y + 0.5f, z + 0.5f },
 		[2] = { x + -0.5f, y + -0.5f, z + 0.5f },
@@ -34,7 +35,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 		[7] = { x + -0.5f, y + -0.5f, z + -0.5f }
 	};
 
-	const vec3 normals[6] = {
+	const Vector3f normals[6] = {
 		[CUBE_FACE_RIGHT] = { 1.0f, 0.0f, 0.0f },
 		[CUBE_FACE_LEFT] = { -1.0f, 0.0f, 0.0f },
 		[CUBE_FACE_TOP] = { 0.0f, 1.0f, 0.0f },
@@ -43,7 +44,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 		[CUBE_FACE_BACK] = { 0.0f, 0.0f, -1.0f }
 	};
 
-	const vec2 uvs[6] = {
+	const Vector2f uvs[6] = {
 		{ 0.0f, 0.0f },
 		{ 0.0f, 1.0f },
 		{ 1.0f, 0.0f },
@@ -64,9 +65,9 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 	for (int face_index = 0; face_index < 6; face_index++) {
 		int index = indices[orientation][face_index];
 
-		memcpy(vertices[face_index].position, positions[index], sizeof(vec3));
-		memcpy(vertices[face_index].normal, normals[orientation], sizeof(vec3));
-		memcpy(vertices[face_index].uv, uvs[face_index], sizeof(vec2));
+        vertices[face_index].position = positions[index];
+        vertices[face_index].normal = normals[orientation];
+        vertices[face_index].uv = uvs[face_index];
 	}
 
 	return rv;
