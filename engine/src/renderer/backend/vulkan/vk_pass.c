@@ -51,7 +51,7 @@ RhiPass vulkan_renderer_pass_create(VulkanContext *context, RenderPassDesc desc)
 
 bool vulkan_renderer_pass_destroy(VulkanContext *context, RhiPass rpass) {
 	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true);
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true, false);
 
 	*pass = (VulkanPass){ 0 };
 	return true;
@@ -59,7 +59,7 @@ bool vulkan_renderer_pass_destroy(VulkanContext *context, RhiPass rpass) {
 
 bool vulkan_renderer_pass_begin(VulkanContext *context, RhiPass rpass) {
 	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true);
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true, false);
 
 	VkExtent2D extent = {
 		context->swapchain.extent.width,

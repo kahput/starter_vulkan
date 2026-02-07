@@ -1,12 +1,11 @@
 #pragma once
 
-#include "renderer/r_internal.h"
-#include <vulkan/vulkan_core.h>
+#include "core/arena.h"
 
+#include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
-#include "common.h"
-#include "core/arena.h"
+#include <vulkan/vulkan_core.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define SWAPCHAIN_IMAGE_COUNT 3
@@ -22,10 +21,10 @@ typedef enum {
 	VULKAN_RESOURCE_STATE_UNINITIALIZED,
 	VULKAN_RESOURCE_STATE_INITIALIZED,
 } VulkanResourceState;
-#define VULKAN_GET_OR_RETURN_TYPE(ptr_var, pool_array, handle, max_limit, expect_initialized, return_type) \
+#define VULKAN_GET_OR_RETURN(ptr_var, pool_array, handle, max_limit, expect_initialized, return_type) \
 	do {                                                                                                   \
-		if ((handle.id) >= (max_limit)) {                                                                  \
-			LOG_ERROR("Vulkan: %s index %u out of bounds (max %u), aborting %s",                           \
+		if ((handle.id) == 0 || (handle.id) >= (max_limit)) {                                                                  \
+			LOG_ERROR("Vulkan: %s index %u out of bounds (min 1, max %u), aborting %s",                           \
 				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                         \
 			return return_type;                                                                            \
 		}                                                                                                  \
@@ -46,32 +45,6 @@ typedef enum {
 				return return_type;                                                                        \
 			}                                                                                              \
 		}                                                                                                  \
-	} while (0)
-
-#define VULKAN_GET_OR_RETURN(ptr_var, pool_array, handle, max_limit, expect_initialized)        \
-	do {                                                                                        \
-		if ((handle.id) >= (max_limit)) {                                                       \
-			LOG_ERROR("Vulkan: %s index %u out of bounds (max %u), aborting %s",                \
-				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);              \
-			return false;                                                                       \
-		}                                                                                       \
-                                                                                                \
-		(ptr_var) = &(pool_array)[handle.id];                                                   \
-		if ((expect_initialized)) {                                                             \
-			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_INITIALIZED) {                        \
-				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s", \
-					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);               \
-				ASSERT(false);                                                                  \
-				return false;                                                                   \
-			}                                                                                   \
-		} else {                                                                                \
-			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                      \
-				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",  \
-					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);               \
-				ASSERT(false);                                                                  \
-				return false;                                                                   \
-			}                                                                                   \
-		}                                                                                       \
 	} while (0)
 
 typedef struct vulkan_buffer {

@@ -198,7 +198,7 @@ typedef struct {
 		DONT_CARE } store;
 
 	union {
-		Vector4f color;
+		float4 color;
 		float depth;
 	} clear;
 

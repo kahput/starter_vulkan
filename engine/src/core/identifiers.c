@@ -34,7 +34,7 @@ Handle handle_create_with_uuid(uint32_t index, UUID id) {
 }
 
 bool handle_is_valid(Handle handle) {
-	return handle.index != INVALID_INDEX && handle.id != INVALID_UUID;
+	return handle.index != 0 && handle.id != 0;
 }
 
 void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t start_offset, uint32_t capacity) {

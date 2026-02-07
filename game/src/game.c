@@ -44,7 +44,7 @@ typedef struct {
 
     uint32_t current_frame;
 
-    Vector3f player_position; // Changed from vec3
+    float3 player_position; // Changed from vec3
     Camera camera;
 
     // Texture
@@ -61,8 +61,8 @@ static GameState *state = NULL;
 RhiShader create_shader(GameContext *context, String filename);
 RhiTexture create_texture(GameContext *context, String filename);
 
-// Changed signature: passing pointer to Vector3f to allow modification
-void player_update(Vector3f *player_position, float dt, Camera *camera);
+// Changed signature: passing pointer to float3 to allow modification
+void player_update(float3 *player_position, float dt, Camera *camera);
 
 #define CAMERA_SENSITIVITY .001f
 #define MOVE_SPEED 5.f
@@ -87,7 +87,7 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 
         state->current_frame = 0;
         for (uint32_t index = 0; index < countof(state->terrain); ++index)
-            state->terrain[index].vb.id = INVALID_INDEX;
+            state->terrain[index].vb.id = 0;
 
         state->sprite_shader = create_shader(context, str_lit("sprite.glsl"));
         state->terrain_shader = create_shader(context, str_lit("terrain.glsl"));
@@ -104,25 +104,25 @@ FrameInfo game_on_update(GameContext *context, float dt) {
         state->checkered_texture = create_texture(context, str_lit("texture_09.png"));
 
         // Create material
-        Vector4f sprite_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
+        float4 sprite_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
 
         state->sprite_material = vulkan_renderer_resource_group_create(context->vk_context,
             state->sprite_shader, 1);
 
         vulkan_renderer_resource_group_write(context->vk_context, state->sprite_material,
-            0, 0, sizeof(Vector4f), &sprite_tint, true);
+            0, 0, sizeof(float4), &sprite_tint, true);
 
         vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
             state->sprite_material, 0, state->sprite_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_NEAREST, 0 });
 
-        Vector4f terrain_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
+        float4 terrain_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
 
         state->terrain_material = vulkan_renderer_resource_group_create(context->vk_context,
             state->terrain_shader, 1);
 
         vulkan_renderer_resource_group_write(
             context->vk_context, state->terrain_material,
-            0, 0, sizeof(Vector4f), &terrain_tint, true);
+            0, 0, sizeof(float4), &terrain_tint, true);
 
         vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
             state->terrain_material, 0, state->checkered_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_LINEAR, 0 });
@@ -172,9 +172,9 @@ FrameInfo game_on_update(GameContext *context, float dt) {
     }
     MeshSource cube_src = mesh_source_list_flatten(scratch.arena, &list);
 
-    if (terrain->vb.id != INVALID_INDEX || terrain->vertex_count < cube_src.vertex_count) {
+    if (terrain->vb.id || terrain->vertex_count < cube_src.vertex_count) {
         vulkan_renderer_buffer_destroy(context->vk_context, terrain->vb);
-        terrain->vb.id = INVALID_INDEX;
+        terrain->vb.id = 0;
         terrain->vb = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_VERTEX,
             cube_src.vertex_size * cube_src.vertex_count, cube_src.vertices);
     } else
@@ -191,13 +191,13 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 
     vulkan_renderer_resource_group_write(
         context->vk_context, state->sprite_material,
-        0, 0, sizeof(Vector4f),
-        &(Vector4f){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
+        0, 0, sizeof(float4),
+        &(float4){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
 
     vulkan_renderer_resource_group_write(
         context->vk_context, state->terrain_material,
-        0, 0, sizeof(Vector4f),
-        &(Vector4f){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
+        0, 0, sizeof(float4),
+        &(float4){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
 
     vulkan_renderer_resource_group_bind(context->vk_context, state->sprite_material, 0);
     vulkan_renderer_resource_local_write(context->vk_context, 0, sizeof(Matrix4f), &transform);
@@ -208,7 +208,7 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 
     vulkan_renderer_shader_bind(
         context->vk_context, state->terrain_shader,
-        state->variant_index);
+        state->variant_index + 1);
     vulkan_renderer_resource_group_bind(context->vk_context, state->terrain_material, 0);
 
     vulkan_renderer_resource_local_write(context->vk_context, 0, sizeof(Matrix4f), &transform);
@@ -287,7 +287,7 @@ RhiTexture create_texture(GameContext *context, String filename) {
     return texture;
 }
 
-void player_update(Vector3f *player_position, float dt, Camera *camera) {
+void player_update(float3 *player_position, float dt, Camera *camera) {
 	static float azimuth = C_PIf * 3 / 2.f;
 	static float theta = C_PIf / 3.f;
 
@@ -300,9 +300,9 @@ void player_update(Vector3f *player_position, float dt, Camera *camera) {
 
     theta = clamp(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
 
-    Vector3f offset = vec3f_subtract(camera->position, *player_position);
+    float3 offset = float3_subtract(camera->position, *player_position);
 
-    float r = vec3f_length(offset);
+    float r = float3_length(offset);
     if (r < EPSILON)
         r = EPSILON;
 
@@ -323,38 +323,38 @@ void player_update(Vector3f *player_position, float dt, Camera *camera) {
     current_azimuth += lerp * da;
     current_theta += lerp * (theta - current_theta);
 
-    camera->position = (Vector3f){
+    camera->position = (float3){
           (SPRING_LENGTH * sinf(current_theta) * cosf(current_azimuth)) + player_position->x,
           SPRING_LENGTH * cosf(current_theta),
           (SPRING_LENGTH * sinf(current_theta) * sinf(current_azimuth)) + player_position->z,
     };
 
-    Vector3f camera_position = camera->position;
+    float3 camera_position = camera->position;
     camera_position.y = 0.0f;
-    Vector3f camera_target = camera->target;
+    float3 camera_target = camera->target;
     camera_target.y = 0.0f;
 
-    Vector3f forward, right;
+    float3 forward, right;
 
-    forward = vec3f_normalize(vec3f_subtract(camera_target, camera_position));
+    forward = float3_normalize(float3_subtract(camera_target, camera_position));
     
-    right = vec3f_cross(forward, camera->up);
-    right = vec3f_normalize(right);
+    right = float3_cross(forward, camera->up);
+    right = float3_normalize(right);
 
-    Vector3f direction = { 0, 0, 0 };
+    float3 direction = { 0, 0, 0 };
     
     // Logic: direction += forward * scalar
     float forward_input = (float)(input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S));
-    direction = vec3f_add(direction, vec3f_scale(forward, forward_input));
+    direction = float3_add(direction, float3_scale(forward, forward_input));
 
     float right_input = (float)(input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A));
-    direction = vec3f_add(direction, vec3f_scale(right, right_input));
+    direction = float3_add(direction, float3_scale(right, right_input));
 
-    if (vec3f_length(direction) > 1e-6f)
-        direction = vec3f_normalize(direction);
+    if (float3_length(direction) > 1e-6f)
+        direction = float3_normalize(direction);
 
     // Apply movement to player_position (passed by pointer)
-    *player_position = vec3f_add(*player_position, vec3f_scale(direction, MOVE_SPEED * dt));
+    *player_position = float3_add(*player_position, float3_scale(direction, MOVE_SPEED * dt));
     
     camera->target.x = player_position->x;
     camera->target.z = player_position->z;

@@ -49,9 +49,9 @@ typedef struct {
 	PropertyType type;
 	union {
 		float f;
-		Vector2f vec2f;
-		Vector3f vec3f;
-		Vector4f vec4f;
+		float2 vec2f;
+		float3 vec3f;
+		float4 vec4f;
 
 		uint32_t u;
 
@@ -69,10 +69,10 @@ typedef struct material_source {
 } MaterialSource;
 
 typedef struct {
-	Vector3f position;
-	Vector3f normal;
-	Vector2f uv;
-	Vector4f tangent;
+	float3 position;
+	float3 normal;
+	float2 uv;
+	float4 tangent;
 } Vertex;
 
 typedef struct mesh_source2 {

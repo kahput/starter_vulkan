@@ -1,13 +1,12 @@
 #pragma once
 
 #include "common.h"
-#include "cmath.h"
 #include "astring.h"
 #include "identifiers.h"
 
 // clang-format off
 #define RHI_HANDLE(name) typedef struct name { uint32_t id, generation; } name
-#define INVALID_RHI(type) (type){ INVALID_INDEX, INVALID_INDEX }
+#define INVALID_RHI(type) (type){ 0, 0}
 RHI_HANDLE(RhiBuffer);
 RHI_HANDLE(RhiGeometry);
 
@@ -82,9 +81,9 @@ typedef struct {
 		RTexture texture;
 
 		float f32;
-		Vector2f vec2f;
-		Vector3f vec3f;
-		Vector4f vec4f;
+		float2 vec2f;
+		float3 vec3f;
+		float4 vec4f;
 
 		void *raw;
 	} as;

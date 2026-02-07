@@ -106,7 +106,7 @@ RhiGlobalResource vulkan_renderer_resource_global_create(VulkanContext *context,
 
 bool vulkan_renderer_resource_global_destroy(VulkanContext *context, RhiGlobalResource handle) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true, false);
 
 	if (global->buffer.state) {
 		vkDestroyBuffer(context->device.logical, global->buffer.handle, NULL);
@@ -124,14 +124,14 @@ bool vulkan_renderer_resource_global_destroy(VulkanContext *context, RhiGlobalRe
 
 bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context, RhiGlobalResource handle, uint32_t binding, RhiTexture rtexture, RhiSampler rsampler) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GROUP_RESOURCES, true, false);
 	VulkanBuffer *buffer = &global->buffer;
 
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, rtexture, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, rtexture, MAX_TEXTURES, true, false);
 
 	VulkanSampler *sampler = NULL;
-	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, rsampler, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, rsampler, MAX_SAMPLERS, true, false);
 
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,
@@ -155,7 +155,7 @@ bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context,
 
 bool vulkan_renderer_resource_global_write(VulkanContext *context, RhiGlobalResource handle, size_t offset, size_t size, void *data) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true, false);
 	VulkanBuffer *buffer = &global->buffer;
 
 	if (buffer->state == VULKAN_RESOURCE_STATE_UNINITIALIZED) {
@@ -167,7 +167,7 @@ bool vulkan_renderer_resource_global_write(VulkanContext *context, RhiGlobalReso
 }
 bool vulkan_renderer_resource_global_bind(VulkanContext *context, RhiGlobalResource handle) {
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(global, context->global_resources, handle, MAX_GLOBAL_RESOURCES, true, false);
 	VulkanBuffer *buffer = &global->buffer;
 
 	if (buffer->state) {
@@ -254,7 +254,7 @@ RhiGroupResource vulkan_renderer_resource_group_create(VulkanContext *context, R
 
 bool vulkan_renderer_resource_group_destroy(VulkanContext *context, RhiGroupResource handle) {
 	VulkanGroupResource *group = NULL;
-	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true, false);
 
 	vkDestroyBuffer(context->device.logical, group->buffer.handle, NULL);
 	vkFreeMemory(context->device.logical, group->buffer.memory, NULL);
@@ -267,7 +267,7 @@ bool vulkan_renderer_resource_group_destroy(VulkanContext *context, RhiGroupReso
 
 bool vulkan_renderer_resource_group_write(VulkanContext *context, RhiGroupResource handle, uint32_t instance_index, size_t offset, size_t size, void *data, bool all_frames) {
 	VulkanGroupResource *group = NULL;
-	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true, false);
 	VulkanBuffer *buffer = &group->buffer;
 
 	if (all_frames) {
@@ -284,11 +284,11 @@ bool vulkan_renderer_resource_group_write(VulkanContext *context, RhiGroupResour
 
 bool vulkan_renderer_resource_group_bind(VulkanContext *context, RhiGroupResource handle, uint32_t instance_index) {
 	VulkanGroupResource *group = NULL;
-	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true, false);
 	VulkanBuffer *buffer = &group->buffer;
 
 	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN(shader, context->shader_pool, group->shader, MAX_SHADERS, true);
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, group->shader, MAX_SHADERS, true, false);
 
 	if (buffer->state) {
 		uint32_t frame_offset = context->current_frame * group->max_instance_count;
@@ -309,14 +309,14 @@ bool vulkan_renderer_resource_group_bind(VulkanContext *context, RhiGroupResourc
 
 bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, RhiGroupResource handle, uint32_t binding, RhiTexture rtexture, RhiSampler rsampler) {
 	VulkanGroupResource *group = NULL;
-	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true);
+	VULKAN_GET_OR_RETURN(group, context->group_resources, handle, MAX_GROUP_RESOURCES, true, false);
 	VulkanBuffer *buffer = &group->buffer;
 
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, rtexture, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, rtexture, MAX_TEXTURES, true, false);
 
 	VulkanSampler *sampler = NULL;
-	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, rsampler, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, rsampler, MAX_SAMPLERS, true, false);
 
 	VkDescriptorImageInfo image_info = {
 		.sampler = sampler->handle,

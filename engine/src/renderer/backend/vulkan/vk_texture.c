@@ -69,7 +69,7 @@ RhiTexture vulkan_renderer_texture_create(
 
 bool vulkan_renderer_texture_destroy(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, false);
 
 	vkDestroyImageView(context->device.logical, image->view, NULL);
 	vkDestroyImage(context->device.logical, image->handle, NULL);
@@ -84,7 +84,7 @@ bool vulkan_renderer_texture_destroy(VulkanContext *context, RhiTexture texture)
 
 bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
@@ -96,7 +96,7 @@ bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, RhiText
 }
 bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -110,7 +110,7 @@ bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, RhiTexture t
 bool vulkan_renderer_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width,
 	uint32_t height) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, false);
 
 	vkDestroyImageView(context->device.logical, image->view, NULL);
 	vkDestroyImage(context->device.logical, image->handle, NULL);
@@ -162,7 +162,7 @@ RhiSampler vulkan_renderer_sampler_create(VulkanContext *context, SamplerDesc de
 
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, RhiSampler handle) {
 	VulkanSampler *sampler = NULL;
-	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, handle, MAX_SAMPLERS, true);
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, handle, MAX_SAMPLERS, true, false);
 
 	vkDestroySampler(context->device.logical, sampler->handle, NULL);
 	*sampler = (VulkanSampler){ 0 };

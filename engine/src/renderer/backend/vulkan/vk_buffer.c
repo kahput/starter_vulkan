@@ -58,7 +58,7 @@ RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type,
 
 bool vulkan_renderer_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
 	vkDestroyBuffer(context->device.logical, buffer->handle, NULL);
 	vkFreeMemory(context->device.logical, buffer->memory, NULL);
@@ -71,7 +71,7 @@ bool vulkan_renderer_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
 
 bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
 	if ((buffer->memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
 		VulkanBuffer *staging_buffer = &context->staging_buffer;
@@ -106,7 +106,7 @@ bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer rbuffer, siz
 
 bool vulkan_renderer_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t index_size) {
 	const VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffer[] = { buffer->handle };
@@ -129,7 +129,7 @@ bool vulkan_renderer_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size
 
 bool vulkan_renderer_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, uint32_t count) {
 	const VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffers[0], MAX_BUFFERS, true);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffers[0], MAX_BUFFERS, true, false);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffers[16] = { 0 };

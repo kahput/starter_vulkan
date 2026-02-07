@@ -13,7 +13,6 @@ typedef struct {
 	uint32_t index;
 } Handle;
 
-#define INVALID_HANDLE ((Handle){ .id = INVALID_UUID, INVALID_INDEX })
 Handle handle_create(uint32_t index);
 ENGINE_API Handle handle_create_with_uuid(uint32_t index, UUID id);
 bool handle_is_valid(Handle handle);

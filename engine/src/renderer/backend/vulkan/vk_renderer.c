@@ -29,6 +29,16 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	context->group_resources = arena_push_pool_zero(arena, VulkanGroupResource, MAX_GROUP_RESOURCES);
 	context->global_resources = arena_push_pool_zero(arena, VulkanGlobalResource, MAX_GLOBAL_RESOURCES);
 
+    // 0 == INVALID
+    pool_alloc(context->image_pool);
+    pool_alloc(context->buffer_pool);
+    pool_alloc(context->sampler_pool);
+    pool_alloc(context->shader_pool);
+    pool_alloc(context->pass_pool);
+
+    pool_alloc(context->group_resources);
+    pool_alloc(context->global_resources);
+
 	if (vulkan_instance_create(context, context->display) == false)
 		return false;
 

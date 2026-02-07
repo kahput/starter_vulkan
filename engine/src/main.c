@@ -100,7 +100,7 @@ static struct State {
 	RhiGroupResource skybox_material;
 } state;
 
-static bool wireframe = false;
+static uint32_t variant_index = 0;
 
 int main(void) {
 	state.permanent = arena_create(MiB(512));
@@ -135,6 +135,7 @@ int main(void) {
 	state.flat_normal_tex = vulkan_renderer_texture_create(
 		state.context, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
+
 
 	// Create default samplers
 	state.linear_sampler = vulkan_renderer_sampler_create(
@@ -350,7 +351,7 @@ int main(void) {
 	float sun_theta = 2 * C_PI / 3.f;
 	float sun_azimuth = 0;
 	
-	// Assuming Light struct is updated to use Vector3f, or we cast. 
+	// Assuming Light struct is updated to use float3, or we cast. 
 	// Accessing via .x .y .z instead of array indices.
 	Light lights[] = { 
 		[0] = { .type = LIGHT_TYPE_DIRECTIONAL,
@@ -439,16 +440,16 @@ int main(void) {
 					sizeof(FrameData), &frame_data);
 
 				// Draw light debug
-				vulkan_renderer_shader_bind(state.context, state.light_shader, wireframe); 
+				vulkan_renderer_shader_bind(state.context, state.light_shader, variant_index + 1); 
 				for (uint32_t index = 0; index < countof(lights); ++index) {
 					if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
 						continue;
 					
 					// --- CHANGED: Transform logic ---
-					Matrix4f transform = mat4f_translated(*(Vector3f*)vec4f_elements(&lights[index].as.position));
+					Matrix4f transform = mat4f_translated(*(float3*)float4_elements(&lights[index].as.position));
 
 					vulkan_renderer_resource_group_write(state.context, state.light_material, 0,
-						0, sizeof(Vector4f), &lights[index].color, true); // Changed vec4 to Vector4f
+						0, sizeof(float4), &lights[index].color, true); // Changed vec4 to float4
 					vulkan_renderer_resource_group_bind(state.context, state.light_material, 0);
 					vulkan_renderer_resource_local_write(state.context, 0, sizeof(Matrix4f), &transform); // Changed mat4 to Matrix4f
 					vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
@@ -479,7 +480,7 @@ int main(void) {
 		}
 
 		if (input_key_pressed(KEY_CODE_ENTER))
-			wireframe = !wireframe;
+			variant_index = !variant_index;
 		if (input_key_pressed(KEY_CODE_TAB))
 			state.editor = !state.editor;
 		if (input_key_down(KEY_CODE_LEFTCTRL))
@@ -497,54 +498,53 @@ int main(void) {
 	return 0;
 }
 
-// --- CHANGED: Editor update totally refactored for new math lib ---
 void editor_update(float dt) {
 	float yaw_delta = -input_mouse_dx() * CAMERA_SENSITIVITY;
 	float pitch_delta = -input_mouse_dy() * CAMERA_SENSITIVITY;
 
-	Vector3f target_position = vec3f_normalize(
-		vec3f_subtract(state.editor_camera.target, state.editor_camera.position));
+	float3 target_position = float3_normalize(
+		float3_subtract(state.editor_camera.target, state.editor_camera.position));
 
 	// Yaw rotation (around up)
-	target_position = vec3f_rotate(target_position, yaw_delta, state.editor_camera.up);
+	target_position = float3_rotate(target_position, yaw_delta, state.editor_camera.up);
 
 	// Calc right
-	Vector3f camera_right = vec3f_cross(target_position, state.editor_camera.up);
-	camera_right = vec3f_normalize(camera_right);
+	float3 camera_right = float3_cross(target_position, state.editor_camera.up);
+	camera_right = float3_normalize(camera_right);
 
 	// Calc down
-	Vector3f camera_down = vec3f_negate(state.editor_camera.up);
+	float3 camera_down = float3_negate(state.editor_camera.up);
 
 	// Pitch clamping
-	float max_angle = vec3f_angle(state.editor_camera.up, target_position) - 0.001f;
-	float min_angle = -vec3f_angle(camera_down, target_position) + 0.001f;
+	float max_angle = float3_angle(state.editor_camera.up, target_position) - 0.001f;
+	float min_angle = -float3_angle(camera_down, target_position) + 0.001f;
 	
 	// Helper to clamp float
 	if (pitch_delta > max_angle) pitch_delta = max_angle;
 	if (pitch_delta < min_angle) pitch_delta = min_angle;
 
 	// Pitch rotation (around right)
-	target_position = vec3f_rotate(target_position, pitch_delta, camera_right);
+	target_position = float3_rotate(target_position, pitch_delta, camera_right);
 
-	Vector3f move = {0,0,0};
+	float3 move = {0,0,0};
 
 	// Re-calculate right after rotation for movement
-	camera_right = vec3f_cross(state.editor_camera.up, target_position);
-	camera_right = vec3f_normalize(camera_right);
+	camera_right = float3_cross(state.editor_camera.up, target_position);
+	camera_right = float3_normalize(camera_right);
 
 	float right_amount = (input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A)) * CAMERA_MOVE_SPEED * dt;
 	float up_amount = (input_key_down(KEY_CODE_SPACE) - input_key_down(KEY_CODE_C)) * CAMERA_MOVE_SPEED * dt;
 	float forward_amount = (input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W)) * CAMERA_MOVE_SPEED * dt;
 
-	move = vec3f_add(move, vec3f_scale(camera_right, right_amount));
-	move = vec3f_add(move, vec3f_scale(camera_down, up_amount));
-	move = vec3f_add(move, vec3f_scale(target_position, forward_amount));
+	move = float3_add(move, float3_scale(camera_right, right_amount));
+	move = float3_add(move, float3_scale(camera_down, up_amount));
+	move = float3_add(move, float3_scale(target_position, forward_amount));
 
-	move = vec3f_negate(move);
+	move = float3_negate(move);
 
 	// Apply move
-	state.editor_camera.position = vec3f_add(move, state.editor_camera.position);
-	state.editor_camera.target = vec3f_add(state.editor_camera.position, target_position);
+	state.editor_camera.position = float3_add(move, state.editor_camera.position);
+	state.editor_camera.target = float3_add(state.editor_camera.position, target_position);
 }
 
 bool resize_event(EventCode code, void *event, void *receiver) {

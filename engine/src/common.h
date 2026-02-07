@@ -43,9 +43,6 @@
 
 #define FLAG_GET(flags, flag) ((flags & flag) == flag)
 
-#define INVALID_INDEX UINT32_MAX
-#define INVALID_UUID UINT64_MAX
-
 #define STATIC_ASSERT_PASTE_(a, b) a##b
 #define STATIC_ASSERT_PASTE(a, b) STATIC_ASSERT_PASTE_(a, b)
 
@@ -62,6 +59,27 @@
 static inline uint64_t aligned_address(uint64_t address, uint64_t alignment) {
 	return ((address + (alignment - 1)) & ~(alignment - 1));
 }
+
+// Types
+// clang-format off
+typedef float float32;
+typedef struct { float32 x, y; } float2;
+STATIC_ASSERT(sizeof(float2) == 2 * sizeof(float));
+typedef struct { float32 x, y, z; } float3;
+STATIC_ASSERT(sizeof(float3) == 3 * sizeof(float));
+typedef struct { float32 x, y, z, w; } float4;
+STATIC_ASSERT(sizeof(float4) == 4 * sizeof(float));
+
+typedef uint32_t uint32;
+typedef struct { uint32 x, y; } uint2;
+typedef struct { uint32 x, y, z; } uint3;
+typedef struct { uint32 x, y, z, w; } uint4;
+
+typedef int32_t int32;
+typedef struct { int32 x, y; } int2;
+typedef struct { int32 x, y, z; } int3;
+typedef struct { int32 x, y, z, w; } int4;
+// clang-format on
 
 typedef uint32_t Flag;
 

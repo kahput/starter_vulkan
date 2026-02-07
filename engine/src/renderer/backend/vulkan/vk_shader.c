@@ -31,7 +31,7 @@ RhiShader vulkan_renderer_shader_create(
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
 	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN_TYPE(global, context->global_resources, rglobal, MAX_GLOBAL_RESOURCES, true, INVALID_RHI(RhiShader));
+	VULKAN_GET_OR_RETURN(global, context->global_resources, rglobal, MAX_GLOBAL_RESOURCES, true, INVALID_RHI(RhiShader));
 
 	if (config->vertex_code == NULL || config->vertex_code_size == 0 || config->fragment_code == NULL || config->fragment_code_size == 0) {
 		LOG_ERROR("Vulkan: Invalid shader code passed to vulkan_renderer_shader_craete");
@@ -63,12 +63,14 @@ RhiShader vulkan_renderer_shader_create(
 	reflect_shader_interface(arena, context, shader, global, config, out_reflection);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
+    shader->variant_count++;
+
 	return (RhiShader){ pool_index_of(context->shader_pool, shader), 0 };
 }
 
 bool vulkan_renderer_shader_destroy(VulkanContext *context, RhiShader rshader) {
 	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true);
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
 
 	vkDestroyShaderModule(context->device.logical, shader->vertex_shader, NULL);
 	vkDestroyShaderModule(context->device.logical, shader->fragment_shader, NULL);
@@ -252,11 +254,11 @@ bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, Vulkan
 
 bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, uint32_t variant_index) {
 	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true);
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
 
 	VulkanPipeline *pipeline = NULL;
 	RhiShaderVariant rvariant = { variant_index, 0 };
-	VULKAN_GET_OR_RETURN(pipeline, shader->variants, rvariant, countof(shader->variants), true);
+	VULKAN_GET_OR_RETURN(pipeline, shader->variants, rvariant, countof(shader->variants), true, false);
 
 	context->bound_shader = shader;
 	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
@@ -265,10 +267,10 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, uint
 
 RhiShaderVariant vulkan_renderer_shader_variant_create(VulkanContext *context, RhiShader rshader, RhiPass rpass, PipelineDesc description) {
 	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN_TYPE(shader, context->shader_pool, rshader, MAX_SHADERS, true, INVALID_RHI(RhiShaderVariant));
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, INVALID_RHI(RhiShaderVariant));
 
 	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN_TYPE(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true, INVALID_RHI(RhiShaderVariant));
+	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true, INVALID_RHI(RhiShaderVariant));
 
 	RhiShaderVariant rvariant = { shader->variant_count++, 0 };
 	VulkanPipeline *pipeline = &shader->variants[rvariant.id];
@@ -281,10 +283,10 @@ RhiShaderVariant vulkan_renderer_shader_variant_create(VulkanContext *context, R
 
 bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, RhiShader rshader, RhiShaderVariant rvariant) {
 	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true);
+	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
 
 	VulkanPipeline *pipeline = NULL;
-	VULKAN_GET_OR_RETURN(pipeline, shader->variants, rvariant, countof(shader->variants), true);
+	VULKAN_GET_OR_RETURN(pipeline, shader->variants, rvariant, countof(shader->variants), true, false);
 
 	return destroy_shader_variant(context, shader, pipeline);
 }
