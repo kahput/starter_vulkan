@@ -193,10 +193,14 @@ bool vulkan_renderer_pass_begin(VulkanContext *context, RhiPass rpass) {
 		.extent = extent
 	};
 	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
+
+	context->bound_pass = pass;
 	return true;
 }
 
 bool vulkan_renderer_pass_end(VulkanContext *context) {
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
+
+	context->bound_pass = NULL;
 	return true;
 }

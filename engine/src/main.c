@@ -17,7 +17,7 @@
 #include "platform/filesystem.h"
 
 #include <math.h>
-#include "core/cmath.h" 
+#include "core/cmath.h"
 
 #include <dlfcn.h>
 #include <string.h>
@@ -100,7 +100,7 @@ static struct State {
 	RhiGroupResource skybox_material;
 } state;
 
-static uint32_t variant_index = 0;
+static bool wireframe = false;
 
 int main(void) {
 	state.permanent = arena_create(MiB(512));
@@ -135,7 +135,6 @@ int main(void) {
 	state.flat_normal_tex = vulkan_renderer_texture_create(
 		state.context, 1, 1,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
-
 
 	// Create default samplers
 	state.linear_sampler = vulkan_renderer_sampler_create(
@@ -279,18 +278,11 @@ int main(void) {
 			.fragment_code = light_shader_src->fragment_shader.content,
 			.fragment_code_size = light_shader_src->fragment_shader.size,
 		};
-		PipelineDesc desc = DEFAULT_PIPELINE();
-		desc.cull_mode = CULL_MODE_NONE;
+		// PipelineDesc desc = DEFAULT_PIPELINE();
+		// desc.cull_mode = CULL_MODE_NONE;
 		ShaderReflection reflection;
-		state.light_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
-			state.global_main, &light_config, &reflection);
-		// Variants
-		vulkan_renderer_shader_variant_create(state.context, state.light_shader,
-			state.pass_main, desc);
-
-		desc.polygon_mode = POLYGON_MODE_LINE;
-		vulkan_renderer_shader_variant_create(state.context, state.light_shader,
-			state.pass_main, desc);
+		state.light_shader = vulkan_renderer_shader_create(
+			&state.permanent, state.context, &light_config, &reflection);
 		state.light_material = vulkan_renderer_resource_group_create(
 			state.context, state.light_shader, 256);
 	}
@@ -304,13 +296,11 @@ int main(void) {
 			.fragment_code = postfx_shader_src->fragment_shader.content,
 			.fragment_code_size = postfx_shader_src->fragment_shader.size,
 		};
-		PipelineDesc desc = DEFAULT_PIPELINE();
-		desc.cull_mode = CULL_MODE_NONE;
+		// PipelineDesc desc = DEFAULT_PIPELINE();
+		// desc.cull_mode = CULL_MODE_NONE;
 		ShaderReflection reflection;
-		state.postfx_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
-			state.global_postfx, &postfx_config, &reflection);
-		vulkan_renderer_shader_variant_create(state.context, state.postfx_shader,
-			state.pass_postfx, desc);
+		state.postfx_shader = vulkan_renderer_shader_create(
+			&state.permanent, state.context, &postfx_config, &reflection);
 	}
 
 	ShaderSource *skybox_shader_src = NULL;
@@ -322,14 +312,12 @@ int main(void) {
 			.fragment_code = skybox_shader_src->fragment_shader.content,
 			.fragment_code_size = skybox_shader_src->fragment_shader.size,
 		};
-		PipelineDesc desc = DEFAULT_PIPELINE();
-		desc.cull_mode = CULL_MODE_NONE;
-		desc.depth_compare_op = COMPARE_OP_LESS_OR_EQUAL;
+		// PipelineDesc desc = DEFAULT_PIPELINE();
+		// desc.cull_mode = CULL_MODE_NONE;
+		// desc.depth_compare_op = COMPARE_OP_LESS_OR_EQUAL;
 		ShaderReflection reflection;
-		state.skybox_shader = vulkan_renderer_shader_create(&state.permanent, state.context,
-			state.global_main, &skybox_config, &reflection);
-		vulkan_renderer_shader_variant_create(state.context, state.skybox_shader,
-			state.pass_main, desc);
+		state.skybox_shader = vulkan_renderer_shader_create(
+			&state.permanent, state.context, &skybox_config, &reflection);
 		state.skybox_material = vulkan_renderer_resource_group_create(state.context, state.skybox_shader, 1);
 		vulkan_renderer_resource_group_set_texture_sampler(state.context, state.skybox_material, 0, state.skybox_tex, state.linear_sampler);
 	}
@@ -350,16 +338,16 @@ int main(void) {
 	// --- CHANGED: Updated math constants and array access ---
 	float sun_theta = 2 * C_PI / 3.f;
 	float sun_azimuth = 0;
-	
-	// Assuming Light struct is updated to use float3, or we cast. 
+
+	// Assuming Light struct is updated to use float3, or we cast.
 	// Accessing via .x .y .z instead of array indices.
-	Light lights[] = { 
+	Light lights[] = {
 		[0] = { .type = LIGHT_TYPE_DIRECTIONAL,
-				.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-				.as.direction = { 0.0f, 0.0f, 0.0f, 0.0f } },
+		  .color = { 1.0f, 1.0f, 1.0f, 1.0f },
+		  .as.direction = { 0.0f, 0.0f, 0.0f, 0.0f } },
 		[1] = { .type = LIGHT_TYPE_POINT,
-				.color = { 1.0f, 0.5f, 0.2f, 0.8f },
-				.as.position = { 0.0f, 3.0f, 1.0f , 0.0f} } 
+		  .color = { 1.0f, 0.5f, 0.2f, 0.8f },
+		  .as.position = { 0.0f, 3.0f, 1.0f, 0.0f } }
 	};
 
 	lights[0].as.direction.x = sinf(sun_theta) * cosf(sun_azimuth);
@@ -391,18 +379,17 @@ int main(void) {
 			vulkan_renderer_pass_begin(state.context, state.pass_main);
 			{
 				FrameData frame_data = { 0 };
-				
+
 				// --- CHANGED: Matrix math using cmath functions ---
 				frame_data.view = mat4f_identity();
 				frame_data.projection = mat4f_identity();
 
 				frame_data.projection = mat4f_perspective(
-					DEG2RAD(state.editor_camera.fov), 
+					DEG2RAD(state.editor_camera.fov),
 					(float)state.width / (float)state.height,
-					0.1f, 
-					1000.f
-				);
-				
+					0.1f,
+					1000.f);
+
 				// Flip Y for Vulkan (element 5 is y,y in 4x4)
 				frame_data.projection.elements[5] *= -1;
 
@@ -422,17 +409,15 @@ int main(void) {
 				if (state.editor) {
 					state.current_layer->update(delta_time);
 					frame_data.view = mat4f_lookat(
-						state.editor_camera.position, 
-						state.editor_camera.target, 
-						state.editor_camera.up
-					);
+						state.editor_camera.position,
+						state.editor_camera.target,
+						state.editor_camera.up);
 					frame_data.camera_position = state.editor_camera.position;
 				} else {
 					frame_data.view = mat4f_lookat(
-						game_frame.camera.position, 
-						game_frame.camera.target, 
-						game_frame.camera.up
-					);
+						game_frame.camera.position,
+						game_frame.camera.target,
+						game_frame.camera.up);
 					frame_data.camera_position = game_frame.camera.position;
 				}
 
@@ -440,13 +425,13 @@ int main(void) {
 					sizeof(FrameData), &frame_data);
 
 				// Draw light debug
-				vulkan_renderer_shader_bind(state.context, state.light_shader, variant_index + 1); 
+				vulkan_renderer_shader_bind(state.context, state.light_shader, wireframe ? SHADER_FLAG_CULL_NONE | SHADER_FLAG_WIREFRAME : SHADER_FLAG_CULL_NONE);
 				for (uint32_t index = 0; index < countof(lights); ++index) {
 					if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
 						continue;
-					
+
 					// --- CHANGED: Transform logic ---
-					Matrix4f transform = mat4f_translated(*(float3*)float4_elements(&lights[index].as.position));
+					Matrix4f transform = mat4f_translated(*(float3 *)float4_elements(&lights[index].as.position));
 
 					vulkan_renderer_resource_group_write(state.context, state.light_material, 0,
 						0, sizeof(float4), &lights[index].color, true); // Changed vec4 to float4
@@ -457,7 +442,7 @@ int main(void) {
 				}
 
 				// Draw skybox
-				vulkan_renderer_shader_bind(state.context, state.skybox_shader, RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
+				vulkan_renderer_shader_bind(state.context, state.skybox_shader, SHADER_FLAG_COMPARE_OP_LESS_OR_EQUAL | SHADER_FLAG_CULL_NONE);
 				vulkan_renderer_resource_group_bind(state.context, state.skybox_material, 0);
 				vulkan_renderer_draw(state.context, 36);
 			}
@@ -470,7 +455,7 @@ int main(void) {
 			{
 				vulkan_renderer_shader_bind(
 					state.context, state.postfx_shader,
-					RENDERER_DEFAULT_SHADER_VARIANT_STANDARD);
+					SHADER_FLAG_CULL_NONE);
 				vulkan_renderer_resource_global_bind(state.context, state.global_postfx);
 				vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 				vulkan_renderer_draw(state.context, 6);
@@ -480,7 +465,7 @@ int main(void) {
 		}
 
 		if (input_key_pressed(KEY_CODE_ENTER))
-			variant_index = !variant_index;
+			wireframe = !wireframe;
 		if (input_key_pressed(KEY_CODE_TAB))
 			state.editor = !state.editor;
 		if (input_key_down(KEY_CODE_LEFTCTRL))
@@ -518,15 +503,17 @@ void editor_update(float dt) {
 	// Pitch clamping
 	float max_angle = float3_angle(state.editor_camera.up, target_position) - 0.001f;
 	float min_angle = -float3_angle(camera_down, target_position) + 0.001f;
-	
+
 	// Helper to clamp float
-	if (pitch_delta > max_angle) pitch_delta = max_angle;
-	if (pitch_delta < min_angle) pitch_delta = min_angle;
+	if (pitch_delta > max_angle)
+		pitch_delta = max_angle;
+	if (pitch_delta < min_angle)
+		pitch_delta = min_angle;
 
 	// Pitch rotation (around right)
 	target_position = float3_rotate(target_position, pitch_delta, camera_right);
 
-	float3 move = {0,0,0};
+	float3 move = { 0, 0, 0 };
 
 	// Re-calculate right after rotation for movement
 	camera_right = float3_cross(state.editor_camera.up, target_position);

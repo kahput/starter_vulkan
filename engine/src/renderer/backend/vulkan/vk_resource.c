@@ -210,7 +210,7 @@ RhiGroupResource vulkan_renderer_resource_group_create(VulkanContext *context, R
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = context->descriptor_pool,
 		.descriptorSetCount = 1,
-		.pSetLayouts = &shader->group_layout
+		.pSetLayouts = &shader->layouts[1]
 	};
 
 	if (vkAllocateDescriptorSets(context->device.logical, &ds_allocate_info, &group->set) != VK_SUCCESS) {

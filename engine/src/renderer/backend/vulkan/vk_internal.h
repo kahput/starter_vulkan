@@ -2,6 +2,7 @@
 
 #include "core/arena.h"
 
+#include "core/hash_trie.h"
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
@@ -10,7 +11,7 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define SWAPCHAIN_IMAGE_COUNT 3
 
-#define MAX_SETS 3
+#define MAX_SETS 2
 #define MAX_INPUT_ATTRIBUTES 16
 #define MAX_INPUT_BINDINGS 16
 #define MAX_BINDINGS_PER_RESOURCE 16
@@ -22,29 +23,29 @@ typedef enum {
 	VULKAN_RESOURCE_STATE_INITIALIZED,
 } VulkanResourceState;
 #define VULKAN_GET_OR_RETURN(ptr_var, pool_array, handle, max_limit, expect_initialized, return_type) \
-	do {                                                                                                   \
-		if ((handle.id) == 0 || (handle.id) >= (max_limit)) {                                                                  \
-			LOG_ERROR("Vulkan: %s index %u out of bounds (min 1, max %u), aborting %s",                           \
-				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                         \
-			return return_type;                                                                            \
-		}                                                                                                  \
-                                                                                                           \
-		(ptr_var) = &(pool_array)[handle.id];                                                              \
-		if ((expect_initialized)) {                                                                        \
-			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_INITIALIZED) {                                   \
-				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s",            \
-					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                          \
-				ASSERT(false);                                                                             \
-				return return_type;                                                                        \
-			}                                                                                              \
-		} else {                                                                                           \
-			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                                 \
-				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",             \
-					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                          \
-				ASSERT(false);                                                                             \
-				return return_type;                                                                        \
-			}                                                                                              \
-		}                                                                                                  \
+	do {                                                                                              \
+		if ((handle.id) == 0 || (handle.id) >= (max_limit)) {                                         \
+			LOG_ERROR("Vulkan: %s index %u out of bounds (min 1, max %u), aborting %s",               \
+				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                    \
+			return return_type;                                                                       \
+		}                                                                                             \
+                                                                                                      \
+		(ptr_var) = &(pool_array)[handle.id];                                                         \
+		if ((expect_initialized)) {                                                                   \
+			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_INITIALIZED) {                              \
+				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s",       \
+					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                     \
+				ASSERT(false);                                                                        \
+				return return_type;                                                                   \
+			}                                                                                         \
+		} else {                                                                                      \
+			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                            \
+				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",        \
+					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                     \
+				ASSERT(false);                                                                        \
+				return return_type;                                                                   \
+			}                                                                                         \
+		}                                                                                             \
 	} while (0)
 
 typedef struct vulkan_buffer {
@@ -90,13 +91,6 @@ typedef struct vulkan_global_resource {
 typedef struct vulkan_resource_set {
 	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
 } VulkanResourceSet;
-
-typedef struct vulkan_pipeline {
-	VulkanResourceState state;
-
-	VkPipeline handle;
-	PipelineDesc description;
-} VulkanPipeline;
 
 typedef struct vulkan_image {
 	VulkanResourceState state;
@@ -228,6 +222,12 @@ uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type
 
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 
+typedef struct vulkan_pipeline {
+	HashTrieNode node;
+
+	VkPipeline handle;
+} VulkanPipeline;
+
 typedef struct vulkan_shader {
 	VulkanResourceState state;
 	VkShaderModule vertex_shader, fragment_shader;
@@ -236,12 +236,14 @@ typedef struct vulkan_shader {
 	VkVertexInputBindingDescription bindings[MAX_INPUT_BINDINGS];
 	uint32_t attribute_count, binding_count;
 
-	VkDescriptorSetLayout group_layout;
+	VkDescriptorSetLayout layouts[4];
 
 	uint32_t group_ubo_binding;
 	VkDeviceSize instance_size;
 
 	VkPipelineLayout pipeline_layout;
+
+    VulkanPipeline *pipeline_cache;
 
 	VulkanPipeline variants[MAX_SHADER_VARIANTS];
 	uint32_t variant_count;
@@ -282,6 +284,7 @@ struct vulkan_context {
 
 	VulkanBuffer staging_buffer;
 	VulkanShader *bound_shader;
+	VulkanPass *bound_pass;
 	VkDescriptorPool descriptor_pool;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];

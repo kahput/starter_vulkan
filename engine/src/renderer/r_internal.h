@@ -126,8 +126,8 @@ typedef enum cull_mode {
 } PipelineCullMode;
 
 typedef enum front_face {
-	FRONT_FACE_COUNTER_CLOCKWISE = 0, 
-	FRONT_FACE_CLOCKWISE = 1 
+	FRONT_FACE_COUNTER_CLOCKWISE = 0,
+	FRONT_FACE_CLOCKWISE = 1
 } PipelineFrontFace;
 
 typedef enum polygon_mode {
@@ -163,6 +163,15 @@ typedef struct pipeline_desc {
 	bool blend_enable;
 	bool topology_line_list;
 } PipelineDesc;
+
+typedef enum {
+	SHADER_FLAG_CULL_NONE = 1 << 0,
+	SHADER_FLAG_CULL_FRONT = 1 << 2,
+	SHADER_FLAG_WIREFRAME = 1 << 3,
+
+	SHADER_FLAG_CLOCK_WISE = 1 << 4,
+	SHADER_FLAG_COMPARE_OP_LESS_OR_EQUAL = 1 << 5,
+} ShaderStateFlags;
 
 typedef enum sampler_filter {
 	FILTER_NEAREST = 0,

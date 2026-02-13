@@ -1,3 +1,4 @@
+#include "core/hash_trie.h"
 #include "core/pool.h"
 #include "core/r_types.h"
 #include "renderer/r_internal.h"
@@ -14,24 +15,21 @@
 #include "core/arena.h"
 
 #include <stddef.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, PipelineDesc description, VulkanPipeline *variant);
+bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, ShaderStateFlags flags, VulkanPipeline *variant);
 bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant);
 
-bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, VulkanGlobalResource *global, ShaderConfig *config, ShaderReflection *out_reflection);
+bool reflect_shader_interface(
+	Arena *arena, VulkanContext *context, VulkanShader *shader,
+	ShaderConfig *config, ShaderReflection *out_reflection);
 
 RhiShader vulkan_renderer_shader_create(
 	Arena *arena, VulkanContext *context,
-	RhiGlobalResource rglobal,
 	ShaderConfig *config, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
-
-	VulkanGlobalResource *global = NULL;
-	VULKAN_GET_OR_RETURN(global, context->global_resources, rglobal, MAX_GLOBAL_RESOURCES, true, INVALID_RHI(RhiShader));
 
 	if (config->vertex_code == NULL || config->vertex_code_size == 0 || config->fragment_code == NULL || config->fragment_code_size == 0) {
 		LOG_ERROR("Vulkan: Invalid shader code passed to vulkan_renderer_shader_craete");
@@ -60,10 +58,10 @@ RhiShader vulkan_renderer_shader_create(
 		return INVALID_RHI(RhiShader);
 	}
 
-	reflect_shader_interface(arena, context, shader, global, config, out_reflection);
+	reflect_shader_interface(arena, context, shader, config, out_reflection);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-    shader->variant_count++;
+	shader->variant_count++;
 
 	return (RhiShader){ pool_index_of(context->shader_pool, shader), 0 };
 }
@@ -75,7 +73,10 @@ bool vulkan_renderer_shader_destroy(VulkanContext *context, RhiShader rshader) {
 	vkDestroyShaderModule(context->device.logical, shader->vertex_shader, NULL);
 	vkDestroyShaderModule(context->device.logical, shader->fragment_shader, NULL);
 
-	vkDestroyDescriptorSetLayout(context->device.logical, shader->group_layout, NULL);
+	for (uint32_t index = 0; index < MAX_SETS; ++index) {
+		vkDestroyDescriptorSetLayout(context->device.logical, shader->layouts[index], NULL);
+	}
+
 	vkDestroyPipelineLayout(context->device.logical, shader->pipeline_layout, NULL);
 
 	for (uint32_t index = 0; index < shader->variant_count; ++index) {
@@ -98,9 +99,9 @@ struct vertex_input_state {
 	uint32_t binding_count, attribute_count;
 };
 
-static bool override_attributes(struct vertex_input_state *state, ShaderAttribute *attributes, uint32_t attribute_count);
+// static bool override_attributes(struct vertex_input_state *state, ShaderAttribute *attributes, uint32_t attribute_count);
 static void resolve_pass_formats(VulkanContext *context, VulkanPass *pass, VkFormat *out_color_formats, VkFormat *out_depth_format);
-bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, PipelineDesc description, VulkanPipeline *variant) {
+bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, ShaderStateFlags flags, VulkanPipeline *variant) {
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 		.stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -128,23 +129,23 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	};
 
 	VkPipelineVertexInputStateCreateInfo vis_create_info = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-	struct vertex_input_state override = { 0 };
-	if (description.override_count > 0) {
-		override_attributes(&override, description.override_attributes, description.override_count);
-		vis_create_info.vertexBindingDescriptionCount = override.binding_count;
-		vis_create_info.pVertexBindingDescriptions = override.bindings;
-		vis_create_info.vertexAttributeDescriptionCount = override.attribute_count;
-		vis_create_info.pVertexAttributeDescriptions = override.attributes;
-	} else {
-		vis_create_info.vertexBindingDescriptionCount = shader->binding_count;
-		vis_create_info.pVertexBindingDescriptions = shader->bindings;
-		vis_create_info.vertexAttributeDescriptionCount = shader->attribute_count;
-		vis_create_info.pVertexAttributeDescriptions = shader->attributes;
-	}
+	// struct vertex_input_state override = { 0 };
+	// if (description.override_count > 0) {
+	// 	override_attributes(&override, description.override_attributes, description.override_count);
+	// 	vis_create_info.vertexBindingDescriptionCount = override.binding_count;
+	// 	vis_create_info.pVertexBindingDescriptions = override.bindings;
+	// 	vis_create_info.vertexAttributeDescriptionCount = override.attribute_count;
+	// 	vis_create_info.pVertexAttributeDescriptions = override.attributes;
+	// } else {
+	// }
+	vis_create_info.vertexBindingDescriptionCount = shader->binding_count;
+	vis_create_info.pVertexBindingDescriptions = shader->bindings;
+	vis_create_info.vertexAttributeDescriptionCount = shader->attribute_count;
+	vis_create_info.pVertexAttributeDescriptions = shader->attributes;
 
 	VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-		.topology = description.topology_line_list ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, // description.topology_line_list ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 		.primitiveRestartEnable = VK_FALSE
 	};
 
@@ -158,10 +159,13 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 		.depthClampEnable = VK_FALSE,
 		.rasterizerDiscardEnable = VK_FALSE,
-		.polygonMode = (VkPolygonMode)description.polygon_mode,
-		.lineWidth = description.line_width > 0.0f ? description.line_width : 1.0f,
-		.cullMode = (VkCullModeFlags)description.cull_mode,
-		.frontFace = (VkFrontFace)description.front_face,
+		.polygonMode = FLAG_GET(flags, SHADER_FLAG_WIREFRAME) ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL, // (VkPolygonMode)description.polygon_mode,
+		.lineWidth = 1.f, // description.line_width > 0.0f ? description.line_width : 1.0f,
+		.cullMode =
+			FLAG_GET(flags, SHADER_FLAG_CULL_NONE)	  ? VK_CULL_MODE_NONE
+			: FLAG_GET(flags, SHADER_FLAG_CULL_FRONT) ? VK_CULL_MODE_FRONT_BIT
+													  : VK_CULL_MODE_BACK_BIT, //(VkCullModeFlags)description.cull_mode,
+		.frontFace = FLAG_GET(flags, SHADER_FLAG_CLOCK_WISE) ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE, //(VkFrontFace)description.front_face,
 		.depthBiasEnable = VK_FALSE,
 	};
 
@@ -197,7 +201,7 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 		.depthTestEnable = pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED,
 		.depthWriteEnable = pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED,
-		.depthCompareOp = (VkCompareOp)description.depth_compare_op,
+		.depthCompareOp = FLAG_GET(flags, SHADER_FLAG_COMPARE_OP_LESS_OR_EQUAL) ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS, // (VkCompareOp)description.depth_compare_op,
 		.depthBoundsTestEnable = VK_FALSE,
 		.minDepthBounds = 0.0f,
 		.maxDepthBounds = 1.0f
@@ -236,13 +240,11 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	}
 
 	LOG_INFO("Vulkan: VkPipeline created");
-	variant->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-
 	return true;
 }
 
 bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant) {
-	if (variant->state == VULKAN_RESOURCE_STATE_INITIALIZED) {
+	if (variant->handle) {
 		vkDestroyPipeline(context->device.logical, variant->handle, NULL);
 		*variant = (VulkanPipeline){ 0 };
 
@@ -252,20 +254,46 @@ bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, Vulkan
 	return false;
 }
 
-bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, uint32_t variant_index) {
+bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, ShaderStateFlags flags) {
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
 
-	VulkanPipeline *pipeline = NULL;
-	RhiShaderVariant rvariant = { variant_index, 0 };
-	VULKAN_GET_OR_RETURN(pipeline, shader->variants, rvariant, countof(shader->variants), true, false);
+	ArenaTemp scratch = arena_scratch(NULL);
+	String key = string_pushf(scratch.arena, "%d", flags);
+
+	VulkanPass *pass = context->bound_pass;
+
+	for (uint32_t index = 0; index < pass->color_attachment_count; ++index) {
+		key = string_push_concat(
+			scratch.arena, key, string_pushf(scratch.arena, "%d", pass->color_formats[index]));
+	}
+	if (pass->depth_attachment.state)
+		key = string_push_concat(scratch.arena, key, string_pushf(scratch.arena, "%d", pass->depth_format));
+
+	uint64_t hash = string_hash64(key);
+	arena_release_scratch(scratch);
+
+	VulkanPipeline *variant = hash_trie_lookup_hash(&shader->pipeline_cache, hash, VulkanPipeline);
+
+	if (variant == NULL) {
+		Arena variant_arena = {
+			.memory = shader->variants,
+			.offset = shader->variant_count * sizeof(VulkanPipeline),
+			.capacity = sizeof(shader->variants),
+		};
+
+		variant = hash_trie_insert_hash(&variant_arena, &shader->pipeline_cache, hash, VulkanPipeline);
+		create_shader_variant(context, shader, pass, flags, variant);
+
+		shader->variant_count++;
+	}
 
 	context->bound_shader = shader;
-	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
+	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, variant->handle);
 	return true;
 }
 
-RhiShaderVariant vulkan_renderer_shader_variant_create(VulkanContext *context, RhiShader rshader, RhiPass rpass, PipelineDesc description) {
+RhiShaderVariant shader_variant_create(VulkanContext *context, RhiShader rshader, RhiPass rpass, ShaderStateFlags flags) {
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, INVALID_RHI(RhiShaderVariant));
 
@@ -275,20 +303,10 @@ RhiShaderVariant vulkan_renderer_shader_variant_create(VulkanContext *context, R
 	RhiShaderVariant rvariant = { shader->variant_count++, 0 };
 	VulkanPipeline *pipeline = &shader->variants[rvariant.id];
 
-	if (create_shader_variant(context, shader, pass, description, pipeline))
+	if (create_shader_variant(context, shader, pass, flags, pipeline))
 		return INVALID_RHI(RhiShaderVariant);
 
 	return INVALID_RHI(RhiShaderVariant);
-}
-
-bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, RhiShader rshader, RhiShaderVariant rvariant) {
-	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
-
-	VulkanPipeline *pipeline = NULL;
-	VULKAN_GET_OR_RETURN(pipeline, shader->variants, rvariant, countof(shader->variants), true, false);
-
-	return destroy_shader_variant(context, shader, pipeline);
 }
 
 static uint32_t count_shader_members(SpvReflectBlockVariable *var) {
@@ -306,8 +324,7 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 	char full_name[128];
 	if (prefix.length > 0) {
 		snprintf(full_name, sizeof(full_name), "%s.%s", prefix.memory, var->name);
-    }
-	else
+	} else
 		snprintf(full_name, sizeof(full_name), "%s", var->name);
 
 	if (var->member_count == 0) {
@@ -342,7 +359,9 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 	return buffer;
 }
 
-bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader *shader, VulkanGlobalResource *global, ShaderConfig *config, ShaderReflection *out_reflection) {
+bool reflect_shader_interface(
+	Arena *arena, VulkanContext *context, VulkanShader *shader,
+	ShaderConfig *config, ShaderReflection *out_reflection) {
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
@@ -434,6 +453,9 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	result = spvReflectEnumerateDescriptorSets(&fragment_module, &fs_set_count, NULL);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
+	// TODO: remove set count hardcap
+	ASSERT(vs_set_count <= 2 && fs_set_count <= 2);
+
 	SpvReflectDescriptorSet **vs_sets = arena_push_array_zero(scratch.arena, SpvReflectDescriptorSet *, vs_set_count);
 	SpvReflectDescriptorSet **fs_sets = arena_push_array_zero(scratch.arena, SpvReflectDescriptorSet *, fs_set_count);
 
@@ -466,9 +488,16 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 			VkDescriptorSetLayoutBinding *vk = &set->vk_binding[set->binding_count++];
 
 			vk->binding = spv_binding->binding;
-			vk->descriptorType = (VkDescriptorType)spv_binding->descriptor_type;
+
+			if (spv_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+				vk->descriptorType = (VkDescriptorType)VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+			else if (spv_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+				vk->descriptorType = (VkDescriptorType)VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+			else
+				vk->descriptorType = (VkDescriptorType)spv_binding->descriptor_type;
+
 			vk->descriptorCount = spv_binding->count;
-			vk->stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+			vk->stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
 			vk->pImmutableSamplers = NULL;
 		}
 	}
@@ -492,17 +521,24 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 					break;
 				}
 			}
-			if (found_index != -1)
-				set->vk_binding[found_index].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-			else {
+			// if (found_index != -1)
+			// 	set->vk_binding[found_index].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+			// else {
+			if (found_index == -1) {
 				set->spv_binding[set->binding_count] = reflect_binding;
 				VkDescriptorSetLayoutBinding *vk = &set->vk_binding[set->binding_count++];
 
 				vk->binding = reflect_binding->binding;
-				vk->descriptorType = (VkDescriptorType)reflect_binding->descriptor_type;
+
+				if (reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+					vk->descriptorType = (VkDescriptorType)VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+				else if (reflect_binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+					vk->descriptorType = (VkDescriptorType)VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+				else
+					vk->descriptorType = (VkDescriptorType)reflect_binding->descriptor_type;
+
 				vk->descriptorCount = reflect_binding->count;
-				vk->stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-				vk->pImmutableSamplers = NULL;
+				vk->stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
 			}
 		}
 	}
@@ -534,10 +570,10 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 			VkDescriptorType type = vk->descriptorType;
 			dst->buffer_layout = NULL;
 
-			if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+			if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
 				dst->type = SHADER_BINDING_UNIFORM_BUFFER;
 				dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
-			} else if (type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+			} else if (type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
 				dst->type = SHADER_BINDING_STORAGE_BUFFER;
 				dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
 			} else if (type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
@@ -546,29 +582,30 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 		}
 	}
 
+	// NOTE: allow assetion?
 	SetInfo *global_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_FRAME];
-	for (uint32_t binding_index = 0; binding_index < global->binding_count; ++binding_index) {
-		VkDescriptorSetLayoutBinding *global_binding = &global->bindings[binding_index];
+	// for (uint32_t binding_index = 0; binding_index < global->binding_count; ++binding_index) {
+	// 	VkDescriptorSetLayoutBinding *global_binding = &global->bindings[binding_index];
 
-		bool valid = false;
-		for (uint32_t reflect_index = 0; reflect_index < global_reflect_info->binding_count; ++reflect_index) {
-			VkDescriptorSetLayoutBinding *reflect_binding = &global_reflect_info->vk_binding[reflect_index];
-			VkDescriptorType type =
-				global_binding->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-				? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-				: global_binding->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
-				? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
-				: global_binding->descriptorType;
+	// 	bool valid = false;
+	// 	for (uint32_t reflect_index = 0; reflect_index < global_reflect_info->binding_count; ++reflect_index) {
+	// 		VkDescriptorSetLayoutBinding *reflect_binding = &global_reflect_info->vk_binding[reflect_index];
+	// 		VkDescriptorType type =
+	// 			global_binding->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+	// 			? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+	// 			: global_binding->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+	// 			? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+	// 			: global_binding->descriptorType;
 
-			if (reflect_binding->binding == global_binding->binding && reflect_binding->descriptorType == type)
-				valid = true;
-		}
+	// 		if (reflect_binding->binding == global_binding->binding && reflect_binding->descriptorType == type)
+	// 			valid = true;
+	// 	}
 
-		if (valid == false) {
-			LOG_WARN("Vulkan: shader is not compatible with passed global resource");
-			ASSERT(false);
-		}
-	}
+	// 	if (valid == false) {
+	// 		LOG_WARN("Vulkan: shader is not compatible with passed global resource");
+	// 		ASSERT(false);
+	// 	}
+	// }
 
 	SetInfo *material_reflect_info = &merged_sets[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL];
 	for (uint32_t index = 0; index < material_reflect_info->binding_count; ++index) {
@@ -584,26 +621,26 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 		}
 	}
 
-	if (vulkan_descriptor_layout_create(context, material_reflect_info->vk_binding, material_reflect_info->binding_count, &shader->group_layout) == false) {
-		spvReflectDestroyShaderModule(&vertex_module);
-		spvReflectDestroyShaderModule(&fragment_module);
-		arena_release_scratch(scratch);
-		return false;
+	for (uint32_t index = 0; index < 2; ++index) {
+		if (vulkan_descriptor_layout_create(
+				context,
+				merged_sets[index].vk_binding, merged_sets[index].binding_count,
+				&shader->layouts[index]) == false) {
+			spvReflectDestroyShaderModule(&vertex_module);
+			spvReflectDestroyShaderModule(&fragment_module);
+			arena_release_scratch(scratch);
+			return false;
+		}
 	}
 
 	spvReflectDestroyShaderModule(&vertex_module);
 	spvReflectDestroyShaderModule(&fragment_module);
 	arena_release_scratch(scratch);
 
-	VkDescriptorSetLayout layouts[] = {
-		[SHADER_UNIFORM_FREQUENCY_PER_FRAME] = global->set_layout,
-		[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL] = shader->group_layout
-	};
-
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount = 2,
-		.pSetLayouts = layouts,
+		.pSetLayouts = shader->layouts,
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &context->global_range,
 	};
@@ -615,119 +652,119 @@ bool reflect_shader_interface(Arena *arena, VulkanContext *context, VulkanShader
 	return true;
 }
 
-static inline VkFormat to_vk_format(ShaderAttributeFormat format);
-static inline size_t to_bytes(ShaderAttributeFormat format);
+// static inline VkFormat to_vk_format(ShaderAttributeFormat format);
+// static inline size_t to_bytes(ShaderAttributeFormat format);
 
-static bool override_attributes(struct vertex_input_state *override, ShaderAttribute *attributes, uint32_t attribute_count) {
-	uint32_t unique_bindings = 0;
-	for (uint32_t attribute_index = 0; attribute_index < attribute_count; ++attribute_index) {
-		ShaderAttribute attribute = attributes[attribute_index];
-		uint32_t byte_offset = 0;
-		for (uint32_t binding_index = 0; binding_index < attribute_count; ++binding_index) {
-			VkVertexInputBindingDescription *binding_description = &override->bindings[binding_index];
-			unique_bindings += binding_description->stride == 0;
+// static bool override_attributes(struct vertex_input_state *override, ShaderAttribute *attributes, uint32_t attribute_count) {
+// 	uint32_t unique_bindings = 0;
+// 	for (uint32_t attribute_index = 0; attribute_index < attribute_count; ++attribute_index) {
+// 		ShaderAttribute attribute = attributes[attribute_index];
+// 		uint32_t byte_offset = 0;
+// 		for (uint32_t binding_index = 0; binding_index < attribute_count; ++binding_index) {
+// 			VkVertexInputBindingDescription *binding_description = &override->bindings[binding_index];
+// 			unique_bindings += binding_description->stride == 0;
 
-			if (binding_description->binding == attribute.binding || binding_description->stride == 0) {
-				binding_description->binding = attribute.binding;
-				binding_description->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-				byte_offset = binding_description->stride;
-				binding_description->stride += to_bytes(attribute.format);
-				break;
-			}
-		}
+// 			if (binding_description->binding == attribute.binding || binding_description->stride == 0) {
+// 				binding_description->binding = attribute.binding;
+// 				binding_description->inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+// 				byte_offset = binding_description->stride;
+// 				binding_description->stride += to_bytes(attribute.format);
+// 				break;
+// 			}
+// 		}
 
-		VkVertexInputAttributeDescription attribute_description = {
-			.binding = attribute.binding,
-			.location = attribute_index,
-			.format = to_vk_format(attribute.format),
-			.offset = byte_offset
-		};
+// 		VkVertexInputAttributeDescription attribute_description = {
+// 			.binding = attribute.binding,
+// 			.location = attribute_index,
+// 			.format = to_vk_format(attribute.format),
+// 			.offset = byte_offset
+// 		};
 
-		override->attributes[attribute_index] = attribute_description;
-	}
+// 		override->attributes[attribute_index] = attribute_description;
+// 	}
 
-	override->binding_count = unique_bindings;
-	override->attribute_count = attribute_count;
+// 	override->binding_count = unique_bindings;
+// 	override->attribute_count = attribute_count;
 
-	return true;
-}
+// 	return true;
+// }
 
-VkFormat to_vk_format(ShaderAttributeFormat format) {
-	switch (format.type) {
-		case SHADER_ATTRIBUTE_TYPE_FLOAT64: {
-			const VkFormat types[] = { VK_FORMAT_R64_SFLOAT, VK_FORMAT_R64G64_SFLOAT, VK_FORMAT_R64G64B64_SFLOAT, VK_FORMAT_R64G64B64A64_SFLOAT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_INT64: {
-			const VkFormat types[] = { VK_FORMAT_R64_SINT, VK_FORMAT_R64G64_SINT, VK_FORMAT_R64G64B64_SINT, VK_FORMAT_R64G64B64A64_SINT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_UINT64: {
-			const VkFormat types[] = { VK_FORMAT_R64_UINT, VK_FORMAT_R64G64_UINT, VK_FORMAT_R64G64B64_UINT, VK_FORMAT_R64G64B64A64_UINT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_FLOAT32: {
-			const VkFormat types[] = { VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_INT32: {
-			const VkFormat types[] = { VK_FORMAT_R32_SINT, VK_FORMAT_R32G32_SINT, VK_FORMAT_R32G32B32_SINT, VK_FORMAT_R32G32B32A32_SINT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_UINT32: {
-			const VkFormat types[] = { VK_FORMAT_R32_UINT, VK_FORMAT_R32G32_UINT, VK_FORMAT_R32G32B32_UINT, VK_FORMAT_R32G32B32A32_UINT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_INT16: {
-			const VkFormat types[] = { VK_FORMAT_R16_SINT, VK_FORMAT_R16G16_SINT, VK_FORMAT_R16G16B16_SINT, VK_FORMAT_R16G16B16A16_SINT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_UINT16: {
-			const VkFormat types[] = { VK_FORMAT_R16_UINT, VK_FORMAT_R16G16_UINT, VK_FORMAT_R16G16B16_UINT, VK_FORMAT_R16G16B16A16_UINT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_INT8: {
-			const VkFormat types[] = { VK_FORMAT_R8_SINT, VK_FORMAT_R8G8_SINT, VK_FORMAT_R8G8B8_SINT, VK_FORMAT_R8G8B8A8_SINT };
-			return types[format.count - 1];
-		}
-		case SHADER_ATTRIBUTE_TYPE_UINT8: {
-			const VkFormat types[] = { VK_FORMAT_R8_UINT, VK_FORMAT_R8G8_UINT, VK_FORMAT_R8G8B8_UINT, VK_FORMAT_R8G8B8A8_UINT };
-			return types[format.count - 1];
-		}
-		default: {
-			ASSERT_MESSAGE(false, "Shader attribute type should not be undefined");
-			return VK_FORMAT_UNDEFINED;
-		}
-	}
-}
-size_t to_bytes(ShaderAttributeFormat format) {
-	size_t type_size = 0;
-	switch (format.type) {
-		case SHADER_ATTRIBUTE_TYPE_FLOAT64:
-		case SHADER_ATTRIBUTE_TYPE_INT64:
-		case SHADER_ATTRIBUTE_TYPE_UINT64:
-			type_size = 8;
-			break;
-		case SHADER_ATTRIBUTE_TYPE_FLOAT32:
-		case SHADER_ATTRIBUTE_TYPE_INT32:
-		case SHADER_ATTRIBUTE_TYPE_UINT32:
-			type_size = 4;
-			break;
-		case SHADER_ATTRIBUTE_TYPE_INT16:
-		case SHADER_ATTRIBUTE_TYPE_UINT16:
-			type_size = 2;
-			break;
-		case SHADER_ATTRIBUTE_TYPE_INT8:
-		case SHADER_ATTRIBUTE_TYPE_UINT8:
-			type_size = 1;
-			break;
-		case SHADER_ATTRIBUTE_TYPE_UNDEFINED:
-		case SHADER_ATTRIBUTE_TYPE_LAST:
-		default:
-			return 0;
-	}
-	return type_size * format.count;
-}
+// VkFormat to_vk_format(ShaderAttributeFormat format) {
+// 	switch (format.type) {
+// 		case SHADER_ATTRIBUTE_TYPE_FLOAT64: {
+// 			const VkFormat types[] = { VK_FORMAT_R64_SFLOAT, VK_FORMAT_R64G64_SFLOAT, VK_FORMAT_R64G64B64_SFLOAT, VK_FORMAT_R64G64B64A64_SFLOAT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_INT64: {
+// 			const VkFormat types[] = { VK_FORMAT_R64_SINT, VK_FORMAT_R64G64_SINT, VK_FORMAT_R64G64B64_SINT, VK_FORMAT_R64G64B64A64_SINT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_UINT64: {
+// 			const VkFormat types[] = { VK_FORMAT_R64_UINT, VK_FORMAT_R64G64_UINT, VK_FORMAT_R64G64B64_UINT, VK_FORMAT_R64G64B64A64_UINT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_FLOAT32: {
+// 			const VkFormat types[] = { VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_INT32: {
+// 			const VkFormat types[] = { VK_FORMAT_R32_SINT, VK_FORMAT_R32G32_SINT, VK_FORMAT_R32G32B32_SINT, VK_FORMAT_R32G32B32A32_SINT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_UINT32: {
+// 			const VkFormat types[] = { VK_FORMAT_R32_UINT, VK_FORMAT_R32G32_UINT, VK_FORMAT_R32G32B32_UINT, VK_FORMAT_R32G32B32A32_UINT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_INT16: {
+// 			const VkFormat types[] = { VK_FORMAT_R16_SINT, VK_FORMAT_R16G16_SINT, VK_FORMAT_R16G16B16_SINT, VK_FORMAT_R16G16B16A16_SINT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_UINT16: {
+// 			const VkFormat types[] = { VK_FORMAT_R16_UINT, VK_FORMAT_R16G16_UINT, VK_FORMAT_R16G16B16_UINT, VK_FORMAT_R16G16B16A16_UINT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_INT8: {
+// 			const VkFormat types[] = { VK_FORMAT_R8_SINT, VK_FORMAT_R8G8_SINT, VK_FORMAT_R8G8B8_SINT, VK_FORMAT_R8G8B8A8_SINT };
+// 			return types[format.count - 1];
+// 		}
+// 		case SHADER_ATTRIBUTE_TYPE_UINT8: {
+// 			const VkFormat types[] = { VK_FORMAT_R8_UINT, VK_FORMAT_R8G8_UINT, VK_FORMAT_R8G8B8_UINT, VK_FORMAT_R8G8B8A8_UINT };
+// 			return types[format.count - 1];
+// 		}
+// 		default: {
+// 			ASSERT_MESSAGE(false, "Shader attribute type should not be undefined");
+// 			return VK_FORMAT_UNDEFINED;
+// 		}
+// 	}
+// }
+// size_t to_bytes(ShaderAttributeFormat format) {
+// 	size_t type_size = 0;
+// 	switch (format.type) {
+// 		case SHADER_ATTRIBUTE_TYPE_FLOAT64:
+// 		case SHADER_ATTRIBUTE_TYPE_INT64:
+// 		case SHADER_ATTRIBUTE_TYPE_UINT64:
+// 			type_size = 8;
+// 			break;
+// 		case SHADER_ATTRIBUTE_TYPE_FLOAT32:
+// 		case SHADER_ATTRIBUTE_TYPE_INT32:
+// 		case SHADER_ATTRIBUTE_TYPE_UINT32:
+// 			type_size = 4;
+// 			break;
+// 		case SHADER_ATTRIBUTE_TYPE_INT16:
+// 		case SHADER_ATTRIBUTE_TYPE_UINT16:
+// 			type_size = 2;
+// 			break;
+// 		case SHADER_ATTRIBUTE_TYPE_INT8:
+// 		case SHADER_ATTRIBUTE_TYPE_UINT8:
+// 			type_size = 1;
+// 			break;
+// 		case SHADER_ATTRIBUTE_TYPE_UNDEFINED:
+// 		case SHADER_ATTRIBUTE_TYPE_LAST:
+// 		default:
+// 			return 0;
+// 	}
+// 	return type_size * format.count;
+// }
 
 void resolve_pass_formats(VulkanContext *context, VulkanPass *pass, VkFormat *out_color_formats, VkFormat *out_depth_format) {
 	ASSERT(pass->color_attachment_count <= 4);

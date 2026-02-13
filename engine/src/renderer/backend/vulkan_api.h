@@ -1,3 +1,4 @@
+// Old interface
 #pragma once
 
 #include "renderer/r_internal.h"
@@ -35,12 +36,13 @@ bool vulkan_renderer_pass_end(VulkanContext *context);
 ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
-ENGINE_API RhiShader vulkan_renderer_shader_create(Arena *arena, VulkanContext *context, RhiGlobalResource rglobal, ShaderConfig *config, ShaderReflection *out_reflection);
+ENGINE_API RhiShader vulkan_renderer_shader_create(
+	Arena *arena, VulkanContext *context,
+	ShaderConfig *config, ShaderReflection *out_reflection);
 bool vulkan_renderer_shader_destroy(VulkanContext *context, RhiShader shader);
-ENGINE_API bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, uint32_t variant_index);
 
-ENGINE_API RhiShaderVariant vulkan_renderer_shader_variant_create(VulkanContext *context, RhiShader shader, RhiPass compatible_pass, PipelineDesc description);
-bool vulkan_renderer_shader_variant_destroy(VulkanContext *context, RhiShader shader, RhiShaderVariant variant);
+ENGINE_API bool vulkan_renderer_shader_bind(
+	VulkanContext *context, RhiShader rshader, ShaderStateFlags flags);
 
 ENGINE_API RhiTexture vulkan_renderer_texture_create(VulkanContext *context, uint32_t width, uint32_t height, TextureType type, TextureFormat format, TextureUsageFlags usage, uint8_t *pixels);
 bool vulkan_renderer_texture_destroy(VulkanContext *context, RhiTexture texture);
