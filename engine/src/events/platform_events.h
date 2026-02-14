@@ -36,6 +36,6 @@ enum {
 };
 
 EVENT_STRUCT_DECLARE(key_event, KeyEvent)
-EVENT_STRUCT_DECLARE(mouse_motion_event, MouseMotionEvent)
-EVENT_STRUCT_DECLARE(mouse_button_event, MouseButtonEvent)
-EVENT_STRUCT_DECLARE(mouse_resize_event, WindowResizeEvent)
+EVENT_STRUCT_DECLARE(mouse_motion, MouseMotionEvent)
+EVENT_STRUCT_DECLARE(mouse_button, MouseButtonEvent)
+EVENT_STRUCT_DECLARE(mouse_resize, WindowResizeEvent)

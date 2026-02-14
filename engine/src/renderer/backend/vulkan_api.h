@@ -16,9 +16,7 @@ typedef struct vulkan_context VulkanContext;
 
 #define MAX_SHADERS 32
 #define MAX_SHADER_VARIANTS 8
-#define MAX_GLOBAL_RESOURCES 32
-#define MAX_GROUP_RESOURCES 256
-#define MAX_GEOMETRY_RESOURCES 1024
+#define MAX_UNIFORM_SETS 1024
 #define MAX_RENDER_PASSES 8
 
 bool vulkan_renderer_create(Arena *arena, struct platform *platform, VulkanContext **out_context);
@@ -59,16 +57,12 @@ ENGINE_API bool vulkan_renderer_buffers_bind(VulkanContext *context, RhiBuffer *
 RhiSampler vulkan_renderer_sampler_create(VulkanContext *context, SamplerDesc description);
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, RhiSampler sampler);
 
-RhiGlobalResource vulkan_renderer_resource_global_create(VulkanContext *context, ResourceBinding *bindings, uint32_t binding_count);
-bool vulkan_renderer_resource_global_destroy(VulkanContext *context, RhiGlobalResource resource);
-bool vulkan_renderer_resource_global_write(VulkanContext *context, RhiGlobalResource resource, size_t offset, size_t size, void *data);
-bool vulkan_renderer_resource_global_bind(VulkanContext *context, RhiGlobalResource resource);
-bool vulkan_renderer_resource_global_set_texture_sampler(VulkanContext *context, RhiGlobalResource resource, uint32_t binding, RhiTexture texture, RhiSampler sampler);
+ENGINE_API RhiUniformSet vulkan_renderer_uniform_set_create(VulkanContext *context, RhiShader shader, uint32_t set_number);
+ENGINE_API RhiUniformSet vulkan_renderer_uniform_set_create_ex(VulkanContext *context, ResourceBinding *bindings, uint32_t binding_count);
+ENGINE_API bool vulkan_renderer_uniform_set_destroy(VulkanContext *context, RhiUniformSet set);
 
-ENGINE_API RhiGroupResource vulkan_renderer_resource_group_create(VulkanContext *context, RhiShader shader, uint32_t max_instance_count);
-bool vulkan_renderer_resource_group_destroy(VulkanContext *context, RhiGroupResource resource);
-ENGINE_API bool vulkan_renderer_resource_group_write(VulkanContext *context, RhiGroupResource resource, uint32_t instance_index, size_t offset, size_t size, void *data, bool all_frames);
-ENGINE_API bool vulkan_renderer_resource_group_bind(VulkanContext *context, RhiGroupResource resource, uint32_t instance_index);
-ENGINE_API bool vulkan_renderer_resource_group_set_texture_sampler(VulkanContext *context, RhiGroupResource resource, uint32_t binding, RhiTexture texture, RhiSampler sampler);
+ENGINE_API bool vulkan_renderer_uniform_set_bind_buffer(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer);
+ENGINE_API bool vulkan_renderer_uniform_set_bind_texture(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiTexture texture, RhiSampler sampler);
+ENGINE_API bool vulkan_renderer_uniform_set_bind(VulkanContext *context, RhiUniformSet uniform);
 
-ENGINE_API bool vulkan_renderer_resource_local_write(VulkanContext *context, size_t offset, size_t size, void *data);
+ENGINE_API bool vulkan_renderer_push_constants(VulkanContext *context, size_t offset, size_t size, void *data);

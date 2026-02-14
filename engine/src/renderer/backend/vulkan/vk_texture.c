@@ -64,7 +64,7 @@ RhiTexture vulkan_renderer_texture_create(
 
 	LOG_INFO("Vulkan Texture created");
 	image->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-	return (RhiTexture){ pool_index_of(context->image_pool, image), 0 };
+	return (RhiTexture){ pool_index_of(context->image_pool, image) };
 }
 
 bool vulkan_renderer_texture_destroy(VulkanContext *context, RhiTexture texture) {
@@ -157,7 +157,7 @@ RhiSampler vulkan_renderer_sampler_create(VulkanContext *context, SamplerDesc de
 	LOG_INFO("VkSampler created");
 	sampler->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-	return (RhiSampler){ pool_index_of(context->sampler_pool, sampler), 0 };
+	return (RhiSampler){ pool_index_of(context->sampler_pool, sampler) };
 }
 
 bool vulkan_renderer_sampler_destroy(VulkanContext *context, RhiSampler handle) {

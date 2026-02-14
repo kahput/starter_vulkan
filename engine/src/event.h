@@ -21,12 +21,12 @@ enum {
 };
 
 #define MAX_EVENT_SIZE 128
-#define EVENT_STRUCT_DECLARE(prefix, type)                            \
+#define EVENT_STRUCT_DECLARE(name, type)                            \
 	STATIC_ASSERT(sizeof(type) <= MAX_EVENT_SIZE);                    \
-	static inline void prefix##_emit(EventCode code, type *data) {    \
+	static inline void event_##name##_emit(EventCode code, type *data) {    \
 		event_emit(code, data, sizeof(type));                         \
 	}                                                                 \
-	static inline type *prefix##_push(EventCode code) {               \
+	static inline type *event_##name##_push(EventCode code) {               \
 		return (type *)event_push(code, sizeof(type), alignof(type)); \
 	}
 

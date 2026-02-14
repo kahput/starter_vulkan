@@ -46,7 +46,7 @@ RhiPass vulkan_renderer_pass_create(VulkanContext *context, RenderPassDesc desc)
 	}
 
 	pass->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-	return (RhiPass){ pool_index_of(context->pass_pool, pass), 0 };
+	return (RhiPass){ pool_index_of(context->pass_pool, pass) };
 }
 
 bool vulkan_renderer_pass_destroy(VulkanContext *context, RhiPass rpass) {

@@ -30,6 +30,7 @@ RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type,
 		bool result = vulkan_buffer_ubo_create(context, buffer, size, data);
 		if (result == false)
 			return INVALID_RHI(RhiBuffer);
+        data = NULL;
 	} else {
 		bool result = vulkan_buffer_create(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
 	}
@@ -53,7 +54,7 @@ RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type,
 
 	logger_dedent();
 
-	return (RhiBuffer){ pool_index_of(context->buffer_pool, buffer), 0 };
+	return (RhiBuffer){ pool_index_of(context->buffer_pool, buffer) };
 }
 
 bool vulkan_renderer_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
@@ -73,33 +74,35 @@ bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer rbuffer, siz
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
-	if ((buffer->memory_property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-		VulkanBuffer *staging_buffer = &context->staging_buffer;
-		size_t copy_end = aligned_address(staging_buffer->offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
-		size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
-		if (copy_end >= staging_buffer->size) {
-			LOG_TRACE("Vulkan: staging buffer size exceeded for frame %d, aborting %s", context->current_frame, __func__);
-			ASSERT(false);
-			return false;
+	if (FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+		size_t copy_size = size;
+		if (offset + copy_size > buffer->size) {
+			LOG_WARN("Vulkan: write size greater than allocation size, ignoring difference of %dB", size - buffer->size);
+			copy_size = buffer->size - offset;
 		}
 
-		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, data);
-
-		vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
-		staging_buffer->offset = copy_end;
+		size_t aligned_size = aligned_address(buffer->size, buffer->required_alignment);
+		uint8_t *dest = (uint8_t *)buffer->mapped + (aligned_size * context->current_frame) + offset;
+		memcpy(dest, data, copy_size);
 
 		return true;
 	}
 
-	size_t copy_size = size;
-	if (offset + copy_size > buffer->size) {
-		LOG_WARN("Vulkan: write size greater than allocation size, ignoring difference of %dB", size - buffer->size);
-		copy_size = buffer->size - offset;
+	ASSERT(buffer->usage != VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
+	VulkanBuffer *staging_buffer = &context->staging_buffer;
+	size_t copy_end = aligned_address(staging_buffer->offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
+	size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
+	if (copy_end >= staging_buffer->size) {
+		LOG_TRACE("Vulkan: staging buffer size exceeded for frame %d, aborting %s", context->current_frame, __func__);
+		ASSERT(false);
+		return false;
 	}
 
-	size_t aligned_size = aligned_address(buffer->size, buffer->required_alignment);
-	uint8_t *dest = (uint8_t *)buffer->mapped + (aligned_size * context->current_frame) + offset;
-	memcpy(dest, data, copy_size);
+	vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, data);
+
+	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
+	staging_buffer->offset = copy_end;
 
 	return true;
 }
@@ -154,11 +157,16 @@ bool vulkan_renderer_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, u
 }
 
 bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data) {
-	vulkan_buffer_create(context, size, MAX_FRAMES_IN_FLIGHT, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer);
+	vulkan_buffer_create(
+		context, size, MAX_FRAMES_IN_FLIGHT,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		buffer);
+
 	vulkan_buffer_memory_map(context, buffer);
 
-	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-		if (data) {
+	if (data) {
+		for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
 			memcpy((uint8_t *)buffer->mapped + (index * buffer->stride), data, size);
 		}
 	}

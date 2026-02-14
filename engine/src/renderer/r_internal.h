@@ -48,6 +48,8 @@ typedef enum {
 	SHADER_UNIFORM_FREQUENCY_PER_FRAME,
 	SHADER_UNIFORM_FREQUENCY_PER_MATERIAL,
 	SHADER_UNIFORM_FREQUENCY_PER_OBJECT,
+
+	SHADER_UNIFORM_FREQUENCY_COUNT,
 } ShaderUniformFrequency;
 
 typedef enum {
@@ -107,15 +109,16 @@ typedef struct shader_binding {
 	String name;
 	ShaderBindingType type;
 	ShaderStageFlags stage;
-	ShaderUniformFrequency frequency;
-	uint32_t binding, count;
+	uint32_t binding_number, count;
 
 	ShaderBuffer *buffer_layout;
 } ShaderBinding;
 
 typedef struct {
-	ShaderBinding *bindings;
-	uint32_t binding_count;
+	struct {
+		ShaderBinding *bindings;
+		uint32_t binding_count;
+	} sets[SHADER_UNIFORM_FREQUENCY_COUNT];
 } ShaderReflection;
 
 typedef enum cull_mode {

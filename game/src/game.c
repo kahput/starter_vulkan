@@ -31,10 +31,12 @@ typedef struct {
 	Arena arena;
 	// Sprite shader
 	RhiShader sprite_shader;
-	RhiGroupResource sprite_material;
+	RhiBuffer sprite_uniform_buffer;
+	RhiUniformSet sprite_material;
 
 	RhiShader terrain_shader;
-	RhiGroupResource terrain_material;
+	RhiBuffer terrain_uniform_buffer;
+	RhiUniformSet terrain_material;
 
 	// Quad mesh
 	RhiBuffer quad_vb;
@@ -106,26 +108,33 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 		// Create material
 		float4 sprite_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-		state->sprite_material = vulkan_renderer_resource_group_create(context->vk_context,
+		state->sprite_material = vulkan_renderer_uniform_set_create(context->vk_context,
 			state->sprite_shader, 1);
 
-		vulkan_renderer_resource_group_write(context->vk_context, state->sprite_material,
-			0, 0, sizeof(float4), &sprite_tint, true);
+		/*
+		 * SpriteSet0UniformSet sprite_set = {
+		 *      .color_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
+		 *  };
+		 *
+		 *  vulkan_renderer_uniform_set_update(state->vk_context, state->sprite_material, &sprite_set);
+		 */
 
-		vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
-			state->sprite_material, 0, state->sprite_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_NEAREST, 0 });
+		state->sprite_uniform_buffer = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_UNIFORM, sizeof(float4), &sprite_tint);
+		vulkan_renderer_uniform_set_bind_buffer(context->vk_context, state->sprite_material, 1, state->sprite_uniform_buffer);
+
+		vulkan_renderer_uniform_set_bind_texture(context->vk_context,
+			state->sprite_material, 0, state->sprite_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_NEAREST });
 
 		float4 terrain_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-		state->terrain_material = vulkan_renderer_resource_group_create(context->vk_context,
+		state->terrain_material = vulkan_renderer_uniform_set_create(context->vk_context,
 			state->terrain_shader, 1);
 
-		vulkan_renderer_resource_group_write(
-			context->vk_context, state->terrain_material,
-			0, 0, sizeof(float4), &terrain_tint, true);
+		state->terrain_uniform_buffer = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_UNIFORM, sizeof(float4), &terrain_tint);
+		vulkan_renderer_uniform_set_bind_buffer(context->vk_context, state->terrain_material, 1, state->terrain_uniform_buffer);
 
-		vulkan_renderer_resource_group_set_texture_sampler(context->vk_context,
-			state->terrain_material, 0, state->checkered_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_LINEAR, 0 });
+		vulkan_renderer_uniform_set_bind_texture(context->vk_context,
+			state->terrain_material, 0, state->checkered_texture, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_LINEAR });
 
 		float azimuth = C_PIf * 3 / 2.f;
 		float thetha = C_PIf / 3.f;
@@ -185,22 +194,20 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 
 	Matrix4f transform = mat4f_translated(state->player_position);
 
+	vulkan_renderer_buffer_write(
+		context->vk_context, state->sprite_uniform_buffer,
+		0, sizeof(float4), &(float4){ 1.0f, 1.0f, 1.0f, 1.0f });
+
+	vulkan_renderer_buffer_write(
+		context->vk_context, state->terrain_uniform_buffer,
+		0, sizeof(float4), &(float4){ 1.0f, 1.0f, 1.0f, 1.0f });
+
 	vulkan_renderer_shader_bind(
 		context->vk_context, state->sprite_shader,
 		state->wireframe ? SHADER_FLAG_CULL_NONE | SHADER_FLAG_WIREFRAME : SHADER_FLAG_CULL_NONE);
 
-	vulkan_renderer_resource_group_write(
-		context->vk_context, state->sprite_material,
-		0, 0, sizeof(float4),
-		&(float4){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
-
-	vulkan_renderer_resource_group_write(
-		context->vk_context, state->terrain_material,
-		0, 0, sizeof(float4),
-		&(float4){ 1.0f, 1.0f, 1.0f, 1.0f }, false);
-
-	vulkan_renderer_resource_group_bind(context->vk_context, state->sprite_material, 0);
-	vulkan_renderer_resource_local_write(context->vk_context, 0, sizeof(Matrix4f), &transform);
+	vulkan_renderer_uniform_set_bind(context->vk_context, state->sprite_material);
+	vulkan_renderer_push_constants(context->vk_context, 0, sizeof(Matrix4f), &transform);
 	vulkan_renderer_buffer_bind(context->vk_context, state->quad_vb, 0);
 	vulkan_renderer_draw(context->vk_context, state->quad_vertex_count);
 
@@ -209,9 +216,9 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 	vulkan_renderer_shader_bind(
 		context->vk_context, state->terrain_shader,
 		state->wireframe ? SHADER_FLAG_CULL_NONE | SHADER_FLAG_WIREFRAME : SHADER_FLAG_CULL_NONE);
-	vulkan_renderer_resource_group_bind(context->vk_context, state->terrain_material, 0);
+	vulkan_renderer_uniform_set_bind(context->vk_context, state->terrain_material);
 
-	vulkan_renderer_resource_local_write(context->vk_context, 0, sizeof(Matrix4f), &transform);
+	vulkan_renderer_push_constants(context->vk_context, 0, sizeof(Matrix4f), &transform);
 	vulkan_renderer_buffer_bind(context->vk_context, terrain->vb, 0);
 	vulkan_renderer_draw(context->vk_context, terrain->vertex_count);
 

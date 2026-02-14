@@ -63,7 +63,7 @@ RhiShader vulkan_renderer_shader_create(
 
 	shader->variant_count++;
 
-	return (RhiShader){ pool_index_of(context->shader_pool, shader), 0 };
+	return (RhiShader){ pool_index_of(context->shader_pool, shader) };
 }
 
 bool vulkan_renderer_shader_destroy(VulkanContext *context, RhiShader rshader) {
@@ -300,7 +300,7 @@ RhiShaderVariant shader_variant_create(VulkanContext *context, RhiShader rshader
 	VulkanPass *pass = NULL;
 	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true, INVALID_RHI(RhiShaderVariant));
 
-	RhiShaderVariant rvariant = { shader->variant_count++, 0 };
+	RhiShaderVariant rvariant = { shader->variant_count++ };
 	VulkanPipeline *pipeline = &shader->variants[rvariant.id];
 
 	if (create_shader_variant(context, shader, pass, flags, pipeline))
@@ -543,11 +543,10 @@ bool reflect_shader_interface(
 		}
 	}
 
-	out_reflection->binding_count = 0;
-	for (uint32_t i = 0; i <= max_set_index; ++i)
-		out_reflection->binding_count += merged_sets[i].binding_count;
-
-	out_reflection->bindings = arena_push_array_zero(arena, ShaderBinding, out_reflection->binding_count);
+	for (uint32_t i = 0; i <= max_set_index; ++i) {
+		out_reflection->sets[i].binding_count = merged_sets[i].binding_count;
+		out_reflection->sets[i].bindings = arena_push_array_zero(arena, ShaderBinding, out_reflection->sets[i].binding_count);
+	}
 
 	for (uint32_t set_index = 0, index = 0; set_index <= max_set_index; ++set_index) {
 		SetInfo *set = &merged_sets[set_index];
@@ -555,12 +554,11 @@ bool reflect_shader_interface(
 			SpvReflectDescriptorBinding *spv = set->spv_binding[binding_index];
 			VkDescriptorSetLayoutBinding *vk = &set->vk_binding[binding_index];
 
-			ShaderBinding *dst = &out_reflection->bindings[index];
+			ShaderBinding *dst = &out_reflection->sets[set_index].bindings[index];
 
 			dst->name = string_push_copy(arena, string_from_cstr(spv->name));
 
-			dst->frequency = spv->set;
-			dst->binding = spv->binding;
+			dst->binding_number = spv->binding;
 			dst->count = spv->count;
 			if ((vk->stageFlags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT)
 				dst->stage |= SHADER_STAGE_VERTEX;

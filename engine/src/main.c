@@ -86,18 +86,26 @@ static struct State {
 	RhiTexture main_depth_tex;
 	RhiTexture main_color_tex;
 	RhiTexture skybox_tex;
-	RhiGlobalResource global_shadow;
-	RhiGlobalResource global_main;
-	RhiGlobalResource global_postfx;
+
+	RhiUniformSet global_shadow;
+
+	RhiUniformSet global_main;
+	RhiBuffer global_main_buffer;
+
+	RhiUniformSet global_postfx;
+
 	RhiPass pass_shadow;
 	RhiPass pass_main;
 	RhiPass pass_postfx;
 	RhiBuffer quad_vb;
 	RhiShader light_shader;
-	RhiGroupResource light_material;
+
+	RhiUniformSet light_material;
+	RhiBuffer light_buffer;
+
 	RhiShader postfx_shader;
 	RhiShader skybox_shader;
-	RhiGroupResource skybox_material;
+	RhiUniformSet skybox_material;
 } state;
 
 static bool wireframe = false;
@@ -159,33 +167,35 @@ int main(void) {
 		TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED, NULL);
 
 	// Create global resources
-	state.global_shadow = vulkan_renderer_resource_global_create(
+	state.global_shadow = vulkan_renderer_uniform_set_create_ex(
 		state.context,
 		(ResourceBinding[]){
-		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(Matrix4f), .count = 1 }, // Changed sizeof(mat4)
+		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(Matrix4f), .count = 1 },
 		},
 		1);
 
-	state.global_main = vulkan_renderer_resource_global_create(
+	state.global_main_buffer = vulkan_renderer_buffer_create(
+		state.context, BUFFER_TYPE_UNIFORM, sizeof(FrameData), NULL);
+
+	state.global_main = vulkan_renderer_uniform_set_create_ex(
 		state.context,
 		(ResourceBinding[]){
-		  { .binding = 0,
-			.type = SHADER_BINDING_UNIFORM_BUFFER,
-			.size = sizeof(FrameData),
-			.count = 1 },
+		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(FrameData), .count = 1 },
 		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 		},
 		2);
-	vulkan_renderer_resource_global_set_texture_sampler(
+	vulkan_renderer_uniform_set_bind_buffer(
+		state.context, state.global_main, 0, state.global_main_buffer);
+	vulkan_renderer_uniform_set_bind_texture(
 		state.context, state.global_main, 1, state.shadow_depth_tex, state.linear_sampler);
 
-	state.global_postfx = vulkan_renderer_resource_global_create(
+	state.global_postfx = vulkan_renderer_uniform_set_create_ex(
 		state.context,
 		(ResourceBinding[]){
 		  { .binding = 0, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 		},
 		1);
-	vulkan_renderer_resource_global_set_texture_sampler(
+	vulkan_renderer_uniform_set_bind_texture(
 		state.context, state.global_postfx, 0,
 		state.main_color_tex, state.linear_sampler);
 
@@ -283,8 +293,11 @@ int main(void) {
 		ShaderReflection reflection;
 		state.light_shader = vulkan_renderer_shader_create(
 			&state.permanent, state.context, &light_config, &reflection);
-		state.light_material = vulkan_renderer_resource_group_create(
-			state.context, state.light_shader, 256);
+		state.light_buffer = vulkan_renderer_buffer_create(state.context, BUFFER_TYPE_UNIFORM, sizeof(float4), NULL);
+		state.light_material = vulkan_renderer_uniform_set_create(
+			state.context, state.light_shader, 1);
+		vulkan_renderer_uniform_set_bind_buffer(
+			state.context, state.light_material, 0, state.light_buffer);
 	}
 
 	ShaderSource *postfx_shader_src = NULL;
@@ -318,8 +331,8 @@ int main(void) {
 		ShaderReflection reflection;
 		state.skybox_shader = vulkan_renderer_shader_create(
 			&state.permanent, state.context, &skybox_config, &reflection);
-		state.skybox_material = vulkan_renderer_resource_group_create(state.context, state.skybox_shader, 1);
-		vulkan_renderer_resource_group_set_texture_sampler(state.context, state.skybox_material, 0, state.skybox_tex, state.linear_sampler);
+		state.skybox_material = vulkan_renderer_uniform_set_create(state.context, state.skybox_shader, 1);
+		vulkan_renderer_uniform_set_bind_texture(state.context, state.skybox_material, 0, state.skybox_tex, state.linear_sampler);
 	}
 
 	// clang-format off
@@ -402,7 +415,7 @@ int main(void) {
 				}
 				frame_data.light_count = point_light_count;
 
-				vulkan_renderer_resource_global_bind(state.context, state.global_main);
+				vulkan_renderer_uniform_set_bind(state.context, state.global_main);
 
 				FrameInfo game_frame = game_on_update(&game_context, delta_time);
 
@@ -421,7 +434,7 @@ int main(void) {
 					frame_data.camera_position = game_frame.camera.position;
 				}
 
-				vulkan_renderer_resource_global_write(state.context, state.global_main, 0,
+				vulkan_renderer_buffer_write(state.context, state.global_main_buffer, 0,
 					sizeof(FrameData), &frame_data);
 
 				// Draw light debug
@@ -433,17 +446,17 @@ int main(void) {
 					// --- CHANGED: Transform logic ---
 					Matrix4f transform = mat4f_translated(*(float3 *)float4_elements(&lights[index].as.position));
 
-					vulkan_renderer_resource_group_write(state.context, state.light_material, 0,
-						0, sizeof(float4), &lights[index].color, true); // Changed vec4 to float4
-					vulkan_renderer_resource_group_bind(state.context, state.light_material, 0);
-					vulkan_renderer_resource_local_write(state.context, 0, sizeof(Matrix4f), &transform); // Changed mat4 to Matrix4f
+					vulkan_renderer_buffer_write(state.context, state.light_buffer,
+						0, sizeof(float4), &lights[index].color); // Changed vec4 to float4
+					vulkan_renderer_uniform_set_bind(state.context, state.light_material);
+					vulkan_renderer_push_constants(state.context, 0, sizeof(Matrix4f), &transform); // Changed mat4 to Matrix4f
 					vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 					vulkan_renderer_draw(state.context, 6);
 				}
 
 				// Draw skybox
 				vulkan_renderer_shader_bind(state.context, state.skybox_shader, SHADER_FLAG_COMPARE_OP_LESS_OR_EQUAL | SHADER_FLAG_CULL_NONE);
-				vulkan_renderer_resource_group_bind(state.context, state.skybox_material, 0);
+				vulkan_renderer_uniform_set_bind(state.context, state.skybox_material);
 				vulkan_renderer_draw(state.context, 36);
 			}
 			vulkan_renderer_pass_end(state.context);
@@ -456,7 +469,7 @@ int main(void) {
 				vulkan_renderer_shader_bind(
 					state.context, state.postfx_shader,
 					SHADER_FLAG_CULL_NONE);
-				vulkan_renderer_resource_global_bind(state.context, state.global_postfx);
+				vulkan_renderer_uniform_set_bind(state.context, state.global_postfx);
 				vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 				vulkan_renderer_draw(state.context, 6);
 			}
@@ -541,7 +554,7 @@ bool resize_event(EventCode code, void *event, void *receiver) {
 		state.height = wr_event->height;
 		vulkan_renderer_texture_resize(state.context, state.main_depth_tex, state.width, state.height);
 		vulkan_renderer_texture_resize(state.context, state.main_color_tex, state.width, state.height);
-		vulkan_renderer_resource_global_set_texture_sampler(state.context, state.global_postfx, 0, state.main_color_tex, state.linear_sampler);
+		vulkan_renderer_uniform_set_bind_texture(state.context, state.global_postfx, 0, state.main_color_tex, state.linear_sampler);
 	}
 	return true;
 }

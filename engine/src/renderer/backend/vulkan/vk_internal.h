@@ -88,6 +88,20 @@ typedef struct vulkan_global_resource {
 	VkPipelineLayout pipeline_layout;
 } VulkanGlobalResource;
 
+typedef struct {
+	VulkanResourceState state;
+
+	VkDescriptorSet handle;
+	VkDescriptorSetLayout layout;
+	uint64_t layout_hash;
+
+	uint32_t number;
+
+	VkPipelineLayout pipeline_layout;
+
+	VulkanBuffer *buffer;
+} VulkanUniformSet;
+
 typedef struct vulkan_resource_set {
 	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
 } VulkanResourceSet;
@@ -243,7 +257,7 @@ typedef struct vulkan_shader {
 
 	VkPipelineLayout pipeline_layout;
 
-    VulkanPipeline *pipeline_cache;
+	VulkanPipeline *pipeline_cache;
 
 	VulkanPipeline variants[MAX_SHADER_VARIANTS];
 	uint32_t variant_count;
@@ -278,9 +292,7 @@ struct vulkan_context {
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
 	VulkanPass *pass_pool;
-
-	VulkanGlobalResource *global_resources;
-	VulkanGroupResource *group_resources;
+	VulkanUniformSet *set_pool;
 
 	VulkanBuffer staging_buffer;
 	VulkanShader *bound_shader;

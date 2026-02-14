@@ -25,19 +25,15 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	context->sampler_pool = arena_push_pool_zero(arena, VulkanSampler, MAX_SAMPLERS);
 	context->shader_pool = arena_push_pool_zero(arena, VulkanShader, MAX_SHADERS);
 	context->pass_pool = arena_push_pool_zero(arena, VulkanPass, MAX_RENDER_PASSES);
+	context->set_pool = arena_push_pool_zero(arena, VulkanUniformSet, MAX_UNIFORM_SETS);
 
-	context->group_resources = arena_push_pool_zero(arena, VulkanGroupResource, MAX_GROUP_RESOURCES);
-	context->global_resources = arena_push_pool_zero(arena, VulkanGlobalResource, MAX_GLOBAL_RESOURCES);
-
-    // 0 == INVALID
-    pool_alloc(context->image_pool);
-    pool_alloc(context->buffer_pool);
-    pool_alloc(context->sampler_pool);
-    pool_alloc(context->shader_pool);
-    pool_alloc(context->pass_pool);
-
-    pool_alloc(context->group_resources);
-    pool_alloc(context->global_resources);
+	// 0 == INVALID
+	pool_alloc(context->image_pool);
+	pool_alloc(context->buffer_pool);
+	pool_alloc(context->sampler_pool);
+	pool_alloc(context->shader_pool);
+	pool_alloc(context->pass_pool);
+	pool_alloc(context->set_pool);
 
 	if (vulkan_instance_create(context, context->display) == false)
 		return false;
@@ -88,32 +84,27 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 
 	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
 		if (context->shader_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_shader_destroy(context, (RhiShader){ index, 0 });
+			vulkan_renderer_shader_destroy(context, (RhiShader){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
 		if (context->image_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_texture_destroy(context, (RhiTexture){ index, 0 });
+			vulkan_renderer_texture_destroy(context, (RhiTexture){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
 		if (context->sampler_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_sampler_destroy(context, (RhiSampler){ index, 0 });
+			vulkan_renderer_sampler_destroy(context, (RhiSampler){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
 		if (context->buffer_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_buffer_destroy(context, (RhiBuffer){ index, 0 });
+			vulkan_renderer_buffer_destroy(context, (RhiBuffer){ index });
 	}
 
-	for (uint32_t index = 0; index < MAX_GLOBAL_RESOURCES; ++index) {
-		if (context->global_resources[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_resource_global_destroy(context, (RhiGlobalResource){ index, 0 });
-	}
-
-	for (uint32_t index = 0; index < MAX_GROUP_RESOURCES; ++index) {
-		if (context->group_resources[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_resource_group_destroy(context, (RhiGroupResource){ index, 0 });
+	for (uint32_t index = 0; index < MAX_UNIFORM_SETS; ++index) {
+		if (context->set_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
+			vulkan_renderer_uniform_set_destroy(context, (RhiUniformSet){ index });
 	}
 
 	vkDestroyBuffer(context->device.logical, context->staging_buffer.handle, NULL);
@@ -244,6 +235,9 @@ bool Vulkan_renderer_frame_end(VulkanContext *context) {
 
 	context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 	VkResult result = vkQueuePresentKHR(context->device.present_queue, &present_info);
+
+	// NOTE: All bound resources are unbound after frame ends
+	context->bound_shader = NULL;
 
 	return true;
 }

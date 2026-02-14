@@ -5,8 +5,8 @@
 #include "identifiers.h"
 
 // clang-format off
-#define RHI_HANDLE(name) typedef struct name { uint32_t id, generation; } name
-#define INVALID_RHI(type) (type){ 0, 0}
+#define RHI_HANDLE(name) typedef struct name { uint32_t id; } name
+#define INVALID_RHI(type) (type){ 0 }
 RHI_HANDLE(RhiBuffer);
 RHI_HANDLE(RhiGeometry);
 
@@ -15,6 +15,7 @@ RHI_HANDLE(RhiSampler);
 
 RHI_HANDLE(RhiShader);
 RHI_HANDLE(RhiShaderVariant);
+RHI_HANDLE(RhiUniformSet);
 RHI_HANDLE(RhiGlobalResource);
 RHI_HANDLE(RhiGroupResource);
 
