@@ -70,7 +70,7 @@ bool asset_library_track_directory(AssetLibrary *library, String directory) {
 bool asset_library_track_file(AssetLibrary *library, String file_path) {
 	ArenaTemp scratch = arena_scratch(NULL);
 	String name = string_push_copy(scratch.arena, string_path_filename(file_path));
-	AssetEntry *entry = hash_trie_insert(library->arena, &library->root, name, AssetEntry);
+	AssetEntry *entry = hash_trie_insert(library->arena, &library->root, string_hash64(name), AssetEntry);
 
 	if (entry->full_path.length == 0) {
 		entry->full_path = string_push_copy(library->arena, file_path);
@@ -97,8 +97,8 @@ UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, 
 	String vertex_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("vert.spv"));
 	String fragment_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("frag.spv"));
 
-	AssetEntry *vs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
-	AssetEntry *fs_entry = hash_trie_lookup(&library->root, fragment_shader_key, AssetEntry);
+	AssetEntry *vs_entry = hash_trie_lookup(&library->root, string_hash64(vertex_shader_key), AssetEntry);
+	AssetEntry *fs_entry = hash_trie_lookup(&library->root, string_hash64(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
 		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
 		*out_shader = NULL;
@@ -128,7 +128,7 @@ UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, 
 }
 
 UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, ModelSource **out_model, bool use_cached_textures) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
+	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
 	if (entry == NULL) {
 		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
 		*out_model = NULL;
@@ -152,7 +152,7 @@ UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, M
 		String path = (*out_model)->images[image_index].path;
 		String name = string_push_copy(scratch.arena, string_path_filename(path));
 
-		AssetEntry *entry = hash_trie_lookup(&library->root, name, AssetEntry);
+		AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(name), AssetEntry);
 		if (entry == NULL) {
 			asset_library_track_file(library, path);
 		}
@@ -171,7 +171,7 @@ UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, M
 }
 
 UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, ImageSource **out_texture) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
+	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
 
 	if (entry == NULL) {
 		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
@@ -199,8 +199,8 @@ UUID asset_library_request_shader(AssetLibrary *library, String key, ShaderSourc
 	String vertex_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("vert.spv"));
 	String fragment_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("frag.spv"));
 
-	AssetEntry *vs_entry = hash_trie_lookup(&library->root, vertex_shader_key, AssetEntry);
-	AssetEntry *fs_entry = hash_trie_lookup(&library->root, fragment_shader_key, AssetEntry);
+	AssetEntry *vs_entry = hash_trie_lookup(&library->root, string_hash64(vertex_shader_key), AssetEntry);
+	AssetEntry *fs_entry = hash_trie_lookup(&library->root, string_hash64(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
 		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
 		*out_shader = NULL;
@@ -239,7 +239,7 @@ UUID asset_library_request_shader(AssetLibrary *library, String key, ShaderSourc
 }
 
 UUID asset_library_request_model(AssetLibrary *library, String key, ModelSource **out_model) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
+	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
 	if (entry == NULL)
 		return 0;
 
@@ -264,7 +264,7 @@ UUID asset_library_request_model(AssetLibrary *library, String key, ModelSource 
 }
 
 UUID asset_library_request_image(AssetLibrary *library, String key, ImageSource **out_image) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, key, AssetEntry);
+	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
 	if (entry == NULL) {
 		LOG_WARN("AssetLibrary: No image '%.*s'", str_expand(key));
 		return 0;

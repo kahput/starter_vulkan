@@ -54,6 +54,7 @@ typedef struct {
 	RhiTexture checkered_texture;
 
 	bool wireframe;
+	bool clock_wise;
 
 	bool is_initialized;
 } GameState;
@@ -202,9 +203,13 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 		context->vk_context, state->terrain_uniform_buffer,
 		0, sizeof(float4), &(float4){ 1.0f, 1.0f, 1.0f, 1.0f });
 
+	uint32_t flag = SHADER_FLAG_CULL_NONE;
+	flag |= state->wireframe ? SHADER_FLAG_WIREFRAME : 0;
+	flag |= state->clock_wise ? SHADER_FLAG_CLOCK_WISE : 0;
+
 	vulkan_renderer_shader_bind(
 		context->vk_context, state->sprite_shader,
-		state->wireframe ? SHADER_FLAG_CULL_NONE | SHADER_FLAG_WIREFRAME : SHADER_FLAG_CULL_NONE);
+		flag);
 
 	vulkan_renderer_uniform_set_bind(context->vk_context, state->sprite_material);
 	vulkan_renderer_push_constants(context->vk_context, 0, sizeof(Matrix4f), &transform);
@@ -227,6 +232,8 @@ FrameInfo game_on_update(GameContext *context, float dt) {
 
 	if (input_key_pressed(KEY_CODE_ENTER))
 		state->wireframe = !state->wireframe;
+	if (input_key_pressed(KEY_CODE_P))
+		state->clock_wise = !state->clock_wise;
 
 	player_update(&state->player_position, dt, &state->camera);
 

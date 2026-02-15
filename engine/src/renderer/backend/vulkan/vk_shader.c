@@ -273,8 +273,7 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, Shad
 	uint64_t hash = string_hash64(key);
 	arena_release_scratch(scratch);
 
-	VulkanPipeline *variant = hash_trie_lookup_hash(&shader->pipeline_cache, hash, VulkanPipeline);
-
+	VulkanPipeline *variant = hash_trie_lookup(&shader->pipeline_root, hash, VulkanPipeline);
 	if (variant == NULL) {
 		Arena variant_arena = {
 			.memory = shader->variants,
@@ -282,10 +281,36 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, Shad
 			.capacity = sizeof(shader->variants),
 		};
 
-		variant = hash_trie_insert_hash(&variant_arena, &shader->pipeline_cache, hash, VulkanPipeline);
+		ASSERT_MESSAGE(
+			variant_arena.offset != variant_arena.capacity, "Finish LRU Cache (deleting missing)");
+
+		variant = hash_trie_insert(&variant_arena, &shader->pipeline_root, hash, VulkanPipeline);
 		create_shader_variant(context, shader, pass, flags, variant);
 
 		shader->variant_count++;
+	} else {
+		if (shader->pipeline_lru_head != variant) {
+			variant->next->prev = variant->prev;
+			variant->prev->next = variant->next;
+		}
+	}
+
+	if (shader->pipeline_lru_head && shader->pipeline_lru_head != variant) {
+		VulkanPipeline *tail = shader->pipeline_lru_head->prev;
+		VulkanPipeline *head = shader->pipeline_lru_head;
+
+		tail->next = variant;
+		head->prev = variant;
+
+		variant->next = head;
+		variant->prev = tail;
+
+		shader->pipeline_lru_head = variant;
+	} else if (shader->pipeline_lru_head == NULL) {
+		variant->prev = variant;
+		variant->next = variant;
+
+		shader->pipeline_lru_head = variant;
 	}
 
 	context->bound_shader = shader;

@@ -30,7 +30,7 @@ RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type,
 		bool result = vulkan_buffer_ubo_create(context, buffer, size, data);
 		if (result == false)
 			return INVALID_RHI(RhiBuffer);
-        data = NULL;
+		data = NULL;
 	} else {
 		bool result = vulkan_buffer_create(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
 	}

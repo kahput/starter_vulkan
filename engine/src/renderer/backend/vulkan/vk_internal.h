@@ -239,6 +239,9 @@ VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 typedef struct vulkan_pipeline {
 	HashTrieNode node;
 
+	struct vulkan_pipeline *next;
+	struct vulkan_pipeline *prev;
+
 	VkPipeline handle;
 } VulkanPipeline;
 
@@ -256,8 +259,9 @@ typedef struct vulkan_shader {
 	VkDeviceSize instance_size;
 
 	VkPipelineLayout pipeline_layout;
+	VulkanPipeline *pipeline_root;
 
-	VulkanPipeline *pipeline_cache;
+	VulkanPipeline *pipeline_lru_head;
 
 	VulkanPipeline variants[MAX_SHADER_VARIANTS];
 	uint32_t variant_count;
