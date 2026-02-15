@@ -100,7 +100,6 @@ struct vertex_input_state {
 };
 
 // static bool override_attributes(struct vertex_input_state *state, ShaderAttribute *attributes, uint32_t attribute_count);
-static void resolve_pass_formats(VulkanContext *context, VulkanPass *pass, VkFormat *out_color_formats, VkFormat *out_depth_format);
 bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPass *pass, ShaderStateFlags flags, VulkanPipeline *variant) {
 	VkPipelineShaderStageCreateInfo vss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -172,7 +171,7 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	VkPipelineMultisampleStateCreateInfo mss_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 		.sampleShadingEnable = VK_FALSE,
-		.rasterizationSamples = pass->enable_msaa ? context->device.sample_count : VK_SAMPLE_COUNT_1_BIT,
+		.rasterizationSamples = pass->sample_count,
 		.minSampleShading = 1.0f,
 	};
 
@@ -189,33 +188,33 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		};
 	}
 
+	uint32_t color_attachment_count = 0;
+	for (uint32_t index = 0; pass->color_formats[index]; ++index)
+		color_attachment_count++;
+
 	VkPipelineColorBlendStateCreateInfo cbs_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
 		.logicOpEnable = VK_FALSE,
-		.attachmentCount = pass->color_attachment_count,
+		.attachmentCount = color_attachment_count,
 		.pAttachments = color_blend_attachments,
 	};
 
 	// NOTE: This should be handled by the pass, and not the pipeline description?
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		.depthTestEnable = pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED,
-		.depthWriteEnable = pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED,
+		.depthTestEnable = pass->depth_format,
+		.depthWriteEnable = pass->depth_format,
 		.depthCompareOp = FLAG_GET(flags, SHADER_FLAG_COMPARE_OP_LESS_OR_EQUAL) ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS, // (VkCompareOp)description.depth_compare_op,
 		.depthBoundsTestEnable = VK_FALSE,
 		.minDepthBounds = 0.0f,
 		.maxDepthBounds = 1.0f
 	};
 
-	VkFormat color_formats[4];
-	VkFormat depth_format;
-	resolve_pass_formats(context, pass, color_formats, &depth_format);
-
 	VkPipelineRenderingCreateInfo r_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-		.colorAttachmentCount = pass->color_attachment_count,
-		.pColorAttachmentFormats = color_formats,
-		.depthAttachmentFormat = depth_format
+		.colorAttachmentCount = color_attachment_count,
+		.pColorAttachmentFormats = pass->color_formats,
+		.depthAttachmentFormat = pass->depth_format
 	};
 
 	VkGraphicsPipelineCreateInfo gp_create_info = {
@@ -261,13 +260,13 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, Shad
 	ArenaTemp scratch = arena_scratch(NULL);
 	String key = string_pushf(scratch.arena, "%d", flags);
 
-	VulkanPass *pass = context->bound_pass;
+	VulkanPass *pass = &context->bound_pass;
 
-	for (uint32_t index = 0; index < pass->color_attachment_count; ++index) {
+	for (uint32_t index = 0; pass->color_formats[index]; ++index) {
 		key = string_push_concat(
 			scratch.arena, key, string_pushf(scratch.arena, "%d", pass->color_formats[index]));
 	}
-	if (pass->depth_attachment.state)
+	if (pass->depth_format)
 		key = string_push_concat(scratch.arena, key, string_pushf(scratch.arena, "%d", pass->depth_format));
 
 	uint64_t hash = string_hash64(key);
@@ -318,21 +317,6 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, Shad
 	return true;
 }
 
-RhiShaderVariant shader_variant_create(VulkanContext *context, RhiShader rshader, RhiPass rpass, ShaderStateFlags flags) {
-	VulkanShader *shader = NULL;
-	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, INVALID_RHI(RhiShaderVariant));
-
-	VulkanPass *pass = NULL;
-	VULKAN_GET_OR_RETURN(pass, context->pass_pool, rpass, MAX_RENDER_PASSES, true, INVALID_RHI(RhiShaderVariant));
-
-	RhiShaderVariant rvariant = { shader->variant_count++ };
-	VulkanPipeline *pipeline = &shader->variants[rvariant.id];
-
-	if (create_shader_variant(context, shader, pass, flags, pipeline))
-		return INVALID_RHI(RhiShaderVariant);
-
-	return INVALID_RHI(RhiShaderVariant);
-}
 
 static uint32_t count_shader_members(SpvReflectBlockVariable *var) {
 	if (var->member_count == 0)
@@ -788,19 +772,3 @@ bool reflect_shader_interface(
 // 	}
 // 	return type_size * format.count;
 // }
-
-void resolve_pass_formats(VulkanContext *context, VulkanPass *pass, VkFormat *out_color_formats, VkFormat *out_depth_format) {
-	ASSERT(pass->color_attachment_count <= 4);
-
-	for (uint32_t color_index = 0; color_index < pass->color_attachment_count; ++color_index) {
-		if (pass->color_attachments[color_index].present)
-			out_color_formats[color_index] = context->swapchain.format.format;
-		else
-			out_color_formats[color_index] = context->image_pool[pass->color_attachments[color_index].image_index].info.format;
-	}
-
-	if (pass->depth_attachment.state == VULKAN_RESOURCE_STATE_INITIALIZED) {
-		*out_depth_format = context->image_pool[pass->depth_attachment.image_index].info.format;
-	} else
-		*out_depth_format = VK_FORMAT_UNDEFINED;
-}

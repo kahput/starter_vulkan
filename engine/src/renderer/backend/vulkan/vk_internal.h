@@ -11,6 +11,7 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define SWAPCHAIN_IMAGE_COUNT 3
 
+#define MAX_SHADER_VARIANTS 8
 #define MAX_SETS 2
 #define MAX_INPUT_ATTRIBUTES 16
 #define MAX_INPUT_BINDINGS 16
@@ -133,15 +134,10 @@ typedef struct vulkan_attachment {
 typedef struct vulkan_pass {
 	VulkanResourceState state;
 
-	VulkanAttachment color_attachments[4];
-	uint32_t color_attachment_count;
-	VulkanAttachment depth_attachment;
-
 	VkFormat color_formats[4];
 	VkFormat depth_format;
 
-	RenderPassDesc desc;
-	bool enable_msaa;
+	VkSampleCountFlags sample_count;
 } VulkanPass;
 
 typedef struct swapchain_support_details {
@@ -215,7 +211,7 @@ void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAsp
 void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout);
 
-bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkImageAspectFlags aspect);
+bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect);
 
 bool vulkan_command_pool_create(VulkanContext *context);
 bool vulkan_command_buffer_create(VulkanContext *context);
@@ -295,12 +291,11 @@ struct vulkan_context {
 	VulkanBuffer *buffer_pool;
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
-	VulkanPass *pass_pool;
 	VulkanUniformSet *set_pool;
 
 	VulkanBuffer staging_buffer;
 	VulkanShader *bound_shader;
-	VulkanPass *bound_pass;
+	VulkanPass bound_pass;
 	VkDescriptorPool descriptor_pool;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];

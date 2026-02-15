@@ -265,14 +265,14 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 	image->layout = new_layout;
 }
 
-bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkImageAspectFlags aspect) {
+bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect) {
 	bool recreate = false;
 
 	if (msaa->info.extent.width != extent.width)
 		recreate = true;
 	if (msaa->info.extent.height != extent.height)
 		recreate = true;
-	if (msaa->info.samples != context->device.sample_count)
+	if (msaa->info.samples != sample_count)
 		recreate = true;
 	if (msaa->info.format != format)
 		recreate = true;
@@ -292,7 +292,7 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	if (vulkan_image_create(
-			context, context->device.sample_count,
+			context, sample_count,
 			extent.width, extent.height,
 			format, VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage, false,

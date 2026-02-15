@@ -213,8 +213,6 @@ typedef struct {
 		float4 color;
 		float depth;
 	} clear;
-
-	bool present;
 } AttachmentDesc;
 
 typedef struct {
@@ -226,8 +224,8 @@ typedef struct {
 	bool use_depth;
 
 	uint32_t width, height;
-	bool enable_msaa;
-} RenderPassDesc;
+	uint32_t msaa_level;
+} DrawListDesc;
 
 // TODO: Move these
 #define DEFAULT_PIPELINE()                          \

@@ -355,6 +355,6 @@ void mat4f_debug_print(Matrix4f m) {
 		m.elements[3], m.elements[7], m.elements[11], m.elements[15]);
 }
 
-ENGINE_API void float3_debug_print(float3 v) {
+void float3_debug_print(float3 v) {
 	LOG_INFO("float3 { %.2f, %.2f, %.2f }", v.x, v.y, v.z);
 }

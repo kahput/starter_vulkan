@@ -24,7 +24,6 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	context->buffer_pool = arena_push_pool_zero(arena, VulkanBuffer, MAX_BUFFERS);
 	context->sampler_pool = arena_push_pool_zero(arena, VulkanSampler, MAX_SAMPLERS);
 	context->shader_pool = arena_push_pool_zero(arena, VulkanShader, MAX_SHADERS);
-	context->pass_pool = arena_push_pool_zero(arena, VulkanPass, MAX_RENDER_PASSES);
 	context->set_pool = arena_push_pool_zero(arena, VulkanUniformSet, MAX_UNIFORM_SETS);
 
 	// 0 == INVALID
@@ -32,7 +31,6 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	pool_alloc(context->buffer_pool);
 	pool_alloc(context->sampler_pool);
 	pool_alloc(context->shader_pool);
-	pool_alloc(context->pass_pool);
 	pool_alloc(context->set_pool);
 
 	if (vulkan_instance_create(context, context->display) == false)

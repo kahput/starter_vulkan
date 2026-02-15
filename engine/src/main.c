@@ -94,9 +94,6 @@ static struct State {
 
 	RhiUniformSet global_postfx;
 
-	RhiPass pass_shadow;
-	RhiPass pass_main;
-	RhiPass pass_postfx;
 	RhiBuffer quad_vb;
 	RhiShader light_shader;
 
@@ -200,7 +197,7 @@ int main(void) {
 		state.main_color_tex, state.linear_sampler);
 
 	// Create render passes
-	RenderPassDesc shadow_pass = {
+	DrawListDesc shadow_pass = {
 		.name = str_lit("Shadow"),
 		.depth_attachment = {
 		  .texture = state.shadow_depth_tex,
@@ -209,10 +206,10 @@ int main(void) {
 		  .store = STORE,
 		},
 		.use_depth = true,
-		.enable_msaa = false
+		.msaa_level = 1
 	};
 
-	RenderPassDesc main_pass = {
+	DrawListDesc main_pass = {
 		.name = str_lit("Main"),
 		.color_attachments = { {
 		  .texture = state.main_color_tex,
@@ -228,22 +225,21 @@ int main(void) {
 		  .store = DONT_CARE,
 		},
 		.use_depth = true,
-		.enable_msaa = true
+		.msaa_level = 4
 	};
 
-	RenderPassDesc postfx_pass = {
+	DrawListDesc postfx_pass = {
 		.name = str_lit("Post"),
-		.color_attachments = { { .present = true,
-		  .clear = { .color = { 0.0f, 0.0f, 0.0f, 1.0f } },
-		  .load = CLEAR,
-		  .store = STORE } },
+		.color_attachments = {
+		  [0] = {
+			.clear = { .color = { 0.0f, 0.0f, 0.0f, 1.0f } },
+			.load = CLEAR,
+			.store = STORE,
+		  },
+		},
 		.color_attachment_count = 1,
-		.enable_msaa = false
+		.msaa_level = 1
 	};
-
-	state.pass_shadow = vulkan_renderer_pass_create(state.context, shadow_pass);
-	state.pass_main = vulkan_renderer_pass_create(state.context, main_pass);
-	state.pass_postfx = vulkan_renderer_pass_create(state.context, postfx_pass);
 
 	state.layers[0] = (Layer){ .update = editor_update };
 	state.current_layer = &state.layers[0];
@@ -389,7 +385,7 @@ int main(void) {
 		if (vulkan_renderer_frame_begin(state.context, state.display.physical_width,
 				state.display.physical_height)) {
 			// Main pass
-			vulkan_renderer_pass_begin(state.context, state.pass_main);
+			vulkan_renderer_draw_list_begin(state.context, main_pass);
 			{
 				FrameData frame_data = { 0 };
 
@@ -459,12 +455,12 @@ int main(void) {
 				vulkan_renderer_uniform_set_bind(state.context, state.skybox_material);
 				vulkan_renderer_draw(state.context, 36);
 			}
-			vulkan_renderer_pass_end(state.context);
+			vulkan_renderer_draw_list_end(state.context);
 
 			vulkan_renderer_texture_prepare_sample(state.context, state.main_color_tex);
 
 			// Postfx pass
-			vulkan_renderer_pass_begin(state.context, state.pass_postfx);
+			vulkan_renderer_draw_list_begin(state.context, postfx_pass);
 			{
 				vulkan_renderer_shader_bind(
 					state.context, state.postfx_shader,
@@ -473,7 +469,7 @@ int main(void) {
 				vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 				vulkan_renderer_draw(state.context, 6);
 			}
-			vulkan_renderer_pass_end(state.context);
+			vulkan_renderer_draw_list_end(state.context);
 			Vulkan_renderer_frame_end(state.context);
 		}
 

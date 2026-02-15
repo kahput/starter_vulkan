@@ -1,4 +1,3 @@
-// Old interface
 #pragma once
 
 #include "renderer/r_internal.h"
@@ -12,12 +11,8 @@ typedef struct vulkan_context VulkanContext;
 #define MAX_BUFFERS 1024
 #define MAX_TEXTURES 512
 #define MAX_SAMPLERS 32
-#define MAX_RENDER_TARGETS 32
-
 #define MAX_SHADERS 32
-#define MAX_SHADER_VARIANTS 8
 #define MAX_UNIFORM_SETS 1024
-#define MAX_RENDER_PASSES 8
 
 bool vulkan_renderer_create(Arena *arena, struct platform *platform, VulkanContext **out_context);
 void vulkan_renderer_destroy(VulkanContext *context);
@@ -26,10 +21,11 @@ bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint3
 bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_t height);
 bool Vulkan_renderer_frame_end(VulkanContext *context);
 
-RhiPass vulkan_renderer_pass_create(VulkanContext *context, RenderPassDesc desc);
-bool vulkan_renderer_pass_destroy(VulkanContext *context, RhiPass pass);
-bool vulkan_renderer_pass_begin(VulkanContext *context, RhiPass pass);
-bool vulkan_renderer_pass_end(VulkanContext *context);
+bool vulkan_renderer_draw_list_begin(VulkanContext *context, DrawListDesc desc);
+bool vulkan_renderer_draw_list_end(VulkanContext *context);
+
+// bool vulkan_renderer_compute_list_begin(VulkanContext *context, ...);
+// bool vulkan_renderer_compute_list_end(VulkanContext *context);
 
 ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
