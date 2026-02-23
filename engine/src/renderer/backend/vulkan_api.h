@@ -28,7 +28,7 @@ bool vulkan_renderer_draw_list_end(VulkanContext *context);
 // bool vulkan_renderer_compute_list_end(VulkanContext *context);
 
 ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
-bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
+ENGINE_API bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 
 ENGINE_API RhiShader vulkan_renderer_shader_create(
 	Arena *arena, VulkanContext *context,
@@ -36,7 +36,7 @@ ENGINE_API RhiShader vulkan_renderer_shader_create(
 bool vulkan_renderer_shader_destroy(VulkanContext *context, RhiShader shader);
 
 ENGINE_API bool vulkan_renderer_shader_bind(
-	VulkanContext *context, RhiShader rshader, ShaderStateFlags flags);
+	VulkanContext *context, RhiShader rshader, PipelineDesc desc);
 
 ENGINE_API RhiTexture vulkan_renderer_texture_create(VulkanContext *context, uint32_t width, uint32_t height, TextureType type, TextureFormat format, TextureUsageFlags usage, uint8_t *pixels);
 bool vulkan_renderer_texture_destroy(VulkanContext *context, RhiTexture texture);

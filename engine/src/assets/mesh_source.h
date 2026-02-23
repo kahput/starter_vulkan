@@ -24,19 +24,19 @@ enum {
 };
 
 // MeshSource mesh_source_cube_create(Arena *arena);
-MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z, uint8_t face_index);
+ENGINE_API MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z, uint8_t face_index);
+ENGINE_API MeshSource mesh_source_sphere_create(Arena *arena, float radius);
 
-MeshSource mesh_source_sphere_create(Arena *arena, float radius);
+typedef struct mesh_source_node {
+	struct mesh_source_node *next;
+	struct mesh_source_node *prev;
 
-typedef struct MeshNode {
-	struct MeshNode *next;
 	MeshSource source;
-} MeshNode;
+} MeshSourceNode;
 
-typedef struct MeshList {
-	MeshNode *first;
-	MeshNode *last;
-	uint32_t node_count;
+typedef struct mesh_source_list {
+	MeshSourceNode *first;
+	uint32_t count;
 
 	size_t total_vertices_size;
 	size_t vertex_size;
@@ -45,9 +45,9 @@ typedef struct MeshList {
 	size_t total_indices_size;
 	size_t index_size;
 	uint32_t index_count;
-} MeshList;
+} MeshSourceList;
 
-void mesh_source_list_push(Arena *arena, MeshList *list, MeshSource source);
-MeshSource mesh_source_list_flatten(Arena *arena, MeshList *list);
+ENGINE_API void mesh_source_list_push(Arena *arena, MeshSourceList *list, MeshSource source);
+ENGINE_API MeshSource mesh_source_list_flatten(Arena *arena, MeshSourceList *list);
 
 #endif /* MESH_SOURCE_H_ */

@@ -1,15 +1,18 @@
 #pragma once
 
-#include "core/arena.h"
+#include "event.h"
 #include "input/input_types.h"
+
+#include "common.h"
+#include "core/arena.h"
 
 typedef struct InputState InputState;
 
 InputState *input_system_startup(Arena *arena);
 bool input_system_shutdown(void);
 
-ENGINE_API bool input_system_hookup(InputState *state_ptr);
 ENGINE_API bool input_system_update(void);
+ENGINE_API bool input_system_on_event(EventCode code, void *event, void *receiver);
 
 ENGINE_API bool input_key_pressed(int key);
 ENGINE_API bool input_key_released(int key);

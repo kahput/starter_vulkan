@@ -45,22 +45,10 @@ static DynamicLibrary game_library = { 0 };
 static GameInterface *game = NULL;
 
 bool game_load(GameContext *context);
-bool game_on_load(GameContext *context) {
-	if (game->on_load)
-		return game->on_load(context);
-	return false;
-}
-
-FrameInfo game_on_update(GameContext *context, float dt) {
+FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	if (game->on_update)
 		return game->on_update(context, dt);
 	return (FrameInfo){ 0 };
-}
-
-bool game_on_unload(GameContext *context) {
-	if (game->on_unload)
-		return game->on_unload(context);
-	return false;
 }
 
 void editor_update(float dt);
@@ -104,8 +92,6 @@ static struct State {
 	RhiShader skybox_shader;
 	RhiUniformSet skybox_material;
 } state;
-
-static bool wireframe = false;
 
 int main(void) {
 	state.permanent = arena_create(MiB(512));
@@ -269,7 +255,6 @@ int main(void) {
 	};
 
 	game_load(&game_context);
-	game_on_load(&game_context);
 
 	float timer_accumulator = 0.0f;
 	uint32_t frames = 0;
@@ -363,6 +348,8 @@ int main(void) {
 	lights[0].as.direction.y = cosf(sun_theta);
 	lights[0].as.direction.z = sinf(sun_theta) * sinf(sun_azimuth);
 
+	PipelineDesc pipeline = DEFAULT_PIPELINE;
+
 	while (platform_should_close(&state.display) == false) {
 		float time = platform_time_seconds(&state.display);
 		delta_time = time - last_frame;
@@ -390,10 +377,10 @@ int main(void) {
 				FrameData frame_data = { 0 };
 
 				// --- CHANGED: Matrix math using cmath functions ---
-				frame_data.view = mat4f_identity();
-				frame_data.projection = mat4f_identity();
+				frame_data.view = matrix4f_identity();
+				frame_data.projection = matrix4f_identity();
 
-				frame_data.projection = mat4f_perspective(
+				frame_data.projection = matrix4f_perspective(
 					DEG2RAD(state.editor_camera.fov),
 					(float)state.width / (float)state.height,
 					0.1f,
@@ -413,17 +400,17 @@ int main(void) {
 
 				vulkan_renderer_uniform_set_bind(state.context, state.global_main);
 
-				FrameInfo game_frame = game_on_update(&game_context, delta_time);
+				FrameInfo game_frame = game_on_update_and_render(&game_context, delta_time);
 
 				if (state.editor) {
 					state.current_layer->update(delta_time);
-					frame_data.view = mat4f_lookat(
+					frame_data.view = matrix4f_lookat(
 						state.editor_camera.position,
 						state.editor_camera.target,
 						state.editor_camera.up);
 					frame_data.camera_position = state.editor_camera.position;
 				} else {
-					frame_data.view = mat4f_lookat(
+					frame_data.view = matrix4f_lookat(
 						game_frame.camera.position,
 						game_frame.camera.target,
 						game_frame.camera.up);
@@ -434,16 +421,16 @@ int main(void) {
 					sizeof(FrameData), &frame_data);
 
 				// Draw light debug
-				vulkan_renderer_shader_bind(state.context, state.light_shader, wireframe ? SHADER_FLAG_CULL_NONE | SHADER_FLAG_WIREFRAME : SHADER_FLAG_CULL_NONE);
+				vulkan_renderer_shader_bind(state.context, state.light_shader, pipeline);
 				for (uint32_t index = 0; index < countof(lights); ++index) {
 					if (lights[index].type == LIGHT_TYPE_DIRECTIONAL)
 						continue;
 
 					// --- CHANGED: Transform logic ---
-					Matrix4f transform = mat4f_translated(*(float3 *)float4_elements(&lights[index].as.position));
+					Matrix4f transform = matrix4f_translated(*(float3 *)vector4f_elements(&lights[index].as.position));
 
 					vulkan_renderer_buffer_write(state.context, state.light_buffer,
-						0, sizeof(float4), &lights[index].color); // Changed vec4 to float4
+						0, sizeof(float4), &lights[index].color); // Changed vector4 to float4
 					vulkan_renderer_uniform_set_bind(state.context, state.light_material);
 					vulkan_renderer_push_constants(state.context, 0, sizeof(Matrix4f), &transform); // Changed mat4 to Matrix4f
 					vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
@@ -451,7 +438,9 @@ int main(void) {
 				}
 
 				// Draw skybox
-				vulkan_renderer_shader_bind(state.context, state.skybox_shader, SHADER_FLAG_COMPARE_OP_LESS_OR_EQUAL | SHADER_FLAG_CULL_NONE);
+				PipelineDesc skybox_pipeline = DEFAULT_PIPELINE;
+				skybox_pipeline.depth_compare_op = COMPARE_OP_LESS_OR_EQUAL;
+				vulkan_renderer_shader_bind(state.context, state.skybox_shader, skybox_pipeline);
 				vulkan_renderer_uniform_set_bind(state.context, state.skybox_material);
 				vulkan_renderer_draw(state.context, 36);
 			}
@@ -464,7 +453,7 @@ int main(void) {
 			{
 				vulkan_renderer_shader_bind(
 					state.context, state.postfx_shader,
-					SHADER_FLAG_CULL_NONE);
+					DEFAULT_PIPELINE);
 				vulkan_renderer_uniform_set_bind(state.context, state.global_postfx);
 				vulkan_renderer_buffer_bind(state.context, state.quad_vb, 0);
 				vulkan_renderer_draw(state.context, 6);
@@ -474,7 +463,7 @@ int main(void) {
 		}
 
 		if (input_key_pressed(KEY_CODE_ENTER))
-			wireframe = !wireframe;
+			pipeline.polygon_mode = !pipeline.polygon_mode;
 		if (input_key_pressed(KEY_CODE_TAB))
 			state.editor = !state.editor;
 		if (input_key_down(KEY_CODE_LEFTCTRL))
@@ -496,22 +485,22 @@ void editor_update(float dt) {
 	float yaw_delta = -input_mouse_dx() * CAMERA_SENSITIVITY;
 	float pitch_delta = -input_mouse_dy() * CAMERA_SENSITIVITY;
 
-	float3 target_position = float3_normalize(
-		float3_subtract(state.editor_camera.target, state.editor_camera.position));
+	float3 target_position = vector3f_normalize(
+		vector3f_subtract(state.editor_camera.target, state.editor_camera.position));
 
 	// Yaw rotation (around up)
-	target_position = float3_rotate(target_position, yaw_delta, state.editor_camera.up);
+	target_position = vector3f_rotate(target_position, yaw_delta, state.editor_camera.up);
 
 	// Calc right
-	float3 camera_right = float3_cross(target_position, state.editor_camera.up);
-	camera_right = float3_normalize(camera_right);
+	float3 camera_right = vector3f_cross(target_position, state.editor_camera.up);
+	camera_right = vector3f_normalize(camera_right);
 
 	// Calc down
-	float3 camera_down = float3_negate(state.editor_camera.up);
+	float3 camera_down = vector3f_negate(state.editor_camera.up);
 
 	// Pitch clamping
-	float max_angle = float3_angle(state.editor_camera.up, target_position) - 0.001f;
-	float min_angle = -float3_angle(camera_down, target_position) + 0.001f;
+	float max_angle = vector3f_angle(state.editor_camera.up, target_position) - 0.001f;
+	float min_angle = -vector3f_angle(camera_down, target_position) + 0.001f;
 
 	// Helper to clamp float
 	if (pitch_delta > max_angle)
@@ -520,27 +509,27 @@ void editor_update(float dt) {
 		pitch_delta = min_angle;
 
 	// Pitch rotation (around right)
-	target_position = float3_rotate(target_position, pitch_delta, camera_right);
+	target_position = vector3f_rotate(target_position, pitch_delta, camera_right);
 
 	float3 move = { 0, 0, 0 };
 
 	// Re-calculate right after rotation for movement
-	camera_right = float3_cross(state.editor_camera.up, target_position);
-	camera_right = float3_normalize(camera_right);
+	camera_right = vector3f_cross(state.editor_camera.up, target_position);
+	camera_right = vector3f_normalize(camera_right);
 
 	float right_amount = (input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A)) * CAMERA_MOVE_SPEED * dt;
 	float up_amount = (input_key_down(KEY_CODE_SPACE) - input_key_down(KEY_CODE_C)) * CAMERA_MOVE_SPEED * dt;
 	float forward_amount = (input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W)) * CAMERA_MOVE_SPEED * dt;
 
-	move = float3_add(move, float3_scale(camera_right, right_amount));
-	move = float3_add(move, float3_scale(camera_down, up_amount));
-	move = float3_add(move, float3_scale(target_position, forward_amount));
+	move = vector3f_add(move, vector3f_scale(camera_right, right_amount));
+	move = vector3f_add(move, vector3f_scale(camera_down, up_amount));
+	move = vector3f_add(move, vector3f_scale(target_position, forward_amount));
 
-	move = float3_negate(move);
+	move = vector3f_negate(move);
 
 	// Apply move
-	state.editor_camera.position = float3_add(move, state.editor_camera.position);
-	state.editor_camera.target = float3_add(state.editor_camera.position, target_position);
+	state.editor_camera.position = vector3f_add(move, state.editor_camera.position);
+	state.editor_camera.target = vector3f_add(state.editor_camera.position, target_position);
 }
 
 bool resize_event(EventCode code, void *event, void *receiver) {
@@ -557,8 +546,6 @@ bool resize_event(EventCode code, void *event, void *receiver) {
 
 bool game_load(GameContext *context) {
 	if (game_library.handle) {
-		if (game && game->on_unload)
-			game->on_unload(context);
 		dlclose(game_library.handle);
 		game_library.handle = NULL;
 	}
@@ -608,7 +595,7 @@ RhiTexture load_cubemap(String path) {
 		return (RhiTexture){ 0 }; // Return invalid handle
 	}
 
-	ImageSource *loaded_images[6];
+	ImageSource loaded_images[6];
 	int32_t width = 0, height = 0;
 	int32_t channels = 0;
 	size_t single_image_size = 0;
@@ -626,26 +613,26 @@ RhiTexture load_cubemap(String path) {
 	String extension = string_path_extension(file_node->string);
 
 	for (int index = 0; index < 6; index++) {
-		ImageSource *img = NULL;
+		ImageSource img = { 0 };
 		String key = string_push_concat(scratch.arena, string_from_cstr(order[index]), extension);
 		asset_library_load_image(scratch.arena, &state.asset_system, key, &img);
 		LOG_INFO("Scratch size used so after image %d: %llu", index, scratch.arena->offset);
 		loaded_images[index] = img;
 
 		if (index == 0) {
-			width = img->width;
-			height = img->height;
-			channels = img->channels;
+			width = img.width;
+			height = img.height;
+			channels = img.channels;
 			single_image_size = width * height * channels;
 		} else
-			ASSERT(img->width == width && img->height == height);
+			ASSERT(img.width == width && img.height == height);
 
 		file_node = file_node->next;
 	}
 
 	uint8_t *final_pixels = arena_push_array(scratch.arena, uint8_t, single_image_size * 6);
 	for (int index = 0; index < 6; index++) {
-		memcpy(final_pixels + (index * single_image_size), loaded_images[index]->pixels, single_image_size);
+		memcpy(final_pixels + (index * single_image_size), loaded_images[index].pixels, single_image_size);
 	}
 
 	RhiTexture result = vulkan_renderer_texture_create(

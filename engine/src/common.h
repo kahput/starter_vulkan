@@ -28,9 +28,9 @@
 #endif
 
 #if defined(_MSC_VER)
-	#define ALIGN(X) __declspec(align(X))
+	#define alignas(X) __declspec(align(X))
 #else
-	#define ALIGN(X) __attribute((aligned(X)))
+	#define alignas(X) __attribute((aligned(X)))
 #endif
 
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
@@ -67,7 +67,7 @@ typedef struct { float32 x, y; } float2;
 STATIC_ASSERT(sizeof(float2) == 2 * sizeof(float));
 typedef struct { float32 x, y, z; } float3;
 STATIC_ASSERT(sizeof(float3) == 3 * sizeof(float));
-typedef struct { float32 x, y, z, w; } float4;
+typedef struct alignas(16) { float32 x, y, z, w; } float4;
 STATIC_ASSERT(sizeof(float4) == 4 * sizeof(float));
 
 typedef uint32_t uint32;

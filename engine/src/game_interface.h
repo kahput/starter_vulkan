@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assets.h"
+#include "event.h"
 #include "renderer/backend/vulkan_api.h"
 #include "scene.h"
 
@@ -20,9 +21,8 @@ typedef struct FrameInfo {
 } FrameInfo;
 
 typedef struct {
-	bool (*on_load)(GameContext *);
 	FrameInfo (*on_update)(GameContext *, float dt);
-	bool (*on_unload)(GameContext *);
+	bool (*on_event)(GameContext *, EventCode code, void *event, void *receiver);
 } GameInterface;
 
 typedef GameInterface *(*PFN_game_hookup)(void);

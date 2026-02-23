@@ -8,7 +8,7 @@ void *hash_trie_traverse(Arena *arena, HashTrieNode **root, size_t stride, uint6
 		if (hash == (*node)->hash) {
 			return *node;
 		}
-		node = &(*node)->child[hash_index >> 62];
+		node = &(*node)->children[hash_index >> 62];
 	}
 
 	if (!arena)

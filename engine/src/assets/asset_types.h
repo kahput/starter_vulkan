@@ -1,5 +1,7 @@
 #pragma once
 
+#include "assets/mesh_source.h"
+
 #include "common.h"
 #include "core/cmath.h"
 #include "core/astring.h"
@@ -48,10 +50,10 @@ typedef struct {
 	String name;
 	PropertyType type;
 	union {
-		float f;
-		float2 vec2f;
-		float3 vec3f;
-		float4 vec4f;
+		float float1;
+		float2 float2;
+		float3 float3;
+		float4 float4;
 
 		uint32_t u;
 
@@ -75,21 +77,8 @@ typedef struct {
 	float4 tangent;
 } Vertex;
 
-typedef struct mesh_source2 {
-	UUID id;
-
-	Vertex *vertices;
-	uint32_t vertex_count;
-
-	void *indices;
-	size_t index_size;
-	uint32_t index_count;
-
-	MaterialSource *material;
-} MeshSource2;
-
 typedef struct model_source {
-	MeshSource2 *meshes;
+	MeshSource *meshes;
 	uint32_t mesh_count;
 
 	MaterialSource *materials;
@@ -97,4 +86,6 @@ typedef struct model_source {
 
 	ImageSource *images;
 	uint32_t image_count;
-} ModelSource;
+
+	uint32_t *mesh_to_material;
+} SModel;

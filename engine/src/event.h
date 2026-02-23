@@ -20,14 +20,14 @@ enum {
 	EVENT_CORE_QUIT = EVENT_ID(EVENT_SUBSYSTEM_CORE, 0x01),
 };
 
-#define MAX_EVENT_SIZE 128
-#define EVENT_STRUCT_DECLARE(name, type)                            \
-	STATIC_ASSERT(sizeof(type) <= MAX_EVENT_SIZE);                    \
-	static inline void event_##name##_emit(EventCode code, type *data) {    \
-		event_emit(code, data, sizeof(type));                         \
-	}                                                                 \
-	static inline type *event_##name##_push(EventCode code) {               \
-		return (type *)event_push(code, sizeof(type), alignof(type)); \
+/* #define MAX_EVENT_SIZE 128 */
+#define EVENT_STRUCT_DECLARE(name, type)                                 \
+	/*STATIC_ASSERT(sizeof(type) <= MAX_EVENT_SIZE);*/                   \
+	static inline void event_##name##_emit(EventCode code, type *data) { \
+		event_emit(code, data, sizeof(type));                            \
+	}                                                                    \
+	static inline type *event_##name##_push(EventCode code) {            \
+		return (type *)event_push(code, sizeof(type), alignof(type));    \
 	}
 
 typedef struct EventState EventState;
@@ -40,12 +40,12 @@ bool event_system_update(void);
 typedef bool (*PFN_event_handler)(EventCode code, void *event, void *receiver);
 
 bool event_subscribe(EventCode code, PFN_event_handler on_event, void *receiver);
+bool event_subscribe_list_(EventCode *codes, uint32_t count, PFN_event_handler on_event, void *receiver);
 bool event_unsubscribe(EventCode code, PFN_event_handler on_event, void *receiver);
-bool event_subscribe_multi(EventCode *codes, uint32_t count, PFN_event_handler on_event, void *receiver);
 #define event_subscribe_list(handler, receiver, ...)                           \
 	do {                                                                       \
 		EventCode _codes[] = { __VA_ARGS__ };                                  \
-		event_subscribe_multi(_codes, countof(_codes), (handler), (receiver)); \
+		event_subscribe_list_(_codes, countof(_codes), (handler), (receiver)); \
 	} while (0)
 
 bool event_emit(EventCode code, void *event, size_t size);

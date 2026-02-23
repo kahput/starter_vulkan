@@ -35,7 +35,7 @@ enum {
 	EVENT_PLATFORM_MOUSE_BUTTON_RELEASED,
 };
 
-EVENT_STRUCT_DECLARE(key_event, KeyEvent)
+EVENT_STRUCT_DECLARE(key, KeyEvent)
 EVENT_STRUCT_DECLARE(mouse_motion, MouseMotionEvent)
 EVENT_STRUCT_DECLARE(mouse_button, MouseButtonEvent)
-EVENT_STRUCT_DECLARE(mouse_resize, WindowResizeEvent)
+EVENT_STRUCT_DECLARE(window_resize, WindowResizeEvent)

@@ -4,7 +4,7 @@
 #include "arena.h"
 
 typedef struct hash_trie_node {
-	struct hash_trie_node *child[4];
+	struct hash_trie_node *children[4];
 	uint64_t hash;
 } HashTrieNode;
 

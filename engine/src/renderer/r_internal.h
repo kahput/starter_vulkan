@@ -135,7 +135,7 @@ typedef enum front_face {
 
 typedef enum polygon_mode {
 	POLYGON_MODE_FILL = 0,
-	POLYGON_MODE_LINE = 1, // Wireframe
+	POLYGON_MODE_LINE = 1,
 	POLYGON_MODE_POINT = 2,
 } PipelinePolygonMode;
 
@@ -157,13 +157,13 @@ typedef struct pipeline_desc {
 	PipelineCullMode cull_mode;
 	PipelineFrontFace front_face;
 	PipelinePolygonMode polygon_mode;
-	float line_width;
+	/* float line_width; */
 
 	bool depth_test_enable;
 	bool depth_write_enable;
 	PipelineCompareOp depth_compare_op;
 
-	bool blend_enable;
+	/* bool blend_enable; */
 	bool topology_line_list;
 } PipelineDesc;
 
@@ -228,19 +228,17 @@ typedef struct {
 } DrawListDesc;
 
 // TODO: Move these
-#define DEFAULT_PIPELINE()                          \
+#define DEFAULT_PIPELINE                            \
 	(PipelineDesc) {                                \
 		.override_attributes = NULL,                \
 		.override_count = 0,                        \
-		.cull_mode = CULL_MODE_BACK,                \
+		.cull_mode = CULL_MODE_NONE,                \
 		.front_face = FRONT_FACE_COUNTER_CLOCKWISE, \
 		.polygon_mode = POLYGON_MODE_FILL,          \
-		.line_width = 1.0f,                         \
 		.depth_test_enable = true,                  \
 		.depth_write_enable = true,                 \
 		.depth_compare_op = COMPARE_OP_LESS,        \
-		.blend_enable = false,                      \
-		.topology_line_list = false                 \
+		.topology_line_list = false,                \
 	}
 
 #define LINEAR_SAMPLER                                 \
@@ -268,27 +266,20 @@ typedef enum {
 } MaterialStateFlagBits;
 typedef uint32_t MaterialStateFlag;
 
-typedef struct {
-	Handle handle;
-	ShaderReflection reflection;
-} Shader;
-
-typedef struct {
-	RShader shader;
-	uint32_t group_resource_id;
-
-	MaterialStateFlag flags;
-} Material;
-
 typedef struct texture {
 	uint32_t handle, sampler;
 } Texture;
 
-typedef struct mesh {
-	uint32_t vertex_buffer, index_buffer;
+typedef struct render_material {
+	RhiUniformSet set;
+	RhiBuffer ubo;
+} RMaterial;
+
+typedef struct render_mesh {
+	RhiBuffer vb, ib;
 	uint32_t vertex_count, index_count;
 	size_t index_size;
-} Mesh;
+} RMesh;
 
 typedef struct {
 	uint32_t binding;

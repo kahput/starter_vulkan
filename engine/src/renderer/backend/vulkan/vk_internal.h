@@ -65,30 +65,6 @@ typedef struct vulkan_buffer {
 	VkMemoryPropertyFlags memory_property_flags;
 } VulkanBuffer;
 
-typedef struct vulkan_group_resource {
-	VulkanResourceState state;
-
-	VulkanBuffer buffer;
-	VkDescriptorSet set;
-
-	uint32_t max_instance_count;
-	RhiShader shader;
-} VulkanGroupResource;
-
-typedef struct vulkan_global_resource {
-	VulkanResourceState state;
-
-	VulkanBuffer buffer;
-
-	VkDescriptorSetLayoutBinding bindings[MAX_BINDINGS_PER_RESOURCE];
-	uint32_t binding_count;
-
-	VkDescriptorSetLayout set_layout;
-	VkDescriptorSet set;
-
-	VkPipelineLayout pipeline_layout;
-} VulkanGlobalResource;
-
 typedef struct {
 	VulkanResourceState state;
 

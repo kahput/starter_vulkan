@@ -9,4 +9,4 @@ struct arena;
 
 bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path, ShaderSource *out_shader);
 bool importer_load_image(Arena *arena, String path, ImageSource *out_texture);
-bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model);
+bool importer_load_gltf(Arena *arena, String path, SModel *out_model);

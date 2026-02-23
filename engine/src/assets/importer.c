@@ -1,6 +1,7 @@
 #include "importer.h"
 #include "assets/asset_types.h"
 
+#include "assets/mesh_source.h"
 #include "common.h"
 #include "core/astring.h"
 
@@ -19,11 +20,8 @@
 
 #define MATERIAL_PROPERTY_COUNT 9
 
-void filesystem_filename(const char *src, char *dst);
-void filesystem_directory(const char *src, char *dst);
-
 // static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
-static ImageSource *find_loaded_texture(const cgltf_data *data, ModelSource *scene, const cgltf_texture *gltf_tex);
+static ImageSource *find_loaded_texture(const cgltf_data *data, SModel *scene, const cgltf_texture *gltf_tex);
 
 bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path, ShaderSource *out_shader) {
 	out_shader->vertex_shader = filesystem_read(arena, vertex_path);
@@ -70,13 +68,13 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 	{ .name = { .memory = "u_occlusion_texture", .length = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
 	{ .name = { .memory = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
 
-	{ .name = { .memory = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.vec4f = { 1.0f, 1.0f, 1.0f, 1.0f } },
-	{ .name = { .memory = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.0f },
-	{ .name = { .memory = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.f = 0.5f },
-	{ .name = { .memory = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.vec3f = { 1.0f, 1.0f, 1.0f } },
+	{ .name = { .memory = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.float4 = { 1.0f, 1.0f, 1.0f, 1.0f } },
+	{ .name = { .memory = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.0f },
+	{ .name = { .memory = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.5f },
+	{ .name = { .memory = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float3 = { 1.0f, 1.0f, 1.0f } },
 };
 
-bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
+bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;
 	cgltf_result result = cgltf_parse_file(&options, path.memory, &data);
@@ -91,14 +89,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		LOG_ERROR("Importer: Failed to load model");
 		return NULL;
 	}
-	// After loading, verify buffer data is valid
-	for (size_t i = 0; i < data->buffers_count; i++) {
-		if (data->buffers[i].data == NULL) {
-			LOG_ERROR("Buffer %zu has NULL data after loading", i);
-			cgltf_free(data);
-			return false;
-		}
-	}
+
 	LOG_INFO("Loading %s...", path.memory);
 	logger_indent();
 
@@ -153,10 +144,10 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 		if (src->has_pbr_metallic_roughness) {
 			cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
-			memcpy(&dst->properties[5].as.vec4f, pbr->base_color_factor, sizeof(float4));
+			memcpy(&dst->properties[5].as.float4, pbr->base_color_factor, sizeof(float4));
 
-			dst->properties[6].as.f = pbr->metallic_factor;
-			dst->properties[7].as.f = pbr->roughness_factor;
+			dst->properties[6].as.float1 = pbr->metallic_factor;
+			dst->properties[7].as.float1 = pbr->roughness_factor;
 
 			dst->properties[0].as.image = find_loaded_texture(data, out_model, pbr->base_color_texture.texture);
 			dst->properties[1].as.image = find_loaded_texture(data, out_model, pbr->metallic_roughness_texture.texture);
@@ -165,7 +156,7 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 		dst->properties[2].as.image = find_loaded_texture(data, out_model, src->normal_texture.texture);
 		dst->properties[3].as.image = find_loaded_texture(data, out_model, src->occlusion_texture.texture);
 
-		memcpy(&dst->properties[8].as.vec3f, src->emissive_factor, sizeof(float3));
+		memcpy(&dst->properties[8].as.float3, src->emissive_factor, sizeof(float3));
 		dst->properties[4].as.image = find_loaded_texture(data, out_model, src->emissive_texture.texture);
 	}
 
@@ -175,9 +166,9 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 		mesh_count += mesh->primitives_count;
 	}
-
+	out_model->meshes = arena_push_array_zero(arena, MeshSource, mesh_count);
 	out_model->mesh_count = mesh_count;
-	out_model->meshes = arena_push_array_zero(arena, MeshSource2, out_model->mesh_count);
+	out_model->mesh_to_material = arena_push_array_zero(arena, uint32_t, mesh_count);
 
 	mesh_count = 0;
 	for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
@@ -185,7 +176,9 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
 			cgltf_primitive *src_mesh = &mesh->primitives[primitive_index];
-			MeshSource2 *dst_mesh = &out_model->meshes[mesh_count++];
+
+			uint32_t out_mesh_index = mesh_count++;
+			MeshSource *dst_mesh = &out_model->meshes[out_mesh_index];
 
 			// bool has_tangents = false;
 
@@ -211,7 +204,8 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 
 				if (dst_mesh->vertices == NULL) {
 					dst_mesh->vertex_count = accessor->count;
-					dst_mesh->vertices = arena_push_array_zero(arena, Vertex, dst_mesh->vertex_count);
+					dst_mesh->vertex_size = sizeof(Vertex);
+					dst_mesh->vertices = arena_push_array_zero(arena, uint8_t, dst_mesh->vertex_count * dst_mesh->vertex_size);
 				}
 
 				ASSERT(dst_mesh->vertex_count == accessor->count);
@@ -219,36 +213,36 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 				switch (attribute->type) {
 					case cgltf_attribute_type_position: {
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
-							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
+							Vertex *dst_vertex = &((Vertex *)dst_mesh->vertices)[vertex_index];
 
-							cgltf_accessor_read_float(accessor, vertex_index, float3_elements(&dst_vertex->position), 3);
+							cgltf_accessor_read_float(accessor, vertex_index, vector3f_elements(&dst_vertex->position), 3);
 						}
 						ASSERT(accessor->stride == 12);
 					} break;
 					case cgltf_attribute_type_texcoord: {
 						ASSERT(accessor->component_type == cgltf_component_type_r_32f);
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
-							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
+							Vertex *dst_vertex = &((Vertex *)dst_mesh->vertices)[vertex_index];
 
-							cgltf_accessor_read_float(accessor, vertex_index, float2_elements(&dst_vertex->uv), 2);
+							cgltf_accessor_read_float(accessor, vertex_index, vector2f_elements(&dst_vertex->uv), 2);
 						}
 					} break;
 					case cgltf_attribute_type_normal: {
 						ASSERT(accessor->component_type == cgltf_component_type_r_32f);
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
-							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
+							Vertex *dst_vertex = &((Vertex *)dst_mesh->vertices)[vertex_index];
 
-							cgltf_accessor_read_float(accessor, vertex_index, float3_elements(&dst_vertex->normal), 3);
+							cgltf_accessor_read_float(accessor, vertex_index, vector3f_elements(&dst_vertex->normal), 3);
 						}
 					} break;
 					case cgltf_attribute_type_tangent: {
 						ASSERT(accessor->component_type == cgltf_component_type_r_32f);
 						for (uint32_t vertex_index = 0; vertex_index < dst_mesh->vertex_count; ++vertex_index) {
-							Vertex *dst_vertex = &dst_mesh->vertices[vertex_index];
+							Vertex *dst_vertex = &((Vertex *)dst_mesh->vertices)[vertex_index];
 
 							// has_tangents = true;
 
-							cgltf_accessor_read_float(accessor, vertex_index, float4_elements(&dst_vertex->tangent), 4);
+							cgltf_accessor_read_float(accessor, vertex_index, vector4f_elements(&dst_vertex->tangent), 4);
 						}
 					} break;
 					case cgltf_attribute_type_invalid:
@@ -261,13 +255,13 @@ bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) {
 				}
 			}
 
-			// if (has_tangents == false)
-			// 	calculate_tangents(dst_mesh->vertices, dst_mesh->vertex_count, dst_mesh->indices, dst_mesh->index_count);
-
 			if (src_mesh->material) {
 				uint32_t index = src_mesh->material - data->materials;
-				dst_mesh->material = &out_model->materials[index];
+				out_model->mesh_to_material[out_mesh_index] = index;
 			}
+
+			// if (has_tangents == false)
+			// 	calculate_tangents(dst_mesh.vertices, dst_mesh.vertex_count, dst_mesh.indices, dst_mesh.index_count);
 		}
 	}
 
@@ -309,7 +303,7 @@ void filesystem_directory(const char *src, char *dst) {
 	dst[final] = '\0';
 }
 
-ImageSource *find_loaded_texture(const cgltf_data *data, ModelSource *source, const cgltf_texture *gltf_tex) {
+ImageSource *find_loaded_texture(const cgltf_data *data, SModel *source, const cgltf_texture *gltf_tex) {
 	if (!gltf_tex || !gltf_tex->image)
 		return NULL;
 
@@ -323,31 +317,31 @@ ImageSource *find_loaded_texture(const cgltf_data *data, ModelSource *source, co
 
 // void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count) {
 // 	for (uint32_t i = 0; i < vertex_count; i++) {
-// 		memset(vertices[i].tangent, 0, sizeof(vec4));
+// 		memset(vertices[i].tangent, 0, sizeof(vector4));
 // 	}
 //
 // 	for (uint32_t index = 0; index < index_count; index += 3) {
 // 		uint32_t triangle[3] = { indices[index + 0], indices[index + 1], indices[index + 2] };
 // 		Vertex *points[3] = { &vertices[triangle[0]], &vertices[triangle[1]], &vertices[triangle[2]] };
 //
-// 		vec3 edge1 = { 0 }, edge2 = { 0 };
-// 		glm_vec3_sub(points[1]->position, points[0]->position, edge1);
-// 		glm_vec3_sub(points[2]->position, points[0]->position, edge2);
+// 		vector3 edge1 = { 0 }, edge2 = { 0 };
+// 		glm_vector3_sub(points[1]->position, points[0]->position, edge1);
+// 		glm_vector3_sub(points[2]->position, points[0]->position, edge2);
 //
-// 		vec2 delta_1 = { 0 }, delta_2 = { 0 };
-// 		glm_vec2_sub(points[1]->uv, points[0]->uv, delta_1);
-// 		glm_vec2_sub(points[2]->uv, points[0]->uv, delta_2);
+// 		vector2 delta_1 = { 0 }, delta_2 = { 0 };
+// 		glm_vector2_sub(points[1]->uv, points[0]->uv, delta_1);
+// 		glm_vector2_sub(points[2]->uv, points[0]->uv, delta_2);
 //
 // 		float f = 1.0f / (delta_1[0] * delta_2[1] - delta_2[0] * delta_1[1]);
 //
-// 		vec3 tangent;
+// 		vector3 tangent;
 // 		tangent[0] = f * (delta_2[1] * edge1[0] - delta_1[1] * edge2[0]);
 // 		tangent[1] = f * (delta_2[1] * edge1[1] - delta_1[1] * edge2[1]);
 // 		tangent[2] = f * (delta_2[1] * edge1[2] - delta_1[1] * edge2[2]);
 //
-// 		glm_vec3_add(points[0]->tangent, tangent, points[0]->tangent);
-// 		glm_vec3_add(points[1]->tangent, tangent, points[1]->tangent);
-// 		glm_vec3_add(points[2]->tangent, tangent, points[2]->tangent);
+// 		glm_vector3_add(points[0]->tangent, tangent, points[0]->tangent);
+// 		glm_vector3_add(points[1]->tangent, tangent, points[1]->tangent);
+// 		glm_vector3_add(points[2]->tangent, tangent, points[2]->tangent);
 //
 // 		points[0]->tangent[3] = 1.0f;
 // 		points[1]->tangent[3] = 1.0f;

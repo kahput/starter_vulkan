@@ -224,6 +224,49 @@ bool vulkan_renderer_uniform_set_bind(VulkanContext *context, RhiUniformSet rset
 
 	return true;
 }
+bool vulkan_renderer_uniform_set_bind_offset(VulkanContext *context, RhiUniformSet rset, size_t offset, size_t size) {
+	VulkanUniformSet *set = NULL;
+	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
+
+	if (set->pipeline_layout == NULL && context->bound_shader == NULL) {
+		LOG_ERROR("Cannot bind set %d without a bound shader!", set->number);
+		return false;
+	}
+
+	if (set->pipeline_layout) {
+		if (set->buffer && set->buffer->state) {
+			VulkanBuffer *buffer = set->buffer;
+
+			uint32_t pass_offsets[] = { buffer->stride * context->current_frame };
+			vkCmdBindDescriptorSets(
+				context->command_buffers[context->current_frame],
+				VK_PIPELINE_BIND_POINT_GRAPHICS, set->pipeline_layout,
+				set->number, 1, &set->handle, 1, pass_offsets);
+		} else
+			vkCmdBindDescriptorSets(
+				context->command_buffers[context->current_frame],
+				VK_PIPELINE_BIND_POINT_GRAPHICS, set->pipeline_layout,
+				set->number, 1, &set->handle, 0, NULL);
+	} else {
+		VulkanShader *shader = context->bound_shader;
+
+		if (set->buffer && set->buffer->state) {
+			VulkanBuffer *buffer = set->buffer;
+
+			uint32_t pass_offsets[] = { buffer->stride * context->current_frame };
+			vkCmdBindDescriptorSets(
+				context->command_buffers[context->current_frame],
+				VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+				set->number, 1, &set->handle, 1, pass_offsets);
+		} else
+			vkCmdBindDescriptorSets(
+				context->command_buffers[context->current_frame],
+				VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+				set->number, 1, &set->handle, 0, NULL);
+	}
+
+	return true;
+}
 
 bool vulkan_renderer_push_constants(VulkanContext *context, size_t offset, size_t size, void *data) {
 	VulkanShader *shader = context->bound_shader;
