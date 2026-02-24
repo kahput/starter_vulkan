@@ -9,7 +9,6 @@ set(CMAKE_CXX_FLAGS_DEBUG
     "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 set(CMAKE_LINKER_FLAGS_DEBUG
     "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
   set(CONFIG $<CONFIG>)
@@ -24,7 +23,7 @@ endif()
 add_subdirectory(game)
 add_subdirectory(engine)
 
-set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/game/assets")
+set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
 if(EXISTS ${ASSETS_DIR})
   file(GLOB_RECURSE ASSET_FILES "${ASSETS_DIR}/*.*")
 

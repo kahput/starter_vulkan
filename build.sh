@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Resolve the directory this script is in and move one level up to get the project root
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 
 # Function to build the project using CMake with C99
@@ -9,7 +9,7 @@ build() {
     echo "[INFO] Creating build files..."
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR" || exit 1
-    cmake -GNinja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=99 "$PROJECT_ROOT"
+    cmake -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=99 "$PROJECT_ROOT"
     cmake --build .
     cp compile_commands.json ..
 }
