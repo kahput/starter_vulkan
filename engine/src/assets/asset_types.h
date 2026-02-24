@@ -16,7 +16,6 @@ typedef enum {
 } AssetType;
 
 typedef struct image {
-	UUID id;
 	String path;
 
 	void *pixels;

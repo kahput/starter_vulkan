@@ -28,6 +28,7 @@ typedef enum {
 		if ((handle.id) == 0 || (handle.id) >= (max_limit)) {                                         \
 			LOG_ERROR("Vulkan: %s index %u out of bounds (min 1, max %u), aborting %s",               \
 				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                    \
+				ASSERT(false);                                                                        \
 			return return_type;                                                                       \
 		}                                                                                             \
                                                                                                       \

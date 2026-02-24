@@ -273,13 +273,13 @@ typedef struct texture {
 typedef struct render_material {
 	RhiUniformSet set;
 	RhiBuffer ubo;
-} RMaterial;
+} Material;
 
 typedef struct render_mesh {
 	RhiBuffer vb, ib;
 	uint32_t vertex_count, index_count;
 	size_t index_size;
-} RMesh;
+} Mesh;
 
 typedef struct {
 	uint32_t binding;

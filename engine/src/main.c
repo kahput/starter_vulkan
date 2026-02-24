@@ -57,38 +57,44 @@ RhiTexture load_cubemap(String path);
 
 static struct State {
 	Arena permanent, transient, game;
+
 	Platform display;
 	VulkanContext *context;
-	Camera editor_camera;
+
+	uint64_t start_time;
+	uint32_t width, height;
+
 	AssetLibrary asset_system;
 	InputState *input_system;
 	EventState *event_system;
+
 	Layer layers[1];
 	Layer *current_layer;
+
 	bool editor;
-	uint64_t start_time;
-	uint32_t width, height;
+	Camera editor_camera;
+
 	RhiTexture white_tex, black_tex, flat_normal_tex;
 	RhiSampler linear_sampler, nearest_sampler;
-	RhiTexture shadow_depth_tex;
-	RhiTexture main_depth_tex;
-	RhiTexture main_color_tex;
-	RhiTexture skybox_tex;
 
 	RhiUniformSet global_shadow;
+	RhiTexture shadow_depth_tex;
 
+	RhiTexture main_depth_tex;
+	RhiTexture main_color_tex;
 	RhiUniformSet global_main;
 	RhiBuffer global_main_buffer;
 
-	RhiUniformSet global_postfx;
-
 	RhiBuffer quad_vb;
-	RhiShader light_shader;
 
+	RhiShader light_shader;
 	RhiUniformSet light_material;
 	RhiBuffer light_buffer;
 
 	RhiShader postfx_shader;
+	RhiUniformSet global_postfx;
+
+	RhiTexture skybox_tex;
 	RhiShader skybox_shader;
 	RhiUniformSet skybox_material;
 } state;
@@ -259,15 +265,17 @@ int main(void) {
 	float timer_accumulator = 0.0f;
 	uint32_t frames = 0;
 
+	ArenaTemp scratch = arena_scratch(NULL);
+
 	// Create light debug shader
-	ShaderSource *light_shader_src = NULL;
-	UUID light_shader_id = asset_library_request_shader(&state.asset_system, str_lit("light_debug.glsl"), &light_shader_src);
+	ShaderSource light_shader_src = { 0 };
+	UUID light_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, str_lit("light_debug.glsl"), &light_shader_src);
 	{
 		ShaderConfig light_config = {
-			.vertex_code = light_shader_src->vertex_shader.content,
-			.vertex_code_size = light_shader_src->vertex_shader.size,
-			.fragment_code = light_shader_src->fragment_shader.content,
-			.fragment_code_size = light_shader_src->fragment_shader.size,
+			.vertex_code = light_shader_src.vertex_shader.content,
+			.vertex_code_size = light_shader_src.vertex_shader.size,
+			.fragment_code = light_shader_src.fragment_shader.content,
+			.fragment_code_size = light_shader_src.fragment_shader.size,
 		};
 		// PipelineDesc desc = DEFAULT_PIPELINE();
 		// desc.cull_mode = CULL_MODE_NONE;
@@ -281,14 +289,14 @@ int main(void) {
 			state.context, state.light_material, 0, state.light_buffer);
 	}
 
-	ShaderSource *postfx_shader_src = NULL;
-	UUID postfx_shader_id = asset_library_request_shader(&state.asset_system, str_lit("postfx.glsl"), &postfx_shader_src);
+	ShaderSource postfx_shader_src = { 0 };
+	UUID postfx_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, str_lit("postfx.glsl"), &postfx_shader_src);
 	{
 		ShaderConfig postfx_config = {
-			.vertex_code = postfx_shader_src->vertex_shader.content,
-			.vertex_code_size = postfx_shader_src->vertex_shader.size,
-			.fragment_code = postfx_shader_src->fragment_shader.content,
-			.fragment_code_size = postfx_shader_src->fragment_shader.size,
+			.vertex_code = postfx_shader_src.vertex_shader.content,
+			.vertex_code_size = postfx_shader_src.vertex_shader.size,
+			.fragment_code = postfx_shader_src.fragment_shader.content,
+			.fragment_code_size = postfx_shader_src.fragment_shader.size,
 		};
 		// PipelineDesc desc = DEFAULT_PIPELINE();
 		// desc.cull_mode = CULL_MODE_NONE;
@@ -297,14 +305,14 @@ int main(void) {
 			&state.permanent, state.context, &postfx_config, &reflection);
 	}
 
-	ShaderSource *skybox_shader_src = NULL;
-	UUID skybox_shader_id = asset_library_request_shader(&state.asset_system, str_lit("skybox.glsl"), &skybox_shader_src);
+	ShaderSource skybox_shader_src = { 0 };
+	UUID skybox_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, str_lit("skybox.glsl"), &skybox_shader_src);
 	{
 		ShaderConfig skybox_config = {
-			.vertex_code = skybox_shader_src->vertex_shader.content,
-			.vertex_code_size = skybox_shader_src->vertex_shader.size,
-			.fragment_code = skybox_shader_src->fragment_shader.content,
-			.fragment_code_size = skybox_shader_src->fragment_shader.size,
+			.vertex_code = skybox_shader_src.vertex_shader.content,
+			.vertex_code_size = skybox_shader_src.vertex_shader.size,
+			.fragment_code = skybox_shader_src.fragment_shader.content,
+			.fragment_code_size = skybox_shader_src.fragment_shader.size,
 		};
 		// PipelineDesc desc = DEFAULT_PIPELINE();
 		// desc.cull_mode = CULL_MODE_NONE;
@@ -315,6 +323,8 @@ int main(void) {
 		state.skybox_material = vulkan_renderer_uniform_set_create(state.context, state.skybox_shader, 1);
 		vulkan_renderer_uniform_set_bind_texture(state.context, state.skybox_material, 0, state.skybox_tex, state.linear_sampler);
 	}
+
+	arena_release_scratch(scratch);
 
 	// clang-format off
     float quadVertices[] = {
@@ -551,12 +561,14 @@ bool game_load(GameContext *context) {
 	}
 
 	ArenaTemp scratch = arena_scratch(NULL);
+
 	String path = str_lit("./libgame.so");
 	String temp_path = string_pushf(scratch.arena, "./loaded_%s.so", "game");
 
 	if (filesystem_file_copy(path, temp_path) == false) {
 		LOG_ERROR("failed to copy file");
 		ASSERT(false);
+		arena_release_scratch(scratch);
 		return false;
 	}
 
@@ -564,6 +576,7 @@ bool game_load(GameContext *context) {
 	if (handle == NULL) {
 		LOG_ERROR("dlopen failed: %s", dlerror());
 		ASSERT(false);
+		arena_release_scratch(scratch);
 		return false;
 	}
 
@@ -577,10 +590,13 @@ bool game_load(GameContext *context) {
 	if (hookup == false) {
 		LOG_ERROR("dlsym failed: %s", dlerror());
 		ASSERT(false);
+		arena_release_scratch(scratch);
 		return false;
 	}
 
 	game = hookup();
+	arena_release_scratch(scratch);
+
 	return true;
 }
 

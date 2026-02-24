@@ -23,10 +23,10 @@
 #include <vulkan/vulkan_core.h>
 
 typedef struct {
-	RMesh *meshes;
+	Mesh *meshes;
 	uint32_t mesh_count;
 
-	RMaterial *materials;
+	Material *materials;
 	uint32_t material_count;
 
 	Matrix4f transform;
@@ -55,7 +55,7 @@ typedef struct {
 	GameModel crate;
 
 	GameModel walls[3];
-	RMesh terrain[2];
+	Mesh terrain[2];
 
 	uint32_t current_frame;
 
@@ -87,6 +87,50 @@ void player_update(float3 *player_position, float dt, Camera *camera);
 FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	state = (GameState *)context->permanent_memory;
 
+	/*
+	 * ///////////////////////////////////////////////////////////////////////////////////////////
+	 * /// INITIALIZATION
+	 * ///////////////////////////////////////////////////////////////////////////////////////////
+	 *
+	 * UUID sprite_shader = asset_library_request_shader(context->asset_library, str_lit("sprite.glsl"));
+	 * UUID sprite = asset_library_request_image(context->asset_library, str_lit("tile_0085.png"));
+	 *
+	 * ArenaTemp scratch = arena_scratch();
+	 * MeshSource plane = mesh_source_plane_create(scratch.arena, 0, 0, 0, PLANE_Z);
+	 *
+	 * // Unsure about materials
+	 *
+	 * MaterialSource sprite_mat_src = {
+	 *     .shader = sprite_shader,
+	 *     .properties = {
+	 *         [0] = { .name = str_lit("u_tint"), FORMAT_FLOAT_4, .as.float4 = {1.0f, 1.0f, 1.0f, 1.0f}},
+	 *     }
+	 * }
+	 * UUID sprite_mat_base = asset_library_register_material(context->asset_library, str_lit("sprite.mat"), sprite_mat_src);
+	 *
+	 * ///////////////////////////////////////////////////////////////////////////////////////////
+	 * /// Drawing
+	 * ///////////////////////////////////////////////////////////////////////////////////////////
+	 *
+	 * MaterialProperty overrides[] = {
+	 *     [0] = {.name = str_lit("u_tint"), FORMAT_FLOAT_4, .as.float4 = { 1.0f, 0.0f, 1.0f, 1.0f },
+	 * }
+	 *
+	 * typedef struct draw_packet {
+	 *     UUID base_material;
+	 *     ...
+	 *
+	 *     MaterialProperty *overrides;
+	 *     uint32_t override_count;
+	 * } DrawPacket;
+	 *
+	 *
+	 * draw_list_push_generated(context, plane, ...);
+	 * // draw_list_push_model(context, model, ...);
+	 *
+	 *
+	 */
+
 	ArenaTemp scratch = arena_scratch(NULL);
 	if (state->is_initialized == false) {
 		state->arena = (Arena){
@@ -94,54 +138,6 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			.offset = 0,
 			.capacity = context->permanent_memory_size - sizeof(GameState)
 		};
-
-		state->current_frame = 0;
-		for (uint32_t index = 0; index < countof(state->terrain); ++index)
-			state->terrain[index].vb.id = 0;
-
-		/*
-		 * ///////////////////////////////////////////////////////////////////////////////////////////
-		 * /// INITIALIZATION
-		 * ///////////////////////////////////////////////////////////////////////////////////////////
-		 *
-		 * UUID sprite_shader = asset_library_request_shader(context->asset_library, str_lit("sprite.glsl"));
-		 * UUID sprite = asset_library_request_image(context->asset_library, str_lit("tile_0085.png"));
-		 *
-		 * ArenaTemp scratch = arena_scratch();
-		 * MeshSource plane = mesh_source_plane_create(scratch.arena, 0, 0, 0, PLANE_Z);
-		 *
-		 * // Unsure about materials
-		 *
-		 * MaterialSource sprite_mat_src = {
-		 *     .shader = sprite_shader,
-		 *     .properties = {
-		 *         [0] = { .name = str_lit("u_tint"), FORMAT_FLOAT_4, .as.float4 = {1.0f, 1.0f, 1.0f, 1.0f}},
-		 *     }
-		 * }
-		 * UUID sprite_mat_base = asset_library_register_material(context->asset_library, str_lit("sprite.mat"), sprite_mat_src);
-		 *
-		 * ///////////////////////////////////////////////////////////////////////////////////////////
-		 * /// Drawing
-		 * ///////////////////////////////////////////////////////////////////////////////////////////
-		 *
-		 * MaterialProperty overrides[] = {
-		 *     [0] = {.name = str_lit("u_tint"), FORMAT_FLOAT_4, .as.float4 = { 1.0f, 0.0f, 1.0f, 1.0f },
-		 * }
-		 *
-		 * typedef struct draw_packet {
-		 *     UUID base_material;
-         *     ...
-         *
-		 *     MaterialProperty *overrides;
-		 *     uint32_t override_count;
-		 * } DrawPacket;
-		 *
-		 *
-		 * draw_list_push_generated(context, plane, ...);
-		 * // draw_list_push_model(context, model, ...);
-		 *
-		 *
-		 */
 
 		state->sprite_shader = create_shader(context, str_lit("sprite.glsl"));
 		state->terrain_shader = create_shader(context, str_lit("terrain.glsl"));
@@ -153,22 +149,6 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 		state->barrel = load_game_model(context, str_lit("barrel.glb"));
 		state->crate = load_game_model(context, str_lit("crate.glb"));
-
-		/* SModel walls_door = { 0 }; */
-		/* asset_library_load_model(scratch.arena, context->asset_library, str_lit("walls_door.glb"), &walls_door, false); */
-
-		/* MeshSource wall_mesh = walls_door.meshes[0]; */
-		/* state->walls[0].vb = vulkan_renderer_buffer_create( */
-		/* 	context->vk_context, BUFFER_TYPE_VERTEX, */
-		/* 	wall_mesh.vertex_count * sizeof(Vertex), wall_mesh.vertices); */
-
-		/* state->walls[0].ib = vulkan_renderer_buffer_create( */
-		/* 	context->vk_context, BUFFER_TYPE_INDEX, */
-		/* 	wall_mesh.index_size * wall_mesh.index_count, wall_mesh.indices); */
-
-		/* state->walls[0].vertex_count = wall_mesh.vertex_count; */
-		/* state->walls[0].index_count = wall_mesh.index_count; */
-		/* state->walls[0].index_size = wall_mesh.index_size; */
 
 		state->quad_vertex_count = plane_src.vertex_count;
 
@@ -238,7 +218,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		state->is_initialized = true;
 	}
 
-	RMesh *terrain = &state->terrain[state->current_frame];
+	Mesh *terrain = &state->terrain[state->current_frame];
 	MeshSourceList list = { 0 };
 
 	uint32_t size = 32;
@@ -264,9 +244,11 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	}
 	MeshSource cube_src = mesh_source_list_flatten(scratch.arena, &list);
 
-	if (terrain->vb.id || terrain->vertex_count < cube_src.vertex_count) {
-		vulkan_renderer_buffer_destroy(context->vk_context, terrain->vb);
-		terrain->vb.id = 0;
+	if (terrain->vertex_count < cube_src.vertex_count) {
+		if (terrain->vb.id != 0)
+			vulkan_renderer_buffer_destroy(context->vk_context, terrain->vb);
+
+		*terrain = (Mesh){ 0 };
 		terrain->vb = vulkan_renderer_buffer_create(context->vk_context, BUFFER_TYPE_VERTEX,
 			cube_src.vertex_size * cube_src.vertex_count, cube_src.vertices);
 	} else
@@ -279,7 +261,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 	vulkan_renderer_buffer_write(
 		context->vk_context, state->sprite_uniform_buffer,
-		0, sizeof(float4), &(float4){ 1.0f, 1.0f, 1.0f, 1.0f });
+		0, sizeof(float4), &(float4){ 0.0f, 0.0f, 1.0f, 1.0f });
 
 	vulkan_renderer_buffer_write(
 		context->vk_context, state->terrain_uniform_buffer,
@@ -297,8 +279,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	vulkan_renderer_shader_bind(context->vk_context, state->model_shader, state->pipeline_desc);
 
 	for (uint32_t index = 0; index < state->barrel.mesh_count; ++index) {
-		RMesh *mesh = &state->barrel.meshes[index];
-		RMaterial *material = &state->barrel.materials[index];
+		Mesh *mesh = &state->barrel.meshes[index];
+		Material *material = &state->barrel.materials[index];
 
 		transform = matrix4f_translate(matrix4f_identity(), (Vector3f){ -3.0f, 0.0f, 0.0f });
 		vulkan_renderer_push_constants(context->vk_context, 0, sizeof(Matrix4f), &transform);
@@ -310,8 +292,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	}
 
 	for (uint32_t index = 0; index < state->crate.mesh_count; ++index) {
-		RMesh *mesh = &state->crate.meshes[index];
-		RMaterial *material = &state->crate.materials[index];
+		Mesh *mesh = &state->crate.meshes[index];
+		Material *material = &state->crate.materials[index];
 
 		transform = matrix4f_translate(matrix4f_identity(), (Vector3f){ 3.0f, 0.0f, 0.0f });
 		vulkan_renderer_push_constants(context->vk_context, 0, sizeof(Matrix4f), &transform);
@@ -342,7 +324,6 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	vulkan_renderer_draw(context->vk_context, terrain->vertex_count);
 
 	arena_release_scratch(scratch);
-	state->current_frame = (state->current_frame + 1) % 2;
 
 	if (input_key_pressed(KEY_CODE_ENTER))
 		state->pipeline_desc.polygon_mode = !state->pipeline_desc.polygon_mode;
@@ -359,19 +340,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 }
 
 RhiShader create_shader(GameContext *context, String filename) {
-	ShaderSource *shader_src = NULL;
-	asset_library_request_shader(context->asset_library, filename, &shader_src);
-	if (shader_src == NULL) {
-		LOG_ERROR("Failed to load %.*s shader", str_expand(filename));
-		ASSERT(false);
-		return (RhiShader){ 0 };
-	}
+	ArenaTemp scratch = arena_scratch(NULL);
+
+	ShaderSource shader_src = { 0 };
+	asset_library_load_shader(scratch.arena, context->asset_library, filename, &shader_src);
 
 	ShaderConfig config = {
-		.vertex_code = shader_src->vertex_shader.content,
-		.vertex_code_size = shader_src->vertex_shader.size,
-		.fragment_code = shader_src->fragment_shader.content,
-		.fragment_code_size = shader_src->fragment_shader.size,
+		.vertex_code = shader_src.vertex_shader.content,
+		.vertex_code_size = shader_src.vertex_shader.size,
+		.fragment_code = shader_src.fragment_shader.content,
+		.fragment_code_size = shader_src.fragment_shader.size,
 	};
 
 	ShaderReflection reflection;
@@ -379,23 +357,22 @@ RhiShader create_shader(GameContext *context, String filename) {
 	RhiShader shader = vulkan_renderer_shader_create(
 		&state->arena, context->vk_context, &config, &reflection);
 
+	arena_release_scratch(scratch);
 	return shader;
 }
 
 RhiTexture create_texture(GameContext *context, String filename) {
-	ImageSource *texture_src = NULL;
-	UUID texture_id = asset_library_request_image(context->asset_library, filename, &texture_src);
+	ArenaTemp scratch = arena_scratch(NULL);
 
-	if (!texture_src) {
-		LOG_ERROR("Failed to load texture texture");
-		return (RhiTexture){ 0 };
-	}
+	ImageSource image_src = { 0 };
+	UUID texture_id = asset_library_load_image(scratch.arena, context->asset_library, filename, &image_src);
 
 	RhiTexture texture = vulkan_renderer_texture_create(context->vk_context,
-		texture_src->width, texture_src->height,
+		image_src.width, image_src.height,
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
-		TEXTURE_USAGE_SAMPLED, texture_src->pixels);
+		TEXTURE_USAGE_SAMPLED, image_src.pixels);
 
+	arena_release_scratch(scratch);
 	return texture;
 }
 
@@ -405,20 +382,20 @@ GameModel load_game_model(GameContext *context, String file) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
 	SModel src = { 0 };
-	asset_library_load_model(scratch.arena, context->asset_library, file, &src, false);
+	asset_library_load_model(scratch.arena, context->asset_library, file, &src);
 
 	result.mesh_count = src.mesh_count;
 	result.material_count = src.material_count;
 
-	result.meshes = arena_push_array(&state->arena, RMesh, result.mesh_count);
-	result.materials = arena_push_array(&state->arena, RMaterial, result.mesh_count);
+	result.meshes = arena_push_array(&state->arena, Mesh, result.mesh_count);
+	result.materials = arena_push_array(&state->arena, Material, result.mesh_count);
 
 	for (uint32_t index = 0; index < src.mesh_count; ++index) {
 		MeshSource *src_mesh = &src.meshes[index];
 		MaterialSource *src_material = &src.materials[src.mesh_to_material[index]];
 
-		RMesh *dst_mesh = &result.meshes[index];
-		RMaterial *dst_material = &result.materials[index];
+		Mesh *dst_mesh = &result.meshes[index];
+		Material *dst_material = &result.materials[index];
 
 		dst_mesh->vb = vulkan_renderer_buffer_create(
 			context->vk_context, BUFFER_TYPE_VERTEX,
