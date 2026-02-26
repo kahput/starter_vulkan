@@ -41,7 +41,7 @@ bool asset_library_startup(AssetLibrary *library, void *memory, size_t size) {
 		.offset = 0,
 		.capacity = size - sizeof(Arena)
 	};
-	library->trie = arena_trie_make(arena);
+	library->trie = arena_trie_make(arena, NULL);
 
 	return true;
 }

@@ -209,8 +209,7 @@ uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 
 typedef struct vulkan_pipeline {
-	struct vulkan_pipeline *children[4];
-	uint64_t key;
+	ArenaTrieNode node;
 
 	struct vulkan_pipeline *next;
 	struct vulkan_pipeline *prev;
@@ -236,8 +235,7 @@ typedef struct vulkan_shader {
 	VulkanPipeline *first_free;
 	VulkanPipeline *pipeline_lru_head;
 
-
-    ArenaTrie trie;
+	ArenaTrie trie;
 	VulkanPipeline variants[MAX_SHADER_VARIANTS];
 	uint32_t variant_count;
 } VulkanShader;

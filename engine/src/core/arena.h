@@ -14,7 +14,8 @@ Arena arena_make(size_t size);
 static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .memory = buffer, .capacity = size }; }
 void arena_destroy(Arena *arena);
 
-#define arena_wrap_array(array) arena_wrap(array, sizeof(array))
+#define arena_wrap_array(array) ((Arena){ .memory = array, .capacity = sizeof(array) })
+#define arena_wrap_struct(s) ((Arena){ .memory = s, .capacity = sizeof(*s) })
 
 ENGINE_API void *arena_push(Arena *arena, size_t size, size_t align, bool zero);
 
@@ -67,13 +68,16 @@ typedef struct {
 	ArenaTrieNode *root;
 } ArenaTrie;
 
-static inline ArenaTrie arena_trie_make(Arena *arena) { return (ArenaTrie){ .arena = arena }; }
+static inline ArenaTrie arena_trie_make(Arena *arena, ArenaTrieNode *root) { return (ArenaTrie){ .arena = arena , .root = root }; }
 ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, ArenaTrieMode mode);
 
-#define arena_trie_wrap_array(arr)                                                  \
-	(ArenaTrie) {                                                                   \
-		.arena = &(Arena){ .offset = 0, .capacity = sizeof(arr), .memory = (arr) }, \
-		.root = NULL                                                                \
+#define arena_trie_wrap_struct(s)                                \
+	(ArenaTrie) {                                                \
+		.arena = &(Arena) { .memory = s, .capacity = izeof(*s) } \
+	}
+#define arena_trie_wrap_array(arr)                                     \
+	(ArenaTrie) {                                                      \
+		.arena = &(Arena){ .memory = (arr), .capacity = sizeof(arr) }, \
 	}
 
 #define arena_trie_push(trie, hash, type) ((type *)arena_trie_ensure((trie).arena, &(trie).root, (hash), sizeof(type), alignof(type), ARENA_TRIE_SEQUENTIAL))

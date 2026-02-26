@@ -8,7 +8,6 @@
 #include "common.h"
 #include "core/pool.h"
 #include "core/arena.h"
-#include "core/slist.h"
 #include "core/debug.h"
 #include "core/logger.h"
 #include "core/r_types.h"
@@ -61,7 +60,7 @@ RhiShader vulkan_renderer_shader_create(
 	reflect_shader_interface(arena, context, shader, config, out_reflection);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-	shader->first_free = slist_create(shader->variants, sizeof(VulkanPipeline), countof(shader->variants));
+	shader->first_free = arena_slist_make(shader->variants, sizeof(VulkanPipeline), countof(shader->variants));
 	shader->variant_count++;
 
 	return (RhiShader){ pool_index_of(context->shader_pool, shader) };
@@ -250,65 +249,64 @@ bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, Vulkan
 	return false;
 }
 
+typedef struct {
+	PipelineDesc desc;
+	VkFormat color_formats[4];
+	VkFormat depth_format;
+} PipelineStateKey;
+
 bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc desc) {
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
 
-	ArenaTemp scratch = arena_scratch(NULL);
-
-	String key = string_pushf(scratch.arena, "cm=%d,ff=%d,pm=%d,co=%d,dt=%d,dw=%d",
-		desc.cull_mode, desc.front_face, desc.polygon_mode, desc.depth_compare_op,
-		desc.depth_test_enable, desc.depth_write_enable);
-
 	VulkanPass *pass = &context->bound_pass;
+	PipelineStateKey key = {
+		.desc = desc,
+		.depth_format = pass->depth_format
+	};
 
-	for (uint32_t index = 0; pass->color_formats[index]; ++index) {
-		key = string_push_concat(
-			scratch.arena, key, string_pushf(scratch.arena, "%d", pass->color_formats[index]));
-	}
-	if (pass->depth_format)
-		key = string_push_concat(scratch.arena, key, string_pushf(scratch.arena, "%d", pass->depth_format));
+	for (uint32_t index = 0; pass->color_formats[index] && index < countof(key.color_formats); ++index)
+		key.color_formats[index] = pass->color_formats[index];
 
-	uint64_t hash = string_hash64(key);
-	arena_scratch_release(scratch);
+	uint64_t hash = string_hash64((String){ .memory = (char *)&key, .length = sizeof(PipelineStateKey) });
 
-	VulkanPipeline *variant = arena_trie_find(shader->trie, hash, VulkanPipeline);
-	if (variant == NULL) {
-		variant = slist_pop(&shader->first_free);
+	VulkanPipeline *slot = arena_slist_pop(&shader->first_free, VulkanPipeline);
+	ASSERT(slot);
 
-		shader->trie.arena = &(Arena){
-			.memory = variant,
-			.capacity = sizeof(VulkanPipeline)
-		};
-		arena_trie_pushi(shader->trie, hash, VulkanPipeline);
+	shader->trie.arena = &arena_wrap_struct(slot);
+	VulkanPipeline *variant = arena_trie_pushi(shader->trie, hash, VulkanPipeline);
 
+	if (variant == slot) {
 		create_shader_variant(context, shader, pass, desc, variant);
 		shader->variant_count++;
-	} else if (shader->pipeline_lru_head != variant) {
-		variant->next->prev = variant->prev;
-		variant->prev->next = variant->next;
-	}
 
-	if (shader->pipeline_lru_head && shader->pipeline_lru_head != variant) {
-		VulkanPipeline *tail = shader->pipeline_lru_head->prev;
-		VulkanPipeline *head = shader->pipeline_lru_head;
+		variant->next = NULL;
+		variant->prev = NULL;
+	} else
+		arena_slist_push(&shader->first_free, slot);
 
-		tail->next = variant;
-		head->prev = variant;
+	if (shader->pipeline_lru_head != variant) {
+		if (variant->next && variant->prev) {
+			variant->next->prev = variant->prev;
+			variant->prev->next = variant->next;
+		}
 
-		variant->next = head;
-		variant->prev = tail;
-
-		shader->pipeline_lru_head = variant;
-	} else if (shader->pipeline_lru_head == NULL) {
-		variant->prev = variant;
-		variant->next = variant;
-
+		if (shader->pipeline_lru_head) {
+			VulkanPipeline *tail = shader->pipeline_lru_head->prev;
+			tail->next = variant;
+			variant->prev = tail;
+			variant->next = shader->pipeline_lru_head;
+			shader->pipeline_lru_head->prev = variant;
+		} else {
+			variant->prev = variant;
+			variant->next = variant;
+		}
 		shader->pipeline_lru_head = variant;
 	}
 
 	context->bound_shader = shader;
 	vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, variant->handle);
+
 	return true;
 }
 
