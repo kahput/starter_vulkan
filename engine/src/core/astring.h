@@ -8,8 +8,9 @@ typedef struct String {
 	size_t length;
 } String;
 
-#define str_expand(s) (int)(s).length, (s).memory
-#define str_lit(s) ((String){ (char *)(s), sizeof(s) - 1 })
+#define sfmt(s) (int)(s).length, (s).memory
+#define slit(s) ((String){ (char *)(s), sizeof(s) - 1 })
+#define shash(s) string_hash64(slit(s))
 
 String string_from_cstr(const char *s);
 String string_from_range(char *start, char *end);

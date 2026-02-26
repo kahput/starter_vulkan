@@ -1,10 +1,9 @@
 #pragma once
 
-#include "core/arena.h"
-
-#include "core/hash_trie.h"
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
+
+#include "core/arena.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -28,7 +27,7 @@ typedef enum {
 		if ((handle.id) == 0 || (handle.id) >= (max_limit)) {                                         \
 			LOG_ERROR("Vulkan: %s index %u out of bounds (min 1, max %u), aborting %s",               \
 				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                    \
-				ASSERT(false);                                                                        \
+			ASSERT(false);                                                                            \
 			return return_type;                                                                       \
 		}                                                                                             \
                                                                                                       \
@@ -210,7 +209,8 @@ uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 
 typedef struct vulkan_pipeline {
-	HashTrieNode node;
+	struct vulkan_pipeline *children[4];
+	uint64_t key;
 
 	struct vulkan_pipeline *next;
 	struct vulkan_pipeline *prev;
@@ -232,10 +232,12 @@ typedef struct vulkan_shader {
 	VkDeviceSize instance_size;
 
 	VkPipelineLayout pipeline_layout;
-	VulkanPipeline *pipeline_root;
 
+	VulkanPipeline *first_free;
 	VulkanPipeline *pipeline_lru_head;
 
+
+    ArenaTrie trie;
 	VulkanPipeline variants[MAX_SHADER_VARIANTS];
 	uint32_t variant_count;
 } VulkanShader;

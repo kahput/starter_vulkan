@@ -6,7 +6,6 @@
 
 #include "common.h"
 #include "core/astring.h"
-#include "core/hash_trie.h"
 #include "core/identifiers.h"
 #include "core/logger.h"
 
@@ -42,6 +41,7 @@ bool asset_library_startup(AssetLibrary *library, void *memory, size_t size) {
 		.offset = 0,
 		.capacity = size - sizeof(Arena)
 	};
+	library->trie = arena_trie_make(arena);
 
 	return true;
 }
@@ -63,14 +63,14 @@ bool asset_library_track_directory(AssetLibrary *library, String directory) {
 	logger_dedent();
 
 	LOG_INFO("AssetLibrary: %d files tracked", count);
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return true;
 }
 
 bool asset_library_track_file(AssetLibrary *library, String file_path) {
 	ArenaTemp scratch = arena_scratch(NULL);
 	String name = string_push_copy(scratch.arena, string_path_filename(file_path));
-	AssetEntry *entry = hash_trie_insert(library->arena, &library->root, string_hash64(name), AssetEntry);
+	AssetEntry *entry = arena_trie_push(library->trie, string_hash64(name), AssetEntry);
 
 	if (entry->full_path.length == 0) {
 		entry->full_path = string_push_copy(library->arena, file_path);
@@ -79,31 +79,31 @@ bool asset_library_track_file(AssetLibrary *library, String file_path) {
 
 		library->tracked_file_count++;
 
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return true;
 	}
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return false;
 }
 
 UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, ShaderSource *out_shader) {
 	ArenaTemp scratch = arena_scratch(arena);
 
-	String vertex_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("vert.spv"));
-	String fragment_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("frag.spv"));
+	String vertex_shader_key = string_push_replace(scratch.arena, key, slit("glsl"), slit("vert.spv"));
+	String fragment_shader_key = string_push_replace(scratch.arena, key, slit("glsl"), slit("frag.spv"));
 
-	AssetEntry *vs_entry = hash_trie_lookup(&library->root, string_hash64(vertex_shader_key), AssetEntry);
-	AssetEntry *fs_entry = hash_trie_lookup(&library->root, string_hash64(fragment_shader_key), AssetEntry);
+	AssetEntry *vs_entry = arena_trie_find(library->trie, string_hash64(vertex_shader_key), AssetEntry);
+	AssetEntry *fs_entry = arena_trie_find(library->trie, string_hash64(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
-		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
-		arena_release_scratch(scratch);
+		LOG_WARN("Assets: Key '%.*s' is not tracked", sfmt(key));
+		arena_scratch_release(scratch);
 		return 0;
 	}
 
 	if (vs_entry->type != ASSET_TYPE_SHADER || fs_entry->type != ASSET_TYPE_SHADER) {
-		LOG_ERROR("Assets: Key '%.*s' is not a shader", str_expand(key));
-		arena_release_scratch(scratch);
+		LOG_ERROR("Assets: Key '%.*s' is not a shader", sfmt(key));
+		arena_scratch_release(scratch);
 		return 0;
 	}
 
@@ -116,19 +116,19 @@ UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, 
 		string_path_folder(vs_entry->full_path), key);
 	out_shader->id = string_hash64(out_shader->path);
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return out_shader->id;
 }
 
 UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, SModel *out_model) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
+	AssetEntry *entry = arena_trie_find(library->trie, string_hash64(key), AssetEntry);
 	if (entry == NULL) {
-		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
+		LOG_WARN("Assets: Key '%.*s' is not tracked", sfmt(key));
 		return 0;
 	}
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {
-		LOG_ERROR("Assets: Key '%.*s' is not geometry", str_expand(key));
+		LOG_ERROR("Assets: Key '%.*s' is not geometry", sfmt(key));
 		return 0;
 	}
 
@@ -142,7 +142,7 @@ UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, S
 		String path = out_model->images[image_index].path;
 		String name = string_push_copy(scratch.arena, string_path_filename(path));
 
-		AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(name), AssetEntry);
+		AssetEntry *entry = arena_trie_find(library->trie, string_hash64(name), AssetEntry);
 		if (entry == NULL) {
 			asset_library_track_file(library, path);
 		}
@@ -150,20 +150,20 @@ UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, S
 		asset_library_load_image(arena, library, name, &out_model->images[image_index]);
 	}
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return entry->id;
 }
 
 UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, ImageSource *out_image) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
+	AssetEntry *entry = arena_trie_find(library->trie, string_hash64(key), AssetEntry);
 
 	if (entry == NULL) {
-		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
+		LOG_WARN("Assets: Key '%.*s' is not tracked", sfmt(key));
 		return 0;
 	}
 
 	if (entry->type != ASSET_TYPE_IMAGE) {
-		LOG_ERROR("Assets: Key '%.*s' is not a image", str_expand(key));
+		LOG_ERROR("Assets: Key '%.*s' is not a image", sfmt(key));
 		return 0;
 	}
 
@@ -176,35 +176,35 @@ UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, I
 UUID asset_library_request_shader(AssetLibrary *library, String key) {
 	ArenaTemp scratch = arena_scratch(NULL);
 
-	String vertex_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("vert.spv"));
-	String fragment_shader_key = string_push_replace(scratch.arena, key, str_lit("glsl"), str_lit("frag.spv"));
+	String vertex_shader_key = string_push_replace(scratch.arena, key, slit("glsl"), slit("vert.spv"));
+	String fragment_shader_key = string_push_replace(scratch.arena, key, slit("glsl"), slit("frag.spv"));
 
-	AssetEntry *vs_entry = hash_trie_lookup(&library->root, string_hash64(vertex_shader_key), AssetEntry);
-	AssetEntry *fs_entry = hash_trie_lookup(&library->root, string_hash64(fragment_shader_key), AssetEntry);
+	AssetEntry *vs_entry = arena_trie_find(library->trie, string_hash64(vertex_shader_key), AssetEntry);
+	AssetEntry *fs_entry = arena_trie_find(library->trie, string_hash64(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
-		LOG_WARN("Assets: Key '%.*s' is not tracked", str_expand(key));
-		arena_release_scratch(scratch);
+		LOG_WARN("Assets: Key '%.*s' is not tracked", sfmt(key));
+		arena_scratch_release(scratch);
 		return 0;
 	}
 
 	if (vs_entry->type != ASSET_TYPE_SHADER || fs_entry->type != ASSET_TYPE_SHADER) {
-		LOG_ERROR("Assets: Key '%.*s' is not a shader", str_expand(key));
-		arena_release_scratch(scratch);
+		LOG_ERROR("Assets: Key '%.*s' is not a shader", sfmt(key));
+		arena_scratch_release(scratch);
 		return 0;
 	}
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 
 	return vs_entry->id;
 }
 
 UUID asset_library_request_model(AssetLibrary *library, String key) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
+	AssetEntry *entry = arena_trie_find(library->trie, string_hash64(key), AssetEntry);
 	if (entry == NULL)
 		return 0;
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {
-		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", str_expand(key), entry->type);
+		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", sfmt(key), entry->type);
 		return 0;
 	}
 
@@ -212,14 +212,14 @@ UUID asset_library_request_model(AssetLibrary *library, String key) {
 }
 
 UUID asset_library_request_image(AssetLibrary *library, String key) {
-	AssetEntry *entry = hash_trie_lookup(&library->root, string_hash64(key), AssetEntry);
+	AssetEntry *entry = arena_trie_find(library->trie, string_hash64(key), AssetEntry);
 	if (entry == NULL) {
-		LOG_WARN("AssetLibrary: No image '%.*s'", str_expand(key));
+		LOG_WARN("AssetLibrary: No image '%.*s'", sfmt(key));
 		return 0;
 	}
 
 	if (entry->type != ASSET_TYPE_IMAGE) {
-		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", str_expand(key), entry->type);
+		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", sfmt(key), entry->type);
 		return 0;
 	}
 
@@ -229,7 +229,7 @@ UUID asset_library_request_image(AssetLibrary *library, String key) {
 bool asset_library_clear_cache(AssetLibrary *library) {
 	arena_clear(library->arena);
 
-	library->root = NULL;
+	library->trie = (ArenaTrie){ 0 };
 	library->tracked_file_count = 0;
 
 	LOG_INFO("AssetLibrary: Cache cleared. All tracking lost.");

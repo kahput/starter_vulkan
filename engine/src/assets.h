@@ -16,7 +16,7 @@ typedef struct asset_entry {
 
 typedef struct asset_library {
 	Arena *arena;
-	AssetEntry *root;
+	ArenaTrie trie;
 
 	uint32_t tracked_file_count;
 } AssetLibrary;

@@ -55,7 +55,7 @@ bool vulkan_instance_create(VulkanContext *context, void *display) {
 		if (found == false) {
 			LOG_FATAL("Extension '%s' not found, aborting vulkan_instance_create", extensions[request_index]);
 			ASSERT(false);
-			arena_release_scratch(scratch);
+			arena_scratch_release(scratch);
 			return false;
 		}
 	}
@@ -83,7 +83,7 @@ bool vulkan_instance_create(VulkanContext *context, void *display) {
 
 	if (match != requested_layers) {
 		LOG_ERROR("Requested layers not found");
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 	create_info.enabledLayerCount = requested_layers;
@@ -118,13 +118,13 @@ bool vulkan_instance_create(VulkanContext *context, void *display) {
 	VkResult result = vkCreateInstance(&create_info, NULL, &context->instance);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Vulkan instance creation failed");
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 
 	LOG_INFO("Vulkan Instance created");
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return true;
 }
 

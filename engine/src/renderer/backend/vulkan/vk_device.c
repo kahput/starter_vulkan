@@ -104,7 +104,7 @@ bool select_physical_device(Arena *arena, VulkanContext *context) {
 		}
 	}
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return found_suitable;
 }
 
@@ -144,7 +144,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &device->swapchain_details.format_count, NULL);
 	if (device->swapchain_details.format_count == 0) {
 		LOG_ERROR("No surface formats available");
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 
@@ -154,7 +154,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->swapchain_details.present_mode_count, NULL);
 	if (device->swapchain_details.present_mode_count == 0) {
 		LOG_ERROR("No surface modes available");
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 
@@ -184,7 +184,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 			device->present_index = index;
 	}
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	LOG_INFO("Device '%s' selected", device->properties.deviceName);
 
 	return true;

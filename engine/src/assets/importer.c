@@ -44,7 +44,7 @@ bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
 		out_texture->width = out_texture->height = 1;
 		out_texture->channels = 4;
 		out_texture->pixels = magenta;
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 	out_texture->channels = 4;
@@ -57,7 +57,7 @@ bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
 	LOG_INFO("%s loaded", filename.memory);
 	logger_dedent();
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return true;
 }
 
@@ -107,16 +107,16 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
 			String mime_type = string_from_cstr(src->mime_type);
 
-			String filename = string_push_replace(scratch.arena, string_path_filename(path), str_lit(".glb"), str_lit(""));
+			String filename = string_push_replace(scratch.arena, string_path_filename(path), slit(".glb"), slit(""));
 			String name = string_pushf(scratch.arena, "%s_%s", filename.memory, (src->name ? src->name : "image"));
-			if (string_find_first(string_from_cstr(src->mime_type), str_lit("png")) != -1) {
+			if (string_find_first(string_from_cstr(src->mime_type), slit("png")) != -1) {
 				dst->path = string_pushf(arena, "%s/%s.png", base_directory.memory, name.memory);
 				if (filesystem_file_exists(dst->path) == false) {
 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 					stbi_write_png(dst->path.memory, dst->width, dst->height, 4, pixels, STBI_default);
 					stbi_image_free(pixels);
 				}
-			} else if (string_find_first(mime_type, str_lit("jpg")) != -1 || string_find_first(mime_type, str_lit("jpeg")) != -1) {
+			} else if (string_find_first(mime_type, slit("jpg")) != -1 || string_find_first(mime_type, slit("jpeg")) != -1) {
 				dst->path = string_pushf(arena, "%s/%s.jpg", base_directory.memory, name.memory);
 				if (filesystem_file_exists(dst->path) == false) {
 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
@@ -268,7 +268,7 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 	logger_dedent();
 	cgltf_free(data);
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return true;
 }
 

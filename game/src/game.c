@@ -92,8 +92,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	 * /// INITIALIZATION
 	 * ///////////////////////////////////////////////////////////////////////////////////////////
 	 *
-	 * UUID sprite_shader = asset_library_request_shader(context->asset_library, str_lit("sprite.glsl"));
-	 * UUID sprite = asset_library_request_image(context->asset_library, str_lit("tile_0085.png"));
+	 * UUID sprite_shader = asset_library_request_shader(context->asset_library, slit("sprite.glsl"));
+	 * UUID sprite = asset_library_request_image(context->asset_library, slit("tile_0085.png"));
 	 *
 	 * ArenaTemp scratch = arena_scratch();
 	 * MeshSource plane = mesh_source_plane_create(scratch.arena, 0, 0, 0, PLANE_Z);
@@ -103,17 +103,17 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	 * MaterialSource sprite_mat_src = {
 	 *     .shader = sprite_shader,
 	 *     .properties = {
-	 *         [0] = { .name = str_lit("u_tint"), FORMAT_FLOAT_4, .as.float4 = {1.0f, 1.0f, 1.0f, 1.0f}},
+	 *         [0] = { .name = slit("u_tint"), FORMAT_FLOAT_4, .as.float4 = {1.0f, 1.0f, 1.0f, 1.0f}},
 	 *     }
 	 * }
-	 * UUID sprite_mat_base = asset_library_register_material(context->asset_library, str_lit("sprite.mat"), sprite_mat_src);
+	 * UUID sprite_mat_base = asset_library_register_material(context->asset_library, slit("sprite.mat"), sprite_mat_src);
 	 *
 	 * ///////////////////////////////////////////////////////////////////////////////////////////
 	 * /// Drawing
 	 * ///////////////////////////////////////////////////////////////////////////////////////////
 	 *
 	 * MaterialProperty overrides[] = {
-	 *     [0] = {.name = str_lit("u_tint"), FORMAT_FLOAT_4, .as.float4 = { 1.0f, 0.0f, 1.0f, 1.0f },
+	 *     [0] = {.name = slit("u_tint"), FORMAT_FLOAT_4, .as.float4 = { 1.0f, 0.0f, 1.0f, 1.0f },
 	 * }
 	 *
 	 * typedef struct draw_packet {
@@ -139,16 +139,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			.capacity = context->permanent_memory_size - sizeof(GameState)
 		};
 
-		state->sprite_shader = create_shader(context, str_lit("sprite.glsl"));
-		state->terrain_shader = create_shader(context, str_lit("terrain.glsl"));
-		state->model_shader = create_shader(context, str_lit("pbr.glsl"));
+		state->sprite_shader = create_shader(context, slit("sprite.glsl"));
+		state->terrain_shader = create_shader(context, slit("terrain.glsl"));
+		state->model_shader = create_shader(context, slit("pbr.glsl"));
 
 		state->pipeline_desc = DEFAULT_PIPELINE;
 
 		MeshSource plane_src = mesh_source_cube_face_create(scratch.arena, 0, 0, 0, CUBE_FACE_FRONT);
 
-		state->barrel = load_game_model(context, str_lit("barrel.glb"));
-		state->crate = load_game_model(context, str_lit("crate.glb"));
+		state->barrel = load_game_model(context, slit("barrel.glb"));
+		state->crate = load_game_model(context, slit("crate.glb"));
 
 		state->quad_vertex_count = plane_src.vertex_count;
 
@@ -156,8 +156,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			plane_src.vertex_size * plane_src.vertex_count, plane_src.vertices);
 
 		// Load sprite texture
-		state->sprite_texture = create_texture(context, str_lit("tile_0085.png"));
-		state->checkered_texture = create_texture(context, str_lit("texture_09.png"));
+		state->sprite_texture = create_texture(context, slit("tile_0085.png"));
+		state->checkered_texture = create_texture(context, slit("texture_09.png"));
 
 		// Create material
 		float4 sprite_tint = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -323,7 +323,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	vulkan_renderer_buffer_bind(context->vk_context, terrain->vb, 0);
 	vulkan_renderer_draw(context->vk_context, terrain->vertex_count);
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 
 	if (input_key_pressed(KEY_CODE_ENTER))
 		state->pipeline_desc.polygon_mode = !state->pipeline_desc.polygon_mode;
@@ -357,7 +357,7 @@ RhiShader create_shader(GameContext *context, String filename) {
 	RhiShader shader = vulkan_renderer_shader_create(
 		&state->arena, context->vk_context, &config, &reflection);
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return shader;
 }
 
@@ -372,7 +372,7 @@ RhiTexture create_texture(GameContext *context, String filename) {
 		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 		TEXTURE_USAGE_SAMPLED, image_src.pixels);
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return texture;
 }
 
@@ -428,7 +428,7 @@ GameModel load_game_model(GameContext *context, String file) {
 		vulkan_renderer_uniform_set_bind_texture(context->vk_context, dst_material->set, 4, (RhiTexture){ RENDERER_DEFAULT_TEXTURE_BLACK }, (RhiSampler){ RENDERER_DEFAULT_SAMPLER_LINEAR });
 	}
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 
 	return result;
 }

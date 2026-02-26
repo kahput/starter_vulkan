@@ -1,18 +1,18 @@
-#include "core/hash_trie.h"
-#include "core/pool.h"
-#include "core/r_types.h"
-#include "renderer/r_internal.h"
 #include "vk_internal.h"
+#include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include <assert.h>
 #include <spirv_reflect/spirv_reflect.h>
 
 #include "common.h"
+#include "core/pool.h"
+#include "core/arena.h"
+#include "core/slist.h"
 #include "core/debug.h"
 #include "core/logger.h"
+#include "core/r_types.h"
 #include "core/astring.h"
-#include "core/arena.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -61,6 +61,7 @@ RhiShader vulkan_renderer_shader_create(
 	reflect_shader_interface(arena, context, shader, config, out_reflection);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
+	shader->first_free = slist_create(shader->variants, sizeof(VulkanPipeline), countof(shader->variants));
 	shader->variant_count++;
 
 	return (RhiShader){ pool_index_of(context->shader_pool, shader) };
@@ -196,11 +197,10 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		.pAttachments = color_blend_attachments,
 	};
 
-	// NOTE: This should be handled by the pass, and not the pipeline description?
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		.depthTestEnable = pass->depth_format,
-		.depthWriteEnable = pass->depth_format,
+		.depthTestEnable = pass->depth_format && desc.depth_test_enable,
+		.depthWriteEnable = pass->depth_format && desc.depth_write_enable,
 		.depthCompareOp = (VkCompareOp)desc.depth_compare_op,
 		.depthBoundsTestEnable = VK_FALSE,
 		.minDepthBounds = 0.0f,
@@ -256,8 +256,9 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, Pipe
 
 	ArenaTemp scratch = arena_scratch(NULL);
 
-	String key = string_pushf(scratch.arena, "cm=%d,ff=%d,pm=%d,co=%d",
-		desc.cull_mode, desc.front_face, desc.polygon_mode, desc.depth_compare_op);
+	String key = string_pushf(scratch.arena, "cm=%d,ff=%d,pm=%d,co=%d,dt=%d,dw=%d",
+		desc.cull_mode, desc.front_face, desc.polygon_mode, desc.depth_compare_op,
+		desc.depth_test_enable, desc.depth_write_enable);
 
 	VulkanPass *pass = &context->bound_pass;
 
@@ -269,22 +270,19 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, Pipe
 		key = string_push_concat(scratch.arena, key, string_pushf(scratch.arena, "%d", pass->depth_format));
 
 	uint64_t hash = string_hash64(key);
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 
-	VulkanPipeline *variant = hash_trie_lookup(&shader->pipeline_root, hash, VulkanPipeline);
+	VulkanPipeline *variant = arena_trie_find(shader->trie, hash, VulkanPipeline);
 	if (variant == NULL) {
-		Arena variant_arena = {
-			.memory = shader->variants,
-			.offset = shader->variant_count * sizeof(VulkanPipeline),
-			.capacity = sizeof(shader->variants),
+		variant = slist_pop(&shader->first_free);
+
+		shader->trie.arena = &(Arena){
+			.memory = variant,
+			.capacity = sizeof(VulkanPipeline)
 		};
+		arena_trie_pushi(shader->trie, hash, VulkanPipeline);
 
-		ASSERT_MESSAGE(
-			variant_arena.offset != variant_arena.capacity, "Finish LRU Cache (deleting missing)");
-
-		variant = hash_trie_insert(&variant_arena, &shader->pipeline_root, hash, VulkanPipeline);
 		create_shader_variant(context, shader, pass, desc, variant);
-
 		shader->variant_count++;
 	} else if (shader->pipeline_lru_head != variant) {
 		variant->next->prev = variant->prev;
@@ -343,7 +341,7 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 	} else {
 		// Recurse
 		for (uint32_t i = 0; i < var->member_count; ++i) {
-			fill_shader_members(arena, &var->members[i], str_lit(full_name), cursor);
+			fill_shader_members(arena, &var->members[i], slit(full_name), cursor);
 		}
 	}
 }
@@ -358,7 +356,7 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 
 	ShaderMember *cursor = buffer->members;
 	for (uint32_t i = 0; i < block->member_count; ++i) {
-		fill_shader_members(arena, &block->members[i], str_lit(""), &cursor);
+		fill_shader_members(arena, &block->members[i], slit(""), &cursor);
 	}
 
 	return buffer;
@@ -631,14 +629,14 @@ bool reflect_shader_interface(
 				&shader->layouts[index]) == false) {
 			spvReflectDestroyShaderModule(&vertex_module);
 			spvReflectDestroyShaderModule(&fragment_module);
-			arena_release_scratch(scratch);
+			arena_scratch_release(scratch);
 			return false;
 		}
 	}
 
 	spvReflectDestroyShaderModule(&vertex_module);
 	spvReflectDestroyShaderModule(&fragment_module);
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,

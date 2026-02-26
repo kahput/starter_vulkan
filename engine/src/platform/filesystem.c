@@ -72,7 +72,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 	DIR *directory = opendir(dir_cstr);
 
 	if (!directory) {
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return list;
 	}
 
@@ -80,8 +80,8 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 	while ((entry = readdir(directory))) {
 		String entry_name = string_from_cstr(entry->d_name);
 
-		if (string_equals(entry_name, str_lit(".")) ||
-			string_equals(entry_name, str_lit(".."))) {
+		if (string_equals(entry_name, slit(".")) ||
+			string_equals(entry_name, slit(".."))) {
 			continue;
 		}
 
@@ -114,7 +114,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 	}
 
 	closedir(directory);
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return list;
 }
 

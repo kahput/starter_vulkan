@@ -100,8 +100,8 @@ static struct State {
 } state;
 
 int main(void) {
-	state.permanent = arena_create(MiB(512));
-	state.transient = arena_create(MiB(4));
+	state.permanent = arena_make(MiB(512));
+	state.transient = arena_make(MiB(4));
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	state.event_system = event_system_startup(&state.permanent);
@@ -116,6 +116,8 @@ int main(void) {
 		LOG_ERROR("Failed to create vulkan context");
 		return 1;
 	}
+
+	uint32_t x = alignof(RhiShader);
 
 	// Create default textures
 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
@@ -190,7 +192,7 @@ int main(void) {
 
 	// Create render passes
 	DrawListDesc shadow_pass = {
-		.name = str_lit("Shadow"),
+		.name = slit("Shadow"),
 		.depth_attachment = {
 		  .texture = state.shadow_depth_tex,
 		  .clear = { .depth = 1.0f },
@@ -202,7 +204,7 @@ int main(void) {
 	};
 
 	DrawListDesc main_pass = {
-		.name = str_lit("Main"),
+		.name = slit("Main"),
 		.color_attachments = { {
 		  .texture = state.main_color_tex,
 		  .clear = { .color = { 0.0f, 0.0f, 0.0f, 1.0f } },
@@ -221,7 +223,7 @@ int main(void) {
 	};
 
 	DrawListDesc postfx_pass = {
-		.name = str_lit("Post"),
+		.name = slit("Post"),
 		.color_attachments = {
 		  [0] = {
 			.clear = { .color = { 0.0f, 0.0f, 0.0f, 1.0f } },
@@ -250,8 +252,8 @@ int main(void) {
 	float delta_time = 0.0f;
 	float last_frame = 0.0f;
 
-	asset_library_track_directory(&state.asset_system, str_lit("assets"));
-	state.skybox_tex = load_cubemap(str_lit("assets/textures/skybox/"));
+	asset_library_track_directory(&state.asset_system, slit("assets"));
+	state.skybox_tex = load_cubemap(slit("assets/textures/skybox/"));
 
 	GameContext game_context = {
 		.permanent_memory = arena_push(&state.permanent, MiB(32), 1, true),
@@ -269,7 +271,7 @@ int main(void) {
 
 	// Create light debug shader
 	ShaderSource light_shader_src = { 0 };
-	UUID light_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, str_lit("light_debug.glsl"), &light_shader_src);
+	UUID light_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, slit("light_debug.glsl"), &light_shader_src);
 	{
 		ShaderConfig light_config = {
 			.vertex_code = light_shader_src.vertex_shader.content,
@@ -290,7 +292,7 @@ int main(void) {
 	}
 
 	ShaderSource postfx_shader_src = { 0 };
-	UUID postfx_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, str_lit("postfx.glsl"), &postfx_shader_src);
+	UUID postfx_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, slit("postfx.glsl"), &postfx_shader_src);
 	{
 		ShaderConfig postfx_config = {
 			.vertex_code = postfx_shader_src.vertex_shader.content,
@@ -306,7 +308,7 @@ int main(void) {
 	}
 
 	ShaderSource skybox_shader_src = { 0 };
-	UUID skybox_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, str_lit("skybox.glsl"), &skybox_shader_src);
+	UUID skybox_shader_id = asset_library_load_shader(scratch.arena, &state.asset_system, slit("skybox.glsl"), &skybox_shader_src);
 	{
 		ShaderConfig skybox_config = {
 			.vertex_code = skybox_shader_src.vertex_shader.content,
@@ -324,7 +326,7 @@ int main(void) {
 		vulkan_renderer_uniform_set_bind_texture(state.context, state.skybox_material, 0, state.skybox_tex, state.linear_sampler);
 	}
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 
 	// clang-format off
     float quadVertices[] = {
@@ -366,7 +368,7 @@ int main(void) {
 		last_frame = time;
 		delta_time = max(delta_time, 0.0016f);
 
-		uint64_t current_write_time = filesystem_last_modified(str_lit("libgame.so"));
+		uint64_t current_write_time = filesystem_last_modified(slit("libgame.so"));
 		if (current_write_time != game_library.last_write && current_write_time != 0) {
 			LOG_INFO("Game file change detected. Reloading...");
 			struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
@@ -562,13 +564,13 @@ bool game_load(GameContext *context) {
 
 	ArenaTemp scratch = arena_scratch(NULL);
 
-	String path = str_lit("./libgame.so");
+	String path = slit("./libgame.so");
 	String temp_path = string_pushf(scratch.arena, "./loaded_%s.so", "game");
 
 	if (filesystem_file_copy(path, temp_path) == false) {
 		LOG_ERROR("failed to copy file");
 		ASSERT(false);
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 
@@ -576,7 +578,7 @@ bool game_load(GameContext *context) {
 	if (handle == NULL) {
 		LOG_ERROR("dlopen failed: %s", dlerror());
 		ASSERT(false);
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 
@@ -590,12 +592,12 @@ bool game_load(GameContext *context) {
 	if (hookup == false) {
 		LOG_ERROR("dlsym failed: %s", dlerror());
 		ASSERT(false);
-		arena_release_scratch(scratch);
+		arena_scratch_release(scratch);
 		return false;
 	}
 
 	game = hookup();
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 
 	return true;
 }
@@ -606,8 +608,8 @@ RhiTexture load_cubemap(String path) {
 	LOG_INFO("Scratch size used so after file_list: %llu", scratch.arena->offset);
 
 	if (files.node_count != 6) {
-		LOG_ERROR("Cubemap error: Found %llu files in '%.*s', expected 6.", files.node_count, str_expand(path));
-		arena_release_scratch(scratch);
+		LOG_ERROR("Cubemap error: Found %llu files in '%.*s', expected 6.", files.node_count, sfmt(path));
+		arena_scratch_release(scratch);
 		return (RhiTexture){ 0 }; // Return invalid handle
 	}
 
@@ -657,6 +659,6 @@ RhiTexture load_cubemap(String path) {
 		TEXTURE_TYPE_CUBE, TEXTURE_FORMAT_RGBA8_SRGB,
 		TEXTURE_USAGE_SAMPLED, final_pixels);
 
-	arena_release_scratch(scratch);
+	arena_scratch_release(scratch);
 	return result;
 }
