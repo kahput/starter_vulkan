@@ -13,7 +13,7 @@ struct InputState {
 
 	struct Button {
 		bool state, last;
-	} buttons[MOUSE_BUTTON_LAST];
+	} buttons[MOUSE_BUTTON_COUNT];
 
 	struct {
 		double x, y;
@@ -30,7 +30,7 @@ static bool on_mouse_button_event(EventCode code, void *event, void *receiver);
 static bool on_mouse_motion_event(EventCode code, void *event, void *receiver);
 
 InputState *input_system_startup(Arena *arena) {
-	state = arena_push_struct_zero(arena, InputState);
+	state = arena_push_struct(arena, InputState);
 
 	event_subscribe_list(
 		on_key_event, state,
@@ -68,7 +68,7 @@ bool input_system_update(void) {
 		struct Key *key = &state->keys[index];
 		key->last = key->state;
 	}
-	for (uint32_t index = 0; index < MOUSE_BUTTON_LAST; ++index) {
+	for (uint32_t index = 0; index < MOUSE_BUTTON_COUNT; ++index) {
 		struct Button *button = &state->buttons[index];
 		button->last = button->state;
 	}

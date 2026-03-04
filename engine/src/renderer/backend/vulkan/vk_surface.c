@@ -6,7 +6,7 @@
 #include "renderer/backend/vulkan_api.h"
 
 bool vulkan_surface_create(VulkanContext *context, void *display) {
-	if (platform_create_vulkan_surface(display, context->instance, &context->surface) == false) {
+	if (window_vulkan_surface_make(display, context->instance, &context->surface) == false) {
 		LOG_ERROR("Failed to create Vulkan surface");
 		return false;
 	}

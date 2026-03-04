@@ -91,7 +91,7 @@ bool select_physical_device(Arena *arena, VulkanContext *context) {
 	}
 
 	ArenaTemp scratch = arena_scratch(NULL);
-	VkPhysicalDevice *physical_devices = arena_push_array_zero(scratch.arena, VkPhysicalDevice, device_count);
+	VkPhysicalDevice *physical_devices = arena_push_count(scratch.arena, device_count, VkPhysicalDevice);
 	vkEnumeratePhysicalDevices(context->instance, &device_count, physical_devices);
 
 	LOG_INFO("Selecting suitable device...");
@@ -122,7 +122,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 	uint32_t requested_extensions = countof(extensions), available_extensions = 0;
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, NULL);
 
-	VkExtensionProperties *properties = arena_push_array_zero(scratch.arena, VkExtensionProperties, available_extensions);
+	VkExtensionProperties *properties = arena_push_count(scratch.arena, available_extensions, VkExtensionProperties);
 	vkEnumerateDeviceExtensionProperties(physical_device, NULL, &available_extensions, properties);
 
 	for (uint32_t i = 0; i < requested_extensions; i++) {
@@ -148,7 +148,7 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 		return false;
 	}
 
-	device->swapchain_details.formats = arena_push_array_zero(arena, VkSurfaceFormatKHR, device->swapchain_details.format_count);
+	device->swapchain_details.formats = arena_push_count(arena, device->swapchain_details.format_count, VkSurfaceFormatKHR);
 	vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &device->swapchain_details.format_count, device->swapchain_details.formats);
 
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->swapchain_details.present_mode_count, NULL);
@@ -158,13 +158,13 @@ bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfac
 		return false;
 	}
 
-	device->swapchain_details.present_modes = arena_push_array_zero(arena, VkPresentModeKHR, device->swapchain_details.present_mode_count);
+	device->swapchain_details.present_modes = arena_push_count(arena, device->swapchain_details.present_mode_count, VkPresentModeKHR);
 	vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &device->swapchain_details.present_mode_count, device->swapchain_details.present_modes);
 
 	uint32_t queue_family_count = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, NULL);
 
-	VkQueueFamilyProperties *queue_family_properties = arena_push_array_zero(scratch.arena, VkQueueFamilyProperties, queue_family_count);
+	VkQueueFamilyProperties *queue_family_properties = arena_push_count(scratch.arena, queue_family_count, VkQueueFamilyProperties);
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_family_properties);
 
 	device->graphics_index = -1, device->transfer_index = -1,

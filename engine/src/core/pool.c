@@ -27,8 +27,8 @@ void *pool_create(Arena *arena, uint32_t stride, uint32_t align, uint32_t capaci
 	pool->stride = stride;
 	pool->used_count = 0;
 
-	for (uint32_t i = 0; i < capacity; i++)
-		pool->free_indices[i] = (capacity - 1) - i;
+	for (uint32_t index = 0; index < capacity; index++)
+		pool->free_indices[index] = (capacity - 1) - index;
 
 	return pool->slots;
 }
@@ -50,17 +50,6 @@ void *pool_alloc(void *ptr) {
 	return (uint8_t *)pool->slots + (slot_index * pool->stride);
 }
 
-uint32_t pool_index_of(void *ptr, void *slot) {
-	Pool *pool = POOL_HEADER(ptr);
-
-	uint32_t offset = (uint32_t)((uint8_t *)slot - (uint8_t *)pool->slots);
-	uint32_t index = offset / pool->stride;
-
-	ASSERT(index < pool->capacity);
-
-	return index;
-}
-
 void pool_free(void *ptr, void *slot) {
 	if (slot == NULL)
 		return;
@@ -77,4 +66,15 @@ void pool_free(void *ptr, void *slot) {
 	pool->free_indices[pool->free_count] = index;
 	pool->free_count++;
 	pool->used_count--;
+}
+
+uint32_t pool_index_of(void *ptr, void *slot) {
+	Pool *pool = POOL_HEADER(ptr);
+
+	uint32_t offset = (uint32_t)((uint8_t *)slot - (uint8_t *)pool->slots);
+	uint32_t index = offset / pool->stride;
+
+	ASSERT(index < pool->capacity);
+
+	return index;
 }

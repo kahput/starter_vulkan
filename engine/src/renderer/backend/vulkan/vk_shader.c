@@ -25,7 +25,7 @@ bool reflect_shader_interface(
 	Arena *arena, VulkanContext *context, VulkanShader *shader,
 	ShaderConfig *config, ShaderReflection *out_reflection);
 
-RhiShader vulkan_renderer_shader_create(
+RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
 	ShaderConfig *config, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
@@ -60,13 +60,13 @@ RhiShader vulkan_renderer_shader_create(
 	reflect_shader_interface(arena, context, shader, config, out_reflection);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-	shader->first_free = arena_slist_make(shader->variants, sizeof(VulkanPipeline), countof(shader->variants));
+	shader->first_free = arena_list_make(shader->variants, sizeof(VulkanPipeline), countof(shader->variants));
 	shader->variant_count++;
 
 	return (RhiShader){ pool_index_of(context->shader_pool, shader) };
 }
 
-bool vulkan_renderer_shader_destroy(VulkanContext *context, RhiShader rshader) {
+bool vulkan_shader_destroy(VulkanContext *context, RhiShader rshader) {
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
 
@@ -238,6 +238,12 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	return true;
 }
 
+typedef struct {
+	PipelineDesc desc;
+	VkFormat color_formats[4];
+	VkFormat depth_format;
+} PipelineStateKey;
+
 bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant) {
 	if (variant->handle) {
 		vkDestroyPipeline(context->device.logical, variant->handle, NULL);
@@ -249,18 +255,14 @@ bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, Vulkan
 	return false;
 }
 
-typedef struct {
-	PipelineDesc desc;
-	VkFormat color_formats[4];
-	VkFormat depth_format;
-} PipelineStateKey;
-
-bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc desc) {
+bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc desc) {
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, false);
 
 	VulkanPass *pass = &context->bound_pass;
-	PipelineStateKey key = {
+	PipelineStateKey key;
+	memset(&key, 0, sizeof(key));
+	key = (PipelineStateKey){
 		.desc = desc,
 		.depth_format = pass->depth_format
 	};
@@ -270,23 +272,22 @@ bool vulkan_renderer_shader_bind(VulkanContext *context, RhiShader rshader, Pipe
 
 	uint64_t hash = string_hash64((String){ .memory = (char *)&key, .length = sizeof(PipelineStateKey) });
 
-	VulkanPipeline *slot = arena_slist_pop(&shader->first_free, VulkanPipeline);
-	ASSERT(slot);
+	VulkanPipeline *popped_slot = arena_list_pop(&shader->first_free, VulkanPipeline);
 
-	shader->trie.arena = &arena_wrap_struct(slot);
-	VulkanPipeline *variant = arena_trie_pushi(shader->trie, hash, VulkanPipeline);
+	shader->trie.arena = &arena_wrap_struct(popped_slot);
+	VulkanPipeline *variant = arena_trie_pushi(&shader->trie, hash, VulkanPipeline);
 
-	if (variant == slot) {
+	if (variant == popped_slot) {
 		create_shader_variant(context, shader, pass, desc, variant);
 		shader->variant_count++;
 
 		variant->next = NULL;
 		variant->prev = NULL;
 	} else
-		arena_slist_push(&shader->first_free, slot);
+		arena_list_push(&shader->first_free, popped_slot);
 
 	if (shader->pipeline_lru_head != variant) {
-		if (variant->next && variant->prev) {
+		if (variant->next && variant->prev) { // Delete variant from where it was
 			variant->next->prev = variant->prev;
 			variant->prev->next = variant->next;
 		}
@@ -331,7 +332,7 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 	if (var->member_count == 0) {
 		// This is a leaf node
 		ShaderMember *m = *cursor;
-		m->name = string_push_copy(arena, string_from_cstr(full_name));
+		m->name = string_push_copy(arena, string_wrap(full_name));
 		m->offset = var->absolute_offset;
 		m->size = var->size;
 
@@ -345,12 +346,12 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 }
 
 static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *block) {
-	ShaderBuffer *buffer = arena_push_struct_zero(arena, ShaderBuffer);
-	buffer->name = string_push_copy(arena, string_from_cstr(block->name));
+	ShaderBuffer *buffer = arena_push_struct(arena, ShaderBuffer);
+	buffer->name = string_push_copy(arena, string_wrap(block->name));
 	buffer->size = block->size;
 
 	buffer->member_count = count_shader_members(block);
-	buffer->members = arena_push_array_zero(arena, ShaderMember, buffer->member_count);
+	buffer->members = arena_push_count(arena, buffer->member_count, ShaderMember);
 
 	ShaderMember *cursor = buffer->members;
 	for (uint32_t i = 0; i < block->member_count; ++i) {
@@ -385,7 +386,7 @@ bool reflect_shader_interface(
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, NULL);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
-	SpvReflectInterfaceVariable **input_variables = arena_push_array_zero(scratch.arena, SpvReflectInterfaceVariable *, input_variable_count);
+	SpvReflectInterfaceVariable **input_variables = arena_push_count(scratch.arena, input_variable_count, SpvReflectInterfaceVariable *);
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, input_variables);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
@@ -393,7 +394,7 @@ bool reflect_shader_interface(
 	shader->binding_count = 0;
 
 	uint32_t max_attributes = context->device.properties.limits.maxVertexInputAttributes;
-	uint32_t *indices = arena_push_array_zero(scratch.arena, uint32_t, max_attributes);
+	uint32_t *indices = arena_push_count(scratch.arena, max_attributes, uint32_t);
 	memset(indices, INT32_MAX, sizeof(uint32_t) * max_attributes);
 
 	for (uint32_t index = 0; index < input_variable_count; ++index) {
@@ -457,8 +458,8 @@ bool reflect_shader_interface(
 	// TODO: remove set count hardcap
 	ASSERT(vs_set_count <= 2 && fs_set_count <= 2);
 
-	SpvReflectDescriptorSet **vs_sets = arena_push_array_zero(scratch.arena, SpvReflectDescriptorSet *, vs_set_count);
-	SpvReflectDescriptorSet **fs_sets = arena_push_array_zero(scratch.arena, SpvReflectDescriptorSet *, fs_set_count);
+	SpvReflectDescriptorSet **vs_sets = arena_push_count(scratch.arena, vs_set_count, SpvReflectDescriptorSet *);
+	SpvReflectDescriptorSet **fs_sets = arena_push_count(scratch.arena, fs_set_count, SpvReflectDescriptorSet *);
 
 	result = spvReflectEnumerateDescriptorSets(&vertex_module, &vs_set_count, vs_sets);
 	ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
@@ -546,7 +547,7 @@ bool reflect_shader_interface(
 
 	for (uint32_t i = 0; i <= max_set_index; ++i) {
 		out_reflection->sets[i].binding_count = merged_sets[i].binding_count;
-		out_reflection->sets[i].bindings = arena_push_array_zero(arena, ShaderBinding, out_reflection->sets[i].binding_count);
+		out_reflection->sets[i].bindings = arena_push_count(arena, out_reflection->sets[i].binding_count, ShaderBinding);
 	}
 
 	for (uint32_t set_index = 0, index = 0; set_index <= max_set_index; ++set_index) {
@@ -557,7 +558,7 @@ bool reflect_shader_interface(
 
 			ShaderBinding *dst = &out_reflection->sets[set_index].bindings[index];
 
-			dst->name = string_push_copy(arena, string_from_cstr(spv->name));
+			dst->name = string_push_copy(arena, string_wrap(spv->name));
 
 			dst->binding_number = spv->binding;
 			dst->count = spv->count;

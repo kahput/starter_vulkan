@@ -111,13 +111,13 @@
 // 		.capacity = size - sizeof(Arena)
 // 	};
 //
-// 	renderer = arena_push_struct_zero(arena, Renderer);
+// 	renderer = arena_push_structarena, Renderer);
 // 	renderer->arena = arena;
 //
 // 	renderer->display = display;
 // 	renderer->width = width, renderer->height = height;
 //
-// 	if (vulkan_renderer_create(renderer->arena, renderer->display, &renderer->context) == false) {
+// 	if (vulkan_create(renderer->arena, renderer->display, &renderer->context) == false) {
 // 		LOG_ERROR("Renderer: Failed to create vulkan context");
 // 		ASSERT(false);
 // 		return false;
@@ -139,33 +139,33 @@
 // 	// ========================= DEFAULT ======================================
 // 	uint8_t WHITE[4] = { 255, 255, 255, 255 };
 // 	renderer_texture_create(identifier_generate(), (TextureConfig[]){ (TextureConfig){ .width = 1, .height = 1, .channels = 4, .is_srgb = true, .pixels = WHITE } });
-// 	// vulkan_renderer_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, WHITE);
+// 	// vulkan_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_WHITE, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, WHITE);
 //
 // 	uint8_t BLACK[4] = { 0, 0, 0, 255 };
 // 	renderer_texture_create(identifier_generate(), (TextureConfig[]){ (TextureConfig){ .width = 1, .height = 1, .channels = 4, .is_srgb = true, .pixels = BLACK } });
-// 	// vulkan_renderer_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, BLACK);
+// 	// vulkan_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_BLACK, 1, 1, 4, true, TEXTURE_USAGE_SAMPLED, BLACK);
 //
 // 	uint8_t FLAT_NORMAL[4] = { 128, 128, 255, 255 };
 // 	renderer_texture_create(identifier_generate(), (TextureConfig[]){ (TextureConfig){ .width = 1, .height = 1, .channels = 4, .is_srgb = false, .pixels = FLAT_NORMAL } });
-// 	// vulkan_renderer_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1, 4, false, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
+// 	// vulkan_texture_create(renderer->context, RENDERER_DEFAULT_TEXTURE_NORMAL, 1, 1, 4, false, TEXTURE_USAGE_SAMPLED, FLAT_NORMAL);
 //
-// 	vulkan_renderer_sampler_create(renderer->context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
-// 	vulkan_renderer_sampler_create(renderer->context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
+// 	vulkan_sampler_create(renderer->context, RENDERER_DEFAULT_SAMPLER_LINEAR, LINEAR_SAMPLER);
+// 	vulkan_sampler_create(renderer->context, RENDERER_DEFAULT_SAMPLER_NEAREST, NEAREST_SAMPLER);
 //
 // 	recycler_new_index(&renderer->image_indices);
-// 	vulkan_renderer_texture_create(
+// 	vulkan_texture_create(
 // 		renderer->context, RENDER_TARGET_TEXTURE_MAIN_DEPTH,
 // 		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 1, false,
 // 		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
 //
 // 	recycler_new_index(&renderer->image_indices);
-// 	vulkan_renderer_texture_create(
+// 	vulkan_texture_create(
 // 		renderer->context, RENDER_TARGET_TEXTURE_SHADOW_DEPTH,
 // 		2048, 2048, 1, false,
 // 		TEXTURE_USAGE_DEPTH_ATTACHMENT | TEXTURE_USAGE_SAMPLED, NULL);
 //
 // 	recycler_new_index(&renderer->image_indices);
-// 	vulkan_renderer_texture_create(
+// 	vulkan_texture_create(
 // 		renderer->context, RENDER_TARGET_TEXTURE_MAIN_COLOR,
 // 		MATCH_SWAPCHAIN, MATCH_SWAPCHAIN, 4, true,
 // 		TEXTURE_USAGE_COLOR_ATTACHMENT, NULL);
@@ -184,17 +184,17 @@
 // 		.use_depth = true
 // 	};
 //
-// 	vulkan_renderer_resource_global_create(renderer->context, GLOBAL_VIEW,
+// 	vulkan_resource_global_create(renderer->context, GLOBAL_VIEW,
 // 		(ResourceBinding[]){
 // 		  { .binding = 0, .type = SHADER_BINDING_UNIFORM_BUFFER, .size = sizeof(FrameData), .count = 1 },
 // 		  { .binding = 1, .type = SHADER_BINDING_TEXTURE_2D, .size = 0, .count = 1 },
 // 		  { .binding = 1, .type = SHADER_BINDING_SAMPLER, .size = 0, .count = 1 }, // Same binding == COMBINED_IMAGE_SAMPLER
 // 		},
 // 		3);
-// 	vulkan_renderer_resource_global_set_texture_sampler(renderer->context, GLOBAL_VIEW, 1, RENDER_TARGET_TEXTURE_SHADOW_DEPTH, RENDERER_DEFAULT_SAMPLER_LINEAR);
+// 	vulkan_resource_global_set_texture_sampler(renderer->context, GLOBAL_VIEW, 1, RENDER_TARGET_TEXTURE_SHADOW_DEPTH, RENDERER_DEFAULT_SAMPLER_LINEAR);
 //
-// 	vulkan_renderer_pass_create(renderer->context, RENDERER_DEFAULT_PASS_SHADOW, SHADOW_VIEW, &shadow);
-// 	vulkan_renderer_pass_create(renderer->context, RENDERER_DEFAULT_PASS_MAIN, GLOBAL_VIEW, &main);
+// 	vulkan_pass_create(renderer->context, RENDERER_DEFAULT_PASS_SHADOW, SHADOW_VIEW, &shadow);
+// 	vulkan_pass_create(renderer->context, RENDERER_DEFAULT_PASS_MAIN, GLOBAL_VIEW, &main);
 //
 // 	ArenaTemp scratch = arena_scratch(NULL);
 // 	{
@@ -233,7 +233,7 @@
 // }
 //
 // void renderer_system_shutdown(void) {
-// 	vulkan_renderer_destroy(renderer->context);
+// 	vulkan_destroy(renderer->context);
 // }
 //
 // Handle renderer_texture_create(UUID id, TextureConfig *config) {
@@ -271,10 +271,10 @@
 // 	instance->shader = shader->handle;
 //
 // 	instance->group_resource_id = recycler_new_index(&renderer->group_indices);
-// 	vulkan_renderer_resource_group_create(renderer->context, instance->group_resource_id, shader->handle.index, 256);
+// 	vulkan_resource_group_create(renderer->context, instance->group_resource_id, shader->handle.index, 256);
 //
 // 	if (shader->default_ubo_data && shader->ubo_size > 0)
-// 		vulkan_renderer_resource_group_write(renderer->context, instance->group_resource_id, 0, 0, shader->ubo_size, shader->default_ubo_data, true);
+// 		vulkan_resource_group_write(renderer->context, instance->group_resource_id, 0, 0, shader->ubo_size, shader->default_ubo_data, true);
 //
 // 	for (uint32_t binding_index = 0; binding_index < shader->reflection.binding_count; ++binding_index) {
 // 		ShaderBinding *binding = &shader->reflection.bindings[binding_index];
@@ -291,7 +291,7 @@
 // 			if (handle_is_valid(texture_handle))
 // 				handle = (((Texture *)renderer->texture_allocator->slots) + texture_handle.index)->handle;
 //
-// 			vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, binding->binding, handle, RENDERER_DEFAULT_SAMPLER_NEAREST);
+// 			vulkan_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, binding->binding, handle, RENDERER_DEFAULT_SAMPLER_NEAREST);
 // 		}
 // 	}
 //
@@ -315,7 +315,7 @@
 // 	if (member == NULL)
 // 		return false;
 //
-// 	vulkan_renderer_resource_group_write(renderer->context, material->group_resource_id, instance, member->offset, member->size, value, false);
+// 	vulkan_resource_group_write(renderer->context, material->group_resource_id, instance, member->offset, member->size, value, false);
 // 	return true;
 // }
 //
@@ -362,7 +362,7 @@
 // 		return false;
 // 	}
 //
-// 	vulkan_renderer_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, texture_binding, texture->handle, RENDERER_DEFAULT_SAMPLER_NEAREST);
+// 	vulkan_resource_group_set_texture_sampler(renderer->context, instance->group_resource_id, texture_binding, texture->handle, RENDERER_DEFAULT_SAMPLER_NEAREST);
 // 	return true;
 // }
 //
@@ -386,11 +386,11 @@
 // 	if (entry && entry->pool_index != INVALID_INDEX) {
 // 		Mesh *gpu_mesh = ((Mesh *)renderer->mesh_allocator->slots) + entry->pool_index;
 //
-// 		vulkan_renderer_buffer_destroy(renderer->context, gpu_mesh->vertex_buffer);
+// 		vulkan_buffer_destroy(renderer->context, gpu_mesh->vertex_buffer);
 // 		recycler_free_index(&renderer->buffer_indices, gpu_mesh->vertex_buffer);
 //
 // 		if (gpu_mesh->index_count) {
-// 			vulkan_renderer_buffer_destroy(renderer->context, gpu_mesh->index_buffer);
+// 			vulkan_buffer_destroy(renderer->context, gpu_mesh->index_buffer);
 // 			recycler_free_index(&renderer->buffer_indices, gpu_mesh->index_buffer);
 // 		}
 //
@@ -403,9 +403,9 @@
 // }
 //
 // bool renderer_frame_begin(Camera *camera, uint32_t light_count, Light *lights) {
-// 	if (vulkan_renderer_frame_begin(renderer->context, renderer->display->physical_width, renderer->display->logical_height) == false)
+// 	if (vulkan_frame_begin(renderer->context, renderer->display->physical_width, renderer->display->logical_height) == false)
 // 		return false;
-//     vulkan_renderer_pass_begin(renderer->context, RENDERER_DEFAULT_PASS_MAIN);
+//     vulkan_pass_begin(renderer->context, RENDERER_DEFAULT_PASS_MAIN);
 //
 // 	if (camera) {
 // 		FrameData data = { 0 };
@@ -429,23 +429,23 @@
 //
 // 		ASSERT(point_light_count != light_count);
 //
-// 		vulkan_renderer_resource_global_write(renderer->context, GLOBAL_VIEW, 0, sizeof(FrameData), &data);
-// 		vulkan_renderer_resource_global_bind(renderer->context, GLOBAL_VIEW);
+// 		vulkan_resource_global_write(renderer->context, GLOBAL_VIEW, 0, sizeof(FrameData), &data);
+// 		vulkan_resource_global_bind(renderer->context, GLOBAL_VIEW);
 // 	}
 //
 // 	return true;
 // }
 //
 // bool renderer_frame_end(void) {
-// 	vulkan_renderer_pass_end(renderer->context);
-// 	return Vulkan_renderer_frame_end(renderer->context);
+// 	vulkan_pass_end(renderer->context);
+// 	return vulkan_frame_end(renderer->context);
 // }
 //
 // // bool renderer_pass_begin(RenderPass pass) {
-// // 	return vulkan_renderer_pass_begin(renderer->context, pass);
+// // 	return vulkan_pass_begin(renderer->context, pass);
 // // }
 // // bool renderer_pass_end(void) {
-// //     return vulkan_renderer_pass_end(renderer->context);
+// //     return vulkan_pass_end(renderer->context);
 // // }
 //
 // bool renderer_draw_mesh(RMesh mesh_handle, RMaterial material, uint32_t material_instance, mat4 transform) {
@@ -460,28 +460,28 @@
 // 		ASSERT(isnan(val) == false || isinf(val) == false);
 // 	}
 //
-// 	vulkan_renderer_shader_bind(renderer->context, instance->shader.index);
-// 	vulkan_renderer_resource_group_bind(renderer->context, instance->group_resource_id, material_instance);
+// 	vulkan_shader_bind(renderer->context, instance->shader.index);
+// 	vulkan_resource_group_bind(renderer->context, instance->group_resource_id, material_instance);
 //
-// 	vulkan_renderer_resource_local_write(renderer->context, 0, sizeof(mat4), transform);
-// 	vulkan_renderer_buffer_bind(renderer->context, mesh->vertex_buffer, 0);
+// 	vulkan_resource_local_write(renderer->context, 0, sizeof(mat4), transform);
+// 	vulkan_buffer_bind(renderer->context, mesh->vertex_buffer, 0);
 // 	if (mesh->index_count) {
-// 		vulkan_renderer_buffer_bind(renderer->context, mesh->index_buffer, mesh->index_size);
+// 		vulkan_buffer_bind(renderer->context, mesh->index_buffer, mesh->index_size);
 // 		// LOG_INFO("Drawing %d indices (%d vertices)", mesh->index_count, mesh->vertex_count);
-// 		vulkan_renderer_draw_indexed(renderer->context, mesh->index_count);
+// 		vulkan_draw_indexed(renderer->context, mesh->index_count);
 //
 // 	} else
-// 		vulkan_renderer_draw(renderer->context, mesh->vertex_count);
+// 		vulkan_draw(renderer->context, mesh->vertex_count);
 //
 // 	return true;
 // }
 //
 // void renderer_state_global_wireframe_set(bool active) {
-// 	vulkan_renderer_shader_global_state_wireframe_set(renderer->context, active);
+// 	vulkan_shader_global_state_wireframe_set(renderer->context, active);
 // }
 //
 // bool renderer_on_resize(uint32_t width, uint32_t height) {
-// 	if (vulkan_renderer_on_resize(renderer->context, width, height)) {
+// 	if (vulkan_on_resize(renderer->context, width, height)) {
 // 		renderer->width = width, renderer->height = height;
 // 		return true;
 // 	}
@@ -504,14 +504,14 @@
 //
 // 	gpu_mesh->vertex_buffer = recycler_new_index(&renderer->buffer_indices);
 // 	gpu_mesh->vertex_count = config->vertex_count;
-// 	vulkan_renderer_buffer_create(renderer->context, gpu_mesh->vertex_buffer, BUFFER_TYPE_VERTEX, config->vertex_size * config->vertex_count, config->vertices);
+// 	vulkan_buffer_create(renderer->context, gpu_mesh->vertex_buffer, BUFFER_TYPE_VERTEX, config->vertex_size * config->vertex_count, config->vertices);
 //
 // 	if (config->index_count != 0) {
 // 		gpu_mesh->index_buffer = recycler_new_index(&renderer->buffer_indices);
 // 		gpu_mesh->index_size = config->index_size;
 // 		gpu_mesh->index_count = config->index_count;
 //
-// 		vulkan_renderer_buffer_create(renderer->context, gpu_mesh->index_buffer, BUFFER_TYPE_INDEX, config->index_size * config->index_count, config->indices);
+// 		vulkan_buffer_create(renderer->context, gpu_mesh->index_buffer, BUFFER_TYPE_INDEX, config->index_size * config->index_count, config->indices);
 // 	}
 //
 // 	// gpu_mesh->material = renderer->default_material;
@@ -534,7 +534,7 @@
 // 	uint32_t pool_index = texture - (Texture *)renderer->texture_allocator->slots;
 // 	entry->pool_index = pool_index;
 //
-// 	vulkan_renderer_texture_create(renderer->context, texture->handle, config->width, config->height, config->channels, config->is_srgb, TEXTURE_USAGE_SAMPLED, config->pixels);
+// 	vulkan_texture_create(renderer->context, texture->handle, config->width, config->height, config->channels, config->is_srgb, TEXTURE_USAGE_SAMPLED, config->pixels);
 // 	return pool_index;
 // }
 //
@@ -552,7 +552,7 @@
 //
 // 	PipelineDesc desc = DEFAULT_PIPELINE();
 // 	desc.cull_mode = CULL_MODE_BACK;
-// 	vulkan_renderer_shader_create(
+// 	vulkan_shader_create(
 // 		renderer->arena, renderer->context,
 // 		shader->handle.index, GLOBAL_VIEW, config,
 // 		desc,

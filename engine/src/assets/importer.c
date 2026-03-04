@@ -27,7 +27,7 @@ bool importer_load_shader(Arena *arena, String vertex_path, String fragment_path
 	out_shader->vertex_shader = filesystem_read(arena, vertex_path);
 	out_shader->fragment_shader = filesystem_read(arena, fragment_path);
 
-	return out_shader->fragment_shader.content && out_shader->vertex_shader.content;
+	return out_shader->fragment_shader.memory && out_shader->vertex_shader.memory;
 }
 
 bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
@@ -49,7 +49,7 @@ bool importer_load_image(Arena *arena, String path, ImageSource *out_texture) {
 	}
 	out_texture->channels = 4;
 	uint32_t pixel_buffer_size = out_texture->width * out_texture->height * out_texture->channels;
-	out_texture->pixels = arena_push_array(arena, uint8_t, pixel_buffer_size);
+	out_texture->pixels = arena_push_count(arena, pixel_buffer_size, uint8_t);
 	memcpy(out_texture->pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
@@ -97,7 +97,7 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 	String base_directory = string_push_copy(scratch.arena, string_path_folder(path));
 
 	out_model->image_count = data->images_count;
-	out_model->images = arena_push_array_zero(arena, ImageSource, out_model->image_count);
+	out_model->images = arena_push_count(arena, out_model->image_count, ImageSource);
 
 	for (uint32_t texture_index = 0; texture_index < out_model->image_count; ++texture_index) {
 		cgltf_image *src = &data->images[texture_index];
@@ -105,11 +105,11 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 
 		if (src->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset;
-			String mime_type = string_from_cstr(src->mime_type);
+			String mime_type = string_wrap(src->mime_type);
 
 			String filename = string_push_replace(scratch.arena, string_path_filename(path), slit(".glb"), slit(""));
 			String name = string_pushf(scratch.arena, "%s_%s", filename.memory, (src->name ? src->name : "image"));
-			if (string_find_first(string_from_cstr(src->mime_type), slit("png")) != -1) {
+			if (string_find_first(string_wrap(src->mime_type), slit("png")) != -1) {
 				dst->path = string_pushf(arena, "%s/%s.png", base_directory.memory, name.memory);
 				if (filesystem_file_exists(dst->path) == false) {
 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
@@ -130,7 +130,7 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 	}
 
 	out_model->material_count = data->materials_count;
-	out_model->materials = arena_push_array_zero(arena, MaterialSource, out_model->material_count);
+	out_model->materials = arena_push_count(arena, out_model->material_count, MaterialSource);
 	LOG_INFO("Number of materials: %d", out_model->material_count);
 
 	for (uint32_t index = 0; index < out_model->material_count; ++index) {
@@ -138,7 +138,7 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 		MaterialSource *dst = &out_model->materials[index];
 
 		dst->property_count = MATERIAL_PROPERTY_COUNT;
-		dst->properties = arena_push_array_zero(arena, MaterialProperty, dst->property_count);
+		dst->properties = arena_push_count(arena, dst->property_count, MaterialProperty);
 
 		memcpy(dst->properties, default_properties, sizeof(default_properties));
 
@@ -166,9 +166,9 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 
 		mesh_count += mesh->primitives_count;
 	}
-	out_model->meshes = arena_push_array_zero(arena, MeshSource, mesh_count);
+	out_model->meshes = arena_push_count(arena, mesh_count, MeshSource);
 	out_model->mesh_count = mesh_count;
-	out_model->mesh_to_material = arena_push_array_zero(arena, uint32_t, mesh_count);
+	out_model->mesh_to_material = arena_push_count(arena, mesh_count, uint32_t);
 
 	mesh_count = 0;
 	for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
@@ -205,7 +205,7 @@ bool importer_load_gltf(Arena *arena, String path, SModel *out_model) {
 				if (dst_mesh->vertices == NULL) {
 					dst_mesh->vertex_count = accessor->count;
 					dst_mesh->vertex_size = sizeof(Vertex);
-					dst_mesh->vertices = arena_push_array_zero(arena, uint8_t, dst_mesh->vertex_count * dst_mesh->vertex_size);
+					dst_mesh->vertices = arena_push_count(arena, dst_mesh->vertex_count * dst_mesh->vertex_size, uint8_t);
 				}
 
 				ASSERT(dst_mesh->vertex_count == accessor->count);

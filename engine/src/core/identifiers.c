@@ -38,7 +38,7 @@ bool handle_is_valid(Handle handle) {
 }
 
 void index_recycler_create(Arena *arena, IndexRecycler *recycler, uint32_t start_offset, uint32_t capacity) {
-	recycler->free_indices = arena_push_array_zero(arena, uint32_t, capacity);
+	recycler->free_indices = arena_push_count(arena, capacity, uint32_t);
 	recycler->free_count = recycler->next_unused = 0;
 	recycler->capacity = capacity;
 	recycler->next_unused = start_offset;

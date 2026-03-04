@@ -53,6 +53,7 @@ size_t arena_size(Arena *arena) {
 }
 
 void arena_clear(Arena *arena) {
+	memset(arena->memory, 0, arena->offset);
 	arena->offset = 0;
 }
 
@@ -74,74 +75,58 @@ ArenaTemp arena_scratch(Arena *conflict) {
 	Arena *selected = conflict == &scratch_arenas[0] ? &scratch_arenas[1] : &scratch_arenas[0];
 	return arena_temp_begin(selected);
 }
-typedef struct ArenaPool {
-	void *first_free;
-	void *tracker;
-	uint32_t capacity;
-	uint32_t stride;
-} ArenaPool;
 
-#define POOL_HEADER(ptr) ((ArenaPool *)(ptr) - 1)
-void *_arena_push_pool(Arena *arena, uint32_t stride, uint32_t align, uint32_t capacity, bool zero_memory) {
-	size_t header_align = alignof(ArenaPool) > align ? alignof(ArenaPool) : align;
+ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, const char *debug_type_name) {
+	ArenaTrieNode **node = root;
 
-	uint8_t *memory = (uint8_t *)arena_push(arena, sizeof(ArenaPool) + (stride * capacity), header_align, zero_memory);
+	for (uint64_t hash_index = hash; *node; hash_index <<= 2) {
+		if (hash == (*node)->hash) {
+			ASSERT_FORMAT(
+				debug_type_name && (*node)->debug_type_name
+					? strcmp((*node)->debug_type_name, debug_type_name) == 0
+					: 1,
+				"ArenaTrie type mismatch: Stored: %s, Requested: %s",
+				(*node)->debug_type_name, debug_type_name);
 
-	ArenaPool *pool = (ArenaPool *)memory;
-	void *slots = (void *)(pool + 1);
-
-	pool->tracker = arena_push(arena, sizeof(void *) * capacity, alignof(void *), false);
-	pool->first_free = arena_slist_make(pool->tracker, sizeof(void *), capacity);
-
-	pool->capacity = capacity;
-	pool->stride = stride;
-
-	return slots;
-}
-
-void *arena_pool_alloc(void *slots) {
-	if (slots == NULL)
-		return NULL;
-	ArenaPool *pool = POOL_HEADER(slots);
-
-	void *node = arena_slist_alloc(&pool->first_free);
-	if (node == NULL) {
-		LOG_ERROR("Pool is out of memory!");
-		ASSERT(false);
-		return NULL;
+			return (*node);
+		}
+		node = &(*node)->children[hash_index >> 62];
 	}
 
-	uint32_t index = ((uint8_t *)node - (uint8_t *)pool->tracker) / sizeof(void *);
-	return (uint8_t *)slots + (index * pool->stride);
+	if (arena == NULL)
+		return NULL;
+
+	*node = arena_push(arena, sizeof(ArenaTrieNode), alignof(ArenaTrieNode), true);
+	(*node)->hash = hash;
+	(*node)->debug_type_name = debug_type_name;
+
+	return (*node);
 }
 
-void arena_pool_free(void *slots, void *slot) {
-	if (slots == NULL || slot == NULL)
-		return;
-	ArenaPool *pool = POOL_HEADER(slots);
+void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, bool intrusive, const char *debug_type_name) {
+	ArenaTrieNode *node = arena_trienode_ensure(arena, root, hash, debug_type_name);
 
-	uint32_t index = ((uint8_t *)slot - (uint8_t *)slots) / pool->stride;
-
-	if (index >= pool->capacity) {
-		LOG_ERROR("Attempted to free a slot outside of pool!");
-		return;
+	// Add
+	if (arena && node && node->payload == NULL) {
+		if (intrusive) {
+			ASSERT(size > sizeof(ArenaTrieNode));
+			arena_push(arena, size - sizeof(ArenaTrieNode), 1, true);
+			node->payload = node;
+		} else
+			node->payload = arena_push(arena, size, align, true);
 	}
 
-	void *node = (uint8_t *)pool->tracker + (index * sizeof(void *));
-
-	arena_slist_free(&pool->first_free, node);
-
-	memset(slot, 0, pool->stride);
+	return node ? node->payload : NULL;
 }
 
-typedef struct slist_node {
-	struct slist_node *next;
-} SListNode;
+typedef struct arena_list_node {
+	struct arena_list_node *next;
+} ArenaListNode;
 
-void *arena_slist_make(void *array, size_t stride, uint32_t capacity) {
+void *arena_list_make(void *array, size_t stride, uint32_t capacity) {
 	for (uint32_t index = 0; index < capacity; ++index) {
-		SListNode *element = (SListNode *)((uint8_t *)array + stride * index);
-		element->next = (SListNode *)((uint8_t *)element + stride);
+		ArenaListNode *element = (ArenaListNode *)((uint8_t *)array + stride * index);
+		element->next = (ArenaListNode *)((uint8_t *)element + stride);
 
 		if (index + 1 == capacity)
 			element->next = NULL;
@@ -150,58 +135,23 @@ void *arena_slist_make(void *array, size_t stride, uint32_t capacity) {
 	return array;
 }
 
-void *arena_slist_alloc(void **first_free) {
+void *arena_list_alloc(void **first_free) {
 	if (first_free == NULL || *first_free == NULL)
 		return NULL;
 
-	SListNode *element = (SListNode *)*first_free;
+	ArenaListNode *element = (ArenaListNode *)*first_free;
 	*first_free = element->next;
 
 	return element;
 }
 
-void arena_slist_free(void **first_free, void *slot) {
+void arena_list_free(void **first_free, void *slot) {
 	if (first_free == NULL || *first_free == NULL)
 		return;
 
-	SListNode *head = *first_free;
-	SListNode *element = slot;
+	ArenaListNode *head = *first_free;
+	ArenaListNode *element = slot;
 
 	element->next = head;
 	*first_free = element;
-}
-
-void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, ArenaTrieMode mode) {
-	ArenaTrieNode **node = root;
-
-	for (uint64_t hash_index = hash; *node; hash_index <<= 2) {
-		if (hash == (*node)->hash) {
-			return (*node)->payload;
-		}
-		node = &(*node)->children[hash_index >> 62];
-	}
-
-	if (arena == NULL)
-		return NULL;
-
-	switch (mode) {
-		case ARENA_TRIE_INTRUSIVE: {
-			*node = arena_push(arena, size, align, true);
-			(*node)->hash = hash;
-			(*node)->payload = *node;
-			return (*node)->payload;
-		}
-		case ARENA_TRIE_SEQUENTIAL: {
-			*node = arena_push(arena, size + sizeof(ArenaTrieNode), align, true);
-			(*node)->hash = hash;
-			(*node)->payload = *node + 1;
-			return (*node)->payload;
-		}
-		default: { // ARENA_TRIE_NODE_ONLY
-			*node = arena_push(arena, size, align, true);
-			(*node)->hash = hash;
-			(*node)->payload = NULL;
-			return *node; // The only time we return the raw node
-		}
-	}
 }

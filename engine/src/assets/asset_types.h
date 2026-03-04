@@ -26,7 +26,7 @@ typedef struct shader_source {
 	UUID id;
 	String path;
 
-	FileContent vertex_shader, fragment_shader;
+	String vertex_shader, fragment_shader;
 } ShaderSource;
 
 typedef enum {

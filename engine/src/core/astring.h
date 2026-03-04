@@ -12,8 +12,7 @@ typedef struct String {
 #define slit(s) ((String){ (char *)(s), sizeof(s) - 1 })
 #define shash(s) string_hash64(slit(s))
 
-String string_from_cstr(const char *s);
-String string_from_range(char *start, char *end);
+String string_wrap(const char *s);
 
 bool string_equals(String a, String b);
 bool string_equals_ignore_case(String a, String b);

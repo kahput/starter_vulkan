@@ -82,9 +82,3 @@ typedef struct { int32 x, y, z, w; } int4;
 // clang-format on
 
 typedef uint32_t Flag;
-
-// TODO: Move this?
-typedef struct {
-	size_t size;
-	char *content;
-} FileContent;

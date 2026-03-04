@@ -6,23 +6,13 @@
 #include <stdarg.h>
 #include <stdlib.h> // For strtod/strtoll logic if needed, though we implement custom mostly
 
-String string_from_cstr(const char *s) {
+String string_wrap(const char *s) {
 	if (s == NULL)
 		return (String){ 0 };
 
 	return (String){
 		.memory = (char *)s,
 		.length = strlen(s)
-	};
-}
-
-String string_from_range(char *start, char *end) {
-	if (end < start)
-		return (String){ 0 };
-
-	return (String){
-		.memory = start,
-		.length = (size_t)(end - start)
 	};
 }
 
@@ -233,7 +223,7 @@ String string_push_copy(Arena *arena, String str) {
 		return (String){ 0 };
 
 	// Allocate length + 1 for implicit null termination convenience
-	char *data = arena_push_array(arena, char, str.length + 1);
+	char *data = arena_push_count(arena, str.length + 1, char);
 	memcpy(data, str.memory, str.length);
 	data[str.length] = '\0';
 
@@ -252,7 +242,7 @@ String string_pushfv(Arena *arena, const char *format, va_list args) {
 	}
 
 	// Pass 2: Write
-	char *data = arena_push_array(arena, char, length + 1);
+	char *data = arena_push_count(arena, length + 1, char);
 	vsnprintf(data, length + 1, format, args_copy);
 	va_end(args_copy);
 
@@ -269,7 +259,7 @@ String string_pushf(Arena *arena, const char *fmt, ...) {
 
 String string_push_concat(Arena *arena, String head, String tail) {
 	size_t new_length = head.length + tail.length;
-	char *data = arena_push_array(arena, char, new_length + 1);
+	char *data = arena_push_count(arena, new_length + 1, char);
 
 	memcpy(data, head.memory, head.length);
 	memcpy(data + head.length, tail.memory, tail.length);
@@ -296,7 +286,7 @@ String string_push_replace(Arena *arena, String source, String find, String repl
 	}
 
 	size_t new_length = source.length + count * (replace.length - find.length);
-	char *data = arena_push_array(arena, char, new_length + 1);
+	char *data = arena_push_count(arena, new_length + 1, char);
 
 	// Pass 2: Build string
 	size_t src_offset = 0;
@@ -361,7 +351,7 @@ String string_push_path_join(Arena *arena, String head, String tail) {
 		// "folder" + "file" -> "folder/file" (need to add one)
 		// Manual construction to avoid double allocation of concat(concat)
 		size_t new_length = head.length + 1 + tail.length;
-		char *data = arena_push_array(arena, char, new_length + 1);
+		char *data = arena_push_count(arena, new_length + 1, char);
 		memcpy(data, head.memory, head.length);
 		data[head.length] = '/';
 		memcpy(data + head.length + 1, tail.memory, tail.length);
@@ -373,7 +363,7 @@ String string_push_path_join(Arena *arena, String head, String tail) {
 }
 
 char *string_push_cstring(Arena *arena, String s) {
-	char *cstr = arena_push_array(arena, char, s.length + 1);
+	char *cstr = arena_push_count(arena, s.length + 1, char);
 	memcpy(cstr, s.memory, s.length);
 	cstr[s.length] = '\0';
 	return cstr;
@@ -429,7 +419,7 @@ String string_list_join(Arena *arena, StringList *list, String separator) {
 	// Calculate exact size needed
 	size_t total_length = list->total_length + (list->node_count - 1) * separator.length;
 
-	char *data = arena_push_array(arena, char, total_length + 1);
+	char *data = arena_push_count(arena, total_length + 1, char);
 	size_t cursor = 0;
 
 	StringNode *node = list->first;

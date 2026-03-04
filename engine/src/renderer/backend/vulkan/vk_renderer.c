@@ -9,7 +9,7 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_renderer_create(struct arena *arena, struct platform *display, VulkanContext **out_context) {
+bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanContext **out_context) {
 	*out_context = arena_push_struct(arena, VulkanContext);
 
 	VulkanContext *context = *out_context;
@@ -20,11 +20,11 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	context->image_pool = arena_push_pool_zero(arena, VulkanImage, MAX_TEXTURES);
-	context->buffer_pool = arena_push_pool_zero(arena, VulkanBuffer, MAX_BUFFERS);
-	context->sampler_pool = arena_push_pool_zero(arena, VulkanSampler, MAX_SAMPLERS);
-	context->shader_pool = arena_push_pool_zero(arena, VulkanShader, MAX_SHADERS);
-	context->set_pool = arena_push_pool_zero(arena, VulkanUniformSet, MAX_UNIFORM_SETS);
+	context->image_pool = arena_push_pool(arena, VulkanImage, MAX_TEXTURES);
+	context->buffer_pool = arena_push_pool(arena, VulkanBuffer, MAX_BUFFERS);
+	context->sampler_pool = arena_push_pool(arena, VulkanSampler, MAX_SAMPLERS);
+	context->shader_pool = arena_push_pool(arena, VulkanShader, MAX_SHADERS);
+	context->set_pool = arena_push_pool(arena, VulkanUniformSet, MAX_UNIFORM_SETS);
 
 	// 0 == INVALID
 	pool_alloc(context->image_pool);
@@ -33,7 +33,7 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	pool_alloc(context->shader_pool);
 	pool_alloc(context->set_pool);
 
-	if (vulkan_instance_create(context, context->display) == false)
+	if (vulkan_instance_create(context) == false)
 		return false;
 
 	if (vulkan_surface_create(context, context->display) == false)
@@ -54,13 +54,12 @@ bool vulkan_renderer_create(struct arena *arena, struct platform *display, Vulka
 	if (vulkan_sync_objects_create(context) == false)
 		return false;
 
-	uint32_t width, height;
-	platform_get_physical_dimensions(context->display, &width, &height);
-	if (vulkan_swapchain_create(context, width, height) == false)
+	int2 dims = window_size_pixel(context->display);
+	if (vulkan_swapchain_create(context, dims.x, dims.y) == false)
 		return false;
 
 	// TODO: Lower this back down to 32?
-	if (vulkan_buffer_create(
+	if (vulkan_buffer_create_(
 			context, MiB(256), MAX_FRAMES_IN_FLIGHT,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			&context->staging_buffer) == false)
@@ -82,27 +81,27 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 
 	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
 		if (context->shader_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_shader_destroy(context, (RhiShader){ index });
+			vulkan_shader_destroy(context, (RhiShader){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
 		if (context->image_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_texture_destroy(context, (RhiTexture){ index });
+			vulkan_texture_destroy(context, (RhiTexture){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
 		if (context->sampler_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_sampler_destroy(context, (RhiSampler){ index });
+			vulkan_sampler_destroy(context, (RhiSampler){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
 		if (context->buffer_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_buffer_destroy(context, (RhiBuffer){ index });
+			vulkan_buffer_destroy(context, (RhiBuffer){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_UNIFORM_SETS; ++index) {
 		if (context->set_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_renderer_uniform_set_destroy(context, (RhiUniformSet){ index });
+			vulkan_uniformset_destroy(context, (RhiUniformSet){ index });
 	}
 
 	vkDestroyBuffer(context->device.logical, context->staging_buffer.handle, NULL);
@@ -118,8 +117,8 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
 	for (uint32_t color_index = 0; color_index < MAX_COLOR_ATTACHMENTS; ++color_index)
-		vulkan_image_destroy(context, &context->msaa_colors[color_index]);
-	vulkan_image_destroy(context, &context->msaa_depth);
+		vulkan_image_destroy_(context, &context->msaa_colors[color_index]);
+	vulkan_image_destroy_(context, &context->msaa_depth);
 
 	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
 		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[index], NULL);
@@ -138,7 +137,7 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDestroyInstance(context->instance, NULL);
 }
 
-bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
+bool vulkan_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
 	LOG_INFO("Recreating Swapchain...");
 	logger_indent();
 	if (vulkan_swapchain_recreate(context, new_width, new_height) == true) {

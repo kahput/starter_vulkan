@@ -1,41 +1,37 @@
 #pragma once
 
 #include "common.h"
-
 #include "core/arena.h"
+#include "core/astring.h"
 
-typedef struct platform {
-	uint32_t logical_width, logical_height;
-	uint32_t physical_width, physical_height;
-	bool should_close;
+#include "events/platform_events.h"
 
-	void *internal;
-} Platform;
+bool platform_startup(void);
+void platform_shutdown(void);
 
-typedef void (*fn_platform_dimensions)(struct platform *platform, uint32_t width, uint32_t height);
+double platform_time(void);
+uint64_t platform_time_absolute(void);
+void platform_sleep(uint32_t ms);
 
-typedef enum {
-	PLATFORM_POINTER_NORMAL,
-	PLATFORM_POINTER_DISABLED,
-} PointerMode;
+typedef struct window Window;
+Window *window_make(Arena *arena, uint32_t width, uint32_t height, String title);
+void window_poll_events(Window *window);
+bool window_is_open(Window *window);
 
-bool platform_startup(Arena *arena, uint32_t width, uint32_t height, const char *title, Platform *platform);
-void platform_shutdown(Platform *platform);
+int2 window_size(Window *window);
+int2 window_size_pixel(Window *window);
 
-void platform_poll_events(Platform *platform);
-bool platform_should_close(Platform *platform);
+void window_set_callback(PFN_event_handler handler);
 
-void platform_get_logical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
-void platform_get_physical_dimensions(Platform *platform, uint32_t *width, uint32_t *height);
+void window_set_fullscreen(Window *window, bool fullscreen);
+bool window_is_fullscreen(Window *window);
+void window_set_title(Window *window, String title);
+void window_set_cursor_visible(Window *window, bool visible);
+void window_set_cursor_locked(Window *window, bool locked);
 
-bool platform_pointer_mode(Platform *platform, PointerMode mode);
-
-double platform_time_seconds(Platform *platform);
-uint64_t platform_time_ms(Platform *platform);
-uint64_t platform_random_64(Platform *platform);
-
-struct VkSurfaceKHR_T;
 struct VkInstance_T;
+struct VkSurfaceKHR_T;
+struct VkAllocationCallbacks;
 
-bool platform_create_vulkan_surface(Platform *platform, struct VkInstance_T *instance, struct VkSurfaceKHR_T **surface);
-const char **platform_vulkan_extensions(Platform *platform, uint32_t *count);
+const char **platform_vulkan_extensions(uint32_t *count);
+bool window_vulkan_surface_make(Window *window, struct VkInstance_T *instance, struct VkSurfaceKHR_T **out_surface);

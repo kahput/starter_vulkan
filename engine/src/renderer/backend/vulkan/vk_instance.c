@@ -28,7 +28,7 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 };
 void create_debug_messenger(VulkanContext *context);
 
-bool vulkan_instance_create(VulkanContext *context, void *display) {
+bool vulkan_instance_create(VulkanContext *context) {
 	VkApplicationInfo app_info = {
 		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 		.pApplicationName = "Hello vulkan",
@@ -39,11 +39,11 @@ bool vulkan_instance_create(VulkanContext *context, void *display) {
 	};
 
 	uint32_t platform_extension_count = 0, extension_count = 0;
-	const char **extensions = platform_vulkan_extensions(display, &platform_extension_count);
+	const char **extensions = platform_vulkan_extensions(&platform_extension_count);
 	vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL);
 
 	ArenaTemp scratch = arena_scratch(NULL);
-	VkExtensionProperties *properties = arena_push_array_zero(scratch.arena, VkExtensionProperties, extension_count);
+	VkExtensionProperties *properties = arena_push_count(scratch.arena, extension_count, VkExtensionProperties);
 	vkEnumerateInstanceExtensionProperties(NULL, &extension_count, properties);
 
 	for (uint32_t request_index = 0; request_index < platform_extension_count; ++request_index) {
@@ -72,7 +72,7 @@ bool vulkan_instance_create(VulkanContext *context, void *display) {
 	uint32_t requested_layers = sizeof(layers) / sizeof(*layers), available_layers = 0;
 	vkEnumerateInstanceLayerProperties(&available_layers, NULL);
 
-	VkLayerProperties *layer_properties = arena_push_array_zero(scratch.arena, VkLayerProperties, available_layers);
+	VkLayerProperties *layer_properties = arena_push_count(scratch.arena, available_layers, VkLayerProperties);
 	vkEnumerateInstanceLayerProperties(&available_layers, layer_properties);
 
 	uint32_t match = 0;

@@ -12,7 +12,7 @@
 
 int32_t to_vulkan_usage(BufferType type);
 
-RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type, size_t size, void *data) {
+RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, size_t size, void *data) {
 	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
 
 	const char *stringify[] = {
@@ -32,7 +32,7 @@ RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type,
 			return INVALID_RHI(RhiBuffer);
 		data = NULL;
 	} else {
-		bool result = vulkan_buffer_create(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
+		bool result = vulkan_buffer_create_(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
 	}
 
 	if (data != NULL) {
@@ -57,7 +57,7 @@ RhiBuffer vulkan_renderer_buffer_create(VulkanContext *context, BufferType type,
 	return (RhiBuffer){ pool_index_of(context->buffer_pool, buffer) };
 }
 
-bool vulkan_renderer_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
+bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
@@ -70,7 +70,7 @@ bool vulkan_renderer_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
 	return true;
 }
 
-bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
+bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
@@ -107,7 +107,7 @@ bool vulkan_renderer_buffer_write(VulkanContext *context, RhiBuffer rbuffer, siz
 	return true;
 }
 
-bool vulkan_renderer_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t index_size) {
+bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t index_size) {
 	const VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
@@ -130,7 +130,7 @@ bool vulkan_renderer_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size
 	return false;
 }
 
-bool vulkan_renderer_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, uint32_t count) {
+bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, uint32_t count) {
 	const VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffers[0], MAX_BUFFERS, true, false);
 
@@ -157,7 +157,7 @@ bool vulkan_renderer_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, u
 }
 
 bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data) {
-	vulkan_buffer_create(
+	vulkan_buffer_create_(
 		context, size, MAX_FRAMES_IN_FLIGHT,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -174,7 +174,7 @@ bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size
 	return true;
 }
 
-bool vulkan_buffer_create(
+bool vulkan_buffer_create_(
 	VulkanContext *context,
 	VkDeviceSize size, uint32_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VulkanBuffer *out_buffer) {
@@ -240,7 +240,7 @@ void vulkan_buffer_memory_unmap(VulkanContext *context, VulkanBuffer *buffer) {
 	vkUnmapMemory(context->device.logical, buffer->memory);
 }
 
-void vulkan_buffer_write(VulkanBuffer *buffer, size_t offset, size_t size, void *data) {
+void vulkan_buffer_write_(VulkanBuffer *buffer, size_t offset, size_t size, void *data) {
 	vulkan_buffer_write_indexed(buffer, 0, offset, size, data);
 }
 
@@ -288,7 +288,7 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkB
 		0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
 	ArenaTemp scratch = arena_scratch(NULL);
-	VkBufferImageCopy *regions = arena_push_array_zero(scratch.arena, VkBufferImageCopy, layer_count);
+	VkBufferImageCopy *regions = arena_push_count(scratch.arena, layer_count, VkBufferImageCopy);
 
 	for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
 		regions[layer_index] = (VkBufferImageCopy){

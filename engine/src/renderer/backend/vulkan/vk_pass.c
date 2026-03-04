@@ -6,7 +6,7 @@
 
 VkSampleCountFlags to_sample_count(uint32_t sample_count);
 
-bool vulkan_renderer_draw_list_begin(VulkanContext *context, DrawListDesc desc) {
+bool vulkan_renderer_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	VkExtent2D extent = {
 		context->swapchain.extent.width,
 		context->swapchain.extent.height
@@ -140,7 +140,7 @@ bool vulkan_renderer_draw_list_begin(VulkanContext *context, DrawListDesc desc) 
 	return true;
 }
 
-bool vulkan_renderer_draw_list_end(VulkanContext *context) {
+bool vulkan_renderer_drawlist_end(VulkanContext *context) {
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
 
 	context->bound_pass = (VulkanPass){ 0 };

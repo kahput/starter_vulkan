@@ -17,7 +17,7 @@ static VkImageViewType to_view_type(TextureType type);
 static VkImageUsageFlags to_usage_flags(TextureFormat format, TextureUsageFlags usage,
 	bool has_pixels);
 
-RhiTexture vulkan_renderer_texture_create(
+RhiTexture vulkan_texture_make(
 	VulkanContext *context,
 	uint32_t width, uint32_t height,
 	TextureType type, TextureFormat format, TextureUsageFlags usage,
@@ -33,7 +33,7 @@ RhiTexture vulkan_renderer_texture_create(
 	VkFormat vk_format = to_vulkan_format(context, format);
 	VkImageAspectFlags aspect = to_aspect(format);
 
-	vulkan_image_create(context, VK_SAMPLE_COUNT_1_BIT, width, height, vk_format,
+	vulkan_image_create_(context, VK_SAMPLE_COUNT_1_BIT, width, height, vk_format,
 		VK_IMAGE_TILING_OPTIMAL, vk_usage, type, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		image);
 
@@ -67,7 +67,7 @@ RhiTexture vulkan_renderer_texture_create(
 	return (RhiTexture){ pool_index_of(context->image_pool, image) };
 }
 
-bool vulkan_renderer_texture_destroy(VulkanContext *context, RhiTexture texture) {
+bool vulkan_texture_destroy(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, false);
 
@@ -94,7 +94,7 @@ bool vvulkan_renderer_texture_prepare_attachment(VulkanContext *context, RhiText
 
 	return true;
 }
-bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, RhiTexture texture) {
+bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, false);
 
@@ -107,7 +107,7 @@ bool vulkan_renderer_texture_prepare_sample(VulkanContext *context, RhiTexture t
 	return true;
 }
 
-bool vulkan_renderer_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width,
+bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width,
 	uint32_t height) {
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, false);
@@ -116,7 +116,7 @@ bool vulkan_renderer_texture_resize(VulkanContext *context, RhiTexture texture, 
 	vkDestroyImage(context->device.logical, image->handle, NULL);
 	vkFreeMemory(context->device.logical, image->memory, NULL);
 
-	vulkan_image_create(context, image->info.samples, width, height, image->info.format,
+	vulkan_image_create_(context, image->info.samples, width, height, image->info.format,
 		VK_IMAGE_TILING_OPTIMAL, image->info.usage, image->type,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image);
 	vulkan_image_view_create(context, to_view_type(image->type), image->aspect, image);
@@ -124,7 +124,7 @@ bool vulkan_renderer_texture_resize(VulkanContext *context, RhiTexture texture, 
 	return true;
 }
 
-RhiSampler vulkan_renderer_sampler_create(VulkanContext *context, SamplerDesc description) {
+RhiSampler vulkan_sampler_make(VulkanContext *context, SamplerDesc description) {
 	VulkanSampler *sampler = pool_alloc(context->sampler_pool);
 
 	sampler->info = (VkSamplerCreateInfo){
@@ -160,7 +160,7 @@ RhiSampler vulkan_renderer_sampler_create(VulkanContext *context, SamplerDesc de
 	return (RhiSampler){ pool_index_of(context->sampler_pool, sampler) };
 }
 
-bool vulkan_renderer_sampler_destroy(VulkanContext *context, RhiSampler handle) {
+bool vulkan_sampler_destroy(VulkanContext *context, RhiSampler handle) {
 	VulkanSampler *sampler = NULL;
 	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, handle, MAX_SAMPLERS, true, false);
 

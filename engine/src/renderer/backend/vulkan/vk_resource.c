@@ -10,7 +10,7 @@
 
 VkDescriptorType to_vulkan_descriptor_type(ShaderBindingType type);
 
-RhiUniformSet vulkan_renderer_uniform_set_create(
+RhiUniformSet vulkan_uniformset_make(
 	VulkanContext *context, RhiShader rshader, uint32_t set_number) {
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_SHADERS, true, INVALID_RHI(RhiUniformSet));
@@ -42,7 +42,7 @@ RhiUniformSet vulkan_renderer_uniform_set_create(
 	return (RhiUniformSet){ pool_index_of(context->set_pool, set) };
 }
 
-RhiUniformSet vulkan_renderer_uniform_set_create_ex(
+RhiUniformSet vulkan_uniformset_make_ex(
 	VulkanContext *context, ResourceBinding *bindings, uint32_t binding_count) {
 	VulkanUniformSet *set = pool_alloc_struct(context->set_pool, VulkanUniformSet);
 	set->number = 0;
@@ -106,7 +106,7 @@ RhiUniformSet vulkan_renderer_uniform_set_create_ex(
 	return (RhiUniformSet){ pool_index_of(context->set_pool, set) };
 }
 
-bool vulkan_renderer_uniform_set_destroy(VulkanContext *context, RhiUniformSet rset) {
+bool vulkan_uniformset_destroy(VulkanContext *context, RhiUniformSet rset) {
 	VulkanUniformSet *set = NULL;
 	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
 
@@ -119,7 +119,7 @@ bool vulkan_renderer_uniform_set_destroy(VulkanContext *context, RhiUniformSet r
 	return true;
 }
 
-bool vulkan_renderer_uniform_set_bind_buffer(
+bool vulkan_uniformset_bind_buffer(
 	VulkanContext *context, RhiUniformSet rset,
 	uint32_t binding, RhiBuffer rbuffer) {
 	VulkanUniformSet *set = NULL;
@@ -149,7 +149,7 @@ bool vulkan_renderer_uniform_set_bind_buffer(
 
 	return true;
 }
-bool vulkan_renderer_uniform_set_bind_texture(
+bool vulkan_uniformset_bind_texture(
 	VulkanContext *context, RhiUniformSet rset,
 	uint32_t binding, RhiTexture rtexture, RhiSampler rsampler) {
 	VulkanUniformSet *set = NULL;
@@ -181,7 +181,7 @@ bool vulkan_renderer_uniform_set_bind_texture(
 	return true;
 }
 
-bool vulkan_renderer_uniform_set_bind(VulkanContext *context, RhiUniformSet rset) {
+bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet rset) {
 	VulkanUniformSet *set = NULL;
 	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
 

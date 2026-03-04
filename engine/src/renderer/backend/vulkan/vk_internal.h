@@ -144,7 +144,7 @@ typedef struct vulkan_device {
 
 } VulkanDevice;
 
-bool vulkan_instance_create(VulkanContext *context, void *display);
+bool vulkan_instance_create(VulkanContext *context);
 bool vulkan_surface_create(VulkanContext *context, void *display);
 bool vulkan_device_create(Arena *arena, VulkanContext *context);
 
@@ -164,14 +164,14 @@ typedef struct VulkanSwapchain {
 bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t height);
 bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t width, uint32_t height);
 
-bool vulkan_buffer_create(
+bool vulkan_buffer_create_(
 	VulkanContext *context,
 	VkDeviceSize size, uint32_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VulkanBuffer *out_buffer);
 
 bool vulkan_buffer_memory_map(VulkanContext *context, VulkanBuffer *buffer);
 void vulkan_buffer_memory_unmap(VulkanContext *context, VulkanBuffer *buffer);
-void vulkan_buffer_write(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
+void vulkan_buffer_write_(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
 void vulkan_buffer_write_indexed(VulkanBuffer *buffer, uint32_t index, size_t offset, size_t size, void *data);
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size);
@@ -179,8 +179,8 @@ bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size
 
 // bool vulkan_pass_on_resize(VulkanContext *context, VulkanPass *pass);
 
-bool vulkan_image_create(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, TextureType, VkMemoryPropertyFlags, VulkanImage *);
-void vulkan_image_destroy(VulkanContext *context, VulkanImage *image);
+bool vulkan_image_create_(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, TextureType, VkMemoryPropertyFlags, VulkanImage *);
+void vulkan_image_destroy_(VulkanContext *context, VulkanImage *image);
 
 bool vulkan_image_view_create(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image);
 void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
@@ -294,7 +294,6 @@ VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default);
 typedef VK_CREATE_UTIL_DEBUG_MESSENGER(fn_create_utils_debug_messenger);
 static fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messneger_default;
 
-// EXTENSIONS
 #define VK_DESTROY_UTIL_DEBUG_MESSENGER(name) \
 	VKAPI_ATTR void VKAPI_CALL name(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks *pAllocator)
 VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messneger_default);

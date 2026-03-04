@@ -147,7 +147,7 @@ typedef enum {
 	MOUSE_BUTTON_FORWARD = 5,
 	MOUSE_BUTTON_BACK = 6,
 
-	MOUSE_BUTTON_LAST
+	MOUSE_BUTTON_COUNT
 } MouseButton;
 
 typedef enum {

@@ -71,7 +71,7 @@ elseif(UNIX AND NOT APPLE)
             -Wno-unused-variable)
 
   target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-dynamic)
-  target_link_libraries(${PROJECT_NAME} dl Vulkan::Vulkan m)
+  target_link_libraries(${PROJECT_NAME} dl xcb Vulkan::Vulkan m)
 
 else()
   message(FATAL_ERROR "Windows and Linux only supported platforms")

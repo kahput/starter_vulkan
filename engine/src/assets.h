@@ -19,19 +19,15 @@ typedef struct asset_library {
 	ArenaTrie trie;
 
 	uint32_t tracked_file_count;
-} AssetLibrary;
+} AssetTracker;
 
-bool asset_library_startup(AssetLibrary *library, void *memory, size_t size);
+static inline AssetTracker asset_tracker_make(Arena *arena) { return (AssetTracker){ .arena = arena, .trie = arena_trie_make(arena) }; }
 
-bool asset_library_track_directory(AssetLibrary *library, String directory);
-bool asset_library_track_file(AssetLibrary *library, String file_path);
+bool asset_tracker_track_directory(AssetTracker *tracker, String directory);
+bool asset_tracker_track_file(AssetTracker *tracker, String file_path);
 
-ENGINE_API UUID asset_library_load_shader(Arena *arena, AssetLibrary *library, String key, ShaderSource *out_shader);
-ENGINE_API UUID asset_library_load_model(Arena *arena, AssetLibrary *library, String key, SModel *out_model);
-ENGINE_API UUID asset_library_load_image(Arena *arena, AssetLibrary *library, String key, ImageSource *out_texture);
+ENGINE_API UUID asset_tracker_request_shader(AssetTracker *tracker, String key);
+ENGINE_API UUID asset_tracker_request_model(AssetTracker *tracker, String key);
+ENGINE_API UUID asset_tracker_request_image(AssetTracker *tracker, String key);
 
-ENGINE_API UUID asset_library_request_shader(AssetLibrary *library, String key);
-ENGINE_API UUID asset_library_request_model(AssetLibrary *library, String key);
-ENGINE_API UUID asset_library_request_image(AssetLibrary *library, String key);
-
-bool asset_library_clear_cache(AssetLibrary *library);
+bool asset_tracker_clear(AssetTracker *tracker);

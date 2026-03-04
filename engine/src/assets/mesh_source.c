@@ -12,7 +12,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 		.vertex_count = 6,
 	};
 
-	Vertex *vertices = arena_push_array_zero(arena, Vertex, rv.vertex_count);
+	Vertex *vertices = arena_push_count(arena, rv.vertex_count, Vertex);
 	rv.vertices = (uint8_t *)vertices;
 
 	/**
@@ -106,7 +106,7 @@ MeshSource mesh_source_list_flatten(Arena *arena, MeshSourceList *list) {
 	if (list->count == 0)
 		return rv;
 
-	uint8_t *vertices = arena_push_array(arena, uint8_t, list->total_vertices_size);
+	uint8_t *vertices = arena_push_count(arena, list->total_vertices_size, uint8_t);
 	size_t cursor = 0;
 
 	MeshSourceNode *node = list->first;

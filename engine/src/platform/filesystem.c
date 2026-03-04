@@ -21,23 +21,23 @@ bool filesystem_file_exists(String path) {
 	return false;
 }
 
-FileContent filesystem_read(Arena *arena, String path) {
+String filesystem_read(Arena *arena, String path) {
 	FILE *file = fopen((const char *)path.memory, "rb");
 	if (file == NULL) {
 		LOG_ERROR("Failed to read file '%s': %s", path.memory, strerror(errno));
-		return (FileContent){ 0 };
+		return (String){ 0 };
 	}
 
 	fseek(file, 0L, SEEK_END);
 	uint32_t size = ftell(file);
 	fseek(file, 0L, SEEK_SET);
 
-	char *byte_content = arena_push_array_zero(arena, char, size);
+	char *byte_content = arena_push_count(arena, size, char);
 	fread(byte_content, sizeof(*byte_content), size, file);
 
 	fclose(file);
 
-	return (FileContent){ .size = size, .content = byte_content };
+	return (String){ .memory = byte_content, .length = size };
 }
 
 bool filesystem_file_copy(String from, String to) {
@@ -78,7 +78,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 
 	struct dirent *entry;
 	while ((entry = readdir(directory))) {
-		String entry_name = string_from_cstr(entry->d_name);
+		String entry_name = string_wrap(entry->d_name);
 
 		if (string_equals(entry_name, slit(".")) ||
 			string_equals(entry_name, slit(".."))) {

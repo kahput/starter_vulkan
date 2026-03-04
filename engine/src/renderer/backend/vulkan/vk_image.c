@@ -4,7 +4,7 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_image_create(
+bool vulkan_image_create_(
 	VulkanContext *context, VkSampleCountFlags sample_count,
 	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
 	VkImageUsageFlags usage, TextureType type, VkMemoryPropertyFlags properties,
@@ -61,7 +61,7 @@ bool vulkan_image_create(
 	return true;
 }
 
-void vulkan_image_destroy(VulkanContext *context, VulkanImage *image) {
+void vulkan_image_destroy_(VulkanContext *context, VulkanImage *image) {
 	if (!image || image->handle == VK_NULL_HANDLE)
 		return;
 
@@ -280,7 +280,7 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 	if (recreate == false)
 		return true;
 
-	vulkan_image_destroy(context, msaa);
+	vulkan_image_destroy_(context, msaa);
 
 	VkImageUsageFlags usage =
 		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
@@ -291,7 +291,7 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-	if (vulkan_image_create(
+	if (vulkan_image_create_(
 			context, sample_count,
 			extent.width, extent.height,
 			format, VK_IMAGE_TILING_OPTIMAL,
