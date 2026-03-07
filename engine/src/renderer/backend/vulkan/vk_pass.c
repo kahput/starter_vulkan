@@ -3,10 +3,11 @@
 #include "renderer/backend/vulkan_api.h"
 
 #include "core/debug.h"
+#include <vulkan/vulkan_core.h>
 
 VkSampleCountFlags to_sample_count(uint32_t sample_count);
 
-bool vulkan_renderer_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
+bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	VkExtent2D extent = {
 		context->swapchain.extent.width,
 		context->swapchain.extent.height
@@ -26,8 +27,6 @@ bool vulkan_renderer_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		VkRenderingAttachmentInfo *dst = &color_attachments[color_index];
 		dst->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 		dst->imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		dst->loadOp = (VkAttachmentLoadOp)src->load;
-		dst->storeOp = (VkAttachmentStoreOp)src->store;
 
 		dst->clearValue.color.float32[0] = src->clear.color.x;
 		dst->clearValue.color.float32[1] = src->clear.color.y;
@@ -37,6 +36,8 @@ bool vulkan_renderer_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		// Present
 		if (src->texture.id == 0) {
 			context->bound_pass.color_formats[color_index] = context->swapchain.format.format;
+			dst->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			dst->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 
 			if (use_msaa) {
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
@@ -56,6 +57,8 @@ bool vulkan_renderer_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 			context->bound_pass.color_formats[color_index] = image->info.format;
+				dst->loadOp = (VkAttachmentLoadOp)src->load;
+				dst->storeOp = (VkAttachmentStoreOp)src->store;
 
 			extent.width = min(extent.width, image->width);
 			extent.height = min(extent.height, image->height);
@@ -70,8 +73,9 @@ bool vulkan_renderer_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 
 				dst->imageView = context->msaa_colors[color_index].view;
 				dst->resolveImageView = image->view;
-			} else
+			} else {
 				dst->imageView = image->view;
+			}
 		}
 	}
 
@@ -140,7 +144,7 @@ bool vulkan_renderer_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	return true;
 }
 
-bool vulkan_renderer_drawlist_end(VulkanContext *context) {
+bool vulkan_drawlist_end(VulkanContext *context) {
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
 
 	context->bound_pass = (VulkanPass){ 0 };

@@ -67,15 +67,9 @@ typedef struct vulkan_buffer {
 
 typedef struct {
 	VulkanResourceState state;
-
 	VkDescriptorSet handle;
-	VkDescriptorSetLayout layout;
-	uint64_t layout_hash;
 
 	uint32_t number;
-
-	VkPipelineLayout pipeline_layout;
-
 	VulkanBuffer *buffer;
 } VulkanUniformSet;
 
@@ -268,12 +262,12 @@ struct vulkan_context {
 	VulkanBuffer *buffer_pool;
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
-	VulkanUniformSet *set_pool;
+	VulkanUniformSet *set_stack;
 
 	VulkanBuffer staging_buffer;
 	VulkanShader *bound_shader;
 	VulkanPass bound_pass;
-	VkDescriptorPool descriptor_pool;
+	VkDescriptorPool descriptor_pools[MAX_FRAMES_IN_FLIGHT];
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
 	VkSemaphore render_finished_semaphores[SWAPCHAIN_IMAGE_COUNT];

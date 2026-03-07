@@ -16,8 +16,6 @@ typedef enum {
 } AssetType;
 
 typedef struct image {
-	String path;
-
 	void *pixels;
 	int32_t width, height, channels;
 } ImageSource;
@@ -50,9 +48,9 @@ typedef struct {
 	PropertyType type;
 	union {
 		float float1;
-		float2 float2;
-		float3 float3;
-		float4 float4;
+		float32_2 float2;
+		float32_3 float3;
+		float32_4 float4;
 
 		uint32_t u;
 
@@ -70,10 +68,10 @@ typedef struct material_source {
 } MaterialSource;
 
 typedef struct {
-	float3 position;
-	float3 normal;
-	float2 uv;
-	float4 tangent;
+	float32_3 position;
+	float32_3 normal;
+	float32_2 uv;
+	float32_4 tangent;
 } Vertex;
 
 typedef struct model_source {

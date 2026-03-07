@@ -63,7 +63,7 @@ RhiShader vulkan_shader_make(
 	shader->first_free = arena_list_make(shader->variants, sizeof(VulkanPipeline), countof(shader->variants));
 	shader->variant_count++;
 
-	return (RhiShader){ pool_index_of(context->shader_pool, shader) };
+	return (RhiShader){ indexof(context->shader_pool, shader) };
 }
 
 bool vulkan_shader_destroy(VulkanContext *context, RhiShader rshader) {
@@ -545,39 +545,41 @@ bool reflect_shader_interface(
 		}
 	}
 
-	for (uint32_t i = 0; i <= max_set_index; ++i) {
-		out_reflection->sets[i].binding_count = merged_sets[i].binding_count;
-		out_reflection->sets[i].bindings = arena_push_count(arena, out_reflection->sets[i].binding_count, ShaderBinding);
-	}
+	if (out_reflection) {
+		for (uint32_t i = 0; i <= max_set_index; ++i) {
+			out_reflection->sets[i].binding_count = merged_sets[i].binding_count;
+			out_reflection->sets[i].bindings = arena_push_count(arena, out_reflection->sets[i].binding_count, ShaderBinding);
+		}
 
-	for (uint32_t set_index = 0, index = 0; set_index <= max_set_index; ++set_index) {
-		SetInfo *set = &merged_sets[set_index];
-		for (uint32_t binding_index = 0; binding_index < set->binding_count; ++binding_index, ++index) {
-			SpvReflectDescriptorBinding *spv = set->spv_binding[binding_index];
-			VkDescriptorSetLayoutBinding *vk = &set->vk_binding[binding_index];
+		for (uint32_t set_index = 0, index = 0; set_index <= max_set_index; ++set_index) {
+			SetInfo *set = &merged_sets[set_index];
+			for (uint32_t binding_index = 0; binding_index < set->binding_count; ++binding_index, ++index) {
+				SpvReflectDescriptorBinding *spv = set->spv_binding[binding_index];
+				VkDescriptorSetLayoutBinding *vk = &set->vk_binding[binding_index];
 
-			ShaderBinding *dst = &out_reflection->sets[set_index].bindings[index];
+				ShaderBinding *dst = &out_reflection->sets[set_index].bindings[index];
 
-			dst->name = string_push_copy(arena, string_wrap(spv->name));
+				dst->name = string_push_copy(arena, string_wrap(spv->name));
 
-			dst->binding_number = spv->binding;
-			dst->count = spv->count;
-			if ((vk->stageFlags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT)
-				dst->stage |= SHADER_STAGE_VERTEX;
-			if ((vk->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT) == VK_SHADER_STAGE_FRAGMENT_BIT)
-				dst->stage |= SHADER_STAGE_FRAGMENT;
+				dst->binding_number = spv->binding;
+				dst->count = spv->count;
+				if ((vk->stageFlags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT)
+					dst->stage |= SHADER_STAGE_VERTEX;
+				if ((vk->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT) == VK_SHADER_STAGE_FRAGMENT_BIT)
+					dst->stage |= SHADER_STAGE_FRAGMENT;
 
-			VkDescriptorType type = vk->descriptorType;
-			dst->buffer_layout = NULL;
+				VkDescriptorType type = vk->descriptorType;
+				dst->buffer_layout = NULL;
 
-			if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
-				dst->type = SHADER_BINDING_UNIFORM_BUFFER;
-				dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
-			} else if (type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
-				dst->type = SHADER_BINDING_STORAGE_BUFFER;
-				dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
-			} else if (type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
-				dst->type = SHADER_BINDING_TEXTURE_2D;
+				if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
+					dst->type = SHADER_BINDING_UNIFORM_BUFFER;
+					dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
+				} else if (type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+					dst->type = SHADER_BINDING_STORAGE_BUFFER;
+					dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
+				} else if (type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+					dst->type = SHADER_BINDING_TEXTURE_2D;
+				}
 			}
 		}
 	}

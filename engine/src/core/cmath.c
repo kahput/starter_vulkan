@@ -267,20 +267,17 @@ Matrix4f matrix4f_perspective(float fovy_radians, float aspect, float near_z, fl
 	return result;
 }
 
-Matrix4f matrix4f_orthographic(float left, float right, float bottom, float top, float near_z, float far_z) {
+Matrix4f matrix4f_orthographic(float left, float right, float bottom, float top, float near, float far) {
 	Matrix4f result = matrix4f_identity();
 
-	// FIX: Using Vulkan Zero-to-One Depth (ZO)
-	//
-	// Top-Left is (-1, -1), Bottom-Right is (1, 1), Z is 0 to 1
-
 	result.elements[0] = 2.0f / (right - left);
-	result.elements[5] = 2.0f / (bottom - top); // Note: bottom - top to flip Y for Vulkan if needed, or standard top-bottom
-	result.elements[10] = 1.0f / (near_z - far_z); // Scale for [0, 1] range
+	result.elements[5] = 2.0f / (top - bottom);
+	result.elements[10] = -2.0f / (far - near);
 
 	result.elements[12] = -(right + left) / (right - left);
-	result.elements[13] = -(bottom + top) / (bottom - top);
-	result.elements[14] = near_z / (near_z - far_z); // Translation for [0, 1] range
+	result.elements[13] = -(top + bottom) / (top - bottom);
+	result.elements[14] = -(far + near) / (far - near);
+	result.elements[15] = 1.0f;
 
 	return result;
 }

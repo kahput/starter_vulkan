@@ -96,20 +96,20 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 			if (recursive) {
 				StringList sub_list = filesystem_list_files(arena, temp_full_path, true);
 
-				if (sub_list.node_count > 0) {
+				if (sub_list.count > 0) {
 					if (list.last)
 						list.last->next = sub_list.first;
 					else
 						list.first = sub_list.first;
 
 					list.last = sub_list.last;
-					list.node_count += sub_list.node_count;
+					list.count += sub_list.count;
 					list.total_length += sub_list.total_length;
 				}
 			}
 		} else {
 			String permanent_path = string_push_path_join(arena, directory_path, entry_name);
-			string_list_push(arena, &list, permanent_path);
+			stringlist_push(arena, &list, permanent_path);
 		}
 	}
 

@@ -72,13 +72,13 @@ UUID asset_tracker_request_shader(AssetTracker *tracker, String key) {
 	AssetEntry *vs_entry = arena_trie_find(&tracker->trie, string_hash64(vertex_shader_key), AssetEntry);
 	AssetEntry *fs_entry = arena_trie_find(&tracker->trie, string_hash64(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
-		LOG_WARN("Assets: Key '%.*s' is not tracked", sfmt(key));
+		LOG_WARN("Assets: Key '%.*s' is not tracked", sarg(key));
 		arena_scratch_release(scratch);
 		return 0;
 	}
 
 	if (vs_entry->type != ASSET_TYPE_SHADER || fs_entry->type != ASSET_TYPE_SHADER) {
-		LOG_ERROR("Assets: Key '%.*s' is not a shader", sfmt(key));
+		LOG_ERROR("Assets: Key '%.*s' is not a shader", sarg(key));
 		arena_scratch_release(scratch);
 		return 0;
 	}
@@ -94,7 +94,7 @@ UUID asset_tracker_request_model(AssetTracker *tracker, String key) {
 		return 0;
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {
-		LOG_ERROR("AssetTracker: Requested asset '%.*s' is type %d", sfmt(key), entry->type);
+		LOG_ERROR("AssetTracker: Requested asset '%.*s' is type %d", sarg(key), entry->type);
 		return 0;
 	}
 
@@ -104,12 +104,12 @@ UUID asset_tracker_request_model(AssetTracker *tracker, String key) {
 UUID asset_tracker_request_image(AssetTracker *tracker, String key) {
 	AssetEntry *entry = arena_trie_find(&tracker->trie, string_hash64(key), AssetEntry);
 	if (entry == NULL) {
-		LOG_WARN("AssetTracker: No image '%.*s'", sfmt(key));
+		LOG_WARN("AssetTracker: No image '%.*s'", sarg(key));
 		return 0;
 	}
 
 	if (entry->type != ASSET_TYPE_IMAGE) {
-		LOG_ERROR("AssetTracker: Requested asset '%.*s' is type %d", sfmt(key), entry->type);
+		LOG_ERROR("AssetTracker: Requested asset '%.*s' is type %d", sarg(key), entry->type);
 		return 0;
 	}
 

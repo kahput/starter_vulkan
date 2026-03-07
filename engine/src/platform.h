@@ -10,7 +10,7 @@ bool platform_startup(void);
 void platform_shutdown(void);
 
 double platform_time(void);
-uint64_t platform_time_absolute(void);
+ENGINE_API uint64_t platform_time_absolute(void);
 void platform_sleep(uint32_t ms);
 
 typedef struct window Window;
@@ -18,8 +18,8 @@ Window *window_make(Arena *arena, uint32_t width, uint32_t height, String title)
 void window_poll_events(Window *window);
 bool window_is_open(Window *window);
 
-int2 window_size(Window *window);
-int2 window_size_pixel(Window *window);
+uint32_2 window_size(Window *window);
+uint32_2 window_size_pixel(Window *window);
 
 void window_set_callback(PFN_event_handler handler);
 

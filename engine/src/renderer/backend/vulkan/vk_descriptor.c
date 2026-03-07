@@ -77,9 +77,11 @@ bool vulkan_descriptor_pool_create(VulkanContext *context) {
 		.maxSets = 1000,
 	};
 
-	if (vkCreateDescriptorPool(context->device.logical, &dp_create_info, NULL, &context->descriptor_pool) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create Vulkan DescriptorPool");
-		return false;
+	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
+		if (vkCreateDescriptorPool(context->device.logical, &dp_create_info, NULL, &context->descriptor_pools[frame_index]) != VK_SUCCESS) {
+			LOG_ERROR("Failed to create Vulkan DescriptorPool");
+			return false;
+		}
 	}
 
 	LOG_INFO("VkDescriptorPool created");

@@ -107,7 +107,7 @@ Window *window_make(Arena *arena, uint32_t width, uint32_t height, String title)
 
 	uint32_t value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
 	uint32_t values[] = {
-		window->screen->white_pixel,
+		window->screen->black_pixel,
 		event_mask
 	};
 
@@ -475,14 +475,14 @@ void platform_sleep(uint32_t ms) {
 #endif
 }
 
-int2 window_size(Window *window) {
+uint32_2 window_size(Window *window) {
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(
 		x11.connection,
 		xcb_get_geometry(x11.connection, window->handle),
 		NULL);
 
 	if (geometry) {
-		int2 dims = {
+		uint32_2 dims = {
 			.x = geometry->width,
 			.y = geometry->height
 		};
@@ -492,10 +492,10 @@ int2 window_size(Window *window) {
 	}
 
 	ASSERT(false);
-	return (int2){ 0 };
+	return (uint32_2){ 0 };
 }
 
-int2 window_size_pixel(Window *window) {
+uint32_2 window_size_pixel(Window *window) {
 	return window_size(window);
 }
 

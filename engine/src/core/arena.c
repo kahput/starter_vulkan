@@ -96,7 +96,7 @@ ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_
 	if (arena == NULL)
 		return NULL;
 
-	*node = arena_push(arena, sizeof(ArenaTrieNode), alignof(ArenaTrieNode), true);
+	*node = arena_push_struct(arena, ArenaTrieNode);
 	(*node)->hash = hash;
 	(*node)->debug_type_name = debug_type_name;
 

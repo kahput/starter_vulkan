@@ -33,6 +33,16 @@ void *pool_create(Arena *arena, uint32_t stride, uint32_t align, uint32_t capaci
 	return pool->slots;
 }
 
+void pool_reset(void *ptr) {
+	Pool *pool = POOL_HEADER(ptr);
+
+	pool->free_count = pool->capacity;
+	pool->used_count = 0;
+
+	for (uint32_t index = 0; index < pool->capacity; index++)
+		pool->free_indices[index] = (pool->capacity - 1) - index;
+}
+
 void *pool_alloc(void *ptr) {
 	Pool *pool = POOL_HEADER(ptr);
 

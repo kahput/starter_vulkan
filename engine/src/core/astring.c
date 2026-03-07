@@ -369,7 +369,7 @@ char *string_push_cstring(Arena *arena, String s) {
 	return cstr;
 }
 
-void string_list_push(Arena *arena, StringList *list, String s) {
+void stringlist_push(Arena *arena, StringList *list, String s) {
 	StringNode *node = arena_push_struct(arena, StringNode);
 	node->string = s;
 	node->next = NULL;
@@ -382,11 +382,11 @@ void string_list_push(Arena *arena, StringList *list, String s) {
 		list->last = node;
 	}
 
-	list->node_count++;
+	list->count++;
 	list->total_length += s.length;
 }
 
-StringList string_list_split(Arena *arena, String str, String separator) {
+StringList stringlist_split(Arena *arena, String str, String separator) {
 	StringList list = { 0 };
 	uint32_t cursor = 0;
 
@@ -397,27 +397,27 @@ StringList string_list_split(Arena *arena, String str, String separator) {
 
 		if (index == -1) {
 			// Push remainder
-			string_list_push(arena, &list, string_slice(str, cursor, str.length - cursor));
+			stringlist_push(arena, &list, string_slice(str, cursor, str.length - cursor));
 			break;
 		}
 
-		string_list_push(arena, &list, string_slice(str, cursor, (uint32_t)index - cursor));
+		stringlist_push(arena, &list, string_slice(str, cursor, (uint32_t)index - cursor));
 		cursor = (uint32_t)index + (uint32_t)separator.length;
 	}
 
 	// Edge case: if string ends with separator, do we push empty string?
 	// Standard split behavior usually says yes.
 	if (cursor == str.length && str.length > 0)
-		string_list_push(arena, &list, (String){ 0 });
+		stringlist_push(arena, &list, (String){ 0 });
 
 	return list;
 }
-String string_list_join(Arena *arena, StringList *list, String separator) {
-	if (list->node_count == 0)
+String stringlist_join(Arena *arena, StringList *list, String separator) {
+	if (list->count == 0)
 		return (String){ 0 };
 
 	// Calculate exact size needed
-	size_t total_length = list->total_length + (list->node_count - 1) * separator.length;
+	size_t total_length = list->total_length + (list->count - 1) * separator.length;
 
 	char *data = arena_push_count(arena, total_length + 1, char);
 	size_t cursor = 0;

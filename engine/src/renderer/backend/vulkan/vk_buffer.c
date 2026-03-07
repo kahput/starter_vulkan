@@ -54,7 +54,7 @@ RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, size_t siz
 
 	logger_dedent();
 
-	return (RhiBuffer){ pool_index_of(context->buffer_pool, buffer) };
+	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
 }
 
 bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {

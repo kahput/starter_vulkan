@@ -9,18 +9,18 @@ typedef enum {
 } CameraProjection;
 
 typedef struct camera {
-	float3 position, target, up;
+	float32_3 position, target, up;
 	float fov;
 
 	CameraProjection projection;
 } Camera;
 
 typedef struct material_paramters {
-	float4 base_color_factor;
+	float32_4 base_color_factor;
 	float metallic_factor;
 	float roughness_factor;
-	float2 _pad0;
-	float4 emissive_factor;
+	float32_2 _pad0;
+	float32_4 emissive_factor;
 } MaterialParameters;
 
 typedef enum {
@@ -30,12 +30,12 @@ typedef enum {
 
 typedef struct {
 	LightType type;
-	uint3 _pad0;
+	uint32_3 _pad0;
 	union {
-		float4 position;
-		float4 direction;
+		float32_4 position;
+		float32_4 direction;
 	} as;
-	float4 color;
+	float32_4 color;
 } Light;
 
 #define MAX_POINT_LIGHTS 10
@@ -44,6 +44,6 @@ typedef struct {
 	Matrix4f projection;
 	Light directional_light;
 	Light lights[MAX_POINT_LIGHTS];
-	float3 camera_position;
+	float32_3 camera_position;
 	int light_count;
 } FrameData;

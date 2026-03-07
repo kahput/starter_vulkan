@@ -210,7 +210,7 @@ typedef struct {
 		DONT_CARE } store;
 
 	union {
-		float4 color;
+		float32_4 color;
 		float depth;
 	} clear;
 } AttachmentDesc;
@@ -260,26 +260,6 @@ typedef struct {
 		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
 		.anisotropy_enable = false                            \
 	}
-
-typedef enum {
-	MATERIAL_INSTANCE_STATE_DIRTY = 1 << 0,
-} MaterialStateFlagBits;
-typedef uint32_t MaterialStateFlag;
-
-typedef struct texture {
-	uint32_t handle, sampler;
-} Texture;
-
-typedef struct render_material {
-	RhiUniformSet set;
-	RhiBuffer ubo;
-} Material;
-
-typedef struct render_mesh {
-	RhiBuffer vb, ib;
-	uint32_t vertex_count, index_count;
-	size_t index_size;
-} Mesh;
 
 typedef struct {
 	uint32_t binding;

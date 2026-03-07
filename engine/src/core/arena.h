@@ -38,9 +38,10 @@ ENGINE_API void arena_temp_end(ArenaTemp temp);
 ENGINE_API ArenaTemp arena_scratch(Arena *conflict);
 #define arena_scratch_release(scratch) arena_temp_end(scratch)
 
+#define arena_put(arena, T, ...) (void)(*(T *)arena_push((arena), sizeof(T), alignof(16), false) = (T)__VA_ARGS__)
 #define arena_push_count(arena, count, T) ((T *)arena_push((arena), sizeof(T) * (count), alignof(T), true))
 #define arena_push_struct(arena, T) ((T *)arena_push((arena), sizeof(T), alignof(T), true))
-#define arena_push_pool(arena, type, capacity) pool_create(arena, sizeof(type), alignof(type), capacity, true)
+#define arena_push_pool(arena, capacity, T) pool_create(arena, sizeof(T), alignof(T), capacity, true)
 
 void *arena_list_make(void *buffer, size_t stride, uint32_t capacity);
 
@@ -67,8 +68,8 @@ typedef struct {
 } ArenaTrie;
 
 static inline ArenaTrie arena_trie_make(Arena *arena) { return (ArenaTrie){ .arena = arena }; }
-ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, const char *debug_type_name);
-void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, bool intrusive, const char *debug_type_name);
+ENGINE_API ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, const char *debug_type_name);
+ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, bool intrusive, const char *debug_type_name);
 
 #define arena_trie_wrap_array(arr)                                                  \
 	(ArenaTrie) {                                                                   \

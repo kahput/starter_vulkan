@@ -16,10 +16,10 @@ typedef struct {
 } Matrix4f;
 STATIC_ASSERT(sizeof(Matrix4f) == (4 * 4) * sizeof(float));
 
-typedef float2 Vector2f;
-typedef float3 Vector3f;
-typedef float3 Ray3f;
-typedef float4 Vector4f;
+typedef float32_2 Vector2f;
+typedef float32_3 Vector3f;
+typedef float32_3 Ray3f;
+typedef float32_4 Vector4f;
 
 static inline float *vector4f_elements(Vector4f *v) { return (float *)v; }
 static inline float *vector3f_elements(Vector3f *v) { return (float *)v; }

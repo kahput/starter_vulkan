@@ -20,18 +20,18 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	context->image_pool = arena_push_pool(arena, VulkanImage, MAX_TEXTURES);
-	context->buffer_pool = arena_push_pool(arena, VulkanBuffer, MAX_BUFFERS);
-	context->sampler_pool = arena_push_pool(arena, VulkanSampler, MAX_SAMPLERS);
-	context->shader_pool = arena_push_pool(arena, VulkanShader, MAX_SHADERS);
-	context->set_pool = arena_push_pool(arena, VulkanUniformSet, MAX_UNIFORM_SETS);
+	context->image_pool = arena_push_pool(arena, MAX_TEXTURES, VulkanImage);
+	context->buffer_pool = arena_push_pool(arena, MAX_BUFFERS, VulkanBuffer);
+	context->sampler_pool = arena_push_pool(arena, MAX_SAMPLERS, VulkanSampler);
+	context->shader_pool = arena_push_pool(arena, MAX_SHADERS, VulkanShader);
+	context->set_stack = arena_push_pool(arena, MAX_UNIFORM_SETS, VulkanUniformSet);
 
 	// 0 == INVALID
 	pool_alloc(context->image_pool);
 	pool_alloc(context->buffer_pool);
 	pool_alloc(context->sampler_pool);
 	pool_alloc(context->shader_pool);
-	pool_alloc(context->set_pool);
+	pool_alloc(context->set_stack);
 
 	if (vulkan_instance_create(context) == false)
 		return false;
@@ -54,7 +54,7 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 	if (vulkan_sync_objects_create(context) == false)
 		return false;
 
-	int2 dims = window_size_pixel(context->display);
+	uint32_2 dims = window_size_pixel(context->display);
 	if (vulkan_swapchain_create(context, dims.x, dims.y) == false)
 		return false;
 
@@ -77,7 +77,6 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 
 void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDeviceWaitIdle(context->device.logical);
-	vkDestroyDescriptorPool(context->device.logical, context->descriptor_pool, NULL);
 
 	for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
 		if (context->shader_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
@@ -99,11 +98,6 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 			vulkan_buffer_destroy(context, (RhiBuffer){ index });
 	}
 
-	for (uint32_t index = 0; index < MAX_UNIFORM_SETS; ++index) {
-		if (context->set_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_uniformset_destroy(context, (RhiUniformSet){ index });
-	}
-
 	vkDestroyBuffer(context->device.logical, context->staging_buffer.handle, NULL);
 	vkFreeMemory(context->device.logical, context->staging_buffer.memory, NULL);
 	context->staging_buffer = (VulkanBuffer){ 0 };
@@ -120,9 +114,10 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 		vulkan_image_destroy_(context, &context->msaa_colors[color_index]);
 	vulkan_image_destroy_(context, &context->msaa_depth);
 
-	for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[index], NULL);
-		vkDestroyFence(context->device.logical, context->in_flight_fences[index], NULL);
+	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
+		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[frame_index], NULL);
+		vkDestroyFence(context->device.logical, context->in_flight_fences[frame_index], NULL);
+		vkDestroyDescriptorPool(context->device.logical, context->descriptor_pools[frame_index], NULL);
 	}
 
 	for (uint32_t index = 0; index < SWAPCHAIN_IMAGE_COUNT; ++index)
@@ -137,20 +132,18 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	vkDestroyInstance(context->instance, NULL);
 }
 
-bool vulkan_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
+bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height) {
 	LOG_INFO("Recreating Swapchain...");
-	logger_indent();
 	if (vulkan_swapchain_recreate(context, new_width, new_height) == true) {
 		LOG_INFO("Swapchain successfully recreated");
-	} else {
-		LOG_WARN("Failed to recreate swapchain");
+		return true;
 	}
 
-	logger_dedent();
-	return true;
+	LOG_WARN("Failed to recreate swapchain");
+	return false;
 }
 
-bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_t height) {
+bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height) {
 	vkWaitForFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame], VK_TRUE, UINT64_MAX);
 
 	VkResult result = vkAcquireNextImageKHR(context->device.logical, context->swapchain.handle, UINT64_MAX, context->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &context->image_index);
@@ -164,6 +157,10 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 	}
 
 	vkResetFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame]);
+	vkResetDescriptorPool(context->device.logical, context->descriptor_pools[context->current_frame], 0);
+
+	pool_reset(context->set_stack);
+	pool_alloc(context->set_stack);
 
 	vkResetCommandBuffer(context->command_buffers[context->current_frame], 0);
 	context->staging_buffer.offset = 0;
@@ -187,7 +184,7 @@ bool vulkan_renderer_frame_begin(VulkanContext *context, uint32_t width, uint32_
 	return true;
 }
 
-bool Vulkan_renderer_frame_end(VulkanContext *context) {
+bool vulkan_frame_end(VulkanContext *context) {
 	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
 		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT, 1,

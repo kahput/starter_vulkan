@@ -7,14 +7,18 @@
 #ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
-layout(location = 0) in vec3 in_position;
-layout(location = 1) in vec2 in_uv;
+#include "global.shared"
 
+layout(push_constant) uniform constants {
+    mat4 model;
+} push;
+
+layout(location = 0) in vec4 in_vertex;
 layout(location = 0) out vec2 out_uv;
 
 void main() {
-    gl_Position = vec4(in_position.xy, 0.0f, 1.0f);
-    out_uv = in_uv;
+    gl_Position = global.projection * global.view * push.model * vec4(in_vertex.xy, 0.0f, 1.0f);
+    out_uv = in_vertex.zw;
 }
 
 #endif
@@ -25,16 +29,22 @@ void main() {
 #ifdef SHADER_STAGE_FRAGMENT
 #pragma shader_stage(fragment)
 
-layout(set = 0, binding = 0) uniform sampler2D u_screen;
+#include "global.shared"
+
+layout(set = 1, binding = 1) uniform sampler2D u_texture;
+layout(set = 1, binding = 0) uniform MaterialParameters {
+    vec4 tint;
+} material;
+
 
 layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    out_color = texture(u_screen, in_uv);
-    // float average = 0.2126 * out_color.r + 0.7152 * out_color.g + 0.0722 * out_color.b;
-    //
-    // out_color = vec4(vec3(average), 1.0f);
+    vec4 color = texture(u_texture, in_uv);
+    if (color.a < 1.0) discard;
+
+    out_color = color * material.tint;
 }
 
 #endif

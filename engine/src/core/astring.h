@@ -8,11 +8,13 @@ typedef struct String {
 	size_t length;
 } String;
 
-#define sfmt(s) (int)(s).length, (s).memory
+#define sfmt "%.*s"
+#define sarg(s) (int)(s).length, (s).memory
 #define slit(s) ((String){ (char *)(s), sizeof(s) - 1 })
 #define shash(s) string_hash64(slit(s))
 
 String string_wrap(const char *s);
+#define string_wrap_offset(start, end) (String){ .memory = start, .length = end - start }
 
 bool string_equals(String a, String b);
 bool string_equals_ignore_case(String a, String b);
@@ -31,7 +33,7 @@ String string_trim(String s);
 String string_trim_left(String s);
 String string_trim_right(String s);
 
-uint64_t string_hash64(String s);
+ENGINE_API uint64_t string_hash64(String s);
 
 int64_t string_to_i64(String s);
 double string_to_f64(String s);
@@ -61,10 +63,10 @@ typedef struct StringNode {
 typedef struct StringList {
 	StringNode *first;
 	StringNode *last;
-	size_t node_count;
+	size_t count;
 	size_t total_length;
 } StringList;
 
-void string_list_push(Arena *arena, StringList *list, String s);
-StringList string_list_split(Arena *arena, String str, String separator);
-String string_list_join(Arena *arena, StringList *list, String separator);
+ENGINE_API void stringlist_push(Arena *arena, StringList *list, String s);
+ENGINE_API StringList stringlist_split(Arena *arena, String str, String separator);
+ENGINE_API String stringlist_join(Arena *arena, StringList *list, String separator);
