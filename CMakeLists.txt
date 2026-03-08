@@ -20,10 +20,11 @@ else()
   set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${CONFIG})
 endif()
 
+# add_subdirectory(tools)
 add_subdirectory(game)
 add_subdirectory(engine)
 
-set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets")
+set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/game/assets")
 if(EXISTS ${ASSETS_DIR})
   file(GLOB_RECURSE ASSET_FILES "${ASSETS_DIR}/*.*")
 
