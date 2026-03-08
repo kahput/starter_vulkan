@@ -19,6 +19,7 @@
 
 #include <math.h>
 #include "core/cmath.h"
+#include "scene.h"
 
 #include <dlfcn.h>
 #include <string.h>
@@ -122,8 +123,8 @@ int main(void) {
 		}
 
 		if (frame_begin(&renderer)) {
-			texture_draw(&renderer, sprite0, (Vector3f){ .x = 100.f, 100.f, 0.0f }, (Vector3f){ 100.0f, 100.f, 1.0f }, (Vector3f){ 1.0f, 1.0f, 0.0f });
-			texture_draw(&renderer, sprite1, (Vector3f){ .x = 500.f, 100.f, 0.0f }, (Vector3f){ 100.0f, 100.f, 1.0f }, (Vector3f){ 0.0f, 1.0f, 1.0f });
+			texture_draw(&renderer, sprite1, (Vector3f){ .x = 0.0f, 0.0f, 0.0f }, (Vector3f){ 1.0f, 1.f, 1.0f }, (Vector3f){ 0.0f, 1.0f, 1.0f });
+			texture_draw(&renderer, sprite0, (Vector3f){ .x = 0.0f, 0.0f, 0.0f }, (Vector3f){ 1.0f, 1.f, 1.0f }, (Vector3f){ 1.0f, 1.0f, 0.0f });
 
 			frame_end(&renderer);
 		}
@@ -148,8 +149,11 @@ Renderer2D renderer_make(void) {
 
 	ArenaTemp scratch = arena_scratch(NULL);
 
-	ShaderConfig config = importer_load_shader(scratch.arena, slit("assets/shaders/unlit.vert.spv"), slit("assets/shaders/unlit.frag.spv"));
-	result.shader = vulkan_shader_make(scratch.arena, engine.context, &config, NULL);
+	result.shader = vulkan_shader_make(
+		scratch.arena,
+		engine.context,
+		importer_load_shader(scratch.arena, slit("assets/shaders/unlit.vert.spv"), slit("assets/shaders/unlit.frag.spv")),
+		NULL);
 	arena_scratch_release(scratch);
 
 	result.global_buffer = vulkan_buffer_make(engine.context, BUFFER_TYPE_UNIFORM, sizeof(Matrix4f) * 2, NULL);
@@ -172,23 +176,30 @@ Renderer2D renderer_make(void) {
 }
 
 bool frame_begin(Renderer2D *renderer) {
+	Camera camera = {
+		.projection = CAMERA_PROJECTION_PERSPECTIVE,
+		.position = { 0.0f, 0.0f, -10.f },
+		.target = { 0.0f, 0.0f, 0.0f },
+		.up = { 0.0f, 1.0f, 0.0f },
+		.fov = 45.f,
+	};
+
 	uint32_2 size = window_size(engine.display);
 	if (vulkan_frame_begin(engine.context, size.x, size.y)) {
 		DrawListDesc desc = {
 			.color_attachments[0] = {
 			  .clear = { .color = { .x = 1.0f, .y = 1.0f, .z = 1.0f, .w = 1.0f } },
-			  .load = CLEAR,
-			  .store = STORE,
 			},
 			.color_attachment_count = 1
 		};
 		if (vulkan_drawlist_begin(engine.context, desc)) {
-			Matrix4f projection = matrix4f_orthographic(0.0f, size.x, 0.0f, size.y, -1.0f, 1.0f);
-			Matrix4f view = matrix4f_identity();
+			Matrix4f projection = matrix4f_perspective(DEG2RAD(camera.fov), (float32)size.x / (float32)size.y, 0.01f, 1000.f);
+			Matrix4f view = matrix4f_lookat(camera.position, camera.target, camera.up);
 			vulkan_buffer_write(engine.context, renderer->global_buffer, 0, sizeof(Matrix4f), &view);
 			vulkan_buffer_write(engine.context, renderer->global_buffer, sizeof(Matrix4f), sizeof(Matrix4f), &projection);
 
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
+			pipeline.cull_mode = CULL_MODE_NONE;
 			vulkan_shader_bind(engine.context, renderer->shader, pipeline);
 
 			RhiUniformSet set0 = vulkan_uniformset_push(engine.context, renderer->shader, 0);

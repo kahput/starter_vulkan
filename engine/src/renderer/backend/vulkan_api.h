@@ -32,7 +32,7 @@ ENGINE_API bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t in
 
 ENGINE_API RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
-	ShaderConfig *config, ShaderReflection *out_reflection);
+	ShaderConfig config, ShaderReflection *out_reflection);
 bool vulkan_shader_destroy(VulkanContext *context, RhiShader shader);
 
 ENGINE_API bool vulkan_shader_bind(

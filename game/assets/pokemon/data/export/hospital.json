@@ -1,0 +1,141 @@
+{ "compressionlevel":-1,
+ "height":12,
+ "infinite":false,
+ "layers":[
+        {
+         "data":[247, 248, 248, 248, 248, 248, 248, 248, 249,
+            277, 258, 258, 270, 271, 258, 258, 258, 259,
+            277, 268, 268, 280, 281, 268, 268, 268, 269,
+            277, 278, 278, 278, 278, 278, 278, 278, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 289,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            297, 298, 260, 261, 298, 298, 298, 298, 299],
+         "height":12,
+         "id":1,
+         "name":"Terrain",
+         "opacity":1,
+         "type":"tilelayer",
+         "visible":true,
+         "width":9,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "data":[0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 307, 0, 0,
+            0, 0, 0, 0, 0, 0, 317, 0, 0,
+            0, 0, 0, 0, 0, 0, 317, 0, 0,
+            0, 0, 0, 0, 0, 0, 317, 0, 0,
+            0, 326, 326, 306, 0, 316, 327, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0],
+         "height":12,
+         "id":10,
+         "name":"Terrain Top",
+         "opacity":1,
+         "type":"tilelayer",
+         "visible":true,
+         "width":9,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":2,
+         "name":"Entities",
+         "objects":[
+                {
+                 "height":0,
+                 "id":1,
+                 "name":"Player",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"direction",
+                         "type":"string",
+                         "value":"up"
+                        }, 
+                        {
+                         "name":"pos",
+                         "type":"string",
+                         "value":"world"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":192.666,
+                 "y":651.333
+                }, 
+                {
+                 "height":0,
+                 "id":12,
+                 "name":"Character",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"character_id",
+                         "type":"string",
+                         "value":"Nurse"
+                        }, 
+                        {
+                         "name":"direction",
+                         "type":"string",
+                         "value":"down"
+                        }, 
+                        {
+                         "name":"graphic",
+                         "type":"string",
+                         "value":"purple_girl"
+                        }, 
+                        {
+                         "name":"radius",
+                         "type":"string",
+                         "value":"0"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":287.846,
+                 "y":431.973
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }],
+ "nextlayerid":11,
+ "nextobjectid":18,
+ "orientation":"orthogonal",
+ "renderorder":"right-down",
+ "tiledversion":"1.11.0",
+ "tileheight":64,
+ "tilesets":[
+        {
+         "firstgid":1,
+         "source":"..\/tilesets\/world.tsx"
+        }, 
+        {
+         "firstgid":211,
+         "source":"..\/tilesets\/objects.tsx"
+        }, 
+        {
+         "firstgid":242,
+         "source":"..\/tilesets\/indoor.tsx"
+        }],
+ "tilewidth":64,
+ "type":"map",
+ "version":"1.10",
+ "width":9
+}

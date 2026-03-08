@@ -14,9 +14,8 @@ typedef struct String {
 #define shash(s) string_hash64(slit(s))
 
 String string_wrap(const char *s);
-#define string_wrap_offset(start, end) (String){ .memory = start, .length = end - start }
 
-bool string_equals(String a, String b);
+ENGINE_API bool string_equals(String a, String b);
 bool string_equals_ignore_case(String a, String b);
 bool string_has_prefix(String str, String prefix);
 bool string_has_suffix(String str, String suffix);

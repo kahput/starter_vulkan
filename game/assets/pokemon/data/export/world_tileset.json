@@ -1,0 +1,14 @@
+{ "columns":10,
+ "image":"..\/..\/graphics\/tilesets\/world.png",
+ "imageheight":1344,
+ "imagewidth":640,
+ "margin":0,
+ "name":"world",
+ "spacing":0,
+ "tilecount":210,
+ "tiledversion":"1.11.0",
+ "tileheight":64,
+ "tilewidth":64,
+ "type":"tileset",
+ "version":"1.10"
+}

@@ -88,3 +88,4 @@ ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t 
 
 #define arena_trieset_push(trie, hash) (arena_trienode_ensure((trie)->arena, &(trie)->root, (hash), NULL))
 #define arena_trieset_find(trie, hash) (arena_trienode_ensure(NULL, &(trie)->root, (hash), NULL))
+

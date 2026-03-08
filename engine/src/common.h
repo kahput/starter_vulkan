@@ -70,6 +70,11 @@ typedef struct { float32 x, y; } float32_2;
 typedef struct { float32 x, y, z; } float32_3;
 typedef struct alignas(16) { float32 x, y, z, w; } float32_4;
 
+typedef double float64;
+typedef struct { float64 x, y; } float64_2;
+typedef struct { float64 x, y, z; } float64_3;
+typedef struct alignas(16) { float64 x, y, z, w; } float64_4;
+
 typedef uint32_t uint32;
 typedef struct { uint32 x, y; } uint32_2;
 typedef struct { uint32 x, y, z; } uint32_3;

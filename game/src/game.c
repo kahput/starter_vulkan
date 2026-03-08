@@ -13,6 +13,8 @@
 #include <core/logger.h>
 #include <core/astring.h>
 
+#include <assets/json_parser.h>
+
 #include <renderer.h>
 #include <renderer/r_internal.h>
 #include <renderer/backend/vulkan_api.h>
@@ -48,13 +50,8 @@ typedef struct Entry {
 	float probability;
 } ChainEntry;
 
-bool is_digit(char c) {
-	return c >= '0' && c <= '9';
-}
-
-bool is_aplha(char c) {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-}
+bool is_digit(char c) { return c >= '0' && c <= '9'; }
+bool is_aplha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 
 String peek_next_token(String source) {
 	uint32_t start = 0;
@@ -215,6 +212,29 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		}
 
 		LOG_INFO(sfmt, sarg(stringlist_join(scratch.arena, &generated, slit(" "))));
+
+		source = filesystem_read(scratch.arena, slit("assets/pokemon/data/export/hospital.json"));
+		JsonNode *root = json_parse(scratch.arena, source);
+
+		bool error = json_as(root, bool);
+		bool infinite = json_find(root, "infinite", bool);
+		LOG_INFO("Random value that doesn't exist is %b", infinite);
+
+		for (JsonNode *layer = json_list(root, "layers"); layer; layer = layer->next) {
+			String layer_name = json_find(layer, "name", String);
+			String type = json_find(layer, "type", String);
+
+			LOG_INFO("Layer[" sfmt "]", sarg(layer_name));
+			if (string_equals(type, slit("objectgroup")) == false)
+				continue;
+
+			for (JsonNode *object = json_list(layer, "objects"); object; object = object->next) {
+				String obj_name = json_find(object, "name", String);
+				float64 x = json_find(object, "x", float64);
+				float64 y = json_find(object, "y", float64);
+				LOG_INFO("  - " sfmt " at (%.1f, %.1f)", sarg(obj_name), x, y);
+			}
+		}
 
 		state->is_initialized = true;
 	}

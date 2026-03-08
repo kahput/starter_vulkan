@@ -23,22 +23,22 @@ bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, Vulkan
 
 bool reflect_shader_interface(
 	Arena *arena, VulkanContext *context, VulkanShader *shader,
-	ShaderConfig *config, ShaderReflection *out_reflection);
+	ShaderConfig config, ShaderReflection *out_reflection);
 
 RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
-	ShaderConfig *config, ShaderReflection *out_reflection) {
+	ShaderConfig config, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
-	if (config->vertex_code == NULL || config->vertex_code_size == 0 || config->fragment_code == NULL || config->fragment_code_size == 0) {
+	if (config.vertex_code == NULL || config.vertex_code_size == 0 || config.fragment_code == NULL || config.fragment_code_size == 0) {
 		LOG_ERROR("Vulkan: Invalid shader code passed to vulkan_renderer_shader_craete");
 		return INVALID_RHI(RhiShader);
 	}
 
 	VkShaderModuleCreateInfo vsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config->vertex_code_size,
-		.pCode = (uint32_t *)config->vertex_code,
+		.codeSize = config.vertex_code_size,
+		.pCode = (uint32_t *)config.vertex_code,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
@@ -48,8 +48,8 @@ RhiShader vulkan_shader_make(
 
 	VkShaderModuleCreateInfo fsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config->fragment_code_size,
-		.pCode = (uint32_t *)config->fragment_code,
+		.codeSize = config.fragment_code_size,
+		.pCode = (uint32_t *)config.fragment_code,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
@@ -363,17 +363,17 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 
 bool reflect_shader_interface(
 	Arena *arena, VulkanContext *context, VulkanShader *shader,
-	ShaderConfig *config, ShaderReflection *out_reflection) {
+	ShaderConfig config, ShaderReflection *out_reflection) {
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
-	result = spvReflectCreateShaderModule(config->vertex_code_size, config->vertex_code, &vertex_module);
+	result = spvReflectCreateShaderModule(config.vertex_code_size, config.vertex_code, &vertex_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect vertex shader");
 		return false;
 	}
 
-	result = spvReflectCreateShaderModule(config->fragment_code_size, config->fragment_code, &fragment_module);
+	result = spvReflectCreateShaderModule(config.fragment_code_size, config.fragment_code, &fragment_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect fragment shader");
 		spvReflectDestroyShaderModule(&vertex_module);

@@ -57,8 +57,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 			context->bound_pass.color_formats[color_index] = image->info.format;
-				dst->loadOp = (VkAttachmentLoadOp)src->load;
-				dst->storeOp = (VkAttachmentStoreOp)src->store;
+			dst->loadOp = (VkAttachmentLoadOp)src->load;
+			dst->storeOp = (VkAttachmentStoreOp)src->store;
 
 			extent.width = min(extent.width, image->width);
 			extent.height = min(extent.height, image->height);
