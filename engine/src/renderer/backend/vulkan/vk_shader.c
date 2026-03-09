@@ -340,7 +340,7 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 	} else {
 		// Recurse
 		for (uint32_t i = 0; i < var->member_count; ++i) {
-			fill_shader_members(arena, &var->members[i], slit(full_name), cursor);
+			fill_shader_members(arena, &var->members[i], S(full_name), cursor);
 		}
 	}
 }
@@ -355,7 +355,7 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 
 	ShaderMember *cursor = buffer->members;
 	for (uint32_t i = 0; i < block->member_count; ++i) {
-		fill_shader_members(arena, &block->members[i], slit(""), &cursor);
+		fill_shader_members(arena, &block->members[i], S(""), &cursor);
 	}
 
 	return buffer;

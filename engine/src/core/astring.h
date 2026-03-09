@@ -8,17 +8,17 @@ typedef struct String {
 	size_t length;
 } String;
 
-#define sfmt "%.*s"
-#define sarg(s) (int)(s).length, (s).memory
-#define slit(s) ((String){ (char *)(s), sizeof(s) - 1 })
-#define shash(s) string_hash64(slit(s))
+#define SFMT "%.*s"
+#define SARG(s) (int)(s).length, (s).memory
+#define S(s) ((String){ (char *)(s), sizeof(s) - 1 })
+#define shash(s) string_hash64(S(s))
 
 String string_wrap(const char *s);
 
 ENGINE_API bool string_equals(String a, String b);
-bool string_equals_ignore_case(String a, String b);
-bool string_has_prefix(String str, String prefix);
-bool string_has_suffix(String str, String suffix);
+ENGINE_API bool string_equals_ignore_case(String a, String b);
+ENGINE_API bool string_has_prefix(String str, String prefix);
+ENGINE_API bool string_has_suffix(String str, String suffix);
 
 int64_t string_find_first(String haystack, String needle);
 int64_t string_find_last(String haystack, String needle);
@@ -34,25 +34,33 @@ String string_trim_right(String s);
 
 ENGINE_API uint64_t string_hash64(String s);
 
+uint32_t string_to_u32(String str);
+uint64_t string_to_u64(String s);
+
+int32_t string_to_i32(String s);
 int64_t string_to_i64(String s);
+
+float string_to_f32(String s);
 double string_to_f64(String s);
 
-String string_path_folder(String path);
-String string_path_filename(String path);
-String string_path_extension(String path);
+ENGINE_API String string_path_directory(String path);
+ENGINE_API String string_path_filename(String path);
+ENGINE_API String string_path_extension(String path);
 
-String string_push_copy(Arena *arena, String s);
+ENGINE_API String string_path_join(Arena *arena, String head, String tail);
+ENGINE_API String string_path_clean(Arena *arena, String path);
 
-String string_pushf(Arena *arena, const char *format, ...);
-String string_pushfv(Arena *arena, const char *format, va_list args);
+ENGINE_API String string_push_copy(Arena *arena, String s);
 
-String string_push_concat(Arena *arena, String head, String tail);
-String string_push_replace(Arena *arena, String source, String find, String replace);
-String string_push_upper(Arena *arena, String s);
-String string_push_lower(Arena *arena, String s);
+ENGINE_API String string_pushf(Arena *arena, const char *format, ...);
+ENGINE_API String string_pushfv(Arena *arena, const char *format, va_list args);
 
-String string_push_path_join(Arena *arena, String head, String tail);
-char *string_push_cstring(Arena *arena, String s);
+ENGINE_API String string_push_concat(Arena *arena, String head, String tail);
+ENGINE_API String string_push_replace(Arena *arena, String source, String find, String replace);
+ENGINE_API String string_push_upper(Arena *arena, String s);
+ENGINE_API String string_push_lower(Arena *arena, String s);
+
+ENGINE_API char *string_push_cstring(Arena *arena, String s);
 
 typedef struct StringNode {
 	struct StringNode *next;

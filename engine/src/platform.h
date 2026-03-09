@@ -18,8 +18,8 @@ Window *window_make(Arena *arena, uint32_t width, uint32_t height, String title)
 void window_poll_events(Window *window);
 bool window_is_open(Window *window);
 
-uint32_2 window_size(Window *window);
-uint32_2 window_size_pixel(Window *window);
+ENGINE_API uint32_2 window_size(Window *window);
+ENGINE_API uint32_2 window_size_pixel(Window *window);
 
 void window_set_callback(PFN_event_handler handler);
 

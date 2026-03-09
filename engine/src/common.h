@@ -40,7 +40,7 @@
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
-#define clamp(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
+#define CLAMP(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
 
 #define FLAG_GET(flags, flag) ((flags & flag) == flag)
 #define HEADER(ptr, T) ((T *)ptr - 1)

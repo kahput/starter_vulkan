@@ -262,7 +262,7 @@ struct vulkan_context {
 	VulkanBuffer *buffer_pool;
 	VulkanImage *image_pool;
 	VulkanSampler *sampler_pool;
-	VulkanUniformSet *set_stack;
+	VulkanUniformSet *set_pool;
 
 	VulkanBuffer staging_buffer;
 	VulkanShader *bound_shader;

@@ -6,6 +6,17 @@
 
 uint8_t json_zero_buffer[128] = { 0 };
 
+const char *json_type_string[JSON_TYPE_COUNT] = {
+	[JSON_NULL] = "null",
+	[JSON_bool] = "bool",
+	[JSON_uint32_t] = "uint",
+	[JSON_int32_t] = "int",
+	[JSON_float32] = "float",
+	[JSON_String] = "string",
+	[JSON_ARRAY] = "array",
+	[JSON_OBJECT] = "object",
+};
+
 static JsonNode *parse_value(JsonParser *parser);
 static JsonNode *parse_error(JsonParser *parser, Token token, const char *message) {
 	if (!parser->failed)
@@ -89,19 +100,19 @@ static JsonNode *parse_value(JsonParser *p) {
 		}
 		case TOKEN_INTEGER: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
-			node->type = JSON_int64_t;
+			node->type = JSON_uint32_t;
 
-			int64_t *integer = arena_push_struct(p->arena, int64_t);
-			*integer = string_to_i64(token.string);
+			uint32_t *integer = arena_push_struct(p->arena, uint32_t);
+			*integer = string_to_u32(token.string);
 			node->value = integer;
 			return node;
 		}
 		case TOKEN_FLOAT: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
-			node->type = JSON_float64;
+			node->type = JSON_float32;
 
-			float64 *floating_point = arena_push_struct(p->arena, float64);
-			*floating_point = string_to_f64(token.string);
+			float32 *floating_point = arena_push_struct(p->arena, float32);
+			*floating_point = string_to_f32(token.string);
 			node->value = floating_point;
 			return node;
 		}
@@ -134,17 +145,17 @@ static JsonNode *parse_value(JsonParser *p) {
 			Token num = lexer_next(&p->lexer);
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
 			if (num.type == TOKEN_INTEGER) {
-				node->type = JSON_int64_t;
+				node->type = JSON_int32_t;
 
-				int64_t *integer = arena_push_struct(p->arena, int64_t);
-				*integer = -string_to_i64(num.string);
+				int32_t *integer = arena_push_struct(p->arena, int32_t);
+				*integer = -string_to_i32(num.string);
 				node->value = integer;
 				return node;
 			}
 			if (num.type == TOKEN_FLOAT) {
-				node->type = JSON_float64;
+				node->type = JSON_float32;
 
-				float64 *floating_point = arena_push_struct(p->arena, float64);
+				float32 *floating_point = arena_push_struct(p->arena, float32);
 				*floating_point = -string_to_f64(num.string);
 				node->value = floating_point;
 				return node;

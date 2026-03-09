@@ -24,14 +24,14 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 	context->buffer_pool = arena_push_pool(arena, MAX_BUFFERS, VulkanBuffer);
 	context->sampler_pool = arena_push_pool(arena, MAX_SAMPLERS, VulkanSampler);
 	context->shader_pool = arena_push_pool(arena, MAX_SHADERS, VulkanShader);
-	context->set_stack = arena_push_pool(arena, MAX_UNIFORM_SETS, VulkanUniformSet);
+	context->set_pool = arena_push_pool(arena, MAX_UNIFORM_SETS, VulkanUniformSet);
 
 	// 0 == INVALID
 	pool_alloc(context->image_pool);
 	pool_alloc(context->buffer_pool);
 	pool_alloc(context->sampler_pool);
 	pool_alloc(context->shader_pool);
-	pool_alloc(context->set_stack);
+	pool_alloc(context->set_pool);
 
 	if (vulkan_instance_create(context) == false)
 		return false;
@@ -159,8 +159,8 @@ bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height)
 	vkResetFences(context->device.logical, 1, &context->in_flight_fences[context->current_frame]);
 	vkResetDescriptorPool(context->device.logical, context->descriptor_pools[context->current_frame], 0);
 
-	pool_reset(context->set_stack);
-	pool_alloc(context->set_stack);
+	pool_reset(context->set_pool);
+	pool_alloc(context->set_pool);
 
 	vkResetCommandBuffer(context->command_buffers[context->current_frame], 0);
 	context->staging_buffer.offset = 0;

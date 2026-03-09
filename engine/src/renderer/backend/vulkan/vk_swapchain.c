@@ -17,6 +17,10 @@ static bool create_swapchain_image_views(VulkanContext *context);
 // static bool create_swapchain_framebuffers(VulkanContext *context);
 
 bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t height) {
+	// NOTE: On XCB, the device is delayed in its adoption of new dimensions
+	// This seems to fix it
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context->device.physical, context->surface, &context->device.swapchain_details.capabilities);
+
 	context->swapchain.format = swapchain_select_surface_format(context->device.swapchain_details.formats, context->device.swapchain_details.format_count);
 	context->swapchain.present_mode = swapchain_select_present_mode(context->device.swapchain_details.present_modes, context->device.swapchain_details.present_mode_count);
 	context->swapchain.extent = swapchain_select_extent(width, height, &context->device.swapchain_details.capabilities);
@@ -73,25 +77,6 @@ bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t new_width, uint3
 		vkDestroyImageView(context->device.logical, context->swapchain.images.views[i], NULL);
 	}
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
-	// if (context->depth_attachment.handle) {
-	// 	vkDestroyImageView(context->device.logical, context->depth_attachment.view, NULL);
-	// 	vkDestroyImage(context->device.logical, context->depth_attachment.handle, NULL);
-	// 	vkFreeMemory(context->device.logical, context->depth_attachment.memory, NULL);
-	//
-	// 	context->depth_attachment.view = NULL;
-	// 	context->depth_attachment.handle = NULL;
-	// 	context->depth_attachment.memory = NULL;
-	// }
-	//
-	// if (context->color_attachment.handle) {
-	// 	vkDestroyImageView(context->device.logical, context->color_attachment.view, NULL);
-	// 	vkDestroyImage(context->device.logical, context->color_attachment.handle, NULL);
-	// 	vkFreeMemory(context->device.logical, context->color_attachment.memory, NULL);
-	//
-	// 	context->color_attachment.view = NULL;
-	// 	context->color_attachment.handle = NULL;
-	// 	context->color_attachment.memory = NULL;
-	// }
 
 	if (vulkan_swapchain_create(context, new_width, new_height) == false)
 		return false;

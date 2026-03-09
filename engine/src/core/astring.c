@@ -140,6 +140,57 @@ uint64_t string_hash64(String string) {
 // Parsing
 // ==========================================
 
+uint32_t string_to_u32(String str) {
+	if (str.length == 0)
+		return 0;
+
+	uint32_t result = 0;
+	size_t index = 0;
+
+	while (index < str.length && isdigit(str.memory[index])) {
+		result = result * 10 + (str.memory[index] - '0');
+		index++;
+	}
+
+	return result;
+}
+uint64_t string_to_u64(String str) {
+	if (str.length == 0)
+		return 0;
+
+	uint64_t result = 0;
+	size_t index = 0;
+
+	while (index < str.length && isdigit(str.memory[index])) {
+		result = result * 10 + (str.memory[index] - '0');
+		index++;
+	}
+
+	return result;
+}
+
+int32_t string_to_i32(String str) {
+	if (str.length == 0)
+		return 0;
+
+	int32_t result = 0;
+	int sign = 1;
+	size_t index = 0;
+
+	str = string_trim_left(str);
+	if (index < str.length && (str.memory[index] == '+' || str.memory[index] == '-')) {
+		sign = (str.memory[index] == '-') ? -1 : 1;
+		index++;
+	}
+
+	while (index < str.length && isdigit(str.memory[index])) {
+		result = result * 10 + (str.memory[index] - '0');
+		index++;
+	}
+
+	return result * sign;
+}
+
 int64_t string_to_i64(String str) {
 	if (str.length == 0)
 		return 0;
@@ -162,6 +213,16 @@ int64_t string_to_i64(String str) {
 	return result * sign;
 }
 
+float32 string_to_f32(String str) {
+	char buffer[128];
+	if (str.length >= sizeof(buffer))
+		return 0.0f;
+
+	memcpy(buffer, str.memory, str.length);
+	buffer[str.length] = '\0';
+
+	return strtof(buffer, NULL);
+}
 double string_to_f64(String str) {
 	char buffer[128];
 	if (str.length >= sizeof(buffer))
@@ -177,7 +238,7 @@ static bool is_path_separator(char c) {
 	return c == '/' || c == '\\';
 }
 
-String string_path_folder(String path) {
+String string_path_directory(String path) {
 	if (path.length == 0)
 		return (String){ 0 };
 
@@ -216,6 +277,43 @@ String string_path_extension(String path) {
 	}
 
 	return (String){ 0 };
+}
+String string_path_join(Arena *arena, String head, String tail) {
+	if (head.length == 0)
+		return string_push_copy(arena, tail);
+	if (tail.length == 0)
+		return string_push_copy(arena, head);
+
+	bool head_has_sep = is_path_separator(head.memory[head.length - 1]);
+	bool tail_has_sep = is_path_separator(tail.memory[0]);
+
+	if (head_has_sep && tail_has_sep)
+		return string_push_concat(arena, head, string_chop_left(tail, 1));
+	else if (!head_has_sep && !tail_has_sep) {
+		// "folder" + "file" -> "folder/file" (need to add one)
+		// Manual construction to avoid double allocation of concat(concat)
+		size_t new_length = head.length + 1 + tail.length;
+		char *data = arena_push_count(arena, new_length + 1, char);
+		memcpy(data, head.memory, head.length);
+		data[head.length] = '/';
+		memcpy(data + head.length + 1, tail.memory, tail.length);
+		data[new_length] = '\0';
+		return (String){ .memory = data, .length = new_length };
+	} else
+		// "folder/" + "file" OR "folder" + "/file" -> Clean concat
+		return string_push_concat(arena, head, tail);
+}
+
+String string_path_clean(Arena *arena, String path) {
+	String result = string_wrap(arena_push_count(arena, path.length, char));
+	for (uint32_t index = 0; index < path.length; ++index) {
+		if (path.memory[index] == '\\')
+			continue;
+
+		result.memory[result.length++] = path.memory[index];
+	}
+
+	return result;
 }
 
 String string_push_copy(Arena *arena, String str) {
@@ -334,32 +432,6 @@ String string_push_lower(Arena *arena, String s) {
 		copy.memory[index] = tolower(copy.memory[index]);
 
 	return copy;
-}
-String string_push_path_join(Arena *arena, String head, String tail) {
-	if (head.length == 0)
-		return string_push_copy(arena, tail);
-	if (tail.length == 0)
-		return string_push_copy(arena, head);
-
-	bool head_has_sep = is_path_separator(head.memory[head.length - 1]);
-	bool tail_has_sep = is_path_separator(tail.memory[0]);
-
-	if (head_has_sep && tail_has_sep) {
-		// "folder/" + "/file" -> "folder//file" (need to remove one)
-		return string_push_concat(arena, head, string_chop_left(tail, 1));
-	} else if (!head_has_sep && !tail_has_sep) {
-		// "folder" + "file" -> "folder/file" (need to add one)
-		// Manual construction to avoid double allocation of concat(concat)
-		size_t new_length = head.length + 1 + tail.length;
-		char *data = arena_push_count(arena, new_length + 1, char);
-		memcpy(data, head.memory, head.length);
-		data[head.length] = '/';
-		memcpy(data + head.length + 1, tail.memory, tail.length);
-		data[new_length] = '\0';
-		return (String){ .memory = data, .length = new_length };
-	} else
-		// "folder/" + "file" OR "folder" + "/file" -> Clean concat
-		return string_push_concat(arena, head, tail);
 }
 
 char *string_push_cstring(Arena *arena, String s) {

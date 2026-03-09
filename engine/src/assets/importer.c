@@ -115,16 +115,16 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 			uint8_t *buffer_data = (uint8_t *)src->buffer_view->buffer->data + src->buffer_view->offset; */
 /* 			String mime_type = string_wrap(src->mime_type); */
 
-/* 			String filename = string_push_replace(scratch.arena, string_path_filename(path), slit(".glb"), slit("")); */
+/* 			String filename = string_push_replace(scratch.arena, string_path_filename(path), S(".glb"), S("")); */
 /* 			String name = string_pushf(scratch.arena, "%s_%s", filename.memory, (src->name ? src->name : "image")); */
-/* 			if (string_find_first(string_wrap(src->mime_type), slit("png")) != -1) { */
+/* 			if (string_find_first(string_wrap(src->mime_type), S("png")) != -1) { */
 /* 				dst->path = string_pushf(arena, "%s/%s.png", base_directory.memory, name.memory); */
 /* 				if (filesystem_file_exists(dst->path) == false) { */
 /* 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4); */
 /* 					stbi_write_png(dst->path.memory, dst->width, dst->height, 4, pixels, STBI_default); */
 /* 					stbi_image_free(pixels); */
 /* 				} */
-/* 			} else if (string_find_first(mime_type, slit("jpg")) != -1 || string_find_first(mime_type, slit("jpeg")) != -1) { */
+/* 			} else if (string_find_first(mime_type, S("jpg")) != -1 || string_find_first(mime_type, S("jpeg")) != -1) { */
 /* 				dst->path = string_pushf(arena, "%s/%s.jpg", base_directory.memory, name.memory); */
 /* 				if (filesystem_file_exists(dst->path) == false) { */
 /* 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4); */

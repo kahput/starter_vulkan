@@ -13,6 +13,7 @@ typedef struct {
 	size_t transient_memory_size;
 
 	VulkanContext *vk_context;
+	struct window *display;
 } GameContext;
 
 typedef struct FrameInfo {

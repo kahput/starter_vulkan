@@ -15,8 +15,11 @@ RhiUniformSet vulkan_uniformset_push(
 	VulkanShader *shader = NULL;
 	VULKAN_GET_OR_RETURN(shader, context->shader_pool, rshader, MAX_UNIFORM_SETS, true, INVALID_RHI(RhiUniformSet));
 
-	VulkanUniformSet *set = pool_alloc_struct(context->set_stack, VulkanUniformSet);
+	VulkanUniformSet *set = pool_alloc_struct(context->set_pool, VulkanUniformSet);
 	set->number = set_number;
+	if (indexof(context->set_pool, set) == 0) {
+		LOG_INFO("The set is 0 for some reason");
+	}
 
 	// TODO: Keep reflection around and copy it to uniform set here
 	// set->bindings = shader->bindings;
@@ -34,14 +37,14 @@ RhiUniformSet vulkan_uniformset_push(
 	}
 
 	set->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-	return (RhiUniformSet){ indexof(context->set_stack, set) };
+	return (RhiUniformSet){ indexof(context->set_pool, set) };
 }
 
 bool vulkan_uniformset_destroy(VulkanContext *context, RhiUniformSet rset) {
 	VulkanUniformSet *set = NULL;
-	VULKAN_GET_OR_RETURN(set, context->set_stack, rset, MAX_UNIFORM_SETS, true, false);
+	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
 
-	pool_free(context->set_stack, set);
+	pool_free(context->set_pool, set);
 
 	return true;
 }
@@ -50,7 +53,7 @@ bool vulkan_uniformset_bind_buffer(
 	VulkanContext *context, RhiUniformSet rset,
 	uint32_t binding, RhiBuffer rbuffer) {
 	VulkanUniformSet *set = NULL;
-	VULKAN_GET_OR_RETURN(set, context->set_stack, rset, MAX_UNIFORM_SETS, true, false);
+	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
 
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
@@ -80,7 +83,7 @@ bool vulkan_uniformset_bind_texture(
 	VulkanContext *context, RhiUniformSet rset,
 	uint32_t binding, RhiTexture rtexture, RhiSampler rsampler) {
 	VulkanUniformSet *set = NULL;
-	VULKAN_GET_OR_RETURN(set, context->set_stack, rset, MAX_UNIFORM_SETS, true, false);
+	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
 
 	VulkanImage *image = NULL;
 	VULKAN_GET_OR_RETURN(image, context->image_pool, rtexture, MAX_TEXTURES, true, false);
@@ -110,10 +113,10 @@ bool vulkan_uniformset_bind_texture(
 
 bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet rset) {
 	VulkanUniformSet *set = NULL;
-	VULKAN_GET_OR_RETURN(set, context->set_stack, rset, MAX_UNIFORM_SETS, true, false);
+	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
 
 	VulkanShader *shader = context->bound_shader;
-    ASSERT(shader);
+	ASSERT(shader);
 
 	if (set->buffer && set->buffer->state) {
 		VulkanBuffer *buffer = set->buffer;
