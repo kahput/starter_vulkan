@@ -64,6 +64,8 @@ int main(void) {
 	engine = (Engine){
 		.memory = arena_make(MiB(512)),
 	};
+	event_system_startup(&engine.memory);
+	input_system_startup(&engine.memory);
 
 	engine.display = window_make(&engine.memory, 1280, 720, S("test"));
 	if (vulkan_renderer_make(&engine.memory, engine.display, &engine.context) == false) {

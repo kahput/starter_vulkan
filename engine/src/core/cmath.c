@@ -3,6 +3,19 @@
 
 #include <math.h>
 
+float32 vector2f_length(Vector2f v) {
+	return sqrt(v.x * v.x + v.y * v.y);
+}
+Vector2f vector2f_normalize(Vector2f v) {
+	float32 length = vector2f_length(v);
+	if (length < EPSILON) {
+		return (Vector2f){ 0 };
+	}
+	Vector2f result = { .x = v.x / length, .y = v.y / length };
+
+	return result;
+}
+
 Vector3f vector3f_add(Vector3f a, Vector3f b) {
 	Vector3f result = { a.x + b.x, a.y + b.y, a.z + b.z };
 

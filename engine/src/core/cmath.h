@@ -25,16 +25,20 @@ static inline float *vector4f_elements(Vector4f *v) { return (float *)v; }
 static inline float *vector3f_elements(Vector3f *v) { return (float *)v; }
 static inline float *vector2f_elements(Vector2f *v) { return (float *)v; }
 
+
+ENGINE_API float32 vector2f_length(Vector2f v);
+ENGINE_API Vector2f vector2f_normalize(Vector2f v);
+
 ENGINE_API Vector3f vector3f_add(Vector3f a, Vector3f b);
 ENGINE_API Vector3f vector3f_subtract(Vector3f a, Vector3f b);
 ENGINE_API Vector3f vector3f_scale(Vector3f v, float s);
 
 ENGINE_API Vector3f vector3f_negate(Vector3f v);
 
-ENGINE_API float vector3f_dot(Vector3f a, Vector3f b);
+ENGINE_API float32 vector3f_dot(Vector3f a, Vector3f b);
 ENGINE_API Vector3f vector3f_cross(Vector3f a, Vector3f b);
 
-ENGINE_API float vector3f_length(Vector3f v);
+ENGINE_API float32 vector3f_length(Vector3f v);
 ENGINE_API Vector3f vector3f_normalize(Vector3f v);
 ENGINE_API Vector3f vector3f_normalize_safe(Vector3f v, float epsilon);
 

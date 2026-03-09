@@ -68,12 +68,14 @@ typedef struct {
 
 	RhiBuffer world_map;
 
+	Camera camera;
+
 } GameState;
 
 static GameState *state = NULL;
 
 Renderer2D renderer_make(void);
-bool frame_begin(Renderer2D *renderer);
+bool frame_begin(Renderer2D *renderer, Camera camera);
 void frame_end(Renderer2D *renderer);
 Sprite sprite_make(Renderer2D *renderer, String path);
 void texture_draw(Renderer2D *renderer, Sprite sprite, Vector3f position, Vector3f scale, Vector3f tint);
@@ -202,11 +204,27 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 		arena_scratch_release(scratch);
 
+		state->camera = (Camera){
+			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
+			.position = { 1300, 600, 0.f },
+			.target = { 0.0f, 0.0f, 0.0f },
+			.up = { 0.0f, 1.0f, 0.0f },
+			.fov = 45.f,
+		};
 		state->is_initialized = true;
 	}
 
+	Vector2f input = {
+		.x = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
+		.y = input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W),
+	};
+	input = vector2f_normalize(input);
+
+	state->camera.position.x += input.x * 100 * dt;
+	state->camera.position.y += input.y * 100 * dt;
+
 	uint32_2 size = window_size_pixel(context->display);
-	if (frame_begin(&state->renderer)) {
+	if (frame_begin(&state->renderer, state->camera)) {
 		RhiUniformSet set1 = vulkan_uniformset_push(state->context, state->renderer.shader, 1);
 		vulkan_uniformset_bind_buffer(state->context, set1, 0, state->map_buffer);
 		vulkan_uniformset_bind_texture(state->context, set1, 1, state->map_atlas, state->renderer.nearest);
@@ -219,7 +237,12 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		vulkan_renderer_draw(state->context, state->map_width * state->map_height * 6);
 
 		texture_draw(&state->renderer, state->sprite1, (Vector3f){ .x = (size.x + 64) * 0.5f, (size.y + 64) * 0.5f, 0.0f }, (Vector3f){ 64.f, 64.f, 64.f }, (Vector3f){ 0.0f, 1.0f, 1.0f });
-		texture_draw(&state->renderer, state->sprite0, (Vector3f){ .x = (size.x + 64) * 0.5f, 0.0f, 0.0f }, (Vector3f){ 64.f, 64.f, 64.f }, (Vector3f){ 1.0f, 1.0f, 1.0f });
+
+		Vector3f position = {
+			.x = state->camera.position.x + (size.x * .5f + 32),
+			.y = state->camera.position.y + (size.y * .5f + 32)
+		};
+		texture_draw(&state->renderer, state->sprite0, position, (Vector3f){ 64.f, 64.f, 64.f }, (Vector3f){ 1.0f, 1.0f, 1.0f });
 
 		frame_end(&state->renderer);
 	}
@@ -272,15 +295,7 @@ Renderer2D renderer_make(void) {
 	return result;
 }
 
-bool frame_begin(Renderer2D *renderer) {
-	Camera camera = {
-		.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
-		.position = { 0.0f, 0.0f, -10.f },
-		.target = { 0.0f, 0.0f, 0.0f },
-		.up = { 0.0f, 1.0f, 0.0f },
-		.fov = 45.f,
-	};
-
+bool frame_begin(Renderer2D *renderer, Camera camera) {
 	uint32_2 size = window_size(state->display);
 	if (vulkan_frame_begin(state->context, size.x, size.y)) {
 		DrawListDesc desc = {
@@ -291,7 +306,7 @@ bool frame_begin(Renderer2D *renderer) {
 		};
 		if (vulkan_drawlist_begin(state->context, desc)) {
 			Matrix4f projection = matrix4f_orthographic(0, size.x, 0, size.y, -1, 1);
-			Matrix4f view = matrix4f_identity();
+			Matrix4f view = matrix4f_translated(vector3f_negate(camera.position));
 			vulkan_buffer_write(state->context, renderer->global_buffer, 0, sizeof(Matrix4f), &view);
 			vulkan_buffer_write(state->context, renderer->global_buffer, sizeof(Matrix4f), sizeof(Matrix4f), &projection);
 

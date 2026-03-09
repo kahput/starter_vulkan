@@ -195,12 +195,12 @@ void window_poll_events(Window *window) {
 					window->width = cfg->width;
 					window->height = cfg->height;
 
-					/* WindowResizeEvent e = { */
-					/* 	.width = cfg->width, */
-					/* 	.height = cfg->height, */
+					WindowResizeEvent e = {
+						.width = cfg->width,
+						.height = cfg->height,
 
-					/* }; */
-					/* event_emit_struct(EVENT_PLATFORM_WINDOW_RESIZED, &e); */
+					};
+					event_emit_struct(EVENT_PLATFORM_WINDOW_RESIZED, &e);
 				}
 			} break;
 
@@ -233,7 +233,7 @@ void window_poll_events(Window *window) {
 			case XCB_MOTION_NOTIFY: {
 				xcb_motion_notify_event_t *motion = (xcb_motion_notify_event_t *)event;
 
-				/* MouseMotionEvent e = { 0 }; */
+				MouseMotionEvent e = { 0 };
 
 				/* if (window->pointer_mode == PLATFORM_POINTER_DISABLED) { */
 				/* 	// Locked Mode Logic (Fake raw input) */
@@ -256,13 +256,13 @@ void window_poll_events(Window *window) {
 				/* 	xcb_warp_pointer(x11.connection, XCB_NONE, window->handle, 0, 0, 0, 0, center_x, center_y); */
 				/* 	xcb_flush(x11.connection); */
 				/* } else { */
-				/* 	// Standard Mode */
-				/* 	e.x = (double)motion->event_x; */
-				/* 	e.y = (double)motion->event_y; */
-				/* 	// Note: Calculating DX/DY in standard mode requires storing last_mouse_x/y */
+
+				e.x = (double)motion->event_x;
+				e.y = (double)motion->event_y;
+
 				/* } */
 
-				/* event_emit_struct(EVENT_PLATFORM_MOUSE_MOTION, &e); */
+				event_emit_struct(EVENT_PLATFORM_MOUSE_MOTION, &e);
 			} break;
 
 			case XCB_BUTTON_PRESS:
@@ -270,21 +270,21 @@ void window_poll_events(Window *window) {
 				xcb_button_press_event_t *bp = (xcb_button_press_event_t *)event;
 				bool pressed = (event->response_type & ~0x80) == XCB_BUTTON_PRESS;
 
-				/* MouseButtonEvent e = { 0 }; */
+				MouseButtonEvent e = { 0 };
 
-				/* e.x = bp->event_x; */
-				/* e.y = bp->event_y; */
+				e.x = bp->event_x;
+				e.y = bp->event_y;
 
 				switch (bp->detail) {
-					/* case 1: */
-					/* 	e.button = BTN_LEFT; */
-					/* 	break; */
-					/* case 2: */
-					/* 	e.button = BTN_MIDDLE; */
-					/* 	break; */
-					/* case 3: */
-					/* 	e.button = BTN_RIGHT; */
-					/* 	break; */
+					case 1:
+						e.button = BTN_LEFT;
+						break;
+					case 2:
+						e.button = BTN_MIDDLE;
+						break;
+					case 3:
+						e.button = BTN_RIGHT;
+						break;
 					// X11 sends Scroll as buttons 4/5/6/7
 					case 4: /* Handle Scroll Up if needed */
 						break;
@@ -292,13 +292,13 @@ void window_poll_events(Window *window) {
 						break;
 					default:
 						break;
-						/* e.button = BTN_LEFT;  */
+						e.button = BTN_LEFT;
 				}
 
 				// If it's a standard button, emit event
-				/* if (bp->detail <= 3) { */
-				/* 	event_emit_struct(pressed ? EVENT_PLATFORM_MOUSE_BUTTON_PRESSED : EVENT_PLATFORM_MOUSE_BUTTON_RELEASED, &e); */
-				/* } */
+				if (bp->detail <= 3) {
+					event_emit_struct(pressed ? EVENT_PLATFORM_MOUSE_BUTTON_PRESSED : EVENT_PLATFORM_MOUSE_BUTTON_RELEASED, &e);
+				}
 			} break;
 
 			case XCB_KEY_PRESS:
@@ -306,20 +306,20 @@ void window_poll_events(Window *window) {
 				xcb_key_press_event_t *kp = (xcb_key_press_event_t *)event;
 				bool pressed = (event->response_type & ~0x80) == XCB_KEY_PRESS;
 
-				/* KeyEvent e = { 0 }; */
+				KeyEvent e = { 0 };
 
-				/* uint32_t scancode_index = kp->detail - 8; */
+				uint32_t scancode_index = kp->detail - 8;
 
-				/* if (scancode_index < 256) { */
-				/* 	e.key = x11->keycodes[scancode_index]; */
-				/* } else { */
-				/* 	e.key = KEY_CODE_UNKOWN; */
-				/* } */
+				if (scancode_index < 256) {
+					e.key = window->keycodes[scancode_index];
+				} else {
+					e.key = KEY_CODE_UNKOWN;
+				}
 
 				// You can add modifier logic here by checking kp->state
 				// e.mods = ...
 
-				/* event_emit_struct(pressed ? EVENT_PLATFORM_KEY_PRESSED : EVENT_PLATFORM_KEY_RELEASED, &e); */
+				event_emit_struct(pressed ? EVENT_PLATFORM_KEY_PRESSED : EVENT_PLATFORM_KEY_RELEASED, &e);
 			} break;
 
 			default:
