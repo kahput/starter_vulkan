@@ -78,6 +78,8 @@ int main(void) {
 	GameContext game_context = {
 		.permanent_memory = arena_push(&engine.memory, MiB(32), 1, true),
 		.permanent_memory_size = MiB(32),
+		.transient_memory = arena_push(&engine.memory, MiB(256), 1, true),
+		.transient_memory_size = MiB(256),
 		.vk_context = engine.context,
 		.display = engine.display
 	};
@@ -97,6 +99,7 @@ int main(void) {
 			struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
 			nanosleep(&ts, NULL);
 			game_load(&game_context);
+			memset(game_context.transient_memory, 0, game_context.transient_memory_size);
 		}
 
 		window_poll_events(engine.display);

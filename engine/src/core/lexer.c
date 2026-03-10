@@ -222,6 +222,7 @@ Token scan_token(Lexer *lexer) {
 		default: {
 			if (is_digit(c)) {
 				bool is_float = false;
+
 				while (is_digit(lexer->at[0])) {
 					++lexer->at;
 					++lexer->column;
@@ -250,6 +251,7 @@ Token scan_token(Lexer *lexer) {
 				}
 				token.string.length = (int)(lexer->at - token.string.memory);
 				token.type = is_float ? TOKEN_FLOAT : TOKEN_INTEGER;
+
 			} else if (is_aplha(c)) {
 				while (is_alnum(lexer->at[0]))
 					++lexer->at;

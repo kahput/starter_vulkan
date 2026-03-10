@@ -67,7 +67,7 @@ void logger_log(LogLevel level, const char *file, int line, const char *format, 
 
 	char indent_buffer[32];
 	memset(indent_buffer, ' ', sizeof(indent_buffer));
-	int32_t indent_space = min(g_logger.indent, 15) * 2;
+	int32_t indent_space = MIN(g_logger.indent, 15) * 2;
 	indent_buffer[indent_space] = '\0';
 
 	va_list arg_ptr;

@@ -33,7 +33,7 @@ bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t he
 	if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount)
 		image_count = capabilities.maxImageCount;
 
-	image_count = min(image_count, SWAPCHAIN_IMAGE_COUNT);
+	image_count = MIN(image_count, SWAPCHAIN_IMAGE_COUNT);
 
 	VkSwapchainCreateInfoKHR swapchain_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -94,7 +94,8 @@ VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, 
 }
 
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count) {
-	return VK_PRESENT_MODE_FIFO_KHR;
+    // NOTE: returning this to cap the framerate, move this somewhere else
+	/* return VK_PRESENT_MODE_FIFO_KHR; */
 	for (uint32_t i = 0; i < count; i++) {
 		if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
 			return modes[i];

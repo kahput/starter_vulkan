@@ -49,16 +49,17 @@ bool vulkan_device_create(Arena *arena, VulkanContext *context) {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
 		.dynamicRendering = true
 	};
-	VkPhysicalDeviceFeatures2 features = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &vk13_features, .features = { .samplerAnisotropy = true, .fillModeNonSolid = true } };
+	VkPhysicalDeviceFeatures features = { .samplerAnisotropy = true, .fillModeNonSolid = true };
 
 	VkDeviceCreateInfo device_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-		.pNext = &features,
+		.pNext = &vk13_features,
 		.pQueueCreateInfos = queue_create_infos,
 		.queueCreateInfoCount = unique_count,
 		.ppEnabledExtensionNames = extensions,
 		.enabledExtensionCount = sizeof(extensions) / sizeof(*extensions),
 		// TODO: Set  this for compatibility
+		.pEnabledFeatures = &features,
 		.enabledLayerCount = 0,
 		.ppEnabledLayerNames = NULL,
 	};

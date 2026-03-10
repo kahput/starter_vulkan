@@ -14,7 +14,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	};
 
 	bool use_msaa = desc.msaa_level > 1 && context->device.sample_count > VK_SAMPLE_COUNT_1_BIT;
-	VkSampleCountFlags sample_count = min(to_sample_count(desc.msaa_level), context->device.sample_count);
+	VkSampleCountFlags sample_count = MIN(to_sample_count(desc.msaa_level), context->device.sample_count);
 
 	context->bound_pass = (VulkanPass){
 		.sample_count = sample_count,
@@ -60,8 +60,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
 			dst->storeOp = (VkAttachmentStoreOp)src->store;
 
-			extent.width = min(extent.width, image->width);
-			extent.height = min(extent.height, image->height);
+			extent.width = MIN(extent.width, image->width);
+			extent.height = MIN(extent.height, image->height);
 
 			if (use_msaa) {
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
@@ -88,8 +88,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 
 		context->bound_pass.depth_format = image->info.format;
 
-		extent.width = min(extent.width, image->width);
-		extent.height = min(extent.height, image->height);
+		extent.width = MIN(extent.width, image->width);
+		extent.height = MIN(extent.height, image->height);
 
 		depth_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 		depth_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;

@@ -181,10 +181,44 @@ JsonNode *json_node(JsonNode *node, String key) {
 	return found ? *found : NULL;
 }
 
+JsonNode *json_find_where(JsonNode *list, String key, String value) {
+	for (JsonNode *it = list; it; it = it->next) {
+		JsonNode *prop = json_node(it, key);
+		if (prop && prop->type == JSON_String) {
+			if (string_equals(*(String *)prop->value, value)) {
+				return it;
+			}
+		}
+	}
+	return NULL;
+}
+
 void *json_value_safe(JsonNode *node, JsonType type) {
 	if (node == NULL)
 		return json_zero_buffer;
 	if (node->type != type) {
+		// NOTE: Must cast the value to change the bits to be interpreted correctly
+		if (node->type == JSON_uint32_t && type == JSON_float32) {
+			*(float32 *)node->value = (float32)(*(uint32_t *)node->value);
+			node->type = type;
+			return node->value;
+		}
+		if (node->type == JSON_int32_t && type == JSON_float32) {
+			*(float32 *)node->value = (float32)(*(int32_t *)node->value);
+			node->type = type;
+			return node->value;
+		}
+		if (node->type == JSON_float32 && type == JSON_uint32_t) {
+			*(uint32_t *)node->value = (uint32_t)(*(float32 *)node->value);
+			node->type = type;
+			return node->value;
+		}
+		if (node->type == JSON_float32 && type == JSON_int32_t) {
+			*(int32_t *)node->value = (int32_t)(*(float32 *)node->value);
+			node->type = type;
+			return node->value;
+		}
+
 		LOG_WARN("JSON Type Mismatch: expected %s, found %s",
 			json_type_string[type], json_type_string[node->type]);
 		return json_zero_buffer;
