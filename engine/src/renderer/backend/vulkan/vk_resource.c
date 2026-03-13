@@ -142,7 +142,7 @@ bool vulkan_push_constants(VulkanContext *context, size_t offset, size_t size, v
 		return false;
 	}
 
-	vkCmdPushConstants(context->command_buffers[context->current_frame], shader->pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, 0, size, data);
+	vkCmdPushConstants(context->command_buffers[context->current_frame], shader->pipeline_layout, VK_SHADER_STAGE_ALL_GRAPHICS, offset, size, data);
 	return true;
 }
 

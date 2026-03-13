@@ -42,7 +42,7 @@ bool vulkan_instance_create(VulkanContext *context) {
 	const char **extensions = platform_vulkan_extensions(&platform_extension_count);
 	vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL);
 
-	ArenaTemp scratch = arena_scratch(NULL);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
 	VkExtensionProperties *properties = arena_push_count(scratch.arena, extension_count, VkExtensionProperties);
 	vkEnumerateInstanceExtensionProperties(NULL, &extension_count, properties);
 
@@ -55,7 +55,7 @@ bool vulkan_instance_create(VulkanContext *context) {
 		if (found == false) {
 			LOG_FATAL("Extension '%s' not found, aborting vulkan_instance_create", extensions[request_index]);
 			ASSERT(false);
-			arena_scratch_release(scratch);
+			arena_scratch_end(scratch);
 			return false;
 		}
 	}
@@ -83,7 +83,7 @@ bool vulkan_instance_create(VulkanContext *context) {
 
 	if (match != requested_layers) {
 		LOG_ERROR("Requested layers not found");
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return false;
 	}
 	create_info.enabledLayerCount = requested_layers;
@@ -118,13 +118,13 @@ bool vulkan_instance_create(VulkanContext *context) {
 	VkResult result = vkCreateInstance(&create_info, NULL, &context->instance);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Vulkan instance creation failed");
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return false;
 	}
 
 	LOG_INFO("Vulkan Instance created");
 
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 	return true;
 }
 

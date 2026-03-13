@@ -280,15 +280,15 @@ String string_path_extension(String path) {
 }
 String string_path_join(Arena *arena, String head, String tail) {
 	if (head.length == 0)
-		return string_push_copy(arena, tail);
+		return string_copy(arena, tail);
 	if (tail.length == 0)
-		return string_push_copy(arena, head);
+		return string_copy(arena, head);
 
 	bool head_has_sep = is_path_separator(head.memory[head.length - 1]);
 	bool tail_has_sep = is_path_separator(tail.memory[0]);
 
 	if (head_has_sep && tail_has_sep)
-		return string_push_concat(arena, head, string_chop_left(tail, 1));
+		return string_concat(arena, head, string_chop_left(tail, 1));
 	else if (!head_has_sep && !tail_has_sep) {
 		// "folder" + "file" -> "folder/file" (need to add one)
 		// Manual construction to avoid double allocation of concat(concat)
@@ -301,7 +301,7 @@ String string_path_join(Arena *arena, String head, String tail) {
 		return (String){ .memory = data, .length = new_length };
 	} else
 		// "folder/" + "file" OR "folder" + "/file" -> Clean concat
-		return string_push_concat(arena, head, tail);
+		return string_concat(arena, head, tail);
 }
 
 String string_path_clean(Arena *arena, String path) {
@@ -316,7 +316,7 @@ String string_path_clean(Arena *arena, String path) {
 	return result;
 }
 
-String string_push_copy(Arena *arena, String str) {
+String string_copy(Arena *arena, String str) {
 	if (str.length == 0)
 		return (String){ 0 };
 
@@ -328,7 +328,7 @@ String string_push_copy(Arena *arena, String str) {
 	return (String){ .memory = data, .length = str.length };
 }
 
-String string_pushfv(Arena *arena, const char *format, va_list args) {
+String string_formatv(Arena *arena, const char *format, va_list args) {
 	va_list args_copy;
 	va_copy(args_copy, args);
 
@@ -347,15 +347,15 @@ String string_pushfv(Arena *arena, const char *format, va_list args) {
 	return (String){ .memory = data, .length = (size_t)length };
 }
 
-String string_pushf(Arena *arena, const char *fmt, ...) {
+String string_format(Arena *arena, const char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
-	String result = string_pushfv(arena, fmt, args);
+	String result = string_formatv(arena, fmt, args);
 	va_end(args);
 	return result;
 }
 
-String string_push_concat(Arena *arena, String head, String tail) {
+String string_concat(Arena *arena, String head, String tail) {
 	size_t new_length = head.length + tail.length;
 	char *data = arena_push_count(arena, new_length + 1, char);
 
@@ -366,9 +366,9 @@ String string_push_concat(Arena *arena, String head, String tail) {
 	return (String){ .memory = data, .length = new_length };
 }
 
-String string_push_replace(Arena *arena, String source, String find, String replace) {
+String string_replace(Arena *arena, String source, String find, String replace) {
 	if (find.length == 0)
-		return string_push_copy(arena, source);
+		return string_copy(arena, source);
 
 	size_t count = 0;
 	size_t offset = 0;
@@ -418,23 +418,23 @@ String string_push_replace(Arena *arena, String source, String find, String repl
 	return (String){ .memory = data, .length = new_length };
 }
 
-String string_push_upper(Arena *arena, String s) {
-	String copy = string_push_copy(arena, s);
+String string_upper(Arena *arena, String s) {
+	String copy = string_copy(arena, s);
 	for (size_t index = 0; index < copy.length; index++)
 		copy.memory[index] = toupper(copy.memory[index]);
 
 	return copy;
 }
 
-String string_push_lower(Arena *arena, String s) {
-	String copy = string_push_copy(arena, s);
+String string_lower(Arena *arena, String s) {
+	String copy = string_copy(arena, s);
 	for (size_t index = 0; index < copy.length; index++)
 		copy.memory[index] = tolower(copy.memory[index]);
 
 	return copy;
 }
 
-char *string_push_cstring(Arena *arena, String s) {
+char *string_cstring(Arena *arena, String s) {
 	char *cstr = arena_push_count(arena, s.length + 1, char);
 	memcpy(cstr, s.memory, s.length);
 	cstr[s.length] = '\0';

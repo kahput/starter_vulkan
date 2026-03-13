@@ -73,7 +73,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 	return rv;
 }
 
-void mesh_source_list_push(Arena *arena, MeshSourceList *list, MeshSource source) {
+void meshlist_push(Arena *arena, MeshSourceList *list, MeshSource source) {
 	MeshSourceNode *node = arena_push_struct(arena, MeshSourceNode);
 	node->source = source;
 	node->next = NULL;
@@ -101,7 +101,7 @@ void mesh_source_list_push(Arena *arena, MeshSourceList *list, MeshSource source
 	list->index_count += source.index_count;
 }
 
-MeshSource mesh_source_list_flatten(Arena *arena, MeshSourceList *list) {
+MeshSource meshlist_flatten(Arena *arena, MeshSourceList *list) {
 	MeshSource rv = { 0 };
 	if (list->count == 0)
 		return rv;

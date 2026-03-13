@@ -12,7 +12,13 @@ typedef enum buffer_type {
 	BUFFER_TYPE_VERTEX,
 	BUFFER_TYPE_INDEX,
 	BUFFER_TYPE_UNIFORM,
+	BUFFER_TYPE_STORAGE,
 } BufferType;
+
+typedef enum {
+	BUFFER_USAGE_STATIC,
+	BUFFER_USAGE_DYNAMIC
+} BufferUsage;
 
 typedef enum shader_attribute_format {
 	SHADER_ATTRIBUTE_TYPE_UNDEFINED,

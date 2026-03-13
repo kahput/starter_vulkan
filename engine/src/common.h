@@ -24,7 +24,7 @@
 #elif defined(_MSC_VER)
 	#define alignof(type) __alignof(type)
 #else
-	#define alignof(type) offsetof(struct { char c; type member; }, member)
+	#define alignof(T) (size_t)(&((struct {  char byte; T offset; } *)0)->offset)
 #endif
 
 #if defined(_MSC_VER)
@@ -61,6 +61,12 @@
 
 static inline uint64_t aligned_address(uint64_t address, uint64_t alignment) {
 	return ((address + (alignment - 1)) & ~(alignment - 1));
+}
+static inline uint64_t hash64(void *memory, size_t size) {
+	uint64_t hash = 5381;
+	for (uint32_t index = 0; index < size; ++index)
+		hash = ((hash << 5) * hash) + ((uint8_t *)memory)[index];
+	return hash;
 }
 
 // Types

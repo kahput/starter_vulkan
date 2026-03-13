@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static Arena scratch_arenas[2] = { 0 };
+thread_local Arena scratch_arenas[2] = { 0 };
 
 Arena arena_make(size_t size) { return (Arena){ .memory = malloc(size), .capacity = size }; }
 
@@ -65,7 +65,7 @@ void arena_temp_end(ArenaTemp temp) {
 	arena_set(temp.arena, temp.position);
 }
 
-ArenaTemp arena_scratch(Arena *conflict) {
+ArenaTemp arena_scratch_begin(Arena *conflict) {
 	if (scratch_arenas[0].memory == NULL) {
 		// TODO: Lower this back down
 		scratch_arenas[0] = arena_make(MiB(256));
@@ -119,11 +119,7 @@ void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_
 	return node ? node->payload : NULL;
 }
 
-typedef struct arena_list_node {
-	struct arena_list_node *next;
-} ArenaListNode;
-
-void *arena_list_make(void *array, size_t stride, uint32_t capacity) {
+void *arena_freelist_wrap(void *array, size_t stride, uint32_t capacity) {
 	for (uint32_t index = 0; index < capacity; ++index) {
 		ArenaListNode *element = (ArenaListNode *)((uint8_t *)array + stride * index);
 		element->next = (ArenaListNode *)((uint8_t *)element + stride);
@@ -155,3 +151,28 @@ void arena_list_free(void **first_free, void *slot) {
 	element->next = head;
 	*first_free = element;
 }
+
+/* void *arena_list_push(Arena *arena, ArenaListNode **first, size_t size, size_t align) { */
+/* 	if (arena == NULL) */
+/* 		return NULL; */
+
+/* 	ArenaListNode *node = arena_push(arena, sizeof(ArenaListNode), align, true); */
+
+/* 	if (*first) { */
+/* 		node->next = *first; */
+/* 		*first = node; */
+/* 	} else */
+/* 		*first = node; */
+
+/* 	return arena_push(arena, size, align, true); */
+/* } */
+
+/* void *arena_list_pop(ArenaListNode **first) { */
+/* 	if (first == NULL || *first == NULL) */
+/* 		return NULL; */
+
+/* 	ArenaListNode *element = (ArenaListNode *)*first; */
+/* 	*first = element->next; */
+
+/* 	return element + 1; */
+/* } */

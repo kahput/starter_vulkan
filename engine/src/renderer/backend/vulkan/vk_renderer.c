@@ -59,7 +59,7 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 		return false;
 
 	// TODO: Lower this back down to 32?
-	if (vulkan_buffer_create_(
+	if (vulkan_buffer_make_internal(
 			context, MiB(256), MAX_FRAMES_IN_FLIGHT,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			&context->staging_buffer) == false)
@@ -243,5 +243,10 @@ bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count) {
 
 bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count) {
 	vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_count, 1, 0, 0, 0);
+	return true;
+}
+
+bool vulkan_renderer_draw_offset(VulkanContext *context, uint32_t vertex_count, uint32_t start_vertex) {
+	vkCmdDraw(context->command_buffers[context->current_frame], vertex_count, 1, start_vertex, 0);
 	return true;
 }

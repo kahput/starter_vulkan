@@ -28,7 +28,7 @@ typedef enum {
 			LOG_ERROR("Vulkan: %s index %u out of bounds (min 1, max %u), aborting %s",               \
 				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                    \
 			ASSERT(false);                                                                            \
-			return return_type;                                                                       \
+			return (return_type);                                                                       \
 		}                                                                                             \
                                                                                                       \
 		(ptr_var) = &(pool_array)[handle.id];                                                         \
@@ -37,14 +37,14 @@ typedef enum {
 				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s",       \
 					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                     \
 				ASSERT(false);                                                                        \
-				return return_type;                                                                   \
+				return (return_type);                                                                   \
 			}                                                                                         \
 		} else {                                                                                      \
 			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                            \
 				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",        \
 					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                     \
 				ASSERT(false);                                                                        \
-				return return_type;                                                                   \
+				return (return_type);                                                                   \
 			}                                                                                         \
 		}                                                                                             \
 	} while (0)
@@ -158,7 +158,7 @@ typedef struct VulkanSwapchain {
 bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t height);
 bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t width, uint32_t height);
 
-bool vulkan_buffer_create_(
+bool vulkan_buffer_make_internal(
 	VulkanContext *context,
 	VkDeviceSize size, uint32_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VulkanBuffer *out_buffer);

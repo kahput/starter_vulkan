@@ -29,6 +29,7 @@ ENGINE_API bool vulkan_drawlist_end(VulkanContext *context);
 
 ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 ENGINE_API bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
+ENGINE_API bool vulkan_renderer_draw_offset(VulkanContext *context, uint32_t vertex_count, uint32_t start_vertex);
 
 ENGINE_API RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
@@ -43,11 +44,13 @@ ENGINE_API bool vulkan_texture_destroy(VulkanContext *context, RhiTexture textur
 ENGINE_API bool vulkan_texture_prepare_attachment(VulkanContext *context, RhiTexture texture);
 ENGINE_API bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture texture);
 ENGINE_API bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width, uint32_t height);
+ENGINE_API uint32_2 vulkan_texture_size(VulkanContext *context, RhiTexture texture);
 
 ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, size_t size, void *data);
+ENGINE_API RhiBuffer vulkan_buffer_make_ex(VulkanContext *context, BufferType type, BufferUsage usage, uint32_t count, size_t stride);
 ENGINE_API bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
 ENGINE_API bool vulkan_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
-ENGINE_API bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer buffer, size_t index_size);
+ENGINE_API bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset);
 ENGINE_API bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *buffers, uint32_t count);
 
 ENGINE_API RhiSampler vulkan_sampler_make(VulkanContext *context, SamplerDesc description);

@@ -50,17 +50,17 @@ ENGINE_API String string_path_extension(String path);
 ENGINE_API String string_path_join(Arena *arena, String head, String tail);
 ENGINE_API String string_path_clean(Arena *arena, String path);
 
-ENGINE_API String string_push_copy(Arena *arena, String s);
+ENGINE_API String string_copy(Arena *arena, String s);
 
-ENGINE_API String string_pushf(Arena *arena, const char *format, ...);
-ENGINE_API String string_pushfv(Arena *arena, const char *format, va_list args);
+ENGINE_API String string_format(Arena *arena, const char *format, ...);
+ENGINE_API String string_formatv(Arena *arena, const char *format, va_list args);
 
-ENGINE_API String string_push_concat(Arena *arena, String head, String tail);
-ENGINE_API String string_push_replace(Arena *arena, String source, String find, String replace);
-ENGINE_API String string_push_upper(Arena *arena, String s);
-ENGINE_API String string_push_lower(Arena *arena, String s);
+ENGINE_API String string_concat(Arena *arena, String head, String tail);
+ENGINE_API String string_replace(Arena *arena, String source, String find, String replace);
+ENGINE_API String string_upper(Arena *arena, String s);
+ENGINE_API String string_lower(Arena *arena, String s);
 
-ENGINE_API char *string_push_cstring(Arena *arena, String s);
+ENGINE_API char *string_cstring(Arena *arena, String s);
 
 typedef struct StringNode {
 	struct StringNode *next;

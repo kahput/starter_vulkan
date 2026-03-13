@@ -60,7 +60,7 @@ RhiShader vulkan_shader_make(
 	reflect_shader_interface(arena, context, shader, config, out_reflection);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
-	shader->first_free = arena_list_make(shader->variants, sizeof(VulkanPipeline), countof(shader->variants));
+	shader->first_free = arena_freelist_wrap_array(shader->variants, VulkanPipeline);
 	shader->variant_count++;
 
 	return (RhiShader){ indexof(context->shader_pool, shader) };
@@ -332,7 +332,7 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 	if (var->member_count == 0) {
 		// This is a leaf node
 		ShaderMember *m = *cursor;
-		m->name = string_push_copy(arena, string_wrap(full_name));
+		m->name = string_copy(arena, string_wrap(full_name));
 		m->offset = var->absolute_offset;
 		m->size = var->size;
 
@@ -347,7 +347,7 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 
 static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *block) {
 	ShaderBuffer *buffer = arena_push_struct(arena, ShaderBuffer);
-	buffer->name = string_push_copy(arena, string_wrap(block->name));
+	buffer->name = string_copy(arena, string_wrap(block->name));
 	buffer->size = block->size;
 
 	buffer->member_count = count_shader_members(block);
@@ -380,7 +380,7 @@ bool reflect_shader_interface(
 		return false;
 	}
 
-	ArenaTemp scratch = arena_scratch(NULL);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
 
 	uint32_t input_variable_count = 0;
 	result = spvReflectEnumerateInputVariables(&vertex_module, &input_variable_count, NULL);
@@ -559,7 +559,7 @@ bool reflect_shader_interface(
 
 				ShaderBinding *dst = &out_reflection->sets[set_index].bindings[index];
 
-				dst->name = string_push_copy(arena, string_wrap(spv->name));
+				dst->name = string_copy(arena, string_wrap(spv->name));
 
 				dst->binding_number = spv->binding;
 				dst->count = spv->count;
@@ -630,14 +630,14 @@ bool reflect_shader_interface(
 				&shader->layouts[index]) == false) {
 			spvReflectDestroyShaderModule(&vertex_module);
 			spvReflectDestroyShaderModule(&fragment_module);
-			arena_scratch_release(scratch);
+			arena_scratch_end(scratch);
 			return false;
 		}
 	}
 
 	spvReflectDestroyShaderModule(&vertex_module);
 	spvReflectDestroyShaderModule(&fragment_module);
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,

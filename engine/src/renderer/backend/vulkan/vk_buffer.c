@@ -2,6 +2,7 @@
 #include "core/arena.h"
 #include "core/pool.h"
 #include "core/r_types.h"
+#include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
@@ -11,29 +12,28 @@
 #include <vulkan/vulkan_core.h>
 
 int32_t to_vulkan_usage(BufferType type);
+static const char *buffer_type_stringify[] = {
+	"Vertex buffer",
+	"Index buffer",
+	"Uniform buffer",
+	"Storage buffer"
+};
 
 RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, size_t size, void *data) {
 	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
-
-	const char *stringify[] = {
-		"Vertex buffer",
-		"Index buffer",
-		"Uniform buffer",
-	};
-
-	LOG_TRACE("Vulkan: Creating %s resource...", stringify[type]);
+	LOG_TRACE("Vulkan: Creating %s resource...", buffer_type_stringify[type]);
 
 	logger_indent();
 
-	if (type == BUFFER_TYPE_UNIFORM) {
+	bool result = false;
+	if (type == BUFFER_TYPE_UNIFORM || type == BUFFER_TYPE_STORAGE) {
 		buffer->count = MAX_FRAMES_IN_FLIGHT;
-		bool result = vulkan_buffer_ubo_create(context, buffer, size, data);
-		if (result == false)
-			return INVALID_RHI(RhiBuffer);
-		data = NULL;
-	} else {
-		bool result = vulkan_buffer_create_(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
-	}
+		result = vulkan_buffer_ubo_create(context, buffer, size, data);
+	} else
+		result = vulkan_buffer_make_internal(context, size, 1, VK_BUFFER_USAGE_TRANSFER_DST_BIT | to_vulkan_usage(type), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
+
+	if (result == false)
+		return INVALID_RHI(RhiBuffer);
 
 	if (data != NULL) {
 		VulkanBuffer *staging_buffer = &context->staging_buffer;
@@ -50,11 +50,23 @@ RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, size_t siz
 		vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
 		staging_buffer->offset = copy_end;
 	}
-	LOG_TRACE("%s resource created", stringify[type]);
+	LOG_TRACE("%s resource created", buffer_type_stringify[type]);
 
 	logger_dedent();
 
 	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
+}
+
+RhiBuffer vulkan_buffer_make_ex(VulkanContext *context, BufferType type, BufferUsage usage, uint32_t count, size_t stride) {
+	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
+	LOG_TRACE("Vulkan: Creating %s resource...", buffer_type_stringify[type]);
+
+	switch (type) {
+		case BUFFER_TYPE_UNIFORM:
+		case BUFFER_TYPE_STORAGE:
+		default:
+			ASSERT(false);
+	}
 }
 
 bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
@@ -88,8 +100,6 @@ bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offse
 		return true;
 	}
 
-	ASSERT(buffer->usage != VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-
 	VulkanBuffer *staging_buffer = &context->staging_buffer;
 	size_t copy_end = aligned_address(staging_buffer->offset + buffer->size, context->device.properties.limits.minMemoryMapAlignment);
 	size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
@@ -98,7 +108,6 @@ bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offse
 		ASSERT(false);
 		return false;
 	}
-
 	vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset, size, data);
 
 	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->size);
@@ -107,21 +116,20 @@ bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offse
 	return true;
 }
 
-bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t index_size) {
+bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset) {
 	const VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffer[] = { buffer->handle };
-		VkDeviceSize offset[] = { 0 };
+		VkDeviceSize offsets[1] = { offset };
 
-		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, vertex_buffer, offset);
+		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, vertex_buffer, offsets);
 		return true;
 	}
 
 	if (buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
-		ASSERT(index_size == 4 || index_size == 2);
-		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle, 0, index_size == 4 ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle, offset, VK_INDEX_TYPE_UINT32);
 		return true;
 	}
 
@@ -157,7 +165,7 @@ bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, uint32_t c
 }
 
 bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data) {
-	vulkan_buffer_create_(
+	vulkan_buffer_make_internal(
 		context, size, MAX_FRAMES_IN_FLIGHT,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -174,7 +182,7 @@ bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size
 	return true;
 }
 
-bool vulkan_buffer_create_(
+bool vulkan_buffer_make_internal(
 	VulkanContext *context,
 	VkDeviceSize size, uint32_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VulkanBuffer *out_buffer) {
@@ -287,7 +295,7 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkB
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
-	ArenaTemp scratch = arena_scratch(NULL);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
 	VkBufferImageCopy *regions = arena_push_count(scratch.arena, layer_count, VkBufferImageCopy);
 
 	for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
@@ -315,7 +323,7 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkB
 		VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 
 	return true;
 }
@@ -332,6 +340,8 @@ int32_t to_vulkan_usage(BufferType type) {
 			return VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 		case BUFFER_TYPE_UNIFORM:
 			return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		case BUFFER_TYPE_STORAGE:
+			return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		default:
 			ASSERT(false);
 			return -1;

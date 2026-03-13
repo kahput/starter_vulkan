@@ -23,7 +23,7 @@ static const char *extensions[ASSET_TYPE_COUNT][8] = {
 static AssetType file_extension_to_asset_type(String extension);
 
 bool asset_tracker_track_directory(AssetTracker *tracker, String directory) {
-	ArenaTemp scratch = arena_scratch(NULL);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
 
 	StringList file_list = filesystem_list_files(scratch.arena, directory, true);
 	StringNode *file = file_list.first;
@@ -39,51 +39,51 @@ bool asset_tracker_track_directory(AssetTracker *tracker, String directory) {
 	logger_dedent();
 
 	LOG_INFO("AssetTracker: %d files tracked", count);
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 	return true;
 }
 
 bool asset_tracker_track_file(AssetTracker *tracker, String file_path) {
-	ArenaTemp scratch = arena_scratch(NULL);
-	String name = string_push_copy(scratch.arena, string_path_filename(file_path));
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	String name = string_copy(scratch.arena, string_path_filename(file_path));
 	AssetEntry *entry = arena_trie_push(&tracker->trie, string_hash64(name), AssetEntry);
 
 	if (entry->full_path.length == 0) {
-		entry->full_path = string_push_copy(tracker->arena, file_path);
+		entry->full_path = string_copy(tracker->arena, file_path);
 		entry->type = file_extension_to_asset_type(string_path_extension(file_path));
 		entry->last_modified = filesystem_last_modified(file_path);
 
 		tracker->tracked_file_count++;
 
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return true;
 	}
 
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 	return false;
 }
 
 UUID asset_tracker_request_shader(AssetTracker *tracker, String key) {
-	ArenaTemp scratch = arena_scratch(NULL);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
 
-	String vertex_shader_key = string_push_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
-	String fragment_shader_key = string_push_replace(scratch.arena, key, S("glsl"), S("frag.spv"));
+	String vertex_shader_key = string_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
+	String fragment_shader_key = string_replace(scratch.arena, key, S("glsl"), S("frag.spv"));
 
 	AssetEntry *vs_entry = arena_trie_find(&tracker->trie, string_hash64(vertex_shader_key), AssetEntry);
 	AssetEntry *fs_entry = arena_trie_find(&tracker->trie, string_hash64(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
 		LOG_WARN("Assets: Key '%.*s' is not tracked", SARG(key));
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return 0;
 	}
 
 	if (vs_entry->type != ASSET_TYPE_SHADER || fs_entry->type != ASSET_TYPE_SHADER) {
 		LOG_ERROR("Assets: Key '%.*s' is not a shader", SARG(key));
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return 0;
 	}
 
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 
 	return vs_entry->id;
 }

@@ -117,15 +117,15 @@ bool game_load(GameContext *context) {
 		game_library.handle = NULL;
 	}
 
-	ArenaTemp scratch = arena_scratch(NULL);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
 
 	String path = S("./libgame.so");
-	String temp_path = string_pushf(scratch.arena, "./loaded_%s.so", "game");
+	String temp_path = string_format(scratch.arena, "./loaded_%s.so", "game");
 
 	if (filesystem_file_copy(path, temp_path) == false) {
 		LOG_ERROR("failed to copy file");
 		ASSERT(false);
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return false;
 	}
 
@@ -133,7 +133,7 @@ bool game_load(GameContext *context) {
 	if (handle == NULL) {
 		LOG_ERROR("dlopen failed: %s", dlerror());
 		ASSERT(false);
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return false;
 	}
 
@@ -146,12 +146,12 @@ bool game_load(GameContext *context) {
 	if (hookup == NULL) {
 		LOG_ERROR("dlsym failed: %s", dlerror());
 		ASSERT(false);
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return false;
 	}
 
 	game = hookup();
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 
 	return true;
 }

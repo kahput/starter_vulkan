@@ -54,7 +54,11 @@ static JsonNode *parse_array(JsonParser *parser) {
 	JsonNode *node = arena_push_struct(parser->arena, JsonNode);
 	node->type = JSON_ARRAY;
 	JsonNode *tail = NULL;
-	node->value = NULL;
+	struct json_list {
+		uint32_t count;
+		JsonNode *first;
+	} *list = arena_push(parser->arena, sizeof(struct json_list), alignof(struct json_list), true);
+	node->value = list;
 
 	while (!lexer_match(&parser->lexer, TOKEN_RIGHT_BRACKET, NULL)) {
 		if (parser->failed || lexer_at_end(&parser->lexer))
@@ -65,11 +69,11 @@ static JsonNode *parse_array(JsonParser *parser) {
 			element->next = NULL;
 
 		if (tail == NULL)
-			node->value = element;
+			list->first = element;
 		else
 			tail->next = element;
 		tail = element;
-		/* node->as.array.count++; */
+		list->count++;
 
 		lexer_match(&parser->lexer, TOKEN_COMMA, NULL);
 	}
@@ -233,5 +237,22 @@ JsonNode *json_first(JsonNode *n) {
 	if (n->type != JSON_ARRAY)
 		ASSERT(false);
 
-	return (JsonNode *)n->value;
+	struct json_list {
+		uint32_t count;
+		JsonNode *first;
+	};
+	return ((struct json_list *)n->value)->first;
+}
+
+uint32_t json_count(JsonNode *n) {
+	if (n == NULL)
+		return 0;
+	if (n->type != JSON_ARRAY)
+		ASSERT(false);
+
+	struct json_list {
+		uint32_t count;
+		JsonNode *first;
+	};
+	return ((struct json_list *)n->value)->count;
 }

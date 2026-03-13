@@ -124,6 +124,17 @@ bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t 
 	return true;
 }
 
+uint32_2 vulkan_texture_size(VulkanContext *context, RhiTexture texture) {
+	VulkanImage *image = NULL;
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, (uint32_2){ 0 });
+
+	uint32_2 result = {
+		.x = image->info.extent.width,
+		.y = image->info.extent.height,
+	};
+	return result;
+}
+
 RhiSampler vulkan_sampler_make(VulkanContext *context, SamplerDesc description) {
 	VulkanSampler *sampler = pool_alloc(context->sampler_pool);
 

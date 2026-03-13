@@ -67,13 +67,13 @@ bool filesystem_file_copy(String from, String to) {
 
 StringList filesystem_list_files(Arena *arena, String directory_path, bool recursive) {
 	StringList list = { 0 };
-	ArenaTemp scratch = arena_scratch(arena);
+	ArenaTemp scratch = arena_scratch_begin(arena);
 
-	char *dir_cstr = string_push_cstring(scratch.arena, directory_path);
+	char *dir_cstr = string_cstring(scratch.arena, directory_path);
 	DIR *directory = opendir(dir_cstr);
 
 	if (!directory) {
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return list;
 	}
 
@@ -115,7 +115,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 	}
 
 	closedir(directory);
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 	return list;
 }
 

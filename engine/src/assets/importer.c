@@ -38,10 +38,10 @@ ShaderConfig importer_load_shader(Arena *arena, String vertex_path, String fragm
 }
 
 ImageSource importer_load_image(Arena *arena, String path) {
-	ArenaTemp scratch = arena_scratch(arena);
+	ArenaTemp scratch = arena_scratch_begin(arena);
 	ImageSource result = { 0 };
 
-	String filename = string_push_copy(scratch.arena, string_path_filename(path));
+	String filename = string_copy(scratch.arena, string_path_filename(path));
 	LOG_INFO("Loading %s...", filename.memory);
 
 	logger_indent();
@@ -52,7 +52,7 @@ ImageSource importer_load_image(Arena *arena, String path) {
 		result.width = result.height = 1;
 		result.channels = 4;
 		result.pixels = magenta;
-		arena_scratch_release(scratch);
+		arena_scratch_end(scratch);
 		return (ImageSource){ 0 };
 	}
 	result.channels = 4;
@@ -65,7 +65,7 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	LOG_INFO("%s loaded", filename.memory);
 	logger_dedent();
 
-	arena_scratch_release(scratch);
+	arena_scratch_end(scratch);
 	return result;
 }
 
@@ -276,7 +276,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 	logger_dedent(); */
 /* 	cgltf_free(data); */
 
-/* 	arena_scratch_release(scratch); */
+/* 	arena_scratch_end(scratch); */
 /* 	return true; */
 /* } */
 

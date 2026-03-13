@@ -94,12 +94,17 @@ VkSurfaceFormatKHR swapchain_select_surface_format(VkSurfaceFormatKHR *formats, 
 }
 
 VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t count) {
-    // NOTE: returning this to cap the framerate, move this somewhere else
+	// NOTE: Caps framerate to monitor framerate
 	/* return VK_PRESENT_MODE_FIFO_KHR; */
+
+	// NOTE: Uncap framerate on XWayland
 	for (uint32_t i = 0; i < count; i++) {
-		if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
+		if (modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR)
 			return modes[i];
-		}
+	}
+	for (uint32_t i = 0; i < count; i++) {
+		if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
+			return modes[i];
 	}
 
 	return VK_PRESENT_MODE_FIFO_KHR;
