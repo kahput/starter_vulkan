@@ -56,6 +56,7 @@ typedef struct {
 
 	DrawCommand *draw_list;
 	RhiBuffer dynamic_ssbo;
+	/* RhiBuffer dynamic_vbo; */
 } Renderer2D;
 
 // NOTE: Entity
@@ -121,6 +122,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	pstate = (PermanentState *)context->permanent_memory;
 	tstate = (TransientState *)context->transient_memory;
 
+	// Initialize permanent state
 	if (pstate->is_initialized == false) {
 		pstate->context = context->vk_context;
 		pstate->display = context->display;
@@ -266,6 +268,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		pstate->is_initialized = true;
 	}
 
+	// Initialize transient state
 	if (tstate->is_initialized == false) {
 		tstate->transient = (Arena){
 			.memory = tstate + 1,
@@ -296,6 +299,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	pstate->uniform_set_cache = arena_trie_make(scratch.arena);
 	pstate->renderer.draw_list = arena_array_make(scratch.arena, MAX_DRAW_COMMANDS, DrawCommand);
+
+	// Push to drawlist
 	for (uint32_t y = 0; y < pstate->map_height; ++y) {
 		for (uint32_t x = 0; x < pstate->map_width; ++x) {
 			uint32_t index = y * pstate->map_width + x;
@@ -336,6 +341,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	for (uint32_t index = 0; index < arena_array_count(pstate->objects); ++index)
 		texture_draw(&pstate->renderer, pstate->objects[index].texture, pstate->objects[index].position, pstate->objects[index].size, (Vector3f){ 1.0f, 1.0f, 1.0f });
 
+	// Create single large vbo
 	uint32_t count = arena_array_count(pstate->renderer.draw_list);
 	if (count > 0) {
 		qsort(pstate->renderer.draw_list, count, sizeof(DrawCommand), sort_draw_commands);
@@ -382,8 +388,6 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 		Matrix4f identity = matrix4f_identity();
 		vulkan_push_constants(pstate->context, 0, sizeof(Matrix4f), &identity);
-
-		vulkan_buffer_bind(pstate->context, pstate->renderer.dynamic_ssbo, 0);
 
 		for (uint32_t index = 0; index < count; ++index) {
 			DrawCommand *cmd = &pstate->renderer.draw_list[index];
@@ -435,11 +439,11 @@ Renderer2D renderer_make(void) {
 		NULL);
 	arena_scratch_end(scratch);
 
-	result.global_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, sizeof(Matrix4f) * 2, NULL);
+	result.global_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, sizeof(Matrix4f) * 2, NULL);
 
 	uint32_t buffer_size = MAX_DRAW_COMMANDS * 24 * sizeof(float);
 	// vulkan_buffer_make(pstate->context, BUFFER_TYPE_STORAGE, MAX_DRAW_COMMANDS, STRIDE, NULL);
-	result.dynamic_ssbo = vulkan_buffer_make(pstate->context, BUFFER_TYPE_VERTEX, buffer_size, NULL);
+	result.dynamic_ssbo = vulkan_buffer_make(pstate->context, BUFFER_TYPE_STORAGE, BUFFER_MEMORY_SHARED, buffer_size, NULL);
 
 	// clang-format off
     float vertices[] = { 
@@ -453,7 +457,7 @@ Renderer2D renderer_make(void) {
         1.0f, 0.0f, 1.0f, 0.0f
     };
 	// clang-format on
-	result.vbo = vulkan_buffer_make(pstate->context, BUFFER_TYPE_VERTEX, sizeof(vertices), vertices);
+	result.vbo = vulkan_buffer_make(pstate->context, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(vertices), vertices);
 
 	return result;
 }
@@ -479,6 +483,7 @@ bool frame_begin(Renderer2D *renderer, Camera camera) {
 
 			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, renderer->shader, 0);
 			vulkan_uniformset_bind_buffer(pstate->context, set0, 0, renderer->global_buffer);
+			vulkan_uniformset_bind_buffer(pstate->context, set0, 1, renderer->dynamic_ssbo);
 			vulkan_uniformset_bind(pstate->context, set0);
 
 			return true;

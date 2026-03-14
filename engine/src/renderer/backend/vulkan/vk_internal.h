@@ -28,7 +28,7 @@ typedef enum {
 			LOG_ERROR("Vulkan: %s index %u out of bounds (min 1, max %u), aborting %s",               \
 				#ptr_var, (uint32_t)(handle.id), (uint32_t)(max_limit), __func__);                    \
 			ASSERT(false);                                                                            \
-			return (return_type);                                                                       \
+			return (return_type);                                                                     \
 		}                                                                                             \
                                                                                                       \
 		(ptr_var) = &(pool_array)[handle.id];                                                         \
@@ -37,14 +37,14 @@ typedef enum {
 				LOG_ERROR("Vulkan: %s at index %u is not initialized (State: %d), aborting %s",       \
 					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                     \
 				ASSERT(false);                                                                        \
-				return (return_type);                                                                   \
+				return (return_type);                                                                 \
 			}                                                                                         \
 		} else {                                                                                      \
 			if ((ptr_var)->state != VULKAN_RESOURCE_STATE_UNINITIALIZED) {                            \
 				LOG_FATAL("Vulkan: %s at index %u is already in use (State: %d), aborting %s",        \
 					#ptr_var, (uint32_t)(handle.id), (ptr_var)->state, __func__);                     \
 				ASSERT(false);                                                                        \
-				return (return_type);                                                                   \
+				return (return_type);                                                                 \
 			}                                                                                         \
 		}                                                                                             \
 	} while (0)
@@ -56,10 +56,8 @@ typedef struct vulkan_buffer {
 	VkDeviceMemory memory;
 	void *mapped;
 
-	uint32_t count;
-
-	VkDeviceSize required_alignment, stride;
-	VkDeviceSize offset, size;
+	VkDeviceSize size;
+	VkDeviceSize offset, frame_size;
 
 	VkBufferUsageFlags usage;
 	VkMemoryPropertyFlags memory_property_flags;
@@ -70,7 +68,9 @@ typedef struct {
 	VkDescriptorSet handle;
 
 	uint32_t number;
-	VulkanBuffer *buffer;
+
+	uint32_t buffer_ranges[MAX_BINDINGS_PER_RESOURCE];
+    uint32_t range_count;
 } VulkanUniformSet;
 
 typedef struct vulkan_resource_set {
@@ -158,15 +158,13 @@ typedef struct VulkanSwapchain {
 bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t height);
 bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t width, uint32_t height);
 
-bool vulkan_buffer_make_internal(
-	VulkanContext *context,
-	VkDeviceSize size, uint32_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+bool vulkan_buffer_make_internal(VulkanContext *context, VkDeviceSize size,
+	VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
 	VulkanBuffer *out_buffer);
 
-bool vulkan_buffer_memory_map(VulkanContext *context, VulkanBuffer *buffer);
-void vulkan_buffer_memory_unmap(VulkanContext *context, VulkanBuffer *buffer);
-void vulkan_buffer_write_(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
-void vulkan_buffer_write_indexed(VulkanBuffer *buffer, uint32_t index, size_t offset, size_t size, void *data);
+bool vulkan_buffer_map(VulkanContext *context, VulkanBuffer *buffer);
+void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer);
+void vulkan_buffer_write_internal(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size);
 bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data);

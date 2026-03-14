@@ -2,3 +2,7 @@ layout(set = 0, binding = 0) uniform GlobalParameters {
     mat4 view;
     mat4 projection;
 } global;
+
+layout(set = 0, binding = 1) readonly buffer Objectbuffer{
+    vec4 vertex_data[];
+} batch;

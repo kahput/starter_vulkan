@@ -16,9 +16,9 @@ typedef enum buffer_type {
 } BufferType;
 
 typedef enum {
-	BUFFER_USAGE_STATIC,
-	BUFFER_USAGE_DYNAMIC
-} BufferUsage;
+	BUFFER_MEMORY_DEVICE,
+	BUFFER_MEMORY_SHARED,
+} BufferMemory;
 
 typedef enum shader_attribute_format {
 	SHADER_ATTRIBUTE_TYPE_UNDEFINED,

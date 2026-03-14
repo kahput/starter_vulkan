@@ -65,6 +65,14 @@ bool vulkan_descriptor_pool_create(VulkanContext *context) {
 		  .descriptorCount = 1000,
 		},
 		{
+		  .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		  .descriptorCount = 1000,
+		},
+		{
+		  .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+		  .descriptorCount = 1000,
+		},
+		{
 		  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		  .descriptorCount = 1000,
 		},

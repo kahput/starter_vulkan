@@ -46,8 +46,8 @@ ENGINE_API bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture
 ENGINE_API bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width, uint32_t height);
 ENGINE_API uint32_2 vulkan_texture_size(VulkanContext *context, RhiTexture texture);
 
-ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, size_t size, void *data);
-ENGINE_API RhiBuffer vulkan_buffer_make_ex(VulkanContext *context, BufferType type, BufferUsage usage, uint32_t count, size_t stride);
+ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemory memory, size_t size, void *data);
+ENGINE_API RhiBuffer vulkan_bufferarray_make(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride);
 ENGINE_API bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
 ENGINE_API bool vulkan_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset);

@@ -7,6 +7,7 @@
 #include "core/pool.h"
 #include "core/arena.h"
 #include "core/logger.h"
+#include <string.h>
 #include <vulkan/vulkan_core.h>
 
 bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanContext **out_context) {
@@ -60,11 +61,11 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 
 	// TODO: Lower this back down to 32?
 	if (vulkan_buffer_make_internal(
-			context, MiB(256), MAX_FRAMES_IN_FLIGHT,
+			context, MiB(256),
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			&context->staging_buffer) == false)
 		return false;
-	vulkan_buffer_memory_map(context, &context->staging_buffer);
+	vulkan_buffer_map(context, &context->staging_buffer);
 
 	context->global_range = (VkPushConstantRange){
 		.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,

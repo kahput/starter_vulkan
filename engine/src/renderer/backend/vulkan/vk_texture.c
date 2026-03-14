@@ -8,6 +8,7 @@
 #include "core/debug.h"
 #include "core/logger.h"
 
+#include <string.h>
 #include <vulkan/vulkan_core.h>
 
 static VkFormat to_vulkan_format(VulkanContext *context, TextureFormat format);
@@ -41,16 +42,15 @@ RhiTexture vulkan_texture_make(
 		VulkanBuffer *staging_buffer = &context->staging_buffer;
 		size_t copy_end = aligned_address(staging_buffer->offset + total_size,
 			context->device.properties.limits.minMemoryMapAlignment);
-		size_t copy_start = staging_buffer->stride * context->current_frame + staging_buffer->offset;
-		if (copy_end >= staging_buffer->size) {
+		size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
+		if (copy_end >= staging_buffer->frame_size) {
 			LOG_ERROR(
 				"Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
 			ASSERT(false);
 			return INVALID_RHI(RhiTexture);
 		}
 
-		vulkan_buffer_write_indexed(staging_buffer, context->current_frame, staging_buffer->offset,
-			total_size, pixels);
+		memcpy((uint8_t *)staging_buffer->mapped + copy_start, pixels, total_size);
 		staging_buffer->offset = copy_end;
 		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, width,
 			height, layer_count, layer_size);

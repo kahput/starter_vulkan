@@ -58,20 +58,25 @@ bool vulkan_uniformset_bind_buffer(
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
-	set->buffer = buffer;
+	set->buffer_ranges[set->range_count++] = buffer->frame_size;
 
 	VkDescriptorBufferInfo buffer_info = {
 		.buffer = buffer->handle,
 		.offset = 0,
-		.range = buffer->stride
+		.range = buffer->frame_size
 	};
+
+	VkDescriptorType type =
+		FLAG_GET(buffer->usage, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+		? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+		: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 
 	VkWriteDescriptorSet descriptor_write = {
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 		.dstSet = set->handle,
 		.dstBinding = binding,
 		.dstArrayElement = 0,
-		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, // TODO: Can't assume dynamic
+		.descriptorType = type, // TODO: Can't assume dynamic
 		.descriptorCount = 1,
 		.pBufferInfo = &buffer_info
 	};
@@ -118,19 +123,14 @@ bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet rset) {
 	VulkanShader *shader = context->bound_shader;
 	ASSERT(shader);
 
-	if (set->buffer && set->buffer->state) {
-		VulkanBuffer *buffer = set->buffer;
+	uint32_t offsets[MAX_BINDINGS_PER_RESOURCE];
+	for (uint32_t index = 0; index < set->range_count; index++)
+		offsets[index] = set->buffer_ranges[index] * context->current_frame;
 
-		uint32_t pass_offsets[] = { buffer->stride * context->current_frame };
-		vkCmdBindDescriptorSets(
-			context->command_buffers[context->current_frame],
-			VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
-			set->number, 1, &set->handle, 1, pass_offsets);
-	} else
-		vkCmdBindDescriptorSets(
-			context->command_buffers[context->current_frame],
-			VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
-			set->number, 1, &set->handle, 0, NULL);
+	vkCmdBindDescriptorSets(
+		context->command_buffers[context->current_frame],
+		VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline_layout,
+		set->number, 1, &set->handle, set->range_count, offsets);
 
 	return true;
 }

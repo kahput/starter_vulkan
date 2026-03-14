@@ -1,6 +1,7 @@
 #include "pool.h"
 #include "core/arena.h"
 #include "core/debug.h"
+#include <string.h>
 
 #define POOL_HEADER(ptr) ((Pool *)ptr - 1)
 
@@ -41,6 +42,8 @@ void pool_reset(void *ptr) {
 
 	for (uint32_t index = 0; index < pool->capacity; index++)
 		pool->free_indices[index] = (pool->capacity - 1) - index;
+
+	memset(pool->slots, 0, pool->stride * pool->capacity);
 }
 
 void *pool_alloc(void *ptr) {

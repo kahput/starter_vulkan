@@ -20,14 +20,6 @@ VkDeviceSize vulkan_memory_required_alignment(VulkanContext *context, VkBufferUs
 		}
 	}
 
-	if ((memory_properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
-		!(memory_properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-		VkDeviceSize atom_size = context->device.properties.limits.nonCoherentAtomSize;
-		if (atom_size > alignment) {
-			alignment = atom_size;
-		}
-	}
-
 	return alignment;
 }
 
