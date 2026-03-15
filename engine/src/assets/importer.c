@@ -3,7 +3,7 @@
 
 #include "assets/mesh_source.h"
 #include "common.h"
-#include "core/astring.h"
+#include "core/strings.h"
 
 #include "core/debug.h"
 #include "platform/filesystem.h"
@@ -41,7 +41,7 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	ImageSource result = { 0 };
 
-	String filename = string_copy(scratch.arena, string_path_filename(path));
+	String filename = string_copy(scratch.arena, stringpath_filename(path));
 	LOG_INFO("Loading %s...", filename.memory);
 
 	logger_indent();
@@ -58,7 +58,7 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	result.channels = 4;
 	uint32_t pixel_buffer_size = result.width * result.height * result.channels;
 	result.pixels = arena_push_count(arena, pixel_buffer_size, uint8_t);
-	memcpy(result.pixels, pixels, pixel_buffer_size);
+	memory_copy(result.pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
 	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.memory, result.width, result.height, result.channels);
@@ -148,11 +148,11 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 		dst->property_count = MATERIAL_PROPERTY_COUNT; */
 /* 		dst->properties = arena_push_count(arena, dst->property_count, MaterialProperty); */
 
-/* 		memcpy(dst->properties, default_properties, sizeof(default_properties)); */
+/* 		memory_copy(dst->properties, default_properties, sizeof(default_properties)); */
 
 /* 		if (src->has_pbr_metallic_roughness) { */
 /* 			cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness; */
-/* 			memcpy(&dst->properties[5].as.float4, pbr->base_color_factor, sizeof(float4)); */
+/* 			memory_copy(&dst->properties[5].as.float4, pbr->base_color_factor, sizeof(float4)); */
 
 /* 			dst->properties[6].as.float1 = pbr->metallic_factor; */
 /* 			dst->properties[7].as.float1 = pbr->roughness_factor; */
@@ -164,7 +164,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 		dst->properties[2].as.image = find_loaded_texture(data, out_model, src->normal_texture.texture); */
 /* 		dst->properties[3].as.image = find_loaded_texture(data, out_model, src->occlusion_texture.texture); */
 
-/* 		memcpy(&dst->properties[8].as.float3, src->emissive_factor, sizeof(float3)); */
+/* 		memory_copy(&dst->properties[8].as.float3, src->emissive_factor, sizeof(float3)); */
 /* 		dst->properties[4].as.image = find_loaded_texture(data, out_model, src->emissive_texture.texture); */
 /* 	} */
 
@@ -294,7 +294,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 		} */
 /* 	} */
 
-/* 	memcpy(dst, src + start, length - start); */
+/* 	memory_copy(dst, src + start, length - start); */
 /* } */
 
 /* void filesystem_directory(const char *src, char *dst) { */
@@ -307,7 +307,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 		} */
 /* 	} */
 
-/* 	memcpy(dst, src, final); */
+/* 	memory_copy(dst, src, final); */
 /* 	dst[final] = '\0'; */
 /* } */
 
@@ -325,7 +325,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 
 // void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count) {
 // 	for (uint32_t i = 0; i < vertex_count; i++) {
-// 		memset(vertices[i].tangent, 0, sizeof(vector4));
+// 		memory_zero(vertices[i].tangent, sizeof(vector4));
 // 	}
 //
 // 	for (uint32_t index = 0; index < index_count; index += 3) {

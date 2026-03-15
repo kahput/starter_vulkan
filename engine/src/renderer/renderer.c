@@ -8,7 +8,7 @@
 // #include "core/pool.h"
 //
 // #include "common.h"
-// #include "core/astring.h"
+// #include "core/strings.h"
 // #include "core/debug.h"
 // #include "core/logger.h"
 // #include "core/hash_trie.h"
@@ -420,9 +420,9 @@
 // 		uint32_t point_light_count = 0;
 // 		for (uint32_t light_index = 0; light_index < light_count; ++light_index) {
 // 			if (lights[light_index].type == LIGHT_TYPE_DIRECTIONAL)
-// 				memcpy(&data.directional_light, lights + light_index, sizeof(Light));
+// 				memory_copy(&data.directional_light, lights + light_index, sizeof(Light));
 // 			else
-// 				memcpy(data.lights + point_light_count++, lights + light_index, sizeof(Light));
+// 				memory_copy(data.lights + point_light_count++, lights + light_index, sizeof(Light));
 // 		}
 // 		glm_vec3_dup(camera->position, data.camera_position);
 // 		data.light_count = point_light_count;
@@ -570,7 +570,7 @@
 // 			shader->ubo_size = binding->buffer_layout->size;
 // 			shader->default_ubo_data = arena_push(renderer->arena, shader->ubo_size, 16, true);
 // 			if (config->default_ubo_data)
-// 				memcpy(shader->default_ubo_data, config->default_ubo_data, shader->ubo_size);
+// 				memory_copy(shader->default_ubo_data, config->default_ubo_data, shader->ubo_size);
 // 		}
 // 	}
 //

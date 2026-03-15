@@ -66,7 +66,7 @@ void logger_log(LogLevel level, const char *file, int line, const char *format, 
 	strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
 
 	char indent_buffer[32];
-	memset(indent_buffer, ' ', sizeof(indent_buffer));
+	memory_set(indent_buffer, ' ', sizeof(indent_buffer));
 	int32_t indent_space = MIN(g_logger.indent, 15) * 2;
 	indent_buffer[indent_space] = '\0';
 

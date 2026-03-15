@@ -50,7 +50,7 @@ RhiTexture vulkan_texture_make(
 			return INVALID_RHI(RhiTexture);
 		}
 
-		memcpy((uint8_t *)staging_buffer->mapped + copy_start, pixels, total_size);
+		memory_copy((uint8_t *)staging_buffer->mapped + copy_start, pixels, total_size);
 		staging_buffer->offset = copy_end;
 		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, width,
 			height, layer_count, layer_size);

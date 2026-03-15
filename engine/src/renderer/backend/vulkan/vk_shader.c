@@ -11,7 +11,7 @@
 #include "core/debug.h"
 #include "core/logger.h"
 #include "core/r_types.h"
-#include "core/astring.h"
+#include "core/strings.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -261,7 +261,7 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 
 	VulkanPass *pass = &context->bound_pass;
 	PipelineStateKey key;
-	memset(&key, 0, sizeof(key));
+	memory_zero(&key, sizeof(key));
 	key = (PipelineStateKey){
 		.desc = desc,
 		.depth_format = pass->depth_format
@@ -270,7 +270,13 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 	for (uint32_t index = 0; pass->color_formats[index] && index < countof(key.color_formats); ++index)
 		key.color_formats[index] = pass->color_formats[index];
 
-	uint64_t hash = string_hash64((String){ .memory = (char *)&key, .length = sizeof(PipelineStateKey) });
+	uint64_t hash = hash64(&key, sizeof(PipelineStateKey));
+
+	static uint64_t assert_hash = 0;
+	if (assert_hash == 0)
+		assert_hash = hash;
+
+    ASSERT(assert_hash == hash);
 
 	VulkanPipeline *popped_slot = arena_list_pop(&shader->first_free, VulkanPipeline);
 
@@ -395,7 +401,7 @@ bool reflect_shader_interface(
 
 	uint32_t max_attributes = context->device.properties.limits.maxVertexInputAttributes;
 	uint32_t *indices = arena_push_count(scratch.arena, max_attributes, uint32_t);
-	memset(indices, INT32_MAX, sizeof(uint32_t) * max_attributes);
+	memory_set(indices, 1, sizeof(uint32_t) * max_attributes);
 
 	for (uint32_t index = 0; index < input_variable_count; ++index) {
 		SpvReflectInterfaceVariable *var = input_variables[index];

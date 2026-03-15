@@ -4,7 +4,7 @@
 
 #include "common.h"
 #include "core/cmath.h"
-#include "core/astring.h"
+#include "core/strings.h"
 #include "core/identifiers.h"
 
 typedef enum {

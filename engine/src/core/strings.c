@@ -1,4 +1,4 @@
-#include "astring.h"
+#include "strings.h"
 
 #include <string.h>
 #include <ctype.h>
@@ -218,7 +218,7 @@ float32 string_to_f32(String str) {
 	if (str.length >= sizeof(buffer))
 		return 0.0f;
 
-	memcpy(buffer, str.memory, str.length);
+	memory_copy(buffer, str.memory, str.length);
 	buffer[str.length] = '\0';
 
 	return strtof(buffer, NULL);
@@ -228,7 +228,7 @@ double string_to_f64(String str) {
 	if (str.length >= sizeof(buffer))
 		return 0.0;
 
-	memcpy(buffer, str.memory, str.length);
+	memory_copy(buffer, str.memory, str.length);
 	buffer[str.length] = '\0';
 
 	return strtod(buffer, NULL);
@@ -238,7 +238,7 @@ static bool is_path_separator(char c) {
 	return c == '/' || c == '\\';
 }
 
-String string_path_directory(String path) {
+String stringpath_directory(String path) {
 	if (path.length == 0)
 		return (String){ 0 };
 
@@ -251,7 +251,7 @@ String string_path_directory(String path) {
 	return (String){ 0 };
 }
 
-String string_path_filename(String path) {
+String stringpath_filename(String path) {
 	if (path.length == 0)
 		return (String){ 0 };
 
@@ -263,7 +263,7 @@ String string_path_filename(String path) {
 	return path;
 }
 
-String string_path_extension(String path) {
+String stringpath_extension(String path) {
 	if (path.length == 0)
 		return (String){ 0 };
 
@@ -294,9 +294,9 @@ String string_path_join(Arena *arena, String head, String tail) {
 		// Manual construction to avoid double allocation of concat(concat)
 		size_t new_length = head.length + 1 + tail.length;
 		char *data = arena_push_count(arena, new_length + 1, char);
-		memcpy(data, head.memory, head.length);
+		memory_copy(data, head.memory, head.length);
 		data[head.length] = '/';
-		memcpy(data + head.length + 1, tail.memory, tail.length);
+		memory_copy(data + head.length + 1, tail.memory, tail.length);
 		data[new_length] = '\0';
 		return (String){ .memory = data, .length = new_length };
 	} else
@@ -304,7 +304,7 @@ String string_path_join(Arena *arena, String head, String tail) {
 		return string_concat(arena, head, tail);
 }
 
-String string_path_clean(Arena *arena, String path) {
+String string_path_normalize(Arena *arena, String path) {
 	String result = string_wrap(arena_push_count(arena, path.length, char));
 	for (uint32_t index = 0; index < path.length; ++index) {
 		if (path.memory[index] == '\\')
@@ -322,7 +322,7 @@ String string_copy(Arena *arena, String str) {
 
 	// Allocate length + 1 for implicit null termination convenience
 	char *data = arena_push_count(arena, str.length + 1, char);
-	memcpy(data, str.memory, str.length);
+	memory_copy(data, str.memory, str.length);
 	data[str.length] = '\0';
 
 	return (String){ .memory = data, .length = str.length };
@@ -359,8 +359,8 @@ String string_concat(Arena *arena, String head, String tail) {
 	size_t new_length = head.length + tail.length;
 	char *data = arena_push_count(arena, new_length + 1, char);
 
-	memcpy(data, head.memory, head.length);
-	memcpy(data + head.length, tail.memory, tail.length);
+	memory_copy(data, head.memory, head.length);
+	memory_copy(data + head.length, tail.memory, tail.length);
 	data[new_length] = '\0';
 
 	return (String){ .memory = data, .length = new_length };
@@ -397,19 +397,19 @@ String string_replace(Arena *arena, String source, String find, String replace) 
 		if (index == -1) {
 			// Copy remaining
 			size_t remain = source.length - src_offset;
-			memcpy(data + dst_offset, source.memory + src_offset, remain);
+			memory_copy(data + dst_offset, source.memory + src_offset, remain);
 			dst_offset += remain;
 			break;
 		}
 
 		// Copy segment before match
 		size_t seg_len = index - src_offset;
-		memcpy(data + dst_offset, source.memory + src_offset, seg_len);
+		memory_copy(data + dst_offset, source.memory + src_offset, seg_len);
 		dst_offset += seg_len;
 		src_offset += seg_len;
 
 		// Copy replacement
-		memcpy(data + dst_offset, replace.memory, replace.length);
+		memory_copy(data + dst_offset, replace.memory, replace.length);
 		dst_offset += replace.length;
 		src_offset += find.length;
 	}
@@ -436,7 +436,7 @@ String string_lower(Arena *arena, String s) {
 
 char *string_cstring(Arena *arena, String s) {
 	char *cstr = arena_push_count(arena, s.length + 1, char);
-	memcpy(cstr, s.memory, s.length);
+	memory_copy(cstr, s.memory, s.length);
 	cstr[s.length] = '\0';
 	return cstr;
 }
@@ -496,11 +496,11 @@ String stringlist_join(Arena *arena, StringList *list, String separator) {
 
 	StringNode *node = list->first;
 	while (node) {
-		memcpy(data + cursor, node->string.memory, node->string.length);
+		memory_copy(data + cursor, node->string.memory, node->string.length);
 		cursor += node->string.length;
 
 		if (node->next) {
-			memcpy(data + cursor, separator.memory, separator.length);
+			memory_copy(data + cursor, separator.memory, separator.length);
 			cursor += separator.length;
 		}
 

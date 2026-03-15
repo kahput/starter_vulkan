@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/astring.h"
+#include "core/strings.h"
 #include "core/identifiers.h"
 
 #include "asset_types.h"

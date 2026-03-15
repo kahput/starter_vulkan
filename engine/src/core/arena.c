@@ -34,35 +34,41 @@ void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) 
 	}
 
 	if (zero_memory)
-		memset((void *)aligned, 0, size);
+		memory_zero((void *)aligned, size);
 
 	arena->offset += padding + size;
 	return (void *)aligned;
+}
+
+void *arena_push_copy(Arena *arena, void *src, size_t size, size_t align) {
+	void *dst = arena_push(arena, size, align, false);
+	memcpy(dst, src, size);
+	return dst;
 }
 
 void arena_pop(Arena *arena, size_t size) {
 	arena->offset = size > arena->offset ? 0 : arena->offset - size;
 }
 
-void arena_set(Arena *arena, size_t position) {
+void arena_rewind(Arena *arena, size_t position) {
 	arena->offset = position > arena->capacity ? arena->capacity : position;
 }
 
-size_t arena_size(Arena *arena) {
+size_t arena_mark(Arena *arena) {
 	return arena->offset;
 }
 
-void arena_clear(Arena *arena) {
-	memset(arena->memory, 0, arena->offset);
+void arena_reset(Arena *arena) {
+	memory_zero(arena->memory, arena->offset);
 	arena->offset = 0;
 }
 
 ArenaTemp arena_temp_begin(Arena *arena) {
-	return (ArenaTemp){ .arena = arena, .position = arena_size(arena) };
+	return (ArenaTemp){ .arena = arena, .position = arena_mark(arena) };
 }
 
 void arena_temp_end(ArenaTemp temp) {
-	arena_set(temp.arena, temp.position);
+	arena_rewind(temp.arena, temp.position);
 }
 
 ArenaTemp arena_scratch_begin(Arena *conflict) {
@@ -152,27 +158,28 @@ void arena_list_free(void **first_free, void *slot) {
 	*first_free = element;
 }
 
-/* void *arena_list_push(Arena *arena, ArenaListNode **first, size_t size, size_t align) { */
-/* 	if (arena == NULL) */
-/* 		return NULL; */
+#define INITIAL_DARRAY_CAPACITY 64
+void *arena_array_ensure(Arena *arena, void *arr, size_t item_size) {
+	uint32_t capacity = 0;
 
-/* 	ArenaListNode *node = arena_push(arena, sizeof(ArenaListNode), align, true); */
+	if (arr) {
+		ArenaArrayHeader *header = HEADER(arr, ArenaArrayHeader);
+		if (header->count < header->capacity)
+			return arr;
+		capacity = header->capacity;
 
-/* 	if (*first) { */
-/* 		node->next = *first; */
-/* 		*first = node; */
-/* 	} else */
-/* 		*first = node; */
+		if ((uint8_t *)arena->memory + arena->offset != (uint8_t *)arr + capacity * item_size) {
+			void *copy = arena_push_copy(arena, HEADER(arr, ArenaArrayHeader), sizeof(ArenaArrayHeader) + capacity * item_size, 16);
+			arr = (ArenaArrayHeader *)copy + 1;
+		}
+	} else {
+		ArenaArrayHeader *header = arena_push(arena, sizeof(ArenaArrayHeader), 16, true);
+		arr = header + 1;
+	}
 
-/* 	return arena_push(arena, size, align, true); */
-/* } */
+	uint32_t extend = capacity ? capacity : INITIAL_DARRAY_CAPACITY;
+	arena_push(arena, extend * item_size, 1, true);
+	HEADER(arr, ArenaArrayHeader)->capacity += extend;
 
-/* void *arena_list_pop(ArenaListNode **first) { */
-/* 	if (first == NULL || *first == NULL) */
-/* 		return NULL; */
-
-/* 	ArenaListNode *element = (ArenaListNode *)*first; */
-/* 	*first = element->next; */
-
-/* 	return element + 1; */
-/* } */
+	return arr;
+}

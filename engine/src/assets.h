@@ -23,8 +23,8 @@ typedef struct asset_library {
 
 static inline AssetTracker asset_tracker_make(Arena *arena) { return (AssetTracker){ .arena = arena, .trie = arena_trie_make(arena) }; }
 
-bool asset_tracker_track_directory(AssetTracker *tracker, String directory);
-bool asset_tracker_track_file(AssetTracker *tracker, String file_path);
+ENGINE_API bool asset_tracker_track_directory(AssetTracker *tracker, String directory);
+ENGINE_API bool asset_tracker_track_file(AssetTracker *tracker, String file_path);
 
 ENGINE_API UUID asset_tracker_request_shader(AssetTracker *tracker, String key);
 ENGINE_API UUID asset_tracker_request_model(AssetTracker *tracker, String key);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common.h"
-#include "astring.h"
+#include "strings.h"
 #include "identifiers.h"
 
 // clang-format off

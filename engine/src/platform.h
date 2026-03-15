@@ -2,7 +2,7 @@
 
 #include "common.h"
 #include "core/arena.h"
-#include "core/astring.h"
+#include "core/strings.h"
 
 #include "events/platform_events.h"
 

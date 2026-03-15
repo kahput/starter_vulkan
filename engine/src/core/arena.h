@@ -25,13 +25,12 @@ void arena_destroy(Arena *arena);
 	(Arena) { .memory = (memory), .capacity = sizeof(*(memory)) * (count) }
 
 ENGINE_API void *arena_push(Arena *arena, size_t size, size_t align, bool zero);
-void *arena_push_copy(Arena *arena, void *src, size_t size);
-
+ENGINE_API void *arena_push_copy(Arena *arena, void *src, size_t size, size_t align);
 void arena_pop(Arena *arena, size_t size);
-void arena_set(Arena *arena, size_t position);
 
-size_t arena_size(Arena *arena);
-void arena_clear(Arena *arena);
+size_t arena_mark(Arena *arena);
+void arena_rewind(Arena *arena, size_t position);
+void arena_reset(Arena *arena);
 
 ENGINE_API ArenaTemp arena_temp_begin(Arena *arena);
 ENGINE_API void arena_temp_end(ArenaTemp temp);
@@ -105,9 +104,19 @@ typedef struct alignas(16) {
 
 #define arena_array_make(arena, cap, T) (((ArenaArrayHeader *)arena_push(arena, sizeof(ArenaArrayHeader), alignof(ArenaArrayHeader), true))->capacity = cap, (T *)arena_push_count((arena), (cap), T))
 
-#define arena_array_count(arr) ((HEADER((arr), ArenaArrayHeader))->count)
-#define arena_array_capacity(arr) ((HEADER((arr), ArenaArrayHeader))->capacity)
+#define arena_array_count(arr) ((arr) ? HEADER(arr, ArenaArrayHeader)->count : 0)
+#define arena_array_capacity(arr) ((arr) ? HEADER(arr, ArenaArrayHeader)->capacity : 0)
+#define arena_array_copy(arena, arr, T) \
+	(arr) ? (T *)((ArenaArrayHeader *)arena_push_copy((arena), HEADER(arr, ArenaArrayHeader), sizeof(ArenaArrayHeader) + sizeof(T) * arena_array_count(arr), 16) + 1) : NULL
 
 #define arena_array_push(arr) (&(arr)[HEADER(arr, ArenaArrayHeader)->count++])
 #define arena_array_put(arr, T, ...) \
 	((arr)[HEADER(arr, ArenaArrayHeader)->count++] = (T)__VA_ARGS__)
+
+ENGINE_API void *arena_array_ensure(Arena *arena, void *arr, size_t item_size);
+
+#define arena_darray_push(arena, arr, T)                    \
+	((arr) = arena_array_ensure((arena), (arr), sizeof(T)), \
+		arena_array_push(arr))
+#define arena_darray_put(arena, arr, T, ...) \
+	(void)(arr = arena_array_ensure((arena), (arr), sizeof(T)), arena_array_put(arr, T, __VA_ARGS__))

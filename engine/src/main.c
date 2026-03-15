@@ -15,7 +15,7 @@
 #include "core/debug.h"
 #include "core/arena.h"
 #include "core/logger.h"
-#include "core/astring.h"
+#include "core/strings.h"
 
 #include "platform/filesystem.h"
 
@@ -99,7 +99,7 @@ int main(void) {
 			struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
 			nanosleep(&ts, NULL);
 			game_load(&game_context);
-			memset(game_context.transient_memory, 0, game_context.transient_memory_size);
+			memory_zero(game_context.transient_memory, game_context.transient_memory_size);
 		}
 
 		window_poll_events(engine.display);

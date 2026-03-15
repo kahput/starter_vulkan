@@ -174,6 +174,7 @@ bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height)
 		LOG_ERROR("Failed to begin command buffer recording");
 		return false;
 	}
+	context->command_buffer = context->command_buffers[context->current_frame];
 
 	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
@@ -233,6 +234,7 @@ bool vulkan_frame_end(VulkanContext *context) {
 
 	// NOTE: All bound resources are unbound after frame ends
 	context->bound_shader = NULL;
+	context->command_buffer = NULL;
 
 	return true;
 }

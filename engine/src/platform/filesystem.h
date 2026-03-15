@@ -3,7 +3,7 @@
 #include "common.h"
 
 #include "core/arena.h"
-#include "core/astring.h"
+#include "core/strings.h"
 
 bool filesystem_file_exists(String path);
 ENGINE_API String filesystem_read(struct arena *arena, String path);

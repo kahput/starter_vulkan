@@ -1,7 +1,7 @@
 #ifndef LEXER_H_
 #define LEXER_H_
 
-#include <core/astring.h>
+#include <core/strings.h>
 
 typedef enum {
 	TOKEN_UNKNOWN,

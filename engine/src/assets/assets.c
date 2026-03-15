@@ -5,7 +5,7 @@
 #include "core/arena.h"
 
 #include "common.h"
-#include "core/astring.h"
+#include "core/strings.h"
 #include "core/identifiers.h"
 #include "core/logger.h"
 
@@ -23,7 +23,7 @@ static const char *extensions[ASSET_TYPE_COUNT][8] = {
 static AssetType file_extension_to_asset_type(String extension);
 
 bool asset_tracker_track_directory(AssetTracker *tracker, String directory) {
-	ArenaTemp scratch = arena_scratch_begin(NULL);
+	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
 
 	StringList file_list = filesystem_list_files(scratch.arena, directory, true);
 	StringNode *file = file_list.first;
@@ -44,14 +44,15 @@ bool asset_tracker_track_directory(AssetTracker *tracker, String directory) {
 }
 
 bool asset_tracker_track_file(AssetTracker *tracker, String file_path) {
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-	String name = string_copy(scratch.arena, string_path_filename(file_path));
+	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
+	String name = string_copy(scratch.arena, stringpath_filename(file_path));
 	AssetEntry *entry = arena_trie_push(&tracker->trie, string_hash64(name), AssetEntry);
 
 	if (entry->full_path.length == 0) {
 		entry->full_path = string_copy(tracker->arena, file_path);
-		entry->type = file_extension_to_asset_type(string_path_extension(file_path));
+		entry->type = file_extension_to_asset_type(stringpath_extension(file_path));
 		entry->last_modified = filesystem_last_modified(file_path);
+		entry->id = string_hash64(entry->full_path);
 
 		tracker->tracked_file_count++;
 
@@ -64,7 +65,7 @@ bool asset_tracker_track_file(AssetTracker *tracker, String file_path) {
 }
 
 UUID asset_tracker_request_shader(AssetTracker *tracker, String key) {
-	ArenaTemp scratch = arena_scratch_begin(NULL);
+	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
 
 	String vertex_shader_key = string_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
 	String fragment_shader_key = string_replace(scratch.arena, key, S("glsl"), S("frag.spv"));
@@ -117,7 +118,7 @@ UUID asset_tracker_request_image(AssetTracker *tracker, String key) {
 }
 
 bool asset_tracker_clear_cache(AssetTracker *tracker) {
-	arena_clear(tracker->arena);
+	arena_reset(tracker->arena);
 	LOG_INFO("AssetTracker: Cache cleared. All tracking lost.");
 
 	return true;

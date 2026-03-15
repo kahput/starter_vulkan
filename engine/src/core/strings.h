@@ -43,12 +43,12 @@ int64_t string_to_i64(String s);
 float string_to_f32(String s);
 double string_to_f64(String s);
 
-ENGINE_API String string_path_directory(String path);
-ENGINE_API String string_path_filename(String path);
-ENGINE_API String string_path_extension(String path);
+ENGINE_API String stringpath_directory(String path);
+ENGINE_API String stringpath_filename(String path);
+ENGINE_API String stringpath_extension(String path);
 
 ENGINE_API String string_path_join(Arena *arena, String head, String tail);
-ENGINE_API String string_path_clean(Arena *arena, String path);
+ENGINE_API String string_path_normalize(Arena *arena, String path);
 
 ENGINE_API String string_copy(Arena *arena, String s);
 

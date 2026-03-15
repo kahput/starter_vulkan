@@ -3,7 +3,7 @@
 #include "core/cmath.h"
 #include "core/r_types.h"
 
-#include "core/astring.h"
+#include "core/strings.h"
 #include "core/identifiers.h"
 
 #define MAX_COLOR_ATTACHMENTS 4

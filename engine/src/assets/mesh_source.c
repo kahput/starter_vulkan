@@ -112,7 +112,7 @@ MeshSource meshlist_flatten(Arena *arena, MeshSourceList *list) {
 	MeshSourceNode *node = list->first;
 	do {
 		size_t size = node->source.vertex_count * node->source.vertex_size;
-		memcpy(vertices + cursor, node->source.vertices, size);
+		memory_copy(vertices + cursor, node->source.vertices, size);
 
 		cursor += size;
 		rv.vertex_count += node->source.vertex_count;

@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 #include <stdbool.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -37,6 +38,23 @@
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
 
+#define memory_copy(dst, src, size) memcpy((dst), (src), (size))
+#define memory_set(dst, byte, size) memset((dst), (byte), (size))
+#define memory_compare(a, b, size) memcmp((a), (b), (size))
+
+#define memory_copy_struct(d, s) memory_copy((d), (s), sizeof(*(d)))
+#define memory_copy_array(d, s) memory_copy((d), (s), sizeof(d))
+#define memory_copy_count(d, s, c) memory_copy((d), (s), sizeof(*(d)) * (c))
+
+#define memory_zero(s, z) memory_set((s), 0, (z))
+#define memory_zero_struct(s) memory_zero((s), sizeof(*(s)))
+#define memory_zero_array(a) memory_zero((a), sizeof(a))
+#define memory_zero_count(m, c) memory_zero((m), sizeof(*(m)) * (c))
+
+#define memory_equals(a, b, z) (memory_compare((a), (b), (z)) == 0)
+#define memory_equals_struct(a, b) memory_equals((a), (b), sizeof(*(a)))
+#define memory_equals_array(a, b) memory_equals((a), (b), sizeof(a))
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -68,6 +86,10 @@ static inline uint64_t hash64(void *memory, size_t size) {
 		hash = ((hash << 5) * hash) + ((uint8_t *)memory)[index];
 	return hash;
 }
+
+#define hash_struct(s) hash64(&(s), sizeof((s)))
+#define hash_array(array) hash64((array), sizeof((array)))
+#define hash_count(memory, count) hash64((memory), sizeof(*(memory)) * (count))
 
 // Types
 // clang-format off

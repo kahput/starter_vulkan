@@ -70,7 +70,7 @@ typedef struct {
 	uint32_t number;
 
 	uint32_t buffer_ranges[MAX_BINDINGS_PER_RESOURCE];
-    uint32_t range_count;
+	uint32_t range_count;
 } VulkanUniformSet;
 
 typedef struct vulkan_resource_set {
@@ -265,6 +265,7 @@ struct vulkan_context {
 	VulkanBuffer staging_buffer;
 	VulkanShader *bound_shader;
 	VulkanPass bound_pass;
+	VkCommandBuffer command_buffer;
 	VkDescriptorPool descriptor_pools[MAX_FRAMES_IN_FLIGHT];
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];

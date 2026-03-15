@@ -1,4 +1,4 @@
-#include "core/astring.h"
+#include "core/strings.h"
 #include "core/debug.h"
 #include "input/input_types.h"
 #include "platform.h"
@@ -521,8 +521,6 @@ const char **platform_vulkan_extensions(uint32_t *count) {
 }
 
 void create_key_table(Window *window) {
-	memset(window->keycodes, -1, sizeof(window->keycodes));
-
 	window->keycodes[KEY_GRAVE] = KEY_CODE_GRAVE;
 	window->keycodes[KEY_1] = KEY_CODE_1;
 	window->keycodes[KEY_2] = KEY_CODE_2;

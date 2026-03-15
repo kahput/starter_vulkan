@@ -34,7 +34,7 @@ RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemo
 		vulkan_buffer_map(context, buffer);
 		if (data) {
 			for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-				memcpy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
+				memory_copy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
 			}
 		}
 	} else {
@@ -52,7 +52,7 @@ RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemo
 				return INVALID_RHI(RhiBuffer);
 			}
 
-			memcpy((uint8_t *)staging_buffer->mapped + copy_start, data, size);
+			memory_copy((uint8_t *)staging_buffer->mapped + copy_start, data, size);
 			vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->frame_size);
 			staging_buffer->offset = copy_end;
 		}
@@ -105,7 +105,7 @@ bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offse
 		}
 
 		uint8_t *dest = (uint8_t *)buffer->mapped + (buffer->frame_size * context->current_frame) + offset;
-		memcpy(dest, data, copy_size);
+		memory_copy(dest, data, copy_size);
 
 		return true;
 	}
@@ -118,7 +118,7 @@ bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offse
 		ASSERT(false);
 		return false;
 	}
-	memcpy((uint8_t *)staging_buffer->mapped + copy_start, data, size);
+	memory_copy((uint8_t *)staging_buffer->mapped + copy_start, data, size);
 	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->frame_size);
 	staging_buffer->offset = copy_end;
 
@@ -188,7 +188,7 @@ bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size
 
 	if (data) {
 		for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-			memcpy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
+			memory_copy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
 		}
 	}
 

@@ -2,7 +2,7 @@
 #define MATERIAL_SOURCE_H_
 
 #include "common.h"
-#include "core/astring.h"
+#include "core/strings.h"
 #include "core/identifiers.h"
 
 typedef enum {
