@@ -47,13 +47,18 @@ bool vulkan_device_create(Arena *arena, VulkanContext *context) {
 
 	VkPhysicalDeviceVulkan13Features vk13_features = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-		.dynamicRendering = true
+		.dynamicRendering = VK_TRUE
+	};
+	VkPhysicalDeviceVulkan12Features vk12_features = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+		.pNext = &vk13_features,
+		.descriptorIndexing = VK_TRUE,
 	};
 	VkPhysicalDeviceFeatures features = { .samplerAnisotropy = true, .fillModeNonSolid = true };
 
 	VkDeviceCreateInfo device_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-		.pNext = &vk13_features,
+		.pNext = &vk12_features,
 		.pQueueCreateInfos = queue_create_infos,
 		.queueCreateInfoCount = unique_count,
 		.ppEnabledExtensionNames = extensions,

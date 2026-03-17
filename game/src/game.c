@@ -33,7 +33,6 @@ typedef struct {
 
 typedef struct {
 	RhiTexture texture;
-	uint32_2 texture_size;
 	Rectangle source, dest;
 } DrawCommand;
 
@@ -54,18 +53,24 @@ typedef struct {
 } Renderer2D;
 
 // NOTE: Entity
+typedef Vector4f Color;
 typedef struct {
 	RhiTexture texture;
-	Vector2f position;
-	Vector2f size;
+
+	Rectangle src, dest;
+	Vector2f origin;
+	float rotation;
+	Color color;
 } Sprite;
 
 typedef struct {
 	RhiTexture *frames;
 	uint32_t frame_count;
 
-	Vector2f position;
-	Vector2f size;
+	Rectangle source, dest;
+	Vector2f origin;
+	float rotation;
+	Color color;
 } AnimatedSprite;
 
 typedef struct {
@@ -96,6 +101,7 @@ typedef struct {
 
 	// Objects
 	Sprite *objects;
+	Sprite *coast;
 	Camera camera;
 	Vector2f player_position;
 
@@ -116,8 +122,7 @@ static TransientState *tstate = NULL;
 
 Renderer2D renderer_make(void);
 RhiTexture texture_make(Renderer2D *renderer, String path);
-void texture_draw(Renderer2D *renderer, RhiTexture texture, Vector2f position, Vector2f scale, Vector3f tint);
-void texture_draw_ex(RhiTexture texture, Rectangle source, Rectangle dest, Vector3f tint);
+void texture_draw(Renderer2D *renderer, RhiTexture texture, Rectangle source, Rectangle dest, Vector2f origin, float32 rotation, Color tint);
 static int sort_draw_commands(const void *a, const void *b) { return ((DrawCommand *)a)->texture.id - ((DrawCommand *)b)->texture.id; }
 
 FrameInfo game_on_update_and_render(GameContext *context, float dt) {
@@ -252,6 +257,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		JsonNode *terrain = json_find_where(layers, S("name"), S("Terrain"));
 		JsonNode *entities = json_find_where(layers, S("name"), S("Entities"));
 		JsonNode *water = json_find_where(layers, S("name"), S("Water"));
+		JsonNode *coast = json_find_where(layers, S("name"), S("Coast"));
 
 		pstate->map_width = json_find(root, S("width"), uint32_t);
 		pstate->map_height = json_find(root, S("height"), uint32_t);
@@ -324,7 +330,6 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					continue;
 
 				pstate->objects = arena_array_make(&pstate->arena, json_list_count(layer, S("objects")), Sprite);
-
 				for (JsonNode *object_node = json_list(layer, S("objects")); object_node; object_node = object_node->next) {
 					uint32_t gid = 0;
 					if ((gid = json_find(object_node, S("gid"), uint32_t) == 0))
@@ -335,11 +340,15 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 					uint32_2 size = vulkan_texture_size(pstate->context, tile->texture);
 					*object = (Sprite){
-						.position = { json_find(object_node, S("x"), float32), json_find(object_node, S("y"), float32) },
-						.size = { size.x, size.y },
+						.src = { 0, 0, size.x, size.y },
+						.dest = {
+						  .x = json_find(object_node, S("x"), float32),
+						  .y = json_find(object_node, S("y"), float32),
+						  .width = size.x,
+						  .height = size.y,
+						},
 					};
-
-					object->position.y -= object->size.y;
+					object->dest.y -= object->dest.width;
 
 					object->texture = tile->texture;
 				}
@@ -372,19 +381,90 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 		AnimatedSprite *animated = NULL;
 		for (JsonNode *node = json_list(water, S("objects")); node; node = node->next) {
+			uint32_t width = json_find(node, S("width"), uint32_t);
+			uint32_t height = json_find(node, S("height"), uint32_t);
 			uint32_t x0 = json_find(node, S("x"), uint32_t);
-			uint32_t x1 = x0 + json_find(node, S("width"), uint32_t);
+			uint32_t x1 = x0 + width;
 			uint32_t y0 = json_find(node, S("y"), uint32_t);
-			uint32_t y1 = y0 + json_find(node, S("height"), uint32_t);
+			uint32_t y1 = y0 + height;
 
 			for (uint32_t y = y0; y < y1; y += 64) {
 				for (uint32_t x = x0; x < x1; x += 64) {
+					Rectangle source = { .x = 0.0f, .y = 0.0f, .width = 64, .height = 64 };
+					Rectangle dest = { x, y, source.width, source.height };
+
 					arena_darray_put(scratch.arena, animated, AnimatedSprite,
-						{ pstate->water, countof(pstate->water), .position = { x, y }, .size = { 64, 64 } });
+						{ .frames = pstate->water, .frame_count = countof(pstate->water), .source = source, .dest = dest });
 				}
 			}
 		}
 		pstate->animated_sprites = arena_array_copy(&pstate->arena, animated, AnimatedSprite);
+
+		ImageSource coast_src = importer_load_image(scratch.arena, S("assets/pokemon/graphics/tilesets/coast.png"));
+		RhiTexture coast_texture = vulkan_texture_make(pstate->context, coast_src.width, coast_src.height, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, coast_src.pixels);
+
+		/*
+		 * topleft = [ 0, 0 ]
+		 * top = [ 1, 0 ]
+		 * topright = [ 2, 0 ]
+		 *
+		 * left = [ 0, 1 ]
+		 * right = [ 1, 1 ]
+		 *
+		 * bottomleft = [ 0, 2 ]
+		 * bottom = [ 1, 2 ]
+		 * bottomright = [ 2, 2 ]
+		 */
+
+		ArenaTrie lookup = arena_trie_make(scratch.arena);
+		arena_trie_put(&lookup, shash("topleft"), uint32_2, { 0, 0 });
+		arena_trie_put(&lookup, shash("top"), uint32_2, { 1, 0 });
+		arena_trie_put(&lookup, shash("topright"), uint32_2, { 2, 0 });
+
+		arena_trie_put(&lookup, shash("left"), uint32_2, { 0, 1 });
+		arena_trie_put(&lookup, shash("right"), uint32_2, { 2, 1 });
+
+		arena_trie_put(&lookup, shash("bottomleft"), uint32_2, { 0, 2 });
+		arena_trie_put(&lookup, shash("bottom"), uint32_2, { 1, 2 });
+		arena_trie_put(&lookup, shash("bottomright"), uint32_2, { 2, 2 });
+
+		arena_trie_put(&lookup, shash("grass"), uint32, 0);
+		arena_trie_put(&lookup, shash("grass_i"), uint32, 3);
+
+		arena_trie_put(&lookup, shash("sand_i"), uint32, 6);
+		arena_trie_put(&lookup, shash("sand"), uint32, 9);
+
+		arena_trie_put(&lookup, shash("rock"), uint32, 12);
+		arena_trie_put(&lookup, shash("rock_i"), uint32, 15);
+
+		arena_trie_put(&lookup, shash("ice"), uint32, 18);
+		arena_trie_put(&lookup, shash("ice_i"), uint32, 21);
+
+		pstate->coast = arena_array_make(&pstate->arena, json_list_count(coast, S("objects")), Sprite);
+		for (JsonNode *node = json_list(coast, S("objects")); node; node = node->next) {
+			uint32_t x = json_find(node, S("x"), uint32_t);
+			uint32_t y = json_find(node, S("y"), uint32_t);
+			uint32_t width = json_find(node, S("width"), uint32_t);
+			uint32_t height = json_find(node, S("height"), uint32_t);
+
+			JsonNode *properties = json_list(node, S("properties"));
+
+			String sidestr = json_find(json_find_where(properties, S("name"), S("side")), S("value"), String);
+			String terrainstr = json_find(json_find_where(properties, S("name"), S("terrain")), S("value"), String);
+
+			uint32_2 side = *arena_trie_find(&lookup, string_hash64(sidestr), uint32_2);
+			uint32_t terrain = *arena_trie_find(&lookup, string_hash64(terrainstr), uint32);
+
+			float32 x0 = (terrain * width) + side.x * width;
+			float y0 = side.y * height;
+
+			Rectangle source = { x0, y0, width, height };
+			Rectangle dest = { x, y, width, height };
+
+			arena_array_put(pstate->coast, Sprite, { .texture = coast_texture, .src = source, .dest = dest });
+
+			LOG_INFO(SFMT "_" SFMT " = %.2f, %.2f", SARG(terrainstr), SARG(sidestr), x0, y0);
+		}
 
 		arena_scratch_end(scratch);
 
@@ -457,13 +537,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	pstate->renderer.draw_list = arena_array_make(scratch.arena, MAX_DRAW_COMMANDS, DrawCommand);
 
 	// Push to drawlist
-	texture_draw(&pstate->renderer, pstate->sprite1, (Vector2f){ .x = (size.x + 64) * 0.5f, (size.y + 64) * 0.5f }, (Vector2f){ 64.f, 64.f }, (Vector3f){ 0.0f, 1.0f, 1.0f });
-	texture_draw(&pstate->renderer, pstate->sprite0, pstate->player_position, (Vector2f){ 64.f, 64.f }, (Vector3f){ 1.0f, 1.0f, 1.0f });
+	Rectangle source = { .x = 0, .y = 0, .width = 16, .height = 16 };
+	Rectangle dest = { .x = 0.0f, .y = 0.0f, .width = 64, .height = 64 };
+	texture_draw(&pstate->renderer, pstate->sprite1, source, dest, (Vector2f){ 0 }, 0.0f, (Color){ 0.0f, 1.0f, 1.0f, 1.0f });
+	dest.x = pstate->player_position.x, dest.y = pstate->player_position.y;
+	texture_draw(&pstate->renderer, pstate->sprite0, source, dest, (Vector2f){ 0 }, 0.0f, (Color){ 0.0f, 1.0f, 1.0f, 1.0f });
 
-	for (uint32_t index = 0; index < arena_array_count(pstate->objects); ++index)
-		texture_draw(&pstate->renderer, pstate->objects[index].texture, pstate->objects[index].position, pstate->objects[index].size, (Vector3f){ 1.0f, 1.0f, 1.0f });
-
-	uint32_t count = arena_array_count(pstate->animated_sprites);
+	for (uint32_t index = 0; index < arena_array_count(pstate->objects); ++index) {
+		Sprite s = pstate->objects[index];
+		texture_draw(&pstate->renderer, s.texture, s.src, s.dest, s.origin, s.rotation, (Color){ 1.0f, 1.0f, 1.0f, 1.0f });
+	}
 
 	static float32 t = 0.0f;
 	static uint32_t frame_index = 0;
@@ -475,8 +558,15 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	}
 
 	t += dt;
-	for (uint32_t index = 0; index < arena_array_count(pstate->animated_sprites); ++index)
-		texture_draw(&pstate->renderer, pstate->animated_sprites[index].frames[frame_index], pstate->animated_sprites[index].position, pstate->animated_sprites[index].size, (Vector3f){ 1.0f, 1.0f, 1.0f });
+	for (uint32_t index = 0; index < arena_array_count(pstate->animated_sprites); ++index) {
+		AnimatedSprite s = pstate->animated_sprites[index];
+		texture_draw(&pstate->renderer, s.frames[frame_index], s.source, s.dest, s.origin, s.rotation, (Vector4f){ 1.0f, 1.0f, 1.0f, 1.0f });
+	}
+	for (uint32_t index = 0; index < arena_array_count(pstate->coast); ++index) { // Actually also animated, but only single image
+		Sprite s = pstate->coast[index];
+		s.src.y = s.src.y + (frame_index * (s.src.height * 3));
+		texture_draw(&pstate->renderer, s.texture, s.src, s.dest, s.origin, s.rotation, (Color){ 1.0f, 1.0f, 1.0f, 1.0f });
+	}
 
 	if (vulkan_frame_begin(pstate->context, size.x, size.y)) {
 		// Create single large vbo
@@ -491,15 +581,20 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			for (uint32_t index = 0; index < count; ++index) {
 				DrawCommand *cmd = &pstate->renderer.draw_list[index];
 
-				float u0 = cmd->source.x / cmd->texture_size.x;
-				float v0 = cmd->source.y / cmd->texture_size.y;
-				float u1 = (cmd->source.x + cmd->source.width) / cmd->texture_size.x;
-				float v1 = (cmd->source.y + cmd->source.height) / cmd->texture_size.y;
+				uint32_2 tex_size = vulkan_texture_size(pstate->context, cmd->texture);
+				float u0 = cmd->source.x / tex_size.x;
+				float v0 = cmd->source.y / tex_size.y;
+				float u1 = (cmd->source.x + cmd->source.width) / tex_size.x;
+				float v1 = (cmd->source.y + cmd->source.height) / tex_size.y;
 
 				float32 x0 = cmd->dest.x;
 				float32 y0 = cmd->dest.y;
 				float32 x1 = cmd->dest.x + cmd->dest.width;
 				float32 y1 = cmd->dest.y + cmd->dest.height;
+				if (cmd->texture.id == 35) {
+					uint32_t x = 0;
+					(void)x;
+				}
 
 				// clang-format off
                 float32 quad[] = {
@@ -662,14 +757,6 @@ RhiTexture texture_make(Renderer2D *renderer, String path) {
 	return result;
 }
 
-void texture_draw(Renderer2D *renderer, RhiTexture texture, Vector2f position, Vector2f size, Vector3f tint) {
-	uint32_2 imagesize = vulkan_texture_size(pstate->context, texture);
-	Rectangle source = { 0, 0, imagesize.x, imagesize.y };
-	Rectangle dest = { position.x, position.y, size.x, size.y };
-	texture_draw_ex(texture, source, dest, tint);
-}
-
-void texture_draw_ex(RhiTexture texture, Rectangle source, Rectangle dest, Vector3f tint) {
-	uint32_2 size = vulkan_texture_size(pstate->context, texture);
-	arena_array_put(pstate->renderer.draw_list, DrawCommand, { .texture = texture, .dest = dest, .source = source, .texture_size = size });
+void texture_draw(Renderer2D *renderer, RhiTexture texture, Rectangle source, Rectangle dest, Vector2f origin, float32 rotation, Color tint) {
+	arena_array_put(pstate->renderer.draw_list, DrawCommand, { .texture = texture, .dest = dest, .source = source });
 }

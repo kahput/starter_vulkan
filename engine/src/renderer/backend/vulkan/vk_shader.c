@@ -276,7 +276,7 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 	if (assert_hash == 0)
 		assert_hash = hash;
 
-    ASSERT(assert_hash == hash);
+	ASSERT(assert_hash == hash);
 
 	VulkanPipeline *popped_slot = arena_list_pop(&shader->first_free, VulkanPipeline);
 
