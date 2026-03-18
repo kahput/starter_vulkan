@@ -254,11 +254,11 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				pstate->tile_lookup[index] = *tile;
 		}
 
-		// Map data
-
 		// Tile data
 		pstate->map_width = json_find(root, S("width"), uint32_t);
 		pstate->map_height = json_find(root, S("height"), uint32_t);
+
+		Sprite *dyn = arena_array_make(scratch.arena, 512, Sprite);
 
 		float32 *buffers[8] = { 0 };
 		uint32_t floats_per_quad = 24;
@@ -328,13 +328,12 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				if (string_equals(S("Objects"), name) == false)
 					continue;
 
-				pstate->objects = arena_array_make(&pstate->arena, json_list_count(layer, S("objects")), Sprite);
 				for (JsonNode *object_node = json_list(layer, S("objects")); object_node; object_node = object_node->next) {
 					uint32_t gid = 0;
 					if ((gid = json_find(object_node, S("gid"), uint32_t) == 0))
 						break;
 
-					Sprite *object = arena_array_push(pstate->objects);
+					Sprite *object = arena_darray_push(scratch.arena, dyn, Sprite);
 					Sprite *tile = &pstate->tile_lookup[json_find(object_node, S("gid"), uint32_t)];
 
 					if (json_find(object_node, S("id"), uint32_t) == 210) {
@@ -372,6 +371,10 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		JsonNode *water = json_find_where(layers, S("name"), S("Water"));
 		JsonNode *coast = json_find_where(layers, S("name"), S("Coast"));
 
+		ArenaTrie entity_texture_lookup =
+			arena_trie_make(scratch.arena);
+
+		String character_folder = S("assets/pokemon/graphics/characters");
 		for (JsonNode *entity = json_list(entities, S("objects")); entity; entity = entity->next) {
 			String name = json_find(entity, S("name"), String);
 			JsonNode *properties = json_list(entity, S("properties"));
@@ -384,8 +387,54 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				LOG_INFO(SFMT ": %.2f, %.2f", SARG(name), entity_x, entity_y);
 				pstate->player.dest.x = entity_x;
 				pstate->player.dest.y = entity_y;
+			} else if (string_equals(S("Character"), name)) {
+				Sprite *object = arena_darray_push(scratch.arena, dyn, Sprite);
+
+				JsonNode *graphic_property = json_find_where(json_list(entity, S("properties")), S("name"), S("graphic"));
+				String graphic = json_find(graphic_property, S("value"), String);
+
+				uint32_t hash = string_hash64(graphic);
+				RhiTexture *texture = arena_trie_find(&entity_texture_lookup, hash, RhiTexture);
+				if (texture == NULL) {
+					texture = arena_trie_push(&entity_texture_lookup, hash, RhiTexture);
+
+					String file_path = stringpath_join(scratch.arena, character_folder, graphic);
+					file_path = string_concat(scratch.arena, file_path, S(".png"));
+					ImageSource grahpic_src = importer_load_image(scratch.arena, file_path);
+
+					*texture = vulkan_texture_make(
+						pstate->context, grahpic_src.width, grahpic_src.height,
+						TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
+						TEXTURE_USAGE_SAMPLED, grahpic_src.pixels);
+				}
+
+				JsonNode *direction_property = json_find_where(json_list(entity, S("properties")), S("name"), S("direction"));
+				String direction = json_find(graphic_property, S("value"), String);
+
+				Rectangle source = { .width = 128, .height = 128 };
+
+				if (string_equals(S("down"), direction))
+					source.y = source.height * 0;
+				if (string_equals(S("left"), direction))
+					source.y = source.height * 1;
+				if (string_equals(S("right"), direction))
+					source.y = source.height * 2;
+				if (string_equals(S("up"), direction))
+					source.y = source.height * 3;
+
+				*object = (Sprite){
+					.texture = *texture,
+					.src = source,
+					.dest = {
+					  .x = json_find(entity, S("x"), uint32_t),
+					  .y = json_find(entity, S("y"), uint32_t),
+					  .width = source.width,
+					  .height = source.height },
+				};
 			}
 		}
+
+		pstate->objects = arena_array_copy(&pstate->arena, dyn, Sprite);
 
 		AnimatedSprite *animated = NULL;
 		for (JsonNode *node = json_list(water, S("objects")); node; node = node->next) {
@@ -470,8 +519,6 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			Rectangle dest = { x, y, width, height };
 
 			arena_array_put(pstate->coast, Sprite, { .texture = coast_texture, .src = source, .dest = dest });
-
-			LOG_INFO(SFMT "_" SFMT " = %.2f, %.2f", SARG(terrainstr), SARG(sidestr), x0, y0);
 		}
 
 		arena_scratch_end(scratch);
@@ -588,7 +635,9 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			p->src.y = p->src.height * 1;
 
 		p->src.x = p->src.width * frame_index;
-	}
+	} else {
+        p->src.x = 0;
+    }
 
 	t += dt;
 	for (uint32_t index = 0; index < arena_array_count(pstate->animated_sprites); ++index) {
