@@ -47,8 +47,8 @@ ENGINE_API String stringpath_directory(String path);
 ENGINE_API String stringpath_filename(String path);
 ENGINE_API String stringpath_extension(String path);
 
-ENGINE_API String string_path_join(Arena *arena, String head, String tail);
-ENGINE_API String string_path_normalize(Arena *arena, String path);
+ENGINE_API String stringpath_join(Arena *arena, String head, String tail);
+ENGINE_API String stringpath_normalize(Arena *arena, String path);
 
 ENGINE_API String string_copy(Arena *arena, String s);
 

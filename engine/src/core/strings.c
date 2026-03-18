@@ -278,7 +278,7 @@ String stringpath_extension(String path) {
 
 	return (String){ 0 };
 }
-String string_path_join(Arena *arena, String head, String tail) {
+String stringpath_join(Arena *arena, String head, String tail) {
 	if (head.length == 0)
 		return string_copy(arena, tail);
 	if (tail.length == 0)
@@ -304,7 +304,7 @@ String string_path_join(Arena *arena, String head, String tail) {
 		return string_concat(arena, head, tail);
 }
 
-String string_path_normalize(Arena *arena, String path) {
+String stringpath_normalize(Arena *arena, String path) {
 	String result = string_wrap(arena_push_count(arena, path.length, char));
 	for (uint32_t index = 0; index < path.length; ++index) {
 		if (path.memory[index] == '\\')

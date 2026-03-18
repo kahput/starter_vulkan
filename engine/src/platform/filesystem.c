@@ -86,7 +86,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 			continue;
 		}
 
-		String temp_full_path = string_path_join(scratch.arena, directory_path, entry_name); // All string_push* calls guarantee \0 terminated
+		String temp_full_path = stringpath_join(scratch.arena, directory_path, entry_name); // All string_push* calls guarantee \0 terminated
 
 		struct stat info;
 		if (stat(temp_full_path.memory, &info) != 0) {
@@ -109,7 +109,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 				}
 			}
 		} else {
-			String permanent_path = string_path_join(arena, directory_path, entry_name);
+			String permanent_path = stringpath_join(arena, directory_path, entry_name);
 			stringlist_push(arena, &list, permanent_path);
 		}
 	}

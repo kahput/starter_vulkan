@@ -112,6 +112,8 @@ typedef int32_t int32;
 typedef struct { int32 x, y; } int32_2;
 typedef struct { int32 x, y, z; } int32_3;
 typedef struct { int32 x, y, z, w; } int32_4;
+
+
 // clang-format on
 
 typedef uint32_t Flag;

@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-thread_local Arena scratch_arenas[2] = { 0 };
+Arena scratch_arenas[2] = { 0 };
 
 Arena arena_make(size_t size) { return (Arena){ .memory = malloc(size), .capacity = size }; }
 

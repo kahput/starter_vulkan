@@ -46,7 +46,6 @@ typedef struct {
 	RhiShader static_shader;
 
 	RhiBuffer global_buffer;
-	RhiBuffer vbo;
 
 	DrawCommand *draw_list;
 	RhiBuffer dynamic_ssbo;
@@ -63,6 +62,13 @@ typedef struct {
 	Color color;
 } Sprite;
 
+typedef struct SpriteMap SpriteMap;
+struct SpriteMap {
+	SpriteMap *children[4];
+	uint32_t key;
+	Sprite value;
+};
+
 typedef struct {
 	RhiTexture *frames;
 	uint32_t frame_count;
@@ -74,14 +80,6 @@ typedef struct {
 } AnimatedSprite;
 
 typedef struct {
-	RhiTexture texture;
-	float u0, v0, u1, v1;
-
-	uint32_t tilewidth, tileheight;
-	uint32_t columns, rows;
-} BakedTile;
-
-typedef struct {
 	Arena arena;
 	bool is_initialized;
 
@@ -91,7 +89,7 @@ typedef struct {
 	Renderer2D renderer;
 	RhiTexture sprite0, sprite1;
 
-	BakedTile *tile_lookup;
+	Sprite *tile_lookup;
 	// TERRRAIN
 	RhiTexture terrain_texture[8];
 	RhiBuffer terrain_vbos[8];
@@ -101,9 +99,11 @@ typedef struct {
 
 	// Objects
 	Sprite *objects;
+
 	Sprite *coast;
 	Camera camera;
-	Vector2f player_position;
+
+	Sprite player;
 
 	AnimatedSprite *animated_sprites;
 
@@ -125,6 +125,24 @@ RhiTexture texture_make(Renderer2D *renderer, String path);
 void texture_draw(Renderer2D *renderer, RhiTexture texture, Rectangle source, Rectangle dest, Vector2f origin, float32 rotation, Color tint);
 static int sort_draw_commands(const void *a, const void *b) { return ((DrawCommand *)a)->texture.id - ((DrawCommand *)b)->texture.id; }
 
+Sprite *sprite_upsert(Arena *arena, SpriteMap **map, uint32_t key) {
+	for (uint64_t hash = hash_struct(key); *map; hash <<= 2) {
+		if (key == (*map)->key) {
+			return &(*map)->value;
+		}
+
+		map = &(*map)->children[hash >> 62];
+	}
+
+	if (arena == NULL) {
+		return 0;
+	}
+
+	*map = arena_push_struct(arena, SpriteMap);
+	(*map)->key = key;
+	return &(*map)->value;
+}
+
 FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	pstate = (PermanentState *)context->permanent_memory;
 	tstate = (TransientState *)context->transient_memory;
@@ -136,19 +154,20 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		pstate->renderer = renderer_make();
 
 		ArenaTemp scratch = arena_scratch_begin(NULL);
-		ArenaTrie tile_lookup = arena_trie_make(scratch.arena);
+		SpriteMap *tilemap = NULL;
 		String map_path = S("assets/pokemon/data/maps/world.tmj");
 
 		String source = filesystem_read(scratch.arena, map_path);
 		JsonNode *root = json_parse(scratch.arena, source);
 
 		uint32_t tile_count = 0;
+		// Tilesets
 		for (JsonNode *map_tileset = json_list(root, S("tilesets")); map_tileset; map_tileset = map_tileset->next) {
 			String source = json_find(map_tileset, S("source"), String);
 			uint32_t firstgid = json_find(map_tileset, S("firstgid"), uint32_t);
 
-			source = string_path_join(scratch.arena, stringpath_directory(map_path), source);
-			source = string_path_normalize(scratch.arena, source);
+			source = stringpath_join(scratch.arena, stringpath_directory(map_path), source);
+			source = stringpath_normalize(scratch.arena, source);
 
 			source = filesystem_read(scratch.arena, source);
 			JsonNode *tileset = json_parse(scratch.arena, source);
@@ -156,8 +175,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 			if (json_find(tileset, S("columns"), uint32_t)) {
 				String image_path = json_find(tileset, S("image"), String);
-				image_path = string_path_normalize(scratch.arena, image_path);
-				image_path = string_path_join(scratch.arena, stringpath_directory(map_path), image_path);
+				image_path = stringpath_normalize(scratch.arena, image_path);
+				image_path = stringpath_join(scratch.arena, stringpath_directory(map_path), image_path);
 				LOG_INFO("ImagePath: " SFMT, SARG(image_path));
 
 				ImageSource image_src = importer_load_image(scratch.arena, image_path);
@@ -178,29 +197,18 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					uint32_t atlas_gridx = (tile_id - firstgid) % columns;
 					uint32_t atlas_gridy = (tile_id - firstgid) / columns;
 
-					float32 atlasx = (float32)atlas_gridx / (float32)columns;
-					float32 atlasy = (float32)atlas_gridy / (float32)rows;
-
-					Rectangle source = {
-						.x = atlas_gridx * tilewidth,
-						.y = atlas_gridy * tileheight,
-						.width = tilewidth,
-						.height = tileheight,
-					};
-
-					BakedTile tile = {
+					Sprite tile = {
 						.texture = texture,
-						.columns = columns,
-						.rows = rows,
-						.tilewidth = tilewidth,
-						.tileheight = tileheight,
-						.u0 = source.x / image_src.width,
-						.v0 = source.y / image_src.height,
-						.u1 = (source.x + source.width) / image_src.width,
-						.v1 = (source.y + source.height) / image_src.height,
+						.src = {
+						  .x = atlas_gridx * tilewidth,
+						  .y = atlas_gridy * tileheight,
+						  .width = tilewidth,
+						  .height = tileheight,
+						},
+						.dest = { .width = tilewidth, .height = tileheight },
 					};
 
-					*arena_trie_push(&tile_lookup, index + firstgid, BakedTile) = tile;
+					*sprite_upsert(scratch.arena, &tilemap, index + firstgid) = tile;
 				}
 
 			} else {
@@ -208,8 +216,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					uint32_t id = json_find(image_node, S("id"), uint32_t);
 					String image_path = json_find(image_node, S("image"), String);
 
-					image_path = string_path_normalize(scratch.arena, image_path);
-					image_path = string_path_join(scratch.arena, stringpath_directory(map_path), image_path);
+					image_path = stringpath_normalize(scratch.arena, image_path);
+					image_path = stringpath_join(scratch.arena, stringpath_directory(map_path), image_path);
 					ImageSource image_src = importer_load_image(scratch.arena, image_path);
 
 					uint32_t tile_id = id + firstgid;
@@ -221,23 +229,17 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 						.height = image_src.height,
 					};
 
-					BakedTile tile = {
+					Sprite tile = {
 						.texture = vulkan_texture_make(pstate->context,
 							image_src.width, image_src.height,
 							TEXTURE_TYPE_2D,
 							TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED,
 							image_src.pixels),
-						.columns = 1,
-						.rows = 1,
-						.tilewidth = image_src.width,
-						.tileheight = image_src.height,
-						.u0 = source.x / image_src.width,
-						.v0 = source.y / image_src.height,
-						.u1 = (source.x + source.width) / image_src.width,
-						.v1 = (source.y + source.height) / image_src.height,
+						.src = source,
+						.dest = source,
 					};
 
-					*arena_trie_push(&tile_lookup, id + firstgid, BakedTile) = tile;
+					*sprite_upsert(scratch.arena, &tilemap, id + firstgid) = tile;
 
 					// NOTE: id in tsj (tileset file) is local. Id repeats for each tileset.
 					// Not guaranteed to be sequential either (can't use id == index)
@@ -245,20 +247,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			}
 		}
 
-		pstate->tile_lookup = arena_array_make(&pstate->arena, tile_count + 1, BakedTile);
+		pstate->tile_lookup = arena_array_make(&pstate->arena, tile_count + 1, Sprite);
 		for (uint32_t index = 1; index < tile_count; ++index) {
-			BakedTile *tile = arena_trie_find(&tile_lookup, index, BakedTile);
+			Sprite *tile = sprite_upsert(NULL, &tilemap, index);
 			if (tile)
 				pstate->tile_lookup[index] = *tile;
 		}
 
-		JsonNode *layers = json_list(root, S("layers"));
+		// Map data
 
-		JsonNode *terrain = json_find_where(layers, S("name"), S("Terrain"));
-		JsonNode *entities = json_find_where(layers, S("name"), S("Entities"));
-		JsonNode *water = json_find_where(layers, S("name"), S("Water"));
-		JsonNode *coast = json_find_where(layers, S("name"), S("Coast"));
-
+		// Tile data
 		pstate->map_width = json_find(root, S("width"), uint32_t);
 		pstate->map_height = json_find(root, S("height"), uint32_t);
 
@@ -276,7 +274,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				for (JsonNode *data_node = json_list(layer, S("data")); data_node; data_node = data_node->next, index++) {
 					uint32_t gid = json_as(data_node, uint32_t);
 
-					BakedTile *tile = &pstate->tile_lookup[gid];
+					Sprite *tile = &pstate->tile_lookup[gid];
 					if (tile->texture.id == 0)
 						continue;
 
@@ -286,15 +284,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					uint32_t x = index % pstate->map_width;
 					uint32_t y = index / pstate->map_width;
 
-					float u0 = tile->u0;
-					float v0 = tile->v0;
-					float u1 = tile->u1;
-					float v1 = tile->v1;
+					uint32_2 image_size = vulkan_texture_size(pstate->context, tile->texture);
+					float u0 = tile->src.x / image_size.x;
+					float v0 = tile->src.y / image_size.y;
+					float u1 = (tile->src.x + tile->src.width) / image_size.x;
+					float v1 = (tile->src.y + tile->src.height) / image_size.y;
 
-					float32 x0 = x * tile->tilewidth;
-					float32 y0 = y * tile->tileheight;
-					float32 x1 = x0 + tile->tilewidth;
-					float32 y1 = y0 + tile->tileheight;
+					float32 x0 = x * tile->dest.width;
+					float32 y0 = y * tile->dest.width;
+					float32 x1 = x0 + tile->dest.width;
+					float32 y1 = y0 + tile->dest.width;
 
 					// clang-format off
                     float32 quad[] = {
@@ -336,21 +335,23 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 						break;
 
 					Sprite *object = arena_array_push(pstate->objects);
-					BakedTile *tile = &pstate->tile_lookup[json_find(object_node, S("gid"), uint32_t)];
+					Sprite *tile = &pstate->tile_lookup[json_find(object_node, S("gid"), uint32_t)];
 
-					uint32_2 size = vulkan_texture_size(pstate->context, tile->texture);
+					if (json_find(object_node, S("id"), uint32_t) == 210) {
+						uint32_t x = 3;
+					}
+
 					*object = (Sprite){
-						.src = { 0, 0, size.x, size.y },
+						.texture = tile->texture,
+						.src = tile->src,
 						.dest = {
 						  .x = json_find(object_node, S("x"), float32),
 						  .y = json_find(object_node, S("y"), float32),
-						  .width = size.x,
-						  .height = size.y,
+						  .width = tile->dest.width,
+						  .height = tile->dest.height,
 						},
 					};
-					object->dest.y -= object->dest.width;
-
-					object->texture = tile->texture;
+					object->dest.y -= object->dest.height;
 				}
 			}
 		}
@@ -364,6 +365,13 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					buffers[index]);
 		}
 
+		// Other object data
+		JsonNode *layers = json_list(root, S("layers"));
+
+		JsonNode *entities = json_find_where(layers, S("name"), S("Entities"));
+		JsonNode *water = json_find_where(layers, S("name"), S("Water"));
+		JsonNode *coast = json_find_where(layers, S("name"), S("Coast"));
+
 		for (JsonNode *entity = json_list(entities, S("objects")); entity; entity = entity->next) {
 			String name = json_find(entity, S("name"), String);
 			JsonNode *properties = json_list(entity, S("properties"));
@@ -374,8 +382,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 			if (string_equals(S("Player"), name) && at_house) {
 				LOG_INFO(SFMT ": %.2f, %.2f", SARG(name), entity_x, entity_y);
-				pstate->player_position.x = entity_x;
-				pstate->player_position.y = entity_y;
+				pstate->player.dest.x = entity_x;
+				pstate->player.dest.y = entity_y;
 			}
 		}
 
@@ -429,16 +437,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		arena_trie_put(&lookup, shash("bottomright"), uint32_2, { 2, 2 });
 
 		arena_trie_put(&lookup, shash("grass"), uint32, 0);
-		arena_trie_put(&lookup, shash("grass_i"), uint32, 3);
+		arena_trie_put(&lookup, shash("grass_i"), uint32, 1);
 
-		arena_trie_put(&lookup, shash("sand_i"), uint32, 6);
-		arena_trie_put(&lookup, shash("sand"), uint32, 9);
+		arena_trie_put(&lookup, shash("sand_i"), uint32, 2);
+		arena_trie_put(&lookup, shash("sand"), uint32, 3);
 
-		arena_trie_put(&lookup, shash("rock"), uint32, 12);
-		arena_trie_put(&lookup, shash("rock_i"), uint32, 15);
+		arena_trie_put(&lookup, shash("rock"), uint32, 4);
+		arena_trie_put(&lookup, shash("rock_i"), uint32, 5);
 
-		arena_trie_put(&lookup, shash("ice"), uint32, 18);
-		arena_trie_put(&lookup, shash("ice_i"), uint32, 21);
+		arena_trie_put(&lookup, shash("ice"), uint32, 6);
+		arena_trie_put(&lookup, shash("ice_i"), uint32, 7);
 
 		pstate->coast = arena_array_make(&pstate->arena, json_list_count(coast, S("objects")), Sprite);
 		for (JsonNode *node = json_list(coast, S("objects")); node; node = node->next) {
@@ -453,7 +461,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			String terrainstr = json_find(json_find_where(properties, S("name"), S("terrain")), S("value"), String);
 
 			uint32_2 side = *arena_trie_find(&lookup, string_hash64(sidestr), uint32_2);
-			uint32_t terrain = *arena_trie_find(&lookup, string_hash64(terrainstr), uint32);
+			uint32_t terrain = *arena_trie_find(&lookup, string_hash64(terrainstr), uint32) * 3;
 
 			float32 x0 = (terrain * width) + side.x * width;
 			float y0 = side.y * height;
@@ -502,6 +510,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 		LOG_INFO("Asset count = %d", tracker.tracked_file_count);
 
+		ImageSource player_src = importer_load_image(scratch.arena, S("assets/pokemon/graphics/characters/player.png"));
+		pstate->player.src.width = (float32)player_src.width / 4;
+		pstate->player.src.height = (float32)player_src.height / 4;
+		pstate->player.dest.width = (float32)player_src.width / 4;
+		pstate->player.dest.height = (float32)player_src.height / 4;
+		pstate->player.texture = vulkan_texture_make(
+			pstate->context, player_src.width, player_src.height,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED,
+			player_src.pixels);
+
 		arena_scratch_end(scratch);
 
 		pstate->is_initialized = true;
@@ -525,13 +543,13 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	if (input_key_down(KEY_CODE_LEFTSHIFT))
 		speed = 1000;
 
-	pstate->player_position.x += input.x * speed * dt;
-	pstate->player_position.y += input.y * speed * dt;
+	pstate->player.dest.x += input.x * speed * dt;
+	pstate->player.dest.y += input.y * speed * dt;
 
 	uint32_2 size = window_size_pixel(context->display);
 
-	pstate->camera.position.x = MAX(pstate->player_position.x - size.x * .5f + 32, 0);
-	pstate->camera.position.y = MAX(pstate->player_position.y - size.y * .5f + 32, 0);
+	pstate->camera.position.x = MAX(pstate->player.dest.x - size.x * .5f + 32, 0);
+	pstate->camera.position.y = MAX(pstate->player.dest.y - size.y * .5f + 32, 0);
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	pstate->renderer.draw_list = arena_array_make(scratch.arena, MAX_DRAW_COMMANDS, DrawCommand);
@@ -540,8 +558,10 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	Rectangle source = { .x = 0, .y = 0, .width = 16, .height = 16 };
 	Rectangle dest = { .x = 0.0f, .y = 0.0f, .width = 64, .height = 64 };
 	texture_draw(&pstate->renderer, pstate->sprite1, source, dest, (Vector2f){ 0 }, 0.0f, (Color){ 0.0f, 1.0f, 1.0f, 1.0f });
-	dest.x = pstate->player_position.x, dest.y = pstate->player_position.y;
-	texture_draw(&pstate->renderer, pstate->sprite0, source, dest, (Vector2f){ 0 }, 0.0f, (Color){ 0.0f, 1.0f, 1.0f, 1.0f });
+
+	Sprite *p = &pstate->player;
+
+	texture_draw(&pstate->renderer, p->texture, p->src, p->dest, (Vector2f){ 0 }, 0.0f, (Color){ 0.0f, 1.0f, 1.0f, 1.0f });
 
 	for (uint32_t index = 0; index < arena_array_count(pstate->objects); ++index) {
 		Sprite s = pstate->objects[index];
@@ -555,6 +575,19 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		t = 0.0f;
 		LOG_INFO("FPS: %.2f", 1 / dt);
 		frame_index = (frame_index + 1) % 4;
+	}
+
+	if (vector2f_length(input) > 0) {
+		if (input.y > 0)
+			p->src.y = p->src.height * 0;
+		if (input.y < 0)
+			p->src.y = p->src.height * 3;
+		if (input.x > 0)
+			p->src.y = p->src.height * 2;
+		if (input.x < 0)
+			p->src.y = p->src.height * 1;
+
+		p->src.x = p->src.width * frame_index;
 	}
 
 	t += dt;
@@ -726,19 +759,19 @@ Renderer2D renderer_make(void) {
 	// vulkan_buffer_make(pstate->context, BUFFER_TYPE_STORAGE, MAX_DRAW_COMMANDS, STRIDE, NULL);
 	result.dynamic_ssbo = vulkan_buffer_make(pstate->context, BUFFER_TYPE_STORAGE, BUFFER_MEMORY_SHARED, buffer_size, NULL);
 
-	// clang-format off
-    float vertices[] = { 
-        // pos      // tex
-        0.0f, 1.0f, 0.0f, 1.0f,
-        1.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f, 
-    
-        0.0f, 1.0f, 0.0f, 1.0f,
-        1.0f, 1.0f, 1.0f, 1.0f,
-        1.0f, 0.0f, 1.0f, 0.0f
-    };
-	// clang-format on
-	result.vbo = vulkan_buffer_make(pstate->context, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(vertices), vertices);
+	/* // clang-format off */
+	/* float vertices[] = {  */
+	/* // pos      // tex */
+	/* 0.0f, 1.0f, 0.0f, 1.0f, */
+	/* 1.0f, 0.0f, 1.0f, 0.0f, */
+	/* 0.0f, 0.0f, 0.0f, 0.0f,  */
+
+	/* 0.0f, 1.0f, 0.0f, 1.0f, */
+	/* 1.0f, 1.0f, 1.0f, 1.0f, */
+	/* 1.0f, 0.0f, 1.0f, 0.0f */
+	/* }; */
+	/* // clang-format on */
+	/* result.vbo = vulkan_buffer_make(pstate->context, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(vertices), vertices); */
 
 	return result;
 }

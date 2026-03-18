@@ -1,8 +1,6 @@
 #pragma once
 
 #include "common.h"
-#include <stdatomic.h>
-#include <threads.h>
 typedef struct arena {
 	size_t offset, capacity;
 	void *memory;
@@ -21,8 +19,8 @@ void arena_destroy(Arena *arena);
 	(Arena) { .memory = (s), .capacity = sizeof(*(s)) }
 #define arena_wrap_array(array) \
 	(Arena) { .memory = (array), .capacity = sizeof((array)) }
-#define arena_wrap_count(memory, count) \
-	(Arena) { .memory = (memory), .capacity = sizeof(*(memory)) * (count) }
+#define arena_wrap_count(ptr, count) \
+	(Arena) { .memory = (ptr), .capacity = sizeof(*(ptr)) * (count) }
 
 ENGINE_API void *arena_push(Arena *arena, size_t size, size_t align, bool zero);
 ENGINE_API void *arena_push_copy(Arena *arena, void *src, size_t size, size_t align);
@@ -35,7 +33,6 @@ void arena_reset(Arena *arena);
 ENGINE_API ArenaTemp arena_temp_begin(Arena *arena);
 ENGINE_API void arena_temp_end(ArenaTemp temp);
 
-extern thread_local Arena scratch_arenas[2];
 ENGINE_API ArenaTemp arena_scratch_begin(Arena *conflict);
 #define arena_scratch_end(scratch) arena_temp_end(scratch)
 
@@ -61,6 +58,7 @@ static inline ArenaTrie arena_trie_make(Arena *arena) { return (ArenaTrie){ .are
 ENGINE_API ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, const char *debug_type_name);
 ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, bool intrusive, const char *debug_type_name);
 
+#define arena_trie_wrap(buf, count) ((ArenaTrie){ .arena = &arena_wrap_count(buf, count) })
 #define arena_trie_wrap_array(arr)                                                    \
 	(ArenaTrie) {                                                                     \
 		.arena = &(Arena){ .offset = 0, .capacity = sizeof((arr)), .memory = (arr) }, \
@@ -102,7 +100,7 @@ typedef struct alignas(16) {
 	uint32_t count, capacity;
 } ArenaArrayHeader;
 
-#define arena_array_make(arena, cap, T) (((ArenaArrayHeader *)arena_push(arena, sizeof(ArenaArrayHeader), alignof(ArenaArrayHeader), true))->capacity = cap, (T *)arena_push_count((arena), (cap), T))
+#define arena_array_make(arena, cap, T) (((ArenaArrayHeader *)arena_push(arena, sizeof(ArenaArrayHeader), 16, true))->capacity = cap, arena_push_count((arena), (cap), T))
 
 #define arena_array_count(arr) ((arr) ? HEADER(arr, ArenaArrayHeader)->count : 0)
 #define arena_array_capacity(arr) ((arr) ? HEADER(arr, ArenaArrayHeader)->capacity : 0)
@@ -119,4 +117,4 @@ ENGINE_API void *arena_array_ensure(Arena *arena, void *arr, size_t item_size);
 	((arr) = arena_array_ensure((arena), (arr), sizeof(T)), \
 		arena_array_push(arr))
 #define arena_darray_put(arena, arr, T, ...) \
-	(void)(arr = arena_array_ensure((arena), (arr), sizeof(T)), arena_array_put(arr, T, __VA_ARGS__))
+	(void)((arr) = arena_array_ensure((arena), (arr), sizeof(T)), arena_array_put((arr), T, __VA_ARGS__))
