@@ -409,7 +409,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				}
 
 				JsonNode *direction_property = json_find_where(json_list(entity, S("properties")), S("name"), S("direction"));
-				String direction = json_find(graphic_property, S("value"), String);
+				String direction = json_find(direction_property, S("value"), String);
 
 				Rectangle source = { .width = 128, .height = 128 };
 
