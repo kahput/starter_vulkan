@@ -13,7 +13,7 @@
 #include "dirent.h"
 
 bool filesystem_file_exists(String path) {
-	FILE *file = fopen((const char *)path.memory, "r");
+	FILE *file = fopen((const char *)path.chars, "r");
 	if (file) {
 		fclose(file);
 		return true;
@@ -21,11 +21,11 @@ bool filesystem_file_exists(String path) {
 	return false;
 }
 
-String filesystem_read(Arena *arena, String path) {
-	FILE *file = fopen((const char *)path.memory, "rb");
+Span filesystem_read(Arena *arena, String path) {
+	FILE *file = fopen((const char *)path.chars, "rb");
 	if (file == NULL) {
-		LOG_ERROR("Failed to read file '%s': %s", path.memory, strerror(errno));
-		return (String){ 0 };
+		LOG_ERROR("Failed to read file '%s': %s", path.chars, strerror(errno));
+		return (Span){ 0 };
 	}
 
 	fseek(file, 0L, SEEK_END);
@@ -38,16 +38,16 @@ String filesystem_read(Arena *arena, String path) {
 
 	fclose(file);
 
-	return (String){ .memory = byte_content, .length = size };
+	return span_make(byte_content, size);
 }
 
 bool filesystem_file_copy(String from, String to) {
-	int input = open(from.memory, O_RDONLY);
+	int input = open(from.chars, O_RDONLY);
 	if (input == -1)
 		return false;
 
 	// 0666 = Read/Write permissions
-	int output = open(to.memory, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	int output = open(to.chars, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 	if (output == -1) {
 		close(input);
 		return false;
@@ -89,7 +89,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 		String temp_full_path = stringpath_join(scratch.arena, directory_path, entry_name); // All string_push* calls guarantee \0 terminated
 
 		struct stat info;
-		if (stat(temp_full_path.memory, &info) != 0) {
+		if (stat(temp_full_path.chars, &info) != 0) {
 			continue;
 		}
 
@@ -121,7 +121,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 
 uint64_t filesystem_last_modified(String path) {
 	struct stat attrib;
-	if (stat(path.memory, &attrib) == 0) {
+	if (stat(path.chars, &attrib) == 0) {
 		return (uint64_t)attrib.st_mtime;
 	}
 	return 0;

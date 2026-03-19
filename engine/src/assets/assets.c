@@ -46,7 +46,7 @@ bool asset_tracker_track_directory(AssetTracker *tracker, String directory) {
 bool asset_tracker_track_file(AssetTracker *tracker, String file_path) {
 	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
 	String name = string_copy(scratch.arena, stringpath_filename(file_path));
-	AssetEntry *entry = arena_trie_push(&tracker->trie, string_hash64(name), AssetEntry);
+	AssetEntry *entry = arena_trie_push(&tracker->trie, span_string(name), AssetEntry);
 
 	if (entry->full_path.length == 0) {
 		entry->full_path = string_copy(tracker->arena, file_path);
@@ -70,8 +70,8 @@ UUID asset_tracker_request_shader(AssetTracker *tracker, String key) {
 	String vertex_shader_key = string_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
 	String fragment_shader_key = string_replace(scratch.arena, key, S("glsl"), S("frag.spv"));
 
-	AssetEntry *vs_entry = arena_trie_find(&tracker->trie, string_hash64(vertex_shader_key), AssetEntry);
-	AssetEntry *fs_entry = arena_trie_find(&tracker->trie, string_hash64(fragment_shader_key), AssetEntry);
+	AssetEntry *vs_entry = arena_trie_find(&tracker->trie, span_string(vertex_shader_key), AssetEntry);
+	AssetEntry *fs_entry = arena_trie_find(&tracker->trie, span_string(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
 		LOG_WARN("Assets: Key '%.*s' is not tracked", SARG(key));
 		arena_scratch_end(scratch);
@@ -90,7 +90,7 @@ UUID asset_tracker_request_shader(AssetTracker *tracker, String key) {
 }
 
 UUID asset_tracker_request_model(AssetTracker *tracker, String key) {
-	AssetEntry *entry = arena_trie_find(&tracker->trie, string_hash64(key), AssetEntry);
+	AssetEntry *entry = arena_trie_find(&tracker->trie, span_string(key), AssetEntry);
 	if (entry == NULL)
 		return 0;
 
@@ -103,7 +103,7 @@ UUID asset_tracker_request_model(AssetTracker *tracker, String key) {
 }
 
 UUID asset_tracker_request_image(AssetTracker *tracker, String key) {
-	AssetEntry *entry = arena_trie_find(&tracker->trie, string_hash64(key), AssetEntry);
+	AssetEntry *entry = arena_trie_find(&tracker->trie, span_string(key), AssetEntry);
 	if (entry == NULL) {
 		LOG_WARN("AssetTracker: No image '%.*s'", SARG(key));
 		return 0;

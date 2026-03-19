@@ -84,22 +84,22 @@ void skip_whitespace_and_comments(Lexer *lexer) {
 }
 
 TokenType match_keyword(Token *token) {
-	switch (token->string.memory[0]) {
+	switch (token->string.chars[0]) {
 		case 't':
 			if (token->string.length == 4)
-				if (memcmp(token->string.memory, token_type_names[TOKEN_TRUE], token->string.length) == 0)
+				if (memcmp(token->string.chars, token_type_names[TOKEN_TRUE], token->string.length) == 0)
 					return TOKEN_TRUE;
 			break;
 
 		case 'f':
 			if (token->string.length == 5)
-				if (memcmp(token->string.memory, token_type_names[TOKEN_FALSE], token->string.length) == 0)
+				if (memcmp(token->string.chars, token_type_names[TOKEN_FALSE], token->string.length) == 0)
 					return TOKEN_FALSE;
 			break;
 
 		case 'n':
 			if (token->string.length == 4)
-				if (memcmp(token->string.memory, token_type_names[TOKEN_NULL], token->string.length) == 0)
+				if (memcmp(token->string.chars, token_type_names[TOKEN_NULL], token->string.length) == 0)
 					return TOKEN_NULL;
 			break;
 	}
@@ -115,7 +115,7 @@ Token scan_token(Lexer *lexer) {
 
 	Token token = {
 		.type = TOKEN_UNKNOWN,
-		.string = { .memory = lexer->at, .length = 1 },
+		.string = { .chars = lexer->at, .length = 1 },
 		.line = lexer->line,
 		.column = lexer->column,
 	};
@@ -200,7 +200,7 @@ Token scan_token(Lexer *lexer) {
 
 		case '"': {
 			token.type = TOKEN_STRING;
-			token.string.memory = lexer->at;
+			token.string.chars = lexer->at;
 			while (!is_at_end(lexer->at[0]) && lexer->at[0] != '"') {
 				if (lexer->at[0] == '\\' && lexer->at[1] != '\0') {
 					++lexer->at;
@@ -210,7 +210,7 @@ Token scan_token(Lexer *lexer) {
 				++lexer->column;
 			}
 
-			token.string.length = (int)(lexer->at - token.string.memory);
+			token.string.length = (int)(lexer->at - token.string.chars);
 			if (lexer->at[0] == '"') {
 				++lexer->at;
 				++lexer->column;
@@ -249,13 +249,13 @@ Token scan_token(Lexer *lexer) {
 						++lexer->column;
 					}
 				}
-				token.string.length = (int)(lexer->at - token.string.memory);
+				token.string.length = (int)(lexer->at - token.string.chars);
 				token.type = is_float ? TOKEN_FLOAT : TOKEN_INTEGER;
 
 			} else if (is_aplha(c)) {
 				while (is_alnum(lexer->at[0]))
 					++lexer->at;
-				token.string.length = lexer->at - token.string.memory;
+				token.string.length = lexer->at - token.string.chars;
 				token.type = match_keyword(&token);
 			} else {
 				ASSERT(0);
@@ -293,10 +293,11 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out) {
 
 Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_next(lexer);
-	if (t.type != type)
+	if (t.type != type) {
 		LOG_WARN("Lexer: expected '%s' got '%s' (%.*s) at %d:%d",
 			token_type_names[type], token_type_names[t.type],
-			t.string.length, t.string.memory, t.line, t.column);
+			t.string.length, t.string.chars, t.line, t.column);
+    }
 	return t;
 }
 

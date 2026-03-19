@@ -71,7 +71,7 @@ typedef struct {
 
 extern const char *token_type_names[TOKEN_TYPE_COUNT];
 
-static inline Lexer lexer_make(String source) { return (Lexer){ .source = source, .at = source.memory }; }
+static inline Lexer lexer_make(String source) { return (Lexer){ .source = source, .at = source.chars }; }
 
 Token lexer_next(Lexer *lexer);
 Token lexer_peek(Lexer *lexer);

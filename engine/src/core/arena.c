@@ -82,11 +82,12 @@ ArenaTemp arena_scratch_begin(Arena *conflict) {
 	return arena_temp_begin(selected);
 }
 
-ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, const char *debug_type_name) {
+ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Span key, const char *debug_type_name) {
 	ArenaTrieNode **node = root;
 
-	for (uint64_t hash_index = hash; *node; hash_index <<= 2) {
-		if (hash == (*node)->hash) {
+	for (uint64_t hash_index = hash64(key.ptr, key.length); *node; hash_index <<= 2) {
+		Span node_key = span_make((uint8_t *)(*node) + sizeof(ArenaTrieNode), (*node)->key_size);
+		if (span_equal(node_key, key)) {
 			ASSERT_FORMAT(
 				debug_type_name && (*node)->debug_type_name
 					? strcmp((*node)->debug_type_name, debug_type_name) == 0
@@ -96,31 +97,47 @@ ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_
 
 			return (*node);
 		}
-		node = &(*node)->children[hash_index >> 62];
+		node = &((*node)->children[hash_index >> 62]);
 	}
 
 	if (arena == NULL)
 		return NULL;
 
-	*node = arena_push_struct(arena, ArenaTrieNode);
-	(*node)->hash = hash;
+	*node = arena_push(arena, sizeof(ArenaTrieNode) + key.length, alignof(ArenaTrieNode), true);
+	(*node)->key_size = key.length;
 	(*node)->debug_type_name = debug_type_name;
+	memory_copy((uint8_t *)(*node) + sizeof(ArenaTrieNode), key.ptr, (*node)->key_size);
 
 	return (*node);
 }
 
-void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, bool intrusive, const char *debug_type_name) {
-	ArenaTrieNode *node = arena_trienode_ensure(arena, root, hash, debug_type_name);
+void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Span key, size_t map_size, size_t map_align) {
+	ArenaTrieHeader **node = root;
 
-	// Add
-	if (arena && node && node->payload == NULL) {
-		if (intrusive) {
-			ASSERT(size > sizeof(ArenaTrieNode));
-			arena_push(arena, size - sizeof(ArenaTrieNode), 1, true);
-			node->payload = node;
-		} else
-			node->payload = arena_push(arena, size, align, true);
+	for (uint64_t hash = hash64(key.ptr, key.length); *node; hash <<= 2) {
+		void *node_key = (uint8_t *)(*node) + key_offset;
+		if (memory_equals(node_key, key.ptr, key.length)) {
+			return (uint8_t *)(*node) + value_offset;
+		}
+
+		node = &(*node)->children[hash >> 62];
 	}
+
+	if (arena == NULL)
+		return NULL;
+
+	ASSERT(map_size >= sizeof(ArenaTrieNode));
+
+	(*node) = arena_push(arena, map_size, 16, true);
+	memory_copy((uint8_t *)(*node) + key_offset, key.ptr, key.length);
+
+	return (uint8_t *)(*node) + value_offset;
+}
+
+void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Span key, size_t size, size_t align, const char *debug_type_name) {
+	ArenaTrieNode *node = arena_trienode_ensure(arena, root, key, debug_type_name);
+	if (arena && node && node->payload == NULL)
+		node->payload = arena_push(arena, size, align, true);
 
 	return node ? node->payload : NULL;
 }

@@ -11,7 +11,7 @@ String string_wrap(const char *s) {
 		return (String){ 0 };
 
 	return (String){
-		.memory = (char *)s,
+		.chars = (char *)s,
 		.length = strlen(s)
 	};
 }
@@ -21,10 +21,10 @@ bool string_equals(String a, String b) {
 		return false;
 	if (a.length == 0)
 		return true;
-	if (a.memory == b.memory)
+	if (a.chars == b.chars)
 		return true;
 
-	return memcmp(a.memory, b.memory, a.length) == 0;
+	return memcmp(a.chars, b.chars, a.length) == 0;
 }
 
 bool string_equals_ignore_case(String a, String b) {
@@ -32,7 +32,7 @@ bool string_equals_ignore_case(String a, String b) {
 		return false;
 
 	for (size_t index = 0; index < a.length; index++) {
-		if (tolower(a.memory[index]) != tolower(b.memory[index]))
+		if (tolower(a.chars[index]) != tolower(b.chars[index]))
 			return false;
 	}
 
@@ -43,14 +43,14 @@ bool string_has_prefix(String str, String prefix) {
 	if (prefix.length > str.length)
 		return false;
 
-	return memcmp(str.memory, prefix.memory, prefix.length) == 0;
+	return memcmp(str.chars, prefix.chars, prefix.length) == 0;
 }
 
 bool string_has_suffix(String str, String suffix) {
 	if (suffix.length > str.length)
 		return false;
 
-	return memcmp(str.memory + (str.length - suffix.length), suffix.memory, suffix.length) == 0;
+	return memcmp(str.chars + (str.length - suffix.length), suffix.chars, suffix.length) == 0;
 }
 
 int64_t string_find_first(String haystack, String needle) {
@@ -60,7 +60,7 @@ int64_t string_find_first(String haystack, String needle) {
 		return -1;
 
 	for (size_t index = 0; index <= haystack.length - needle.length; index++) {
-		if (memcmp(haystack.memory + index, needle.memory, needle.length) == 0) {
+		if (memcmp(haystack.chars + index, needle.chars, needle.length) == 0) {
 			return (int64_t)index;
 		}
 	}
@@ -76,7 +76,7 @@ int64_t string_find_last(String haystack, String needle) {
 
 	// Iterate backwards
 	for (int64_t index = haystack.length - needle.length; index >= 0; index--) {
-		if (memcmp(haystack.memory + index, needle.memory, needle.length) == 0) {
+		if (memcmp(haystack.chars + index, needle.chars, needle.length) == 0) {
 			return index;
 		}
 	}
@@ -89,25 +89,25 @@ String string_slice(String str, uint32_t start, uint32_t length) {
 	if (start + length > str.length)
 		length = str.length - start;
 
-	return (String){ .memory = str.memory + start, .length = length };
+	return (String){ .chars = str.chars + start, .length = length };
 }
 
 String string_chop_left(String str, uint32_t n) {
 	if (n >= str.length)
 		return (String){ 0 };
 
-	return (String){ .memory = str.memory + n, .length = str.length - n };
+	return (String){ .chars = str.chars + n, .length = str.length - n };
 }
 
 String string_chop_right(String str, uint32_t n) {
 	if (n >= str.length)
 		return (String){ 0 };
-	return (String){ .memory = str.memory, .length = str.length - n };
+	return (String){ .chars = str.chars, .length = str.length - n };
 }
 
 String string_trim_left(String str) {
 	size_t index = 0;
-	while (index < str.length && isspace(str.memory[index])) {
+	while (index < str.length && isspace(str.chars[index])) {
 		index++;
 	}
 	return string_chop_left(str, (uint32_t)index);
@@ -115,7 +115,7 @@ String string_trim_left(String str) {
 
 String string_trim_right(String str) {
 	size_t i = 0;
-	while (i < str.length && isspace(str.memory[str.length - 1 - i])) {
+	while (i < str.length && isspace(str.chars[str.length - 1 - i])) {
 		i++;
 	}
 	return string_chop_right(str, (uint32_t)i);
@@ -129,7 +129,7 @@ uint64_t string_hash64(String string) {
 	uint64_t h = 0x100;
 
 	for (uint32_t index = 0; index < string.length; ++index) {
-		h ^= string.memory[index] & 255;
+		h ^= string.chars[index] & 255;
 		h *= 1111111111111111111;
 	}
 
@@ -147,8 +147,8 @@ uint32_t string_to_u32(String str) {
 	uint32_t result = 0;
 	size_t index = 0;
 
-	while (index < str.length && isdigit(str.memory[index])) {
-		result = result * 10 + (str.memory[index] - '0');
+	while (index < str.length && isdigit(str.chars[index])) {
+		result = result * 10 + (str.chars[index] - '0');
 		index++;
 	}
 
@@ -161,8 +161,8 @@ uint64_t string_to_u64(String str) {
 	uint64_t result = 0;
 	size_t index = 0;
 
-	while (index < str.length && isdigit(str.memory[index])) {
-		result = result * 10 + (str.memory[index] - '0');
+	while (index < str.length && isdigit(str.chars[index])) {
+		result = result * 10 + (str.chars[index] - '0');
 		index++;
 	}
 
@@ -178,13 +178,13 @@ int32_t string_to_i32(String str) {
 	size_t index = 0;
 
 	str = string_trim_left(str);
-	if (index < str.length && (str.memory[index] == '+' || str.memory[index] == '-')) {
-		sign = (str.memory[index] == '-') ? -1 : 1;
+	if (index < str.length && (str.chars[index] == '+' || str.chars[index] == '-')) {
+		sign = (str.chars[index] == '-') ? -1 : 1;
 		index++;
 	}
 
-	while (index < str.length && isdigit(str.memory[index])) {
-		result = result * 10 + (str.memory[index] - '0');
+	while (index < str.length && isdigit(str.chars[index])) {
+		result = result * 10 + (str.chars[index] - '0');
 		index++;
 	}
 
@@ -200,13 +200,13 @@ int64_t string_to_i64(String str) {
 	size_t index = 0;
 
 	str = string_trim_left(str);
-	if (index < str.length && (str.memory[index] == '+' || str.memory[index] == '-')) {
-		sign = (str.memory[index] == '-') ? -1 : 1;
+	if (index < str.length && (str.chars[index] == '+' || str.chars[index] == '-')) {
+		sign = (str.chars[index] == '-') ? -1 : 1;
 		index++;
 	}
 
-	while (index < str.length && isdigit(str.memory[index])) {
-		result = result * 10 + (str.memory[index] - '0');
+	while (index < str.length && isdigit(str.chars[index])) {
+		result = result * 10 + (str.chars[index] - '0');
 		index++;
 	}
 
@@ -218,7 +218,7 @@ float32 string_to_f32(String str) {
 	if (str.length >= sizeof(buffer))
 		return 0.0f;
 
-	memory_copy(buffer, str.memory, str.length);
+	memory_copy(buffer, str.chars, str.length);
 	buffer[str.length] = '\0';
 
 	return strtof(buffer, NULL);
@@ -228,7 +228,7 @@ double string_to_f64(String str) {
 	if (str.length >= sizeof(buffer))
 		return 0.0;
 
-	memory_copy(buffer, str.memory, str.length);
+	memory_copy(buffer, str.chars, str.length);
 	buffer[str.length] = '\0';
 
 	return strtod(buffer, NULL);
@@ -243,7 +243,7 @@ String stringpath_directory(String path) {
 		return (String){ 0 };
 
 	for (int64_t index = path.length - 1; index >= 0; index--) {
-		if (is_path_separator(path.memory[index])) {
+		if (is_path_separator(path.chars[index])) {
 			return string_slice(path, 0, (uint32_t)index);
 		}
 	}
@@ -256,7 +256,7 @@ String stringpath_filename(String path) {
 		return (String){ 0 };
 
 	for (int64_t index = path.length - 1; index >= 0; index--) {
-		if (is_path_separator(path.memory[index])) {
+		if (is_path_separator(path.chars[index])) {
 			return string_slice(path, (uint32_t)(index + 1), (uint32_t)(path.length - index - 1));
 		}
 	}
@@ -269,9 +269,9 @@ String stringpath_extension(String path) {
 
 	// Scan backwards, but stop if we hit a path separator
 	for (int64_t index = path.length - 1; index >= 0; index--) {
-		if (is_path_separator(path.memory[index]))
+		if (is_path_separator(path.chars[index]))
 			break;
-		if (path.memory[index] == '.') {
+		if (path.chars[index] == '.') {
 			return string_slice(path, (uint32_t)(index + 1), (uint32_t)(path.length - index - 1));
 		}
 	}
@@ -284,8 +284,8 @@ String stringpath_join(Arena *arena, String head, String tail) {
 	if (tail.length == 0)
 		return string_copy(arena, head);
 
-	bool head_has_sep = is_path_separator(head.memory[head.length - 1]);
-	bool tail_has_sep = is_path_separator(tail.memory[0]);
+	bool head_has_sep = is_path_separator(head.chars[head.length - 1]);
+	bool tail_has_sep = is_path_separator(tail.chars[0]);
 
 	if (head_has_sep && tail_has_sep)
 		return string_concat(arena, head, string_chop_left(tail, 1));
@@ -294,11 +294,11 @@ String stringpath_join(Arena *arena, String head, String tail) {
 		// Manual construction to avoid double allocation of concat(concat)
 		size_t new_length = head.length + 1 + tail.length;
 		char *data = arena_push_count(arena, new_length + 1, char);
-		memory_copy(data, head.memory, head.length);
+		memory_copy(data, head.chars, head.length);
 		data[head.length] = '/';
-		memory_copy(data + head.length + 1, tail.memory, tail.length);
+		memory_copy(data + head.length + 1, tail.chars, tail.length);
 		data[new_length] = '\0';
-		return (String){ .memory = data, .length = new_length };
+		return (String){ .chars = data, .length = new_length };
 	} else
 		// "folder/" + "file" OR "folder" + "/file" -> Clean concat
 		return string_concat(arena, head, tail);
@@ -307,10 +307,10 @@ String stringpath_join(Arena *arena, String head, String tail) {
 String stringpath_normalize(Arena *arena, String path) {
 	String result = string_wrap(arena_push_count(arena, path.length, char));
 	for (uint32_t index = 0; index < path.length; ++index) {
-		if (path.memory[index] == '\\')
+		if (path.chars[index] == '\\')
 			continue;
 
-		result.memory[result.length++] = path.memory[index];
+		result.chars[result.length++] = path.chars[index];
 	}
 
 	return result;
@@ -322,10 +322,10 @@ String string_copy(Arena *arena, String str) {
 
 	// Allocate length + 1 for implicit null termination convenience
 	char *data = arena_push_count(arena, str.length + 1, char);
-	memory_copy(data, str.memory, str.length);
+	memory_copy(data, str.chars, str.length);
 	data[str.length] = '\0';
 
-	return (String){ .memory = data, .length = str.length };
+	return (String){ .chars = data, .length = str.length };
 }
 
 String string_formatv(Arena *arena, const char *format, va_list args) {
@@ -344,7 +344,7 @@ String string_formatv(Arena *arena, const char *format, va_list args) {
 	vsnprintf(data, length + 1, format, args_copy);
 	va_end(args_copy);
 
-	return (String){ .memory = data, .length = (size_t)length };
+	return (String){ .chars = data, .length = (size_t)length };
 }
 
 String string_format(Arena *arena, const char *fmt, ...) {
@@ -359,11 +359,11 @@ String string_concat(Arena *arena, String head, String tail) {
 	size_t new_length = head.length + tail.length;
 	char *data = arena_push_count(arena, new_length + 1, char);
 
-	memory_copy(data, head.memory, head.length);
-	memory_copy(data + head.length, tail.memory, tail.length);
+	memory_copy(data, head.chars, head.length);
+	memory_copy(data + head.length, tail.chars, tail.length);
 	data[new_length] = '\0';
 
-	return (String){ .memory = data, .length = new_length };
+	return (String){ .chars = data, .length = new_length };
 }
 
 String string_replace(Arena *arena, String source, String find, String replace) {
@@ -374,7 +374,7 @@ String string_replace(Arena *arena, String source, String find, String replace) 
 	size_t offset = 0;
 	while (offset < source.length) {
 		int64_t index = string_find_first(
-			(String){ .memory = source.memory + offset, .length = source.length - offset },
+			(String){ .chars = source.chars + offset, .length = source.length - offset },
 			find);
 		if (index == -1)
 			break;
@@ -391,37 +391,37 @@ String string_replace(Arena *arena, String source, String find, String replace) 
 	size_t dst_offset = 0;
 	while (src_offset < source.length) {
 		int64_t index = string_find_first(
-			(String){ .memory = source.memory + src_offset, .length = source.length - src_offset },
+			(String){ .chars = source.chars + src_offset, .length = source.length - src_offset },
 			find);
 
 		if (index == -1) {
 			// Copy remaining
 			size_t remain = source.length - src_offset;
-			memory_copy(data + dst_offset, source.memory + src_offset, remain);
+			memory_copy(data + dst_offset, source.chars + src_offset, remain);
 			dst_offset += remain;
 			break;
 		}
 
 		// Copy segment before match
 		size_t seg_len = index - src_offset;
-		memory_copy(data + dst_offset, source.memory + src_offset, seg_len);
+		memory_copy(data + dst_offset, source.chars + src_offset, seg_len);
 		dst_offset += seg_len;
 		src_offset += seg_len;
 
 		// Copy replacement
-		memory_copy(data + dst_offset, replace.memory, replace.length);
+		memory_copy(data + dst_offset, replace.chars, replace.length);
 		dst_offset += replace.length;
 		src_offset += find.length;
 	}
 
 	data[new_length] = '\0';
-	return (String){ .memory = data, .length = new_length };
+	return (String){ .chars = data, .length = new_length };
 }
 
 String string_upper(Arena *arena, String s) {
 	String copy = string_copy(arena, s);
 	for (size_t index = 0; index < copy.length; index++)
-		copy.memory[index] = toupper(copy.memory[index]);
+		copy.chars[index] = toupper(copy.chars[index]);
 
 	return copy;
 }
@@ -429,14 +429,14 @@ String string_upper(Arena *arena, String s) {
 String string_lower(Arena *arena, String s) {
 	String copy = string_copy(arena, s);
 	for (size_t index = 0; index < copy.length; index++)
-		copy.memory[index] = tolower(copy.memory[index]);
+		copy.chars[index] = tolower(copy.chars[index]);
 
 	return copy;
 }
 
 char *string_cstring(Arena *arena, String s) {
 	char *cstr = arena_push_count(arena, s.length + 1, char);
-	memory_copy(cstr, s.memory, s.length);
+	memory_copy(cstr, s.chars, s.length);
 	cstr[s.length] = '\0';
 	return cstr;
 }
@@ -464,7 +464,7 @@ StringList stringlist_split(Arena *arena, String str, String separator) {
 
 	while (cursor < str.length) {
 		int64_t index = string_find_first(
-			(String){ .memory = str.memory + cursor, str.length - cursor },
+			(String){ .chars = str.chars + cursor, str.length - cursor },
 			separator);
 
 		if (index == -1) {
@@ -496,11 +496,11 @@ String stringlist_join(Arena *arena, StringList *list, String separator) {
 
 	StringNode *node = list->first;
 	while (node) {
-		memory_copy(data + cursor, node->string.memory, node->string.length);
+		memory_copy(data + cursor, node->string.chars, node->string.length);
 		cursor += node->string.length;
 
 		if (node->next) {
-			memory_copy(data + cursor, separator.memory, separator.length);
+			memory_copy(data + cursor, separator.chars, separator.length);
 			cursor += separator.length;
 		}
 
@@ -508,5 +508,5 @@ String stringlist_join(Arena *arena, StringList *list, String separator) {
 	}
 
 	data[total_length] = '\0';
-	return (String){ .memory = data, .length = total_length };
+	return (String){ .chars = data, .length = total_length };
 }

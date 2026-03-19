@@ -4,16 +4,17 @@
 #include "arena.h"
 
 typedef struct String {
-	char *memory;
+	char *chars;
 	size_t length;
 } String;
 
 #define SFMT "%.*s"
-#define SARG(s) (int)(s).length, (s).memory
+#define SARG(s) (int)(s).length, (s).chars
 #define S(s) ((String){ (char *)(s), sizeof(s) - 1 })
 #define shash(s) string_hash64(S(s))
 
 String string_wrap(const char *s);
+static inline String string_wrap_span(Span span) { return (String){ .chars = (char *)span.ptr, .length = span.length }; }
 
 ENGINE_API bool string_equals(String a, String b);
 ENGINE_API bool string_equals_ignore_case(String a, String b);

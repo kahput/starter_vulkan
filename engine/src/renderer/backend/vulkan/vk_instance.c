@@ -157,7 +157,9 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
 }
 
 void create_debug_messenger(VulkanContext *context) {
+#ifndef NDEBUG
 	vkCreateDebugUtilsMessenger(context->instance, &debug_utils_create_info, NULL, &context->debug_messenger);
+#endif
 }
 
 VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default) {

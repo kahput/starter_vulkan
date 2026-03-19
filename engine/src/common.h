@@ -37,6 +37,7 @@
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
+#define container_of(ptr, T, member) ((T *)((uint8_t *)ptr - offsetof(T, member)))
 
 #define memory_copy(dst, src, size) memcpy((dst), (src), (size))
 #define memory_set(dst, byte, size) memset((dst), (byte), (size))
@@ -112,8 +113,33 @@ typedef int32_t int32;
 typedef struct { int32 x, y; } int32_2;
 typedef struct { int32 x, y, z; } int32_3;
 typedef struct { int32 x, y, z, w; } int32_4;
-
-
 // clang-format on
+
+typedef struct {
+	uint8_t *ptr;
+	size_t length;
+} Span;
+
+static inline Span span_make(void *ptr, size_t length) { return (Span){ .ptr = ptr, .length = length }; }
+
+#define span_struct(obj) ((Span){ .ptr = (uint8_t *)&(obj), .length = sizeof(obj) })
+#define span_array(arr) ((Span){ .ptr = (uint8_t *)(arr), .length = sizeof(arr) })
+#define span_count(p, n) ((Span){ .ptr = (uint8_t *)(p), .length = sizeof(*(p)) * (n) })
+#define span_literal(lit) ((Span){ .ptr = (uint8_t *)(lit), .length = sizeof(lit) - 1 })
+#define span_string(s) ((Span){ .ptr = (uint8_t *)(s).chars, .length = (s).length })
+
+static inline Span span_subspan(Span s, size_t offset, size_t length) {
+	if (offset > s.length)
+		return span_make(NULL, 0);
+	if (offset + length > s.length)
+		length = s.length - offset;
+	return span_make(s.ptr + offset, length);
+}
+static inline bool span_empty(Span s) { return s.length == 0; }
+static inline bool span_equal(Span a, Span b) {
+	if (a.length != b.length)
+		return false;
+	return memory_equals(a.ptr, b.ptr, a.length);
+}
 
 typedef uint32_t Flag;

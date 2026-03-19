@@ -24,13 +24,13 @@
 /* static ImageSource *find_loaded_texture(const cgltf_data *data, SModel *scene, const cgltf_texture *gltf_tex); */
 
 ShaderConfig importer_load_shader(Arena *arena, String vertex_path, String fragment_path) {
-	String vfile = filesystem_read(arena, vertex_path);
-	String ffile = filesystem_read(arena, fragment_path);
+	Span vfile = filesystem_read(arena, vertex_path);
+	Span ffile = filesystem_read(arena, fragment_path);
 
 	ShaderConfig result = {
-		.vertex_code = vfile.memory,
+		.vertex_code = vfile.ptr,
 		.vertex_code_size = vfile.length,
-		.fragment_code = ffile.memory,
+		.fragment_code = ffile.ptr,
 		.fragment_code_size = ffile.length,
 	};
 
@@ -42,12 +42,12 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	ImageSource result = { 0 };
 
 	String filename = string_copy(scratch.arena, stringpath_filename(path));
-	LOG_INFO("Loading %s...", filename.memory);
+	LOG_INFO("Loading %s...", filename.chars);
 
 	logger_indent();
-	uint8_t *pixels = stbi_load(path.memory, &result.width, &result.height, &result.channels, 4);
+	uint8_t *pixels = stbi_load(path.chars, &result.width, &result.height, &result.channels, 4);
 	if (pixels == NULL) {
-		LOG_ERROR("Failed to load image [ %s ]", path.memory);
+		LOG_ERROR("Failed to load image [ %s ]", path.chars);
 		static uint8_t magenta[] = { 255, 0, 255, 255 };
 		result.width = result.height = 1;
 		result.channels = 4;
@@ -61,8 +61,8 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	memory_copy(result.pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.memory, result.width, result.height, result.channels);
-	LOG_INFO("%s loaded", filename.memory);
+	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.chars, result.width, result.height, result.channels);
+	LOG_INFO("%s loaded", filename.chars);
 	logger_dedent();
 
 	arena_scratch_end(scratch);
@@ -70,25 +70,25 @@ ImageSource importer_load_image(Arena *arena, String path) {
 }
 
 static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
-	{ .name = { .memory = "u_base_color_texture", .length = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .memory = "u_metallic_roughness_texture", .length = 28 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .memory = "u_normal_texture", .length = 16 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .memory = "u_occlusion_texture", .length = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
-	{ .name = { .memory = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .chars = "u_base_color_texture", .length = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .chars = "u_metallic_roughness_texture", .length = 28 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .chars = "u_normal_texture", .length = 16 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .chars = "u_occlusion_texture", .length = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
+	{ .name = { .chars = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
 
-	{ .name = { .memory = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.float4 = { 1.0f, 1.0f, 1.0f, 1.0f } },
-	{ .name = { .memory = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.0f },
-	{ .name = { .memory = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.5f },
-	{ .name = { .memory = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float3 = { 1.0f, 1.0f, 1.0f } },
+	{ .name = { .chars = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.float4 = { 1.0f, 1.0f, 1.0f, 1.0f } },
+	{ .name = { .chars = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.0f },
+	{ .name = { .chars = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.5f },
+	{ .name = { .chars = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float3 = { 1.0f, 1.0f, 1.0f } },
 };
 
 /* bool importer_load_gltf(Arena *arena, String path, SModel *out_model) { */
 /* 	cgltf_options options = { 0 }; */
 /* 	cgltf_data *data = NULL; */
-/* 	cgltf_result result = cgltf_parse_file(&options, path.memory, &data); */
+/* 	cgltf_result result = cgltf_parse_file(&options, path.chars, &data); */
 
 /* 	if (result == cgltf_result_success) */
-/* 		result = cgltf_load_buffers(&options, data, path.memory); */
+/* 		result = cgltf_load_buffers(&options, data, path.chars); */
 
 /* 	if (result == cgltf_result_success) */
 /* 		result = cgltf_validate(data); */
@@ -98,7 +98,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 		return NULL; */
 /* 	} */
 
-/* 	LOG_INFO("Loading %s...", path.memory); */
+/* 	LOG_INFO("Loading %s...", path.chars); */
 /* 	logger_indent(); */
 
 /* 	ArenaTemp scratch = arena_scratch(arena); */
@@ -116,24 +116,24 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 			String mime_type = string_wrap(src->mime_type); */
 
 /* 			String filename = string_push_replace(scratch.arena, string_path_filename(path), S(".glb"), S("")); */
-/* 			String name = string_pushf(scratch.arena, "%s_%s", filename.memory, (src->name ? src->name : "image")); */
+/* 			String name = string_pushf(scratch.arena, "%s_%s", filename.chars, (src->name ? src->name : "image")); */
 /* 			if (string_find_first(string_wrap(src->mime_type), S("png")) != -1) { */
-/* 				dst->path = string_pushf(arena, "%s/%s.png", base_directory.memory, name.memory); */
+/* 				dst->path = string_pushf(arena, "%s/%s.png", base_directory.chars, name.chars); */
 /* 				if (filesystem_file_exists(dst->path) == false) { */
 /* 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4); */
-/* 					stbi_write_png(dst->path.memory, dst->width, dst->height, 4, pixels, STBI_default); */
+/* 					stbi_write_png(dst->path.chars, dst->width, dst->height, 4, pixels, STBI_default); */
 /* 					stbi_image_free(pixels); */
 /* 				} */
 /* 			} else if (string_find_first(mime_type, S("jpg")) != -1 || string_find_first(mime_type, S("jpeg")) != -1) { */
-/* 				dst->path = string_pushf(arena, "%s/%s.jpg", base_directory.memory, name.memory); */
+/* 				dst->path = string_pushf(arena, "%s/%s.jpg", base_directory.chars, name.chars); */
 /* 				if (filesystem_file_exists(dst->path) == false) { */
 /* 					uint8_t *pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4); */
-/* 					stbi_write_jpg(dst->path.memory, dst->width, dst->height, dst->channels, pixels, 0); */
+/* 					stbi_write_jpg(dst->path.chars, dst->width, dst->height, dst->channels, pixels, 0); */
 /* 					stbi_image_free(pixels); */
 /* 				} */
 /* 			} */
 /* 		} else if (src->uri) { */
-/* 			dst->path = string_pushf(arena, "%s/%s", base_directory.memory, src->uri); */
+/* 			dst->path = string_pushf(arena, "%s/%s", base_directory.chars, src->uri); */
 /* 		} */
 /* 	} */
 

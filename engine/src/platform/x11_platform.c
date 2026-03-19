@@ -134,7 +134,7 @@ Window *window_make(Arena *arena, uint32_t width, uint32_t height, String title)
 		XCB_ATOM_STRING,
 		8,
 		title.length,
-		title.memory);
+		title.chars);
 
 	// Register WM_DELETE_WINDOW
 	xcb_change_property(
@@ -368,7 +368,7 @@ void window_set_title(Window *window, String title) {
 		XCB_ATOM_STRING,
 		8,
 		title.length,
-		title.memory);
+		title.chars);
 	xcb_flush(x11.connection);
 }
 

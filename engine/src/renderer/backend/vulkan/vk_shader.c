@@ -238,12 +238,6 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 	return true;
 }
 
-typedef struct {
-	PipelineDesc desc;
-	VkFormat color_formats[4];
-	VkFormat depth_format;
-} PipelineStateKey;
-
 bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanPipeline *variant) {
 	if (variant->handle) {
 		vkDestroyPipeline(context->device.logical, variant->handle, NULL);
@@ -270,18 +264,12 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 	for (uint32_t index = 0; pass->color_formats[index] && index < countof(key.color_formats); ++index)
 		key.color_formats[index] = pass->color_formats[index];
 
-	uint64_t hash = hash64(&key, sizeof(PipelineStateKey));
-
-	static uint64_t assert_hash = 0;
-	if (assert_hash == 0)
-		assert_hash = hash;
-
-	ASSERT(assert_hash == hash);
-
 	VulkanPipeline *popped_slot = arena_list_pop(&shader->first_free, VulkanPipeline);
 
 	shader->trie.arena = &arena_wrap_struct(popped_slot);
-	VulkanPipeline *variant = arena_trie_pushi(&shader->trie, hash, VulkanPipeline);
+
+	ArenaTrieNode *node = arena_trienode_push(&shader->trie, span_struct(key));
+	VulkanPipeline *variant = container_of(node, VulkanPipeline, node);
 
 	if (variant == popped_slot) {
 		create_shader_variant(context, shader, pass, desc, variant);
@@ -331,7 +319,7 @@ static uint32_t count_shader_members(SpvReflectBlockVariable *var) {
 static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, String prefix, ShaderMember **cursor) {
 	char full_name[128];
 	if (prefix.length > 0) {
-		snprintf(full_name, sizeof(full_name), "%s.%s", prefix.memory, var->name);
+		snprintf(full_name, sizeof(full_name), "%s.%s", prefix.chars, var->name);
 	} else
 		snprintf(full_name, sizeof(full_name), "%s", var->name);
 

@@ -43,11 +43,16 @@ ENGINE_API ArenaTemp arena_scratch_begin(Arena *conflict);
 
 typedef struct arena_trie_node {
 	struct arena_trie_node *children[4];
-	uint64_t hash;
+	const char *debug_type_name;
+	size_t key_size;
+	// Key is stored at: (uint8_t *)node + sizeof(ArenaTrieNode)
 
 	void *payload;
-	const char *debug_type_name;
 } ArenaTrieNode;
+
+typedef struct arena_trie_header {
+	struct arena_trie_header *children[4];
+} ArenaTrieHeader;
 
 typedef struct {
 	Arena *arena;
@@ -55,8 +60,9 @@ typedef struct {
 } ArenaTrie;
 
 static inline ArenaTrie arena_trie_make(Arena *arena) { return (ArenaTrie){ .arena = arena }; }
-ENGINE_API ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, const char *debug_type_name);
-ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t hash, size_t size, size_t align, bool intrusive, const char *debug_type_name);
+ENGINE_API ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Span key, const char *debug_type_name);
+ENGINE_API void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Span key, size_t map_size, size_t map_align);
+ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Span key, size_t size, size_t align, const char *debug_type_name);
 
 #define arena_trie_wrap(buf, count) ((ArenaTrie){ .arena = &arena_wrap_count(buf, count) })
 #define arena_trie_wrap_array(arr)                                                    \
@@ -65,17 +71,19 @@ ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, uint64_t 
 		.root = NULL                                                                  \
 	}
 
-#define arena_trienode_push(trie, hash) (arena_trienode_ensure((trie)->arena, &(trie)->root, (hash), NULL))
-#define arena_trienode_find(trie, hash) (arena_trienode_ensure(NULL, &(trie)->root, (hash), NULL))
+#define arena_trienode_push(trie, key) (arena_trienode_ensure((trie)->arena, &(trie)->root, (key), NULL))
+#define arena_trienode_find(trie, key) (arena_trienode_ensure(NULL, &(trie)->root, (key), NULL))
+#define arena_trieset_push(trie, key) (arena_trienode_ensure((trie)->arena, &(trie)->root, (key), NULL))
+#define arena_trieset_find(trie, key) (arena_trienode_ensure(NULL, &(trie)->root, (key), NULL))
 
-#define arena_trie_push_count(trie, hash, count, T) ((T *)arena_trie_ensure((trie)->arena, &(trie)->root, (hash), sizeof(T) * count, alignof(T), false, #T))
-#define arena_trie_push(trie, hash, T) ((T *)arena_trie_ensure((trie)->arena, &(trie)->root, (hash), sizeof(T), alignof(T), false, #T))
-#define arena_trie_pushi(trie, hash, T) ((T *)arena_trie_ensure((trie)->arena, &(trie)->root, (hash), sizeof(T), alignof(T), true, #T))
-#define arena_trie_put(trie, hash, T, ...) (void)(*(T *)arena_trie_ensure((trie)->arena, &(trie)->root, (hash), sizeof(T), alignof(T), false, #T) = (T)__VA_ARGS__)
-#define arena_trie_find(trie, hash, T) ((T *)arena_trie_ensure(NULL, &(trie)->root, (hash), 0, 0, 0, #T))
+#define arena_trie_push_count(trie, key, count, T) ((T *)arena_trie_ensure((trie)->arena, &(trie)->root, (key), sizeof(T) * count, alignof(T), #T))
+#define arena_trie_push(trie, key, T) ((T *)arena_trie_ensure((trie)->arena, &(trie)->root, (key), sizeof(T), alignof(T), #T))
+#define arena_trie_put(trie, key, T, ...) (void)(*(T *)arena_trie_ensure((trie)->arena, &(trie)->root, (key), sizeof(T), alignof(T), #T) = (T)__VA_ARGS__)
+#define arena_trie_find(trie, key, T) ((T *)arena_trie_ensure(NULL, &(trie)->root, (key), 0, 0, #T))
 
-#define arena_trieset_push(trie, hash) (arena_trienode_ensure((trie)->arena, &(trie)->root, (hash), NULL))
-#define arena_trieset_find(trie, hash) (arena_trienode_ensure(NULL, &(trie)->root, (hash), NULL))
+#define arena_triestruct_push(arena, root, key_value, T) ((T *)arena_triestruct_ensure((arena), (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), key_value, sizeof(T##Trie), alignof(T##Trie)))
+#define arena_triestruct_put(arena, root, key_value, T, ...) (*(T *)arena_triestruct_ensure((arena), (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), key_value, sizeof(T##Trie), alignof(T##Trie)) = (T)__VA_ARGS__)
+#define arena_triestruct_find(root, key_value, T) ((T *)arena_triestruct_ensure(NULL, (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), key_value, sizeof(T##Trie), alignof(T##Trie)))
 
 typedef struct arena_list_node {
 	struct arena_list_node *next;

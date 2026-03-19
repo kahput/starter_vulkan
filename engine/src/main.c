@@ -76,9 +76,9 @@ int main(void) {
 	window_set_cursor_locked(engine.display, true);
 
 	GameContext game_context = {
-		.permanent_memory = arena_push(&engine.memory, MiB(32), 1, true),
+		.permanent_memory = arena_push(&engine.memory, MiB(32), 16, true),
 		.permanent_memory_size = MiB(32),
-		.transient_memory = arena_push(&engine.memory, MiB(256), 1, true),
+		.transient_memory = arena_push(&engine.memory, MiB(256), 16, true),
 		.transient_memory_size = MiB(256),
 		.vk_context = engine.context,
 		.display = engine.display
@@ -129,7 +129,7 @@ bool game_load(GameContext *context) {
 		return false;
 	}
 
-	void *handle = dlopen(temp_path.memory, RTLD_NOW);
+	void *handle = dlopen(temp_path.chars, RTLD_NOW);
 	if (handle == NULL) {
 		LOG_ERROR("dlopen failed: %s", dlerror());
 		ASSERT(false);

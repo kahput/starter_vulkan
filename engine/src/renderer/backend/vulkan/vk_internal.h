@@ -135,7 +135,6 @@ typedef struct vulkan_device {
 
 	VkSampleCountFlags sample_count;
 	bool multi_sample;
-
 } VulkanDevice;
 
 bool vulkan_instance_create(VulkanContext *context);
@@ -200,8 +199,15 @@ uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type
 
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 
+typedef struct {
+	PipelineDesc desc;
+	VkFormat color_formats[4];
+	VkFormat depth_format;
+} PipelineStateKey;
+
 typedef struct vulkan_pipeline {
 	ArenaTrieNode node;
+	PipelineStateKey key;
 
 	struct vulkan_pipeline *next;
 	struct vulkan_pipeline *prev;

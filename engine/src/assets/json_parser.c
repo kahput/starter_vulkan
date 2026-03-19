@@ -19,9 +19,10 @@ const char *json_type_string[JSON_TYPE_COUNT] = {
 
 static JsonNode *parse_value(JsonParser *parser);
 static JsonNode *parse_error(JsonParser *parser, Token token, const char *message) {
-	if (!parser->failed)
+	if (!parser->failed) {
 		LOG_WARN("JSON error at %d:%d: %s (got '%.*s')",
-			token.line, token.column, message, token.string.length, token.string.memory);
+			token.line, token.column, message, token.string.length, token.string.chars);
+	}
 	parser->failed = true;
 	return NULL;
 }
@@ -43,7 +44,7 @@ static JsonNode *parse_object(JsonParser *parser) {
 		JsonNode *value = parse_value(parser);
 
 		// Store a JsonNode* in the trie, keyed by the field name
-		arena_trie_put(trie, string_hash64(key.string), JsonNode *, value);
+		arena_trie_put(trie, span_string(key.string), JsonNode *, value);
 
 		lexer_match(&parser->lexer, TOKEN_COMMA, NULL);
 	}
@@ -181,7 +182,7 @@ JsonNode *json_node(JsonNode *node, String key) {
 	if (node == NULL || node->type != JSON_OBJECT)
 		return NULL;
 
-	JsonNode **found = arena_trie_find((ArenaTrie *)node->value, string_hash64(key), JsonNode *);
+	JsonNode **found = arena_trie_find((ArenaTrie *)node->value, span_string(key), JsonNode *);
 	return found ? *found : NULL;
 }
 
