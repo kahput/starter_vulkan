@@ -3,8 +3,10 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 
 find_package(Vulkan REQUIRED)
 
-add_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
-add_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-fsanitize=address)
+    add_link_options(-fsanitize=address)
+endif()
 
 target_include_directories(${PROJECT_NAME}
                            PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
@@ -22,10 +24,10 @@ elseif(UNIX)
     ${PROJECT_NAME}
     PRIVATE -fvisibility=hidden
             -Wall
-            -O0
-            -pedantic
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-pedantic>
+            $<$<CONFIG:Debug>:-Werror>
             -Wextra
-            -Werror
             -Wno-unused-parameter
             -Wno-unused-variable)
 
