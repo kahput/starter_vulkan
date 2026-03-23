@@ -55,14 +55,14 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 	if (vulkan_sync_objects_create(context) == false)
 		return false;
 
-	uint32_2 dims = window_size_pixel(context->display);
+	uint32x2 dims = window_size_pixel(context->display);
 	if (vulkan_swapchain_create(context, dims.x, dims.y) == false)
 		return false;
 
 	// TODO: Lower this back down to 32?
 	if (vulkan_buffer_make_internal(
 			context, MiB(256),
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0,
 			&context->staging_buffer) == false)
 		return false;
 	vulkan_buffer_map(context, &context->staging_buffer);
@@ -112,8 +112,8 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
 	for (uint32_t color_index = 0; color_index < MAX_COLOR_ATTACHMENTS; ++color_index)
-		vulkan_image_destroy_(context, &context->msaa_colors[color_index]);
-	vulkan_image_destroy_(context, &context->msaa_depth);
+		vulkan_image_destroy_internal(context, &context->msaa_colors[color_index]);
+	vulkan_image_destroy_internal(context, &context->msaa_depth);
 
 	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
 		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[frame_index], NULL);

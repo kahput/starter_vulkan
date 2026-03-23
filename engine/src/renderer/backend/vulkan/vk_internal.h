@@ -54,6 +54,7 @@ typedef struct vulkan_buffer {
 
 	VkBuffer handle;
 	VkDeviceMemory memory;
+	VkBufferView view;
 	void *mapped;
 
 	VkDeviceSize size;
@@ -72,10 +73,6 @@ typedef struct {
 	uint32_t buffer_ranges[MAX_BINDINGS_PER_RESOURCE];
 	uint32_t range_count;
 } VulkanUniformSet;
-
-typedef struct vulkan_resource_set {
-	VkDescriptorSet sets[MAX_FRAMES_IN_FLIGHT];
-} VulkanResourceSet;
 
 typedef struct vulkan_image {
 	VulkanResourceState state;
@@ -158,22 +155,23 @@ bool vulkan_swapchain_create(VulkanContext *context, uint32_t width, uint32_t he
 bool vulkan_swapchain_recreate(VulkanContext *context, uint32_t width, uint32_t height);
 
 bool vulkan_buffer_make_internal(VulkanContext *context, VkDeviceSize size,
-	VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+	VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkFormat format,
 	VulkanBuffer *out_buffer);
 
 bool vulkan_buffer_map(VulkanContext *context, VulkanBuffer *buffer);
 void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer);
 void vulkan_buffer_write_internal(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
+
+bool vulkan_buffer_upload(VulkanContext *context, void *data, VulkanBuffer *dst);
+bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst);
+
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size);
-bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data);
 
-// bool vulkan_pass_on_resize(VulkanContext *context, VulkanPass *pass);
+bool vulkan_image_make_internal(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, TextureType, VkMemoryPropertyFlags, VulkanImage *);
+void vulkan_image_destroy_internal(VulkanContext *context, VulkanImage *image);
 
-bool vulkan_image_create_(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, TextureType, VkMemoryPropertyFlags, VulkanImage *);
-void vulkan_image_destroy_(VulkanContext *context, VulkanImage *image);
-
-bool vulkan_image_view_create(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image);
+bool vulkan_imageview_make(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image);
 void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout);
@@ -189,15 +187,14 @@ void vulkan_load_extensions(VulkanContext *context);
 
 bool vulkan_descriptor_pool_create(VulkanContext *context);
 bool vulkan_descriptor_layout_create(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout);
-bool vulkan_descriptor_global_create(VulkanContext *context);
-// bool vulkan_create_descriptor_set(VulkanContext *context, VulkanShader *shader);
-
 bool vulkan_sync_objects_create(VulkanContext *context);
 
 size_t vulkan_memory_required_alignment(VulkanContext *context, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties);
 uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
+VkFormat vulkan_utils_to_vkformat(VulkanContext *context, TextureFormat format);
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
+uint32_t vulkan_utils_type_to_stride(VkFormat format);
 
 typedef struct {
 	PipelineDesc desc;

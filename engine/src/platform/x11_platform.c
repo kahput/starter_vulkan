@@ -475,14 +475,14 @@ void platform_sleep(uint32_t ms) {
 #endif
 }
 
-uint32_2 window_size(Window *window) {
+uint2 window_size(Window *window) {
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(
 		x11.connection,
 		xcb_get_geometry(x11.connection, window->handle),
 		NULL);
 
 	if (geometry) {
-		uint32_2 dims = {
+		uint32x2 dims = {
 			.x = geometry->width,
 			.y = geometry->height
 		};
@@ -492,10 +492,10 @@ uint32_2 window_size(Window *window) {
 	}
 
 	ASSERT(false);
-	return (uint32_2){ 0 };
+	return (uint32x2){ 0 };
 }
 
-uint32_2 window_size_pixel(Window *window) {
+uint2 window_size_pixel(Window *window) {
 	return window_size(window);
 }
 

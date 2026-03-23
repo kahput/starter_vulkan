@@ -27,6 +27,46 @@ ENGINE_API bool vulkan_drawlist_end(VulkanContext *context);
 // bool vulkan_renderer_compute_list_begin(VulkanContext *context, ...);
 // bool vulkan_renderer_compute_list_end(VulkanContext *context);
 
+// vulkan_buffer_make();
+// vukan_buffer_make_array();
+// vulkan_buffer_make_texel();
+// vulkan_trie_ensure_node();
+// vulkan_trie_struct_ensure();
+//
+// vulkan_texture_prepare_attachment();
+// vulkan_push_constants();
+//
+// json_find_where();
+
+// Vulkan_ComputeList_Begin();
+// Vulkan_Buffer_Create();
+// Vulkan_Buffer_CreateArray();
+// Vulkan_Buffer_CreateTexel();
+//
+// Arena_TrieNode_Ensure();
+// Arena_TrieStruct_Ensure();
+//
+// VulkanBuffer_Create();
+// VulkanBufferArray_Create();
+// ArenaTrieNode_Ensure();
+// ArenaTrieStruct_Ensure()
+//
+// VulkanRenderer_Draw();
+// VulkanRenderer_DrawIndexed();
+//
+// VulkanShader_Make();
+//
+// VulkanTexture_PrepareAttachment();
+// VulkanUniformSet_Make();
+// Vulkan_UniformSet_make();
+//
+// Vulkan_PushConstants();
+//
+// Json_FindWhere();
+// Json_Find();
+//
+//
+
 ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 ENGINE_API bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);
 ENGINE_API bool vulkan_renderer_draw_offset(VulkanContext *context, uint32_t vertex_count, uint32_t start_vertex);
@@ -44,10 +84,11 @@ ENGINE_API bool vulkan_texture_destroy(VulkanContext *context, RhiTexture textur
 ENGINE_API bool vulkan_texture_prepare_attachment(VulkanContext *context, RhiTexture texture);
 ENGINE_API bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture texture);
 ENGINE_API bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width, uint32_t height);
-ENGINE_API uint32_2 vulkan_texture_size(VulkanContext *context, RhiTexture texture);
+ENGINE_API uint32x2 vulkan_texture_size(VulkanContext *context, RhiTexture texture);
 
 ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemory memory, size_t size, void *data);
-ENGINE_API RhiBuffer vulkan_bufferarray_make(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride);
+ENGINE_API RhiBuffer vulkan_buffer_make_array(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride);
+ENGINE_API RhiBuffer vulkan_buffer_make_texel(VulkanContext *context, BufferType type, BufferMemory memory, TextureFormat format, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
 ENGINE_API bool vulkan_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset);

@@ -3,45 +3,70 @@
 
 #include <math.h>
 
-float32 vector2f_length(Vector2f v) {
+float float2_length(float2 v) {
 	return sqrt(v.x * v.x + v.y * v.y);
 }
-Vector2f vector2f_normalize(Vector2f v) {
-	float32 length = vector2f_length(v);
+float2 float2_normalize(float2 v) {
+	float length = float2_length(v);
 	if (length < EPSILON) {
-		return (Vector2f){ 0 };
+		return (float2){ 0 };
 	}
-	Vector2f result = { .x = v.x / length, .y = v.y / length };
+	float2 result = { .x = v.x / length, .y = v.y / length };
 
 	return result;
 }
 
-Vector3f vector3f_add(Vector3f a, Vector3f b) {
-	Vector3f result = { a.x + b.x, a.y + b.y, a.z + b.z };
-
+float2 float2_add(float2 a, float2 b) {
+	float2 result = { a.x + b.x, a.y + b.y };
 	return result;
 }
-Vector3f vector3f_subtract(Vector3f a, Vector3f b) {
-	Vector3f result = { a.x - b.x, a.y - b.y, a.z - b.z };
-
-	return result;
-}
-Vector3f vector3f_scale(Vector3f v, float s) {
-	Vector3f result = { v.x * s, v.y * s, v.z * s };
-
+float2 float2_subtract(float2 a, float2 b) {
+	float2 result = { a.x - b.x, a.y - b.y };
 	return result;
 }
 
-Vector3f vector3f_negate(Vector3f v) { return (Vector3f){ -v.x, -v.y, -v.z }; }
+float2 float2_divide(float2 a, float2 b) {
+	float2 result = { a.x / b.x, a.y / b.y };
+	return result;
+}
 
-float vector3f_dot(Vector3f a, Vector3f b) {
+
+float2 float2_scale(float2 v, float s) {
+	float2 result = { v.x * s, v.y * s };
+	return result;
+}
+
+float float2_dot(float2 a, float2 b) {
+    float result = a.x * b.x + a.y * b.y;
+    return result;
+}
+
+float3 float3_add(float3 a, float3 b) {
+	float3 result = { a.x + b.x, a.y + b.y, a.z + b.z };
+
+	return result;
+}
+float3 float3_subtract(float3 a, float3 b) {
+	float3 result = { a.x - b.x, a.y - b.y, a.z - b.z };
+
+	return result;
+}
+float3 float3_scale(float3 v, float s) {
+	float3 result = { v.x * s, v.y * s, v.z * s };
+
+	return result;
+}
+
+float3 float3_negate(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
+
+float float3_dot(float3 a, float3 b) {
 	float result = a.x * b.x + a.y * b.y + a.z * b.z;
 
 	return result;
 }
 
-Vector3f vector3f_cross(Vector3f a, Vector3f b) {
-	Vector3f result = {
+float3 float3_cross(float3 a, float3 b) {
+	float3 result = {
 		.x = a.y * b.z - b.y * a.z,
 		.y = a.z * b.x - b.z * a.x,
 		.z = a.x * b.y - b.x * a.y,
@@ -50,27 +75,27 @@ Vector3f vector3f_cross(Vector3f a, Vector3f b) {
 	return result;
 }
 
-float vector3f_length(Vector3f v) {
+float float3_length(float3 v) {
 	float result = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 
 	return result;
 }
 
-Vector3f vector3f_normalize(Vector3f v) {
-	Vector3f result = vector3f_scale(v, 1 / vector3f_length(v));
+float3 float3_normalize(float3 v) {
+	float3 result = float3_scale(v, 1 / float3_length(v));
 
 	return result;
 }
-Vector3f vector3f_normalize_safe(Vector3f v, float epsilon) {
-	float length = vector3f_length(v);
+float3 float3_normalize_safe(float3 v, float epsilon) {
+	float length = float3_length(v);
 	if (length < epsilon) {
-		return (Vector3f){ 0 }; // Return zero vectortor if too small
+		return (float3){ 0 }; // Return zero vectortor if too small
 	}
-	return vector3f_scale(v, 1.0f / length);
+	return float3_scale(v, 1.0f / length);
 }
 
-float vector3f_angle(Vector3f a, Vector3f b) {
-	float dot = vector3f_dot(vector3f_normalize_safe(a, EPSILON), vector3f_normalize_safe(b, EPSILON));
+float float3_angle(float3 a, float3 b) {
+	float dot = float3_dot(float3_normalize_safe(a, EPSILON), float3_normalize_safe(b, EPSILON));
 
 	if (dot > 1.0f)
 		dot = 1.0f;
@@ -83,19 +108,19 @@ float vector3f_angle(Vector3f a, Vector3f b) {
 /* Right Hand, Rodrigues' rotation formula:
 	v = v*cos(t) + (kxv)sin(t) + k*(k.v)(1 - cos(t))
 */
-Vector3f vector3f_rotate(Vector3f v, float angle, Vector3f axis) {
+float3 float3_rotate(float3 v, float angle, float3 axis) {
 	float c = cosf(angle);
 	float s = sinf(angle);
-	Vector3f k = vector3f_normalize_safe(axis, EPSILON);
+	float3 k = float3_normalize_safe(axis, EPSILON);
 
-	return vector3f_add(
-		vector3f_scale(v, c),
-		vector3f_add(
-			vector3f_scale(vector3f_cross(k, v), s),
-			vector3f_scale(k, vector3f_dot(k, v) * (1.0f - c))));
+	return float3_add(
+		float3_scale(v, c),
+		float3_add(
+			float3_scale(float3_cross(k, v), s),
+			float3_scale(k, float3_dot(k, v) * (1.0f - c))));
 }
 
-Matrix4f matrix4f_identity(void) {
+Matrix4f float44_identity(void) {
 	Matrix4f result = { { 1.0f, 0.0f, 0.0f, 0.0f,
 	  0.0f, 1.0f, 0.0f, 0.0f,
 	  0.0f, 0.0f, 1.0f, 0.0f,
@@ -104,7 +129,7 @@ Matrix4f matrix4f_identity(void) {
 	return result;
 }
 
-Matrix4f matrix4f_multiply(Matrix4f lhs, Matrix4f rhs) {
+Matrix4f float44_multiply(Matrix4f lhs, Matrix4f rhs) {
 	Matrix4f result = { 0 };
 
 #define MAT4_DOT(row, col)                                  \
@@ -138,7 +163,7 @@ Matrix4f matrix4f_multiply(Matrix4f lhs, Matrix4f rhs) {
 	return result;
 }
 
-Matrix4f matrix4f_translate(Matrix4f m, Vector3f t) {
+Matrix4f float44_translate(Matrix4f m, float3 t) {
 	Matrix4f result = m;
 
 	result.elements[12] = m.elements[0] * t.x + m.elements[4] * t.y + m.elements[8] * t.z + m.elements[12];
@@ -149,7 +174,7 @@ Matrix4f matrix4f_translate(Matrix4f m, Vector3f t) {
 	return result;
 }
 
-Matrix4f matrix4f_scale(Matrix4f m, Vector3f s) {
+Matrix4f float44_scale(Matrix4f m, float3 s) {
 	Matrix4f result = m;
 
 	// Post-multiply by scale: result = m * S
@@ -178,10 +203,10 @@ Matrix4f matrix4f_scale(Matrix4f m, Vector3f s) {
 	return result;
 }
 
-Matrix4f matrix4f_rotate(Matrix4f m, float angle, Vector3f axis) {
+Matrix4f float44_rotate(Matrix4f m, float angle, float3 axis) {
 	// Post-multiply by rotation: result = m * R
 	// Means: each of the first 3 columns of m gets mixed by R.
-	Matrix4f r = matrix4f_rotated(angle, axis);
+	Matrix4f r = float44_rotated(angle, axis);
 	Matrix4f result = m;
 
 	// Cache m's basis columns (col 0,1,2). Translation col stays as-is.
@@ -216,7 +241,7 @@ Matrix4f matrix4f_rotate(Matrix4f m, float angle, Vector3f axis) {
 	return result;
 }
 
-Matrix4f matrix4f_translated(Vector3f v) {
+Matrix4f float44_translated(float3 v) {
 	// clang-format off
 	Matrix4f result = {{
 	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = v.x,
@@ -229,12 +254,12 @@ Matrix4f matrix4f_translated(Vector3f v) {
 	return result;
 }
 
-Matrix4f matrix4f_rotated(float angle, Vector3f axis) {
+Matrix4f float44_rotated(float angle, float3 axis) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
 
-	Vector3f normalized_axis = vector3f_normalize_safe(axis, EPSILON);
+	float3 normalized_axis = float3_normalize_safe(axis, EPSILON);
 	float x = normalized_axis.x;
 	float y = normalized_axis.y;
 	float z = normalized_axis.z;
@@ -251,7 +276,7 @@ Matrix4f matrix4f_rotated(float angle, Vector3f axis) {
 	return result;
 }
 
-Matrix4f matrix4f_scaled(Vector3f scale) {
+Matrix4f float44_scaled(float3 scale) {
 	// clang-format off
 	Matrix4f result = {{
 	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
@@ -264,7 +289,7 @@ Matrix4f matrix4f_scaled(Vector3f scale) {
 	return result;
 }
 
-Matrix4f matrix4f_perspective(float fovy_radians, float aspect, float near_z, float far_z) {
+Matrix4f float44_perspective(float fovy_radians, float aspect, float near_z, float far_z) {
 	Matrix4f result = { 0 };
 
 	float f = 1.0f / tanf(fovy_radians * 0.5f);
@@ -280,8 +305,8 @@ Matrix4f matrix4f_perspective(float fovy_radians, float aspect, float near_z, fl
 	return result;
 }
 
-Matrix4f matrix4f_orthographic(float left, float right, float bottom, float top, float near, float far) {
-	Matrix4f result = matrix4f_identity();
+Matrix4f float44_orthographic(float left, float right, float bottom, float top, float near, float far) {
+	Matrix4f result = float44_identity();
 
 	result.elements[0] = 2.0f / (right - left);
 	result.elements[5] = 2.0f / (top - bottom);
@@ -295,8 +320,8 @@ Matrix4f matrix4f_orthographic(float left, float right, float bottom, float top,
 	return result;
 }
 
-Matrix4f matrix4f_lookat(Vector3f eye, Vector3f center, Vector3f up) {
-	Matrix4f result = matrix4f_identity();
+Matrix4f float44_lookat(float3 eye, float3 center, float3 up) {
+	Matrix4f result = float44_identity();
 
 	// 1. Calculate Basis Vectors
 	// Forward (f): Points from eye to center (standard OpenGL/Vulkan convention is -Z forward,
@@ -304,13 +329,13 @@ Matrix4f matrix4f_lookat(Vector3f eye, Vector3f center, Vector3f up) {
 	// Let's stick to standard Right-Handed Rule derivation:
 	// f = normalized(center - eye) -> Direction usually labeled "Forward"
 	// z_axis = -f                 -> The actual Z column of the matrix
-	Vector3f f = vector3f_normalize_safe(vector3f_subtract(center, eye), EPSILON);
+	float3 f = float3_normalize_safe(float3_subtract(center, eye), EPSILON);
 
 	// Right (s)
-	Vector3f s = vector3f_normalize_safe(vector3f_cross(f, up), EPSILON);
+	float3 s = float3_normalize_safe(float3_cross(f, up), EPSILON);
 
 	// Up (u)
-	Vector3f u = vector3f_cross(s, f);
+	float3 u = float3_cross(s, f);
 
 	// 2. Fill Matrix
 	// The View Matrix Rotation is the Transpose of the Camera orientation.
@@ -320,20 +345,20 @@ Matrix4f matrix4f_lookat(Vector3f eye, Vector3f center, Vector3f up) {
 	result.elements[0] = s.x; // Col 0
 	result.elements[4] = s.y; // Col 1
 	result.elements[8] = s.z; // Col 2
-	result.elements[12] = -vector3f_dot(s, eye); // Translation X
+	result.elements[12] = -float3_dot(s, eye); // Translation X
 
 	// Row 1: Up Vector (u)
 	result.elements[1] = u.x; // Col 0
 	result.elements[5] = u.y; // Col 1
 	result.elements[9] = u.z; // Col 2
-	result.elements[13] = -vector3f_dot(u, eye); // Translation Y
+	result.elements[13] = -float3_dot(u, eye); // Translation Y
 
 	// Row 2: Back Vector (-f)
 	// (Note: we use -f because the camera looks down -Z)
 	result.elements[2] = -f.x; // Col 0
 	result.elements[6] = -f.y; // Col 1
 	result.elements[10] = -f.z; // Col 2
-	result.elements[14] = vector3f_dot(f, eye); // Translation Z (-dot(-f, eye))
+	result.elements[14] = float3_dot(f, eye); // Translation Z (-dot(-f, eye))
 
 	// Row 3: Identity
 	result.elements[3] = 0.0f;
@@ -344,7 +369,7 @@ Matrix4f matrix4f_lookat(Vector3f eye, Vector3f center, Vector3f up) {
 	return result;
 }
 
-void matrix4f_print(Matrix4f m) {
+void float44_print(Matrix4f m) {
 	// Print row by row
 	LOG_DEBUG(
 		"Matrix4f {\n"
@@ -363,10 +388,10 @@ void matrix4f_print(Matrix4f m) {
 		m.elements[3], m.elements[7], m.elements[11], m.elements[15]);
 }
 
-void vector4f_print(Vector4f v) {
+void float4_print(float4 v) {
 	LOG_INFO("Vector4f { %.2f, %.2f, %.2f, %.2f }", v.x, v.y, v.z, v.w);
 }
 
-void vector3f_print(Vector3f v) {
+void float3_print(float3 v) {
 	LOG_INFO("Vector3f { %.2f, %.2f, %.2f }", v.x, v.y, v.z);
 }

@@ -27,13 +27,7 @@ ShaderConfig importer_load_shader(Arena *arena, String vertex_path, String fragm
 	Span vfile = filesystem_read(arena, vertex_path);
 	Span ffile = filesystem_read(arena, fragment_path);
 
-	ShaderConfig result = {
-		.vertex_code = vfile.ptr,
-		.vertex_code_size = vfile.length,
-		.fragment_code = ffile.ptr,
-		.fragment_code_size = ffile.length,
-	};
-
+	ShaderConfig result = { vfile, ffile };
 	return result;
 }
 

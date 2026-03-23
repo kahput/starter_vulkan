@@ -11,7 +11,6 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-static VkFormat to_vulkan_format(VulkanContext *context, TextureFormat format);
 static VkImageAspectFlags to_aspect(TextureFormat format);
 static uint32_t to_stride(TextureFormat format);
 static VkImageViewType to_view_type(TextureType type);
@@ -30,34 +29,19 @@ RhiTexture vulkan_texture_make(
 	VkDeviceSize layer_size = width * height * to_stride(format);
 	VkDeviceSize total_size = layer_size * layer_count;
 
+	ASSERT_MESSAGE(!(pixels == NULL && FLAG_GET(usage, TEXTURE_USAGE_SAMPLED)), "NOTE: This means transfer destination isn't set");
 	VkImageUsageFlags vk_usage = to_usage_flags(format, usage, pixels != NULL);
-	VkFormat vk_format = to_vulkan_format(context, format);
+	VkFormat vk_format = vulkan_utils_to_vkformat(context, format);
 	VkImageAspectFlags aspect = to_aspect(format);
 
-	vulkan_image_create_(context, VK_SAMPLE_COUNT_1_BIT, width, height, vk_format,
+	vulkan_image_make_internal(context, VK_SAMPLE_COUNT_1_BIT, width, height, vk_format,
 		VK_IMAGE_TILING_OPTIMAL, vk_usage, type, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		image);
 
-	if (pixels) {
-		VulkanBuffer *staging_buffer = &context->staging_buffer;
-		size_t copy_end = aligned_address(staging_buffer->offset + total_size,
-			context->device.properties.limits.minMemoryMapAlignment);
-		size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
-		if (copy_end >= staging_buffer->frame_size) {
-			LOG_ERROR(
-				"Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
-			ASSERT(false);
-			return INVALID_RHI(RhiTexture);
-		}
+	if (pixels)
+		vulkan_image_upload(context, pixels, image);
 
-		memory_copy((uint8_t *)staging_buffer->mapped + copy_start, pixels, total_size);
-		staging_buffer->offset = copy_end;
-		vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, image->handle, width,
-			height, layer_count, layer_size);
-		image->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	}
-
-	if (vulkan_image_view_create(context, to_view_type(type), aspect, image) == false) {
+	if (vulkan_imageview_make(context, to_view_type(type), aspect, image) == false) {
 		LOG_ERROR("Failed to create VkImageView");
 		return INVALID_RHI(RhiTexture);
 	}
@@ -116,19 +100,19 @@ bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t 
 	vkDestroyImage(context->device.logical, image->handle, NULL);
 	vkFreeMemory(context->device.logical, image->memory, NULL);
 
-	vulkan_image_create_(context, image->info.samples, width, height, image->info.format,
+	vulkan_image_make_internal(context, image->info.samples, width, height, image->info.format,
 		VK_IMAGE_TILING_OPTIMAL, image->info.usage, image->type,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image);
-	vulkan_image_view_create(context, to_view_type(image->type), image->aspect, image);
+	vulkan_imageview_make(context, to_view_type(image->type), image->aspect, image);
 
 	return true;
 }
 
-uint32_2 vulkan_texture_size(VulkanContext *context, RhiTexture texture) {
+uint32x2 vulkan_texture_size(VulkanContext *context, RhiTexture texture) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, (uint32_2){ 0 });
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture, MAX_TEXTURES, true, (uint32x2){ 0 });
 
-	uint32_2 result = {
+	uint32x2 result = {
 		.x = image->info.extent.width,
 		.y = image->info.extent.height,
 	};
@@ -183,30 +167,14 @@ bool vulkan_sampler_destroy(VulkanContext *context, RhiSampler handle) {
 	return true;
 }
 
-VkFormat to_vulkan_format(VulkanContext *context, TextureFormat format) {
-	switch (format) {
-		case TEXTURE_FORMAT_RGBA8:
-			return VK_FORMAT_R8G8B8A8_UNORM;
-		case TEXTURE_FORMAT_RGBA16F:
-			return VK_FORMAT_R16G16B16A16_SFLOAT;
-		case TEXTURE_FORMAT_R8:
-			return VK_FORMAT_R8_UNORM;
-		case TEXTURE_FORMAT_DEPTH:
-			return context->device.depth_format;
-		case TEXTURE_FORMAT_RGBA8_SRGB:
-			return VK_FORMAT_R8G8B8A8_SRGB;
-		default:
-			ASSERT(false);
-			return VK_FORMAT_UNDEFINED;
-	}
-}
-
 uint32_t to_stride(TextureFormat format) {
 	switch (format) {
 		case TEXTURE_FORMAT_RGBA8:
 			return 4;
 		case TEXTURE_FORMAT_RGBA16F:
 			return 8;
+		case TEXTURE_FORMAT_RGBA32F:
+			return 16;
 		case TEXTURE_FORMAT_R8:
 			return 1;
 		case TEXTURE_FORMAT_DEPTH:

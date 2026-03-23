@@ -3,7 +3,7 @@
 #include "common.h"
 typedef struct arena {
 	size_t offset, capacity;
-	void *memory;
+	void *base;
 } Arena;
 typedef struct {
 	struct arena *arena;
@@ -12,15 +12,15 @@ typedef struct {
 
 Arena arena_make(size_t size);
 Arena *arena_partition(Arena *arena, size_t size);
-static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .memory = buffer, .capacity = size }; }
+static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .base = buffer, .capacity = size }; }
 void arena_destroy(Arena *arena);
 
 #define arena_wrap_struct(s) \
-	(Arena) { .memory = (s), .capacity = sizeof(*(s)) }
+	(Arena) { .base = (s), .capacity = sizeof(*(s)) }
 #define arena_wrap_array(array) \
-	(Arena) { .memory = (array), .capacity = sizeof((array)) }
+	(Arena) { .base = (array), .capacity = sizeof((array)) }
 #define arena_wrap_count(ptr, count) \
-	(Arena) { .memory = (ptr), .capacity = sizeof(*(ptr)) * (count) }
+	(Arena) { .base = (ptr), .capacity = sizeof(*(ptr)) * (count) }
 
 ENGINE_API void *arena_push(Arena *arena, size_t size, size_t align, bool zero);
 ENGINE_API void *arena_push_copy(Arena *arena, void *src, size_t size, size_t align);
@@ -36,7 +36,11 @@ ENGINE_API void arena_temp_end(ArenaTemp temp);
 ENGINE_API ArenaTemp arena_scratch_begin(Arena *conflict);
 #define arena_scratch_end(scratch) arena_temp_end(scratch)
 
-#define arena_put(arena, T, ...) (void)(*(T *)arena_push((arena), sizeof(T), alignof(T), false) = (T)__VA_ARGS__)
+#define arena_put(arena, T, ...)                                        \
+	do {                                                                \
+		T _val = __VA_ARGS__;                                           \
+		*(T *)arena_push((arena), sizeof(T), alignof(T), false) = _val; \
+	} while (0)
 #define arena_push_count(arena, count, T) ((T *)arena_push((arena), sizeof(T) * (count), alignof(T), true))
 #define arena_push_struct(arena, T) ((T *)arena_push((arena), sizeof(T), alignof(T), true))
 #define arena_push_pool(arena, capacity, T) pool_create((arena), sizeof(T), alignof(T), capacity, true)
@@ -65,10 +69,10 @@ ENGINE_API void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, s
 ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Span key, size_t size, size_t align, const char *debug_type_name);
 
 #define arena_trie_wrap(buf, count) ((ArenaTrie){ .arena = &arena_wrap_count(buf, count) })
-#define arena_trie_wrap_array(arr)                                                    \
-	(ArenaTrie) {                                                                     \
-		.arena = &(Arena){ .offset = 0, .capacity = sizeof((arr)), .memory = (arr) }, \
-		.root = NULL                                                                  \
+#define arena_trie_wrap_array(arr)                                                  \
+	(ArenaTrie) {                                                                   \
+		.arena = &(Arena){ .offset = 0, .capacity = sizeof((arr)), .base = (arr) }, \
+		.root = NULL                                                                \
 	}
 
 #define arena_trienode_push(trie, key) (arena_trienode_ensure((trie)->arena, &(trie)->root, (key), NULL))
@@ -78,11 +82,29 @@ ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Span key,
 
 #define arena_trie_push_count(trie, key, count, T) ((T *)arena_trie_ensure((trie)->arena, &(trie)->root, (key), sizeof(T) * count, alignof(T), #T))
 #define arena_trie_push(trie, key, T) ((T *)arena_trie_ensure((trie)->arena, &(trie)->root, (key), sizeof(T), alignof(T), #T))
-#define arena_trie_put(trie, key, T, ...) (void)(*(T *)arena_trie_ensure((trie)->arena, &(trie)->root, (key), sizeof(T), alignof(T), #T) = (T)__VA_ARGS__)
+#define arena_trie_put(trie, key, T, ...)                                                               \
+	do {                                                                                                \
+		T _val = __VA_ARGS__;                                                                           \
+		*(T *)arena_trie_ensure((trie)->arena, &(trie)->root, (key), sizeof(T), alignof(T), #T) = _val; \
+	} while (0)
+#define arena_trie_store(trie, T, ...)                                         \
+	do {                                                                       \
+		struct {                                                               \
+			Span key;                                                          \
+			T value;                                                           \
+		} _values[] = __VA_ARGS__;                                             \
+		for (uint32_t index = 0; index < countof(_values); ++index) {          \
+			arena_trie_put(trie, _values[index].key, T, _values[index].value); \
+		}                                                                      \
+	} while (0)
 #define arena_trie_find(trie, key, T) ((T *)arena_trie_ensure(NULL, &(trie)->root, (key), 0, 0, #T))
 
-#define arena_triestruct_push(arena, root, key_value, T) ((T *)arena_triestruct_ensure((arena), (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), key_value, sizeof(T##Trie), alignof(T##Trie)))
-#define arena_triestruct_put(arena, root, key_value, T, ...) (*(T *)arena_triestruct_ensure((arena), (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), key_value, sizeof(T##Trie), alignof(T##Trie)) = (T)__VA_ARGS__)
+#define arena_triestruct_push(arena, root, k, T) ((T *)arena_triestruct_ensure((arena), (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), k, sizeof(T##Trie), alignof(T##Trie)))
+#define arena_triestruct_put(arena, root, k, T, ...)                                                                                                                        \
+	do {                                                                                                                                                                    \
+		T _val = __VA_ARGS__;                                                                                                                                               \
+		*(T *)arena_triestruct_ensure((arena), (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), k, sizeof(T##Trie), alignof(T##Trie)) = _val; \
+	} while (0)
 #define arena_triestruct_find(root, key_value, T) ((T *)arena_triestruct_ensure(NULL, (ArenaTrieHeader **)&(root), offsetof(T##Trie, key), offsetof(T##Trie, value), key_value, sizeof(T##Trie), alignof(T##Trie)))
 
 typedef struct arena_list_node {
@@ -116,13 +138,20 @@ typedef struct alignas(16) {
 	(arr) ? (T *)((ArenaArrayHeader *)arena_push_copy((arena), HEADER(arr, ArenaArrayHeader), sizeof(ArenaArrayHeader) + sizeof(T) * arena_array_count(arr), 16) + 1) : NULL
 
 #define arena_array_push(arr) (&(arr)[HEADER(arr, ArenaArrayHeader)->count++])
-#define arena_array_put(arr, T, ...) \
-	((arr)[HEADER(arr, ArenaArrayHeader)->count++] = (T)__VA_ARGS__)
+#define arena_array_put(arr, T, ...)                          \
+	do {                                                      \
+		T _val = __VA_ARGS__;                                 \
+		(arr)[HEADER(arr, ArenaArrayHeader)->count++] = _val; \
+	} while (0)
 
 ENGINE_API void *arena_array_ensure(Arena *arena, void *arr, size_t item_size);
 
 #define arena_darray_push(arena, arr, T)                    \
 	((arr) = arena_array_ensure((arena), (arr), sizeof(T)), \
 		arena_array_push(arr))
-#define arena_darray_put(arena, arr, T, ...) \
-	(void)((arr) = arena_array_ensure((arena), (arr), sizeof(T)), arena_array_put((arr), T, __VA_ARGS__))
+#define arena_darray_put(arena, arr, T, ...)                   \
+	do {                                                       \
+		(arr) = arena_array_ensure((arena), (arr), sizeof(T)); \
+		T _val = __VA_ARGS__;                                  \
+		(arr)[HEADER(arr, ArenaArrayHeader)->count++] = _val;  \
+	} while (0)

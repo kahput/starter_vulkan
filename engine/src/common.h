@@ -48,7 +48,7 @@
 #define memory_copy_count(d, s, c) memory_copy((d), (s), sizeof(*(d)) * (c))
 
 #define memory_zero(s, z) memory_set((s), 0, (z))
-#define memory_zero_struct(s) memory_zero((s), sizeof(*(s)))
+#define memory_zero_struct(s) memory_zero(&(s), sizeof((s)))
 #define memory_zero_array(a) memory_zero((a), sizeof(a))
 #define memory_zero_count(m, c) memory_zero((m), sizeof(*(m)) * (c))
 
@@ -82,10 +82,12 @@ static inline uint64_t aligned_address(uint64_t address, uint64_t alignment) {
 	return ((address + (alignment - 1)) & ~(alignment - 1));
 }
 static inline uint64_t hash64(void *memory, size_t size) {
-	uint64_t hash = 5381;
-	for (uint32_t index = 0; index < size; ++index)
-		hash = ((hash << 5) * hash) + ((uint8_t *)memory)[index];
-	return hash;
+	uint64_t h = 0x100;
+	for (size_t i = 0; i < size; i++) {
+		h ^= ((uint8_t *)memory)[i];
+		h *= 1111111111111111111;
+	}
+	return h;
 }
 
 #define hash_struct(s) hash64(&(s), sizeof((s)))
@@ -94,10 +96,9 @@ static inline uint64_t hash64(void *memory, size_t size) {
 
 // Types
 // clang-format off
-typedef float float32;
-typedef struct { float32 x, y; } float32_2;
-typedef struct { float32 x, y, z; } float32_3;
-typedef struct alignas(16) { float32 x, y, z, w; } float32_4;
+typedef struct { float x, y; } float32x2;
+typedef struct { float x, y, z; } float32x3;
+typedef struct alignas(16) { float x, y, z, w; } float32x4;
 
 typedef double float64;
 typedef struct { float64 x, y; } float64_2;
@@ -105,41 +106,49 @@ typedef struct { float64 x, y, z; } float64_3;
 typedef struct alignas(16) { float64 x, y, z, w; } float64_4;
 
 typedef uint32_t uint32;
-typedef struct { uint32 x, y; } uint32_2;
-typedef struct { uint32 x, y, z; } uint32_3;
-typedef struct { uint32 x, y, z, w; } uint32_4;
+typedef struct { uint32 x, y; } uint32x2;
+typedef struct { uint32 x, y, z; } uint32x3;
+typedef struct { uint32 x, y, z, w; } uint32x4;
+
+typedef uint32x2 uint2;
+typedef uint32x3 uint3;
+typedef uint32x4 uint4;
 
 typedef int32_t int32;
-typedef struct { int32 x, y; } int32_2;
-typedef struct { int32 x, y, z; } int32_3;
-typedef struct { int32 x, y, z, w; } int32_4;
+typedef struct { int32 x, y; } int32x2;
+typedef struct { int32 x, y, z; } int32x3;
+typedef struct { int32 x, y, z, w; } int32x4;
+
+typedef int32x2 int2;
+typedef int32x3 int3;
+typedef int32x4 int4;
 // clang-format on
 
 typedef struct {
-	uint8_t *ptr;
+	uint8_t *buffer;
 	size_t length;
 } Span;
 
-static inline Span span_make(void *ptr, size_t length) { return (Span){ .ptr = ptr, .length = length }; }
+static inline Span span_make(void *ptr, size_t length) { return (Span){ .buffer = ptr, .length = length }; }
 
-#define span_struct(obj) ((Span){ .ptr = (uint8_t *)&(obj), .length = sizeof(obj) })
-#define span_array(arr) ((Span){ .ptr = (uint8_t *)(arr), .length = sizeof(arr) })
-#define span_count(p, n) ((Span){ .ptr = (uint8_t *)(p), .length = sizeof(*(p)) * (n) })
-#define span_literal(lit) ((Span){ .ptr = (uint8_t *)(lit), .length = sizeof(lit) - 1 })
-#define span_string(s) ((Span){ .ptr = (uint8_t *)(s).chars, .length = (s).length })
+#define span_struct(obj) ((Span){ .buffer = (uint8_t *)&(obj), .length = sizeof(obj) })
+#define span_array(arr) ((Span){ .buffer = (uint8_t *)(arr), .length = sizeof(arr) })
+#define span_count(p, n) ((Span){ .buffer = (uint8_t *)(p), .length = sizeof(*(p)) * (n) })
+#define span_literal(lit) ((Span){ .buffer = (uint8_t *)(lit), .length = sizeof(lit) - 1 })
+#define span_string(s) ((Span){ .buffer = (uint8_t *)(s).chars, .length = (s).length })
 
 static inline Span span_subspan(Span s, size_t offset, size_t length) {
 	if (offset > s.length)
 		return span_make(NULL, 0);
 	if (offset + length > s.length)
 		length = s.length - offset;
-	return span_make(s.ptr + offset, length);
+	return span_make(s.buffer + offset, length);
 }
 static inline bool span_empty(Span s) { return s.length == 0; }
 static inline bool span_equal(Span a, Span b) {
 	if (a.length != b.length)
 		return false;
-	return memory_equals(a.ptr, b.ptr, a.length);
+	return memory_equals(a.buffer, b.buffer, a.length);
 }
 
 typedef uint32_t Flag;

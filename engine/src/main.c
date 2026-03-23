@@ -73,7 +73,7 @@ int main(void) {
 		return 1;
 	}
 
-	window_set_cursor_locked(engine.display, true);
+	/* window_set_cursor_locked(engine.display, true); */
 
 	GameContext game_context = {
 		.permanent_memory = arena_push(&engine.memory, MiB(32), 16, true),

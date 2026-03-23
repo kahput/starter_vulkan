@@ -15,9 +15,5 @@ RHI_HANDLE(RhiUniformSet);
 // clang-format on
 
 typedef struct {
-	void *vertex_code;
-	size_t vertex_code_size;
-
-	void *fragment_code;
-	size_t fragment_code_size;
+    Span vertex, fragment;
 } ShaderConfig;

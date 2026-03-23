@@ -213,7 +213,7 @@ int64_t string_to_i64(String str) {
 	return result * sign;
 }
 
-float32 string_to_f32(String str) {
+float string_to_f32(String str) {
 	char buffer[128];
 	if (str.length >= sizeof(buffer))
 		return 0.0f;

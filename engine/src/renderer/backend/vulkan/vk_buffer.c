@@ -13,64 +13,50 @@
 
 int32_t to_vulkan_usage(BufferType type);
 static const char *buffer_type_stringify[] = {
-	"Vertex buffer",
-	"Index buffer",
-	"Uniform buffer",
-	"Storage buffer"
+	"Vertex",
+	"Index",
+	"Uniform",
+	"Storage"
 };
 
 RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemory memory, size_t size, void *data) {
 	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
-	LOG_TRACE("Vulkan: Creating %s resource...", buffer_type_stringify[type]);
+	LOG_TRACE("Vulkan: creating %s buffer...", buffer_type_stringify[type]);
 
 	logger_indent();
 
 	VkBufferUsageFlags usage = to_vulkan_usage(type);
-	VkMemoryPropertyFlags properties = 0;
 	bool result = false;
 	if (memory == BUFFER_MEMORY_SHARED) {
-		properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		result = vulkan_buffer_make_internal(context, size, usage, properties, buffer);
+		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		result = vulkan_buffer_make_internal(context, size, usage, properties, 0, buffer);
 		vulkan_buffer_map(context, buffer);
 		if (data) {
-			for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
+			for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index)
 				memory_copy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
-			}
 		}
 	} else {
 		usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-		result = vulkan_buffer_make_internal(context, size, usage, properties, buffer);
+		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		result = vulkan_buffer_make_internal(context, size, usage, properties, 0, buffer);
 
-		if (data != NULL) {
-			VulkanBuffer *staging_buffer = &context->staging_buffer;
-			size_t copy_end = aligned_address(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
-			size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
-			if (copy_end >= staging_buffer->frame_size) {
-				LOG_TRACE("Max staging buffer size exceeded, aborting vulkan_buffer_create");
-				ASSERT(false);
-				return INVALID_RHI(RhiBuffer);
-			}
-
-			memory_copy((uint8_t *)staging_buffer->mapped + copy_start, data, size);
-			vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->frame_size);
-			staging_buffer->offset = copy_end;
-		}
+		if (data && vulkan_buffer_upload(context, data, buffer) == false)
+			return INVALID_RHI(RhiBuffer);
 	}
 
 	if (result == false)
 		return INVALID_RHI(RhiBuffer);
 
-	LOG_TRACE("%s resource created", buffer_type_stringify[type]);
+	LOG_TRACE("Vulkan: %s buffer created", buffer_type_stringify[type]);
 
 	logger_dedent();
 
 	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
 }
 
-RhiBuffer vulkan_bufferarray_make(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride) {
+RhiBuffer vulkan_buffer_make_array(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride) {
 	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
-	LOG_TRACE("Vulkan: Creating %s resource...", buffer_type_stringify[type]);
+	LOG_TRACE("Vulkan: creating %s buffer...", buffer_type_stringify[type]);
 
 	switch (type) {
 		case BUFFER_TYPE_UNIFORM:
@@ -80,12 +66,52 @@ RhiBuffer vulkan_bufferarray_make(VulkanContext *context, BufferType type, Buffe
 	}
 }
 
+RhiBuffer vulkan_buffer_make_texel(VulkanContext *context, BufferType type, BufferMemory memory, TextureFormat format, size_t size, void *data) {
+	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
+	LOG_TRACE("Vulkan: Creating %s texel buffer...", buffer_type_stringify[type]);
+
+	ASSERT(type == BUFFER_TYPE_UNIFORM || type == BUFFER_TYPE_STORAGE);
+	VkBufferUsageFlags usage = type == BUFFER_TYPE_UNIFORM
+		? VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT
+		: VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
+
+	bool result = false;
+
+	if (memory == BUFFER_MEMORY_SHARED) {
+		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		result = vulkan_buffer_make_internal(context, size, usage, properties, vulkan_utils_to_vkformat(context, format), buffer);
+		vulkan_buffer_map(context, buffer);
+		if (data) {
+			for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index)
+				memory_copy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
+		}
+	} else {
+		usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		result = vulkan_buffer_make_internal(context, size, usage, properties, vulkan_utils_to_vkformat(context, format), buffer);
+
+		if (data && vulkan_buffer_upload(context, data, buffer) == false)
+			return INVALID_RHI(RhiBuffer);
+	}
+
+	if (result == false)
+		return INVALID_RHI(RhiBuffer);
+
+	LOG_TRACE("Vulkan: %s texel buffer created", buffer_type_stringify[type]);
+	logger_dedent();
+
+	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
+}
+
 bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
 	vkDestroyBuffer(context->device.logical, buffer->handle, NULL);
 	vkFreeMemory(context->device.logical, buffer->memory, NULL);
+	if (buffer->view)
+		vkDestroyBufferView(context->device.logical, buffer->view, NULL);
+
 	*buffer = (VulkanBuffer){ 0 };
 
 	pool_free(context->buffer_pool, buffer);
@@ -98,31 +124,18 @@ bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offse
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
 	if (FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
-		size_t copy_size = size;
-		if (offset + copy_size > buffer->frame_size) {
-			LOG_WARN("Vulkan: write size greater than allocation size, ignoring difference of %dB", size - buffer->frame_size);
-			copy_size = buffer->frame_size - offset;
+		if (offset + size > buffer->frame_size) {
+			LOG_WARN("Vulkan: write overflows frame allocation by %zuB, clamping", (offset + size) - buffer->frame_size);
+			size = buffer->frame_size - offset;
 		}
 
 		uint8_t *dest = (uint8_t *)buffer->mapped + (buffer->frame_size * context->current_frame) + offset;
-		memory_copy(dest, data, copy_size);
+		memory_copy(dest, data, size);
 
 		return true;
 	}
 
-	VulkanBuffer *staging_buffer = &context->staging_buffer;
-	size_t copy_end = aligned_address(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
-	size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
-	if (copy_end >= staging_buffer->frame_size) {
-		LOG_TRACE("Vulkan: staging buffer size exceeded for frame %d, aborting %s", context->current_frame, __func__);
-		ASSERT(false);
-		return false;
-	}
-	memory_copy((uint8_t *)staging_buffer->mapped + copy_start, data, size);
-	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, buffer->handle, buffer->frame_size);
-	staging_buffer->offset = copy_end;
-
-	return true;
+	return vulkan_buffer_upload(context, data, buffer);
 }
 
 bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset) {
@@ -146,8 +159,7 @@ bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset
 		return true;
 	}
 
-	LOG_WARN("Buffer failed to bind: Unsupported buffer type");
-
+	LOG_WARN("Vulkan: vulkan_buffer_bind failed — unsupported buffer type (usage=0x%x)", buffer->usage);
 	return false;
 }
 
@@ -177,27 +189,9 @@ bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, uint32_t c
 	return false;
 }
 
-bool vulkan_buffer_ubo_create(VulkanContext *context, VulkanBuffer *buffer, size_t size, void *data) {
-	vulkan_buffer_make_internal(
-		context, size,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		buffer);
-
-	vulkan_buffer_map(context, buffer);
-
-	if (data) {
-		for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index) {
-			memory_copy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
-		}
-	}
-
-	return true;
-}
-
 bool vulkan_buffer_make_internal(
 	VulkanContext *context, VkDeviceSize size,
-	VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+	VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkFormat format,
 	VulkanBuffer *out_buffer) {
 	out_buffer->frame_size = size;
 	out_buffer->frame_size = aligned_address(out_buffer->frame_size, vulkan_memory_required_alignment(context, usage, properties));
@@ -221,7 +215,7 @@ bool vulkan_buffer_make_internal(
 	};
 
 	if (vkCreateBuffer(context->device.logical, &vb_create_info, NULL, &out_buffer->handle) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create vertex buffer");
+		LOG_ERROR("Vulkan: failed to create buffer");
 		return false;
 	}
 
@@ -240,13 +234,39 @@ bool vulkan_buffer_make_internal(
 	};
 
 	if (vkAllocateMemory(context->device.logical, &allocate_info, NULL, &out_buffer->memory) != VK_SUCCESS) {
-		LOG_ERROR("Failed to allocate buffer memory");
+		LOG_ERROR("Vulkan: failed to allocate buffer memory");
 		return false;
 	}
 
 	if (vkBindBufferMemory(context->device.logical, out_buffer->handle, out_buffer->memory, 0) != VK_SUCCESS) {
-		LOG_ERROR("Failed to bind buffer memory");
+		LOG_ERROR("Vulkan: failed to bind buffer memory");
 		return false;
+	}
+
+	if (format) {
+		VkFormatProperties format_properties = { 0 };
+		vkGetPhysicalDeviceFormatProperties(context->device.physical, format, &format_properties);
+
+		if (FLAG_GET(usage, VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT) &&
+			FLAG_GET(format_properties.bufferFeatures, VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT) == false) {
+			ASSERT(false);
+		} else if (FLAG_GET(usage, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT) &&
+			FLAG_GET(format_properties.bufferFeatures, VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT) == false) {
+			ASSERT(false);
+		}
+
+		VkBufferViewCreateInfo view_info = {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+			.buffer = out_buffer->handle,
+			.format = format,
+			.offset = 0,
+			.range = size
+		};
+
+		if (vkCreateBufferView(context->device.logical, &view_info, NULL, &out_buffer->view) != VK_SUCCESS) {
+			LOG_ERROR("Vulkan: failed to create buffer view");
+			return false;
+		}
 	}
 
 	LOG_TRACE("VkBuffer created");
@@ -260,6 +280,23 @@ bool vulkan_buffer_map(VulkanContext *context, VulkanBuffer *buffer) {
 
 void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer) {
 	vkUnmapMemory(context->device.logical, buffer->memory);
+}
+
+bool vulkan_buffer_upload(VulkanContext *context, void *data, VulkanBuffer *dst) {
+	VulkanBuffer *staging_buffer = &context->staging_buffer;
+	size_t copy_end = aligned_address(staging_buffer->offset + dst->size, context->device.properties.limits.minMemoryMapAlignment);
+	size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
+	if (copy_end >= staging_buffer->frame_size) {
+		LOG_TRACE("Max staging buffer size exceeded, aborting vulkan_buffer_create");
+		ASSERT(false);
+		return false;
+	}
+
+	memory_copy((uint8_t *)staging_buffer->mapped + copy_start, data, dst->size);
+	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, dst->handle, dst->frame_size);
+	staging_buffer->offset = copy_end;
+
+	return true;
 }
 
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size) {

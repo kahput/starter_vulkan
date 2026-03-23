@@ -30,15 +30,15 @@ RhiShader vulkan_shader_make(
 	ShaderConfig config, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
-	if (config.vertex_code == NULL || config.vertex_code_size == 0 || config.fragment_code == NULL || config.fragment_code_size == 0) {
+	if (config.vertex.buffer == NULL || config.vertex.length == 0 || config.fragment.buffer == NULL || config.fragment.length == 0) {
 		LOG_ERROR("Vulkan: Invalid shader code passed to vulkan_renderer_shader_craete");
 		return INVALID_RHI(RhiShader);
 	}
 
 	VkShaderModuleCreateInfo vsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config.vertex_code_size,
-		.pCode = (uint32_t *)config.vertex_code,
+		.codeSize = config.vertex.length,
+		.pCode = (uint32_t *)config.vertex.buffer,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
@@ -48,8 +48,8 @@ RhiShader vulkan_shader_make(
 
 	VkShaderModuleCreateInfo fsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config.fragment_code_size,
-		.pCode = (uint32_t *)config.fragment_code,
+		.codeSize = config.fragment.length,
+		.pCode = (uint32_t *)config.fragment.buffer,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
@@ -61,7 +61,8 @@ RhiShader vulkan_shader_make(
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	shader->first_free = arena_freelist_wrap_array(shader->variants, VulkanPipeline);
-	shader->variant_count++;
+	arena_list_pop(shader->first_free, VulkanPipeline);
+	shader->variant_count = 1;
 
 	return (RhiShader){ indexof(context->shader_pool, shader) };
 }
@@ -265,7 +266,6 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 		key.color_formats[index] = pass->color_formats[index];
 
 	VulkanPipeline *popped_slot = arena_list_pop(&shader->first_free, VulkanPipeline);
-
 	shader->trie.arena = &arena_wrap_struct(popped_slot);
 
 	ArenaTrieNode *node = arena_trienode_push(&shader->trie, span_struct(key));
@@ -361,13 +361,13 @@ bool reflect_shader_interface(
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
-	result = spvReflectCreateShaderModule(config.vertex_code_size, config.vertex_code, &vertex_module);
+	result = spvReflectCreateShaderModule(config.vertex.length, config.vertex.buffer, &vertex_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect vertex shader");
 		return false;
 	}
 
-	result = spvReflectCreateShaderModule(config.fragment_code_size, config.fragment_code, &fragment_module);
+	result = spvReflectCreateShaderModule(config.fragment.length, config.fragment.buffer, &fragment_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect fragment shader");
 		spvReflectDestroyShaderModule(&vertex_module);

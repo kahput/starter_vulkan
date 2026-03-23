@@ -16,8 +16,9 @@
 UUID identifier_generate(void) {
 	uint64_t random_value = 0;
 	while (random_value == 0)
-		if (getrandom(&random_value, sizeof(random_value), GRND_RANDOM) != sizeof(random_value))
+		if (getrandom(&random_value, sizeof(random_value), GRND_RANDOM) != sizeof(random_value)) {
 			LOG_WARN("Identifier: Random number failed");
+		}
 	return random_value;
 }
 

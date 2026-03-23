@@ -211,4 +211,5 @@ VkFormat find_supported_depth_format(VulkanDevice *device) {
 	}
 
 	ASSERT(false);
+    return VK_FORMAT_UNDEFINED;
 }

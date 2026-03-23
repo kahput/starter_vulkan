@@ -10,7 +10,7 @@ typedef enum {
 	JSON_bool,
 	JSON_uint32_t,
 	JSON_int32_t,
-	JSON_float32,
+	JSON_float,
 	JSON_String,
 	JSON_ARRAY,
 	JSON_OBJECT,

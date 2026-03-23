@@ -81,12 +81,13 @@ typedef enum {
 } TextureUsageFlags;
 
 typedef enum {
-	TEXTURE_FORMAT_RGBA8_SRGB,
 	TEXTURE_FORMAT_RGBA8,
+	TEXTURE_FORMAT_RGBA8_SRGB,
 
 	TEXTURE_FORMAT_R8,
 
 	TEXTURE_FORMAT_RGBA16F,
+	TEXTURE_FORMAT_RGBA32F,
 
 	TEXTURE_FORMAT_DEPTH,
 	TEXTURE_FORMAT_DEPTH_STENCIL
@@ -156,6 +157,7 @@ typedef enum compare_op {
 	COMPARE_OP_ALWAYS = 7
 } PipelineCompareOp;
 
+// NOTE: MUST BE EXPLICITLY PADDED FOR BINARY EQUALITY CHECK
 typedef struct pipeline_desc {
 	ShaderAttribute *override_attributes;
 	uint32_t override_count;
@@ -163,24 +165,13 @@ typedef struct pipeline_desc {
 	PipelineCullMode cull_mode;
 	PipelineFrontFace front_face;
 	PipelinePolygonMode polygon_mode;
-	/* float line_width; */
 
 	bool depth_test_enable;
 	bool depth_write_enable;
-	PipelineCompareOp depth_compare_op;
-
-	/* bool blend_enable; */
 	bool topology_line_list;
+	bool _pad0;
+	PipelineCompareOp depth_compare_op;
 } PipelineDesc;
-
-typedef enum {
-	SHADER_FLAG_CULL_NONE = 1 << 0,
-	SHADER_FLAG_CULL_FRONT = 1 << 2,
-	SHADER_FLAG_WIREFRAME = 1 << 3,
-
-	SHADER_FLAG_CLOCK_WISE = 1 << 4,
-	SHADER_FLAG_COMPARE_OP_LESS_OR_EQUAL = 1 << 5,
-} ShaderStateFlags;
 
 typedef enum sampler_filter {
 	FILTER_NEAREST = 0,
@@ -216,7 +207,7 @@ typedef struct {
 		DONT_CARE } store;
 
 	union {
-		float32_4 color;
+		float32x4 color;
 		float depth;
 	} clear;
 } AttachmentDesc;
@@ -234,6 +225,20 @@ typedef struct {
 } DrawListDesc;
 
 // TODO: Move these
+#define pipeline_opt(...)                           \
+	(PipelineDesc) {                                \
+		.override_attributes = NULL,                \
+		.override_count = 0,                        \
+		.cull_mode = CULL_MODE_NONE,                \
+		.front_face = FRONT_FACE_COUNTER_CLOCKWISE, \
+		.polygon_mode = POLYGON_MODE_FILL,          \
+		.depth_test_enable = true,                  \
+		.depth_write_enable = true,                 \
+		.depth_compare_op = COMPARE_OP_LESS,        \
+		.topology_line_list = false,                \
+		__VA_ARGS__,                                \
+	}
+
 #define DEFAULT_PIPELINE                            \
 	(PipelineDesc) {                                \
 		.override_attributes = NULL,                \
@@ -266,11 +271,3 @@ typedef struct {
 		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
 		.anisotropy_enable = false                            \
 	}
-
-typedef struct {
-	uint32_t binding;
-	ShaderBindingType type;
-
-	size_t size;
-	uint32_t count;
-} ResourceBinding;

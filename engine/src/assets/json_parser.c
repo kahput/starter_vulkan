@@ -11,7 +11,7 @@ const char *json_type_string[JSON_TYPE_COUNT] = {
 	[JSON_bool] = "bool",
 	[JSON_uint32_t] = "uint",
 	[JSON_int32_t] = "int",
-	[JSON_float32] = "float",
+	[JSON_float] = "float",
 	[JSON_String] = "string",
 	[JSON_ARRAY] = "array",
 	[JSON_OBJECT] = "object",
@@ -114,9 +114,9 @@ static JsonNode *parse_value(JsonParser *p) {
 		}
 		case TOKEN_FLOAT: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
-			node->type = JSON_float32;
+			node->type = JSON_float;
 
-			float32 *floating_point = arena_push_struct(p->arena, float32);
+			float *floating_point = arena_push_struct(p->arena, float);
 			*floating_point = string_to_f32(token.string);
 			node->value = floating_point;
 			return node;
@@ -158,9 +158,9 @@ static JsonNode *parse_value(JsonParser *p) {
 				return node;
 			}
 			if (num.type == TOKEN_FLOAT) {
-				node->type = JSON_float32;
+				node->type = JSON_float;
 
-				float32 *floating_point = arena_push_struct(p->arena, float32);
+				float *floating_point = arena_push_struct(p->arena, float);
 				*floating_point = -string_to_f64(num.string);
 				node->value = floating_point;
 				return node;
@@ -203,23 +203,23 @@ void *json_value_safe(JsonNode *node, JsonType type) {
 		return json_zero_buffer;
 	if (node->type != type) {
 		// NOTE: Must cast the value to change the bits to be interpreted correctly
-		if (node->type == JSON_uint32_t && type == JSON_float32) {
-			*(float32 *)node->value = (float32)(*(uint32_t *)node->value);
+		if (node->type == JSON_uint32_t && type == JSON_float) {
+			*(float *)node->value = (float)(*(uint32_t *)node->value);
 			node->type = type;
 			return node->value;
 		}
-		if (node->type == JSON_int32_t && type == JSON_float32) {
-			*(float32 *)node->value = (float32)(*(int32_t *)node->value);
+		if (node->type == JSON_int32_t && type == JSON_float) {
+			*(float *)node->value = (float)(*(int32_t *)node->value);
 			node->type = type;
 			return node->value;
 		}
-		if (node->type == JSON_float32 && type == JSON_uint32_t) {
-			*(uint32_t *)node->value = (uint32_t)(*(float32 *)node->value);
+		if (node->type == JSON_float && type == JSON_uint32_t) {
+			*(uint32_t *)node->value = (uint32_t)(*(float *)node->value);
 			node->type = type;
 			return node->value;
 		}
-		if (node->type == JSON_float32 && type == JSON_int32_t) {
-			*(int32_t *)node->value = (int32_t)(*(float32 *)node->value);
+		if (node->type == JSON_float && type == JSON_int32_t) {
+			*(int32_t *)node->value = (int32_t)(*(float *)node->value);
 			node->type = type;
 			return node->value;
 		}

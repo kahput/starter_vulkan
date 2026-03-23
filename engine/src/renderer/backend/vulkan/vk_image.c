@@ -1,10 +1,11 @@
+#include "core/debug.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_image_create_(
+bool vulkan_image_make_internal(
 	VulkanContext *context, VkSampleCountFlags sample_count,
 	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
 	VkImageUsageFlags usage, TextureType type, VkMemoryPropertyFlags properties,
@@ -61,7 +62,7 @@ bool vulkan_image_create_(
 	return true;
 }
 
-void vulkan_image_destroy_(VulkanContext *context, VulkanImage *image) {
+void vulkan_image_destroy_internal(VulkanContext *context, VulkanImage *image) {
 	if (!image || image->handle == VK_NULL_HANDLE)
 		return;
 
@@ -71,7 +72,30 @@ void vulkan_image_destroy_(VulkanContext *context, VulkanImage *image) {
 	*image = (VulkanImage){ 0 };
 }
 
-bool vulkan_image_view_create(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image) {
+bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst) {
+	VkDeviceSize layer_size = dst->width * dst->height * vulkan_utils_type_to_stride(dst->info.format);
+	VkDeviceSize total_size = layer_size * dst->info.arrayLayers;
+
+	VulkanBuffer *staging_buffer = &context->staging_buffer;
+	size_t copy_end = aligned_address(staging_buffer->offset + total_size,
+		context->device.properties.limits.minMemoryMapAlignment);
+	size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
+	if (copy_end >= staging_buffer->frame_size) {
+		LOG_ERROR(
+			"Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
+		ASSERT(false);
+		return false;
+	}
+
+	memory_copy((uint8_t *)staging_buffer->mapped + copy_start, pixels, total_size);
+	staging_buffer->offset = copy_end;
+	vulkan_buffer_to_image(context, copy_start, staging_buffer->handle, dst->handle, dst->width,
+		dst->height, dst->info.arrayLayers, layer_size);
+	dst->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	return true;
+}
+
+bool vulkan_imageview_make(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image) {
 	VkImageViewCreateInfo iv_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		.image = image->handle,
@@ -280,7 +304,7 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 	if (recreate == false)
 		return true;
 
-	vulkan_image_destroy_(context, msaa);
+	vulkan_image_destroy_internal(context, msaa);
 
 	VkImageUsageFlags usage =
 		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
@@ -291,7 +315,7 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-	if (vulkan_image_create_(
+	if (vulkan_image_make_internal(
 			context, sample_count,
 			extent.width, extent.height,
 			format, VK_IMAGE_TILING_OPTIMAL,
@@ -302,7 +326,7 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 		return false;
 	}
 
-	if (!vulkan_image_view_create(context, VK_IMAGE_VIEW_TYPE_2D, aspect, msaa)) {
+	if (!vulkan_imageview_make(context, VK_IMAGE_VIEW_TYPE_2D, aspect, msaa)) {
 		LOG_ERROR("Vulkan: failed to create MSAA color scratch image view, aborting %s", __func__);
 		return false;
 	}

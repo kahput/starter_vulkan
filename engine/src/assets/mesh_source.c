@@ -24,7 +24,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 			  2---3
 	**/
 
-	const float32_3 positions[8] = {
+	const float32x3 positions[8] = {
 		[0] = { x + -0.5f, y + 0.5f, z + 0.5f },
 		[1] = { x + 0.5f, y + 0.5f, z + 0.5f },
 		[2] = { x + -0.5f, y + -0.5f, z + 0.5f },
@@ -35,7 +35,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 		[7] = { x + -0.5f, y + -0.5f, z + -0.5f }
 	};
 
-	const float32_3 normals[6] = {
+	const float32x3 normals[6] = {
 		[CUBE_FACE_RIGHT] = { 1.0f, 0.0f, 0.0f },
 		[CUBE_FACE_LEFT] = { -1.0f, 0.0f, 0.0f },
 		[CUBE_FACE_TOP] = { 0.0f, 1.0f, 0.0f },
@@ -44,7 +44,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 		[CUBE_FACE_BACK] = { 0.0f, 0.0f, -1.0f }
 	};
 
-	const float32_2 uvs[6] = {
+	const float32x2 uvs[6] = {
 		{ 0.0f, 0.0f },
 		{ 0.0f, 1.0f },
 		{ 1.0f, 0.0f },
