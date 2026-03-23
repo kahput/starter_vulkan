@@ -76,6 +76,9 @@ typedef struct {
 	// Location
 	float rotation;
 	float2 position, size;
+
+	// Collision
+	Rectangle collision_shape;
 } Sprite;
 
 typedef struct {
@@ -454,8 +457,21 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 						},
 						.size = tile->size
 					};
-					object->position.y -= object->size.y;
+					object->position.x += object->size.x * 0.5f;
+					object->position.y -= object->size.y * 0.5f;
 					object->layer = DRAW_LAYER_WORLD;
+
+					object->collision_shape = (Rectangle){
+						.x = object->size.x * 0.5f,
+						.y = 0,
+						.width = object->size.x,
+						.height = object->size.y * 0.5f,
+					};
+
+					object->origin = (float2){
+						.x = object->size.x * 0.5f,
+						.y = object->size.y * 0.5f,
+					};
 
 					String name = json_find(object_node, S("name"), String);
 
@@ -540,8 +556,20 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					.size = { source.width, source.height }
 				};
 				object->layer = DRAW_LAYER_WORLD;
-				object->position.y -= object->size.y;
-				object->position.x -= object->size.x * .5f;
+				object->position.x += object->size.x * 0.5f;
+				object->position.y -= object->size.y * 0.5f;
+
+				object->collision_shape = (Rectangle){
+					.x = object->size.x * 0.33f * .5f,
+					.y = object->size.y * 0.33f * .5f,
+					.width = object->size.x * 0.33f,
+					.height = object->size.y * 0.33f,
+				};
+
+				object->origin = (float2){
+					.x = object->size.x * 0.5f,
+					.y = object->size.y * 0.5f,
+				};
 			}
 		}
 
@@ -673,12 +701,22 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		}
 		LOG_INFO("Asset count = %d", tracker.tracked_file_count);
 
+		// PLAYER_INIT
 		ImageSource player_src = importer_load_image(scratch.arena, S("assets/pokemon/graphics/characters/player.png"));
 		pstate->player.src.width = (float)player_src.width / 4;
 		pstate->player.src.height = (float)player_src.height / 4;
 		pstate->player.size.x = (float)player_src.width / 4;
 		pstate->player.size.y = (float)player_src.height / 4;
-		pstate->player.origin = (float2){ pstate->player.size.x * .5f, pstate->player.size.y * .5f };
+		pstate->player.origin = (float2){
+			pstate->player.size.x * .5f,
+			pstate->player.size.y * .5f,
+		};
+		pstate->player.collision_shape = (Rectangle){
+			.x = pstate->player.size.x * 0.25f,
+			.y = pstate->player.size.y * 0.25f,
+			.width = pstate->player.size.x * 0.5f,
+			.height = pstate->player.size.y * 0.5f,
+		};
 
 		pstate->player.texture = vulkan_texture_make(
 			pstate->context, player_src.width, player_src.height,
@@ -715,24 +753,40 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	float2 new_position = float2_add(old_positon, float2_scale(input, speed * dt));
 	float2 move_delta = float2_subtract(new_position, old_positon);
 
-	float2 player_size = pstate->player.size;
-	Rectangle player_collision_rect = rectangle(pstate->player.position, pstate->player.size, pstate->player.origin);
+	Rectangle player_collision_rect = rectangle(
+		pstate->player.position,
+		(float2){ pstate->player.collision_shape.width, pstate->player.collision_shape.height },
+		(float2){ pstate->player.collision_shape.x, pstate->player.collision_shape.y });
 	draw_rectangle_lines(commands, player_collision_rect, 5, DRAW_LAYER_DEBUG);
+	/* Rectangle player_origin_rect = rectangle(entity->position, (float2){ 5, 5 }, entity->origin); */
+	/* draw_rectangle_lines(commands, entity_origin_rect, 5, DRAW_LAYER_DEBUG); */
 
 	float t_min = 1.0f;
 	for (uint32_t index = 0; index < arena_array_count(pstate->entities); ++index) {
 		Sprite *entity = &pstate->entities[index];
+		if (entity->layer > DRAW_LAYER_WORLD)
+			continue;
 
-		Rectangle entity_collision_rect = rectangle(entity->position, entity->size, entity->origin);
+		Rectangle entity_origin_rect = { entity->position.x, entity->position.y, 5, 5 };
+		draw_rectangle_lines(commands, entity_origin_rect, 5, DRAW_LAYER_DEBUG);
+
+		Rectangle entity_collision_rect =
+			rectangle(entity->position,
+				(float2){ entity->collision_shape.width, entity->collision_shape.height },
+				(float2){ entity->collision_shape.x, entity->collision_shape.y });
 		draw_rectangle_lines(commands, entity_collision_rect, 5, DRAW_LAYER_DEBUG);
 
 		float2 min = {
-			entity_collision_rect.x - player_size.x * 0.5f,
-			entity_collision_rect.y - player_size.y * 0.5f,
+			entity_collision_rect.x - player_collision_rect.width * 0.5f,
+			entity_collision_rect.y - player_collision_rect.height * 0.5f,
 		};
 		float2 max = {
-			entity_collision_rect.x + entity_collision_rect.width + player_size.x * 0.5f,
-			entity_collision_rect.y + entity_collision_rect.height + player_size.y * 0.5f,
+			entity_collision_rect.x +
+				entity_collision_rect.width +
+				player_collision_rect.width * 0.5f,
+			entity_collision_rect.y +
+				entity_collision_rect.height +
+				player_collision_rect.height * 0.5f,
 		};
 
 		Ray2HitResult result = ray2_rectangle_intersection(old_positon, move_delta, min, max);
@@ -761,11 +815,11 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 	// Push to drawlist
 	Sprite *p = &pstate->player;
-	draw_texture(commands, p->texture, p->src, p->position, p->size, (float2){ 64, 64 }, DRAW_LAYER_WORLD);
+	draw_texture(commands, p->texture, p->src, p->position, p->size, p->origin, DRAW_LAYER_WORLD);
 
 	for (uint32_t index = 0; index < arena_array_count(pstate->entities); ++index) {
 		Sprite s = pstate->entities[index];
-		draw_texture(commands, s.texture, s.src, s.position, s.size, (float2){ 0 }, s.layer);
+		draw_texture(commands, s.texture, s.src, s.position, s.size, s.origin, s.layer);
 	}
 
 	static float t = 0.0f;
@@ -801,7 +855,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	for (uint32_t index = 0; index < arena_array_count(pstate->coast); ++index) {
 		Sprite s = pstate->coast[index];
 		s.src.y = s.src.y + (frame_index * (s.src.height * 3));
-		draw_texture(commands, s.texture, s.src, s.position, s.size, (float2){ 0 }, s.layer);
+		draw_texture(commands, s.texture, s.src, s.position, s.size, s.origin, s.layer);
 	}
 
 	if (vulkan_frame_begin(pstate->context, size.x, size.y)) {
