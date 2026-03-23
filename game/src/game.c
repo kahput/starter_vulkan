@@ -462,8 +462,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					object->layer = DRAW_LAYER_WORLD;
 
 					object->collision_shape = (Rectangle){
-						.x = object->size.x * 0.5f,
-						.y = 0,
+						.x = 0,
+						.y = -object->size.y * 0.25,
 						.width = object->size.x,
 						.height = object->size.y * 0.5f,
 					};
@@ -560,10 +560,10 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				object->position.y -= object->size.y * 0.5f;
 
 				object->collision_shape = (Rectangle){
-					.x = object->size.x * 0.33f * .5f,
-					.y = object->size.y * 0.33f * .5f,
-					.width = object->size.x * 0.33f,
-					.height = object->size.y * 0.33f,
+					.x = 0,
+					.y = -object->size.y * 0.25f,
+					.width = object->size.x * 0.5f,
+					.height = object->size.y * 0.4f,
 				};
 
 				object->origin = (float2){
@@ -711,11 +711,12 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			pstate->player.size.x * .5f,
 			pstate->player.size.y * .5f,
 		};
+
 		pstate->player.collision_shape = (Rectangle){
-			.x = pstate->player.size.x * 0.25f,
-			.y = pstate->player.size.y * 0.25f,
-			.width = pstate->player.size.x * 0.5f,
-			.height = pstate->player.size.y * 0.5f,
+			.x = 0,
+			.y = -pstate->player.size.y * 0.33f,
+			.width = pstate->player.size.x * 0.25f,
+			.height = pstate->player.size.y * 0.25f,
 		};
 
 		pstate->player.texture = vulkan_texture_make(
@@ -749,54 +750,69 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	if (input_key_down(KEY_CODE_LEFTSHIFT))
 		speed = 1000;
 
-	float2 old_positon = pstate->player.position;
-	float2 new_position = float2_add(old_positon, float2_scale(input, speed * dt));
-	float2 move_delta = float2_subtract(new_position, old_positon);
+	float2 old_position = {
+		pstate->player.position.x - pstate->player.collision_shape.x,
+		pstate->player.position.y - pstate->player.collision_shape.y,
+	};
+	float2 new_position = float2_add(old_position, float2_scale(input, speed * dt));
+	float2 move_delta = float2_subtract(new_position, old_position);
 
 	Rectangle player_collision_rect = rectangle(
-		pstate->player.position,
+		old_position,
 		(float2){ pstate->player.collision_shape.width, pstate->player.collision_shape.height },
-		(float2){ pstate->player.collision_shape.x, pstate->player.collision_shape.y });
-	draw_rectangle_lines(commands, player_collision_rect, 5, DRAW_LAYER_DEBUG);
+		(float2){ pstate->player.collision_shape.width * .5f, pstate->player.collision_shape.height * .5f });
+	/* draw_rectangle_lines(commands, player_collision_rect, 5, DRAW_LAYER_DEBUG); */
 	/* Rectangle player_origin_rect = rectangle(entity->position, (float2){ 5, 5 }, entity->origin); */
 	/* draw_rectangle_lines(commands, entity_origin_rect, 5, DRAW_LAYER_DEBUG); */
 
-	float t_min = 1.0f;
-	for (uint32_t index = 0; index < arena_array_count(pstate->entities); ++index) {
-		Sprite *entity = &pstate->entities[index];
-		if (entity->layer > DRAW_LAYER_WORLD)
-			continue;
+	float t_remaining = 1.0f;
+	for (uint32_t iteration = 0; iteration < 4 && t_remaining > 0.0f; ++iteration) {
+		Ray2HitResult result = RAY2_NO_HIT;
 
-		Rectangle entity_origin_rect = { entity->position.x, entity->position.y, 5, 5 };
-		draw_rectangle_lines(commands, entity_origin_rect, 5, DRAW_LAYER_DEBUG);
+		for (uint32_t index = 0; index < arena_array_count(pstate->entities); ++index) {
+			Sprite *entity = &pstate->entities[index];
+			if (entity->layer > DRAW_LAYER_WORLD)
+				continue;
 
-		Rectangle entity_collision_rect =
-			rectangle(entity->position,
-				(float2){ entity->collision_shape.width, entity->collision_shape.height },
-				(float2){ entity->collision_shape.x, entity->collision_shape.y });
-		draw_rectangle_lines(commands, entity_collision_rect, 5, DRAW_LAYER_DEBUG);
+			Rectangle entity_collision_rect = {
+				.x = entity->position.x - entity->collision_shape.x - (entity->collision_shape.width * .5f),
+				.y = entity->position.y - entity->collision_shape.y - (entity->collision_shape.height * .5f),
+				.width = entity->collision_shape.width,
+				.height = entity->collision_shape.height,
+			};
+			/* draw_rectangle_lines(commands, entity_collision_rect, 5, DRAW_LAYER_DEBUG); */
 
-		float2 min = {
-			entity_collision_rect.x - player_collision_rect.width * 0.5f,
-			entity_collision_rect.y - player_collision_rect.height * 0.5f,
-		};
-		float2 max = {
-			entity_collision_rect.x +
-				entity_collision_rect.width +
-				player_collision_rect.width * 0.5f,
-			entity_collision_rect.y +
-				entity_collision_rect.height +
-				player_collision_rect.height * 0.5f,
-		};
+			float2 min = {
+				entity_collision_rect.x - player_collision_rect.width * 0.5f,
+				entity_collision_rect.y - player_collision_rect.height * 0.5f,
+			};
+			float2 max = {
+				entity_collision_rect.x +
+					entity_collision_rect.width +
+					player_collision_rect.width * 0.5f,
+				entity_collision_rect.y +
+					entity_collision_rect.height +
+					player_collision_rect.height * 0.5f,
+			};
 
-		Ray2HitResult result = ray2_rectangle_intersection(old_positon, move_delta, min, max);
-		if (result.t < t_min) {
-			t_min = result.t;
+			/* Rectangle collision_shape_visual = { */
+			/* 	min.x, min.y, max.x - min.x, max.y - min.y */
+			/* }; */
+			/* draw_rectangle_lines(commands, collision_shape_visual, 3, DRAW_LAYER_DEBUG); */
+
+			Ray2HitResult temp = ray2_rectangle_intersection(old_position, move_delta, min, max);
+			if (temp.t < result.t) {
+				result = temp;
+			}
 		}
-	}
+		float t_min = fminf(1.0f, result.t);
 
-	pstate->player.position.x += (t_min - 0.001f) * move_delta.x;
-	pstate->player.position.y += (t_min - 0.001f) * move_delta.y;
+		pstate->player.position.x += (t_min - 0.001f) * move_delta.x;
+		pstate->player.position.y += (t_min - 0.001f) * move_delta.y;
+
+		move_delta = float2_subtract(move_delta, float2_scale(result.normal, float2_dot(move_delta, result.normal)));
+		t_remaining -= t_min * t_remaining;
+	}
 
 	DrawCommand player_origin_marker = {
 		.key = sort_key(DRAW_LAYER_DEBUG, 0, 0),
