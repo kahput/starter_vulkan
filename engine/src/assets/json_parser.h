@@ -39,7 +39,7 @@ extern uint8_t json_zero_buffer[128];
 
 ENGINE_API JsonNode *json_parse(Arena *arena, String source);
 ENGINE_API JsonNode *json_node(JsonNode *node, String key);
-ENGINE_API JsonNode *json_find_where(JsonNode *list, String key, String value);
+ENGINE_API JsonNode *json_node_where(JsonNode *list, String key, String value);
 ENGINE_API void *json_value_safe(JsonNode *node, JsonType type);
 
 ENGINE_API JsonNode *json_first(JsonNode *n);

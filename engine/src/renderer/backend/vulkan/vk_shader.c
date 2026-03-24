@@ -173,16 +173,21 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		.minSampleShading = 1.0f,
 	};
 
-	VkPipelineColorBlendAttachmentState color_blend_attachment = {
-		.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-		.blendEnable = VK_FALSE,
-	};
-
 	VkPipelineColorBlendAttachmentState color_blend_attachments[4];
 	for (uint32_t index = 0; index < countof(color_blend_attachments); ++index) {
 		color_blend_attachments[index] = (VkPipelineColorBlendAttachmentState){
 			.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-			.blendEnable = VK_FALSE,
+			.blendEnable = desc.blend_enable ? VK_TRUE : VK_FALSE,
+
+			// Color: result = src.rgb * src.a + dst.rgb * (1 - src.a)
+			.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+			.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+			.colorBlendOp = VK_BLEND_OP_ADD,
+
+			// Alpha: result = src.a * 1 + dst.a * (1 - src.a)
+			.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+			.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+			.alphaBlendOp = VK_BLEND_OP_ADD,
 		};
 	}
 

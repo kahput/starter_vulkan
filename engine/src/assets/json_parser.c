@@ -186,7 +186,7 @@ JsonNode *json_node(JsonNode *node, String key) {
 	return found ? *found : NULL;
 }
 
-JsonNode *json_find_where(JsonNode *list, String key, String value) {
+JsonNode *json_node_where(JsonNode *list, String key, String value) {
 	for (JsonNode *it = list; it; it = it->next) {
 		JsonNode *prop = json_node(it, key);
 		if (prop && prop->type == JSON_String) {

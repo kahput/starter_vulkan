@@ -169,7 +169,7 @@ typedef struct pipeline_desc {
 	bool depth_test_enable;
 	bool depth_write_enable;
 	bool topology_line_list;
-	bool _pad0;
+	bool blend_enable;
 	PipelineCompareOp depth_compare_op;
 } PipelineDesc;
 
@@ -225,19 +225,6 @@ typedef struct {
 } DrawListDesc;
 
 // TODO: Move these
-#define pipeline_opt(...)                           \
-	(PipelineDesc) {                                \
-		.override_attributes = NULL,                \
-		.override_count = 0,                        \
-		.cull_mode = CULL_MODE_NONE,                \
-		.front_face = FRONT_FACE_COUNTER_CLOCKWISE, \
-		.polygon_mode = POLYGON_MODE_FILL,          \
-		.depth_test_enable = true,                  \
-		.depth_write_enable = true,                 \
-		.depth_compare_op = COMPARE_OP_LESS,        \
-		.topology_line_list = false,                \
-		__VA_ARGS__,                                \
-	}
 
 #define DEFAULT_PIPELINE                            \
 	(PipelineDesc) {                                \

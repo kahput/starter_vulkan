@@ -41,8 +41,6 @@ layout(location = 0) out vec4 out_color;
 
 void main() {
     vec4 color = texture(u_texture, in_uv);
-    if (color.a < 1.0) discard;
-
     out_color = color; // * material.tint;
 }
 

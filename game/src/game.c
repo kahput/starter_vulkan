@@ -29,6 +29,8 @@
 
 #define MAX_DRAW_COMMANDS 65536
 
+#define SHADOW_OFFSET (float2){ 40, 110 }
+
 typedef struct {
 	float x, y;
 	float width, height;
@@ -70,7 +72,7 @@ typedef struct {
 	RhiTexture texture;
 	Rectangle src;
 	float2 origin;
-	uint32_t layer;
+	uint32_t layer, y_sort;
 	Color color;
 
 	// Location
@@ -78,7 +80,11 @@ typedef struct {
 	float2 position, size;
 
 	// Collision
+	bool collidable;
 	Rectangle collision_shape;
+
+	// Tag
+	bool is_character;
 } Sprite;
 
 typedef struct {
@@ -118,8 +124,12 @@ typedef struct {
 	Sprite *entities;
 	Camera camera;
 
+	Rectangle *boundaries;
+
 	Sprite player;
 	Sprite *coast;
+
+	Sprite shadow;
 
 	AnimatedSprite *animated_sprites;
 	RhiTexture water[4];
@@ -135,16 +145,11 @@ typedef struct {
 static PermanentState *pstate = NULL;
 static TransientState *tstate = NULL;
 
-static inline SortKey sort_key(uint16_t layer, uint32_t y_sort, uint16_t texture_id) {
-	uint64_t result = ((uint64_t)layer << 48) | ((uint64_t)y_sort << 16) | texture_id;
-	return result;
-}
-
 Renderer2D renderer_make(void);
 
 void draw_rectangle_lines(DrawCommand *commands, Rectangle rect, float thickness, uint32_t layer);
 
-void draw_texture(DrawCommand *commands, RhiTexture texture, Rectangle src, float2 position, float2 size, float2 origin, uint32_t layer);
+void draw_image(DrawCommand *commands, RhiTexture texture, Rectangle src, float2 position, float2 size, float2 origin, uint32_t layer, uint32_t y_sort);
 void draw_rectangle(DrawCommand *commands, Rectangle rect);
 
 RhiTexture texture_make(Renderer2D *renderer, String path);
@@ -161,6 +166,7 @@ static int sort_draw_commands(const void *a, const void *b) {
 
 typedef enum {
 	DRAW_LAYER_BACKGROUND,
+	DRAW_LAYER_SHADOW,
 	DRAW_LAYER_WORLD,
 	DRAW_LAYER_FOREGROUND,
 	DRAW_LAYER_DEBUG
@@ -470,6 +476,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					object->position.x += object->size.x * 0.5f;
 					object->position.y -= object->size.y * 0.5f;
 					object->layer = DRAW_LAYER_WORLD;
+					object->y_sort = (uint32_t)(object->position.y + object->size.y * .5f);
 
 					object->collision_shape = (Rectangle){
 						.x = 0,
@@ -477,6 +484,13 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 						.width = object->size.x,
 						.height = object->size.y * 0.5f,
 					};
+
+					if (string_equals(name, S("Objects"))) {
+						object->collidable = true;
+					} else {
+						object->collidable = false;
+						object->y_sort -= 20;
+					}
 
 					object->origin = (float2){
 						.x = object->size.x * 0.5f,
@@ -503,9 +517,10 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		// Object/Entity data
 		JsonNode *layers = json_list(root, S("layers"));
 
-		JsonNode *entities = json_find_where(layers, S("name"), S("Entities"));
-		JsonNode *water = json_find_where(layers, S("name"), S("Water"));
-		JsonNode *coast = json_find_where(layers, S("name"), S("Coast"));
+		JsonNode *entities = json_node_where(layers, S("name"), S("Entities"));
+		JsonNode *water = json_node_where(layers, S("name"), S("Water"));
+		JsonNode *coast = json_node_where(layers, S("name"), S("Coast"));
+		JsonNode *collisions = json_node_where(layers, S("name"), S("Collisions"));
 
 		ArenaTrie entity_texture_lookup =
 			arena_trie_make(scratch.arena);
@@ -514,7 +529,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		for (JsonNode *entity = json_list(entities, S("objects")); entity; entity = entity->next) {
 			String name = json_find(entity, S("name"), String);
 			JsonNode *properties = json_list(entity, S("properties"));
-			bool at_house = json_find_where(properties, S("value"), S("house")) != NULL;
+			bool at_house = json_node_where(properties, S("value"), S("house")) != NULL;
 
 			float entity_x = json_find(entity, S("x"), float);
 			float entity_y = json_find(entity, S("y"), float);
@@ -526,7 +541,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			} else if (string_equals(S("Character"), name)) {
 				Sprite *object = arena_darray_push(scratch.arena, dyn, Sprite);
 
-				JsonNode *graphic_property = json_find_where(json_list(entity, S("properties")), S("name"), S("graphic"));
+				JsonNode *graphic_property = json_node_where(json_list(entity, S("properties")), S("name"), S("graphic"));
 				String graphic = json_find(graphic_property, S("value"), String);
 
 				uint32_t offset = entity_texture_lookup.arena->offset;
@@ -542,7 +557,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 						TEXTURE_USAGE_SAMPLED, grahpic_src.pixels);
 				}
 
-				JsonNode *direction_property = json_find_where(json_list(entity, S("properties")), S("name"), S("direction"));
+				JsonNode *direction_property = json_node_where(json_list(entity, S("properties")), S("name"), S("direction"));
 				String direction = json_find(direction_property, S("value"), String);
 
 				Rectangle source = { .width = 128, .height = 128 };
@@ -566,8 +581,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					.size = { source.width, source.height }
 				};
 				object->layer = DRAW_LAYER_WORLD;
-				object->position.x += object->size.x * 0.5f;
 				object->position.y -= object->size.y * 0.5f;
+				object->y_sort = (uint32_t)(object->position.y + object->size.y * .5f);
 
 				object->collision_shape = (Rectangle){
 					.x = 0,
@@ -575,6 +590,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					.width = object->size.x * 0.5f,
 					.height = object->size.y * 0.4f,
 				};
+				object->collidable = true;
+				object->is_character = true;
 
 				object->origin = (float2){
 					.x = object->size.x * 0.5f,
@@ -662,8 +679,8 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 			JsonNode *properties = json_list(node, S("properties"));
 
-			String sidestr = json_find(json_find_where(properties, S("name"), S("side")), S("value"), String);
-			String terrainstr = json_find(json_find_where(properties, S("name"), S("terrain")), S("value"), String);
+			String sidestr = json_find(json_node_where(properties, S("name"), S("side")), S("value"), String);
+			String terrainstr = json_find(json_node_where(properties, S("name"), S("terrain")), S("value"), String);
 
 			uint32x2 side = *arena_trie_find(&coast_lookup, span_string(sidestr), uint32x2);
 			uint32 terrain = *arena_trie_find(&coast_lookup, span_string(terrainstr), uint32) * 3;
@@ -676,6 +693,18 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			float2 size = { width, height };
 
 			arena_array_put(pstate->coast, Sprite, { .texture = coast_texture, .src = source, .position = pos, .size = size, .layer = DRAW_LAYER_BACKGROUND });
+		}
+
+		pstate->boundaries = arena_array_make(&pstate->arena, json_list_count(collisions, S("objects")), Rectangle);
+		for (JsonNode *node = json_list(collisions, S("objects")); node; node = node->next) {
+			Rectangle rect = {
+				.width = json_find(node, S("width"), float),
+				.height = json_find(node, S("height"), float),
+				.x = json_find(node, S("x"), float),
+				.y = json_find(node, S("y"), float),
+			};
+
+			arena_array_put(pstate->boundaries, Rectangle, rect);
 		}
 
 		arena_scratch_end(scratch);
@@ -711,10 +740,23 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 		}
 		LOG_INFO("Asset count = %d", tracker.tracked_file_count);
 
+		ImageSource shadow_src = importer_load_image(scratch.arena, S("assets/pokemon/graphics/other/shadow.png"));
+		pstate->shadow = (Sprite){
+			.src = { .width = shadow_src.width, .height = shadow_src.height },
+			.texture = vulkan_texture_make(
+				pstate->context, shadow_src.width, shadow_src.height,
+				TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
+				TEXTURE_USAGE_SAMPLED,
+				shadow_src.pixels),
+			.size = { shadow_src.width, shadow_src.height }
+		};
+
 		// PLAYER_INIT
 		ImageSource player_src = importer_load_image(scratch.arena, S("assets/pokemon/graphics/characters/player.png"));
 		pstate->player.src.width = (float)player_src.width / 4;
 		pstate->player.src.height = (float)player_src.height / 4;
+		pstate->player.layer = DRAW_LAYER_WORLD;
+		pstate->player.y_sort = (uint32_t)(pstate->player.position.y + pstate->player.size.y * .5f);
 		pstate->player.size.x = (float)player_src.width / 4;
 		pstate->player.size.y = (float)player_src.height / 4;
 		pstate->player.origin = (float2){
@@ -760,15 +802,15 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	if (input_key_down(KEY_CODE_LEFTSHIFT))
 		speed = 1000;
 
-	float2 old_position = {
+	float2 player_collision_origin = {
 		pstate->player.position.x - pstate->player.collision_shape.x,
 		pstate->player.position.y - pstate->player.collision_shape.y,
 	};
-	float2 new_position = float2_add(old_position, float2_scale(input, speed * dt));
-	float2 move_delta = float2_subtract(new_position, old_position);
+	float2 new_position = float2_add(player_collision_origin, float2_scale(input, speed * dt));
+	float2 move_delta = float2_subtract(new_position, player_collision_origin);
 
 	Rectangle player_collision_rect = rectangle(
-		old_position,
+		player_collision_origin,
 		(float2){ pstate->player.collision_shape.width, pstate->player.collision_shape.height },
 		(float2){ pstate->player.collision_shape.width * .5f, pstate->player.collision_shape.height * .5f });
 	/* draw_rectangle_lines(commands, player_collision_rect, 5, DRAW_LAYER_DEBUG); */
@@ -778,16 +820,11 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 	float t_remaining = 1.0f;
 	for (uint32_t iteration = 0; iteration < 4 && t_remaining > 0.0f; ++iteration) {
 		move_delta = float2_scale(move_delta, t_remaining);
-		old_position = (float2){
-			pstate->player.position.x - pstate->player.collision_shape.x,
-			pstate->player.position.y - pstate->player.collision_shape.y,
-		};
-
 		Ray2HitResult result = RAY2_NO_HIT;
 
 		for (uint32_t index = 0; index < arena_array_count(pstate->entities); ++index) {
 			Sprite *entity = &pstate->entities[index];
-			if (entity->layer > DRAW_LAYER_WORLD)
+			if (entity->collidable == false || entity->layer > DRAW_LAYER_WORLD)
 				continue;
 
 			Rectangle entity_collision_rect = {
@@ -811,9 +848,10 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					player_collision_rect.height * 0.5f,
 			};
 
-			if (rectangles_overlapping(player_collision_rect, entity_collision_rect)) { // This sometiems happens when moving fast. Stuck inside entity collsion shape. Can escape by moving around fast for a while
+			if (rectangles_overlapping(player_collision_rect, entity_collision_rect)) {
 				draw_rectangle_lines(commands, player_collision_rect, 3, DRAW_LAYER_DEBUG);
 				draw_rectangle_lines(commands, entity_collision_rect, 3, DRAW_LAYER_DEBUG);
+				ASSERT(false);
 			}
 
 			/* Rectangle collision_shape_visual = { */
@@ -821,7 +859,31 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			/* }; */
 			/* draw_rectangle_lines(commands, collision_shape_visual, 3, DRAW_LAYER_DEBUG); */
 
-			Ray2HitResult temp = ray2_rectangle_intersection(old_position, move_delta, min, max);
+			Ray2HitResult temp = ray2_rectangle_intersection(player_collision_origin, move_delta, min, max);
+			if (temp.t < result.t) {
+				result = temp;
+			}
+		}
+
+		for (uint32_t index = 0; index < arena_array_count(pstate->boundaries); ++index) {
+			Rectangle boundary_collision_rect = pstate->boundaries[index];
+
+			float2 min = {
+				boundary_collision_rect.x - player_collision_rect.width * 0.5f,
+				boundary_collision_rect.y - player_collision_rect.height * 0.5f,
+			};
+			float2 max = {
+				boundary_collision_rect.x +
+					boundary_collision_rect.width +
+					player_collision_rect.width * 0.5f,
+				boundary_collision_rect.y +
+					boundary_collision_rect.height +
+					player_collision_rect.height * 0.5f,
+			};
+
+			/* draw_rectangle_lines(commands, boundary_collision_rect, 3, DRAW_LAYER_DEBUG); */
+
+			Ray2HitResult temp = ray2_rectangle_intersection(player_collision_origin, move_delta, min, max);
 			if (temp.t < result.t) {
 				result = temp;
 			}
@@ -831,20 +893,16 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 		pstate->player.position.x += (t_min - 0.001f) * move_delta.x;
 		pstate->player.position.y += (t_min - 0.001f) * move_delta.y;
+		pstate->player.y_sort = (uint32_t)(pstate->player.position.x + pstate->player.size.x * .5f);
+
+		player_collision_origin = (float2){
+			pstate->player.position.x - pstate->player.collision_shape.x,
+			pstate->player.position.y - pstate->player.collision_shape.y,
+		};
 
 		move_delta = float2_subtract(move_delta, float2_scale(result.normal, float2_dot(move_delta, result.normal)));
 		t_remaining -= t_min * t_remaining;
 	}
-
-	DrawCommand player_origin_marker = {
-		.key = sort_key(DRAW_LAYER_DEBUG, 0, 0),
-		.dest = {
-		  .x = pstate->player.position.x,
-		  .y = pstate->player.position.y,
-		  .width = 5.f,
-		  .height = 5.f,
-		}
-	};
 
 	uint2 size = window_size_pixel(context->display);
 
@@ -853,11 +911,19 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 	// Push to drawlist
 	Sprite *p = &pstate->player;
-	draw_texture(commands, p->texture, p->src, p->position, p->size, p->origin, DRAW_LAYER_WORLD);
+	p->y_sort = (uint32_t)(p->position.y + p->size.x * .5f);
+	float2 shadow_position = float2_add(p->position, SHADOW_OFFSET);
+	draw_image(commands, pstate->shadow.texture, pstate->shadow.src, shadow_position, pstate->shadow.size, p->origin, DRAW_LAYER_SHADOW, 0);
+	draw_image(commands, p->texture, p->src, p->position, p->size, p->origin, DRAW_LAYER_WORLD, p->y_sort);
 
 	for (uint32_t index = 0; index < arena_array_count(pstate->entities); ++index) {
 		Sprite s = pstate->entities[index];
-		draw_texture(commands, s.texture, s.src, s.position, s.size, s.origin, s.layer);
+		if (s.is_character) {
+			/* LOG_INFO("Texture", ); */
+			float2 shadow_position = float2_add(s.position, SHADOW_OFFSET);
+			draw_image(commands, pstate->shadow.texture, pstate->shadow.src, shadow_position, pstate->shadow.size, s.origin, DRAW_LAYER_SHADOW, 0);
+		}
+		draw_image(commands, s.texture, s.src, s.position, s.size, s.origin, s.layer, s.y_sort);
 	}
 
 	static float t = 0.0f;
@@ -887,13 +953,14 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 	for (uint32_t index = 0; index < arena_array_count(pstate->animated_sprites); ++index) {
 		AnimatedSprite s = pstate->animated_sprites[index];
-		uint32_t key = sort_key(DRAW_LAYER_BACKGROUND, 0, s.frames[frame_index].id);
-		arena_array_put(commands, DrawCommand, { .texture = s.frames[frame_index], .dest = s.dest, .source = s.src });
+		float2 position = { s.dest.x, s.dest.y };
+		float2 size = { s.dest.width, s.dest.height };
+		draw_image(commands, s.frames[frame_index], s.src, position, size, (float2){ 0 }, DRAW_LAYER_BACKGROUND, 0);
 	}
 	for (uint32_t index = 0; index < arena_array_count(pstate->coast); ++index) {
 		Sprite s = pstate->coast[index];
 		s.src.y = s.src.y + (frame_index * (s.src.height * 3));
-		draw_texture(commands, s.texture, s.src, s.position, s.size, s.origin, s.layer);
+		draw_image(commands, s.texture, s.src, s.position, s.size, s.origin, s.layer, s.y_sort);
 	}
 
 	if (vulkan_frame_begin(pstate->context, size.x, size.y)) {
@@ -962,8 +1029,9 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 			vulkan_buffer_write(pstate->context, renderer->global_buffer, 0, sizeof(Matrix4f), &view);
 			vulkan_buffer_write(pstate->context, renderer->global_buffer, sizeof(Matrix4f), sizeof(Matrix4f), &projection);
 
-			PipelineDesc no_cull = pipeline_opt(.cull_mode = CULL_MODE_NONE);
-			vulkan_shader_bind(pstate->context, renderer->static_shader, no_cull);
+			PipelineDesc pipeline = DEFAULT_PIPELINE;
+			pipeline.blend_enable = true;
+			vulkan_shader_bind(pstate->context, renderer->static_shader, pipeline);
 
 			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, renderer->static_shader, 0);
 			vulkan_uniformset_bind_buffer(pstate->context, set0, 0, renderer->global_buffer);
@@ -983,7 +1051,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				drawcall_count++;
 			}
 
-			vulkan_shader_bind(pstate->context, renderer->dynamic_shader, no_cull);
+			vulkan_shader_bind(pstate->context, renderer->dynamic_shader, pipeline);
 
 			set0 = vulkan_uniformset_push(pstate->context, renderer->dynamic_shader, 0);
 			vulkan_uniformset_bind_buffer(pstate->context, set0, 0, renderer->global_buffer);
@@ -1099,6 +1167,11 @@ RhiTexture texture_make(Renderer2D *renderer, String path) {
 	return result;
 }
 
+static inline SortKey sort_key(uint16_t layer, uint32_t y_sort, uint16_t texture_id) {
+	uint64_t result = ((uint64_t)layer << 48) | ((uint64_t)y_sort << 16) | texture_id;
+	return result;
+}
+
 void draw_rectangle_lines(DrawCommand *commands, Rectangle rect, float thickness, uint32_t layer) {
 	DrawCommand outline[] = {
 		{
@@ -1143,13 +1216,14 @@ void draw_rectangle_lines(DrawCommand *commands, Rectangle rect, float thickness
 		arena_array_put(commands, DrawCommand, outline[index]);
 }
 
-void draw_texture(DrawCommand *commands, RhiTexture texture, Rectangle src, float2 position, float2 size, float2 origin, uint32_t layer) {
-	uint64_t player_sort_key = sort_key(
+void draw_image(DrawCommand *commands, RhiTexture texture, Rectangle src, float2 position, float2 size, float2 origin, uint32_t layer, uint32_t y_sort) {
+	uint64_t key = sort_key(
 		layer,
-		(uint32_t)(position.y + size.y * .5f),
+		y_sort,
 		texture.id);
 
 	Rectangle dest = rectangle(position, size, origin);
 
-	arena_array_put(commands, DrawCommand, { .texture = texture, .dest = dest, .source = src, .key = player_sort_key });
+	ASSERT(arena_array_count(commands) < arena_array_capacity(commands));
+	arena_array_put(commands, DrawCommand, { .texture = texture, .dest = dest, .source = src, .key = key });
 }
