@@ -233,6 +233,16 @@ Ray2HitResult ray2_rectangle_intersection(float2 ro, float2 rd, float2 min, floa
 	return result;
 }
 
+bool rectangles_overlapping(Rectangle a, Rectangle b) {
+	bool result = false;
+
+	if ((a.x + a.width > b.x && a.x < b.x + b.width) &&
+		(a.y + a.height > b.y && a.y < b.y + b.height))
+		result = true;
+
+	return result;
+}
+
 Rectangle rectangle(float2 position, float2 size, float2 origin) {
 	Rectangle result = {
 		.x = position.x - origin.x,
@@ -767,6 +777,12 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 
 	float t_remaining = 1.0f;
 	for (uint32_t iteration = 0; iteration < 4 && t_remaining > 0.0f; ++iteration) {
+		move_delta = float2_scale(move_delta, t_remaining);
+		old_position = (float2){
+			pstate->player.position.x - pstate->player.collision_shape.x,
+			pstate->player.position.y - pstate->player.collision_shape.y,
+		};
+
 		Ray2HitResult result = RAY2_NO_HIT;
 
 		for (uint32_t index = 0; index < arena_array_count(pstate->entities); ++index) {
@@ -795,6 +811,11 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 					player_collision_rect.height * 0.5f,
 			};
 
+			if (rectangles_overlapping(player_collision_rect, entity_collision_rect)) { // This sometiems happens when moving fast. Stuck inside entity collsion shape. Can escape by moving around fast for a while
+				draw_rectangle_lines(commands, player_collision_rect, 3, DRAW_LAYER_DEBUG);
+				draw_rectangle_lines(commands, entity_collision_rect, 3, DRAW_LAYER_DEBUG);
+			}
+
 			/* Rectangle collision_shape_visual = { */
 			/* 	min.x, min.y, max.x - min.x, max.y - min.y */
 			/* }; */
@@ -805,6 +826,7 @@ FrameInfo game_on_update_and_render(GameContext *context, float dt) {
 				result = temp;
 			}
 		}
+
 		float t_min = fminf(1.0f, result.t);
 
 		pstate->player.position.x += (t_min - 0.001f) * move_delta.x;
