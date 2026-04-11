@@ -4,7 +4,9 @@
 #include "platform.h"
 
 #include <string.h>
+#include <xcb/xcb.h>
 #include <xcb/xproto.h>
+#include <xcb/xinput.h>
 
 #define VK_USE_PLATFORM_XCB_KHR
 #include <vulkan/vulkan.h>
@@ -31,6 +33,8 @@ static const char *extensions[] = {
 
 static struct {
 	xcb_connection_t *connection;
+	uint8_t xinput_opcode;
+
 	double start_time;
 } x11 = { 0 };
 
@@ -45,6 +49,10 @@ struct window {
 	xcb_atom_t wm_fullscreen_atom;
 
 	uint32_t is_fullscreen, is_open, cursor_locked;
+
+	uint32_t cursor_wrapping;
+	double2 cursor, virtual_cursor;
+
 	int32_t keycodes[256];
 	uint32_t width, height;
 };
@@ -55,6 +63,39 @@ bool platform_startup(void) {
 		LOG_ERROR("Failed to connect to X server");
 		return false;
 	}
+
+	// XInputExtension setup
+	xcb_query_extension_cookie_t ext_cookie =
+		xcb_query_extension(x11.connection, 15, "XInputExtension");
+	xcb_query_extension_reply_t *ext_reply =
+		xcb_query_extension_reply(x11.connection, ext_cookie, NULL);
+
+	ASSERT(ext_reply && ext_reply->present);
+
+	x11.xinput_opcode = ext_reply->major_opcode;
+	free(ext_reply);
+
+	xcb_input_xi_query_version_cookie_t ver_cookie =
+		xcb_input_xi_query_version(x11.connection, 2, 0);
+	xcb_input_xi_query_version_reply_t *ver_reply =
+		xcb_input_xi_query_version_reply(x11.connection, ver_cookie, NULL);
+	free(ver_reply);
+
+	// Xinput
+	struct {
+		xcb_input_event_mask_t head;
+		xcb_input_xi_event_mask_t mask;
+	} xinput_event_mask = {
+		.head = {
+		  .deviceid = XCB_INPUT_DEVICE_ALL,
+		  .mask_len = 1,
+		},
+		.mask = XCB_INPUT_XI_EVENT_MASK_RAW_MOTION
+	};
+
+	xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(x11.connection)).data;
+	xcb_input_xi_select_events(x11.connection, screen->root, 1, &xinput_event_mask.head);
+	xcb_flush(x11.connection);
 
 	x11.start_time = platform_time();
 
@@ -230,37 +271,73 @@ void window_poll_events(Window *window) {
 				}
 			} break;
 
+			case XCB_GE_GENERIC: {
+				xcb_ge_generic_event_t *ge = (xcb_ge_generic_event_t *)event;
+				if (ge->extension != x11.xinput_opcode)
+					break;
+
+				if (ge->event_type == XCB_INPUT_RAW_MOTION) {
+					xcb_input_raw_motion_event_t *raw = (xcb_input_raw_motion_event_t *)event;
+
+					uint32_t *mask = xcb_input_raw_button_press_valuator_mask(raw);
+					xcb_input_fp3232_t *vals =
+						xcb_input_raw_button_press_axisvalues_raw(raw);
+
+					uint32_t index = 0;
+					double2 delta;
+					for (uint32_t axis = 0; axis < 2; ++axis) {
+						if (mask[axis / 32] & (1 << (axis % 32))) {
+							xcb_input_fp3232_t value = vals[index++];
+							double double_value = value.integral + value.frac / (double)0x100000000;
+
+							if (axis == 0)
+								delta.x = double_value;
+							else
+								delta.y = double_value;
+						}
+					}
+
+					if (window->cursor_wrapping) {
+						window->virtual_cursor.x += delta.x;
+						window->virtual_cursor.y += delta.y;
+
+						MouseMotionEvent e = {
+							window->virtual_cursor.x,
+							window->virtual_cursor.y
+						};
+						event_emit_struct(EVENT_PLATFORM_MOUSE_MOTION, &e);
+					}
+				}
+			} break;
+
 			case XCB_MOTION_NOTIFY: {
 				xcb_motion_notify_event_t *motion = (xcb_motion_notify_event_t *)event;
 
 				MouseMotionEvent e = { 0 };
 
-				/* if (window->pointer_mode == PLATFORM_POINTER_DISABLED) { */
-				/* 	// Locked Mode Logic (Fake raw input) */
-				/* 	int center_x = window->width / 2; */
-				/* 	int center_y = window->height / 2; */
+				if (window->cursor_wrapping) {
+					continue;
+					/* uint2 center = { window->width * .5f, window->height * .5f }; */
+					/* if (motion->event_x == (uint16_t)center.x && motion->event_y == (uint16_t)center.y) */
+					/* 	continue; */
 
-				/* 	// If we are at the center, this event was likely caused by our warp */
-				/* 	if (motion->event_x == center_x && motion->event_y == center_y) { */
-				/* 		break; */
-				/* 	} */
+					/* window->virtual_cursor.x += motion->event_x - (uint16_t)center.x; */
+					/* window->virtual_cursor.y += motion->event_y - (uint16_t)center.y; */
 
-				/* 	e.dx = (double)(motion->event_x - center_x); */
-				/* 	e.dy = (double)(motion->event_y - center_y); */
-				/* 	e.virtual_cursor = true; */
+					/* e.x = window->virtual_cursor.x; */
+					/* e.y = window->virtual_cursor.y; */
 
-				/* 	// X11 doesn't have a built-in virtual accumulator, so we just emit deltas */
-				/* 	// or you can track a virtual_x/y in your struct like Wayland does. */
+					/* xcb_warp_pointer(x11.connection, XCB_NONE, window->handle, */
+					/* 	0, 0, 0, 0, center.x, center.y); */
+					/* xcb_flush(x11.connection); */
 
-				/* 	// Warp back to center */
-				/* 	xcb_warp_pointer(x11.connection, XCB_NONE, window->handle, 0, 0, 0, 0, center_x, center_y); */
-				/* 	xcb_flush(x11.connection); */
-				/* } else { */
+				} else {
+					window->cursor.x = (double)motion->event_x;
+					window->cursor.y = (double)motion->event_y;
 
-				e.x = (double)motion->event_x;
-				e.y = (double)motion->event_y;
-
-				/* } */
+					e.x = (double)motion->event_x;
+					e.y = (double)motion->event_y;
+				}
 
 				event_emit_struct(EVENT_PLATFORM_MOUSE_MOTION, &e);
 			} break;
@@ -277,13 +354,13 @@ void window_poll_events(Window *window) {
 
 				switch (bp->detail) {
 					case 1:
-						e.button = BTN_LEFT;
+						e.button = MOUSE_BUTTON_LEFT;
 						break;
 					case 2:
-						e.button = BTN_MIDDLE;
+						e.button = MOUSE_BUTTON_MIDDLE;
 						break;
 					case 3:
-						e.button = BTN_RIGHT;
+						e.button = MOUSE_BUTTON_RIGHT;
 						break;
 					// X11 sends Scroll as buttons 4/5/6/7
 					case 4: /* Handle Scroll Up if needed */
@@ -295,7 +372,6 @@ void window_poll_events(Window *window) {
 						e.button = BTN_LEFT;
 				}
 
-				// If it's a standard button, emit event
 				if (bp->detail <= 3) {
 					event_emit_struct(pressed ? EVENT_PLATFORM_MOUSE_BUTTON_PRESSED : EVENT_PLATFORM_MOUSE_BUTTON_RELEASED, &e);
 				}
@@ -372,6 +448,17 @@ void window_set_title(Window *window, String title) {
 	xcb_flush(x11.connection);
 }
 
+void window_set_cursor_wrap(Window *window, bool wrapping) {
+	if (window->cursor_wrapping == wrapping)
+		return;
+	window->cursor_wrapping = wrapping;
+
+	if (wrapping)
+		window->virtual_cursor = window->cursor;
+
+	xcb_flush(x11.connection);
+}
+
 void window_set_cursor_visible(Window *window, bool visible) {
 	if (visible) {
 		uint32_t value = XCB_NONE;
@@ -401,14 +488,18 @@ void window_set_cursor_locked(Window *window, bool locked) {
 			XCB_TIME_CURRENT_TIME);
 		xcb_grab_pointer_reply_t *reply = xcb_grab_pointer_reply(x11.connection, cookie, NULL);
 
-		xcb_warp_pointer(x11.connection, XCB_NONE, window->handle,
-			0, 0, 0, 0, window->width * .5f, window->height * .5f);
-
 		if (!reply || reply->status != XCB_GRAB_STATUS_SUCCESS)
 			window->cursor_locked = false;
 
-	} else
+		window_set_cursor_wrap(window, true);
+
+	} else {
+		xcb_warp_pointer(x11.connection, XCB_NONE, window->handle,
+			0, 0, 0, 0, window->cursor.x, window->cursor.y);
+
 		xcb_ungrab_pointer(x11.connection, XCB_TIME_CURRENT_TIME);
+		window_set_cursor_wrap(window, false);
+	}
 
 	xcb_flush(x11.connection);
 }

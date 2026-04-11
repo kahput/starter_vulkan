@@ -12,7 +12,7 @@ typedef struct {
 	void *transient_memory;
 	size_t transient_memory_size;
 
-	VulkanContext *vk_context;
+	VulkanContext *render;
 	struct window *display;
 } GameContext;
 
@@ -22,9 +22,8 @@ typedef struct FrameInfo {
 
 typedef struct {
 	FrameInfo (*on_update)(GameContext *, float dt);
-	bool (*on_event)(GameContext *, EventCode code, void *event, void *receiver);
 } GameInterface;
 
-typedef GameInterface *(*PFN_game_hookup)(void);
+typedef GameInterface (*PFN_game_hookup)(void);
 
 #define GAME_HOOKUP_NAME "game_hookup"

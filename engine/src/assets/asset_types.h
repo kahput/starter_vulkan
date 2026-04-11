@@ -15,6 +15,13 @@ typedef enum {
 	ASSET_TYPE_COUNT,
 } AssetType;
 
+typedef struct {
+	void *internal;
+
+	uint8_t *bitmap;
+	int32_t width, height;
+} Font;
+
 typedef struct image {
 	void *pixels;
 	int32_t width, height, channels;
@@ -85,4 +92,4 @@ typedef struct model_source {
 	uint32_t image_count;
 
 	uint32_t *mesh_to_material;
-} SModel;
+} ModelSource;

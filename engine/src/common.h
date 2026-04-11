@@ -101,9 +101,13 @@ typedef struct { float x, y, z; } float32x3;
 typedef struct alignas(16) { float x, y, z, w; } float32x4;
 
 typedef double float64;
-typedef struct { float64 x, y; } float64_2;
-typedef struct { float64 x, y, z; } float64_3;
-typedef struct alignas(16) { float64 x, y, z, w; } float64_4;
+typedef struct { float64 x, y; } float64x2;
+typedef struct { float64 x, y, z; } float64x3;
+typedef struct alignas(16) { float64 x, y, z, w; } float64x4;
+
+typedef float64x2 double2;
+typedef float64x3 double3;
+typedef float64x4 double4;
 
 typedef uint32_t uint32;
 typedef struct { uint32 x, y; } uint32x2;

@@ -102,9 +102,9 @@ VkPresentModeKHR swapchain_select_present_mode(VkPresentModeKHR *modes, uint32_t
 	/* 	if (modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) */
 	/* 		return modes[i]; */
 	/* } */
-	for (uint32_t i = 0; i < count; i++) {
-		if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
-			return modes[i];
+	for (uint32_t index = 0; index < count; index++) {
+		if (modes[index] == VK_PRESENT_MODE_MAILBOX_KHR)
+			return modes[index];
 	}
 
 	return VK_PRESENT_MODE_FIFO_KHR;

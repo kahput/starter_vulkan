@@ -9,7 +9,7 @@
 bool platform_startup(void);
 void platform_shutdown(void);
 
-double platform_time(void);
+ENGINE_API double platform_time(void);
 ENGINE_API uint64_t platform_time_absolute(void);
 void platform_sleep(uint32_t ms);
 
@@ -26,8 +26,10 @@ void window_set_callback(PFN_event_handler handler);
 void window_set_fullscreen(Window *window, bool fullscreen);
 bool window_is_fullscreen(Window *window);
 void window_set_title(Window *window, String title);
+
+ENGINE_API void window_set_cursor_wrap(Window *window, bool wrap);
 void window_set_cursor_visible(Window *window, bool visible);
-void window_set_cursor_locked(Window *window, bool locked);
+ENGINE_API void window_set_cursor_locked(Window *window, bool locked);
 
 struct VkInstance_T;
 struct VkSurfaceKHR_T;

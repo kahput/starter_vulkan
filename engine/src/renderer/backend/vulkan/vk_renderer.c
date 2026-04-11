@@ -10,10 +10,8 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanContext **out_context) {
-	*out_context = arena_push_struct(arena, VulkanContext);
-
-	VulkanContext *context = *out_context;
+VulkanContext *vulkan_renderer_make(Arena *arena, struct window *display) {
+	VulkanContext *context = arena_push_struct(arena, VulkanContext);
 	context->display = display;
 
 	uint32_t version = 0;
@@ -35,36 +33,36 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 	pool_alloc(context->set_pool);
 
 	if (vulkan_instance_create(context) == false)
-		return false;
+		return NULL;
 
 	if (vulkan_surface_create(context, context->display) == false)
-		return false;
+		return NULL;
 
 	if (vulkan_device_create(arena, context) == false)
-		return false;
+		return NULL;
 
 	if (vulkan_command_pool_create(context) == false)
-		return false;
+		return NULL;
 
 	if (vulkan_command_buffer_create(context) == false)
-		return false;
+		return NULL;
 
 	if (vulkan_descriptor_pool_create(context) == false)
-		return false;
+		return NULL;
 
 	if (vulkan_sync_objects_create(context) == false)
-		return false;
+		return NULL;
 
 	uint32x2 dims = window_size_pixel(context->display);
 	if (vulkan_swapchain_create(context, dims.x, dims.y) == false)
-		return false;
+		return NULL;
 
 	// TODO: Lower this back down to 32?
 	if (vulkan_buffer_make_internal(
 			context, MiB(256),
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0,
 			&context->staging_buffer) == false)
-		return false;
+		return NULL;
 	vulkan_buffer_map(context, &context->staging_buffer);
 
 	context->global_range = (VkPushConstantRange){
@@ -73,7 +71,7 @@ bool vulkan_renderer_make(struct arena *arena, struct window *display, VulkanCon
 		.size = 128
 	};
 
-	return true;
+	return context;
 }
 
 void vulkan_renderer_destroy(VulkanContext *context) {

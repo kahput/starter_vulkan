@@ -11,6 +11,7 @@
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
+#include <stb/stb_truetype.h>
 
 #include "core/arena.h"
 #include "core/logger.h"
@@ -22,6 +23,21 @@
 
 // static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 /* static ImageSource *find_loaded_texture(const cgltf_data *data, SModel *scene, const cgltf_texture *gltf_tex); */
+
+Font importer_load_font(Arena *arena, String path) {
+	Font result = { 0 };
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	Span ttf_file = filesystem_read(scratch.arena, path);
+
+	result.internal = arena_push_struct(arena, stbtt_fontinfo);
+	stbtt_InitFont(result.internal, ttf_file.buffer, 0);
+
+	result.bitmap = stbtt_GetCodepointBitmap(result.internal, 0, stbtt_ScaleForPixelHeight(result.internal, 128), 'A', &result.width, &result.height, 0, 0);
+
+	arena_scratch_end(scratch);
+
+	return result;
+}
 
 ShaderConfig importer_load_shader(Arena *arena, String vertex_path, String fragment_path) {
 	Span vfile = filesystem_read(arena, vertex_path);
@@ -76,7 +92,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 	{ .name = { .chars = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float3 = { 1.0f, 1.0f, 1.0f } },
 };
 
-/* bool importer_load_gltf(Arena *arena, String path, SModel *out_model) { */
+/* bool importer_load_gltf(Arena *arena, String path, ModelSource *out_model) { */
 /* 	cgltf_options options = { 0 }; */
 /* 	cgltf_data *data = NULL; */
 /* 	cgltf_result result = cgltf_parse_file(&options, path.chars, &data); */
@@ -273,172 +289,3 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 /* 	arena_scratch_end(scratch); */
 /* 	return true; */
 /* } */
-
-/* void filesystem_filename(const char *src, char *dst) { */
-/* 	uint32_t start = 0, length = 0; */
-/* 	char c; */
-
-/* 	while ((c = src[length++]) != '\0') { */
-/* 		if (c == '/' || c == '\\') { */
-/* 			if (src[length] == '\0') { */
-/* 				LOG_INFO("'%s' is not a file"); */
-/* 				return; */
-/* 			} */
-/* 			start = length; */
-/* 		} */
-/* 	} */
-
-/* 	memory_copy(dst, src + start, length - start); */
-/* } */
-
-/* void filesystem_directory(const char *src, char *dst) { */
-/* 	uint32_t final = 0, length = 0; */
-/* 	char c; */
-
-/* 	while ((c = src[length++]) != '\0') { */
-/* 		if (c == '/' || c == '\\') { */
-/* 			final = length; */
-/* 		} */
-/* 	} */
-
-/* 	memory_copy(dst, src, final); */
-/* 	dst[final] = '\0'; */
-/* } */
-
-/* ImageSource *find_loaded_texture(const cgltf_data *data, SModel *source, const cgltf_texture *gltf_tex) { */
-/* 	if (!gltf_tex || !gltf_tex->image) */
-/* 		return NULL; */
-
-/* 	size_t index = gltf_tex->image - data->images; */
-
-/* 	if (index < source->image_count) { */
-/* 		return &source->images[index]; */
-/* 	} */
-/* 	return NULL; */
-/* } */
-
-// void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count) {
-// 	for (uint32_t i = 0; i < vertex_count; i++) {
-// 		memory_zero(vertices[i].tangent, sizeof(vector4));
-// 	}
-//
-// 	for (uint32_t index = 0; index < index_count; index += 3) {
-// 		uint32_t triangle[3] = { indices[index + 0], indices[index + 1], indices[index + 2] };
-// 		Vertex *points[3] = { &vertices[triangle[0]], &vertices[triangle[1]], &vertices[triangle[2]] };
-//
-// 		vector3 edge1 = { 0 }, edge2 = { 0 };
-// 		glm_vector3_sub(points[1]->position, points[0]->position, edge1);
-// 		glm_vector3_sub(points[2]->position, points[0]->position, edge2);
-//
-// 		vector2 delta_1 = { 0 }, delta_2 = { 0 };
-// 		glm_vector2_sub(points[1]->uv, points[0]->uv, delta_1);
-// 		glm_vector2_sub(points[2]->uv, points[0]->uv, delta_2);
-//
-// 		float f = 1.0f / (delta_1[0] * delta_2[1] - delta_2[0] * delta_1[1]);
-//
-// 		vector3 tangent;
-// 		tangent[0] = f * (delta_2[1] * edge1[0] - delta_1[1] * edge2[0]);
-// 		tangent[1] = f * (delta_2[1] * edge1[1] - delta_1[1] * edge2[1]);
-// 		tangent[2] = f * (delta_2[1] * edge1[2] - delta_1[1] * edge2[2]);
-//
-// 		glm_vector3_add(points[0]->tangent, tangent, points[0]->tangent);
-// 		glm_vector3_add(points[1]->tangent, tangent, points[1]->tangent);
-// 		glm_vector3_add(points[2]->tangent, tangent, points[2]->tangent);
-//
-// 		points[0]->tangent[3] = 1.0f;
-// 		points[1]->tangent[3] = 1.0f;
-// 		points[2]->tangent[3] = 1.0f;
-// 	}
-// }
-
-// TODO: Move these to the material system for reflection
-
-// static inline ShaderAttributeFormat to_shader_attribute_format(SpvReflectFormat format) {
-// 	switch (format) {
-// 		case SPV_REFLECT_FORMAT_R16_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 1 };
-// 		case SPV_REFLECT_FORMAT_R16G16_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 2 };
-// 		case SPV_REFLECT_FORMAT_R16G16B16_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 3 };
-// 		case SPV_REFLECT_FORMAT_R16G16B16A16_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT16, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R16_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 1 };
-// 		case SPV_REFLECT_FORMAT_R16G16_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 2 };
-// 		case SPV_REFLECT_FORMAT_R16G16B16_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 3 };
-// 		case SPV_REFLECT_FORMAT_R16G16B16A16_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT16, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R16_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 1 };
-// 		case SPV_REFLECT_FORMAT_R16G16_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 2 };
-// 		case SPV_REFLECT_FORMAT_R16G16B16_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 3 };
-// 		case SPV_REFLECT_FORMAT_R16G16B16A16_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT16, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R32_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 1 };
-// 		case SPV_REFLECT_FORMAT_R32G32_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 2 };
-// 		case SPV_REFLECT_FORMAT_R32G32B32_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 3 };
-// 		case SPV_REFLECT_FORMAT_R32G32B32A32_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT32, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R32_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 1 };
-// 		case SPV_REFLECT_FORMAT_R32G32_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 2 };
-// 		case SPV_REFLECT_FORMAT_R32G32B32_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 3 };
-// 		case SPV_REFLECT_FORMAT_R32G32B32A32_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT32, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R32_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 1 };
-// 		case SPV_REFLECT_FORMAT_R32G32_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 2 };
-// 		case SPV_REFLECT_FORMAT_R32G32B32_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 3 };
-// 		case SPV_REFLECT_FORMAT_R32G32B32A32_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT32, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R64_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 1 };
-// 		case SPV_REFLECT_FORMAT_R64G64_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 2 };
-// 		case SPV_REFLECT_FORMAT_R64G64B64_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 3 };
-// 		case SPV_REFLECT_FORMAT_R64G64B64A64_UINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UINT64, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R64_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 1 };
-// 		case SPV_REFLECT_FORMAT_R64G64_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 2 };
-// 		case SPV_REFLECT_FORMAT_R64G64B64_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 3 };
-// 		case SPV_REFLECT_FORMAT_R64G64B64A64_SINT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_INT64, 4 };
-//
-// 		case SPV_REFLECT_FORMAT_R64_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 1 };
-// 		case SPV_REFLECT_FORMAT_R64G64_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 2 };
-// 		case SPV_REFLECT_FORMAT_R64G64B64_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 3 };
-// 		case SPV_REFLECT_FORMAT_R64G64B64A64_SFLOAT:
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_FLOAT64, 4 };
-//
-// 		default: {
-// 			ASSERT_MESSAGE(0, "Undefined spirv reflection format");
-// 			return (ShaderAttributeFormat){ SHADER_ATTRIBUTE_TYPE_UNDEFINED, 0 };
-// 		}
-// 	}
-// }

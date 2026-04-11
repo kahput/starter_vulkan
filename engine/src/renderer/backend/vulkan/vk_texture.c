@@ -169,7 +169,12 @@ bool vulkan_sampler_destroy(VulkanContext *context, RhiSampler handle) {
 
 uint32_t to_stride(TextureFormat format) {
 	switch (format) {
+		case TEXTURE_FORMAT_RGB8:
+		case TEXTURE_FORMAT_RGB8_SRGB:
+			return 3;
+
 		case TEXTURE_FORMAT_RGBA8:
+		case TEXTURE_FORMAT_RGBA8_SRGB:
 			return 4;
 		case TEXTURE_FORMAT_RGBA16F:
 			return 8;

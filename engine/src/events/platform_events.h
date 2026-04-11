@@ -9,9 +9,6 @@ typedef struct {
 
 typedef struct {
 	double x, y;
-	double dx, dy;
-
-	bool virtual_cursor;
 } MouseMotionEvent;
 
 typedef struct {

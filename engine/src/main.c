@@ -19,11 +19,13 @@
 
 #include "platform/filesystem.h"
 
-#include <math.h>
 #include "core/cmath.h"
 #include "scene.h"
 
+#include "stb//stb_truetype.h"
+
 #include <dlfcn.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -33,18 +35,14 @@ typedef struct {
 } DynamicLibrary;
 
 static DynamicLibrary game_library = { 0 };
-static GameInterface *game = NULL;
+static GameInterface game = { 0 };
 
 bool game_load(GameContext *context);
 FrameInfo game_on_update_and_render(GameContext *context, float dt) {
-	if (game->on_update)
-		return game->on_update(context, dt);
+	if (game.on_update)
+		return game.on_update(context, dt);
 	return (FrameInfo){ 0 };
 }
-
-void editor_update(float dt);
-bool resize_event(EventCode code, void *event, void *receiver);
-RhiTexture load_cubemap(String path);
 
 typedef struct engine {
 	Arena memory;
@@ -53,6 +51,7 @@ typedef struct engine {
 	VulkanContext *context;
 
 	uint64_t start_time;
+
 } Engine;
 
 static Engine engine = { 0 };
@@ -68,7 +67,8 @@ int main(void) {
 	input_system_startup(&engine.memory);
 
 	engine.display = window_make(&engine.memory, 1280, 720, S("test"));
-	if (vulkan_renderer_make(&engine.memory, engine.display, &engine.context) == false) {
+	engine.context = vulkan_renderer_make(&engine.memory, engine.display);
+	if (engine.context == NULL) {
 		LOG_ERROR("Failed to create vulkan context");
 		return 1;
 	}
@@ -80,7 +80,7 @@ int main(void) {
 		.permanent_memory_size = MiB(32),
 		.transient_memory = arena_push(&engine.memory, MiB(256), 16, true),
 		.transient_memory_size = MiB(256),
-		.vk_context = engine.context,
+		.render = engine.context,
 		.display = engine.display
 	};
 	game_load(&game_context);
@@ -93,6 +93,8 @@ int main(void) {
 		delta_time = time - last_frame;
 		last_frame = time;
 
+		input_system_update();
+
 		uint64_t current_write_time = filesystem_last_modified(S("libgame.so"));
 		if (current_write_time && current_write_time != game_library.last_write) {
 			LOG_INFO("Game file change detected. Reloading...");
@@ -104,6 +106,10 @@ int main(void) {
 
 		window_poll_events(engine.display);
 		game_on_update_and_render(&game_context, delta_time);
+
+		if (input_key_pressed(KEY_CODE_TAB)) {
+			LOG_INFO("Tab pressed");
+		}
 	}
 
 	vulkan_renderer_destroy(engine.context);

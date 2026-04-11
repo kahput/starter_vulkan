@@ -29,10 +29,11 @@ elseif(UNIX)
             $<$<CONFIG:Debug>:-Werror>
             -Wextra
             -Wno-unused-parameter
-            -Wno-unused-variable)
+            -Wno-unused-variable
+            -Wno-override-init)
 
   target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-dynamic)
-  target_link_libraries(${PROJECT_NAME} dl xcb Vulkan::Vulkan m)
+  target_link_libraries(${PROJECT_NAME} dl xcb xcb-xinput Vulkan::Vulkan m)
 else()
   message(FATAL_ERROR "Windows and Linux only supported platforms")
 endif()

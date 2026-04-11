@@ -176,17 +176,17 @@ void arena_list_free(void **first_free, void *slot) {
 }
 
 #define INITIAL_DARRAY_CAPACITY 64
-void *arena_array_ensure(Arena *arena, void *arr, size_t item_size) {
+void *arena_array_ensure(Arena *arena, void *arr, size_t item_size, uint32_t count) {
 	uint32_t capacity = 0;
 
 	if (arr) {
 		ArenaArrayHeader *header = HEADER(arr, ArenaArrayHeader);
-		if (header->count < header->capacity)
+		if (header->count + count <= header->capacity)
 			return arr;
 		capacity = header->capacity;
 
 		if ((uint8_t *)arena->base + arena->offset != (uint8_t *)arr + capacity * item_size) {
-			void *copy = arena_push_copy(arena, HEADER(arr, ArenaArrayHeader), sizeof(ArenaArrayHeader) + capacity * item_size, 16);
+			void *copy = arena_push_copy(arena, header, sizeof(ArenaArrayHeader) + capacity * item_size, 16);
 			arr = (ArenaArrayHeader *)copy + 1;
 		}
 	} else {
@@ -195,6 +195,10 @@ void *arena_array_ensure(Arena *arena, void *arr, size_t item_size) {
 	}
 
 	uint32_t extend = capacity ? capacity : INITIAL_DARRAY_CAPACITY;
+	uint32_t needed = HEADER(arr, ArenaArrayHeader)->count + count;
+	while (HEADER(arr, ArenaArrayHeader)->capacity + extend < needed)
+		extend += extend;
+
 	arena_push(arena, extend * item_size, 1, true);
 	HEADER(arr, ArenaArrayHeader)->capacity += extend;
 

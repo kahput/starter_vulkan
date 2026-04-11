@@ -14,7 +14,7 @@ typedef struct vulkan_context VulkanContext;
 #define MAX_SHADERS 32
 #define MAX_UNIFORM_SETS 4096
 
-bool vulkan_renderer_make(Arena *arena, struct window *display, VulkanContext **out_context);
+VulkanContext *vulkan_renderer_make(Arena *arena, struct window *display);
 void vulkan_renderer_destroy(VulkanContext *context);
 bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height);
 
@@ -23,49 +23,6 @@ ENGINE_API bool vulkan_frame_end(VulkanContext *context);
 
 ENGINE_API bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc);
 ENGINE_API bool vulkan_drawlist_end(VulkanContext *context);
-
-// bool vulkan_renderer_compute_list_begin(VulkanContext *context, ...);
-// bool vulkan_renderer_compute_list_end(VulkanContext *context);
-
-// vulkan_buffer_make();
-// vukan_buffer_make_array();
-// vulkan_buffer_make_texel();
-// vulkan_trie_ensure_node();
-// vulkan_trie_struct_ensure();
-//
-// vulkan_texture_prepare_attachment();
-// vulkan_push_constants();
-//
-// json_find_where();
-
-// Vulkan_ComputeList_Begin();
-// Vulkan_Buffer_Create();
-// Vulkan_Buffer_CreateArray();
-// Vulkan_Buffer_CreateTexel();
-//
-// Arena_TrieNode_Ensure();
-// Arena_TrieStruct_Ensure();
-//
-// VulkanBuffer_Create();
-// VulkanBufferArray_Create();
-// ArenaTrieNode_Ensure();
-// ArenaTrieStruct_Ensure()
-//
-// VulkanRenderer_Draw();
-// VulkanRenderer_DrawIndexed();
-//
-// VulkanShader_Make();
-//
-// VulkanTexture_PrepareAttachment();
-// VulkanUniformSet_Make();
-// Vulkan_UniformSet_make();
-//
-// Vulkan_PushConstants();
-//
-// Json_FindWhere();
-// Json_Find();
-//
-//
 
 ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
 ENGINE_API bool vulkan_renderer_draw_indexed(VulkanContext *context, uint32_t index_count);

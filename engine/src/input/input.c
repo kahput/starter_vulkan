@@ -18,8 +18,6 @@ struct InputState {
 	struct {
 		double x, y;
 		double last_x, last_y;
-
-		bool initialized, virtual_cursor;
 	} motion;
 };
 
@@ -188,19 +186,7 @@ bool on_mouse_motion_event(EventCode code, void *event, void *receiver) {
 	input_state->motion.x = motion_event->x;
 	input_state->motion.y = motion_event->y;
 
-	if (motion_event->virtual_cursor != input_state->motion.virtual_cursor) {
-		input_state->motion.virtual_cursor = motion_event->virtual_cursor;
-
-		input_state->motion.last_x = input_state->motion.x;
-		input_state->motion.last_y = input_state->motion.y;
-	}
-
-	if (input_state->motion.initialized == false) {
-		input_state->motion.initialized = true;
-
-		input_state->motion.last_x = input_state->motion.x;
-		input_state->motion.last_y = input_state->motion.y;
-	}
+	LOG_INFO("InputMotion %.2lf, %.2lf", motion_event->x, motion_event->y);
 
 	return true;
 }
