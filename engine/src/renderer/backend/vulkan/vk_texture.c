@@ -21,7 +21,8 @@ RhiTexture vulkan_texture_make(
 	VulkanContext *context,
 	uint32_t width, uint32_t height,
 	TextureType type, TextureFormat format, TextureUsageFlags usage,
-	uint8_t *pixels) {
+	void *data) {
+	uint8_t *pixels = data;
 	VulkanImage *image = pool_alloc_struct(context->image_pool, VulkanImage);
 
 	uint32_t layer_count = type == TEXTURE_TYPE_CUBE ? 6 : 1;

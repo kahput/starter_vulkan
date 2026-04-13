@@ -58,7 +58,8 @@ bool vulkan_uniformset_bind_buffer(
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
 
-	set->buffer_ranges[set->range_count++] = buffer->frame_size;
+	// NOTE: This won't work with persistent descriptors
+	set->buffer_ranges[set->range_count++] = buffer->frame_size * context->current_frame;
 
 	VkDescriptorBufferInfo buffer_info = {
 		.buffer = buffer->handle,
@@ -84,6 +85,52 @@ bool vulkan_uniformset_bind_buffer(
 
 	return true;
 }
+
+bool vulkan_uniformset_bind_buffer_range(
+	VulkanContext *context, RhiUniformSet rset,
+	uint32_t binding,
+	size_t offset, size_t size,
+	RhiBuffer rbuffer) {
+	VulkanUniformSet *set = NULL;
+	VULKAN_GET_OR_RETURN(set, context->set_pool, rset, MAX_UNIFORM_SETS, true, false);
+
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+
+	set->buffer_ranges[set->range_count++] = offset;
+
+	VkDescriptorBufferInfo buffer_info = {
+		.buffer = buffer->handle,
+		.offset = 0,
+		.range = size
+	};
+
+	VkDescriptorType type =
+		FLAG_GET(buffer->usage, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+		? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+		: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+
+	VkWriteDescriptorSet descriptor_write = {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = set->handle,
+		.dstBinding = binding,
+		.dstArrayElement = 0,
+		.descriptorType = type, // TODO: Can't assume dynamic
+		.descriptorCount = 1,
+		.pBufferInfo = &buffer_info
+	};
+	vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
+
+	return true;
+}
+
+bool vulkan_uniformset_bind_buffer_array_index(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer rbuffer, uint32_t index) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+
+	return vulkan_uniformset_bind_buffer_range(context, set, binding, buffer->stride * index, buffer->stride, rbuffer);
+}
+
 bool vulkan_uniformset_bind_texture(
 	VulkanContext *context, RhiUniformSet rset,
 	uint32_t binding, RhiTexture rtexture, RhiSampler rsampler) {
@@ -123,9 +170,11 @@ bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet rset) {
 	VulkanShader *shader = context->bound_shader;
 	ASSERT(shader);
 
-	uint32_t offsets[MAX_BINDINGS_PER_RESOURCE];
+	static uint32_t current_frame = 0;
+
+	uint32_t offsets[MAX_BINDINGS_PER_RESOURCE] = { 0 };
 	for (uint32_t index = 0; index < set->range_count; index++)
-		offsets[index] = set->buffer_ranges[index] * context->current_frame;
+		offsets[index] = set->buffer_ranges[index];
 
 	vkCmdBindDescriptorSets(
 		context->command_buffers[context->current_frame],

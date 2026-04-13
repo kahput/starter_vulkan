@@ -20,6 +20,19 @@
 #include "cgltf.h"
 #include <math.h>
 
+static MaterialProperty default_properties[] = {
+	{ .name = { .chars = "u_base_color_texture", .length = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = { .chars = "u_metallic_roughness_texture", .length = 28 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = { .chars = "u_normal_texture", .length = 16 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = { .chars = "u_occlusion_texture", .length = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = { .chars = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+
+	{ .name = { .chars = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.float32x4 = { 0.8f, 0.8f, 0.8f, 1.0f } },
+	{ .name = { .chars = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.0f },
+	{ .name = { .chars = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.5f },
+	{ .name = { .chars = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float32x3 = { 1.0f, 1.0f, 1.0f } },
+};
+
 typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
 	Camera camera;
@@ -51,12 +64,22 @@ typedef struct {
 	Arena arena;
 	bool initialized;
 
+	RhiSampler linear_sampler;
+	RhiTexture white;
+
 	RhiBuffer global_uniform_buffer;
 	RhiShader pbr_shader;
 
 	RhiBuffer quad_geometry;
 
+	RhiTexture *images;
+	RhiBuffer material_properties;
+
 	Mesh *meshes;
+	MaterialSource *materials;
+
+	uint32_t *mesh_to_material;
+
 	SceneNode *nodes;
 
 	GameState state;
@@ -82,6 +105,8 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				context->render,
 				importer_load_shader(scratch.arena, S("assets/shaders/pbr.vert.spv"), S("assets/shaders/pbr.frag.spv")),
 				NULL);
+		pstate->linear_sampler = vulkan_sampler_make(context->render, LINEAR_SAMPLER);
+		pstate->white = vulkan_texture_make(context->render, 1, 1, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
 
 		Vertex quad_vertices[] = {
 			{ .position = { -1.0f, 1.0f, 0.0f } },
@@ -96,8 +121,24 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 		// Load model
 		String path = S("assets/models/custom/room.glb");
+		String directory = stringpath_directory(path);
 
 		MeshSource *mesh_sources = NULL;
+		uint32_t *mesh_to_material = NULL;
+
+		// 0 == default
+		MaterialSource *materials = NULL;
+		MaterialSource defaul_material = {
+			.properties = arena_push_count(scratch.arena, countof(default_properties), MaterialProperty),
+			.property_count = countof(default_properties),
+		};
+		memory_copy(defaul_material.properties, default_properties, sizeof(default_properties));
+		arena_darray_put(scratch.arena, materials, MaterialSource, defaul_material);
+
+		// 0 == invalid
+		ImageSource *images = NULL;
+		arena_darray_push(scratch.arena, images, ImageSource);
+
 		SceneNode *nodes = NULL;
 		{
 			cgltf_options options = { 0 };
@@ -113,6 +154,48 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 			LOG_INFO("Loading %.*s", SARG(path));
 
 			if (cgltf_result == cgltf_result_success) {
+				for (uint32_t image_index = 0; image_index < data->images_count; ++image_index) {
+					cgltf_image *src = &data->images[image_index];
+					ImageSource *dst = arena_darray_push(scratch.arena, images, ImageSource);
+
+					String image_path = stringpath_join(scratch.arena, directory, string_wrap(src->uri));
+					LOG_INFO("'%s' -> '%.*s'", src->name, SARG(image_path));
+					*dst = importer_load_image(scratch.arena, image_path);
+				}
+
+				for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
+					cgltf_material *src = &data->materials[material_index];
+					MaterialSource *dst = arena_darray_push(scratch.arena, materials, MaterialSource);
+
+					dst->property_count = countof(default_properties);
+					dst->properties = arena_push_count(scratch.arena, dst->property_count, MaterialProperty);
+
+					memory_copy(dst->properties, default_properties, sizeof(default_properties));
+
+					if (src->has_pbr_metallic_roughness) {
+						cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
+						memory_copy(&dst->properties[5].as.float32x4, pbr->base_color_factor, sizeof(float4));
+
+						dst->properties[6].as.float32x1 = pbr->metallic_factor;
+						dst->properties[7].as.float32x1 = pbr->roughness_factor;
+
+						if (pbr->base_color_texture.texture)
+							dst->properties[0].as.uint32x1 = cgltf_image_index(data, pbr->base_color_texture.texture->image) + 1;
+						if (pbr->metallic_roughness_texture.texture)
+							dst->properties[1].as.uint32x1 = cgltf_image_index(data, pbr->metallic_roughness_texture.texture->image) + 1;
+					}
+
+					if (src->normal_texture.texture)
+						dst->properties[2].as.uint32x1 = cgltf_image_index(data, src->normal_texture.texture->image) + 1;
+					if (src->occlusion_texture.texture)
+						dst->properties[3].as.uint32x1 = cgltf_image_index(data, src->occlusion_texture.texture->image) + 1;
+
+					memory_copy(&dst->properties[8].as.float32x3, src->emissive_factor, sizeof(float3));
+					if (src->emissive_texture.texture)
+						dst->properties[4].as.uint32x1 = cgltf_image_index(data, src->emissive_texture.texture->image) + 1;
+				}
+				LOG_INFO("Material count = %d", arena_array_count(materials));
+
 				// Meshes
 				uint32_t *mesh_offsets = arena_push_count(scratch.arena, data->meshes_count, uint32_t);
 				uint32_t mesh_offset = 0;
@@ -127,6 +210,10 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 					for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
 						cgltf_primitive *primitive = &mesh->primitives[primitive_index];
 						MeshSource *mesh = arena_darray_push(scratch.arena, mesh_sources, MeshSource);
+						if (primitive->material)
+							arena_darray_put(scratch.arena, mesh_to_material, uint32_t, cgltf_material_index(data, primitive->material) + 1);
+						else
+							arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
 
 						ASSERT(primitive->attributes && primitive->attributes->data);
 						mesh->vertex_count = primitive->attributes->data->count;
@@ -194,10 +281,10 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 			} else
 				LOG_ERROR("Failed to load '%.*s'", SARG(path));
 
-			Mesh *meshes = NULL;
-			for (uint32_t group_index = 0; group_index < arena_array_count(mesh_sources); ++group_index) {
-				Mesh *mesh = arena_darray_push(&pstate->arena, meshes, Mesh);
-				MeshSource source = mesh_sources[group_index];
+			pstate->meshes = arena_push_count(&pstate->arena, arena_array_count(mesh_sources), Mesh);
+			for (uint32_t mesh_index = 0; mesh_index < arena_array_count(mesh_sources); ++mesh_index) {
+				Mesh *mesh = &pstate->meshes[mesh_index];
+				MeshSource source = mesh_sources[mesh_index];
 
 				mesh->vertex_buffer = vulkan_buffer_make(
 					context->render,
@@ -213,14 +300,52 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				mesh->vertex_count = source.vertex_count;
 			}
 
+			pstate->images = arena_push_count(&pstate->arena, arena_array_count(images), RhiTexture);
+			for (uint32_t image_index = 1; image_index < arena_array_count(images); ++image_index) {
+				ImageSource *src = &images[image_index];
+				RhiTexture *dst = &pstate->images[image_index];
+
+				*dst = vulkan_texture_make(
+					context->render,
+					src->width, src->height,
+					TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
+					TEXTURE_USAGE_SAMPLED, src->pixels);
+			}
+
+			pstate->material_properties = vulkan_buffer_make_array(
+				context->render,
+				BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED,
+				arena_array_count(materials),
+				sizeof(MaterialParameters));
+
+			ASSERT(materials);
+			for (uint32_t material_index = 0; material_index < arena_array_count(materials); ++material_index) {
+				MaterialSource *material = &materials[material_index];
+
+				MaterialParameters parameters = {
+					.base_color_factor = material->properties[5].as.float32x4,
+					.metallic_factor = material->properties[6].as.float32x1,
+					.roughness_factor = material->properties[7].as.float32x1,
+					.emissive_factor = material->properties[8].as.float32x3
+				};
+
+				vulkan_buffer_array_index_write_all(
+					context->render,
+					pstate->material_properties,
+					material_index,
+					sizeof(MaterialParameters),
+					&parameters);
+			}
+
 			pstate->nodes = arena_array_copy(&pstate->arena, nodes, SceneNode);
-			pstate->meshes = arena_array_copy(&pstate->arena, meshes, Mesh);
+			pstate->materials = arena_array_copy(&pstate->arena, materials, MaterialSource);
+			pstate->mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
 
 			cgltf_free(data);
 		}
 
 		pstate->game_camera = (Camera){
-			.position = { 0.0f, 0.0f, -5.0f },
+			.position = { 0.0f, 20.0f, -30.0f },
 			.up = { 0.0f, 1.0f, 0.0f },
 			.target = { 0.0f, 0.0f, 0.0f },
 			.fov = 45.f,
@@ -270,16 +395,20 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 		DrawListDesc desc = {
 			.color_attachments[0] = {
-			  .clear = { .color = { 1.0f, 1.0f, 1.0f, 1.0f } },
-			  .load = CLEAR,
+			  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
 			  .store = STORE,
+			  .load = CLEAR,
 			},
 			.color_attachment_count = 1,
+			.depth_attachment = {
+			  .store = STORE,
+			  .load = CLEAR,
+			},
+			.use_depth = true
 		};
 
 		if (vulkan_drawlist_begin(context->render, desc)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
-			pipeline.polygon_mode = POLYGON_MODE_LINE;
 			vulkan_shader_bind(context->render, pstate->pbr_shader, pipeline);
 			vulkan_uniformset_bind(context->render, global_set);
 
@@ -295,6 +424,27 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 				for (uint32_t index = 0; index < node->mesh_count; ++index) {
 					Mesh *mesh = &pstate->meshes[node->mesh_index + index];
+					uint32_t material_index = pstate->mesh_to_material[indexof(pstate->meshes, mesh)];
+					MaterialSource *material = &pstate->materials[material_index];
+
+					RhiUniformSet group = vulkan_uniformset_push(context->render, pstate->pbr_shader, 1);
+					vulkan_uniformset_bind_buffer_array_index(
+						context->render, group, 0,
+						pstate->material_properties, material_index);
+					for (uint32_t index = 0; index < 5; ++index) {
+						RhiTexture texture = pstate->white;
+						if (material->properties[index].as.uint32x1) {
+							texture = pstate->images[material->properties[index].as.uint32x1];
+						}
+						vulkan_uniformset_bind_texture(
+							context->render,
+							group,
+							1 + index,
+							texture,
+							pstate->linear_sampler);
+					}
+
+					vulkan_uniformset_bind(context->render, group);
 
 					vulkan_push_constants(context->render, 0, sizeof(float44), &transform);
 					vulkan_buffer_bind(context->render, mesh->vertex_buffer, 0);
@@ -311,6 +461,7 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 		vulkan_frame_end(context->render);
 	}
+
 	arena_scratch_end(scratch);
 
 	return (FrameInfo){ 0 };
@@ -329,7 +480,7 @@ Editor editor_make(void) {
 		.zoom_speed = 0.05f,
 		.sensitivity = 0.005f,
 		.camera = {
-		  .position = { 0.0f, 0.0f, 5.0f },
+		  .position = { 0.0f, 20, 30 },
 		  .target = { 0.0f, 0.0, 0.0f },
 		  .up = { 0.0, 1.0f, 0.0f },
 		  .fov = 45.f,

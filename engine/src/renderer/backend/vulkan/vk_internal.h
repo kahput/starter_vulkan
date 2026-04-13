@@ -60,6 +60,8 @@ typedef struct vulkan_buffer {
 	VkDeviceSize size;
 	VkDeviceSize offset, frame_size;
 
+	size_t count, stride;
+
 	VkBufferUsageFlags usage;
 	VkMemoryPropertyFlags memory_property_flags;
 } VulkanBuffer;
@@ -160,7 +162,7 @@ bool vulkan_buffer_make_internal(VulkanContext *context, VkDeviceSize size,
 
 bool vulkan_buffer_map(VulkanContext *context, VulkanBuffer *buffer);
 void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer);
-void vulkan_buffer_write_internal(VulkanBuffer *buffer, size_t offset, size_t size, void *data);
+bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame, size_t offset, size_t size, void *data, VulkanBuffer *buffer);
 
 bool vulkan_buffer_upload(VulkanContext *context, void *data, VulkanBuffer *dst);
 bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst);

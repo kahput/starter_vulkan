@@ -80,38 +80,20 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	}
 
 	VkRenderingAttachmentInfo depth_info = { 0 };
-	if (desc.depth_attachment.texture.id) {
-		AttachmentDesc *src = &desc.depth_attachment;
-
-		VulkanImage *image = NULL;
-		VULKAN_GET_OR_RETURN(image, context->image_pool, src->texture, MAX_TEXTURES, true, false);
-
-		context->bound_pass.depth_format = image->info.format;
-
-		extent.width = MIN(extent.width, image->width);
-		extent.height = MIN(extent.height, image->height);
+	if (desc.use_depth) {
+		context->bound_pass.depth_format = context->device.depth_format;
 
 		depth_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 		depth_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		depth_info.loadOp = (VkAttachmentLoadOp)src->load;
-		depth_info.storeOp = (VkAttachmentStoreOp)src->store;
-		depth_info.clearValue.depthStencil.depth = src->clear.depth;
-
-		if (use_msaa) {
-			depth_info.resolveMode = VK_RESOLVE_MODE_NONE;
-			// depth_info.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-			// depth_info.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-			ASSERT(vulkan_image_msaa_scratch_ensure(
-				context, &context->msaa_depth,
-				extent, image->info.format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT));
-
-			depth_info.imageView = context->msaa_depth.view;
-		} else {
-			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-			depth_info.imageView = image->view;
-		}
+		depth_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth_info.clearValue.depthStencil.depth = 1.0f;
+		vulkan_image_msaa_scratch_ensure(
+			context, &context->msaa_depth,
+			extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
+		depth_info.imageView = context->msaa_depth.view;
 	}
+	ASSERT_MESSAGE(desc.depth_attachment.texture.id == 0, "Custom depth texture not implemented");
 
 	VkRenderingInfo pass_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -119,7 +101,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		.layerCount = 1,
 		.colorAttachmentCount = desc.color_attachment_count,
 		.pColorAttachments = color_attachments,
-		.pDepthAttachment = desc.depth_attachment.texture.id ? &depth_info : NULL,
+		.pDepthAttachment = desc.use_depth ? &depth_info : NULL,
 	};
 
 	vkCmdBeginRendering(context->command_buffers[context->current_frame], &pass_info);

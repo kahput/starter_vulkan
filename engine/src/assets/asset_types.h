@@ -54,14 +54,12 @@ typedef struct {
 	String name;
 	PropertyType type;
 	union {
-		float float1;
-		float32x2 float2;
-		float32x3 float3;
-		float32x4 float4;
+		float float32x1;
+		float32x2 float32x2;
+		float32x3 float32x3;
+		float32x4 float32x4;
 
-		uint32_t u;
-
-		ImageSource *image;
+		uint32_t uint32x1;
 	} as;
 } MaterialProperty;
 

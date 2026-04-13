@@ -15,12 +15,11 @@ typedef struct camera {
 	CameraProjection projection;
 } Camera;
 
-typedef struct material_paramters {
-	float32x4 base_color_factor;
+typedef struct alignas(16) material_paramters {
+	float4 base_color_factor;
+	float3 emissive_factor;
 	float metallic_factor;
 	float roughness_factor;
-	float32x2 _pad0;
-	float32x4 emissive_factor;
 } MaterialParameters;
 
 typedef enum {

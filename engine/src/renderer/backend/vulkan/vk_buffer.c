@@ -21,6 +21,8 @@ static const char *buffer_type_stringify[] = {
 
 RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemory memory, size_t size, void *data) {
 	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
+	buffer->count = 1;
+
 	LOG_TRACE("Vulkan: creating %s buffer...", buffer_type_stringify[type]);
 
 	logger_indent();
@@ -51,6 +53,7 @@ RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemo
 
 	logger_dedent();
 
+	buffer->stride = buffer->frame_size;
 	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
 }
 
@@ -58,12 +61,27 @@ RhiBuffer vulkan_buffer_make_array(VulkanContext *context, BufferType type, Buff
 	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
 	LOG_TRACE("Vulkan: creating %s buffer...", buffer_type_stringify[type]);
 
+	VkBufferUsageFlags usage = to_vulkan_usage(type);
+	bool result = false;
 	switch (type) {
-		case BUFFER_TYPE_UNIFORM:
+		case BUFFER_TYPE_UNIFORM: {
+			buffer->stride = MAX(context->device.properties.limits.minUniformBufferOffsetAlignment, stride);
+			buffer->count = count;
+
+			size_t size = buffer->stride * buffer->count;
+			VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+			result = vulkan_buffer_make_internal(context, size, usage, properties, 0, buffer);
+			vulkan_buffer_map(context, buffer);
+		} break;
 		case BUFFER_TYPE_STORAGE:
 		default:
 			ASSERT(false);
 	}
+
+	if (result == false)
+		return INVALID_RHI(RhiBuffer);
+
+	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
 }
 
 RhiBuffer vulkan_buffer_make_texel(VulkanContext *context, BufferType type, BufferMemory memory, TextureFormat format, size_t size, void *data) {
@@ -119,23 +137,54 @@ bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
 	return true;
 }
 
-bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
-	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
-
+bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame_index, size_t offset, size_t size, void *data, VulkanBuffer *buffer) {
 	if (FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
 		if (offset + size > buffer->frame_size) {
 			LOG_WARN("Vulkan: write overflows frame allocation by %zuB, clamping", (offset + size) - buffer->frame_size);
 			size = buffer->frame_size - offset;
 		}
 
-		uint8_t *dest = (uint8_t *)buffer->mapped + (buffer->frame_size * context->current_frame) + offset;
+		uint8_t *dest = (uint8_t *)buffer->mapped + (buffer->frame_size * frame_index) + offset;
 		memory_copy(dest, data, size);
 
 		return true;
 	}
 
 	return vulkan_buffer_upload(context, data, buffer);
+}
+
+bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+
+	return vulkan_buffer_write_internal(context, context->current_frame, offset, size, data, buffer);
+}
+
+bool vulkan_buffer_write_all(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+
+	bool result = true;
+	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
+		if (vulkan_buffer_write_internal(context, frame_index, offset, size, data, buffer) == false)
+			result = false;
+	}
+
+	return result;
+}
+
+bool vulkan_buffer_array_index_write(VulkanContext *context, RhiBuffer rbuffer, uint32_t index, size_t size, void *data) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+
+	return vulkan_buffer_write(context, rbuffer, buffer->stride * index, size, data);
+}
+
+bool vulkan_buffer_array_index_write_all(VulkanContext *context, RhiBuffer rbuffer, uint32_t index, size_t size, void *data) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+
+	return vulkan_buffer_write_all(context, rbuffer, buffer->stride * index, size, data);
 }
 
 bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset) {
