@@ -34,6 +34,7 @@
 	#define alignas(X) __attribute((aligned(X)))
 #endif
 
+
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
@@ -113,6 +114,11 @@ typedef uint32_t uint32;
 typedef struct { uint32 x, y; } uint32x2;
 typedef struct { uint32 x, y, z; } uint32x3;
 typedef struct { uint32 x, y, z, w; } uint32x4;
+
+typedef uint64_t uint64;
+typedef struct { uint64 x, y; } uint64x2;
+typedef struct { uint64 x, y, z; } uint64x3;
+typedef struct { uint64 x, y, z, w; } uint64x4;
 
 typedef uint32x2 uint2;
 typedef uint32x3 uint3;

@@ -1,11 +1,14 @@
 #include "assets/asset_types.h"
 #include "assets/importer.h"
+#include "assets/mesh_source.h"
+
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
 #include "core/debug.h"
 #include "core/logger.h"
 #include "core/r_types.h"
+#include "core/strings.h"
 #include "game_interface.h"
 #include "input.h"
 #include "input/input_types.h"
@@ -18,7 +21,7 @@
 #include <math.h>
 
 typedef struct Editor {
-	float sensitivity, pan_speed;
+	float sensitivity, pan_speed, zoom_speed;
 	Camera camera;
 } Editor;
 
@@ -31,6 +34,21 @@ typedef enum {
 } GameState;
 
 typedef struct {
+	RhiBuffer vertex_buffer;
+	RhiBuffer index_buffer;
+
+	uint32_t index_count;
+	uint32_t vertex_count;
+} Mesh;
+
+typedef struct {
+	uint32_t parent_index, mesh_index, mesh_count;
+
+	float44 local_transform;
+} SceneNode;
+
+typedef struct {
+	Arena arena;
 	bool initialized;
 
 	RhiBuffer global_uniform_buffer;
@@ -38,7 +56,8 @@ typedef struct {
 
 	RhiBuffer quad_geometry;
 
-	RhiBuffer model;
+	Mesh *meshes;
+	SceneNode *nodes;
 
 	GameState state;
 	Editor editor;
@@ -51,6 +70,8 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 	PermanentState *pstate = context->permanent_memory;
 
 	if (pstate->initialized == false) {
+		pstate->arena = arena_wrap((uint8_t *)context->permanent_memory + sizeof(PermanentState), context->permanent_memory_size - sizeof(PermanentState));
+
 		pstate->global_uniform_buffer = vulkan_buffer_make(context->render, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, sizeof(Matrix4f) * 2, NULL);
 
 		ArenaTemp scratch = arena_scratch_begin(NULL);
@@ -62,19 +83,141 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				importer_load_shader(scratch.arena, S("assets/shaders/pbr.vert.spv"), S("assets/shaders/pbr.frag.spv")),
 				NULL);
 
-		float3 vertices[] = {
-			{ -1.0f, 1.0f, 0.0f },
-			{ -1.0f, -1.0f, 0.0f },
-			{ 1.0f, 1.0f, 0.0f },
+		Vertex quad_vertices[] = {
+			{ .position = { -1.0f, 1.0f, 0.0f } },
+			{ .position = { -1.0f, -1.0f, 0.0f } },
+			{ .position = { 1.0f, 1.0f, 0.0f } },
 
-			{ 1.0f, 1.0f, 0.0f },
-			{ -1.0f, -1.0f, 0.0f },
-			{ 1.0f, -1.0f, 0.0f }
+			{ .position = { 1.0f, 1.0f, 0.0f } },
+			{ .position = { -1.0f, -1.0f, 0.0f } },
+			{ .position = { 1.0f, -1.0f, 0.0f } }
 		};
+		pstate->quad_geometry = vulkan_buffer_make(context->render, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(quad_vertices), quad_vertices);
 
-		pstate->quad_geometry = vulkan_buffer_make(context->render, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(vertices), vertices);
+		// Load model
+		String path = S("assets/models/custom/room.glb");
 
-		ModelSource model_src = importer_load_gltf(scratch.arena, S("assets/models/custom/room.glb"));
+		MeshSource *mesh_sources = NULL;
+		SceneNode *nodes = NULL;
+		{
+			cgltf_options options = { 0 };
+			cgltf_data *data = NULL;
+			cgltf_result cgltf_result = cgltf_parse_file(&options, path.chars, &data);
+
+			if (cgltf_result == cgltf_result_success)
+				cgltf_result = cgltf_load_buffers(&options, data, path.chars);
+
+			if (cgltf_result == cgltf_result_success)
+				cgltf_result = cgltf_validate(data);
+
+			LOG_INFO("Loading %.*s", SARG(path));
+
+			if (cgltf_result == cgltf_result_success) {
+				// Meshes
+				uint32_t *mesh_offsets = arena_push_count(scratch.arena, data->meshes_count, uint32_t);
+				uint32_t mesh_offset = 0;
+				for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
+					cgltf_mesh *mesh = &data->meshes[mesh_index];
+
+					mesh_offsets[mesh_index] = mesh_offset;
+					mesh_offset += mesh->primitives_count;
+
+					LOG_INFO("\n%s {\n  primitive_count = %d \n}",
+						mesh->name, mesh->primitives_count);
+					for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
+						cgltf_primitive *primitive = &mesh->primitives[primitive_index];
+						MeshSource *mesh = arena_darray_push(scratch.arena, mesh_sources, MeshSource);
+
+						ASSERT(primitive->attributes && primitive->attributes->data);
+						mesh->vertex_count = primitive->attributes->data->count;
+						mesh->vertex_size = sizeof(Vertex);
+						mesh->vertices = (uint8_t *)arena_push_count(scratch.arena, mesh->vertex_count, Vertex);
+
+						for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
+							cgltf_attribute *attribute = &primitive->attributes[attribute_index];
+							cgltf_accessor *accessor = attribute->data;
+
+							size_t offset = 0;
+							switch (attribute->type) {
+								case cgltf_attribute_type_position:
+									offset = offsetof(Vertex, position);
+									break;
+								case cgltf_attribute_type_normal:
+									offset = offsetof(Vertex, normal);
+									break;
+								case cgltf_attribute_type_tangent:
+									offset = offsetof(Vertex, tangent);
+									break;
+								case cgltf_attribute_type_texcoord:
+									offset = offsetof(Vertex, uv);
+									break;
+								/* case cgltf_attribute_type_color: */
+								/* case cgltf_attribute_type_joints: */
+								/* case cgltf_attribute_type_weights: */
+								default:
+									ASSERT_MESSAGE(false, "Unsupported attribute type");
+									break;
+							}
+
+							uint8_t *vertices = mesh->vertices;
+							for (uint32_t vertex_index = 0; vertex_index < accessor->count; ++vertex_index, vertices += mesh->vertex_size)
+								cgltf_accessor_read_float(accessor, vertex_index, (void *)(vertices + offset), cgltf_num_components(accessor->type));
+						}
+
+						// Indices
+						cgltf_accessor *accessor = primitive->indices;
+
+						mesh->index_count = accessor->count;
+						mesh->index_size = sizeof(uint32_t);
+						mesh->indices = (uint8_t *)arena_push_count(scratch.arena, mesh->index_count, uint32_t);
+						size_t written = cgltf_accessor_unpack_indices(accessor, mesh->indices, mesh->index_size, mesh->index_count);
+					}
+				}
+
+				// Nodes
+				for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
+					cgltf_node *cgltf_node = &data->nodes[node_index];
+					SceneNode *node = arena_darray_push(scratch.arena, nodes, SceneNode);
+
+					if (cgltf_node->parent)
+						node->parent_index = cgltf_node_index(data, cgltf_node->parent);
+					else
+						node->parent_index = UINT32_MAX;
+
+					cgltf_node_transform_local(cgltf_node, node->local_transform.elements);
+
+					ASSERT(cgltf_node->mesh);
+					node->mesh_index = mesh_offsets[cgltf_mesh_index(data, cgltf_node->mesh)];
+					node->mesh_count = cgltf_node->mesh->primitives_count;
+				}
+
+			} else
+				LOG_ERROR("Failed to load '%.*s'", SARG(path));
+
+			Mesh *meshes = NULL;
+			for (uint32_t group_index = 0; group_index < arena_array_count(mesh_sources); ++group_index) {
+				Mesh *mesh = arena_darray_push(&pstate->arena, meshes, Mesh);
+				MeshSource source = mesh_sources[group_index];
+
+				mesh->vertex_buffer = vulkan_buffer_make(
+					context->render,
+					BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE,
+					source.vertex_size * source.vertex_count, source.vertices);
+
+				mesh->index_buffer = vulkan_buffer_make(
+					context->render,
+					BUFFER_TYPE_INDEX, BUFFER_MEMORY_DEVICE,
+					source.index_size * source.index_count, source.indices);
+
+				mesh->index_count = source.index_count;
+				mesh->vertex_count = source.vertex_count;
+			}
+
+			pstate->nodes = arena_array_copy(&pstate->arena, nodes, SceneNode);
+			pstate->meshes = arena_array_copy(&pstate->arena, meshes, Mesh);
+
+			cgltf_free(data);
+		}
 
 		pstate->game_camera = (Camera){
 			.position = { 0.0f, 0.0f, -5.0f },
@@ -111,10 +254,12 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 		editor_update(&pstate->editor, dt);
 
 	uint2 window_size = window_size_pixel(context->display);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
 	if (vulkan_frame_begin(context->render, window_size.x, window_size.y)) {
 		Camera *camera = pstate->camera;
 
 		Matrix4f projection = float44_perspective(DEG2RAD(camera->fov), (float)window_size.x / (float)window_size.y, 0.01f, 1000.f);
+		projection.elements[5] *= -1;
 		Matrix4f view = float44_lookat(camera->position, camera->target, camera->up);
 
 		vulkan_buffer_write(context->render, pstate->global_uniform_buffer, 0, sizeof(Matrix4f), &projection);
@@ -133,19 +278,40 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 		};
 
 		if (vulkan_drawlist_begin(context->render, desc)) {
-			vulkan_shader_bind(context->render, pstate->pbr_shader, DEFAULT_PIPELINE);
+			PipelineDesc pipeline = DEFAULT_PIPELINE;
+			pipeline.polygon_mode = POLYGON_MODE_LINE;
+			vulkan_shader_bind(context->render, pstate->pbr_shader, pipeline);
 			vulkan_uniformset_bind(context->render, global_set);
 
-			Matrix4f transform = float44_identity();
-			vulkan_push_constants(context->render, 0, sizeof(Matrix4f), &transform);
-			vulkan_buffer_bind(context->render, pstate->quad_geometry, 0);
-			vulkan_renderer_draw(context->render, 6);
+			for (uint32_t node_index = 0; node_index < arena_array_count(pstate->nodes); ++node_index) {
+				SceneNode *node = &pstate->nodes[node_index];
+				float44 transform = node->local_transform;
+
+				SceneNode *p = node;
+				while (p->parent_index != UINT32_MAX) {
+					p = &pstate->nodes[p->parent_index];
+					transform = float44_multiply(transform, p->local_transform);
+				}
+
+				for (uint32_t index = 0; index < node->mesh_count; ++index) {
+					Mesh *mesh = &pstate->meshes[node->mesh_index + index];
+
+					vulkan_push_constants(context->render, 0, sizeof(float44), &transform);
+					vulkan_buffer_bind(context->render, mesh->vertex_buffer, 0);
+					if (mesh->index_count > 0) {
+						vulkan_buffer_bind(context->render, mesh->index_buffer, 0);
+						vulkan_renderer_draw_indexed(context->render, mesh->index_count);
+					} else
+						vulkan_renderer_draw(context->render, mesh->vertex_count);
+				}
+			}
 
 			vulkan_drawlist_end(context->render);
 		}
 
 		vulkan_frame_end(context->render);
 	}
+	arena_scratch_end(scratch);
 
 	return (FrameInfo){ 0 };
 }
@@ -157,66 +323,10 @@ GameInterface game_hookup(void) {
 	return interface;
 }
 
-ModelSource importer_load_gltf(Arena *arena, String path) {
-	cgltf_options options = { 0 };
-	cgltf_data *data = NULL;
-	cgltf_result cgltf_result = cgltf_parse_file(&options, path.chars, &data);
-
-	if (cgltf_result == cgltf_result_success)
-		cgltf_result = cgltf_load_buffers(&options, data, path.chars);
-
-	if (cgltf_result == cgltf_result_success)
-		cgltf_result = cgltf_validate(data);
-
-	if (cgltf_result != cgltf_result_success) {
-		LOG_ERROR("Importer: Failed to load model");
-		return (ModelSource){ 0 };
-	}
-
-	LOG_INFO("Loading %.*s", SARG(path));
-
-	ModelSource result = { 0 };
-
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-
-	float *vertices = NULL;
-	uint32_t *indices = NULL;
-
-	for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
-		cgltf_mesh *mesh = &data->meshes[mesh_index];
-		LOG_INFO("Mesh '%s' (primitive_count = %d)", mesh->name, mesh->primitives_count);
-
-		for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
-			cgltf_primitive *primitive = &mesh->primitives[primitive_index];
-
-			size_t primitive_size = 0;
-			for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
-				cgltf_attribute *attribute = &primitive->attributes[attribute_index];
-				cgltf_accessor *accessor = attribute->data;
-
-				size_t count = accessor->count * cgltf_num_components(accessor->type) * cgltf_component_size(accessor->component_type);
-				vertices = arena_array_ensure(scratch.arena, vertices, 1, count);
-				cgltf_accessor_unpack_floats(accessor, vertices + arena_array_count(vertices), accessor->count);
-				HEADER(vertices, ArenaArrayHeader)->count += count;
-			}
-
-			cgltf_accessor *accessor = primitive->indices;
-
-			indices = arena_array_ensure(scratch.arena, indices, sizeof(uint32_t), accessor->count);
-			cgltf_accessor_unpack_indices(primitive->indices, indices + arena_array_count(indices), 4, accessor->count);
-			HEADER(indices, ArenaArrayHeader)->count += accessor->count;
-		}
-	}
-
-	arena_scratch_end(scratch);
-	cgltf_free(data);
-
-	return result;
-}
-
 Editor editor_make(void) {
 	Editor result = {
 		.pan_speed = 0.005f,
+		.zoom_speed = 0.05f,
 		.sensitivity = 0.005f,
 		.camera = {
 		  .position = { 0.0f, 0.0f, 5.0f },
@@ -237,6 +347,7 @@ void editor_update(Editor *editor, float dt) {
 
 	if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
 		float2 shift = float2_scale(mouse_delta, editor->pan_speed);
+		shift.y *= -1;
 
 		float3 camera_target_offset = float3_subtract(camera->target, camera->position);
 		float3 camera_forward = float3_normalize(camera_target_offset);
@@ -249,6 +360,10 @@ void editor_update(Editor *editor, float dt) {
 
 		camera->target = float3_add(camera->position, camera_target_offset);
 
+	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTCTRL)) {
+		float zoom = mouse_delta.y * editor->zoom_speed;
+		float3 camera_forward = float3_normalize(float3_subtract(camera->target, camera->position));
+		camera->position = float3_add(camera->position, float3_scale(camera_forward, -zoom));
 	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE)) {
 		float yaw_delta = mouse_delta.x * editor->sensitivity;
 		float pitch_delta = mouse_delta.y * editor->sensitivity;
@@ -262,6 +377,7 @@ void editor_update(Editor *editor, float dt) {
 		float r = MAX(float3_length(camera_position), EPSILON);
 
 		float current_theta = 0;
+		// Manual (theta) vs atan2 (azimuth)
 		float2 camera_xz = { camera_position.x, camera_position.z };
 		if (camera_position.y > 0)
 			current_theta = atanf(float2_length(camera_xz) / camera_position.y);
@@ -273,7 +389,7 @@ void editor_update(Editor *editor, float dt) {
 			ASSERT(false);
 		float current_azimuth = atan2f(camera_position.z, camera_position.x); // [-pi, pi]
 
-		current_theta = CLAMP(current_theta + pitch_delta, EPSILON, C_PIf - EPSILON);
+		current_theta = CLAMP(current_theta - pitch_delta, EPSILON * 2, C_PIf - EPSILON * 2);
 		current_azimuth += yaw_delta;
 
 		// Apply move
@@ -284,7 +400,5 @@ void editor_update(Editor *editor, float dt) {
 			  .z = r * sinf(current_theta) * sinf(current_azimuth),
 			},
 			camera->target);
-
-	} else {
 	}
 }

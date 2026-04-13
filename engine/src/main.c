@@ -22,8 +22,6 @@
 #include "core/cmath.h"
 #include "scene.h"
 
-#include "stb//stb_truetype.h"
-
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
@@ -106,10 +104,6 @@ int main(void) {
 
 		window_poll_events(engine.display);
 		game_on_update_and_render(&game_context, delta_time);
-
-		if (input_key_pressed(KEY_CODE_TAB)) {
-			LOG_INFO("Tab pressed");
-		}
 	}
 
 	vulkan_renderer_destroy(engine.context);

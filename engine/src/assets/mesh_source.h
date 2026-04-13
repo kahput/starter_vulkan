@@ -14,6 +14,16 @@ typedef struct mesh_source {
 	uint32_t index_count;
 } MeshSource;
 
+/* typedef enum { */
+/* 	ATTRIBUTE_TYPE_POSITION, */
+/* 	ATTRIBUTE_TYPE_NORMAL, */
+/* 	ATTRIBUTE_TYPE_TANGENT, */
+/* 	ATTRIBUTE_TYPE_TEXCOORD, */
+/* 	ATTRIBUTE_TYPE_COLOR, */
+/* 	ATTRIBUTE_TYPE_JOINTS, */
+/* 	ATTRIBUTE_TYPE_WEIGHTS, */
+/* } ShaderAttribute; */
+
 enum {
 	CUBE_FACE_RIGHT,
 	CUBE_FACE_LEFT,
@@ -31,7 +41,7 @@ typedef struct mesh_source_node {
 	struct mesh_source_node *next;
 	struct mesh_source_node *prev;
 
-	MeshSource source;
+	MeshSource mesh;
 } MeshSourceNode;
 
 typedef struct mesh_source_list {

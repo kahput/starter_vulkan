@@ -35,7 +35,7 @@ typedef struct shader_source {
 } ShaderSource;
 
 typedef enum {
-	PROPERTY_TYPE_FLOAT,
+	PROPERTY_TYPE_FLOAT1,
 	PROPERTY_TYPE_FLOAT2,
 	PROPERTY_TYPE_FLOAT3,
 	PROPERTY_TYPE_FLOAT4,
@@ -66,12 +66,8 @@ typedef struct {
 } MaterialProperty;
 
 typedef struct material_source {
-	UUID id;
-	ShaderSource *shader;
-
 	MaterialProperty *properties;
 	uint32_t property_count;
-
 } MaterialSource;
 
 typedef struct {

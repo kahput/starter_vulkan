@@ -13,7 +13,7 @@ typedef struct String {
 #define S(s) ((String){ (char *)(s), sizeof(s) - 1 })
 #define shash(s) string_hash64(S(s))
 
-String string_wrap(const char *s);
+ENGINE_API String string_wrap(const char *s);
 static inline String string_wrap_span(Span span) { return (String){ .chars = (char *)span.buffer, .length = span.length }; }
 
 ENGINE_API bool string_equals(String a, String b);

@@ -186,7 +186,7 @@ bool on_mouse_motion_event(EventCode code, void *event, void *receiver) {
 	input_state->motion.x = motion_event->x;
 	input_state->motion.y = motion_event->y;
 
-	LOG_INFO("InputMotion %.2lf, %.2lf", motion_event->x, motion_event->y);
+	/* LOG_INFO("InputMotion %.2lf, %.2lf", motion_event->x, motion_event->y); */
 
 	return true;
 }

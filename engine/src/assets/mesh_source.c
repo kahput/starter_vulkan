@@ -75,7 +75,7 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 
 void meshlist_push(Arena *arena, MeshSourceList *list, MeshSource source) {
 	MeshSourceNode *node = arena_push_struct(arena, MeshSourceNode);
-	node->source = source;
+	node->mesh = source;
 	node->next = NULL;
 
 	if (list->first == NULL) {
@@ -83,6 +83,7 @@ void meshlist_push(Arena *arena, MeshSourceList *list, MeshSource source) {
 		node->next = node;
 		node->prev = node;
 		list->vertex_size = source.vertex_size;
+		list->index_size = source.index_size;
 	} else {
 		list->first->prev->next = node;
 		node->prev = list->first->prev;
@@ -102,24 +103,64 @@ void meshlist_push(Arena *arena, MeshSourceList *list, MeshSource source) {
 }
 
 MeshSource meshlist_flatten(Arena *arena, MeshSourceList *list) {
-	MeshSource rv = { 0 };
+	MeshSource rv = {
+		.vertex_size = list->vertex_size,
+		.index_size = list->index_size,
+	};
 	if (list->count == 0)
 		return rv;
 
 	uint8_t *vertices = arena_push_count(arena, list->total_vertices_size, uint8_t);
-	size_t cursor = 0;
+	uint8_t *indices = arena_push_count(arena, list->total_indices_size, uint8_t);
+
+	size_t vertices_cursor = 0;
+	size_t indices_cursor = 0;
+
+	if (list->count > 1) {
+		int32_t x = 0;
+		(void)x;
+	}
 
 	MeshSourceNode *node = list->first;
+	ASSERT(node);
 	do {
-		size_t size = node->source.vertex_count * node->source.vertex_size;
-		memory_copy(vertices + cursor, node->source.vertices, size);
+		ASSERT(node->mesh.vertex_size == list->vertex_size);
+		size_t vertices_size = node->mesh.vertex_count * node->mesh.vertex_size;
+		memory_copy(vertices + vertices_cursor, node->mesh.vertices, vertices_size);
 
-		cursor += size;
-		rv.vertex_count += node->source.vertex_count;
+		ASSERT(node->mesh.index_size == list->index_size);
+		size_t indices_size = node->mesh.index_count * node->mesh.index_size;
+		memory_copy(indices + indices_cursor, node->mesh.indices, indices_size);
+
+		for (uint32_t byte_offset = 0; byte_offset < node->mesh.index_count * node->mesh.index_size; byte_offset += node->mesh.index_size) {
+			uint8_t *submesh_indices = indices + indices_cursor;
+			switch (node->mesh.index_size) {
+				case 1:
+					submesh_indices[byte_offset] += vertices_cursor / rv.vertex_size;
+					break;
+				case 2:
+					*(uint16_t *)(submesh_indices + byte_offset) += vertices_cursor / rv.vertex_size;
+					break;
+				case 4:
+					*(uint32_t *)(submesh_indices + byte_offset) += vertices_cursor / rv.vertex_size;
+					break;
+				default:
+					ASSERT_MESSAGE(false, "Unsupported index size");
+					break;
+			}
+		}
+
+		vertices_cursor += vertices_size;
+		indices_cursor += indices_size;
+
+		rv.vertex_count += node->mesh.vertex_count;
+		rv.index_count += node->mesh.index_count;
+
 		node = node->next;
 	} while (node != list->first);
 
-	rv.vertex_size = list->vertex_size;
 	rv.vertices = vertices;
+	rv.indices = indices;
+
 	return rv;
 }

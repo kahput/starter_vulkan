@@ -21,11 +21,13 @@ typedef float32x3 float3;
 typedef float32x3 Ray3f;
 typedef float32x4 float4;
 
+typedef Matrix4f float44;
+
 static inline float *float4_elements(float4 *v) { return (float *)v; }
 static inline float *float3_elements(float3 *v) { return (float *)v; }
 static inline float *float2_elements(float2 *v) { return (float *)v; }
 
-static inline float2 float2_make(float x, float y) { return (float2){x, y};}
+static inline float2 float2_make(float x, float y) { return (float2){ x, y }; }
 
 ENGINE_API float float2_length(float2 v);
 ENGINE_API float2 float2_normalize(float2 v);
@@ -35,6 +37,7 @@ ENGINE_API float2 float2_subtract(float2 a, float2 b);
 ENGINE_API float2 float2_divide(float2 a, float2 b);
 ENGINE_API float2 float2_scale(float2 v, float s);
 
+static inline float3 float3_wrap(float v[3]) { return (float3){ .x = v[0], .y = v[1], .z = v[2] }; }
 ENGINE_API float float2_dot(float2 a, float2 b);
 
 ENGINE_API float3 float3_add(float3 a, float3 b);
@@ -59,7 +62,7 @@ ENGINE_API Matrix4f float44_identity(void);
 ENGINE_API Matrix4f float44_multiply(Matrix4f lhs, Matrix4f rhs);
 
 ENGINE_API Matrix4f float44_translate(Matrix4f matrix, float3 translation);
-ENGINE_API Matrix4f float44_rotate(Matrix4f matrix, float angle, float3 axis);
+ENGINE_API Matrix4f float44_rotate(Matrix4f matrix, float angle_radians, float3 axis);
 ENGINE_API Matrix4f float44_scale(Matrix4f matrix, float3 scale);
 
 ENGINE_API Matrix4f float44_translated(float3 translation);

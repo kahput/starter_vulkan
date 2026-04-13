@@ -11,7 +11,6 @@
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
-#include <stb/stb_truetype.h>
 
 #include "core/arena.h"
 #include "core/logger.h"
@@ -23,21 +22,6 @@
 
 // static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 /* static ImageSource *find_loaded_texture(const cgltf_data *data, SModel *scene, const cgltf_texture *gltf_tex); */
-
-Font importer_load_font(Arena *arena, String path) {
-	Font result = { 0 };
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-	Span ttf_file = filesystem_read(scratch.arena, path);
-
-	result.internal = arena_push_struct(arena, stbtt_fontinfo);
-	stbtt_InitFont(result.internal, ttf_file.buffer, 0);
-
-	result.bitmap = stbtt_GetCodepointBitmap(result.internal, 0, stbtt_ScaleForPixelHeight(result.internal, 128), 'A', &result.width, &result.height, 0, 0);
-
-	arena_scratch_end(scratch);
-
-	return result;
-}
 
 ShaderConfig importer_load_shader(Arena *arena, String vertex_path, String fragment_path) {
 	Span vfile = filesystem_read(arena, vertex_path);
@@ -87,8 +71,8 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 	{ .name = { .chars = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.image = NULL },
 
 	{ .name = { .chars = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.float4 = { 1.0f, 1.0f, 1.0f, 1.0f } },
-	{ .name = { .chars = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.0f },
-	{ .name = { .chars = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT, .as.float1 = 0.5f },
+	{ .name = { .chars = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT1, .as.float1 = 0.0f },
+	{ .name = { .chars = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT1, .as.float1 = 0.5f },
 	{ .name = { .chars = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float3 = { 1.0f, 1.0f, 1.0f } },
 };
 
