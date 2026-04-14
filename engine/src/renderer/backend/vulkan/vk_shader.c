@@ -30,30 +30,30 @@ RhiShader vulkan_shader_make(
 	ShaderConfig config, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
-	if (config.vertex.buffer == NULL || config.vertex.length == 0 || config.fragment.buffer == NULL || config.fragment.length == 0) {
-		LOG_ERROR("Vulkan: Invalid shader code passed to vulkan_renderer_shader_craete");
+	if (config.vertex.buffer == NULL || config.vertex.size == 0 || config.fragment.buffer == NULL || config.fragment.size == 0) {
+		LOG_ERROR("Vulkan: invalid shader code passed, aborting %s", __func__);
 		return INVALID_RHI(RhiShader);
 	}
 
 	VkShaderModuleCreateInfo vsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config.vertex.length,
+		.codeSize = config.vertex.size,
 		.pCode = (uint32_t *)config.vertex.buffer,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create vertex shader module");
+		LOG_ERROR("Vulkan: failed to create vertex shader module, aborting %s", __func__);
 		return INVALID_RHI(RhiShader);
 	}
 
 	VkShaderModuleCreateInfo fsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config.fragment.length,
+		.codeSize = config.fragment.size,
 		.pCode = (uint32_t *)config.fragment.buffer,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
-		LOG_ERROR("Failed to create fragment shader module");
+		LOG_ERROR("Vulkan: failed to create fragment shader module, aborting %s", __func__);
 		return INVALID_RHI(RhiShader);
 	}
 
@@ -366,13 +366,13 @@ bool reflect_shader_interface(
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
-	result = spvReflectCreateShaderModule(config.vertex.length, config.vertex.buffer, &vertex_module);
+	result = spvReflectCreateShaderModule(config.vertex.size, config.vertex.buffer, &vertex_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect vertex shader");
 		return false;
 	}
 
-	result = spvReflectCreateShaderModule(config.fragment.length, config.fragment.buffer, &fragment_module);
+	result = spvReflectCreateShaderModule(config.fragment.size, config.fragment.buffer, &fragment_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect fragment shader");
 		spvReflectDestroyShaderModule(&vertex_module);
@@ -632,6 +632,8 @@ bool reflect_shader_interface(
 			arena_scratch_end(scratch);
 			return false;
 		}
+        // TODO: Add proper debug naming
+		/* vulkan_utils_set_object_name(context, (uint64_t)shader->layouts[index], VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, S("test")); */
 	}
 
 	spvReflectDestroyShaderModule(&vertex_module);

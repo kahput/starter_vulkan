@@ -112,6 +112,10 @@ double input_mouse_y(void) {
 	return state->motion.y;
 }
 
+double2 input_mouse_position(void) {
+    return (double2) {state->motion.x, state->motion.y};
+}
+
 double input_mouse_dx(void) {
 	return state->motion.x - state->motion.last_x;
 }

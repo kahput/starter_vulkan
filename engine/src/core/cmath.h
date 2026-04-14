@@ -23,11 +23,20 @@ typedef float32x4 float4;
 
 typedef Matrix4f float44;
 
+#define FLOAT3_X (float3){ 1.0f, 0.0f, 0.0f }
+#define FLOAT3_Y (float3){ 1.0f, 1.0f, 0.0f }
+#define FLOAT3_Z (float3){ 1.0f, 0.0f, 1.0f }
+
+#define FLOAT3_ONE (float3){ 1.0f, 1.0f, 1.0f }
+
 static inline float *float4_elements(float4 *v) { return (float *)v; }
 static inline float *float3_elements(float3 *v) { return (float *)v; }
 static inline float *float2_elements(float2 *v) { return (float *)v; }
 
 static inline float2 float2_make(float x, float y) { return (float2){ x, y }; }
+static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.x, (float)d.y} ; }
+
+ENGINE_API float2 float2_negate(float2 v);
 
 ENGINE_API float float2_length(float2 v);
 ENGINE_API float2 float2_normalize(float2 v);

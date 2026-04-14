@@ -73,6 +73,7 @@ typedef struct {
 	float32x3 normal;
 	float32x2 uv;
 	float32x4 tangent;
+	float32x4 color;
 } Vertex;
 
 typedef struct model_source {

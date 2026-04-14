@@ -85,7 +85,7 @@ ArenaTemp arena_scratch_begin(Arena *conflict) {
 ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Span key, const char *debug_type_name) {
 	ArenaTrieNode **node = root;
 
-	for (uint64_t hash_index = hash64(key.buffer, key.length); *node; hash_index <<= 2) {
+	for (uint64_t hash_index = hash64(key.buffer, key.size); *node; hash_index <<= 2) {
 		Span node_key = span_make((uint8_t *)(*node) + sizeof(ArenaTrieNode), (*node)->key_size);
 		if (span_equal(node_key, key)) {
 			ASSERT_FORMAT(
@@ -103,8 +103,8 @@ ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Span ke
 	if (arena == NULL)
 		return NULL;
 
-	*node = arena_push(arena, sizeof(ArenaTrieNode) + key.length, alignof(ArenaTrieNode), true);
-	(*node)->key_size = key.length;
+	*node = arena_push(arena, sizeof(ArenaTrieNode) + key.size, alignof(ArenaTrieNode), true);
+	(*node)->key_size = key.size;
 	(*node)->debug_type_name = debug_type_name;
 	memory_copy((uint8_t *)(*node) + sizeof(ArenaTrieNode), key.buffer, (*node)->key_size);
 
@@ -114,9 +114,9 @@ ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Span ke
 void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Span key, size_t map_size, size_t map_align) {
 	ArenaTrieHeader **node = root;
 
-	for (uint64_t hash = hash64(key.buffer, key.length); *node; hash <<= 2) {
+	for (uint64_t hash = hash64(key.buffer, key.size); *node; hash <<= 2) {
 		void *node_key = (uint8_t *)(*node) + key_offset;
-		if (memory_equals(node_key, key.buffer, key.length)) {
+		if (memory_equals(node_key, key.buffer, key.size)) {
 			return (uint8_t *)(*node) + value_offset;
 		}
 
@@ -129,7 +129,7 @@ void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_o
 	ASSERT(map_size >= sizeof(ArenaTrieNode));
 
 	(*node) = arena_push(arena, map_size, 16, true);
-	memory_copy((uint8_t *)(*node) + key_offset, key.buffer, key.length);
+	memory_copy((uint8_t *)(*node) + key_offset, key.buffer, key.size);
 
 	return (uint8_t *)(*node) + value_offset;
 }

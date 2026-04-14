@@ -9,6 +9,8 @@
 #include "core/logger.h"
 #include "core/r_types.h"
 #include "core/strings.h"
+#include "event.h"
+#include "events/platform_events.h"
 #include "game_interface.h"
 #include "input.h"
 #include "input/input_types.h"
@@ -33,14 +35,6 @@ static MaterialProperty default_properties[] = {
 	{ .name = { .chars = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float32x3 = { 1.0f, 1.0f, 1.0f } },
 };
 
-typedef struct Editor {
-	float sensitivity, pan_speed, zoom_speed;
-	Camera camera;
-} Editor;
-
-Editor editor_make(void);
-void editor_update(Editor *editor, float dt);
-
 typedef enum {
 	GAME_STATE_PLAY,
 	GAME_STATE_EDITOR,
@@ -55,20 +49,43 @@ typedef struct {
 } Mesh;
 
 typedef struct {
+	float3 position, scale, rotation;
+
+	float44 local, cached;
+} Transform3D;
+
+typedef struct {
 	uint32_t parent_index, mesh_index, mesh_count;
 
-	float44 local_transform;
+	Transform3D transform;
 } SceneNode;
+
+typedef struct Editor {
+	float sensitivity, pan_speed, zoom_speed;
+	Camera camera;
+
+	bool grab;
+	float2 grab_mouse_position;
+	Transform3D cached_selection_transform;
+} Editor;
 
 typedef struct {
 	Arena arena;
 	bool initialized;
+
+	VulkanContext *context;
+	Window *display;
 
 	RhiSampler linear_sampler;
 	RhiTexture white;
 
 	RhiBuffer global_uniform_buffer;
 	RhiShader pbr_shader;
+
+	RhiBuffer frame_uniform_buffer;
+
+	RhiShader picker_shader;
+	RhiTexture picker_target;
 
 	RhiBuffer quad_geometry;
 
@@ -82,6 +99,8 @@ typedef struct {
 
 	SceneNode *nodes;
 
+	uint32_t selected_node;
+
 	GameState state;
 	Editor editor;
 	Camera game_camera;
@@ -89,24 +108,55 @@ typedef struct {
 	Camera *camera;
 } PermanentState;
 
+Editor editor_make(void);
+void editor_update(PermanentState *state, Editor *editor, float dt);
+
+bool window_resize(EventCode code, void *event, void *receiver) {
+	WindowResizeEvent *resize_event = event;
+	PermanentState *pstate = receiver;
+
+	vulkan_texture_resize(pstate->context, pstate->picker_target, resize_event->width, resize_event->height);
+	return false;
+}
+
 FrameInfo update_and_render(GameContext *context, float dt) {
 	PermanentState *pstate = context->permanent_memory;
+	pstate->context = context->render;
+	pstate->display = context->display;
 
 	if (pstate->initialized == false) {
 		pstate->arena = arena_wrap((uint8_t *)context->permanent_memory + sizeof(PermanentState), context->permanent_memory_size - sizeof(PermanentState));
 
-		pstate->global_uniform_buffer = vulkan_buffer_make(context->render, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, sizeof(Matrix4f) * 2, NULL);
+		event_subscribe(EVENT_PLATFORM_WINDOW_RESIZED, window_resize, pstate);
+
+		pstate->global_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, sizeof(Matrix4f) * 2, NULL);
+		pstate->frame_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, MiB(32), NULL);
 
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 
 		pstate->pbr_shader =
 			vulkan_shader_make(
 				NULL,
-				context->render,
+				pstate->context,
 				importer_load_shader(scratch.arena, S("assets/shaders/pbr.vert.spv"), S("assets/shaders/pbr.frag.spv")),
 				NULL);
-		pstate->linear_sampler = vulkan_sampler_make(context->render, LINEAR_SAMPLER);
-		pstate->white = vulkan_texture_make(context->render, 1, 1, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
+		pstate->picker_shader =
+			vulkan_shader_make(
+				NULL,
+				pstate->context,
+				importer_load_shader(scratch.arena, S("assets/shaders/picker.vert.spv"), S("assets/shaders/picker.frag.spv")),
+				NULL);
+
+		pstate->linear_sampler = vulkan_sampler_make(pstate->context, LINEAR_SAMPLER);
+		pstate->white = vulkan_texture_make(pstate->context, 1, 1, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
+
+		uint32x2 window_size = window_size_pixel(context->display);
+		pstate->picker_target = vulkan_texture_make(
+			pstate->context,
+			window_size.x, window_size.y,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_R32,
+			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_READBACK,
+			NULL);
 
 		Vertex quad_vertices[] = {
 			{ .position = { -1.0f, 1.0f, 0.0f } },
@@ -117,7 +167,7 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 			{ .position = { -1.0f, -1.0f, 0.0f } },
 			{ .position = { 1.0f, -1.0f, 0.0f } }
 		};
-		pstate->quad_geometry = vulkan_buffer_make(context->render, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(quad_vertices), quad_vertices);
+		pstate->quad_geometry = vulkan_buffer_make(pstate->context, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(quad_vertices), quad_vertices);
 
 		// Load model
 		String path = S("assets/models/custom/room.glb");
@@ -271,7 +321,13 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 					else
 						node->parent_index = UINT32_MAX;
 
-					cgltf_node_transform_local(cgltf_node, node->local_transform.elements);
+					cgltf_node_transform_local(cgltf_node, node->transform.local.elements);
+					cgltf_node_transform_world(cgltf_node, node->transform.cached.elements);
+
+					// TODO: quaternion
+					// node->transform.rotation = float3_wrap(cgltf_node->rotation);
+					node->transform.position = float3_wrap(cgltf_node->translation);
+					node->transform.scale = float3_wrap(cgltf_node->scale);
 
 					ASSERT(cgltf_node->mesh);
 					node->mesh_index = mesh_offsets[cgltf_mesh_index(data, cgltf_node->mesh)];
@@ -287,12 +343,12 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				MeshSource source = mesh_sources[mesh_index];
 
 				mesh->vertex_buffer = vulkan_buffer_make(
-					context->render,
+					pstate->context,
 					BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE,
 					source.vertex_size * source.vertex_count, source.vertices);
 
 				mesh->index_buffer = vulkan_buffer_make(
-					context->render,
+					pstate->context,
 					BUFFER_TYPE_INDEX, BUFFER_MEMORY_DEVICE,
 					source.index_size * source.index_count, source.indices);
 
@@ -306,14 +362,14 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				RhiTexture *dst = &pstate->images[image_index];
 
 				*dst = vulkan_texture_make(
-					context->render,
+					pstate->context,
 					src->width, src->height,
 					TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 					TEXTURE_USAGE_SAMPLED, src->pixels);
 			}
 
 			pstate->material_properties = vulkan_buffer_make_array(
-				context->render,
+				pstate->context,
 				BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED,
 				arena_array_count(materials),
 				sizeof(MaterialParameters));
@@ -330,7 +386,7 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				};
 
 				vulkan_buffer_array_index_write_all(
-					context->render,
+					pstate->context,
 					pstate->material_properties,
 					material_index,
 					sizeof(MaterialParameters),
@@ -376,60 +432,64 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 	}
 
 	if (pstate->state == GAME_STATE_EDITOR)
-		editor_update(&pstate->editor, dt);
+		editor_update(pstate, &pstate->editor, dt);
 
 	uint2 window_size = window_size_pixel(context->display);
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	if (vulkan_frame_begin(context->render, window_size.x, window_size.y)) {
+	if (vulkan_frame_begin(pstate->context, window_size.x, window_size.y)) {
 		Camera *camera = pstate->camera;
 
 		Matrix4f projection = float44_perspective(DEG2RAD(camera->fov), (float)window_size.x / (float)window_size.y, 0.01f, 1000.f);
 		projection.elements[5] *= -1;
 		Matrix4f view = float44_lookat(camera->position, camera->target, camera->up);
 
-		vulkan_buffer_write(context->render, pstate->global_uniform_buffer, 0, sizeof(Matrix4f), &projection);
-		vulkan_buffer_write(context->render, pstate->global_uniform_buffer, sizeof(Matrix4f), sizeof(Matrix4f), &view);
+		vulkan_buffer_write(pstate->context, pstate->global_uniform_buffer, 0, sizeof(Matrix4f), &projection);
+		vulkan_buffer_write(pstate->context, pstate->global_uniform_buffer, sizeof(Matrix4f), sizeof(Matrix4f), &view);
 
-		RhiUniformSet global_set = vulkan_uniformset_push(context->render, pstate->pbr_shader, 0);
-		vulkan_uniformset_bind_buffer(context->render, global_set, 0, pstate->global_uniform_buffer);
+		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 0);
+		vulkan_uniformset_bind_buffer(pstate->context, global_set, 0, pstate->global_uniform_buffer);
 
-		DrawListDesc desc = {
+		DrawListDesc main_pass = {
+			.name = S("main_pass"),
 			.color_attachments[0] = {
 			  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
 			  .store = STORE,
 			  .load = CLEAR,
 			},
-			.color_attachment_count = 1,
-			.depth_attachment = {
+			.color_attachments[1] = {
+			  .texture = pstate->picker_target,
 			  .store = STORE,
+			  .load = CLEAR,
+			  .clear.color = { 0.0f, 0.0f, 0.0f, 0.0f },
+			},
+			.color_attachment_count = 2,
+			.depth_attachment = {
+			  .store = DONT_CARE,
 			  .load = CLEAR,
 			},
 			.use_depth = true
 		};
 
-		if (vulkan_drawlist_begin(context->render, desc)) {
+		if (vulkan_drawlist_begin(pstate->context, main_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
-			vulkan_shader_bind(context->render, pstate->pbr_shader, pipeline);
-			vulkan_uniformset_bind(context->render, global_set);
+			vulkan_shader_bind(pstate->context, pstate->pbr_shader, pipeline);
+			vulkan_uniformset_bind(pstate->context, global_set);
 
 			for (uint32_t node_index = 0; node_index < arena_array_count(pstate->nodes); ++node_index) {
 				SceneNode *node = &pstate->nodes[node_index];
-				float44 transform = node->local_transform;
+				float44 transform = node->transform.cached;
 
-				SceneNode *p = node;
-				while (p->parent_index != UINT32_MAX) {
-					p = &pstate->nodes[p->parent_index];
-					transform = float44_multiply(transform, p->local_transform);
-				}
+				uint32_t id = node_index + 1;
+				vulkan_push_constants(pstate->context, sizeof(float44), sizeof(uint32_t), &id);
 
 				for (uint32_t index = 0; index < node->mesh_count; ++index) {
 					Mesh *mesh = &pstate->meshes[node->mesh_index + index];
 					uint32_t material_index = pstate->mesh_to_material[indexof(pstate->meshes, mesh)];
 					MaterialSource *material = &pstate->materials[material_index];
 
-					RhiUniformSet group = vulkan_uniformset_push(context->render, pstate->pbr_shader, 1);
+					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 1);
 					vulkan_uniformset_bind_buffer_array_index(
-						context->render, group, 0,
+						pstate->context, group, 0,
 						pstate->material_properties, material_index);
 					for (uint32_t index = 0; index < 5; ++index) {
 						RhiTexture texture = pstate->white;
@@ -437,29 +497,30 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 							texture = pstate->images[material->properties[index].as.uint32x1];
 						}
 						vulkan_uniformset_bind_texture(
-							context->render,
+							pstate->context,
 							group,
 							1 + index,
 							texture,
 							pstate->linear_sampler);
 					}
 
-					vulkan_uniformset_bind(context->render, group);
+					vulkan_uniformset_bind(pstate->context, group);
 
-					vulkan_push_constants(context->render, 0, sizeof(float44), &transform);
-					vulkan_buffer_bind(context->render, mesh->vertex_buffer, 0);
+					vulkan_push_constants(pstate->context, 0, sizeof(float44), &transform);
+
+					vulkan_buffer_bind(pstate->context, mesh->vertex_buffer, 0);
 					if (mesh->index_count > 0) {
-						vulkan_buffer_bind(context->render, mesh->index_buffer, 0);
-						vulkan_renderer_draw_indexed(context->render, mesh->index_count);
+						vulkan_buffer_bind(pstate->context, mesh->index_buffer, 0);
+						vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 					} else
-						vulkan_renderer_draw(context->render, mesh->vertex_count);
+						vulkan_renderer_draw(pstate->context, mesh->vertex_count);
 				}
 			}
 
-			vulkan_drawlist_end(context->render);
+			vulkan_drawlist_end(pstate->context);
 		}
 
-		vulkan_frame_end(context->render);
+		vulkan_frame_end(pstate->context);
 	}
 
 	arena_scratch_end(scratch);
@@ -492,64 +553,123 @@ Editor editor_make(void) {
 	return result;
 }
 
-void editor_update(Editor *editor, float dt) {
+void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	Camera *camera = &editor->camera;
 	float2 mouse_delta = (float2){ input_mouse_dx(), input_mouse_dy() };
 
-	if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
-		float2 shift = float2_scale(mouse_delta, editor->pan_speed);
-		shift.y *= -1;
+	// State transition
+	if (pstate->selected_node && input_key_pressed(KEY_CODE_G)) {
+		editor->grab = !editor->grab;
+		if (editor->grab) {
+			editor->cached_selection_transform = pstate->nodes[pstate->selected_node].transform;
+			editor->grab_mouse_position = float2_from_double2(input_mouse_position());
+		}
+	}
+
+	if (editor->grab) {
+		double2 mouse_position = input_mouse_position();
+		float2 offset = float2_negate(float2_subtract(float2_from_double2(mouse_position), editor->grab_mouse_position));
+
+		LOG_INFO("offset %.2f, %.2f", offset.x, offset.y);
 
 		float3 camera_target_offset = float3_subtract(camera->target, camera->position);
 		float3 camera_forward = float3_normalize(camera_target_offset);
-
 		float3 camera_right = float3_cross(camera->up, camera_forward);
 		float3 camera_up = float3_cross(camera_right, camera_forward);
 
-		camera->position = float3_add(camera->position, float3_scale(camera_right, shift.x));
-		camera->position = float3_add(camera->position, float3_scale(camera_up, shift.y));
+		SceneNode *node = &pstate->nodes[pstate->selected_node - 1];
 
-		camera->target = float3_add(camera->position, camera_target_offset);
+        // TODO: Make factor this object distance depedent
+		float3 move_x = float3_scale(camera_right, offset.x * 0.05f);
+		float3 move_y = float3_scale(camera_up, -offset.y * 0.05f);
 
-	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTCTRL)) {
-		float zoom = mouse_delta.y * editor->zoom_speed;
-		float3 camera_forward = float3_normalize(float3_subtract(camera->target, camera->position));
-		camera->position = float3_add(camera->position, float3_scale(camera_forward, -zoom));
-	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE)) {
-		float yaw_delta = mouse_delta.x * editor->sensitivity;
-		float pitch_delta = mouse_delta.y * editor->sensitivity;
-		/*
-		 * x = RADIUS * cos(azimuth) * sin(theta) + offset.x;
-		 * y = RADIUS * cos(theta) + offset.y
-		 * z = RADIUS * sin(azimuth) * sin(theta) + offset.z;
-		 */
+		node->transform.position = float3_add(
+			float3_add(editor->cached_selection_transform.position, move_x),
+			move_y);
 
-		float3 camera_position = float3_subtract(camera->position, camera->target);
-		float r = MAX(float3_length(camera_position), EPSILON);
+		float44 translation = float44_translated(node->transform.position);
+		float44 scale = float44_scaled(node->transform.scale);
+		float44 rotation = float44_identity();
 
-		float current_theta = 0;
-		// Manual (theta) vs atan2 (azimuth)
-		float2 camera_xz = { camera_position.x, camera_position.z };
-		if (camera_position.y > 0)
-			current_theta = atanf(float2_length(camera_xz) / camera_position.y);
-		else if (camera_position.y < 0)
-			current_theta = C_PIf + atanf(float2_length(camera_xz) / camera_position.y);
-		else if (camera_position.y < EPSILON && camera_position.y > -EPSILON)
-			current_theta = C_PIf * 0.5f;
-		else
-			ASSERT(false);
-		float current_azimuth = atan2f(camera_position.z, camera_position.x); // [-pi, pi]
+		node->transform.cached = float44_multiply(translation, float44_multiply(rotation, scale));
 
-		current_theta = CLAMP(current_theta - pitch_delta, EPSILON * 2, C_PIf - EPSILON * 2);
-		current_azimuth += yaw_delta;
+		if (input_mouse_pressed(MOUSE_BUTTON_LEFT))
+			editor->grab = false;
 
-		// Apply move
-		camera->position = float3_add(
-			(float3){
-			  .x = r * sinf(current_theta) * cosf(current_azimuth),
-			  .y = r * cosf(current_theta),
-			  .z = r * sinf(current_theta) * sinf(current_azimuth),
-			},
-			camera->target);
+		if (input_mouse_pressed(MOUSE_BUTTON_RIGHT)) {
+			editor->grab = false;
+
+			SceneNode *node = &pstate->nodes[pstate->selected_node - 1];
+			Transform3D *transform = &node->transform;
+
+			node->transform = editor->cached_selection_transform;
+		}
+
+	} else {
+		if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
+			double2 mouse_position = input_mouse_position();
+			uint32_t node_index = 0;
+			vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &node_index);
+			LOG_INFO("Node index = %d", node_index);
+
+			pstate->selected_node = node_index;
+		}
+
+		if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
+			float2 shift = float2_scale(mouse_delta, editor->pan_speed);
+			shift.y *= -1;
+
+			float3 camera_target_offset = float3_subtract(camera->target, camera->position);
+			float3 camera_forward = float3_normalize(camera_target_offset);
+
+			float3 camera_right = float3_cross(camera->up, camera_forward);
+			float3 camera_up = float3_cross(camera_right, camera_forward);
+
+			camera->position = float3_add(camera->position, float3_scale(camera_right, shift.x));
+			camera->position = float3_add(camera->position, float3_scale(camera_up, shift.y));
+
+			camera->target = float3_add(camera->position, camera_target_offset);
+
+		} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTCTRL)) {
+			float zoom = mouse_delta.y * editor->zoom_speed;
+			float3 camera_forward = float3_normalize(float3_subtract(camera->target, camera->position));
+			camera->position = float3_add(camera->position, float3_scale(camera_forward, -zoom));
+		} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE)) {
+			float yaw_delta = mouse_delta.x * editor->sensitivity;
+			float pitch_delta = mouse_delta.y * editor->sensitivity;
+			/*
+			 * x = RADIUS * cos(azimuth) * sin(theta) + offset.x;
+			 * y = RADIUS * cos(theta) + offset.y
+			 * z = RADIUS * sin(azimuth) * sin(theta) + offset.z;
+			 */
+
+			float3 camera_position = float3_subtract(camera->position, camera->target);
+			float r = MAX(float3_length(camera_position), EPSILON);
+
+			float current_theta = 0;
+			// Manual (theta) vs atan2 (azimuth)
+			float2 camera_xz = { camera_position.x, camera_position.z };
+			if (camera_position.y > 0)
+				current_theta = atanf(float2_length(camera_xz) / camera_position.y);
+			else if (camera_position.y < 0)
+				current_theta = C_PIf + atanf(float2_length(camera_xz) / camera_position.y);
+			else if (camera_position.y < EPSILON && camera_position.y > -EPSILON)
+				current_theta = C_PIf * 0.5f;
+			else
+				ASSERT(false);
+			float current_azimuth = atan2f(camera_position.z, camera_position.x); // [-pi, pi]
+
+			current_theta = CLAMP(current_theta - pitch_delta, EPSILON * 2, C_PIf - EPSILON * 2);
+			current_azimuth += yaw_delta;
+
+			// Apply move
+			camera->position = float3_add(
+				(float3){
+				  .x = r * sinf(current_theta) * cosf(current_azimuth),
+				  .y = r * cosf(current_theta),
+				  .z = r * sinf(current_theta) * sinf(current_azimuth),
+				},
+				camera->target);
+		}
 	}
 }

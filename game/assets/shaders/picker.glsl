@@ -13,11 +13,8 @@ layout(push_constant) uniform constants {
     mat4 model;
 } push;
 
-layout(location = 0) out vec2 out_uv;
-
 void main() {
-    gl_Position = global.projection * global.view * push.model * vec4(batch.vertex_data[gl_VertexIndex].xy, 0.0f, 1.0f);
-    out_uv = batch.vertex_data[gl_VertexIndex].zw;
+    gl_Position = global.projection * global.view * push.model * vec4(in_position, 1.0f);
 }
 
 #endif
@@ -28,20 +25,14 @@ void main() {
 #ifdef SHADER_STAGE_FRAGMENT
 #pragma shader_stage(fragment)
 
-#include "global.shared"
+layout(set = 1, binding = 0) uniform ID {
+    uint id;
+};
 
-layout(set = 1, binding = 1) uniform sampler2D u_texture;
-/* layout(set = 1, binding = 0) uniform MaterialParameters { */
-/*     vec4 tint; */
-/* } material; */
-
-
-layout(location = 0) in vec2 in_uv;
-layout(location = 0) out vec4 out_color;
+layout(location = 0) out uint out_id;
 
 void main() {
-    vec4 color = texture(u_texture, in_uv);
-    out_color = color; // * material.tint;
+    out_id = id; 
 }
 
 #endif

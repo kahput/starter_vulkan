@@ -2,6 +2,16 @@
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
 
+void vulkan_utils_set_object_name(VulkanContext *context, uint64_t object_handle, VkObjectType type, String name) {
+	VkDebugUtilsObjectNameInfoEXT name_info = {
+		.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+		.objectType = type,
+		.objectHandle = object_handle,
+		.pObjectName = name.chars,
+	};
+	vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+}
+
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *context) {
 	VkPhysicalDeviceLimits limits = context->device.properties.limits;
 
@@ -23,7 +33,7 @@ VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *context) {
 	return VK_SAMPLE_COUNT_1_BIT;
 }
 
-uint32_t vulkan_utils_type_to_stride(VkFormat format) {
+uint32_t vulkan_utils_format_to_stride(VkFormat format) {
 	switch (format) {
 		case VK_FORMAT_UNDEFINED:
 			return 0;
@@ -143,20 +153,28 @@ uint32_t vulkan_utils_type_to_stride(VkFormat format) {
 
 VkFormat vulkan_utils_to_vkformat(VulkanContext *context, TextureFormat format) {
 	switch (format) {
+		case TEXTURE_FORMAT_RGBA8_SRGB:
+			return VK_FORMAT_R8G8B8A8_SRGB;
+		case TEXTURE_FORMAT_RGB8_SRGB:
+			return VK_FORMAT_R8G8B8_SRGB;
+		case TEXTURE_FORMAT_R32:
+			return VK_FORMAT_R32_UINT;
 		case TEXTURE_FORMAT_RGBA8:
 			return VK_FORMAT_R8G8B8A8_UNORM;
+		case TEXTURE_FORMAT_RGB8:
+			return VK_FORMAT_R8_UNORM;
+		case TEXTURE_FORMAT_R8:
+			return VK_FORMAT_R8_UNORM;
 		case TEXTURE_FORMAT_RGBA16F:
 			return VK_FORMAT_R16G16B16A16_SFLOAT;
 		case TEXTURE_FORMAT_RGBA32F:
 			return VK_FORMAT_R32G32B32A32_SFLOAT;
-		case TEXTURE_FORMAT_R8:
-			return VK_FORMAT_R8_UNORM;
 		case TEXTURE_FORMAT_DEPTH:
 			return context->device.depth_format;
-		case TEXTURE_FORMAT_RGBA8_SRGB:
-			return VK_FORMAT_R8G8B8A8_SRGB;
-		default:
-			ASSERT(false);
-			return VK_FORMAT_UNDEFINED;
+		case TEXTURE_FORMAT_DEPTH_STENCIL:
+			break;
 	}
+
+	ASSERT_MESSAGE(false, "Unsupported/Unhandled texture format");
+	return VK_FORMAT_UNDEFINED;
 }

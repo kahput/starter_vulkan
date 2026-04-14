@@ -136,29 +136,29 @@ typedef int32x4 int4;
 
 typedef struct {
 	uint8_t *buffer;
-	size_t length;
+	size_t size;
 } Span;
 
-static inline Span span_make(void *ptr, size_t length) { return (Span){ .buffer = ptr, .length = length }; }
+static inline Span span_make(void *ptr, size_t size) { return (Span){ .buffer = ptr, .size = size }; }
 
-#define span_struct(obj) ((Span){ .buffer = (uint8_t *)&(obj), .length = sizeof(obj) })
-#define span_array(arr) ((Span){ .buffer = (uint8_t *)(arr), .length = sizeof(arr) })
-#define span_count(p, n) ((Span){ .buffer = (uint8_t *)(p), .length = sizeof(*(p)) * (n) })
-#define span_literal(lit) ((Span){ .buffer = (uint8_t *)(lit), .length = sizeof(lit) - 1 })
-#define span_string(s) ((Span){ .buffer = (uint8_t *)(s).chars, .length = (s).length })
+#define span_struct(obj) ((Span){ .buffer = (uint8_t *)&(obj), .size = sizeof(obj) })
+#define span_array(arr) ((Span){ .buffer = (uint8_t *)(arr), .size = sizeof(arr) })
+#define span_count(p, n) ((Span){ .buffer = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
+#define span_literal(lit) ((Span){ .buffer = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
+#define span_string(s) ((Span){ .buffer = (uint8_t *)(s).chars, .size = (s).length })
 
 static inline Span span_subspan(Span s, size_t offset, size_t length) {
-	if (offset > s.length)
+	if (offset > s.size)
 		return span_make(NULL, 0);
-	if (offset + length > s.length)
-		length = s.length - offset;
+	if (offset + length > s.size)
+		length = s.size - offset;
 	return span_make(s.buffer + offset, length);
 }
-static inline bool span_empty(Span s) { return s.length == 0; }
+static inline bool span_empty(Span s) { return s.size == 0; }
 static inline bool span_equal(Span a, Span b) {
-	if (a.length != b.length)
+	if (a.size != b.size)
 		return false;
-	return memory_equals(a.buffer, b.buffer, a.length);
+	return memory_equals(a.buffer, b.buffer, a.size);
 }
 
 typedef uint32_t Flag;

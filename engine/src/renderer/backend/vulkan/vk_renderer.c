@@ -60,7 +60,8 @@ VulkanContext *vulkan_renderer_make(Arena *arena, struct window *display) {
 	// TODO: Lower this back down to 32?
 	if (vulkan_buffer_make_internal(
 			context, MiB(256),
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0,
 			&context->staging_buffer) == false)
 		return NULL;
 	vulkan_buffer_map(context, &context->staging_buffer);

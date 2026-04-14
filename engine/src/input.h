@@ -24,5 +24,6 @@ ENGINE_API bool input_mouse_up(int button);
 
 ENGINE_API double input_mouse_x(void);
 ENGINE_API double input_mouse_y(void);
+ENGINE_API double2 input_mouse_position(void);
 ENGINE_API double input_mouse_dx(void);
 ENGINE_API double input_mouse_dy(void);

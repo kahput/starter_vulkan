@@ -8,6 +8,7 @@
 
 #include "platform.h"
 #include <string.h>
+#include <vulkan/vulkan_core.h>
 
 static const char *layers[] = {
 	"VK_LAYER_KHRONOS_validation",
@@ -26,7 +27,6 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 	.pfnUserCallback = vulkan_debug_callback,
 	.pUserData = NULL
 };
-void create_debug_messenger(VulkanContext *context);
 
 bool vulkan_instance_create(VulkanContext *context) {
 	VkApplicationInfo app_info = {
@@ -121,6 +121,7 @@ bool vulkan_instance_create(VulkanContext *context) {
 		arena_scratch_end(scratch);
 		return false;
 	}
+	vulkan_load_extensions(context);
 
 	LOG_INFO("Vulkan Instance created");
 
@@ -156,24 +157,36 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
 	}
 }
 
-void create_debug_messenger(VulkanContext *context) {
-#ifndef NDEBUG
-	vkCreateDebugUtilsMessenger(context->instance, &debug_utils_create_info, NULL, &context->debug_messenger);
-#endif
-}
+fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messenger_default;
+fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger = vulkan_destroy_utils_debug_messenger_default;
+fn_set_debug_utils_object_name *vkSetDebugUtilsObjectName = vulkan_set_debug_utils_object_name_default;
 
-VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default) {
+VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messenger_default) {
 	return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
-VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messneger_default) {
+
+VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messenger_default) {
 	return;
+}
+
+VK_SET_DEBUG_UTILS_OBJECT_NAME(vulkan_set_debug_utils_object_name_default) {
+	return VK_SUCCESS;
 }
 
 void vulkan_load_extensions(VulkanContext *context) {
 	vkCreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context->instance, "vkCreateDebugUtilsMessengerEXT");
-	vkDestroyDebugUtilsMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context->instance, "vkDestroyDebugUtilsMessenger");
-	if (vkCreateDebugUtilsMessenger == NULL)
+	vkDestroyDebugUtilsMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context->instance, "vkDestroyDebugUtilsMessengerEXT");
+	vkSetDebugUtilsObjectName = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(context->instance, "vkSetDebugUtilsObjectNameEXT");
+	if (vkCreateDebugUtilsMessenger == NULL) {
 		LOG_ERROR("Failed to load vkCreateDebugUtilsMessenger extension");
-	if (vkDestroyDebugUtilsMessenger == NULL)
+		vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messenger_default;
+	}
+	if (vkDestroyDebugUtilsMessenger == NULL) {
 		LOG_ERROR("Failed to load vkDestroyDebugUtilsMessenger extension");
+		vkDestroyDebugUtilsMessenger = vulkan_destroy_utils_debug_messenger_default;
+	}
+	if (vkSetDebugUtilsObjectName == NULL) {
+		LOG_ERROR("Failed to load vkSetDebugUtilsObjectName extension");
+		vkSetDebugUtilsObjectName = vulkan_set_debug_utils_object_name_default;
+	}
 }

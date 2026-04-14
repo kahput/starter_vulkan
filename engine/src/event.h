@@ -29,7 +29,7 @@ bool event_system_update(void);
 
 typedef bool (*PFN_event_handler)(EventCode code, void *event, void *receiver);
 
-bool event_subscribe(EventCode code, PFN_event_handler on_event, void *receiver);
+ENGINE_API bool event_subscribe(EventCode code, PFN_event_handler on_event, void *receiver);
 bool event_subscribe_list_(EventCode *codes, uint32_t count, PFN_event_handler on_event, void *receiver);
 bool event_unsubscribe(EventCode code, PFN_event_handler on_event, void *receiver);
 #define event_subscribe_list(handler, receiver, ...)                           \

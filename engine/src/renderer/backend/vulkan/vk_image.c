@@ -73,7 +73,7 @@ void vulkan_image_destroy_internal(VulkanContext *context, VulkanImage *image) {
 }
 
 bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst) {
-	VkDeviceSize layer_size = dst->width * dst->height * vulkan_utils_type_to_stride(dst->info.format);
+	VkDeviceSize layer_size = dst->width * dst->height * vulkan_utils_format_to_stride(dst->info.format);
 	VkDeviceSize total_size = layer_size * dst->info.arrayLayers;
 
 	VulkanBuffer *staging_buffer = &context->staging_buffer;
@@ -209,8 +209,9 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 			break;
 
 		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
 			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			src_access = VK_ACCESS_TRANSFER_WRITE_BIT;
+			src_access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
 			break;
 
 		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
@@ -238,8 +239,9 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 			break;
 
 		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
 			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			dst_access = VK_ACCESS_TRANSFER_WRITE_BIT;
+			dst_access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
 			break;
 
 		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
@@ -287,6 +289,27 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 		1, &image_barrier);
 
 	image->layout = new_layout;
+}
+
+bool vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buffer, VulkanImage *image, VulkanBuffer *buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+
+	ASSERT_MESSAGE(image->info.arrayLayers == 1, "Multiple layer's currently unsupported");
+	VkBufferImageCopy regions = {
+		.bufferOffset = buffer->frame_size * context->current_frame + buffer->offset,
+		.imageSubresource = {
+		  .aspectMask = image->aspect,
+		  .mipLevel = 0,
+		  .baseArrayLayer = 0,
+		  .layerCount = 1 },
+		.imageOffset = { .x = x, .y = y },
+		.imageExtent = { .width = width, .height = height, .depth = 1 },
+	};
+	vkCmdCopyImageToBuffer(command_buffer, image->handle, image->layout, buffer->handle, 1, &regions);
+
+	arena_scratch_end(scratch);
+
+	return true;
 }
 
 bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect) {

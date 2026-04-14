@@ -3,6 +3,11 @@
 
 #include <math.h>
 
+float2 float2_negate(float2 v) {
+	float2 result = { -v.x, -v.y };
+	return result;
+}
+
 float float2_length(float2 v) {
 	return sqrt(v.x * v.x + v.y * v.y);
 }
@@ -30,15 +35,14 @@ float2 float2_divide(float2 a, float2 b) {
 	return result;
 }
 
-
 float2 float2_scale(float2 v, float s) {
 	float2 result = { v.x * s, v.y * s };
 	return result;
 }
 
 float float2_dot(float2 a, float2 b) {
-    float result = a.x * b.x + a.y * b.y;
-    return result;
+	float result = a.x * b.x + a.y * b.y;
+	return result;
 }
 
 float3 float3_add(float3 a, float3 b) {

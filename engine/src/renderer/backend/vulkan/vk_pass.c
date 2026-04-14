@@ -87,7 +87,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		depth_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		depth_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth_info.clearValue.depthStencil.depth = 1.0f;
+		depth_info.clearValue.depthStencil.depth = 1.0f;
 		vulkan_image_msaa_scratch_ensure(
 			context, &context->msaa_depth,
 			extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);

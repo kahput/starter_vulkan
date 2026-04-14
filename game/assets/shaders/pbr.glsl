@@ -7,19 +7,11 @@
 #ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
-layout(set = 0, binding = 0) uniform GlobalParameters {
-    mat4 projection;
-    mat4 view;
-} global;
+#include "global.shared"
 
 layout(push_constant) uniform constants {
     mat4 model;
 } push;
-
-layout(location = 0) in vec3 in_position;
-layout(location = 1) in vec3 in_normal;
-layout(location = 2) in vec2 in_uv;
-layout(location = 3) in vec4 in_tangent;
 
 layout(location = 0) out vec2 uv;
 
@@ -49,9 +41,16 @@ layout(set = 1, binding = 5) uniform sampler2D u_emissive_texture;
 
 layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
+layout(location = 1) out uint out_id;
+
+layout(push_constant) uniform constants {
+    mat4 model;
+    uint node_id;
+} push;
 
 void main() {
     out_color = texture(u_base_color_texture, in_uv) * material.base_color_factor; // * material.tint;
+    out_id = push.node_id;
 }
 
 #endif

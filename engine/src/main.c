@@ -1,6 +1,7 @@
 #include "assets/importer.h"
 #include "assets/json_parser.h"
 
+#include "events/platform_events.h"
 #include "game_interface.h"
 #include "input/input_types.h"
 #include "platform.h"

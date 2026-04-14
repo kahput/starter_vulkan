@@ -38,6 +38,10 @@ ENGINE_API bool vulkan_shader_bind(
 
 ENGINE_API RhiTexture vulkan_texture_make(VulkanContext *context, uint32_t width, uint32_t height, TextureType type, TextureFormat format, TextureUsageFlags usage, void *pixels);
 ENGINE_API bool vulkan_texture_destroy(VulkanContext *context, RhiTexture texture);
+
+ENGINE_API bool vulkan_texture_read_pixel(VulkanContext *context, RhiTexture texture, uint32_t x, uint32_t y, void *pixel);
+ENGINE_API bool vulkan_texture_read_pixels(VulkanContext *context, RhiTexture texture, uint32_t x, uint32_t y, void *pixels);
+
 ENGINE_API bool vulkan_texture_prepare_attachment(VulkanContext *context, RhiTexture texture);
 ENGINE_API bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture texture);
 ENGINE_API bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width, uint32_t height);
@@ -47,10 +51,15 @@ ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type,
 ENGINE_API RhiBuffer vulkan_buffer_make_array(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride);
 ENGINE_API RhiBuffer vulkan_buffer_make_texel(VulkanContext *context, BufferType type, BufferMemory memory, TextureFormat format, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
+
+ENGINE_API Span vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer, size_t size);
+ENGINE_API bool vulkan_buffer_reset(VulkanContext *context, RhiBuffer buffer);
+
 ENGINE_API bool vulkan_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_write_all(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_array_index_write(VulkanContext *context, RhiBuffer buffer, uint32_t index, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_array_index_write_all(VulkanContext *context, RhiBuffer buffer, uint32_t index, size_t size, void *data);
+
 ENGINE_API bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset);
 ENGINE_API bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *buffers, uint32_t count);
 
@@ -60,6 +69,7 @@ ENGINE_API bool vulkan_sampler_destroy(VulkanContext *context, RhiSampler sample
 ENGINE_API RhiUniformSet vulkan_uniformset_push(VulkanContext *context, RhiShader shader, uint32_t set_number); // Transient
 ENGINE_API bool vulkan_uniformset_bind_buffer(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer);
 ENGINE_API bool vulkan_uniformset_bind_buffer_range(VulkanContext *context, RhiUniformSet set, uint32_t binding, size_t offset, size_t size, RhiBuffer buffer);
+ENGINE_API bool vulkan_uniformset_bind_buffer_span(VulkanContext *context, RhiUniformSet set, uint32_t binding, Span span, RhiBuffer buffer);
 ENGINE_API bool vulkan_uniformset_bind_buffer_array_index(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer, uint32_t index);
 ENGINE_API bool vulkan_uniformset_bind_texture(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiTexture texture, RhiSampler sampler);
 ENGINE_API bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet uniform);

@@ -169,6 +169,7 @@ bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst)
 
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size);
+bool vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buffer, VulkanImage *image, VulkanBuffer *buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
 bool vulkan_image_make_internal(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, TextureType, VkMemoryPropertyFlags, VulkanImage *);
 void vulkan_image_destroy_internal(VulkanContext *context, VulkanImage *image);
@@ -194,9 +195,10 @@ bool vulkan_sync_objects_create(VulkanContext *context);
 size_t vulkan_memory_required_alignment(VulkanContext *context, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties);
 uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
+void vulkan_utils_set_object_name(VulkanContext *context, uint64_t object_handle, VkObjectType type, String name);
 VkFormat vulkan_utils_to_vkformat(VulkanContext *context, TextureFormat format);
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
-uint32_t vulkan_utils_type_to_stride(VkFormat format);
+uint32_t vulkan_utils_format_to_stride(VkFormat format);
 
 typedef struct {
 	PipelineDesc desc;
@@ -285,16 +287,26 @@ struct vulkan_context {
 };
 
 // EXTENSIONS
+
+// Macro's
 #define VK_CREATE_UTIL_DEBUG_MESSENGER(name) \
 	VKAPI_ATTR VkResult VKAPI_CALL name(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pMessenger)
-VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messneger_default);
-
-typedef VK_CREATE_UTIL_DEBUG_MESSENGER(fn_create_utils_debug_messenger);
-static fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messneger_default;
-
 #define VK_DESTROY_UTIL_DEBUG_MESSENGER(name) \
 	VKAPI_ATTR void VKAPI_CALL name(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks *pAllocator)
-VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messneger_default);
+#define VK_SET_DEBUG_UTILS_OBJECT_NAME(name) \
+	VkResult name(VkDevice device, const VkDebugUtilsObjectNameInfoEXT *pNameInfo)
 
+// create
+VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messenger_default);
+typedef VK_CREATE_UTIL_DEBUG_MESSENGER(fn_create_utils_debug_messenger);
+extern fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger;
+
+// destroy
 typedef VK_DESTROY_UTIL_DEBUG_MESSENGER(fn_destroy_utils_debug_messenger);
-static fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger = vulkan_destroy_utils_debug_messneger_default;
+VK_DESTROY_UTIL_DEBUG_MESSENGER(vulkan_destroy_utils_debug_messenger_default);
+extern fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger;
+
+// set name
+typedef VK_SET_DEBUG_UTILS_OBJECT_NAME(fn_set_debug_utils_object_name);
+VK_SET_DEBUG_UTILS_OBJECT_NAME(vulkan_set_debug_utils_object_name_default);
+extern fn_set_debug_utils_object_name *vkSetDebugUtilsObjectName;

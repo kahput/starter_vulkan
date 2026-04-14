@@ -121,9 +121,9 @@ RhiBuffer vulkan_buffer_make_texel(VulkanContext *context, BufferType type, Buff
 	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
 }
 
-bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer rbuffer) {
+bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer_handle) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
 	vkDestroyBuffer(context->device.logical, buffer->handle, NULL);
 	vkFreeMemory(context->device.logical, buffer->memory, NULL);
@@ -153,16 +153,38 @@ bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame_index, 
 	return vulkan_buffer_upload(context, data, buffer);
 }
 
-bool vulkan_buffer_write(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
+Span vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer_handle, size_t size) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, (Span){ 0 });
+
+	size_t required_alignment =
+		vulkan_memory_required_alignment(context, buffer->usage, buffer->memory_property_flags);
+	size_t padded_size = MAX(required_alignment, size);
+
+	Span result = span_make((uint8_t *)buffer->mapped + (buffer->frame_size * context->current_frame) + buffer->offset, padded_size);
+	buffer->offset += padded_size;
+
+	return result;
+}
+
+bool vulkan_buffer_reset(VulkanContext *context, RhiBuffer buffer_handle) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
+
+	buffer->offset = 0;
+	return true;
+}
+
+bool vulkan_buffer_write(VulkanContext *context, RhiBuffer buffer_handle, size_t offset, size_t size, void *data) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
 	return vulkan_buffer_write_internal(context, context->current_frame, offset, size, data, buffer);
 }
 
-bool vulkan_buffer_write_all(VulkanContext *context, RhiBuffer rbuffer, size_t offset, size_t size, void *data) {
+bool vulkan_buffer_write_all(VulkanContext *context, RhiBuffer buffer_handle, size_t offset, size_t size, void *data) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
 	bool result = true;
 	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
@@ -173,23 +195,23 @@ bool vulkan_buffer_write_all(VulkanContext *context, RhiBuffer rbuffer, size_t o
 	return result;
 }
 
-bool vulkan_buffer_array_index_write(VulkanContext *context, RhiBuffer rbuffer, uint32_t index, size_t size, void *data) {
+bool vulkan_buffer_array_index_write(VulkanContext *context, RhiBuffer buffer_handle, uint32_t index, size_t size, void *data) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
-	return vulkan_buffer_write(context, rbuffer, buffer->stride * index, size, data);
+	return vulkan_buffer_write(context, buffer_handle, buffer->stride * index, size, data);
 }
 
-bool vulkan_buffer_array_index_write_all(VulkanContext *context, RhiBuffer rbuffer, uint32_t index, size_t size, void *data) {
+bool vulkan_buffer_array_index_write_all(VulkanContext *context, RhiBuffer buffer_handle, uint32_t index, size_t size, void *data) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
-	return vulkan_buffer_write_all(context, rbuffer, buffer->stride * index, size, data);
+	return vulkan_buffer_write_all(context, buffer_handle, buffer->stride * index, size, data);
 }
 
-bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset) {
+bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer buffer_handle, size_t offset) {
 	const VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffer, MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffer[] = { buffer->handle };
@@ -212,15 +234,15 @@ bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset
 	return false;
 }
 
-bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *rbuffers, uint32_t count) {
+bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *buffer_handles, uint32_t count) {
 	const VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, rbuffers[0], MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handles[0], MAX_BUFFERS, true, false);
 
 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
 		VkBuffer vertex_buffers[16] = { 0 };
 		VkDeviceSize offsets[16] = { 0 };
 		for (uint32_t index = 0; index < count; ++index) {
-			vertex_buffers[index] = context->buffer_pool[rbuffers[index].id].handle;
+			vertex_buffers[index] = context->buffer_pool[buffer_handles[index].id].handle;
 			offsets[index] = 0;
 		}
 
@@ -416,6 +438,8 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkB
 
 int32_t to_vulkan_usage(BufferType type) {
 	switch (type) {
+		case BUFFER_TYPE_READBACK:
+			return VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 		case BUFFER_TYPE_VERTEX:
 			return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 		case BUFFER_TYPE_INDEX:
