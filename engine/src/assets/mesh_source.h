@@ -35,7 +35,6 @@ enum {
 
 // MeshSource mesh_source_cube_create(Arena *arena);
 ENGINE_API MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z, uint8_t face_index);
-ENGINE_API MeshSource mesh_source_sphere_create(Arena *arena, float radius);
 
 typedef struct mesh_source_node {
 	struct mesh_source_node *next;
@@ -57,7 +56,7 @@ typedef struct mesh_source_list {
 	uint32_t index_count;
 } MeshSourceList;
 
-ENGINE_API void meshlist_push(Arena *arena, MeshSourceList *list, MeshSource source);
-ENGINE_API MeshSource meshlist_flatten(Arena *arena, MeshSourceList *list);
+ENGINE_API void mesh_source_list_push(Arena *arena, MeshSourceList *list, MeshSource source);
+ENGINE_API MeshSource mesh_source_list_flatten(Arena *arena, MeshSourceList *list);
 
 #endif /* MESH_SOURCE_H_ */

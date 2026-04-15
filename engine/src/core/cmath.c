@@ -92,9 +92,9 @@ float3 float3_normalize(float3 v) {
 }
 float3 float3_normalize_safe(float3 v, float epsilon) {
 	float length = float3_length(v);
-	if (length < epsilon) {
-		return (float3){ 0 }; // Return zero vectortor if too small
-	}
+	if (length < epsilon)
+		return (float3){ 0 };
+
 	return float3_scale(v, 1.0f / length);
 }
 
@@ -210,7 +210,7 @@ Matrix4f float44_scale(Matrix4f m, float3 s) {
 Matrix4f float44_rotate(Matrix4f m, float angle, float3 axis) {
 	// Post-multiply by rotation: result = m * R
 	// Means: each of the first 3 columns of m gets mixed by R.
-	Matrix4f r = float44_rotated(angle, axis);
+	Matrix4f r = float44_rotation(angle, axis);
 	Matrix4f result = m;
 
 	// Cache m's basis columns (col 0,1,2). Translation col stays as-is.
@@ -245,7 +245,7 @@ Matrix4f float44_rotate(Matrix4f m, float angle, float3 axis) {
 	return result;
 }
 
-Matrix4f float44_translated(float3 v) {
+Matrix4f float44_translation(float3 v) {
 	// clang-format off
 	Matrix4f result = {{
 	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = v.x,
@@ -258,7 +258,7 @@ Matrix4f float44_translated(float3 v) {
 	return result;
 }
 
-Matrix4f float44_rotated(float angle, float3 axis) {
+Matrix4f float44_rotation(float angle, float3 axis) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
@@ -280,7 +280,7 @@ Matrix4f float44_rotated(float angle, float3 axis) {
 	return result;
 }
 
-Matrix4f float44_scaled(float3 scale) {
+Matrix4f float44_scaling(float3 scale) {
 	// clang-format off
 	Matrix4f result = {{
 	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,

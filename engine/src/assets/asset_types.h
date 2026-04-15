@@ -70,8 +70,11 @@ typedef struct material_source {
 
 typedef struct {
 	float32x3 position;
+    float _pad0;
 	float32x3 normal;
+    float _pad1;
 	float32x2 uv;
+    float2 _pad2;
 	float32x4 tangent;
 	float32x4 color;
 } Vertex;
