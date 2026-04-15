@@ -79,8 +79,8 @@
 #define MiB(bytes) ((KiB(bytes)) * 1024ULL)
 #define GiB(bytes) ((MiB(bytes)) * 1024ULL)
 
-static inline uint64_t aligned_address(uint64_t address, uint64_t alignment) {
-	return ((address + (alignment - 1)) & ~(alignment - 1));
+static inline uint64_t alignup(uint64_t value, uint64_t alignment) {
+	return ((value + (alignment - 1)) & ~(alignment - 1));
 }
 static inline uint64_t hash64(void *memory, size_t size) {
 	uint64_t h = 0x100;

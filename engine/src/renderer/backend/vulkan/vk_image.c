@@ -77,7 +77,7 @@ bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst)
 	VkDeviceSize total_size = layer_size * dst->info.arrayLayers;
 
 	VulkanBuffer *staging_buffer = &context->staging_buffer;
-	size_t copy_end = aligned_address(staging_buffer->offset + total_size,
+	size_t copy_end = alignup(staging_buffer->offset + total_size,
 		context->device.properties.limits.minMemoryMapAlignment);
 	size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
 	if (copy_end >= staging_buffer->frame_size) {

@@ -27,24 +27,20 @@ typedef struct material_property {
 
 	PropertyType type;
 	union {
-		float f;
-		float32x2 f2;
-		float32x3 f3;
-		float32x4 f4;
+		float float1;
+		float32x2 float2;
+		float32x3 float3;
+		float32x4 float4;
 
-		uint32 u;
-
-		UUID image;
+		uint32 uint1;
+		uint32x2 uint2;
+		uint32x3 uint3;
+        uint32x3 uint4;
 	} as;
 } MaterialProperty;
 
 typedef struct material_source {
-	UUID shader;
-
-	MaterialProperty *root;
-
-	MaterialProperty *properties;
-	uint32_t property_count;
+    MaterialProperty root;
 } MaterialSource;
 
 bool material_source_setf(MaterialSource material, String name, float value);

@@ -157,9 +157,12 @@ Span vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer_handle, size_t 
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, (Span){ 0 });
 
+    ASSERT(buffer->offset + size < buffer->frame_size);
+    ASSERT(FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+
 	size_t required_alignment =
 		vulkan_memory_required_alignment(context, buffer->usage, buffer->memory_property_flags);
-	size_t padded_size = MAX(required_alignment, size);
+    size_t padded_size = alignup(size, required_alignment);
 
 	Span result = span_make((uint8_t *)buffer->mapped + (buffer->frame_size * context->current_frame) + buffer->offset, padded_size);
 	buffer->offset += padded_size;
@@ -265,7 +268,7 @@ bool vulkan_buffer_make_internal(
 	VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkFormat format,
 	VulkanBuffer *out_buffer) {
 	out_buffer->frame_size = size;
-	out_buffer->frame_size = aligned_address(out_buffer->frame_size, vulkan_memory_required_alignment(context, usage, properties));
+	out_buffer->frame_size = alignup(out_buffer->frame_size, vulkan_memory_required_alignment(context, usage, properties));
 	out_buffer->size =
 		FLAG_GET(properties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 		? out_buffer->frame_size
@@ -355,7 +358,7 @@ void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer) {
 
 bool vulkan_buffer_upload(VulkanContext *context, void *data, VulkanBuffer *dst) {
 	VulkanBuffer *staging_buffer = &context->staging_buffer;
-	size_t copy_end = aligned_address(staging_buffer->offset + dst->size, context->device.properties.limits.minMemoryMapAlignment);
+	size_t copy_end = alignup(staging_buffer->offset + dst->size, context->device.properties.limits.minMemoryMapAlignment);
 	size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
 	if (copy_end >= staging_buffer->frame_size) {
 		LOG_TRACE("Max staging buffer size exceeded, aborting vulkan_buffer_create");

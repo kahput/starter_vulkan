@@ -24,7 +24,7 @@ void arena_destroy(Arena *arena) {
 void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) {
 	ASSERT(alignment > 0 && ((alignment & (alignment - 1)) == 0));
 	uintptr_t current = (uintptr_t)arena->base + arena->offset;
-	uintptr_t aligned = aligned_address(current, alignment);
+	uintptr_t aligned = alignup(current, alignment);
 
 	size_t padding = aligned - current;
 

@@ -48,7 +48,6 @@ ENGINE_API bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture
 ENGINE_API uint32x2 vulkan_texture_size(VulkanContext *context, RhiTexture texture);
 
 ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemory memory, size_t size, void *data);
-ENGINE_API RhiBuffer vulkan_buffer_make_array(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride);
 ENGINE_API RhiBuffer vulkan_buffer_make_texel(VulkanContext *context, BufferType type, BufferMemory memory, TextureFormat format, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
 
@@ -57,8 +56,6 @@ ENGINE_API bool vulkan_buffer_reset(VulkanContext *context, RhiBuffer buffer);
 
 ENGINE_API bool vulkan_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_write_all(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);
-ENGINE_API bool vulkan_buffer_array_index_write(VulkanContext *context, RhiBuffer buffer, uint32_t index, size_t size, void *data);
-ENGINE_API bool vulkan_buffer_array_index_write_all(VulkanContext *context, RhiBuffer buffer, uint32_t index, size_t size, void *data);
 
 ENGINE_API bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer rbuffer, size_t offset);
 ENGINE_API bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *buffers, uint32_t count);

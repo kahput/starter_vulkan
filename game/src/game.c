@@ -30,7 +30,7 @@ static MaterialProperty default_properties[] = {
 	{ .name = { .chars = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
 
 	{ .name = { .chars = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.float32x4 = { 0.8f, 0.8f, 0.8f, 1.0f } },
-	{ .name = { .chars = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.0f },
+    { .name = { .chars = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.0f },
 	{ .name = { .chars = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.5f },
 	{ .name = { .chars = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float32x3 = { 1.0f, 1.0f, 1.0f } },
 };
@@ -79,20 +79,22 @@ typedef struct {
 	RhiSampler linear_sampler;
 	RhiTexture white;
 
-	RhiBuffer global_uniform_buffer;
-	RhiShader unlit_shader, terrain_shader;
+	RhiShader unlit_shader, pbr_shader, terrain_shader;
 
+    RhiBuffer frame_uniform_buffer;
 	RhiBuffer frame_storage_buffer;
+
+    RhiBuffer scene_uniform_buffer;
+
 	RhiTexture picker_target;
 
 	RhiBuffer quad_geometry;
 
 	RhiTexture *images;
-	RhiBuffer material_properties;
 
 	Mesh *meshes;
-	MaterialSource *materials;
-
+    MaterialSource *materials;
+    Span *material_data;
 	uint32_t *mesh_to_material;
 
 	SceneNode *nodes;
@@ -127,8 +129,9 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 		event_subscribe(EVENT_PLATFORM_WINDOW_RESIZED, window_resize, pstate);
 
-		pstate->global_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, sizeof(Matrix4f) * 2, NULL);
+		pstate->frame_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, MiB(8), NULL);
         pstate->frame_storage_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_STORAGE, BUFFER_MEMORY_SHARED, MiB(32), NULL);
+        pstate->scene_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, MiB(32), NULL);
 
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 
@@ -137,6 +140,12 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				NULL,
 				pstate->context,
                 importer_load_shader(scratch.arena, S("assets/shaders/unlit.vert.spv"), S("assets/shaders/unlit.frag.spv")),
+                NULL);
+        pstate->pbr_shader =
+			vulkan_shader_make(
+				NULL,
+				pstate->context,
+                importer_load_shader(scratch.arena, S("assets/shaders/pbr.vert.spv"), S("assets/shaders/pbr.frag.spv")),
                 NULL);
 		pstate->terrain_shader =
 			vulkan_shader_make(
@@ -176,12 +185,12 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 		// 0 == default
 		MaterialSource *materials = NULL;
-		MaterialSource defaul_material = {
+		MaterialSource default_material = {
 			.properties = arena_push_count(&pstate->arena, countof(default_properties), MaterialProperty),
 			.property_count = countof(default_properties),
 		};
-		memory_copy(defaul_material.properties, default_properties, sizeof(default_properties));
-		arena_darray_put(scratch.arena, materials, MaterialSource, defaul_material);
+		memory_copy(default_material.properties, default_properties, sizeof(default_properties));
+		arena_darray_put(scratch.arena, materials, MaterialSource, default_material);
 
 		// 0 == invalid
 		ImageSource *images = NULL;
@@ -366,13 +375,8 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 					TEXTURE_USAGE_SAMPLED, src->pixels);
 			}
 
-			pstate->material_properties = vulkan_buffer_make_array(
-				pstate->context,
-				BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED,
-				arena_array_count(materials),
-				sizeof(MaterialParameters));
-
 			ASSERT(materials);
+            Span *material_data = NULL;
 			for (uint32_t material_index = 0; material_index < arena_array_count(materials); ++material_index) {
 				MaterialSource *material = &materials[material_index];
 
@@ -383,17 +387,17 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 					.emissive_factor = material->properties[8].as.float32x3
 				};
 
-				vulkan_buffer_array_index_write_all(
-					pstate->context,
-					pstate->material_properties,
-					material_index,
-					sizeof(MaterialParameters),
-					&parameters);
+
+                // NOTE: This bakes in frame offset
+                Span data = vulkan_buffer_push(pstate->context, pstate->scene_uniform_buffer, sizeof(MaterialParameters));
+                arena_darray_put(scratch.arena, material_data, Span, data);
+                memory_copy(data.buffer, &parameters, sizeof(parameters));
 			}
 
 			pstate->nodes = arena_array_copy(&pstate->arena, nodes, SceneNode);
 			pstate->materials = arena_array_copy(&pstate->arena, materials, MaterialSource);
 			pstate->mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
+			pstate->material_data = arena_array_copy(&pstate->arena, material_data, Span);
 
 			cgltf_free(data);
 		}
@@ -418,32 +422,41 @@ FrameInfo update_and_render(GameContext *context, float dt) {
     ArenaTemp scratch = arena_scratch_begin(NULL);
 
     // Procedural terrain
-    MeshSourceList list = { 0 };
-    uint32_t size = 32;
-	for (uint32_t z = 0; z < size; ++z) {
-		for (uint32_t x = 0; x < size; x++) {
-            for (int32_t face_index = 0; face_index < 6; ++face_index) {
-				float x_offset = (float)x - ((float)size * .5f);
-				float z_offset = (float)z - ((float)size * .5f);
+    /* MeshSourceList list = { 0 }; */
+    /* uint32_t size = 128; */
+	/* for (uint32_t z = 0; z < size; ++z) { */
+		/* for (uint32_t x = 0; x < size; x++) { */
+            /* for (int32_t face_index = 0; face_index < 6; ++face_index) { */
+				/* float x_offset = (float)x - ((float)size * .5f); */
+				/* float z_offset = (float)z - ((float)size * .5f); */
 
-                MeshSource source = mesh_source_cube_face_create(
-					scratch.arena, x_offset, -2, z_offset, face_index);
-				mesh_source_list_push(scratch.arena, &list, source);
+                /* if (face_index == CUBE_FACE_RIGHT && x > 0 && x + 1 < size) continue; */
+                /* if (face_index == CUBE_FACE_LEFT && x > 0 && x < size - 1) continue; */
+                /* if (face_index == CUBE_FACE_FRONT && z > 0 && z + 1 < size) continue; */
+                /* if (face_index == CUBE_FACE_BACK && z > 0 && z < size - 1) continue; */
 
-				if (x == 0 || x + 1 == size || z == 0 || z + 1 == size) {
-					for (uint32_t y = 0; y < 3; ++y) {
-						MeshSource wall = mesh_source_cube_face_create(
-							scratch.arena, x_offset, (float)y - 1, z_offset, face_index);
-						mesh_source_list_push(scratch.arena, &list, wall);
-					}
-				}
-			}
-		}
-	}
-    ASSERT(list.total_vertices_size < MiB(32));
-    Span terrain_data_span = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, list.total_vertices_size);
-    Arena terrain_data_arena = arena_wrap_span(terrain_data_span);
-    MeshSource terrain_src = mesh_source_list_flatten(&terrain_data_arena, &list);
+
+				/* if (x == 0 || x + 1 == size || z == 0 || z + 1 == size) { */
+					/* for (uint32_t y = 0; y < 3; ++y) { */
+                        /* if (face_index == CUBE_FACE_TOP && y + 1 < 3) continue; */
+                        /* if (face_index == CUBE_FACE_BOTTOM) continue; */
+						/* MeshSource wall = mesh_source_cube_face_create( */
+							/* scratch.arena, x_offset, (float)y - 1, z_offset, face_index); */
+						/* mesh_source_list_push(scratch.arena, &list, wall); */
+					/* } */
+                    /* if (face_index == CUBE_FACE_TOP) continue; */
+				/* } */
+
+                /* MeshSource source = mesh_source_cube_face_create( */
+					/* scratch.arena, x_offset, -1.f, z_offset, face_index); */
+				/* mesh_source_list_push(scratch.arena, &list, source); */
+			/* } */
+		/* } */
+	/* } */
+    /* ASSERT(list.total_vertices_size < MiB(32)); */
+    /* Span terrain_data_span = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, list.total_vertices_size); */
+    /* Arena terrain_data_arena = arena_wrap_span(terrain_data_span); */
+    /* MeshSource terrain_src = mesh_source_list_flatten(&terrain_data_arena, &list); */
 
 	if (input_mouse_down(MOUSE_BUTTON_MIDDLE))
 		window_set_cursor_locked(context->display, true);
@@ -467,19 +480,26 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 		Camera *camera = pstate->camera;
 
 		Matrix4f projection = float44_perspective(deg2radf(camera->fov), (float)window_size.x / (float)window_size.y, 0.01f, 1000.f);
-		projection.elements[5] *= -1;
+        projection.elements[5] *= -1;
 		Matrix4f view = float44_lookat(camera->position, camera->target, camera->up);
 
-		vulkan_buffer_write(pstate->context, pstate->global_uniform_buffer, 0, sizeof(Matrix4f), &projection);
-		vulkan_buffer_write(pstate->context, pstate->global_uniform_buffer, sizeof(Matrix4f), sizeof(Matrix4f), &view);
+        Span global_data = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float44) * 2 + sizeof(float4));
+        memory_copy(global_data.buffer, &projection, sizeof(float44)); 
+        memory_copy(global_data.buffer + sizeof(float44), &view, sizeof(float44)); 
+        memory_copy(global_data.buffer + sizeof(float44) * 2, &camera->position, sizeof(float4)); 
 
-		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->unlit_shader, 0);
-		vulkan_uniformset_bind_buffer(pstate->context, global_set, 0, pstate->global_uniform_buffer);
+        Span light_data = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4));
+        float4 light_position = { 0.0f, 20.0f, -30.0f , 1.0f };
+        memory_copy(light_data.buffer, &light_position, sizeof(float4));
+
+		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 0);
+        vulkan_uniformset_bind_buffer_span(pstate->context, global_set, 0, global_data, pstate->frame_uniform_buffer);
+        vulkan_uniformset_bind_buffer_span(pstate->context, global_set, 1, light_data, pstate->frame_storage_buffer);
 
 		DrawListDesc main_pass = {
 			.name = S("main_pass"),
 			.color_attachments[0] = {
-			  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+			  .clear.color = { 0.00f, 0.00f, 0.001f, 1.0f },
 			  .store = STORE,
 			  .load = CLEAR,
 			},
@@ -499,7 +519,9 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 		if (vulkan_drawlist_begin(pstate->context, main_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
-			vulkan_shader_bind(pstate->context, pstate->unlit_shader, pipeline);
+            /* pipeline.polygon_mode = POLYGON_MODE_LINE; */
+            pipeline.cull_mode = CULL_MODE_BACK;
+			vulkan_shader_bind(pstate->context, pstate->pbr_shader, pipeline);
 			vulkan_uniformset_bind(pstate->context, global_set);
 
 			for (uint32_t node_index = 0; node_index < arena_array_count(pstate->nodes); ++node_index) {
@@ -513,11 +535,10 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 					Mesh *mesh = &pstate->meshes[node->mesh_index + index];
 					uint32_t material_index = pstate->mesh_to_material[indexof(pstate->meshes, mesh)];
 					MaterialSource *material = &pstate->materials[material_index];
+                    Span span = pstate->material_data[material_index];
 
 					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->unlit_shader, 1);
-					vulkan_uniformset_bind_buffer_array_index(
-						pstate->context, group, 0,
-						pstate->material_properties, material_index);
+                    vulkan_uniformset_bind_buffer_span(pstate->context, group, 0, span, pstate->scene_uniform_buffer);
 					for (uint32_t index = 0; index < 5; ++index) {
 						RhiTexture texture = pstate->white;
 						if (material->properties[index].as.uint32x1) {
@@ -544,17 +565,17 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				}
 			}
 
-            vulkan_shader_bind(pstate->context, pstate->terrain_shader, DEFAULT_PIPELINE);
-            float44 transform = float44_translation((float3){0.0f, 0.0f, 32.0f });;
+            vulkan_shader_bind(pstate->context, pstate->terrain_shader, pipeline);
+            float44 transform = float44_translation((float3){0.0f, 0.0f, 0.0f });;
 
-            vulkan_push_constants(pstate->context, 0, sizeof(float44), &transform);
-            // TODO: Add procedural mesh to scene
-            /* vulkan_push_constants(pstate->context, sizeof(float44), sizeof(uint32_t), &(uint32){ 32 }); */
-            RhiUniformSet terrain_info = vulkan_uniformset_push(pstate->context, pstate->terrain_shader, 1);
-            vulkan_uniformset_bind_buffer_span(pstate->context, terrain_info, 0, terrain_data_span, pstate->frame_storage_buffer);
-            vulkan_uniformset_bind(pstate->context, terrain_info);
+            /* vulkan_push_constants(pstate->context, 0, sizeof(float44), &transform); */
+            /* // TODO: Add procedural mesh to scene */
+            /* vulkan_push_constants(pstate->context, sizeof(float44), sizeof(uint32_t), &(uint32){ 0 }); */
+            /* RhiUniformSet terrain_info = vulkan_uniformset_push(pstate->context, pstate->terrain_shader, 1); */
+            /* vulkan_uniformset_bind_buffer_span(pstate->context, terrain_info, 0, terrain_data_span, pstate->frame_storage_buffer); */
+            /* vulkan_uniformset_bind(pstate->context, terrain_info); */
 
-            vulkan_renderer_draw(pstate->context, terrain_src.vertex_count);
+            /* vulkan_renderer_draw(pstate->context, terrain_src.vertex_count); */
 
 			vulkan_drawlist_end(pstate->context);
 		}
@@ -562,6 +583,7 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 		vulkan_frame_end(pstate->context);
 	}
     vulkan_buffer_reset(pstate->context, pstate->frame_storage_buffer);
+    vulkan_buffer_reset(pstate->context, pstate->frame_uniform_buffer);
 
 	arena_scratch_end(scratch);
 
@@ -577,7 +599,7 @@ GameInterface game_hookup(void) {
 
 Editor editor_make(void) {
 	Editor result = {
-		.pan_speed = 0.005f,
+		.pan_speed = 0.05f,
 		.zoom_speed = 0.05f,
 		.sensitivity = 0.005f,
 		.camera = {
