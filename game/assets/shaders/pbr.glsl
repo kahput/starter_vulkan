@@ -8,6 +8,7 @@
 #pragma shader_stage(vertex)
 
 #include "global.shared"
+#include "vertex.shared"
 
 layout(push_constant) uniform constants {
     mat4 model;

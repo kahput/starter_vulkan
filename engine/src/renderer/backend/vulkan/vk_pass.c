@@ -36,8 +36,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		// Present
 		if (src->texture.id == 0) {
 			context->bound_pass.color_formats[color_index] = context->swapchain.format.format;
-			dst->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			dst->loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			dst->storeOp = (VkAttachmentStoreOp)src->store;
+			dst->loadOp = (VkAttachmentLoadOp)src->load;
 
 			if (use_msaa) {
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;

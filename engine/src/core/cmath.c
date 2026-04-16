@@ -98,6 +98,25 @@ float3 float3_normalize_safe(float3 v, float epsilon) {
 	return float3_scale(v, 1.0f / length);
 }
 
+float3 float3_min(float3 a, float3 b) {
+	float3 result = {
+		.x = minf(a.x, b.x),
+		.y = minf(a.y, b.y),
+		.z = minf(a.z, b.z),
+	};
+
+	return result;
+}
+float3 float3_max(float3 a, float3 b) {
+	float3 result = {
+		.x = maxf(a.x, b.x),
+		.y = maxf(a.y, b.y),
+		.z = maxf(a.z, b.z),
+	};
+
+	return result;
+}
+
 float float3_angle(float3 a, float3 b) {
 	float dot = float3_dot(float3_normalize_safe(a, EPSILON), float3_normalize_safe(b, EPSILON));
 
@@ -124,7 +143,7 @@ float3 float3_rotate(float3 v, float angle, float3 axis) {
 			float3_scale(k, float3_dot(k, v) * (1.0f - c))));
 }
 
-Matrix4f float44_identity(void) {
+Matrix4f float4x4_identity(void) {
 	Matrix4f result = { { 1.0f, 0.0f, 0.0f, 0.0f,
 	  0.0f, 1.0f, 0.0f, 0.0f,
 	  0.0f, 0.0f, 1.0f, 0.0f,
@@ -133,7 +152,7 @@ Matrix4f float44_identity(void) {
 	return result;
 }
 
-Matrix4f float44_multiply(Matrix4f lhs, Matrix4f rhs) {
+Matrix4f float4x4_multiply(Matrix4f lhs, Matrix4f rhs) {
 	Matrix4f result = { 0 };
 
 #define MAT4_DOT(row, col)                                  \
@@ -167,7 +186,7 @@ Matrix4f float44_multiply(Matrix4f lhs, Matrix4f rhs) {
 	return result;
 }
 
-Matrix4f float44_translate(Matrix4f m, float3 t) {
+Matrix4f float4x4_translate(Matrix4f m, float3 t) {
 	Matrix4f result = m;
 
 	result.elements[12] = m.elements[0] * t.x + m.elements[4] * t.y + m.elements[8] * t.z + m.elements[12];
@@ -178,7 +197,7 @@ Matrix4f float44_translate(Matrix4f m, float3 t) {
 	return result;
 }
 
-Matrix4f float44_scale(Matrix4f m, float3 s) {
+Matrix4f float4x4_scale(Matrix4f m, float3 s) {
 	Matrix4f result = m;
 
 	// Post-multiply by scale: result = m * S
@@ -207,10 +226,10 @@ Matrix4f float44_scale(Matrix4f m, float3 s) {
 	return result;
 }
 
-Matrix4f float44_rotate(Matrix4f m, float angle, float3 axis) {
+Matrix4f float4x4_rotate(Matrix4f m, float angle, float3 axis) {
 	// Post-multiply by rotation: result = m * R
 	// Means: each of the first 3 columns of m gets mixed by R.
-	Matrix4f r = float44_rotation(angle, axis);
+	Matrix4f r = float4x4_rotation(angle, axis);
 	Matrix4f result = m;
 
 	// Cache m's basis columns (col 0,1,2). Translation col stays as-is.
@@ -245,7 +264,7 @@ Matrix4f float44_rotate(Matrix4f m, float angle, float3 axis) {
 	return result;
 }
 
-Matrix4f float44_translation(float3 v) {
+Matrix4f float4x4_translation(float3 v) {
 	// clang-format off
 	Matrix4f result = {{
 	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = v.x,
@@ -258,7 +277,7 @@ Matrix4f float44_translation(float3 v) {
 	return result;
 }
 
-Matrix4f float44_rotation(float angle, float3 axis) {
+Matrix4f float4x4_rotation(float angle, float3 axis) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
@@ -280,7 +299,7 @@ Matrix4f float44_rotation(float angle, float3 axis) {
 	return result;
 }
 
-Matrix4f float44_scaling(float3 scale) {
+Matrix4f float4x4_scaling(float3 scale) {
 	// clang-format off
 	Matrix4f result = {{
 	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
@@ -293,7 +312,7 @@ Matrix4f float44_scaling(float3 scale) {
 	return result;
 }
 
-Matrix4f float44_perspective(float fovy_radians, float aspect, float near_z, float far_z) {
+Matrix4f float4x4_perspective(float fovy_radians, float aspect, float near_z, float far_z) {
 	Matrix4f result = { 0 };
 
 	float f = 1.0f / tanf(fovy_radians * 0.5f);
@@ -309,8 +328,8 @@ Matrix4f float44_perspective(float fovy_radians, float aspect, float near_z, flo
 	return result;
 }
 
-Matrix4f float44_orthographic(float left, float right, float bottom, float top, float near, float far) {
-	Matrix4f result = float44_identity();
+Matrix4f float4x4_orthographic(float left, float right, float bottom, float top, float near, float far) {
+	Matrix4f result = float4x4_identity();
 
 	result.elements[0] = 2.0f / (right - left);
 	result.elements[5] = 2.0f / (top - bottom);
@@ -324,8 +343,8 @@ Matrix4f float44_orthographic(float left, float right, float bottom, float top, 
 	return result;
 }
 
-Matrix4f float44_lookat(float3 eye, float3 center, float3 up) {
-	Matrix4f result = float44_identity();
+Matrix4f float4x4_lookat(float3 eye, float3 center, float3 up) {
+	Matrix4f result = float4x4_identity();
 
 	// 1. Calculate Basis Vectors
 	// Forward (f): Points from eye to center (standard OpenGL/Vulkan convention is -Z forward,
@@ -373,7 +392,7 @@ Matrix4f float44_lookat(float3 eye, float3 center, float3 up) {
 	return result;
 }
 
-void float44_print(Matrix4f m) {
+void float4x4_print(Matrix4f m) {
 	// Print row by row
 	LOG_DEBUG(
 		"Matrix4f {\n"

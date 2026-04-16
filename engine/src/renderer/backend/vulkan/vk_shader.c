@@ -632,7 +632,7 @@ bool reflect_shader_interface(
 			arena_scratch_end(scratch);
 			return false;
 		}
-        // TODO: Add proper debug naming
+		// TODO: Add proper debug naming
 		/* vulkan_utils_set_object_name(context, (uint64_t)shader->layouts[index], VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, S("test")); */
 	}
 

@@ -7,10 +7,7 @@
 #ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
-layout(set = 0, binding = 0) uniform GlobalParameters {
-    mat4 projection;
-    mat4 view;
-} global;
+#include "global.shared"
 
 struct Vertex {
 	vec3 position;
@@ -47,15 +44,7 @@ void main() {
 #ifdef SHADER_STAGE_FRAGMENT
 #pragma shader_stage(fragment)
 
-layout(set = 0, binding = 0) uniform GlobalParameters {
-    mat4 projection;
-    mat4 view;
-    vec4 camera_position;
-} global;
-
-layout(set = 0, binding = 1) readonly buffer LightData {
-    vec4 lights[];
-};
+#include "global.shared"
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
