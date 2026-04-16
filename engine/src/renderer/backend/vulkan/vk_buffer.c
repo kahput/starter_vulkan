@@ -11,17 +11,19 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-int32_t to_vulkan_usage(BufferType type);
+static VkBufferUsageFlags to_vulkan_usage(BufferUsageFlags type);
 static const char *buffer_type_stringify[] = {
+	"Readback",
 	"Vertex",
 	"Index",
 	"Uniform",
-	"Storage"
+	"Storage",
+	"Transfer",
 };
 
-RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemory memory, size_t size, void *data) {
+RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferUsageFlags type, BufferMemory memory, size_t size, void *data) {
 	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
-	buffer->count = 1;
+	buffer->type = type;
 
 	LOG_TRACE("Vulkan: creating %s buffer...", buffer_type_stringify[type]);
 
@@ -42,7 +44,7 @@ RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemo
 		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 		result = vulkan_buffer_make_internal(context, size, usage, properties, 0, buffer);
 
-		if (data && vulkan_buffer_upload(context, data, buffer) == false)
+		if (data && vulkan_buffer_upload(context, buffer, 0, size, data) == false)
 			return INVALID_RHI(RhiBuffer);
 	}
 
@@ -51,71 +53,6 @@ RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferType type, BufferMemo
 
 	LOG_TRACE("Vulkan: %s buffer created", buffer_type_stringify[type]);
 
-	logger_dedent();
-
-	buffer->stride = buffer->frame_size;
-	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
-}
-
-RhiBuffer vulkan_buffer_make_array(VulkanContext *context, BufferType type, BufferMemory memory, uint32_t count, size_t stride) {
-	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
-	LOG_TRACE("Vulkan: creating %s buffer...", buffer_type_stringify[type]);
-
-	VkBufferUsageFlags usage = to_vulkan_usage(type);
-	bool result = false;
-	switch (type) {
-		case BUFFER_TYPE_UNIFORM: {
-			buffer->stride = MAX(context->device.properties.limits.minUniformBufferOffsetAlignment, stride);
-			buffer->count = count;
-
-			size_t size = buffer->stride * buffer->count;
-			VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-			result = vulkan_buffer_make_internal(context, size, usage, properties, 0, buffer);
-			vulkan_buffer_map(context, buffer);
-		} break;
-		case BUFFER_TYPE_STORAGE:
-		default:
-			ASSERT(false);
-	}
-
-	if (result == false)
-		return INVALID_RHI(RhiBuffer);
-
-	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
-}
-
-RhiBuffer vulkan_buffer_make_texel(VulkanContext *context, BufferType type, BufferMemory memory, TextureFormat format, size_t size, void *data) {
-	VulkanBuffer *buffer = pool_alloc_struct(context->buffer_pool, VulkanBuffer);
-	LOG_TRACE("Vulkan: Creating %s texel buffer...", buffer_type_stringify[type]);
-
-	ASSERT(type == BUFFER_TYPE_UNIFORM || type == BUFFER_TYPE_STORAGE);
-	VkBufferUsageFlags usage = type == BUFFER_TYPE_UNIFORM
-		? VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT
-		: VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
-
-	bool result = false;
-
-	if (memory == BUFFER_MEMORY_SHARED) {
-		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		result = vulkan_buffer_make_internal(context, size, usage, properties, vulkan_utils_to_vkformat(context, format), buffer);
-		vulkan_buffer_map(context, buffer);
-		if (data) {
-			for (uint32_t index = 0; index < MAX_FRAMES_IN_FLIGHT; ++index)
-				memory_copy((uint8_t *)buffer->mapped + (index * buffer->frame_size), data, size);
-		}
-	} else {
-		usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-		result = vulkan_buffer_make_internal(context, size, usage, properties, vulkan_utils_to_vkformat(context, format), buffer);
-
-		if (data && vulkan_buffer_upload(context, data, buffer) == false)
-			return INVALID_RHI(RhiBuffer);
-	}
-
-	if (result == false)
-		return INVALID_RHI(RhiBuffer);
-
-	LOG_TRACE("Vulkan: %s texel buffer created", buffer_type_stringify[type]);
 	logger_dedent();
 
 	return (RhiBuffer){ indexof(context->buffer_pool, buffer) };
@@ -139,7 +76,7 @@ bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer_handle) {
 
 bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame_index, size_t offset, size_t size, void *data, VulkanBuffer *buffer) {
 	if (FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
-		if (offset + size > buffer->frame_size) {
+		if (offset + size > buffer->size) {
 			LOG_WARN("Vulkan: write overflows frame allocation by %zuB, clamping", (offset + size) - buffer->frame_size);
 			size = buffer->frame_size - offset;
 		}
@@ -150,24 +87,26 @@ bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame_index, 
 		return true;
 	}
 
-	return vulkan_buffer_upload(context, data, buffer);
+	return vulkan_buffer_upload(context, buffer, offset, size, data);
 }
 
-Span vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer_handle, size_t size) {
+size_t vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer_handle, size_t size) {
 	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, (Span){ 0 });
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, 0);
 
-    ASSERT(buffer->offset + size < buffer->frame_size);
-    ASSERT(FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+	if (FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+		ASSERT(buffer->offset + size < buffer->frame_size);
+	} else {
+		ASSERT(buffer->offset + size < buffer->size);
+	}
 
+	size_t offset = buffer->offset;
 	size_t required_alignment =
 		vulkan_memory_required_alignment(context, buffer->usage, buffer->memory_property_flags);
-    size_t padded_size = alignup(size, required_alignment);
-
-	Span result = span_make((uint8_t *)buffer->mapped + (buffer->frame_size * context->current_frame) + buffer->offset, padded_size);
+	size_t padded_size = alignup(size, required_alignment);
 	buffer->offset += padded_size;
 
-	return result;
+	return offset;
 }
 
 bool vulkan_buffer_reset(VulkanContext *context, RhiBuffer buffer_handle) {
@@ -198,70 +137,50 @@ bool vulkan_buffer_write_all(VulkanContext *context, RhiBuffer buffer_handle, si
 	return result;
 }
 
-bool vulkan_buffer_array_index_write(VulkanContext *context, RhiBuffer buffer_handle, uint32_t index, size_t size, void *data) {
-	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
-
-	return vulkan_buffer_write(context, buffer_handle, buffer->stride * index, size, data);
-}
-
-bool vulkan_buffer_array_index_write_all(VulkanContext *context, RhiBuffer buffer_handle, uint32_t index, size_t size, void *data) {
-	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
-
-	return vulkan_buffer_write_all(context, buffer_handle, buffer->stride * index, size, data);
-}
-
-bool vulkan_buffer_bind(VulkanContext *context, RhiBuffer buffer_handle, size_t offset) {
+bool vulkan_buffer_bind_index(VulkanContext *context, RhiBuffer buffer_handle, size_t offset) {
 	const VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
-	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-		VkBuffer vertex_buffer[] = { buffer->handle };
-		VkDeviceSize offsets[1] = {
-			FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-				? offset
-				: buffer->frame_size * context->current_frame + offset
-		};
-
-		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, vertex_buffer, offsets);
-		return true;
-	}
-
-	if (buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
-		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle, offset, VK_INDEX_TYPE_UINT32);
-		return true;
-	}
-
-	LOG_WARN("Vulkan: vulkan_buffer_bind failed — unsupported buffer type (usage=0x%x)", buffer->usage);
-	return false;
+	ASSERT(FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+	ASSERT(FLAG_GET(buffer->usage, VK_BUFFER_USAGE_INDEX_BUFFER_BIT));
+	vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle, offset, VK_INDEX_TYPE_UINT32);
+	return true;
 }
-
-bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *buffer_handles, uint32_t count) {
+ENGINE_API bool vulkan_buffer_bind_vertex(VulkanContext *context, RhiBuffer buffer_handle, size_t offset) {
 	const VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handles[0], MAX_BUFFERS, true, false);
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
-	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-		VkBuffer vertex_buffers[16] = { 0 };
-		VkDeviceSize offsets[16] = { 0 };
-		for (uint32_t index = 0; index < count; ++index) {
-			vertex_buffers[index] = context->buffer_pool[buffer_handles[index].id].handle;
-			offsets[index] = 0;
-		}
-
-		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, count, vertex_buffers, offsets);
-		return true;
-	}
-
-	if (buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
-		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle, 0, VK_INDEX_TYPE_UINT32);
-		return true;
-	}
-
-	LOG_WARN("Buffer failed to bind: Unsupported buffer type");
-
-	return false;
+	ASSERT(FLAG_GET(buffer->memory_property_flags, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+	ASSERT(FLAG_GET(buffer->usage, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT));
+	vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, &buffer->handle, &offset);
+	return true;
 }
+
+/* bool vulkan_buffers_bind(VulkanContext *context, RhiBuffer *buffer_handles, uint32_t count) { */
+/* 	const VulkanBuffer *buffer = NULL; */
+/* 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handles[0], MAX_BUFFERS, true, false); */
+
+/* 	if (buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) { */
+/* 		VkBuffer vertex_buffers[16] = { 0 }; */
+/* 		VkDeviceSize offsets[16] = { 0 }; */
+/* 		for (uint32_t index = 0; index < count; ++index) { */
+/* 			vertex_buffers[index] = context->buffer_pool[buffer_handles[index].id].handle; */
+/* 			offsets[index] = 0; */
+/* 		} */
+
+/* 		vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, count, vertex_buffers, offsets); */
+/* 		return true; */
+/* 	} */
+
+/* 	if (buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) { */
+/* 		vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], buffer->handle, 0, VK_INDEX_TYPE_UINT32); */
+/* 		return true; */
+/* 	} */
+
+/* 	LOG_WARN("Buffer failed to bind: Unsupported buffer type"); */
+
+/* 	return false; */
+/* } */
 
 bool vulkan_buffer_make_internal(
 	VulkanContext *context, VkDeviceSize size,
@@ -271,8 +190,8 @@ bool vulkan_buffer_make_internal(
 	out_buffer->frame_size = alignup(out_buffer->frame_size, vulkan_memory_required_alignment(context, usage, properties));
 	out_buffer->size =
 		FLAG_GET(properties, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-		? out_buffer->frame_size
-		: out_buffer->frame_size * MAX_FRAMES_IN_FLIGHT;
+			? out_buffer->frame_size
+			: out_buffer->frame_size * MAX_FRAMES_IN_FLIGHT;
 
 	out_buffer->usage = usage;
 	out_buffer->memory_property_flags = properties;
@@ -325,7 +244,7 @@ bool vulkan_buffer_make_internal(
 			FLAG_GET(format_properties.bufferFeatures, VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT) == false) {
 			ASSERT(false);
 		} else if (FLAG_GET(usage, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT) &&
-			FLAG_GET(format_properties.bufferFeatures, VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT) == false) {
+				   FLAG_GET(format_properties.bufferFeatures, VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT) == false) {
 			ASSERT(false);
 		}
 
@@ -356,18 +275,17 @@ void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer) {
 	vkUnmapMemory(context->device.logical, buffer->memory);
 }
 
-bool vulkan_buffer_upload(VulkanContext *context, void *data, VulkanBuffer *dst) {
+bool vulkan_buffer_upload(VulkanContext *context, VulkanBuffer *dst, size_t offset, size_t size, void *data) {
 	VulkanBuffer *staging_buffer = &context->staging_buffer;
-	size_t copy_end = alignup(staging_buffer->offset + dst->size, context->device.properties.limits.minMemoryMapAlignment);
+	size_t copy_end = alignup(staging_buffer->offset + size, context->device.properties.limits.minMemoryMapAlignment);
 	size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
 	if (copy_end >= staging_buffer->frame_size) {
-		LOG_TRACE("Max staging buffer size exceeded, aborting vulkan_buffer_create");
-		ASSERT(false);
+		ASSERT_MESSAGE(false, "Max staging buffer size exceeded, aborting vulkan_buffer_create");
 		return false;
 	}
 
-	memory_copy((uint8_t *)staging_buffer->mapped + copy_start, data, dst->size);
-	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, 0, dst->handle, dst->frame_size);
+	memory_copy((uint8_t *)staging_buffer->mapped + copy_start, data, size);
+	vulkan_buffer_to_buffer(context, copy_start, staging_buffer->handle, offset, dst->handle, size);
 	staging_buffer->offset = copy_end;
 
 	return true;
@@ -439,20 +357,25 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkB
 	return true;
 }
 
-int32_t to_vulkan_usage(BufferType type) {
-	switch (type) {
-		case BUFFER_TYPE_READBACK:
-			return VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		case BUFFER_TYPE_VERTEX:
-			return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-		case BUFFER_TYPE_INDEX:
-			return VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-		case BUFFER_TYPE_UNIFORM:
-			return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		case BUFFER_TYPE_STORAGE:
-			return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-		default:
-			ASSERT(false);
-			return -1;
+VkBufferUsageFlags to_vulkan_usage(BufferUsageFlags usage) {
+	VkBufferUsageFlags result = 0;
+
+	if (FLAG_GET(usage, BUFFER_USAGE_VERTEX)) {
+		result |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 	}
+	if (FLAG_GET(usage, BUFFER_USAGE_INDEX)) {
+		result |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+	}
+	if (FLAG_GET(usage, BUFFER_USAGE_UNIFORM)) {
+		result |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	}
+	if (FLAG_GET(usage, BUFFER_USAGE_STORAGE)) {
+		result |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	}
+	if (FLAG_GET(usage, BUFFER_USAGE_TRANSFER)) {
+		result |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	}
+
+	ASSERT(result);
+	return result;
 }

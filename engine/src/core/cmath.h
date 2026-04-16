@@ -19,6 +19,9 @@ typedef float32x4 float4;
 
 typedef Matrix4f float4x4;
 
+#define FLOAT_MAX 3.40282347e+38F
+#define FLOAT_MIN -FLOAT_MAX
+
 #define FLOAT3_X (float3){ 1.0f, 0.0f, 0.0f }
 #define FLOAT3_Y (float3){ 0.0f, 1.0f, 0.0f }
 #define FLOAT3_Z (float3){ 0.0f, 0.0f, 1.0f }

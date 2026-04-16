@@ -8,13 +8,13 @@
 
 #define MAX_COLOR_ATTACHMENTS 4
 
-typedef enum buffer_type {
-    BUFFER_TYPE_READBACK,
-	BUFFER_TYPE_VERTEX,
-	BUFFER_TYPE_INDEX,
-	BUFFER_TYPE_UNIFORM,
-	BUFFER_TYPE_STORAGE,
-} BufferType;
+typedef enum {
+	BUFFER_USAGE_VERTEX = 1 << 0,
+	BUFFER_USAGE_INDEX = 1 << 1,
+	BUFFER_USAGE_TRANSFER = 1 << 2,
+	BUFFER_USAGE_UNIFORM = 1 << 3,
+	BUFFER_USAGE_STORAGE = 1 << 4,
+} BufferUsageFlags;
 
 typedef enum {
 	BUFFER_MEMORY_DEVICE,
@@ -79,7 +79,7 @@ typedef enum TextureType {
 typedef enum {
 	TEXTURE_USAGE_SAMPLED = 1u << 0,
 	TEXTURE_USAGE_RENDER_TARGET = 1u << 1,
-    TEXTURE_USAGE_READBACK = 1u << 2
+	TEXTURE_USAGE_READBACK = 1u << 2
 } TextureUsageFlags;
 
 typedef enum {

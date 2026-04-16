@@ -69,8 +69,8 @@ bool vulkan_uniformset_bind_buffer(
 
 	VkDescriptorType type =
 		FLAG_GET(buffer->usage, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-		? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
-		: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+			? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+			: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 
 	VkWriteDescriptorSet descriptor_write = {
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -97,7 +97,7 @@ bool vulkan_uniformset_bind_buffer_range(
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
-	set->buffer_ranges[set->range_count++] = offset;
+	set->buffer_ranges[set->range_count++] = offset + buffer->frame_size * context->current_frame;
 
 	VkDescriptorBufferInfo buffer_info = {
 		.buffer = buffer->handle,
@@ -107,8 +107,8 @@ bool vulkan_uniformset_bind_buffer_range(
 
 	VkDescriptorType type =
 		FLAG_GET(buffer->usage, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-		? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
-		: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+			? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+			: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 
 	VkWriteDescriptorSet descriptor_write = {
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -130,13 +130,6 @@ bool vulkan_uniformset_bind_buffer_span(VulkanContext *context, RhiUniformSet se
 
 	size_t offset = span.buffer - (uint8_t *)buffer->mapped;
 	return vulkan_uniformset_bind_buffer_range(context, set_handle, binding, offset, span.size, buffer_handle);
-}
-
-bool vulkan_uniformset_bind_buffer_array_index(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer_handle, uint32_t index) {
-	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
-
-	return vulkan_uniformset_bind_buffer_range(context, set, binding, buffer->stride * index, buffer->stride, buffer_handle);
 }
 
 bool vulkan_uniformset_bind_texture(

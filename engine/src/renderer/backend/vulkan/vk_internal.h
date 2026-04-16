@@ -52,6 +52,8 @@ typedef enum {
 typedef struct vulkan_buffer {
 	VulkanResourceState state;
 
+	BufferUsageFlags type;
+
 	VkBuffer handle;
 	VkDeviceMemory memory;
 	VkBufferView view;
@@ -59,8 +61,6 @@ typedef struct vulkan_buffer {
 
 	VkDeviceSize size;
 	VkDeviceSize offset, frame_size;
-
-	size_t count, stride;
 
 	VkBufferUsageFlags usage;
 	VkMemoryPropertyFlags memory_property_flags;
@@ -164,7 +164,7 @@ bool vulkan_buffer_map(VulkanContext *context, VulkanBuffer *buffer);
 void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer);
 bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame, size_t offset, size_t size, void *data, VulkanBuffer *buffer);
 
-bool vulkan_buffer_upload(VulkanContext *context, void *data, VulkanBuffer *dst);
+bool vulkan_buffer_upload(VulkanContext *context, VulkanBuffer *dst, size_t offset, size_t size, void *data);
 bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst);
 
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);

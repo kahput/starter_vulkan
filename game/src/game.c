@@ -20,7 +20,6 @@
 #include "scene.h"
 
 #include "cgltf.h"
-#include <float.h>
 #include <math.h>
 
 static MaterialProperty default_properties[] = {
@@ -42,11 +41,8 @@ typedef enum {
 } GameState;
 
 typedef struct {
-	RhiBuffer vertex_buffer;
-	RhiBuffer index_buffer;
-
-	uint32_t index_count;
-	uint32_t vertex_count;
+	size_t vertex_offset, vertex_count;
+	size_t index_offset, index_count;
 } Mesh;
 
 typedef struct {
@@ -91,6 +87,7 @@ typedef struct {
 	RhiBuffer frame_storage_buffer;
 
 	RhiBuffer scene_uniform_buffer;
+	RhiBuffer scene_geometry_buffer;
 
 	RhiTexture picker_target;
 
@@ -101,7 +98,7 @@ typedef struct {
 	Mesh *meshes;
 	Interval3D *bounds;
 	MaterialSource *materials;
-	Span *material_data;
+	uint64x2 *material_data;
 	uint32_t *mesh_to_material;
 
 	SceneNode *nodes;
@@ -136,9 +133,11 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 		event_subscribe(EVENT_PLATFORM_WINDOW_RESIZED, window_resize, pstate);
 
-		pstate->frame_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, MiB(8), NULL);
-		pstate->frame_storage_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_STORAGE, BUFFER_MEMORY_SHARED, MiB(32), NULL);
-		pstate->scene_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_TYPE_UNIFORM, BUFFER_MEMORY_SHARED, MiB(32), NULL);
+		pstate->frame_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_USAGE_UNIFORM, BUFFER_MEMORY_SHARED, MiB(8), NULL);
+		pstate->frame_storage_buffer = vulkan_buffer_make(pstate->context, BUFFER_USAGE_STORAGE, BUFFER_MEMORY_SHARED, MiB(32), NULL);
+
+		pstate->scene_uniform_buffer = vulkan_buffer_make(pstate->context, BUFFER_USAGE_UNIFORM, BUFFER_MEMORY_SHARED, MiB(32), NULL);
+		pstate->scene_geometry_buffer = vulkan_buffer_make(pstate->context, BUFFER_USAGE_INDEX | BUFFER_USAGE_VERTEX, BUFFER_MEMORY_DEVICE, MiB(128), NULL);
 
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 
@@ -187,7 +186,7 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 			{ .position = { -1.0f, -1.0f, 0.0f } },
 			{ .position = { 1.0f, -1.0f, 0.0f } }
 		};
-		pstate->quad_geometry = vulkan_buffer_make(pstate->context, BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(quad_vertices), quad_vertices);
+		pstate->quad_geometry = vulkan_buffer_make(pstate->context, BUFFER_USAGE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(quad_vertices), quad_vertices);
 
 		// Load model
 		String path = S("assets/models/custom/room.glb");
@@ -288,8 +287,8 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 						// TODO: Per mesh bounding box instead of per primitive?
 						Interval3D *interval = arena_darray_push(scratch.arena, bounds, Interval3D);
-						interval->min = float3_fill(FLT_MAX);
-						interval->max = float3_fill(-FLT_MAX);
+						interval->min = float3_fill(FLOAT_MAX);
+						interval->max = float3_fill(FLOAT_MIN);
 
 						ASSERT(primitive->attributes && primitive->attributes->data);
 						mesh->vertex_count = primitive->attributes->data->count;
@@ -374,15 +373,26 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 				Mesh *mesh = &pstate->meshes[mesh_index];
 				MeshSource source = mesh_sources[mesh_index];
 
-				mesh->vertex_buffer = vulkan_buffer_make(
-					pstate->context,
-					BUFFER_TYPE_VERTEX, BUFFER_MEMORY_DEVICE,
-					source.vertex_size * source.vertex_count, source.vertices);
+				size_t vertices_size = source.vertex_size * source.vertex_count;
+				size_t indices_size = source.index_size * source.index_count;
 
-				mesh->index_buffer = vulkan_buffer_make(
+				// Nothing uploaded yet, only the offset is incremented
+				mesh->vertex_offset = vulkan_buffer_push(
 					pstate->context,
-					BUFFER_TYPE_INDEX, BUFFER_MEMORY_DEVICE,
-					source.index_size * source.index_count, source.indices);
+					pstate->scene_geometry_buffer,
+					vertices_size);
+				mesh->index_offset = vulkan_buffer_push(
+					pstate->context,
+					pstate->scene_geometry_buffer,
+					indices_size);
+
+				// NOTE: This creates oneshot command buffer for each upload, batch instead
+				vulkan_buffer_write(pstate->context,
+					pstate->scene_geometry_buffer,
+					mesh->vertex_offset, vertices_size, source.vertices);
+				vulkan_buffer_write(pstate->context,
+					pstate->scene_geometry_buffer,
+					mesh->index_offset, indices_size, source.indices);
 
 				mesh->index_count = source.index_count;
 				mesh->vertex_count = source.vertex_count;
@@ -401,7 +411,7 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 			}
 
 			ASSERT(materials);
-			Span *material_data = NULL;
+			uint64x2 *material_data = NULL;
 			for (uint32_t material_index = 0; material_index < arena_array_count(materials); ++material_index) {
 				MaterialSource *material = &materials[material_index];
 
@@ -412,16 +422,16 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 					.emissive_factor = material->properties[8].as.float32x3
 				};
 
-				// NOTE: This bakes in frame offset
-				Span data = vulkan_buffer_push(pstate->context, pstate->scene_uniform_buffer, sizeof(MaterialParameters));
-				arena_darray_put(scratch.arena, material_data, Span, data);
-				memory_copy(data.buffer, &parameters, sizeof(parameters));
+				size_t size = sizeof(MaterialParameters);
+				size_t offset = vulkan_buffer_push(pstate->context, pstate->scene_uniform_buffer, size);
+				arena_darray_put(scratch.arena, material_data, uint64x2, { offset, size });
+				vulkan_buffer_write_all(pstate->context, pstate->scene_uniform_buffer, offset, size, &parameters);
 			}
 
 			pstate->nodes = arena_array_copy(&pstate->arena, nodes, SceneNode);
 			pstate->materials = arena_array_copy(&pstate->arena, materials, MaterialSource);
 			pstate->mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
-			pstate->material_data = arena_array_copy(&pstate->arena, material_data, Span);
+			pstate->material_data = arena_array_copy(&pstate->arena, material_data, uint64x2);
 			pstate->bounds = arena_array_copy(&pstate->arena, bounds, Interval3D);
 
 			cgltf_free(data);
@@ -508,24 +518,36 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 		Matrix4f view = float4x4_lookat(camera->position, camera->target, camera->up);
 
 		typedef struct {
-			float4x4 projeciton, view;
+			float4x4 projection, view;
 			float4 camera_position;
 			float2 viewport;
 		} GlobalData;
 
-		Span global_data = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData));
-		memory_copy(global_data.buffer, &projection, sizeof(float4x4));
-		memory_copy(global_data.buffer + offsetof(GlobalData, view), &view, sizeof(float4x4));
-		memory_copy(global_data.buffer + offsetof(GlobalData, camera_position), &camera->position, sizeof(float4));
-		memory_copy(global_data.buffer + offsetof(GlobalData, viewport), &window_size, sizeof(float2));
+		size_t global_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData));
+		vulkan_buffer_write(
+			pstate->context, pstate->frame_uniform_buffer,
+			global_offset + offsetof(GlobalData, projection),
+			sizeof_member(GlobalData, projection), &projection);
+		vulkan_buffer_write(
+			pstate->context, pstate->frame_uniform_buffer,
+			global_offset + offsetof(GlobalData, view),
+			sizeof_member(GlobalData, view), &view);
+		vulkan_buffer_write(
+			pstate->context, pstate->frame_uniform_buffer,
+			global_offset + offsetof(GlobalData, camera_position),
+			sizeof_member(GlobalData, camera_position), &camera->position);
+		vulkan_buffer_write(
+			pstate->context, pstate->frame_uniform_buffer,
+			global_offset + offsetof(GlobalData, viewport),
+			sizeof_member(GlobalData, viewport), &window_size);
 
-		Span light_data = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4));
+		size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4));
 		float4 light_position = { 0.0f, 20.0f, -30.0f, 1.0f };
-		memory_copy(light_data.buffer, &light_position, sizeof(float4));
+		vulkan_buffer_write(pstate->context, pstate->frame_storage_buffer, light_offset, sizeof(float4), &light_position);
 
 		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 0);
-		vulkan_uniformset_bind_buffer_span(pstate->context, global_set, 0, global_data, pstate->frame_uniform_buffer);
-		vulkan_uniformset_bind_buffer_span(pstate->context, global_set, 1, light_data, pstate->frame_storage_buffer);
+		vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
+		vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(float4), pstate->frame_storage_buffer);
 
 		DrawListDesc main_pass = {
 			.name = S("main_pass"),
@@ -566,10 +588,10 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 					Mesh *mesh = &pstate->meshes[node->mesh_index + index];
 					uint32_t material_index = pstate->mesh_to_material[indexof(pstate->meshes, mesh)];
 					MaterialSource *material = &pstate->materials[material_index];
-					Span span = pstate->material_data[material_index];
+					uint64x2 span = pstate->material_data[material_index];
 
 					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->unlit_shader, 1);
-					vulkan_uniformset_bind_buffer_span(pstate->context, group, 0, span, pstate->scene_uniform_buffer);
+					vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, span.x, span.y, pstate->scene_uniform_buffer);
 					for (uint32_t index = 0; index < 5; ++index) {
 						RhiTexture texture = pstate->white;
 						if (material->properties[index].as.uint32x1) {
@@ -587,9 +609,9 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform);
 
-					vulkan_buffer_bind(pstate->context, mesh->vertex_buffer, 0);
+					vulkan_buffer_bind_vertex(pstate->context, pstate->scene_geometry_buffer, mesh->vertex_offset);
 					if (mesh->index_count > 0) {
-						vulkan_buffer_bind(pstate->context, mesh->index_buffer, 0);
+						vulkan_buffer_bind_index(pstate->context, pstate->scene_geometry_buffer, mesh->index_offset);
 						vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 					} else
 						vulkan_renderer_draw(pstate->context, mesh->vertex_count);
@@ -628,7 +650,8 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 
 				uint32_t line_segment_count = 12 * node->mesh_count;
 				size_t line_segment_size = 2 * sizeof(float4);
-				Span span = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, line_segment_count * line_segment_size);
+				size_t size = line_segment_count * line_segment_size;
+				size_t offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, size);
 
 				for (uint32_t index = 0; index < node->mesh_count; ++index) {
 					Mesh *mesh = &pstate->meshes[node->mesh_index + index];
@@ -678,14 +701,18 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 						{ min.x, max.y, max.z, thickness },
 					};
 
-					memory_copy(span.buffer + 12 * line_segment_size * index, points, sizeof(points));
+					vulkan_buffer_write(
+						pstate->context,
+						pstate->frame_storage_buffer,
+						offset + 12 * line_segment_size * index,
+						sizeof(points), points);
 				}
 
 				float4x4 transform = node->transform.global;
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform);
 
 				RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->line_shader, 1);
-				vulkan_uniformset_bind_buffer_span(pstate->context, group, 0, span, pstate->frame_storage_buffer);
+				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, offset, size, pstate->frame_storage_buffer);
 				vulkan_uniformset_bind(pstate->context, group);
 
 				vulkan_renderer_draw(pstate->context, line_segment_count * 2 * 6);
@@ -698,6 +725,8 @@ FrameInfo update_and_render(GameContext *context, float dt) {
 	}
 	vulkan_buffer_reset(pstate->context, pstate->frame_storage_buffer);
 	vulkan_buffer_reset(pstate->context, pstate->frame_uniform_buffer);
+
+	/* LOG_INFO("FPS = %.2f", 1 / dt); */
 
 	arena_scratch_end(scratch);
 
@@ -746,8 +775,6 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		float2 mouse_position = float2_from_double2(input_mouse_position());
 		float2 offset = float2_negate(float2_subtract(mouse_position, editor->grab_mouse_position));
 
-		LOG_INFO("offset %.2f, %.2f", offset.x, offset.y);
-
 		float3 camera_target_offset = float3_subtract(camera->target, camera->position);
 		float3 camera_forward = float3_normalize(camera_target_offset);
 		float3 camera_right = float3_cross(camera->up, camera_forward);
@@ -757,11 +784,9 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 		float2 screen_size = float2_from_uint2(window_size_pixel(pstate->display));
 
-		// NOTE: The postion/rotation/scale are in local space
-		// extract/calculate the world position
-		float4x4 cached = editor->cached_selection_transform.global;
-		float3 position = { cached.elements[12], cached.elements[13], cached.elements[14] };
-		float distance = float3_dot(float3_subtract(position, camera->position), camera_forward);
+		// TODO: The postion/rotation/scale are in local space, extract/calculate the world position
+		float distance = float3_dot(float3_subtract(editor->cached_selection_transform.position, camera->position), camera_forward);
+		LOG_INFO("Distance = %.2f", distance);
 		float fov_radians = deg2radf(camera->fov);
 		float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
 		float frustum_width = frustum_height * (screen_size.x / screen_size.y);
@@ -775,7 +800,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		float3 move_y = float3_scale(camera_up, -offset.y * units_per_pixel.y);
 
 		node->transform.position = float3_add(
-			float3_add(position, move_x),
+			float3_add(editor->cached_selection_transform.position, move_x),
 			move_y);
 
 		float4x4 translation = float4x4_translation(node->transform.position);
