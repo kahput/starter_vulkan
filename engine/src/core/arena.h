@@ -11,7 +11,7 @@ typedef struct {
 } ArenaTemp;
 
 Arena arena_make(size_t size);
-Arena *arena_partition(Arena *arena, size_t size);
+ENGINE_API Arena *arena_partition(Arena *arena, size_t size);
 static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .base = buffer, .capacity = size }; }
 static inline Arena arena_wrap_span(Span span) { return (Arena){ .base = span.buffer, .capacity = span.size }; }
 void arena_destroy(Arena *arena);

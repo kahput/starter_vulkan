@@ -90,7 +90,7 @@ bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame_index, 
 	return vulkan_buffer_upload(context, buffer, offset, size, data);
 }
 
-size_t vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer_handle, size_t size) {
+size_t vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer_handle, size_t size, void *data) {
 	VulkanBuffer *buffer = NULL;
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, 0);
 
@@ -106,7 +106,17 @@ size_t vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer_handle, size_
 	size_t padded_size = alignup(size, required_alignment);
 	buffer->offset += padded_size;
 
+	if (data)
+		vulkan_buffer_write(context, buffer_handle, offset, size, data);
+
 	return offset;
+}
+
+size_t vulkan_buffer_offset(VulkanContext *context, RhiBuffer buffer_handle) {
+	VulkanBuffer *buffer = NULL;
+	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, 0);
+
+	return buffer->offset;
 }
 
 bool vulkan_buffer_reset(VulkanContext *context, RhiBuffer buffer_handle) {

@@ -22,6 +22,8 @@
 #include "cgltf.h"
 #include <math.h>
 
+#define MAX_ENTITIES 1024
+
 static MaterialProperty default_properties[] = {
 	{ .name = { .chars = "u_base_color_texture", .length = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
 	{ .name = { .chars = "u_metallic_roughness_texture", .length = 28 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
@@ -41,25 +43,38 @@ typedef enum {
 } GameState;
 
 typedef struct {
+	// NOTE: Might want to allow for storing vertex/index buffer separately
+	RhiBuffer buffer;
+
 	size_t vertex_offset, vertex_count;
 	size_t index_offset, index_count;
 } Mesh;
 
 typedef struct {
-	float3 position, scale, rotation;
+	RhiBuffer uniform_buffer;
+	size_t offset, size;
 
-	float4x4 local, global;
-} Transform3D;
+	RhiTexture textures[16];
+	uint32_t texture_count;
+} Material;
 
 typedef struct {
 	float3 min, max;
 } Interval3D;
 
-typedef struct {
-	uint32_t parent_index, mesh_index, mesh_count;
+typedef uint32_t Entity;
 
-	Transform3D transform;
-} SceneNode;
+typedef struct {
+	uint32_t parent_index;
+
+	float3 position, scale, rotation;
+	float4x4 local, global;
+} TransformComponent;
+
+typedef struct {
+	uint32_t mesh_index, mesh_count;
+	uint32_t material_index;
+} MeshComponent;
 
 typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
@@ -67,7 +82,7 @@ typedef struct Editor {
 
 	bool grab;
 	float2 grab_mouse_position;
-	Transform3D cached_selection_transform;
+	TransformComponent cached_selection_transform;
 } Editor;
 
 typedef struct {
@@ -91,19 +106,18 @@ typedef struct {
 
 	RhiTexture picker_target;
 
-	RhiBuffer quad_geometry;
+	Mesh quad;
 
-	RhiTexture *images;
+	struct {
+		RhiTexture *images;
+		Material *materials;
+		Mesh *meshes;
+		uint32_t *mesh_to_material;
 
-	Mesh *meshes;
-	Interval3D *bounds;
-	MaterialSource *materials;
-	uint64x2 *material_data;
-	uint32_t *mesh_to_material;
+		Interval3D *bounds;
+	} assets;
 
-	SceneNode *nodes;
-
-	uint32_t selected_node;
+	Entity selected_entity;
 
 	GameState state;
 	Editor editor;
@@ -113,8 +127,17 @@ typedef struct {
 
 	struct {
 		float3 position;
+		float3 rotation;
 		Mesh mesh;
 	} player;
+	/* Entity player; */
+
+	uint32_t entity_count;
+	TransformComponent transforms[MAX_ENTITIES];
+	MeshComponent meshes[MAX_ENTITIES];
+
+	bool has_transform[MAX_ENTITIES];
+	bool has_mesh[MAX_ENTITIES];
 
 	Camera *camera;
 } PermanentState;
@@ -172,12 +195,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				pstate->context,
 				importer_load_shader(scratch.arena, S("assets/shaders/line.vert.spv"), S("assets/shaders/line.frag.spv")),
 				NULL);
-		pstate->line_shader =
-			vulkan_shader_make(
-				NULL,
-				pstate->context,
-				importer_load_shader(scratch.arena, S("assets/shaders/line.vert.spv"), S("assets/shaders/line.frag.spv")),
-				NULL);
 		pstate->picker_shader =
 			vulkan_shader_make(
 				NULL,
@@ -205,7 +222,32 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			{ .position = { -1.0f, -1.0f, 0.0f } },
 			{ .position = { 1.0f, -1.0f, 0.0f } }
 		};
-		pstate->quad_geometry = vulkan_buffer_make(pstate->context, BUFFER_USAGE_VERTEX, BUFFER_MEMORY_DEVICE, sizeof(quad_vertices), quad_vertices);
+		pstate->quad = (Mesh){
+			.buffer = pstate->scene_geometry_buffer,
+			.vertex_count = 6
+		};
+		pstate->quad.vertex_offset =
+			vulkan_buffer_push(pstate->context, pstate->quad.buffer, sizeof(quad_vertices), quad_vertices);
+
+		// DEFAULTS & INVALID
+		pstate->entity_count = 0;
+		pstate->transforms[pstate->entity_count] = (TransformComponent){ 0 };
+		pstate->meshes[pstate->entity_count] = (MeshComponent){ 0 };
+		pstate->entity_count++;
+
+		MaterialSource *material_sources = NULL;
+		MaterialSource default_material = {
+			.properties = arena_push_count(&pstate->arena, countof(default_properties), MaterialProperty),
+			.property_count = countof(default_properties),
+		};
+		memory_copy(default_material.properties, default_properties, sizeof(default_properties));
+		arena_darray_put(scratch.arena, material_sources, MaterialSource, default_material);
+
+		Arena *geometry_upload_arena = arena_partition(scratch.arena, MiB(32));
+		size_t geometry_upload_offset = vulkan_buffer_offset(pstate->context, pstate->scene_geometry_buffer);
+
+		ImageSource *images = NULL;
+		arena_darray_push(scratch.arena, images, ImageSource);
 
 		// Load model
 		String path = S("assets/models/custom/room.glb");
@@ -214,20 +256,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		MeshSource *mesh_sources = NULL;
 		uint32_t *mesh_to_material = NULL;
 
-		// 0 == default
-		MaterialSource *materials = NULL;
-		MaterialSource default_material = {
-			.properties = arena_push_count(&pstate->arena, countof(default_properties), MaterialProperty),
-			.property_count = countof(default_properties),
-		};
-		memory_copy(default_material.properties, default_properties, sizeof(default_properties));
-		arena_darray_put(scratch.arena, materials, MaterialSource, default_material);
-
-		// 0 == invalid
-		ImageSource *images = NULL;
-		arena_darray_push(scratch.arena, images, ImageSource);
-
-		SceneNode *nodes = NULL;
 		Interval3D *bounds = NULL;
 		{
 			cgltf_options options = { 0 };
@@ -254,7 +282,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 				for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
 					cgltf_material *src = &data->materials[material_index];
-					MaterialSource *dst = arena_darray_push(scratch.arena, materials, MaterialSource);
+					MaterialSource *dst = arena_darray_push(scratch.arena, material_sources, MaterialSource);
 
 					dst->property_count = countof(default_properties);
 					dst->properties = arena_push_count(&pstate->arena, dst->property_count, MaterialProperty);
@@ -283,7 +311,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					if (src->emissive_texture.texture)
 						dst->properties[4].as.uint32x1 = cgltf_image_index(data, src->emissive_texture.texture->image) + 1;
 				}
-				LOG_INFO("Material count = %d", arena_array_count(materials));
+				LOG_INFO("Material count = %d", arena_array_count(material_sources));
 
 				// Meshes
 				uint32_t *mesh_offsets = arena_push_count(scratch.arena, data->meshes_count, uint32_t);
@@ -361,66 +389,70 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					}
 				}
 
-				// Nodes
+				// Node -> Entity
 				for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
 					cgltf_node *cgltf_node = &data->nodes[node_index];
-					SceneNode *node = arena_darray_push(scratch.arena, nodes, SceneNode);
+
+					Entity entity = pstate->entity_count++;
+					TransformComponent *transform = &pstate->transforms[entity];
+					MeshComponent *mesh_group = &pstate->meshes[entity];
 
 					if (cgltf_node->parent)
-						node->parent_index = cgltf_node_index(data, cgltf_node->parent);
-					else
-						node->parent_index = UINT32_MAX;
+						transform->parent_index = cgltf_node_index(data, cgltf_node->parent);
 
-					cgltf_node_transform_local(cgltf_node, node->transform.local.elements);
-					cgltf_node_transform_world(cgltf_node, node->transform.global.elements);
+					cgltf_node_transform_local(cgltf_node, transform->local.elements);
+					cgltf_node_transform_world(cgltf_node, transform->global.elements);
 
 					// TODO: quaternion
 					// node->transform.rotation = float3_wrap(cgltf_node->rotation);
-					node->transform.position = float3_wrap(cgltf_node->translation);
-					node->transform.scale = float3_wrap(cgltf_node->scale);
+					transform->position = float3_wrap(cgltf_node->translation);
+					transform->scale = float3_wrap(cgltf_node->scale);
 
 					ASSERT(cgltf_node->mesh);
-					node->mesh_index = mesh_offsets[cgltf_mesh_index(data, cgltf_node->mesh)];
-					node->mesh_count = cgltf_node->mesh->primitives_count;
+					mesh_group->mesh_index = mesh_offsets[cgltf_mesh_index(data, cgltf_node->mesh)];
+					mesh_group->mesh_count = cgltf_node->mesh->primitives_count;
+
+					pstate->has_transform[entity] = true;
+					pstate->has_mesh[entity] = true;
 				}
 
 			} else
 				LOG_ERROR("Failed to load '%.*s'", SARG(path));
 
-			pstate->meshes = arena_push_count(&pstate->arena, arena_array_count(mesh_sources) + 1, Mesh);
+			pstate->assets.meshes = arena_push_count(&pstate->arena, arena_array_count(mesh_sources), Mesh);
 			for (uint32_t mesh_index = 0; mesh_index < arena_array_count(mesh_sources); ++mesh_index) {
-				Mesh *mesh = &pstate->meshes[mesh_index];
+				Mesh *mesh = &pstate->assets.meshes[mesh_index];
 				MeshSource source = mesh_sources[mesh_index];
 
 				size_t vertices_size = source.vertex_size * source.vertex_count;
 				size_t indices_size = source.index_size * source.index_count;
 
+				mesh->buffer = pstate->scene_geometry_buffer;
+
 				// Nothing uploaded yet, only the offset is incremented
 				mesh->vertex_offset = vulkan_buffer_push(
 					pstate->context,
-					pstate->scene_geometry_buffer,
-					vertices_size);
+					mesh->buffer,
+					vertices_size, NULL);
 				mesh->index_offset = vulkan_buffer_push(
 					pstate->context,
-					pstate->scene_geometry_buffer,
-					indices_size);
+					mesh->buffer,
+					indices_size, NULL);
+				if (geometry_upload_offset == 0) {
+					geometry_upload_offset = mesh->vertex_offset;
+				}
 
-				// NOTE: This creates oneshot command buffer for each upload, batch instead
-				vulkan_buffer_write(pstate->context,
-					pstate->scene_geometry_buffer,
-					mesh->vertex_offset, vertices_size, source.vertices);
-				vulkan_buffer_write(pstate->context,
-					pstate->scene_geometry_buffer,
-					mesh->index_offset, indices_size, source.indices);
+				arena_push_copy(geometry_upload_arena, source.vertices, vertices_size, 1);
+				arena_push_copy(geometry_upload_arena, source.indices, indices_size, 1);
 
 				mesh->index_count = source.index_count;
 				mesh->vertex_count = source.vertex_count;
 			}
 
-			pstate->images = arena_push_count(&pstate->arena, arena_array_count(images), RhiTexture);
+			pstate->assets.images = arena_push_count(&pstate->arena, arena_array_count(images), RhiTexture);
 			for (uint32_t image_index = 1; image_index < arena_array_count(images); ++image_index) {
 				ImageSource *src = &images[image_index];
-				RhiTexture *dst = &pstate->images[image_index];
+				RhiTexture *dst = &pstate->assets.images[image_index];
 
 				*dst = vulkan_texture_make(
 					pstate->context,
@@ -429,39 +461,50 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					TEXTURE_USAGE_SAMPLED, src->pixels);
 			}
 
-			ASSERT(materials);
-			uint64x2 *material_data = NULL;
-			for (uint32_t material_index = 0; material_index < arena_array_count(materials); ++material_index) {
-				MaterialSource *material = &materials[material_index];
+			ASSERT(material_sources);
+			pstate->assets.materials = arena_push_count(&pstate->arena, arena_array_count(material_sources), Material);
+			for (uint32_t material_index = 0; material_index < arena_array_count(material_sources); ++material_index) {
+				MaterialSource *src = &material_sources[material_index];
+				Material *dst = &pstate->assets.materials[material_index];
+				dst->uniform_buffer = pstate->scene_uniform_buffer;
 
 				MaterialParameters parameters = {
-					.base_color_factor = material->properties[5].as.float32x4,
-					.metallic_factor = material->properties[6].as.float32x1,
-					.roughness_factor = material->properties[7].as.float32x1,
-					.emissive_factor = material->properties[8].as.float32x3
+					.base_color_factor = src->properties[5].as.float32x4,
+					.metallic_factor = src->properties[6].as.float32x1,
+					.roughness_factor = src->properties[7].as.float32x1,
+					.emissive_factor = src->properties[8].as.float32x3
 				};
 
+				for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
+					dst->textures[texture_index] = pstate->assets.images[src->properties[texture_index].as.uint32x1];
+					dst->texture_count++;
+				}
+
 				size_t size = sizeof(MaterialParameters);
-				size_t offset = vulkan_buffer_push(pstate->context, pstate->scene_uniform_buffer, size);
-				arena_darray_put(scratch.arena, material_data, uint64x2, { offset, size });
-				vulkan_buffer_write_all(pstate->context, pstate->scene_uniform_buffer, offset, size, &parameters);
+				size_t offset = vulkan_buffer_push(pstate->context, dst->uniform_buffer, size, NULL);
+				dst->offset = offset, dst->size = size;
+				vulkan_buffer_write_all(pstate->context, dst->uniform_buffer, dst->offset, dst->size, &parameters);
 			}
 
 			MeshSource player_src = mesh_source_cube(scratch.arena, 0, 0.5f, 0);
 			size_t player_geometry_size = player_src.vertex_count * player_src.vertex_size;
 			Mesh player_mesh = {
+				.buffer = pstate->scene_geometry_buffer,
 				.vertex_count = player_src.vertex_count,
-				.vertex_offset = vulkan_buffer_push(pstate->context, pstate->scene_geometry_buffer, player_geometry_size),
 			};
-			vulkan_buffer_write(pstate->context, pstate->scene_geometry_buffer, player_mesh.vertex_offset, player_geometry_size, player_src.vertices);
+			player_mesh.vertex_offset = vulkan_buffer_push(pstate->context, player_mesh.buffer, player_geometry_size, player_src.vertices);
 			pstate->player.position = (float3){ 0 },
 			pstate->player.mesh = player_mesh;
 
-			pstate->nodes = arena_array_copy(&pstate->arena, nodes, SceneNode);
-			pstate->materials = arena_array_copy(&pstate->arena, materials, MaterialSource);
-			pstate->mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
-			pstate->material_data = arena_array_copy(&pstate->arena, material_data, uint64x2);
-			pstate->bounds = arena_array_copy(&pstate->arena, bounds, Interval3D);
+			pstate->assets.mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
+			pstate->assets.bounds = arena_array_copy(&pstate->arena, bounds, Interval3D);
+
+			// Upload all geometry once
+			vulkan_buffer_write(
+				pstate->context,
+				pstate->scene_geometry_buffer,
+				geometry_upload_offset,
+				geometry_upload_arena->offset, geometry_upload_arena->base);
 
 			cgltf_free(data);
 		}
@@ -474,7 +517,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			.projection = CAMERA_PROJECTION_PERSPECTIVE
 		};
-		pstate->target_azimuth = C_PIf * 3 / 2.f;
+		pstate->target_azimuth = C_PIf * 0.5f;
 		pstate->target_theta = C_PIf / 3.f;
 
 		pstate->editor = editor_make();
@@ -617,9 +660,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	if (vulkan_frame_begin(pstate->context, window_size.x, window_size.y)) {
 		Camera *camera = pstate->camera;
 
-		Matrix4f projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
+		float4x4 projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
 		projection.elements[5] *= -1;
-		Matrix4f view = float4x4_lookat(camera->position, camera->target, camera->up);
+		float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
 
 		typedef struct {
 			float4x4 projection, view;
@@ -627,7 +670,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			float2 viewport;
 		} GlobalData;
 
-		size_t global_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData));
+		size_t global_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData), NULL);
 		vulkan_buffer_write(
 			pstate->context, pstate->frame_uniform_buffer,
 			global_offset + offsetof(GlobalData, projection),
@@ -645,9 +688,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			global_offset + offsetof(GlobalData, viewport),
 			sizeof_member(GlobalData, viewport), &window_size);
 
-		size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4));
 		float4 light_position = { 0.0f, 20.0f, -30.0f, 1.0f };
-		vulkan_buffer_write(pstate->context, pstate->frame_storage_buffer, light_offset, sizeof(float4), &light_position);
+		size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4), &light_position);
 
 		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 0);
 		vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
@@ -676,71 +718,78 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			vulkan_shader_bind(pstate->context, pstate->pbr_shader, pipeline);
 			vulkan_uniformset_bind(pstate->context, global_set);
 
-			for (uint32_t node_index = 0; node_index < arena_array_count(pstate->nodes); ++node_index) {
-				SceneNode *node = &pstate->nodes[node_index];
-				float4x4 transform = node->transform.global;
+			for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
+				if (pstate->has_transform[entity] == false ||
+					pstate->has_mesh[entity] == false)
+					continue;
+				TransformComponent *transform = &pstate->transforms[entity];
+				MeshComponent *mesh_group = &pstate->meshes[entity];
 
-				uint32_t id = node_index + 1;
-				vulkan_push_constants(pstate->context, sizeof(float4x4), sizeof(uint32_t), &id);
+				for (uint32_t index = 0; index < mesh_group->mesh_count; ++index) {
+					Mesh *mesh = &pstate->assets.meshes[mesh_group->mesh_index + index];
+					uint32_t material_index = pstate->assets.mesh_to_material[indexof(pstate->assets.meshes, mesh)];
+					Material *material = &pstate->assets.materials[material_index];
 
-				for (uint32_t index = 0; index < node->mesh_count; ++index) {
-					Mesh *mesh = &pstate->meshes[node->mesh_index + index];
-					uint32_t material_index = pstate->mesh_to_material[indexof(pstate->meshes, mesh)];
-					MaterialSource *material = &pstate->materials[material_index];
-					uint64x2 span = pstate->material_data[material_index];
+					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 1);
+					vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
+					for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
+						RhiTexture texture = material->textures[texture_index];
+						if (texture.id == 0)
+							texture = pstate->white;
 
-					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->unlit_shader, 1);
-					vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, span.x, span.y, pstate->scene_uniform_buffer);
-					for (uint32_t index = 0; index < 5; ++index) {
-						RhiTexture texture = pstate->white;
-						if (material->properties[index].as.uint32x1) {
-							texture = pstate->images[material->properties[index].as.uint32x1];
-						}
 						vulkan_uniformset_bind_texture(
 							pstate->context,
 							group,
-							1 + index,
+							1 + texture_index,
 							texture,
 							pstate->linear_sampler);
 					}
 
 					vulkan_uniformset_bind(pstate->context, group);
 
-					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform);
+					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform->global);
 
-					vulkan_buffer_bind_vertex(pstate->context, pstate->scene_geometry_buffer, mesh->vertex_offset);
+					vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
 					if (mesh->index_count > 0) {
-						vulkan_buffer_bind_index(pstate->context, pstate->scene_geometry_buffer, mesh->index_offset);
+						vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
 						vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 					} else
 						vulkan_renderer_draw(pstate->context, mesh->vertex_count);
 				}
 			}
 
-			float4x4 player_transform = float4x4_translation(pstate->player.position);
-			MaterialSource *defalut_mat = &pstate->materials[0];
+			float4x4 player_translation = float4x4_translation(pstate->player.position);
+			float4x4 player_rotation_x = float4x4_rotation(pstate->player.rotation.x, FLOAT3_X);
+			float4x4 player_rotation_y = float4x4_rotation(pstate->player.rotation.y, FLOAT3_Y);
+			float4x4 player_rotation_z = float4x4_rotation(pstate->player.rotation.z, FLOAT3_Z);
+			float4x4 player_rotation = float4x4_multiply(player_rotation_z, float4x4_multiply(player_rotation_y, player_rotation_x));
+			float4x4 player_transform = float4x4_multiply(player_translation, player_rotation);
+			Material *default_mat = &pstate->assets.materials[0];
 			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->unlit_shader, 1);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, 0, sizeof(MaterialParameters), pstate->scene_uniform_buffer);
-			for (uint32_t index = 0; index < 5; ++index) {
-				RhiTexture texture = pstate->white;
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, default_mat->offset, default_mat->size, default_mat->uniform_buffer);
+			for (uint32_t texture_index = 0; texture_index < default_mat->texture_count; ++texture_index) {
+				RhiTexture texture = default_mat->textures[texture_index];
+				if (texture.id == 0)
+					texture = pstate->white;
+
 				vulkan_uniformset_bind_texture(
 					pstate->context,
 					group,
-					1 + index,
+					1 + texture_index,
 					texture,
 					pstate->linear_sampler);
 			}
+			vulkan_uniformset_bind(pstate->context, group);
 
 			vulkan_push_constants(pstate->context, 0, sizeof(player_transform), player_transform.elements);
 
 			Mesh *mesh = &pstate->player.mesh;
-			vulkan_buffer_bind_vertex(pstate->context, pstate->scene_geometry_buffer, mesh->vertex_offset);
+			vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
 			if (mesh->index_count > 0) {
-				vulkan_buffer_bind_index(pstate->context, pstate->scene_geometry_buffer, mesh->index_offset);
+				vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
 				vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 			} else
 				vulkan_renderer_draw(pstate->context, mesh->vertex_count);
-			vulkan_renderer_draw(pstate->context, pstate->player.mesh.vertex_count);
 
 			vulkan_shader_bind(pstate->context, pstate->terrain_shader, pipeline);
 			float4x4 transform = float4x4_translation((float3){ 0.0f, 0.0f, 0.0f });
@@ -807,10 +856,10 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 		window_set_cursor_locked(pstate->display, false);
 
 	// State transition
-	if (pstate->selected_node && input_key_pressed(KEY_CODE_G)) {
+	if (pstate->selected_entity && input_key_pressed(KEY_CODE_G)) {
 		editor->grab = !editor->grab;
 		if (editor->grab) {
-			editor->cached_selection_transform = pstate->nodes[pstate->selected_node - 1].transform;
+			editor->cached_selection_transform = pstate->transforms[pstate->selected_entity];
 			editor->grab_mouse_position = float2_from_double2(input_mouse_position());
 		}
 	}
@@ -824,7 +873,7 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 		float3 camera_right = float3_cross(camera->up, camera_forward);
 		float3 camera_up = float3_cross(camera_right, camera_forward);
 
-		SceneNode *node = &pstate->nodes[pstate->selected_node - 1];
+		TransformComponent *transform = &pstate->transforms[pstate->selected_entity];
 
 		float2 screen_size = float2_from_uint2(window_size_pixel(pstate->display));
 
@@ -843,15 +892,15 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 		float3 move_x = float3_scale(camera_right, offset.x * units_per_pixel.x);
 		float3 move_y = float3_scale(camera_up, -offset.y * units_per_pixel.y);
 
-		node->transform.position = float3_add(
+		transform->position = float3_add(
 			float3_add(editor->cached_selection_transform.position, move_x),
 			move_y);
 
-		float4x4 translation = float4x4_translation(node->transform.position);
-		float4x4 scale = float4x4_scaling(node->transform.scale);
+		float4x4 translation = float4x4_translation(transform->position);
+		float4x4 scale = float4x4_scaling(transform->scale);
 		float4x4 rotation = float4x4_identity();
 
-		node->transform.global = float4x4_multiply(translation, float4x4_multiply(rotation, scale));
+		transform->global = float4x4_multiply(translation, float4x4_multiply(rotation, scale));
 
 		if (input_mouse_pressed(MOUSE_BUTTON_LEFT))
 			editor->grab = false;
@@ -859,10 +908,7 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 		if (input_mouse_pressed(MOUSE_BUTTON_RIGHT)) {
 			editor->grab = false;
 
-			SceneNode *node = &pstate->nodes[pstate->selected_node - 1];
-			Transform3D *transform = &node->transform;
-
-			node->transform = editor->cached_selection_transform;
+			*transform = editor->cached_selection_transform;
 		}
 
 	} else {
@@ -872,7 +918,7 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 			vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &node_index);
 			LOG_INFO("Node index = %d", node_index);
 
-			pstate->selected_node = node_index;
+			pstate->selected_entity = node_index;
 		}
 
 		if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
@@ -941,21 +987,23 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 		PipelineDesc pipeline = DEFAULT_PIPELINE;
 		vulkan_shader_bind(pstate->context, pstate->picker_shader, pipeline);
 
-		uint32_t node_count = arena_array_count(pstate->nodes);
-		for (uint32_t node_index = 0; node_index < arena_array_count(pstate->nodes); ++node_index) {
-			SceneNode *node = &pstate->nodes[node_index];
-			float4x4 transform = node->transform.global;
+		for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
+			if (pstate->has_transform[entity] == false ||
+				pstate->has_mesh[entity] == false)
+				continue;
 
-			uint32_t id = node_index + 1;
-			vulkan_push_constants(pstate->context, sizeof(float4x4), sizeof(uint32_t), &id);
+			TransformComponent transform = pstate->transforms[entity];
+			MeshComponent mesh_group = pstate->meshes[entity];
 
-			for (uint32_t index = 0; index < node->mesh_count; ++index) {
-				Mesh *mesh = &pstate->meshes[node->mesh_index + index];
-				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform);
+			vulkan_push_constants(pstate->context, sizeof(float4x4), sizeof(uint32_t), &entity);
 
-				vulkan_buffer_bind_vertex(pstate->context, pstate->scene_geometry_buffer, mesh->vertex_offset);
+			for (uint32_t mesh_index = 0; mesh_index < mesh_group.mesh_count; ++mesh_index) {
+				Mesh *mesh = &pstate->assets.meshes[mesh_group.mesh_index + mesh_index];
+				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform.global);
+
+				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
 				if (mesh->index_count > 0) {
-					vulkan_buffer_bind_index(pstate->context, pstate->scene_geometry_buffer, mesh->index_offset);
+					vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
 					vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 				} else
 					vulkan_renderer_draw(pstate->context, mesh->vertex_count);
@@ -976,17 +1024,20 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 		PipelineDesc pipeline = DEFAULT_PIPELINE;
 		vulkan_shader_bind(pstate->context, pstate->line_shader, pipeline);
 
-		if (pstate->selected_node) {
-			SceneNode *node = &pstate->nodes[pstate->selected_node - 1];
+		if (pstate->selected_entity) {
+			TransformComponent transform = pstate->transforms[pstate->selected_entity];
+			MeshComponent mesh_group = pstate->meshes[pstate->selected_entity];
 
-			uint32_t line_segment_count = 12 * node->mesh_count;
+			uint32_t line_segment_count = 12 * mesh_group.mesh_count;
 			size_t line_segment_size = 2 * sizeof(float4);
 			size_t size = line_segment_count * line_segment_size;
-			size_t offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, size);
 
-			for (uint32_t index = 0; index < node->mesh_count; ++index) {
-				Mesh *mesh = &pstate->meshes[node->mesh_index + index];
-				Interval3D *bounds = &pstate->bounds[node->mesh_index + index];
+			RhiBuffer buffer = pstate->frame_storage_buffer;
+			size_t offset = vulkan_buffer_push(pstate->context, buffer, size, NULL);
+
+			for (uint32_t index = 0; index < mesh_group.mesh_count; ++index) {
+				Mesh *mesh = &pstate->assets.meshes[mesh_group.mesh_index + index];
+				Interval3D *bounds = &pstate->assets.bounds[mesh_group.mesh_index + index];
 
 				float3 bounding_box_size = float3_subtract(bounds->max, bounds->min);
 				float3 min = float3_subtract(bounds->min, float3_scale(bounding_box_size, 0.01f));
@@ -1039,11 +1090,10 @@ void editor_update_and_draw(PermanentState *pstate, Editor *editor, float dt) {
 					sizeof(points), points);
 			}
 
-			float4x4 transform = node->transform.global;
-			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform);
+			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform.global);
 
 			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->line_shader, 1);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, offset, size, pstate->frame_storage_buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, offset, size, buffer);
 			vulkan_uniformset_bind(pstate->context, group);
 
 			vulkan_renderer_draw(pstate->context, line_segment_count * 2 * 6);

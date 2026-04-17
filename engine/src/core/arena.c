@@ -12,6 +12,13 @@ Arena scratch_arenas[2] = { 0 };
 
 Arena arena_make(size_t size) { return (Arena){ .base = malloc(size), .capacity = size }; }
 
+Arena *arena_partition(Arena *arena, size_t size) {
+	Arena *sub = arena_push_struct(arena, Arena);
+	sub->base = arena_push(arena, size, 1, true);
+	sub->capacity = size;
+	return sub;
+}
+
 void arena_destroy(Arena *arena) {
 	if (arena->base)
 		free(arena->base);

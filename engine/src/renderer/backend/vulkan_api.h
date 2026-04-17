@@ -51,7 +51,8 @@ ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferUsageFlags
 ENGINE_API bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
 
 // NOTE: returns raw offset
-ENGINE_API size_t vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer, size_t size);
+ENGINE_API size_t vulkan_buffer_push(VulkanContext *context, RhiBuffer buffer, size_t size, void *data);
+ENGINE_API size_t vulkan_buffer_offset(VulkanContext *context, RhiBuffer);
 ENGINE_API bool vulkan_buffer_reset(VulkanContext *context, RhiBuffer buffer);
 
 ENGINE_API bool vulkan_buffer_write(VulkanContext *context, RhiBuffer buffer, size_t offset, size_t size, void *data);

@@ -39,8 +39,8 @@ typedef struct {
 
 #define MAX_POINT_LIGHTS 10
 typedef struct {
-	Matrix4f view;
-	Matrix4f projection;
+	float4x4 view;
+	float4x4 projection;
 	Light directional_light;
 	Light lights[MAX_POINT_LIGHTS];
 	float32x3 camera_position;

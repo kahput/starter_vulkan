@@ -19,15 +19,15 @@ typedef struct asset_library {
 	ArenaTrie trie;
 
 	uint32_t tracked_file_count;
-} AssetTracker;
+} AssetLibrary;
 
-static inline AssetTracker asset_tracker_make(Arena *arena) { return (AssetTracker){ .arena = arena, .trie = arena_trie_make(arena) }; }
+static inline AssetLibrary asset_library_make(Arena *arena) { return (AssetLibrary){ .arena = arena, .trie = arena_trie_make(arena) }; }
 
-ENGINE_API bool asset_tracker_track_directory(AssetTracker *tracker, String directory);
-ENGINE_API bool asset_tracker_track_file(AssetTracker *tracker, String file_path);
+ENGINE_API bool asset_library_track_directory(AssetLibrary *tracker, String directory);
+ENGINE_API bool asset_library_track_file(AssetLibrary *tracker, String file_path);
 
-ENGINE_API UUID asset_tracker_request_shader(AssetTracker *tracker, String key);
-ENGINE_API UUID asset_tracker_request_model(AssetTracker *tracker, String key);
-ENGINE_API UUID asset_tracker_request_image(AssetTracker *tracker, String key);
+ENGINE_API UUID asset_library_request_shader(AssetLibrary *tracker, String key);
+ENGINE_API UUID asset_library_request_mesh(AssetLibrary *tracker, String key);
+ENGINE_API UUID asset_library_request_image(AssetLibrary *tracker, String key);
 
-bool asset_tracker_clear(AssetTracker *tracker);
+bool asset_library_clear(AssetLibrary *tracker);

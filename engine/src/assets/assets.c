@@ -22,7 +22,7 @@ static const char *extensions[ASSET_TYPE_COUNT][8] = {
 
 static AssetType file_extension_to_asset_type(String extension);
 
-bool asset_tracker_track_directory(AssetTracker *tracker, String directory) {
+bool asset_library_track_directory(AssetLibrary *tracker, String directory) {
 	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
 
 	StringList file_list = filesystem_list_files(scratch.arena, directory, true);
@@ -31,19 +31,19 @@ bool asset_tracker_track_directory(AssetTracker *tracker, String directory) {
 
 	logger_indent();
 	while (file) {
-		asset_tracker_track_file(tracker, file->string);
+		asset_library_track_file(tracker, file->string);
 		count++;
 
 		file = file->next;
 	}
 	logger_dedent();
 
-	LOG_INFO("AssetTracker: %d files tracked", count);
+	LOG_INFO("AssetLibrary: %d files tracked", count);
 	arena_scratch_end(scratch);
 	return true;
 }
 
-bool asset_tracker_track_file(AssetTracker *tracker, String file_path) {
+bool asset_library_track_file(AssetLibrary *tracker, String file_path) {
 	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
 	String name = string_copy(scratch.arena, stringpath_filename(file_path));
 	AssetEntry *entry = arena_trie_push(&tracker->trie, span_string(name), AssetEntry);
@@ -64,7 +64,7 @@ bool asset_tracker_track_file(AssetTracker *tracker, String file_path) {
 	return false;
 }
 
-UUID asset_tracker_request_shader(AssetTracker *tracker, String key) {
+UUID asset_library_request_shader(AssetLibrary *tracker, String key) {
 	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
 
 	String vertex_shader_key = string_replace(scratch.arena, key, S("glsl"), S("vert.spv"));
@@ -89,37 +89,37 @@ UUID asset_tracker_request_shader(AssetTracker *tracker, String key) {
 	return vs_entry->id;
 }
 
-UUID asset_tracker_request_model(AssetTracker *tracker, String key) {
+UUID asset_library_request_model(AssetLibrary *tracker, String key) {
 	AssetEntry *entry = arena_trie_find(&tracker->trie, span_string(key), AssetEntry);
 	if (entry == NULL)
 		return 0;
 
 	if (entry->type != ASSET_TYPE_GEOMETRY) {
-		LOG_ERROR("AssetTracker: Requested asset '%.*s' is type %d", SARG(key), entry->type);
+		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", SARG(key), entry->type);
 		return 0;
 	}
 
 	return entry->id;
 }
 
-UUID asset_tracker_request_image(AssetTracker *tracker, String key) {
+UUID asset_library_request_image(AssetLibrary *tracker, String key) {
 	AssetEntry *entry = arena_trie_find(&tracker->trie, span_string(key), AssetEntry);
 	if (entry == NULL) {
-		LOG_WARN("AssetTracker: No image '%.*s'", SARG(key));
+		LOG_WARN("AssetLibrary: No image '%.*s'", SARG(key));
 		return 0;
 	}
 
 	if (entry->type != ASSET_TYPE_IMAGE) {
-		LOG_ERROR("AssetTracker: Requested asset '%.*s' is type %d", SARG(key), entry->type);
+		LOG_ERROR("AssetLibrary: Requested asset '%.*s' is type %d", SARG(key), entry->type);
 		return 0;
 	}
 
 	return entry->id;
 }
 
-bool asset_tracker_clear_cache(AssetTracker *tracker) {
+bool asset_library_clear_cache(AssetLibrary *tracker) {
 	arena_reset(tracker->arena);
-	LOG_INFO("AssetTracker: Cache cleared. All tracking lost.");
+	LOG_INFO("AssetLibrary: Cache cleared. All tracking lost.");
 
 	return true;
 }

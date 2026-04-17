@@ -9,15 +9,11 @@
 
 typedef struct {
 	float elements[4 * 4];
-} Matrix4f;
-STATIC_ASSERT(sizeof(Matrix4f) == (4 * 4) * sizeof(float));
-
+} float4x4;
 typedef float32x2 float2;
 typedef float32x3 float3;
-typedef float32x3 Ray3f;
+typedef float32x3 ray3;
 typedef float32x4 float4;
-
-typedef Matrix4f float4x4;
 
 #define FLOAT_MAX 3.40282347e+38F
 #define FLOAT_MIN -FLOAT_MAX
@@ -27,20 +23,14 @@ typedef Matrix4f float4x4;
 #define FLOAT3_Z (float3){ 0.0f, 0.0f, 1.0f }
 #define FLOAT3_ONE (float3){ 1.0f, 1.0f, 1.0f }
 
-static inline float *float4_elements(float4 *v) { return (float *)v; }
-static inline float *float3_elements(float3 *v) { return (float *)v; }
-static inline float *float2_elements(float2 *v) { return (float *)v; }
-
 static inline float deg2radf(float degree) { return degree * (C_PIf / 180.f); }
 static inline float rad2degf(float radians) {
 	return radians * (180.0f / C_PIf);
 }
 
 static inline float clampf(float value, float min, float max) {
-	return value < min ? min : value > max ? max
-										   : value;
+	return value < min ? min : (value > max ? max : value);
 }
-
 static inline float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
 static inline float lerpf(float start, float end, float t) { return start + (end - start) * t; }
 static inline float minf(float a, float b) { return a < b ? a : b; }
@@ -92,25 +82,25 @@ ENGINE_API float3 float3_rotate(float3 v, float angle, float3 axis);
 
 // float float4_dot_product(Vector4f v);
 
-ENGINE_API Matrix4f float4x4_identity(void);
-ENGINE_API Matrix4f float4x4_multiply(Matrix4f lhs, Matrix4f rhs);
+ENGINE_API float4x4 float4x4_identity(void);
+ENGINE_API float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs);
 
-ENGINE_API Matrix4f float4x4_translate(Matrix4f matrix, float3 translation);
-ENGINE_API Matrix4f float4x4_rotate(Matrix4f matrix, float angle_radians, float3 axis);
-ENGINE_API Matrix4f float4x4_scale(Matrix4f matrix, float3 scale);
+ENGINE_API float4x4 float4x4_translate(float4x4 matrix, float3 translation);
+ENGINE_API float4x4 float4x4_rotate(float4x4 matrix, float angle_radians, float3 axis);
+ENGINE_API float4x4 float4x4_scale(float4x4 matrix, float3 scale);
 
-ENGINE_API Matrix4f float4x4_translation(float3 translation);
-ENGINE_API Matrix4f float4x4_rotation(float angle, float3 axis);
-ENGINE_API Matrix4f float4x4_scaling(float3 scale);
+ENGINE_API float4x4 float4x4_translation(float3 translation);
+ENGINE_API float4x4 float4x4_rotation(float angle, float3 axis);
+ENGINE_API float4x4 float4x4_scaling(float3 scale);
 
-ENGINE_API Matrix4f float4x4_perspective(float fovy_radians, float aspect,
+ENGINE_API float4x4 float4x4_perspective(float fovy_radians, float aspect,
 	float near_z, float far_z);
-ENGINE_API Matrix4f float4x4_orthographic(float left, float right, float top,
+ENGINE_API float4x4 float4x4_orthographic(float left, float right, float top,
 	float bottom, float near, float far);
 
-ENGINE_API Matrix4f float4x4_lookat(float3 eye, float3 center, float3 up);
+ENGINE_API float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
 
-ENGINE_API void float4x4_print(Matrix4f m);
+ENGINE_API void float4x4_print(float4x4 m);
 ENGINE_API void float4_print(float4 v);
 ENGINE_API void float3_print(float3 v);
 
