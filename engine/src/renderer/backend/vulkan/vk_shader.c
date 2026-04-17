@@ -264,7 +264,8 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 	memory_zero(&key, sizeof(key));
 	key = (PipelineStateKey){
 		.desc = desc,
-		.depth_format = pass->depth_format
+		.depth_format = pass->depth_format,
+		.sample_count = pass->sample_count,
 	};
 
 	for (uint32_t index = 0; pass->color_formats[index] && index < countof(key.color_formats); ++index)

@@ -61,7 +61,7 @@ VulkanContext *vulkan_renderer_make(Arena *arena, struct window *display) {
 	if (vulkan_buffer_make_internal(
 			context, MiB(256),
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0,
 			&context->staging_buffer) == false)
 		return NULL;
 	vulkan_buffer_map(context, &context->staging_buffer);
@@ -110,9 +110,8 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 	}
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
-	for (uint32_t color_index = 0; color_index < MAX_COLOR_ATTACHMENTS; ++color_index)
-		vulkan_image_destroy_internal(context, &context->msaa_colors[color_index]);
-	vulkan_image_destroy_internal(context, &context->msaa_depth);
+	for (uint32_t target_index = 0; target_index < countof(context->frame_targets); ++target_index)
+		vulkan_image_destroy_internal(context, &context->frame_targets[target_index]);
 
 	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
 		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[frame_index], NULL);
@@ -234,6 +233,7 @@ bool vulkan_frame_end(VulkanContext *context) {
 	// NOTE: All bound resources are unbound after frame ends
 	context->bound_shader = NULL;
 	context->command_buffer = NULL;
+	context->frame_target_count = 0;
 
 	return true;
 }

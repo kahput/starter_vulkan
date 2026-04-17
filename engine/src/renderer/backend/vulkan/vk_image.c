@@ -312,31 +312,31 @@ bool vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buff
 	return true;
 }
 
-bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect) {
+bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *image, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect) {
 	bool recreate = false;
 
-	if (msaa->info.extent.width != extent.width)
+	if (image->info.extent.width != extent.width)
 		recreate = true;
-	if (msaa->info.extent.height != extent.height)
+	if (image->info.extent.height != extent.height)
 		recreate = true;
-	if (msaa->info.samples != sample_count)
+	if (image->info.samples != sample_count)
 		recreate = true;
-	if (msaa->info.format != format)
+	if (image->info.format != format)
 		recreate = true;
 
 	if (recreate == false)
 		return true;
 
-	vulkan_image_destroy_internal(context, msaa);
+	vulkan_image_destroy_internal(context, image);
 
 	VkImageUsageFlags usage =
 		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
-		? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-		: VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+			? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+			: VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 	VkImageLayout layout =
 		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
-		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+			: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	if (vulkan_image_make_internal(
 			context, sample_count,
@@ -344,15 +344,15 @@ bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa,
 			format, VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | usage, false,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			msaa) == false) {
+			image) == false) {
 		LOG_ERROR("Vulkan: failed to create MSAA color scratch image, aborting %s", __func__);
 		return false;
 	}
 
-	if (!vulkan_imageview_make(context, VK_IMAGE_VIEW_TYPE_2D, aspect, msaa)) {
+	if (!vulkan_imageview_make(context, VK_IMAGE_VIEW_TYPE_2D, aspect, image)) {
 		LOG_ERROR("Vulkan: failed to create MSAA color scratch image view, aborting %s", __func__);
 		return false;
 	}
-	vulkan_image_transition_auto(msaa, context->command_buffers[context->current_frame], layout);
+	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], layout);
 	return true;
 }

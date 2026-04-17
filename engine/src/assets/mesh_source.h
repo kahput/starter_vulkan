@@ -30,11 +30,13 @@ enum {
 	CUBE_FACE_TOP,
 	CUBE_FACE_BOTTOM,
 	CUBE_FACE_FRONT,
-	CUBE_FACE_BACK
+	CUBE_FACE_BACK,
+	CUBE_FACE_COUNT,
 };
 
 // MeshSource mesh_source_cube_create(Arena *arena);
-ENGINE_API MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z, uint8_t face_index);
+ENGINE_API MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, uint8_t face_index);
+ENGINE_API MeshSource mesh_source_cube(Arena *arena, float x, float y, float z);
 
 typedef struct mesh_source_node {
 	struct mesh_source_node *next;

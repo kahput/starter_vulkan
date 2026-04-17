@@ -84,7 +84,9 @@ bool vulkan_texture_read_pixel(VulkanContext *context, RhiTexture image_handle, 
 
 	vulkan_image_transition_auto(image, command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 	vulkan_image_to_buffer(context, command_buffer, image, buffer, x, y, 1, 1);
-	vulkan_image_transition_auto(image, command_buffer, cached);
+
+	if (cached != VK_IMAGE_LAYOUT_UNDEFINED)
+		vulkan_image_transition_auto(image, command_buffer, cached);
 
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 
@@ -133,8 +135,8 @@ bool vulkan_texture_prepare_attachment(VulkanContext *context, RhiTexture image_
 	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
-		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+								 ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+								 : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
 
@@ -145,8 +147,8 @@ bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture image_hand
 	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
-		? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+								 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+								 : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
 	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
 
@@ -195,8 +197,8 @@ RhiSampler vulkan_sampler_make(VulkanContext *context, SamplerDesc description) 
 		.mipLodBias = 0.0f,
 		.anisotropyEnable = description.anisotropy_enable,
 		.maxAnisotropy = description.anisotropy_enable
-			? context->device.properties.limits.maxSamplerAnisotropy
-			: 0.0f,
+						   ? context->device.properties.limits.maxSamplerAnisotropy
+						   : 0.0f,
 		.compareEnable = VK_FALSE,
 		.compareOp = VK_COMPARE_OP_ALWAYS,
 		.minLod = 0.0f,

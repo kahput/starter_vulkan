@@ -179,7 +179,7 @@ void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAsp
 void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
 void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout);
 
-bool vulkan_image_msaa_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect);
+bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect);
 
 bool vulkan_command_pool_create(VulkanContext *context);
 bool vulkan_command_buffer_create(VulkanContext *context);
@@ -204,6 +204,7 @@ typedef struct {
 	PipelineDesc desc;
 	VkFormat color_formats[4];
 	VkFormat depth_format;
+    VkSampleCountFlags sample_count;
 } PipelineStateKey;
 
 typedef struct vulkan_pipeline {
@@ -255,13 +256,14 @@ struct vulkan_context {
 
 	VulkanSwapchain swapchain;
 
-	VulkanImage msaa_colors[MAX_COLOR_ATTACHMENTS];
-	VulkanImage msaa_depth;
-
 	VkCommandPool graphics_command_pool, transfer_command_pool;
 	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
 	VkPushConstantRange global_range;
+
+	// Temporary frame targets
+	VulkanImage frame_targets[16];
+	uint32_t frame_target_count;
 
 	VulkanShader *shader_pool;
 	VulkanBuffer *buffer_pool;

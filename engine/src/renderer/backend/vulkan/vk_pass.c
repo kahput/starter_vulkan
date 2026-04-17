@@ -40,13 +40,17 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
 
 			if (use_msaa) {
+				ASSERT(context->frame_target_count < countof(context->frame_targets));
+				VulkanImage *target = &context->frame_targets[context->frame_target_count++];
+
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 				dst->resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-				ASSERT(
-					vulkan_image_msaa_scratch_ensure(context, &context->msaa_colors[color_index],
-						context->swapchain.extent, context->swapchain.format.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT));
 
-				dst->imageView = context->msaa_colors[color_index].view;
+				bool result = vulkan_image_scratch_ensure(context, target,
+					context->swapchain.extent, context->swapchain.format.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT);
+				ASSERT(result);
+
+				dst->imageView = target->view;
 				dst->resolveImageView = context->swapchain.images.views[context->image_index];
 			} else
 				dst->imageView = context->swapchain.images.views[context->image_index];
@@ -64,14 +68,17 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 			extent.height = MIN(extent.height, image->height);
 
 			if (use_msaa) {
+				ASSERT(context->frame_target_count < countof(context->frame_targets));
+				VulkanImage *target = &context->frame_targets[context->frame_target_count++];
+
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 				dst->resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-				ASSERT(vulkan_image_msaa_scratch_ensure(
-					context, &context->msaa_colors[color_index],
+				ASSERT(vulkan_image_scratch_ensure(
+					context, target,
 					extent, image->info.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT));
 
-				dst->imageView = context->msaa_colors[color_index].view;
+				dst->imageView = target->view;
 				dst->resolveImageView = image->view;
 			} else {
 				dst->imageView = image->view;
@@ -80,7 +87,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	}
 
 	VkRenderingAttachmentInfo depth_info = { 0 };
-	if (desc.use_depth) {
+	if (desc.use_depth && desc.depth_attachment.texture.id == 0) {
+		// Temporary depth buffer
 		context->bound_pass.depth_format = context->device.depth_format;
 
 		depth_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -88,10 +96,13 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		depth_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		depth_info.clearValue.depthStencil.depth = 1.0f;
-		vulkan_image_msaa_scratch_ensure(
-			context, &context->msaa_depth,
+
+		ASSERT(context->frame_target_count < countof(context->frame_targets));
+		VulkanImage *target = &context->frame_targets[context->frame_target_count++];
+		vulkan_image_scratch_ensure(
+			context, target,
 			extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
-		depth_info.imageView = context->msaa_depth.view;
+		depth_info.imageView = target->view;
 	}
 	ASSERT_MESSAGE(desc.depth_attachment.texture.id == 0, "Custom depth texture not implemented");
 

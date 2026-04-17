@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z, uint8_t orientation) {
+MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, uint8_t orientation) {
 	MeshSource rv = {
 		.vertex_size = sizeof(Vertex),
 		.vertex_count = 6,
@@ -68,11 +68,20 @@ MeshSource mesh_source_cube_face_create(Arena *arena, float x, float y, float z,
 		vertices[face_index].position = positions[index];
 		vertices[face_index].normal = normals[orientation];
 		vertices[face_index].uv = uvs[face_index];
-        vertices[face_index].tangent = (float4){ 0 };
-        vertices[face_index].color = (float4){ 0 };
+		vertices[face_index].tangent = (float4){ 0 };
+		vertices[face_index].color = (float4){ 0 };
 	}
 
 	return rv;
+}
+
+MeshSource mesh_source_cube(Arena *arena, float x, float y, float z) {
+	MeshSourceList list = { 0 };
+	for (uint32_t face_index = 0; face_index < CUBE_FACE_COUNT; ++face_index) {
+		mesh_source_list_push(arena, &list, mesh_source_cube_face(arena, x, y, z, face_index));
+	}
+
+	return mesh_source_list_flatten(arena, &list);
 }
 
 void mesh_source_list_push(Arena *arena, MeshSourceList *list, MeshSource source) {
@@ -112,45 +121,44 @@ MeshSource mesh_source_list_flatten(Arena *arena, MeshSourceList *list) {
 	if (list->count == 0)
 		return rv;
 
-    uint8_t *vertices = arena_push_count(arena, list->total_vertices_size, uint8_t);
-    size_t vertices_cursor = 0;
-    
-    uint8_t *indices = arena_push_count(arena, list->total_indices_size, uint8_t);
-    size_t indices_cursor = 0;
+	uint8_t *vertices = arena_push_count(arena, list->total_vertices_size, uint8_t);
+	size_t vertices_cursor = 0;
+
+	uint8_t *indices = arena_push_count(arena, list->total_indices_size, uint8_t);
+	size_t indices_cursor = 0;
 
 	MeshSourceNode *node = list->first;
 	ASSERT(node);
 	do {
 		ASSERT(node->mesh.vertex_size == list->vertex_size);
-        size_t vertices_size = node->mesh.vertex_count * node->mesh.vertex_size;
+		size_t vertices_size = node->mesh.vertex_count * node->mesh.vertex_size;
 		memory_copy(vertices + vertices_cursor, node->mesh.vertices, vertices_size);
 
-        if (list->total_indices_size > 0) {
+		if (list->total_indices_size > 0) {
+			ASSERT(node->mesh.index_size == list->index_size);
+			size_t indices_size = node->mesh.index_count * node->mesh.index_size;
+			memory_copy(indices + indices_cursor, node->mesh.indices, indices_size);
 
-            ASSERT(node->mesh.index_size == list->index_size);
-            size_t indices_size = node->mesh.index_count * node->mesh.index_size;
-            memory_copy(indices + indices_cursor, node->mesh.indices, indices_size);
+			for (uint32_t byte_offset = 0; byte_offset < node->mesh.index_count * node->mesh.index_size; byte_offset += node->mesh.index_size) {
+				uint8_t *submesh_indices = indices + indices_cursor;
+				switch (node->mesh.index_size) {
+					case 1:
+						submesh_indices[byte_offset] += vertices_cursor / rv.vertex_size;
+						break;
+					case 2:
+						*(uint16_t *)(submesh_indices + byte_offset) += vertices_cursor / rv.vertex_size;
+						break;
+					case 4:
+						*(uint32_t *)(submesh_indices + byte_offset) += vertices_cursor / rv.vertex_size;
+						break;
+					default:
+						ASSERT_MESSAGE(false, "Unsupported index size");
+						break;
+				}
+			}
 
-            for (uint32_t byte_offset = 0; byte_offset < node->mesh.index_count * node->mesh.index_size; byte_offset += node->mesh.index_size) {
-                uint8_t *submesh_indices = indices + indices_cursor;
-                switch (node->mesh.index_size) {
-                    case 1:
-                        submesh_indices[byte_offset] += vertices_cursor / rv.vertex_size;
-                        break;
-                    case 2:
-                        *(uint16_t *)(submesh_indices + byte_offset) += vertices_cursor / rv.vertex_size;
-                        break;
-                    case 4:
-                        *(uint32_t *)(submesh_indices + byte_offset) += vertices_cursor / rv.vertex_size;
-                        break;
-                    default:
-                        ASSERT_MESSAGE(false, "Unsupported index size");
-                        break;
-                }
-            }
-
-            indices_cursor += indices_size;
-        }
+			indices_cursor += indices_size;
+		}
 
 		vertices_cursor += vertices_size;
 
