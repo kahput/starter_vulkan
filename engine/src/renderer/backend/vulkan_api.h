@@ -16,7 +16,7 @@ typedef struct vulkan_context VulkanContext;
 
 VulkanContext *vulkan_renderer_make(Arena *arena, struct window *display);
 void vulkan_renderer_destroy(VulkanContext *context);
-bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height);
+ENGINE_API bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_width, uint32_t new_height);
 
 ENGINE_API bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height);
 ENGINE_API bool vulkan_frame_end(VulkanContext *context);

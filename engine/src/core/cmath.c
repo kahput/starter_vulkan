@@ -333,11 +333,11 @@ float4x4 float4x4_orthographic(float left, float right, float bottom, float top,
 
 	result.elements[0] = 2.0f / (right - left);
 	result.elements[5] = 2.0f / (top - bottom);
-	result.elements[10] = -2.0f / (far - near);
+	result.elements[10] = -1.0f / (far - near);
 
 	result.elements[12] = -(right + left) / (right - left);
 	result.elements[13] = -(top + bottom) / (top - bottom);
-	result.elements[14] = -(far + near) / (far - near);
+	result.elements[14] = -(near) / (far - near);
 	result.elements[15] = 1.0f;
 
 	return result;

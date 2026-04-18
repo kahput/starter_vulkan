@@ -154,7 +154,11 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 	WindowResizeEvent *resize_event = event;
 	PermanentState *pstate = receiver;
 
+	vulkan_renderer_on_resize(pstate->context, resize_event->width, resize_event->height);
 	vulkan_texture_resize(pstate->context, pstate->picker_target, resize_event->width, resize_event->height);
+	for (uint32_t index = 0; index < countof(pstate->main_color_targets); ++index)
+		vulkan_texture_resize(pstate->context, pstate->main_color_targets[index], resize_event->width, resize_event->height);
+
 	return false;
 }
 
@@ -254,6 +258,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		ImageSource *image_sources = NULL;
 		MaterialSource *material_sources = NULL;
 		MeshSource *mesh_sources = NULL;
+
 		// TODO: Bake these into MeshSource?
 		uint32_t *mesh_to_material = NULL;
 		Interval3 *bounding_boxes = NULL;
@@ -456,7 +461,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
 		arena_darray_put(scratch.arena, bounding_boxes, Interval3, quad_bounds);
 
-		// Upload
+		// Prep Upload
 		pstate->assets.meshes = arena_push_count(&pstate->arena, arena_array_count(mesh_sources), Mesh);
 		for (uint32_t mesh_index = 0; mesh_index < arena_array_count(mesh_sources); ++mesh_index) {
 			Mesh *mesh = &pstate->assets.meshes[mesh_index];
@@ -548,12 +553,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			geometry_upload_arena->offset, geometry_upload_arena->base);
 
 		pstate->game_camera = (Camera){
-			.position = { 0.0f, 20.0f, 30.0f },
+			.position = { 0.0f, 20, 30 },
 			.up = { 0.0f, 1.0f, 0.0f },
 			.target = { 0.0f, 0.0f, 0.0f },
 			.fov = 45.f,
 
-			.projection = CAMERA_PROJECTION_PERSPECTIVE
+			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC
 		};
 		pstate->target_azimuth = C_PIf * 0.5f;
 		pstate->target_theta = C_PIf / 3.f;
@@ -611,82 +616,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			Camera *camera = &pstate->game_camera;
 			TransformComponent *transform = &pstate->transforms[pstate->player];
 
-			float spring_length = 16.f;
-			float move_speed = 5.f;
-			float camera_sensitivity = 0.001f;
-
-			float yaw_delta = input_mouse_dx() * camera_sensitivity;
-			float pitch_delta = input_mouse_dy() * camera_sensitivity;
-
-			pstate->target_azimuth = fmodf(pstate->target_azimuth + yaw_delta, C_PIf * 2.f);
-			if (pstate->target_azimuth < 0)
-				pstate->target_azimuth += C_PIf * 2.f;
-
-			pstate->target_theta = clampf(pstate->target_theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
-
-			float3 to_camera = float3_subtract(camera->position, transform->position);
-
-			float radius = float3_length(to_camera);
-			if (radius < EPSILON)
-				radius = EPSILON;
-
-			float current_theta = acosf(to_camera.y / radius);
-			float current_azimuth = atan2f(to_camera.z, to_camera.x); // [-pi, pi]
-
-			if (current_azimuth < 0)
-				current_azimuth += C_PIf * 2.f;
-
-			float difference = pstate->target_azimuth - current_azimuth;
-			if (difference > C_PI)
-				difference -= C_PI * 2.f;
-			if (difference < -C_PI)
-				difference += C_PI * 2.f;
-
-			float lerp = 10.0f * dt;
-
-			current_azimuth += lerp * difference;
-			current_theta += lerp * (pstate->target_theta - current_theta);
-
-			camera->position = (float3){
-				(spring_length * sinf(current_theta) * cosf(current_azimuth)) + transform->position.x,
-				spring_length * cosf(current_theta) + transform->position.y,
-				(spring_length * sinf(current_theta) * sinf(current_azimuth)) + transform->position.z,
-			};
-
-			float3 camera_position = camera->position;
-			camera_position.y = 0.0f;
-			float3 camera_target = camera->target;
-			camera_target.y = 0.0f;
-
-			float3 forward, right;
-
-			forward = float3_normalize_safe(float3_subtract(camera_target, camera_position), EPSILON);
-
-			right = float3_cross(forward, camera->up);
-			right = float3_normalize_safe(right, EPSILON);
-
-			float3 direction = { 0, 0, 0 };
-
-			// Logic: direction += forward * scalar
-			float forward_input = (float)(input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S));
-			direction = float3_add(direction, float3_scale(forward, forward_input));
-
-			float right_input = (float)(input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A));
-			direction = float3_add(direction, float3_scale(right, right_input));
-
-			if (float3_length(direction) > EPSILON)
-				direction = float3_normalize(direction);
-
-			// Apply movement to player_position (passed by pointer)
-			transform->position = float3_add(transform->position, float3_scale(direction, move_speed * dt));
-
-			float4x4 t = float4x4_translation(transform->position);
-			float4x4 s = float4x4_scaling(transform->scale);
-			transform->global = float4x4_multiply(t, s); // rotation is identity for now
-
-			camera->target.x = transform->position.x;
-			camera->target.y = transform->position.y;
-			camera->target.z = transform->position.z;
 		} break;
 
 		case GAME_STATE_EDITOR: {
@@ -700,7 +629,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			window_set_cursor_locked(context->display, false);
 			pstate->camera = &pstate->editor.camera;
 		} else {
-			window_set_cursor_locked(context->display, true);
+			/* window_set_cursor_locked(context->display, true); */
 			pstate->camera = &pstate->game_camera;
 		}
 	}
@@ -709,7 +638,18 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	if (vulkan_frame_begin(pstate->context, window_size.x, window_size.y)) {
 		Camera *camera = pstate->camera;
 
-		float4x4 projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
+		float4x4 projection = float4x4_identity();
+		if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
+			projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
+		} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
+			float ortho_size = 96.0f;
+
+			float aspect = window_size.x / window_size.y;
+			projection = float4x4_orthographic(
+				-window_size.x / ortho_size, window_size.x / ortho_size,
+				-window_size.y / ortho_size, window_size.y / ortho_size,
+				0.1f, 1000.f);
+		}
 		projection.elements[5] *= -1;
 		float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
 
