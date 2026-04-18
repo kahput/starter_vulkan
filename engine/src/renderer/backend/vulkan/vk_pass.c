@@ -34,7 +34,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		dst->clearValue.color.float32[3] = src->clear.color.w;
 
 		// Present
-		if (src->texture.id == 0) {
+		if (src->target.id == 0) {
 			context->bound_pass.color_formats[color_index] = context->swapchain.format.format;
 			dst->storeOp = (VkAttachmentStoreOp)src->store;
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
@@ -57,7 +57,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 
 		} else {
 			VulkanImage *image = NULL;
-			VULKAN_GET_OR_RETURN(image, context->image_pool, src->texture, MAX_TEXTURES, true, false);
+			VULKAN_GET_OR_RETURN(image, context->image_pool, src->target, MAX_TEXTURES, true, false);
 			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 			context->bound_pass.color_formats[color_index] = image->info.format;
@@ -87,8 +87,19 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	}
 
 	VkRenderingAttachmentInfo depth_info = { 0 };
-	if (desc.use_depth && desc.depth_attachment.texture.id == 0) {
-		// Temporary depth buffer
+	if (desc.use_depth) {
+		VulkanImage *depth_target = NULL;
+		if (desc.use_depth && desc.depth_attachment.target.id == 0) {
+			depth_target = &context->frame_targets[context->frame_target_count++];
+			ASSERT(context->frame_target_count < countof(context->frame_targets));
+			vulkan_image_scratch_ensure(
+				context, depth_target,
+				extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
+		} else {
+			VULKAN_GET_OR_RETURN(depth_target, context->image_pool, desc.depth_attachment.target, MAX_TEXTURES, true, false);
+			vulkan_image_transition_auto(depth_target, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+		}
+
 		context->bound_pass.depth_format = context->device.depth_format;
 
 		depth_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -97,14 +108,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 		depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		depth_info.clearValue.depthStencil.depth = 1.0f;
 
-		ASSERT(context->frame_target_count < countof(context->frame_targets));
-		VulkanImage *target = &context->frame_targets[context->frame_target_count++];
-		vulkan_image_scratch_ensure(
-			context, target,
-			extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
-		depth_info.imageView = target->view;
+		depth_info.imageView = depth_target->view;
 	}
-	ASSERT_MESSAGE(desc.depth_attachment.texture.id == 0, "Custom depth texture not implemented");
 
 	VkRenderingInfo pass_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,

@@ -6,7 +6,16 @@
 
 #include <string.h>
 
-MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, uint8_t orientation) {
+MeshSource mesh_source_quad3(Arena *arena, float32x3 offset, float size) {
+	MeshSource rv = {
+		.vertex_size = sizeof(Vertex),
+		.vertex_count = 6,
+	};
+
+	return mesh_source_cube_face(arena, offset.x, offset.y, offset.z, size, CUBE_FACE_FRONT);
+}
+
+MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, float size, uint8_t orientation) {
 	MeshSource rv = {
 		.vertex_size = sizeof(Vertex),
 		.vertex_count = 6,
@@ -24,15 +33,17 @@ MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, uint8_
 			  2---3
 	**/
 
+	float half_size = size * 0.5f;
+
 	const float32x3 positions[8] = {
-		[0] = { x + -0.5f, y + 0.5f, z + 0.5f },
-		[1] = { x + 0.5f, y + 0.5f, z + 0.5f },
-		[2] = { x + -0.5f, y + -0.5f, z + 0.5f },
-		[3] = { x + 0.5f, y + -0.5f, z + 0.5f },
-		[4] = { x + 0.5f, y + 0.5f, z + -0.5f },
-		[5] = { x + -0.5f, y + 0.5f, z + -0.5f },
-		[6] = { x + 0.5f, y + -0.5f, z + -0.5f },
-		[7] = { x + -0.5f, y + -0.5f, z + -0.5f }
+		[0] = { x + -half_size, y + half_size, z + half_size },
+		[1] = { x + half_size, y + half_size, z + half_size },
+		[2] = { x + -half_size, y + -half_size, z + half_size },
+		[3] = { x + half_size, y + -half_size, z + half_size },
+		[4] = { x + half_size, y + half_size, z + -half_size },
+		[5] = { x + -half_size, y + half_size, z + -half_size },
+		[6] = { x + half_size, y + -half_size, z + -half_size },
+		[7] = { x + -half_size, y + -half_size, z + -half_size }
 	};
 
 	const float32x3 normals[6] = {
@@ -78,7 +89,7 @@ MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, uint8_
 MeshSource mesh_source_cube(Arena *arena, float x, float y, float z) {
 	MeshSourceList list = { 0 };
 	for (uint32_t face_index = 0; face_index < CUBE_FACE_COUNT; ++face_index) {
-		mesh_source_list_push(arena, &list, mesh_source_cube_face(arena, x, y, z, face_index));
+		mesh_source_list_push(arena, &list, mesh_source_cube_face(arena, x, y, z, 1.0f, face_index));
 	}
 
 	return mesh_source_list_flatten(arena, &list);

@@ -1,3 +1,4 @@
+#include "core/debug.h"
 #include "renderer/r_internal.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
@@ -185,6 +186,9 @@ bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height)
 }
 
 bool vulkan_frame_end(VulkanContext *context) {
+
+	ASSERT(context->bound_pass.state == VULKAN_RESOURCE_STATE_UNINITIALIZED);
+
 	vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
 		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT, 1,

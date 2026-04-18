@@ -35,7 +35,8 @@ enum {
 };
 
 // MeshSource mesh_source_cube_create(Arena *arena);
-ENGINE_API MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, uint8_t face_index);
+ENGINE_API MeshSource mesh_source_quad3(Arena *arena, float32x3 center_offset, float size);
+ENGINE_API MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, float size, uint8_t face_index);
 ENGINE_API MeshSource mesh_source_cube(Arena *arena, float x, float y, float z);
 
 typedef struct mesh_source_node {

@@ -205,7 +205,7 @@ typedef struct sampler_desc {
 } SamplerDesc;
 
 typedef struct {
-	RhiTexture texture;
+	RhiTexture target;
 
 	enum { LOAD,
 		CLEAR } load;
