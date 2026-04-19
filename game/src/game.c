@@ -82,19 +82,18 @@ typedef enum {
 
 // EDITOR
 typedef enum {
-	AXIS_MODE_NONE,
-	AXIS_MODE_X,
-	AXIS_MODE_Y,
-	AXIS_MODE_Z,
+	AXIS_MODE_XYZ,
 	AXIS_MODE_XY,
 	AXIS_MODE_YZ,
 	AXIS_MODE_ZX,
-	AXIS_MODE_XYZ,
+	AXIS_MODE_X,
+	AXIS_MODE_Y,
+	AXIS_MODE_Z,
 } AxisMode;
 
 typedef enum {
 	EDITOR_MODE_VIEWING,
-	EDITOR_MODE_GRABBING,
+	EDITOR_MODE_TRANSFORM,
 	EDITOR_MODE_ADDING,
 } EditorMode;
 
@@ -104,12 +103,14 @@ typedef struct {
 	AxisMode axis_mode;
 	bool axis_reverse;
 
+	bool rotating;
+
 	float2 mouse_start_position;
 	TransformComponent cached_transform;
-} EditorGrabInfo;
+} EditorTransformInfo;
 
 typedef struct {
-	uint32_t selected;
+	uint32_t entity;
 } EditorAddInfo;
 
 typedef struct Editor {
@@ -118,7 +119,7 @@ typedef struct Editor {
 
 	EditorMode mode;
 	EditorAddInfo add;
-	EditorGrabInfo grab;
+	EditorTransformInfo transform;
 
 	struct {
 		TransformComponent cached;
@@ -427,21 +428,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->editor = editor_make(&pstate->arena);
 
-		for (uint32_t index = 0; index < 32; ++index) {
-			Entity e = pstate->entity_count++;
-			pstate->transforms[e] = (TransformComponent){
-				.position = { 0.0f, 0.0f, 0.0f },
-				.scale = FLOAT3_ONE,
-			};
-			pstate->transforms[e].global = float4x4_translation(pstate->transforms[1].position);
-
-			pstate->meshes[e] = (MeshComponent){
-				.mesh_group_index = 1 + 2 * (index % 2),
-				.material_index = 0,
-			};
-			pstate->components[e] = COMPONENT_FLAG_DRAWABLE;
-		}
-
 		pstate->camera = &pstate->editor.camera;
 		pstate->state = GAME_STATE_EDITOR;
 
@@ -702,15 +688,20 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		window_set_cursor_locked(pstate->display, false);
 
 	if (pstate->selected_entity) {
-		if (input_key_pressed(KEY_CODE_G)) {
-			editor->mode = editor->mode == EDITOR_MODE_GRABBING ? EDITOR_MODE_VIEWING : EDITOR_MODE_GRABBING;
-			if (editor->mode == EDITOR_MODE_GRABBING) {
-				editor->grab.cached_transform = pstate->transforms[pstate->selected_entity];
-				editor->grab.mouse_start_position = float2_from_double2(input_mouse_position());
+		bool is_rotating = false;
+		if (input_key_pressed(KEY_CODE_G) || (is_rotating = input_key_pressed(KEY_CODE_R))) {
+			editor->mode = editor->mode == EDITOR_MODE_TRANSFORM ? EDITOR_MODE_VIEWING : EDITOR_MODE_TRANSFORM;
+			if (editor->mode == EDITOR_MODE_TRANSFORM) {
+				editor->transform.rotating = is_rotating;
+				editor->transform.cached_transform = pstate->transforms[pstate->selected_entity];
+				editor->transform.mouse_start_position = float2_from_double2(input_mouse_position());
 			}
 		}
 
-		if (editor->mode == EDITOR_MODE_GRABBING) {
+		float3 position = pstate->transforms[pstate->selected_entity].position;
+		/* LOG_INFO("EntityPosition = %.2f, %.2f, %.2f", position.x, position.y, position.z); */
+
+		if (editor->mode == EDITOR_MODE_TRANSFORM) {
 			bool exclude = input_key_down(KEY_CODE_LEFTCTRL);
 
 			bool x_axis = input_key_pressed(KEY_CODE_X);
@@ -719,18 +710,39 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 			if (exclude == false) {
 				if (x_axis)
-					editor->grab.axis_mode = AXIS_MODE_X;
+					editor->transform.axis_mode = AXIS_MODE_X;
 				if (y_axis)
-					editor->grab.axis_mode = AXIS_MODE_Y;
+					editor->transform.axis_mode = AXIS_MODE_Y;
 				if (z_axis)
-					editor->grab.axis_mode = AXIS_MODE_Z;
+					editor->transform.axis_mode = AXIS_MODE_Z;
 			}
 		}
 	}
 
+	if (input_key_down(KEY_CODE_LEFTSHIFT) && input_key_pressed(KEY_CODE_A)) {
+		editor->mode = EDITOR_MODE_ADDING;
+
+		float3 place_position = { 0 };
+
+		editor->add.entity = pstate->entity_count++;
+		Entity entity = editor->add.entity;
+		ASSERT(entity < MAX_ENTITIES);
+		pstate->transforms[entity] = (TransformComponent){
+			.position = place_position,
+			.scale = FLOAT3_ONE,
+			.global = float4x4_translation(place_position),
+		};
+		pstate->meshes[entity] = (MeshComponent){
+			.mesh_group_index = 1,
+		};
+
+		pstate->components[entity] = COMPONENT_FLAG_DRAWABLE;
+		pstate->selected_entity = entity;
+	}
+
 	float2 screen_size = float2_from_uint2(window_size_pixel(pstate->display));
 	float2 mouse_position = float2_from_double2(input_mouse_position());
-	float2 offset = float2_negate(float2_subtract(mouse_position, editor->grab.mouse_start_position));
+	float2 mouse_offset = float2_negate(float2_subtract(mouse_position, editor->transform.mouse_start_position));
 
 	float3 camera_target_offset = float3_subtract(camera->target, camera->position);
 	float3 camera_forward = float3_normalize(camera_target_offset);
@@ -738,162 +750,205 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	float3 camera_right = float3_cross(camera->up, camera_forward);
 	float3 camera_up = float3_cross(camera_right, camera_forward);
 
-	if (editor->mode == EDITOR_MODE_GRABBING) {
-		TransformComponent *transform = &pstate->transforms[pstate->selected_entity];
-		float distance = float3_dot(float3_subtract(editor->grab.cached_transform.position, camera->position), camera_forward);
-		float fov_radians = deg2radf(camera->fov);
-		float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
-		float frustum_width = frustum_height * (screen_size.x / screen_size.y);
+	switch (editor->mode) {
+		case EDITOR_MODE_VIEWING: {
+			if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
+				double2 mouse_position = input_mouse_position();
+				uint32_t node_index = 0;
+				vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &node_index);
+				LOG_INFO("Node index = %d", node_index);
 
-		float2 units_per_pixel = {
-			.x = frustum_width / screen_size.x,
-			.y = frustum_height / screen_size.y,
-		};
-
-		for (uint32_t key = KEY_CODE_0; key < KEY_CODE_9 + 1; ++key) {
-			if (input_key_pressed(key)) {
-				if (editor->grab.number_input == 0)
-					*transform = editor->grab.cached_transform;
-				editor->grab.number_input *= 10;
-				editor->grab.number_input += key - KEY_CODE_0;
+				pstate->selected_entity = node_index;
 			}
-		}
-		if (input_key_pressed(KEY_CODE_MINUS))
-			editor->grab.axis_reverse = true;
 
-		if (editor->grab.axis_mode == AXIS_MODE_NONE && editor->grab.number_input == 0) {
-			// TODO: The postion/rotation/scale are in local space, extract/calculate the world position
-			float3 move_x = float3_scale(camera_right, offset.x * units_per_pixel.x);
-			float3 move_y = float3_scale(camera_up, -offset.y * units_per_pixel.y);
+			if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
+				float2 shift = float2_scale(mouse_delta, editor->pan_speed);
+				shift.y *= -1;
 
-			transform->position = float3_add(
-				float3_add(editor->grab.cached_transform.position, move_x),
-				move_y);
-		} else if (editor->grab.axis_mode != AXIS_MODE_NONE && editor->grab.number_input == 0) {
-			// TODO: Move on camera view's relation to the global axis
+				camera->position = float3_add(camera->position, float3_scale(camera_right, shift.x));
+				camera->position = float3_add(camera->position, float3_scale(camera_up, shift.y));
 
-			float3 axis = { 0 };
-			if (editor->grab.axis_mode == AXIS_MODE_X)
-				axis = float3_dot(FLOAT3_X, camera_right) > 0 ? FLOAT3_X : float3_negate(FLOAT3_X);
-			else if (editor->grab.axis_mode == AXIS_MODE_Z)
-				axis = float3_dot(FLOAT3_Z, camera_up) > 0 ? float3_negate(FLOAT3_Z) : FLOAT3_Z;
-			else if (editor->grab.axis_mode == AXIS_MODE_Y)
-				axis = FLOAT3_Y;
-			float3 move_x = float3_scale(axis, offset.x * units_per_pixel.x);
-			float3 move_y = float3_scale(axis, offset.y * units_per_pixel.y);
+				camera->target = float3_add(camera->position, camera_target_offset);
 
-			transform->position = float3_add(
-				float3_add(editor->grab.cached_transform.position, move_x),
-				move_y);
-		} else if (editor->grab.number_input || editor->grab.axis_reverse) {
-			if (input_key_pressed(KEY_CODE_BACKSPACE))
-				editor->grab.number_input /= 10;
+			} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTCTRL)) {
+				float zoom = mouse_delta.y * editor->zoom_speed;
+				float3 camera_forward = float3_normalize(float3_subtract(camera->target, camera->position));
+				camera->position = float3_add(camera->position, float3_scale(camera_forward, -zoom));
+			} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE)) {
+				float yaw_delta = mouse_delta.x * editor->sensitivity;
+				float pitch_delta = mouse_delta.y * editor->sensitivity;
+				/*
+				 * x = RADIUS * cos(azimuth) * sin(theta) + offset.x;
+				 * y = RADIUS * cos(theta) + offset.y
+				 * z = RADIUS * sin(azimuth) * sin(theta) + offset.z;
+				 */
 
-			float3 move = { 0 };
-			float scale = editor->grab.number_input * (editor->grab.axis_reverse ? -1.f : 1.f);
-			if (editor->grab.axis_mode == AXIS_MODE_X)
-				move = float3_scale(FLOAT3_X, scale);
-			else if (editor->grab.axis_mode == AXIS_MODE_Z)
-				move = float3_scale(FLOAT3_Z, scale);
-			else if (editor->grab.axis_mode == AXIS_MODE_Y)
-				move = float3_scale(FLOAT3_Y, scale);
-			transform->position = float3_add(editor->grab.cached_transform.position, move);
-		}
+				float3 camera_position = float3_subtract(camera->position, camera->target);
+				float r = MAX(float3_length(camera_position), EPSILON);
 
-		float4x4 translation = float4x4_translation(transform->position);
-		float4x4 scale = float4x4_scaling(transform->scale);
-		float4x4 rotation = float4x4_identity();
+				float camera_xz = float2_length((float2){ camera_position.x, camera_position.z });
+				float current_theta = atan2f(camera_xz, camera_position.y);
+				// tan(theta) = o / a = y / x;
+				float current_azimuth = atan2f(camera_position.z, camera_position.x);
 
-		transform->global = float4x4_multiply(translation, float4x4_multiply(rotation, scale));
+				current_theta = CLAMP(current_theta - pitch_delta, EPSILON * 2, C_PIf - EPSILON * 2);
+				current_azimuth += yaw_delta;
 
-		if (input_mouse_pressed(MOUSE_BUTTON_LEFT) || input_key_pressed(KEY_CODE_ENTER)) {
-			editor->redo_steps[editor->redo_write_cursor].entity = pstate->selected_entity;
-			editor->redo_steps[editor->redo_write_cursor].cached = editor->grab.cached_transform;
+				// Apply move
+				camera->position = float3_add(
+					(float3){
+					  .x = r * sinf(current_theta) * cosf(current_azimuth),
+					  .y = r * cosf(current_theta),
+					  .z = r * sinf(current_theta) * sinf(current_azimuth),
+					},
+					camera->target);
+			}
 
-			editor->redo_write_cursor = (editor->redo_write_cursor + 1) % countof(editor->redo_steps);
-			editor->redo_count++;
-			editor->redo_count = MIN(countof(editor->redo_steps), editor->redo_count);
-		}
-		if (input_mouse_pressed(MOUSE_BUTTON_RIGHT) || input_key_pressed(KEY_CODE_ESCAPE))
-			*transform = editor->grab.cached_transform;
+			if (editor->redo_count &&
+				input_key_down(KEY_CODE_LEFTCTRL) && input_key_pressed(KEY_CODE_Z)) {
+				int32_t last_step = editor->redo_write_cursor - 1;
+				if (last_step < 0)
+					last_step = countof(editor->redo_steps) - 1;
 
-	} else {
-		if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
-			double2 mouse_position = input_mouse_position();
-			uint32_t node_index = 0;
-			vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &node_index);
-			LOG_INFO("Node index = %d", node_index);
+				TransformComponent *transform = &pstate->transforms[editor->redo_steps[last_step].entity];
+				*transform = editor->redo_steps[last_step].cached;
 
-			pstate->selected_entity = node_index;
-		}
+				editor->redo_write_cursor = last_step;
+				editor->redo_count--;
+			}
+		} break;
+		case EDITOR_MODE_TRANSFORM: {
+			TransformComponent *transform = &pstate->transforms[pstate->selected_entity];
+			float distance = float3_dot(float3_subtract(editor->transform.cached_transform.position, camera->position), camera_forward);
+			float fov_radians = deg2radf(camera->fov);
+			float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
+			float frustum_width = frustum_height * (screen_size.x / screen_size.y);
 
-		if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
-			float2 shift = float2_scale(mouse_delta, editor->pan_speed);
-			shift.y *= -1;
+			float2 units_per_pixel = {
+				.x = frustum_width / screen_size.x,
+				.y = frustum_height / screen_size.y,
+			};
 
-			camera->position = float3_add(camera->position, float3_scale(camera_right, shift.x));
-			camera->position = float3_add(camera->position, float3_scale(camera_up, shift.y));
+			for (uint32_t key = KEY_CODE_0; key < KEY_CODE_9 + 1; ++key) {
+				if (input_key_pressed(key)) {
+					if (editor->transform.number_input == 0)
+						*transform = editor->transform.cached_transform;
+					editor->transform.number_input *= 10;
+					editor->transform.number_input += key - KEY_CODE_0;
+				}
+			}
+			if (input_key_pressed(KEY_CODE_MINUS))
+				editor->transform.axis_reverse = true;
 
-			camera->target = float3_add(camera->position, camera_target_offset);
+			if (editor->transform.rotating && editor->transform.axis_mode) {
+				// Angle 0 is the angle from the
+				if (input_key_pressed(KEY_CODE_BACKSPACE))
+					editor->transform.number_input /= 10;
 
-		} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTCTRL)) {
-			float zoom = mouse_delta.y * editor->zoom_speed;
-			float3 camera_forward = float3_normalize(float3_subtract(camera->target, camera->position));
-			camera->position = float3_add(camera->position, float3_scale(camera_forward, -zoom));
-		} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE)) {
-			float yaw_delta = mouse_delta.x * editor->sensitivity;
-			float pitch_delta = mouse_delta.y * editor->sensitivity;
-			/*
-			 * x = RADIUS * cos(azimuth) * sin(theta) + offset.x;
-			 * y = RADIUS * cos(theta) + offset.y
-			 * z = RADIUS * sin(azimuth) * sin(theta) + offset.z;
-			 */
+				float3 rotation = { 0 };
+				float scale = deg2radf(editor->transform.number_input) * (editor->transform.axis_reverse ? -1.f : 1.f);
+				if (editor->transform.axis_mode == AXIS_MODE_X)
+					rotation = float3_scale(FLOAT3_X, scale);
+				else if (editor->transform.axis_mode == AXIS_MODE_Z)
+					rotation = float3_scale(FLOAT3_Z, scale);
+				else if (editor->transform.axis_mode == AXIS_MODE_Y)
+					rotation = float3_scale(FLOAT3_Y, scale);
+				transform->rotation = float3_add(editor->transform.cached_transform.position, rotation);
 
-			float3 camera_position = float3_subtract(camera->position, camera->target);
-			float r = MAX(float3_length(camera_position), EPSILON);
+			} else {
+				if (editor->transform.axis_mode == AXIS_MODE_XYZ && editor->transform.number_input == 0) {
+					// TODO: The postion/rotation/scale are in local space, extract/calculate the world position
+					float3 move_x = float3_scale(camera_right, mouse_offset.x * units_per_pixel.x);
+					float3 move_y = float3_scale(camera_up, -mouse_offset.y * units_per_pixel.y);
 
-			float camera_xz = float2_length((float2){ camera_position.x, camera_position.z });
-			float current_theta = atan2f(camera_xz, camera_position.y);
-			// tan(theta) = o / a = y / x;
-			float current_azimuth = atan2f(camera_position.z, camera_position.x);
+					transform->position = float3_add(
+						float3_add(editor->transform.cached_transform.position, move_x),
+						move_y);
+				} else if (editor->transform.axis_mode && editor->transform.number_input == 0) {
+					// TODO: Move on camera view's relation to the global axis
 
-			current_theta = CLAMP(current_theta - pitch_delta, EPSILON * 2, C_PIf - EPSILON * 2);
-			current_azimuth += yaw_delta;
+					float3 axis = { 0 };
+					if (editor->transform.axis_mode == AXIS_MODE_X)
+						axis = FLOAT3_X;
+					else if (editor->transform.axis_mode == AXIS_MODE_Z)
+						axis = FLOAT3_Z;
+					else if (editor->transform.axis_mode == AXIS_MODE_Y)
+						axis = FLOAT3_Y;
 
-			// Apply move
-			camera->position = float3_add(
-				(float3){
-				  .x = r * sinf(current_theta) * cosf(current_azimuth),
-				  .y = r * cosf(current_theta),
-				  .z = r * sinf(current_theta) * sinf(current_azimuth),
-				},
-				camera->target);
-		}
+					float2 sign = {
+						float3_dot(axis, camera_right) < 0.0f ? -1.0f : 1.0f,
+						float3_dot(axis, camera_up) < 0.0f ? 1.0f : -1.0f
+					};
+					float3 move_x = float3_scale(axis, sign.x * mouse_offset.x * units_per_pixel.x);
+					float3 move_y = float3_scale(axis, sign.y * mouse_offset.y * units_per_pixel.y);
+
+					transform->position = float3_add(
+						float3_add(editor->transform.cached_transform.position, move_x),
+						move_y);
+				} else if (editor->transform.number_input || editor->transform.axis_reverse) {
+					if (input_key_pressed(KEY_CODE_BACKSPACE))
+						editor->transform.number_input /= 10;
+
+					float3 move = { 0 };
+					float scale = editor->transform.number_input * (editor->transform.axis_reverse ? -1.f : 1.f);
+					if (editor->transform.axis_mode == AXIS_MODE_X)
+						move = float3_scale(FLOAT3_X, scale);
+					else if (editor->transform.axis_mode == AXIS_MODE_Z)
+						move = float3_scale(FLOAT3_Z, scale);
+					else if (editor->transform.axis_mode == AXIS_MODE_Y)
+						move = float3_scale(FLOAT3_Y, scale);
+					transform->position = float3_add(editor->transform.cached_transform.position, move);
+				}
+			}
+
+			if (input_key_down(KEY_CODE_LEFTCTRL)) {
+				transform->position.x = (int32_t)transform->position.x;
+				transform->position.y = (int32_t)transform->position.y;
+				transform->position.z = (int32_t)transform->position.z;
+			}
+
+			float4x4 translation = float4x4_translation(transform->position);
+			float4x4 scale = float4x4_scaling(transform->scale);
+			float4x4 rotation_x = float4x4_rotation(transform->rotation.x, FLOAT3_X);
+			float4x4 rotation_y = float4x4_rotation(transform->rotation.y, FLOAT3_Y);
+			float4x4 rotation_z = float4x4_rotation(transform->rotation.z, FLOAT3_Z);
+			float4x4 rotation = float4x4_multiply(rotation_z, float4x4_multiply(rotation_y, rotation_x));
+
+			transform->global = float4x4_multiply(translation, float4x4_multiply(rotation, scale));
+
+			if (input_mouse_pressed(MOUSE_BUTTON_LEFT) || input_key_pressed(KEY_CODE_ENTER)) {
+				editor->redo_steps[editor->redo_write_cursor].entity = pstate->selected_entity;
+				editor->redo_steps[editor->redo_write_cursor].cached = editor->transform.cached_transform;
+
+				editor->redo_write_cursor = (editor->redo_write_cursor + 1) % countof(editor->redo_steps);
+				editor->redo_count++;
+				editor->redo_count = MIN(countof(editor->redo_steps), editor->redo_count);
+			}
+			if (input_mouse_pressed(MOUSE_BUTTON_RIGHT) || input_key_pressed(KEY_CODE_ESCAPE))
+				*transform = editor->transform.cached_transform;
+		} break;
+		case EDITOR_MODE_ADDING: {
+			uint32_t group_count = arena_array_count(pstate->assets.mesh_groups);
+			MeshComponent *add_entity_mesh = &pstate->meshes[editor->add.entity];
+			if (input_key_pressed(KEY_CODE_RIGHTBRACKET))
+				add_entity_mesh->mesh_group_index = (add_entity_mesh->mesh_group_index % (group_count - 1)) + 1;
+			if (input_key_pressed(KEY_CODE_LEFTBRACKET)) {
+				add_entity_mesh->mesh_group_index = add_entity_mesh->mesh_group_index > 1
+													  ? add_entity_mesh->mesh_group_index - 1
+													  : group_count - 1;
+			}
+		} break;
 	}
 
-	if (editor->redo_count &&
-		input_key_down(KEY_CODE_LEFTCTRL) && input_key_pressed(KEY_CODE_Z)) {
-		int32_t last_step = editor->redo_write_cursor - 1;
-		if (last_step < 0)
-			last_step = countof(editor->redo_steps) - 1;
+	if (input_mouse_pressed(MOUSE_BUTTON_LEFT) ||
+		input_key_pressed(KEY_CODE_ENTER) ||
+		input_mouse_pressed(MOUSE_BUTTON_RIGHT) ||
+		input_key_pressed(KEY_CODE_ESCAPE)
 
-		TransformComponent *transform = &pstate->transforms[editor->redo_steps[last_step].entity];
-		*transform = editor->redo_steps[last_step].cached;
-
-		editor->redo_write_cursor = last_step;
-		editor->redo_count--;
-	}
-	if (input_mouse_pressed(MOUSE_BUTTON_LEFT) || input_key_pressed(KEY_CODE_ENTER)) {
-		editor->grab.axis_mode = AXIS_MODE_NONE;
-		editor->grab.axis_reverse = false;
+	) {
+		editor->transform = (EditorTransformInfo){ 0 };
+		editor->add = (EditorAddInfo){ 0 };
 		editor->mode = EDITOR_MODE_VIEWING;
-		editor->grab.number_input = 0;
-	}
-	if (input_mouse_pressed(MOUSE_BUTTON_RIGHT) || input_key_pressed(KEY_CODE_ESCAPE)) {
-		editor->grab.axis_mode = AXIS_MODE_NONE;
-		editor->grab.axis_reverse = false;
-		editor->mode = EDITOR_MODE_VIEWING;
-		editor->grab.number_input = 0;
 	}
 }
 
