@@ -15,6 +15,7 @@
 #include "input.h"
 #include "input/input_types.h"
 #include "platform.h"
+#include "platform/filesystem.h"
 #include "renderer/backend/vulkan_api.h"
 #include "renderer/r_internal.h"
 #include "scene.h"
@@ -57,10 +58,6 @@ typedef struct {
 	RhiTexture textures[16];
 	uint32_t texture_count;
 } Material;
-
-typedef struct {
-	float3 min, max;
-} Interval3;
 
 // ENTITIES
 typedef uint32_t Entity;
@@ -126,9 +123,10 @@ typedef struct {
 	float target_azimuth, target_theta;
 
 	struct {
-		RhiTexture *images;
+		RhiTexture *textures;
 		Material *materials;
 		Mesh *meshes;
+		uint32x2 *mesh_groups; // aka model
 		uint32_t *mesh_to_material;
 
 		Interval3 *bounds;
@@ -141,7 +139,6 @@ typedef struct {
 
 	Entity selected_entity;
 	Entity player;
-	uint32_t quad_mesh_index;
 
 	Camera *camera;
 } PermanentState;
@@ -180,41 +177,48 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 
+		ShaderSource source = { 0 };
+		source = importer_load_shader(scratch.arena, S("assets/shaders/unlit.vert.spv"), S("assets/shaders/unlit.frag.spv"));
 		pstate->unlit_shader =
 			vulkan_shader_make(
 				NULL,
 				pstate->context,
-				importer_load_shader(scratch.arena, S("assets/shaders/unlit.vert.spv"), S("assets/shaders/unlit.frag.spv")),
+				source.vertex, source.fragment,
 				NULL);
+		source = importer_load_shader(scratch.arena, S("assets/shaders/pbr.vert.spv"), S("assets/shaders/pbr.frag.spv"));
 		pstate->pbr_shader =
 			vulkan_shader_make(
 				NULL,
 				pstate->context,
-				importer_load_shader(scratch.arena, S("assets/shaders/pbr.vert.spv"), S("assets/shaders/pbr.frag.spv")),
+				source.vertex, source.fragment,
 				NULL);
+		source = importer_load_shader(scratch.arena, S("assets/shaders/line.vert.spv"), S("assets/shaders/line.frag.spv"));
 		pstate->line_shader =
 			vulkan_shader_make(
 				NULL,
 				pstate->context,
-				importer_load_shader(scratch.arena, S("assets/shaders/line.vert.spv"), S("assets/shaders/line.frag.spv")),
+				source.vertex, source.fragment,
 				NULL);
+		source = importer_load_shader(scratch.arena, S("assets/shaders/picker.vert.spv"), S("assets/shaders/picker.frag.spv"));
 		pstate->picker_shader =
 			vulkan_shader_make(
 				NULL,
 				pstate->context,
-				importer_load_shader(scratch.arena, S("assets/shaders/picker.vert.spv"), S("assets/shaders/picker.frag.spv")),
+				source.vertex, source.fragment,
 				NULL);
+		source = importer_load_shader(scratch.arena, S("assets/shaders/postfx.vert.spv"), S("assets/shaders/postfx.frag.spv"));
 		pstate->postfx_shader =
 			vulkan_shader_make(
 				NULL,
 				pstate->context,
-				importer_load_shader(scratch.arena, S("assets/shaders/postfx.vert.spv"), S("assets/shaders/postfx.frag.spv")),
+				source.vertex, source.fragment,
 				NULL);
+		source = importer_load_shader(scratch.arena, S("assets/shaders/blit.vert.spv"), S("assets/shaders/blit.frag.spv"));
 		pstate->blit_shader =
 			vulkan_shader_make(
 				NULL,
 				pstate->context,
-				importer_load_shader(scratch.arena, S("assets/shaders/blit.vert.spv"), S("assets/shaders/blit.frag.spv")),
+				source.vertex, source.fragment,
 				NULL);
 
 		pstate->linear_sampler = vulkan_sampler_make(pstate->context, LINEAR_SAMPLER);
@@ -248,289 +252,125 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->meshes[pstate->entity_count] = (MeshComponent){ 0 };
 		pstate->entity_count++;
 
-		Arena *geometry_upload_arena = arena_partition(scratch.arena, MiB(32));
-		size_t geometry_upload_offset = vulkan_buffer_offset(pstate->context, pstate->scene_geometry_buffer);
-
-		// Load model
-		String path = S("assets/models/modular_dungeon/room-large.glb");
-		String directory = stringpath_directory(path);
-
-		ImageSource *image_sources = NULL;
-		MaterialSource *material_sources = NULL;
-		MeshSource *mesh_sources = NULL;
-
-		// TODO: Bake these into MeshSource?
-		uint32_t *mesh_to_material = NULL;
-		Interval3 *bounding_boxes = NULL;
-
-		// Defaults
-		arena_darray_push(scratch.arena, image_sources, ImageSource);
-		MaterialSource default_material = {
-			.properties = arena_push_count(scratch.arena, countof(default_properties), MaterialProperty),
-			.property_count = countof(default_properties),
-		};
-		memory_copy(default_material.properties, default_properties, sizeof(default_properties));
-		arena_darray_put(scratch.arena, material_sources, MaterialSource, default_material);
-		arena_darray_push(scratch.arena, mesh_sources, ImageSource);
-		arena_darray_push(scratch.arena, mesh_to_material, uint32_t);
-		arena_darray_push(scratch.arena, bounding_boxes, Interval3);
-
-		{
-			cgltf_options options = { 0 };
-			cgltf_data *data = NULL;
-			cgltf_result cgltf_result = cgltf_parse_file(&options, path.chars, &data);
-
-			if (cgltf_result == cgltf_result_success)
-				cgltf_result = cgltf_load_buffers(&options, data, path.chars);
-
-			if (cgltf_result == cgltf_result_success)
-				cgltf_result = cgltf_validate(data);
-
-			LOG_INFO("Loading %.*s", SARG(path));
-
-			if (cgltf_result == cgltf_result_success) {
-				for (uint32_t image_index = 0; image_index < data->images_count; ++image_index) {
-					cgltf_image *src = &data->images[image_index];
-					ImageSource *dst = arena_darray_push(scratch.arena, image_sources, ImageSource);
-
-					String image_path = stringpath_join(scratch.arena, directory, string_wrap(src->uri));
-					LOG_INFO("'%s' -> '%.*s'", src->name, SARG(image_path));
-					*dst = importer_load_image(scratch.arena, image_path);
-				}
-
-				for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
-					cgltf_material *src = &data->materials[material_index];
-					MaterialSource *dst = arena_darray_push(scratch.arena, material_sources, MaterialSource);
-
-					dst->property_count = countof(default_properties);
-					dst->properties = arena_push_count(scratch.arena, dst->property_count, MaterialProperty);
-
-					memory_copy(dst->properties, default_properties, sizeof(default_properties));
-
-					if (src->has_pbr_metallic_roughness) {
-						cgltf_pbr_metallic_roughness *pbr = &src->pbr_metallic_roughness;
-						memory_copy(&dst->properties[5].as.float32x4, pbr->base_color_factor, sizeof(float4));
-
-						dst->properties[6].as.float32x1 = pbr->metallic_factor;
-						dst->properties[7].as.float32x1 = pbr->roughness_factor;
-
-						if (pbr->base_color_texture.texture)
-							dst->properties[0].as.uint32x1 = cgltf_image_index(data, pbr->base_color_texture.texture->image) + 1;
-						if (pbr->metallic_roughness_texture.texture)
-							dst->properties[1].as.uint32x1 = cgltf_image_index(data, pbr->metallic_roughness_texture.texture->image) + 1;
-					}
-
-					if (src->normal_texture.texture)
-						dst->properties[2].as.uint32x1 = cgltf_image_index(data, src->normal_texture.texture->image) + 1;
-					if (src->occlusion_texture.texture)
-						dst->properties[3].as.uint32x1 = cgltf_image_index(data, src->occlusion_texture.texture->image) + 1;
-
-					memory_copy(&dst->properties[8].as.float32x3, src->emissive_factor, sizeof(float3));
-					if (src->emissive_texture.texture)
-						dst->properties[4].as.uint32x1 = cgltf_image_index(data, src->emissive_texture.texture->image) + 1;
-				}
-				LOG_INFO("Material count = %d", arena_array_count(material_sources));
-
-				// Meshes
-				uint32_t *mesh_offsets = arena_push_count(scratch.arena, data->meshes_count, uint32_t);
-				uint32_t mesh_offset = 0;
-				for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
-					cgltf_mesh *mesh = &data->meshes[mesh_index];
-
-					mesh_offsets[mesh_index] = mesh_offset;
-					mesh_offset += mesh->primitives_count;
-
-					LOG_INFO("\n%s {\n  primitive_count = %d \n}",
-						mesh->name, mesh->primitives_count);
-					for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
-						cgltf_primitive *primitive = &mesh->primitives[primitive_index];
-						MeshSource *mesh = arena_darray_push(scratch.arena, mesh_sources, MeshSource);
-						if (primitive->material)
-							arena_darray_put(scratch.arena, mesh_to_material, uint32_t, cgltf_material_index(data, primitive->material) + 1);
-						else
-							arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
-
-						// TODO: Per mesh bounding box instead of per primitive?
-						Interval3 *interval = arena_darray_push(scratch.arena, bounding_boxes, Interval3);
-						interval->min = float3_fill(FLOAT_MAX);
-						interval->max = float3_fill(FLOAT_MIN);
-
-						ASSERT(primitive->attributes && primitive->attributes->data);
-						mesh->vertex_count = primitive->attributes->data->count;
-						mesh->vertex_size = sizeof(Vertex);
-						mesh->vertices = (uint8_t *)arena_push_count(scratch.arena, mesh->vertex_count, Vertex);
-
-						for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
-							cgltf_attribute *attribute = &primitive->attributes[attribute_index];
-							cgltf_accessor *accessor = attribute->data;
-
-							size_t offset = 0;
-							switch (attribute->type) {
-								case cgltf_attribute_type_position:
-									offset = offsetof(Vertex, position);
-									break;
-								case cgltf_attribute_type_normal:
-									offset = offsetof(Vertex, normal);
-									break;
-								case cgltf_attribute_type_tangent:
-									offset = offsetof(Vertex, tangent);
-									break;
-								case cgltf_attribute_type_texcoord:
-									offset = offsetof(Vertex, uv);
-									break;
-								/* case cgltf_attribute_type_color: */
-								/* case cgltf_attribute_type_joints: */
-								/* case cgltf_attribute_type_weights: */
-								default:
-									ASSERT_MESSAGE(false, "Unsupported attribute type");
-									break;
-							}
-
-							uint8_t *vertices = mesh->vertices;
-							for (uint32_t vertex_index = 0; vertex_index < accessor->count; ++vertex_index, vertices += mesh->vertex_size) {
-								cgltf_accessor_read_float(accessor, vertex_index, (void *)(vertices + offset), cgltf_num_components(accessor->type));
-								if (offset == offsetof(Vertex, position)) {
-									float3 position = *((float3 *)vertices);
-									interval->min = float3_min(interval->min, position);
-									interval->max = float3_max(interval->max, position);
-								}
-							}
-						}
-
-						// Indices
-						cgltf_accessor *accessor = primitive->indices;
-
-						mesh->index_count = accessor->count;
-						mesh->index_size = sizeof(uint32_t);
-						mesh->indices = (uint8_t *)arena_push_count(scratch.arena, mesh->index_count, uint32_t);
-						size_t written = cgltf_accessor_unpack_indices(accessor, mesh->indices, mesh->index_size, mesh->index_count);
-					}
-				}
-
-				// NOTE: Should not directly access entities, rather return list of nodes/transforms
-				// Node -> Entity
-				for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
-					cgltf_node *cgltf_node = &data->nodes[node_index];
-
-					Entity entity = pstate->entity_count++;
-					TransformComponent *transform = &pstate->transforms[entity];
-					MeshComponent *mesh_group = &pstate->meshes[entity];
-
-					if (cgltf_node->parent)
-						transform->parent_index = cgltf_node_index(data, cgltf_node->parent);
-
-					cgltf_node_transform_local(cgltf_node, transform->local.elements);
-					cgltf_node_transform_world(cgltf_node, transform->global.elements);
-
-					// TODO: quaternion
-					// node->transform.rotation = float3_wrap(cgltf_node->rotation);
-					transform->position = float3_wrap(cgltf_node->translation);
-					transform->scale = float3_wrap(cgltf_node->scale);
-
-					ASSERT(cgltf_node->mesh);
-					mesh_group->mesh_index = mesh_offsets[cgltf_mesh_index(data, cgltf_node->mesh)] + 1;
-					mesh_group->mesh_count = cgltf_node->mesh->primitives_count;
-
-					pstate->components[entity] = COMPONENT_FLAG_DRAWABLE;
-				}
-
-			} else
-				LOG_ERROR("Failed to load '%.*s'", SARG(path));
-
-			cgltf_free(data);
-		}
-
-		uint32_t player_mesh_index = arena_array_count(mesh_sources);
-		MeshSource player_src = mesh_source_cube(scratch.arena, 0, 0.5f, 0);
-		Interval3 player_bounds = {
-			.min = { -0.5f, 0, -0.5f },
-			.max = { 0.5f, 1, 0.5f },
+		// Import models
+		SceneSource models[] = {
+			importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/room-large.glb")),
+			importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/room-small.glb")),
+			importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/corridor.glb")),
+			importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/gate-door.glb")),
 		};
 
-		arena_darray_put(scratch.arena, mesh_sources, MeshSource, player_src);
-		arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
-		arena_darray_put(scratch.arena, bounding_boxes, Interval3, player_bounds);
+		/* uint32_t player_mesh_index = arena_array_count(mesh_sources); */
+		/* MeshSource player_src = mesh_source_cube(scratch.arena, 0, 0.5f, 0); */
+		/* Interval3 player_bounds = { */
+		/* 	.min = { -0.5f, 0, -0.5f }, */
+		/* 	.max = { 0.5f, 1, 0.5f }, */
+		/* }; */
 
-		MeshSource screen_quad_src = mesh_source_quad3(scratch.arena, FLOAT3_ZERO, 2.0f);
-		pstate->quad_mesh_index = arena_array_count(mesh_sources);
-		arena_darray_put(scratch.arena, mesh_sources, MeshSource, screen_quad_src);
-		Interval3 quad_bounds = {
-			.min = { -1.0f, -1.0f, -1.0f },
-			.max = { 1.0f, 1.0f, 1.0f },
-		};
-		arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
-		arena_darray_put(scratch.arena, bounding_boxes, Interval3, quad_bounds);
+		/* arena_darray_put(scratch.arena, mesh_sources, MeshSource, player_src); */
+		/* arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0); */
+		/* arena_darray_put(scratch.arena, bounding_boxes, Interval3, player_bounds); */
+
+		/*
+		 * The final runtime format for the GPU is
+		 * float *vertices + uint32_t *indices of all geometry + metadata for offsets
+		 */
 
 		// Prep Upload
-		pstate->assets.meshes = arena_push_count(&pstate->arena, arena_array_count(mesh_sources), Mesh);
-		for (uint32_t mesh_index = 0; mesh_index < arena_array_count(mesh_sources); ++mesh_index) {
-			Mesh *mesh = &pstate->assets.meshes[mesh_index];
-			MeshSource source = mesh_sources[mesh_index];
+		RhiTexture *textures = NULL;
+		Material *materials = NULL;
+		Mesh *meshes = NULL;
+		uint32_t *mesh_to_material = NULL;
+		Interval3 *bounds = NULL;
+		uint32x2 *mesh_groups = NULL;
 
-			size_t vertices_size = source.vertex_size * source.vertex_count;
-			size_t indices_size = source.index_size * source.index_count;
+		uint32_t material_offset = 0;
+		uint32_t texture_offset = 0;
+		uint32_t mesh_offset = 0;
+		size_t vertex_offset = 0, index_offset = 0;
 
-			if (vertices_size == 0 && indices_size == 0)
-				continue;
+		Arena *geometry_upload_arena = arena_partition(scratch.arena, MiB(32));
+		for (uint32_t model_index = 0; model_index < countof(models); ++model_index) {
+			SceneSource *model = &models[model_index];
+			for (uint32_t image_index = 0; image_index < model->image_count; ++image_index) {
+				ImageSource *src = &model->images[image_index];
+				RhiTexture *dst = arena_darray_push(scratch.arena, textures, RhiTexture);
 
-			mesh->buffer = pstate->scene_geometry_buffer;
-
-			// Nothing uploaded yet, only the offset is incremented
-			mesh->vertex_offset = vulkan_buffer_push(
-				pstate->context,
-				mesh->buffer,
-				vertices_size, NULL);
-			mesh->index_offset = vulkan_buffer_push(
-				pstate->context,
-				mesh->buffer,
-				indices_size, NULL);
-
-			arena_push_copy(geometry_upload_arena, source.vertices, vertices_size, 1);
-			arena_push_copy(geometry_upload_arena, source.indices, indices_size, 1);
-
-			mesh->index_count = source.index_count;
-			mesh->vertex_count = source.vertex_count;
-		}
-
-		pstate->assets.images = arena_push_count(&pstate->arena, arena_array_count(image_sources), RhiTexture);
-		for (uint32_t image_index = 1; image_index < arena_array_count(image_sources); ++image_index) {
-			ImageSource *src = &image_sources[image_index];
-			RhiTexture *dst = &pstate->assets.images[image_index];
-
-			*dst = vulkan_texture_make(
-				pstate->context,
-				src->width, src->height,
-				TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
-				TEXTURE_USAGE_SAMPLED, src->pixels);
-		}
-
-		ASSERT(material_sources);
-		pstate->assets.materials = arena_push_count(&pstate->arena, arena_array_count(material_sources), Material);
-		for (uint32_t material_index = 0; material_index < arena_array_count(material_sources); ++material_index) {
-			MaterialSource *src = &material_sources[material_index];
-			Material *dst = &pstate->assets.materials[material_index];
-			dst->uniform_buffer = pstate->scene_uniform_buffer;
-
-			MaterialParameters parameters = {
-				.base_color_factor = src->properties[5].as.float32x4,
-				.metallic_factor = src->properties[6].as.float32x1,
-				.roughness_factor = src->properties[7].as.float32x1,
-				.emissive_factor = src->properties[8].as.float32x3
-			};
-
-			for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-				dst->textures[texture_index] = pstate->assets.images[src->properties[texture_index].as.uint32x1];
-				dst->texture_count++;
+				if (src->pixels)
+					*dst = vulkan_texture_make(
+						pstate->context,
+						src->width, src->height,
+						TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
+						TEXTURE_USAGE_SAMPLED, src->pixels);
 			}
 
-			size_t size = sizeof(MaterialParameters);
-			size_t offset = vulkan_buffer_push(pstate->context, dst->uniform_buffer, size, NULL);
-			dst->offset = offset, dst->size = size;
-			vulkan_buffer_write_all(pstate->context, dst->uniform_buffer, dst->offset, dst->size, &parameters);
+			for (uint32_t material_index = 0; material_index < model->material_count; ++material_index) {
+				MaterialSource *src = &model->materials[material_index];
+				Material *dst = arena_darray_push(scratch.arena, materials, Material);
+				dst->uniform_buffer = pstate->scene_uniform_buffer;
+
+				MaterialParameters parameters = {
+					.base_color_factor = src->properties[5].as.float32x4,
+					.metallic_factor = src->properties[6].as.float32x1,
+					.roughness_factor = src->properties[7].as.float32x1,
+					.emissive_factor = src->properties[8].as.float32x3
+				};
+
+				for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
+					if (textures)
+						dst->textures[texture_index] = textures[src->properties[texture_index].as.uint32x1 + texture_offset];
+					dst->texture_count++;
+				}
+
+				size_t size = sizeof(MaterialParameters);
+				size_t offset = vulkan_buffer_push(pstate->context, dst->uniform_buffer, size, NULL);
+				dst->offset = offset, dst->size = size;
+				vulkan_buffer_write_all(pstate->context, dst->uniform_buffer, dst->offset, dst->size, &parameters);
+			}
+
+			size_t vertex_offset = geometry_upload_arena->offset;
+			size_t index_offset = vertex_offset + model->vertices_size;
+			for (uint32_t mesh_index = 0; mesh_index < model->mesh_count; ++mesh_index) {
+				MeshSource *src = &model->meshes[mesh_index];
+				Mesh *dst = arena_darray_push(scratch.arena, meshes, Mesh);
+
+				size_t vertices_size = src->vertex_size * src->vertex_count;
+				size_t indices_size = src->index_size * src->index_count;
+
+				if (vertices_size == 0 && indices_size == 0)
+					continue;
+
+				dst->buffer = pstate->scene_geometry_buffer;
+
+				dst->vertex_offset = vertex_offset;
+				dst->index_offset = index_offset;
+				vertex_offset += vertices_size;
+				index_offset += indices_size;
+
+				dst->index_count = src->index_count;
+				dst->vertex_count = src->vertex_count;
+
+				arena_darray_put(scratch.arena, mesh_to_material, uint32_t, model->mesh_to_material[mesh_index] + material_offset);
+				arena_darray_put(scratch.arena, bounds, Interval3, model->bounding_boxes[mesh_index]);
+			}
+
+			arena_darray_put(scratch.arena, mesh_groups, uint32x2, { mesh_offset, model->mesh_count });
+
+			material_offset += model->material_count;
+			mesh_offset += model->mesh_count;
+
+			arena_push_copy(geometry_upload_arena, model->vertices, model->vertices_size, 1);
+			arena_push_copy(geometry_upload_arena, model->indices, model->indices_size, 1);
 		}
 
+		pstate->assets.textures = arena_array_copy(&pstate->arena, textures, RhiTexture);
+		pstate->assets.meshes = arena_array_copy(&pstate->arena, meshes, Mesh);
+		uint32_t mesh_count = arena_array_count(pstate->assets.meshes);
+		pstate->assets.materials = arena_array_copy(&pstate->arena, materials, Material);
 		pstate->assets.mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
-		pstate->assets.bounds = arena_array_copy(&pstate->arena, bounding_boxes, Interval3);
+		pstate->assets.bounds = arena_array_copy(&pstate->arena, bounds, Interval3);
+		pstate->assets.mesh_groups = arena_array_copy(&pstate->arena, mesh_groups, uint32x2);
+
 
 		pstate->player = pstate->entity_count++;
 		pstate->transforms[pstate->player] = (TransformComponent){
@@ -539,18 +379,18 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			.global = float4x4_identity(),
 		};
 		pstate->meshes[pstate->player] = (MeshComponent){
-			.mesh_index = player_mesh_index,
-			.mesh_count = 1,
+			.mesh_index = mesh_groups[0].x,
+			.mesh_count = mesh_groups[0].y,
 			.material_index = 0,
 		};
 		pstate->components[pstate->player] = COMPONENT_FLAG_DRAWABLE;
 
 		// Upload all geometry once
-		vulkan_buffer_write(
+		vulkan_buffer_push(
 			pstate->context,
 			pstate->scene_geometry_buffer,
-			geometry_upload_offset,
-			geometry_upload_arena->offset, geometry_upload_arena->base);
+			geometry_upload_arena->offset,
+			geometry_upload_arena->base);
 
 		pstate->game_camera = (Camera){
 			.position = { 0.0f, 20, 30 },
@@ -712,6 +552,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 				for (uint32_t index = 0; index < mesh_group->mesh_count; ++index) {
 					uint32_t mesh_index = mesh_group->mesh_index + index;
+					uint32_t mesh_count = arena_array_count(pstate->assets.meshes);
+					if (mesh_index >= mesh_count)
+						break;
 					Mesh *mesh = &pstate->assets.meshes[mesh_group->mesh_index + index];
 					uint32_t material_index = pstate->assets.mesh_to_material[mesh_index];
 					Material *material = &pstate->assets.materials[material_index];
@@ -769,13 +612,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			vulkan_uniformset_bind_texture(pstate->context, set, 0, pstate->main_color_targets[pstate->previous_target], pstate->linear_sampler);
 			vulkan_uniformset_bind(pstate->context, set);
 
-			Mesh *mesh = &pstate->assets.meshes[pstate->quad_mesh_index];
-			vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
-			if (mesh->index_count > 0) {
-				vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
-				vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
-			} else
-				vulkan_renderer_draw(pstate->context, mesh->vertex_count);
+			vulkan_renderer_draw(pstate->context, 6);
 
 			vulkan_drawlist_end(pstate->context);
 		}
@@ -1042,8 +879,11 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 			vulkan_push_constants(pstate->context, sizeof(float4x4), sizeof(uint32_t), &entity);
 
-			for (uint32_t mesh_index = 0; mesh_index < mesh_group.mesh_count; ++mesh_index) {
-				Mesh *mesh = &pstate->assets.meshes[mesh_group.mesh_index + mesh_index];
+			for (uint32_t index = 0; index < mesh_group.mesh_count; ++index) {
+				uint32_t mesh_index = mesh_group.mesh_index + index;
+				if (mesh_index >= arena_array_count(pstate->assets.meshes))
+					break;
+				Mesh *mesh = &pstate->assets.meshes[mesh_group.mesh_index + index];
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform.global);
 
 				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);

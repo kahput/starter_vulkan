@@ -7,13 +7,25 @@
 #ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
-#include "vertex.shared"
+layout(location = 0) out vec2 out_uv;
 
-layout(location = 0) out vec2 uv;
+const vec4 quad_vertices[4] = {
+    // positions    uvs
+    { -1.0f, -1.0f, 0.0f, 0.0f },
+    { -1.0f,  1.0f, 0.0f, 1.0f },
+    {  1.0f, -1.0f, 1.0f, 0.0f },
+    {  1.0f,  1.0f, 1.0f, 1.0f },
+};
+
+const uint quad_indices[6] = {
+    0, 1, 2,
+    2, 1, 3
+};
 
 void main() {
-    gl_Position = vec4(in_position.xyz, 1.0f);
-    uv = in_uv;
+    vec4 vertex = quad_vertices[quad_indices[gl_VertexIndex]];
+    gl_Position = vec4(vertex.xy, 0.0f, 1.0f);
+    out_uv = vertex.zw;
 }
 #endif
 
@@ -29,7 +41,7 @@ layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    out_color = texture(u_screen, vec2(in_uv.x, -in_uv.y));
+    out_color = texture(u_screen, vec2(in_uv));
 }
 
 #endif

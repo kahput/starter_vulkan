@@ -52,6 +52,7 @@ ENGINE_API String stringpath_join(Arena *arena, String head, String tail);
 ENGINE_API String stringpath_normalize(Arena *arena, String path);
 
 ENGINE_API String string_copy(Arena *arena, String s);
+ENGINE_API String string_merge(Arena *arena, String a, String b);
 
 ENGINE_API String string_format(Arena *arena, const char *format, ...);
 ENGINE_API String string_formatv(Arena *arena, const char *format, va_list args);

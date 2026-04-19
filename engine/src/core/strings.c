@@ -1,4 +1,5 @@
 #include "strings.h"
+#include "core/arena.h"
 
 #include <string.h>
 #include <ctype.h>
@@ -321,9 +322,10 @@ String string_copy(Arena *arena, String str) {
 		return (String){ 0 };
 
 	// Allocate length + 1 for implicit null termination convenience
-	char *data = arena_push_count(arena, str.length + 1, char);
+	uint32_t length = str.chars[str.length - 1] != 0 ? str.length + 1 : str.length;
+	char *data = arena_push_count(arena, length, char);
 	memory_copy(data, str.chars, str.length);
-	data[str.length] = '\0';
+	data[length - 1] = '\0';
 
 	return (String){ .chars = data, .length = str.length };
 }

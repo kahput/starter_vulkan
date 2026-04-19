@@ -25,7 +25,7 @@ static AssetType file_extension_to_asset_type(String extension);
 bool asset_library_track_directory(AssetLibrary *tracker, String directory) {
 	ArenaTemp scratch = arena_scratch_begin(tracker->arena);
 
-	StringList file_list = filesystem_list_files(scratch.arena, directory, true);
+	StringList file_list = filesystem_directory_files(scratch.arena, directory, true);
 	StringNode *file = file_list.first;
 	uint32_t count = 0;
 

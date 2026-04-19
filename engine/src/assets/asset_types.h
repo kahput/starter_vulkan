@@ -15,23 +15,14 @@ typedef enum {
 	ASSET_TYPE_COUNT,
 } AssetType;
 
-typedef struct {
-	void *internal;
-
-	uint8_t *bitmap;
-	int32_t width, height;
-} Font;
-
 typedef struct image {
 	void *pixels;
 	int32_t width, height, channels;
 } ImageSource;
 
-typedef struct shader_source {
-	UUID id;
-	String path;
-
-	String vertex_shader, fragment_shader;
+typedef struct {
+	String vertex_path, fragment_path;
+	Span vertex, fragment;
 } ShaderSource;
 
 typedef enum {
@@ -70,16 +61,16 @@ typedef struct material_source {
 
 typedef struct {
 	float32x3 position;
-    float _pad0;
+	float _pad0;
 	float32x3 normal;
-    float _pad1;
+	float _pad1;
 	float32x2 uv;
-    float2 _pad2;
+	float2 _pad2;
 	float32x4 tangent;
 	float32x4 color;
 } Vertex;
 
-typedef struct model_source {
+typedef struct scene_source {
 	MeshSource *meshes;
 	uint32_t mesh_count;
 
@@ -90,4 +81,11 @@ typedef struct model_source {
 	uint32_t image_count;
 
 	uint32_t *mesh_to_material;
-} ModelSource;
+	Interval3 *bounding_boxes;
+
+	uint8_t *vertices;
+	size_t vertices_size;
+
+	uint8_t *indices;
+	size_t indices_size;
+} SceneSource;

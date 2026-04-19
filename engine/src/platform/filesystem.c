@@ -65,7 +65,7 @@ bool filesystem_file_copy(String from, String to) {
 	return true;
 }
 
-StringList filesystem_list_files(Arena *arena, String directory_path, bool recursive) {
+StringList filesystem_directory_files(Arena *arena, String directory_path, bool recursive) {
 	StringList list = { 0 };
 	ArenaTemp scratch = arena_scratch_begin(arena);
 
@@ -95,7 +95,7 @@ StringList filesystem_list_files(Arena *arena, String directory_path, bool recur
 
 		if (S_ISDIR(info.st_mode)) {
 			if (recursive) {
-				StringList sub_list = filesystem_list_files(arena, temp_full_path, true);
+				StringList sub_list = filesystem_directory_files(arena, temp_full_path, true);
 
 				if (sub_list.count > 0) {
 					if (list.last)

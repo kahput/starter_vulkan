@@ -23,22 +23,22 @@ bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, Vulkan
 
 bool reflect_shader_interface(
 	Arena *arena, VulkanContext *context, VulkanShader *shader,
-	ShaderConfig config, ShaderReflection *out_reflection);
+	Span vertex, Span fragment, ShaderReflection *out_reflection);
 
 RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
-	ShaderConfig config, ShaderReflection *out_reflection) {
+	Span vertex, Span fragment, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
-	if (config.vertex.buffer == NULL || config.vertex.size == 0 || config.fragment.buffer == NULL || config.fragment.size == 0) {
+	if (vertex.buffer == NULL || vertex.size == 0 || fragment.buffer == NULL || fragment.size == 0) {
 		LOG_ERROR("Vulkan: invalid shader code passed, aborting %s", __func__);
 		return INVALID_RHI(RhiShader);
 	}
 
 	VkShaderModuleCreateInfo vsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config.vertex.size,
-		.pCode = (uint32_t *)config.vertex.buffer,
+		.codeSize = vertex.size,
+		.pCode = (uint32_t *)vertex.buffer,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
@@ -48,8 +48,8 @@ RhiShader vulkan_shader_make(
 
 	VkShaderModuleCreateInfo fsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = config.fragment.size,
-		.pCode = (uint32_t *)config.fragment.buffer,
+		.codeSize = fragment.size,
+		.pCode = (uint32_t *)fragment.buffer,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
@@ -57,7 +57,7 @@ RhiShader vulkan_shader_make(
 		return INVALID_RHI(RhiShader);
 	}
 
-	reflect_shader_interface(arena, context, shader, config, out_reflection);
+	reflect_shader_interface(arena, context, shader, vertex, fragment, out_reflection);
 	shader->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	shader->first_free = arena_freelist_wrap_array(shader->variants, VulkanPipeline);
@@ -363,17 +363,17 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 
 bool reflect_shader_interface(
 	Arena *arena, VulkanContext *context, VulkanShader *shader,
-	ShaderConfig config, ShaderReflection *out_reflection) {
+	Span vertex, Span fragment, ShaderReflection *out_reflection) {
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
-	result = spvReflectCreateShaderModule(config.vertex.size, config.vertex.buffer, &vertex_module);
+	result = spvReflectCreateShaderModule(vertex.size, vertex.buffer, &vertex_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect vertex shader");
 		return false;
 	}
 
-	result = spvReflectCreateShaderModule(config.fragment.size, config.fragment.buffer, &fragment_module);
+	result = spvReflectCreateShaderModule(fragment.size, fragment.buffer, &fragment_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect fragment shader");
 		spvReflectDestroyShaderModule(&vertex_module);

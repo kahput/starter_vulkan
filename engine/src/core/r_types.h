@@ -14,10 +14,6 @@ RHI_HANDLE(RhiShader);
 RHI_HANDLE(RhiUniformSet);
 // clang-format on
 
-typedef struct {
-	Span vertex, fragment;
-} ShaderConfig;
-
 typedef enum {
 	SHADER_ATTRIBUTE_LOCATION_POSITION,
 	SHADER_ATTRIBUTE_LOCATION_NORAML,

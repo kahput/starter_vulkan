@@ -5,7 +5,7 @@
 #include <vulkan/vulkan_core.h>
 
 VkDeviceSize vulkan_memory_required_alignment(VulkanContext *context, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_properties) {
-    // NOTE: Seems like device local index/vertex buffers don't need alignment at all 
+	// NOTE: Seems like device local index/vertex buffers don't need alignment at all
 	VkDeviceSize alignment = 1;
 
 	if (FLAG_GET(memory_properties, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
