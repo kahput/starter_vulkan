@@ -91,18 +91,40 @@ typedef enum {
 	AXIS_MODE_ZX,
 	AXIS_MODE_XYZ,
 } AxisMode;
-typedef struct Editor {
-	float sensitivity, pan_speed, zoom_speed;
-	Camera camera;
 
-	bool grab;
+typedef enum {
+	EDITOR_MODE_VIEWING,
+	EDITOR_MODE_GRABBING,
+	EDITOR_MODE_ADDING,
+} EditorMode;
+
+typedef struct {
 	uint32_t number_input;
 
 	AxisMode axis_mode;
 	bool axis_reverse;
 
-	float2 grab_mouse_position;
-	TransformComponent cached_selection_transform;
+	float2 mouse_start_position;
+	TransformComponent cached_transform;
+} EditorGrabInfo;
+
+typedef struct {
+	uint32_t selected;
+} EditorAddInfo;
+
+typedef struct Editor {
+	float sensitivity, pan_speed, zoom_speed;
+	Camera camera;
+
+	EditorMode mode;
+	EditorAddInfo add;
+	EditorGrabInfo grab;
+
+	struct {
+		TransformComponent cached;
+		Entity entity;
+	} redo_steps[32];
+	uint32_t redo_count, redo_write_cursor;
 } Editor;
 
 typedef struct {
@@ -158,7 +180,7 @@ typedef struct {
 	Camera *camera;
 } PermanentState;
 
-Editor editor_make(void);
+Editor editor_make(Arena *arena);
 void editor_update(PermanentState *state, Editor *editor, float dt);
 void editor_draw(PermanentState *state, Editor *editor);
 
@@ -403,7 +425,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->target_azimuth = C_PIf * 0.5f;
 		pstate->target_theta = C_PIf / 3.f;
 
-		pstate->editor = editor_make();
+		pstate->editor = editor_make(&pstate->arena);
 
 		for (uint32_t index = 0; index < 32; ++index) {
 			Entity e = pstate->entity_count++;
@@ -651,7 +673,7 @@ GameInterface game_hookup(void) {
 	return interface;
 }
 
-Editor editor_make(void) {
+Editor editor_make(Arena *arena) {
 	Editor result = {
 		.pan_speed = 0.005f,
 		.zoom_speed = 0.05f,
@@ -663,7 +685,8 @@ Editor editor_make(void) {
 		  .fov = 45.f,
 
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
-		}
+		},
+		.redo_write_cursor = 0,
 	};
 
 	return result;
@@ -678,26 +701,16 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	else
 		window_set_cursor_locked(pstate->display, false);
 
-	// State transition
-	if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
-		double2 mouse_position = input_mouse_position();
-		uint32_t node_index = 0;
-		vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &node_index);
-		LOG_INFO("Node index = %d", node_index);
-
-		pstate->selected_entity = node_index;
-	}
-
 	if (pstate->selected_entity) {
 		if (input_key_pressed(KEY_CODE_G)) {
-			editor->grab = !editor->grab;
-			if (editor->grab) {
-				editor->cached_selection_transform = pstate->transforms[pstate->selected_entity];
-				editor->grab_mouse_position = float2_from_double2(input_mouse_position());
+			editor->mode = editor->mode == EDITOR_MODE_GRABBING ? EDITOR_MODE_VIEWING : EDITOR_MODE_GRABBING;
+			if (editor->mode == EDITOR_MODE_GRABBING) {
+				editor->grab.cached_transform = pstate->transforms[pstate->selected_entity];
+				editor->grab.mouse_start_position = float2_from_double2(input_mouse_position());
 			}
 		}
 
-		if (editor->grab) {
+		if (editor->mode == EDITOR_MODE_GRABBING) {
 			bool exclude = input_key_down(KEY_CODE_LEFTCTRL);
 
 			bool x_axis = input_key_pressed(KEY_CODE_X);
@@ -706,18 +719,18 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 			if (exclude == false) {
 				if (x_axis)
-					editor->axis_mode = AXIS_MODE_X;
+					editor->grab.axis_mode = AXIS_MODE_X;
 				if (y_axis)
-					editor->axis_mode = AXIS_MODE_Y;
+					editor->grab.axis_mode = AXIS_MODE_Y;
 				if (z_axis)
-					editor->axis_mode = AXIS_MODE_Z;
+					editor->grab.axis_mode = AXIS_MODE_Z;
 			}
 		}
 	}
 
 	float2 screen_size = float2_from_uint2(window_size_pixel(pstate->display));
 	float2 mouse_position = float2_from_double2(input_mouse_position());
-	float2 offset = float2_negate(float2_subtract(mouse_position, editor->grab_mouse_position));
+	float2 offset = float2_negate(float2_subtract(mouse_position, editor->grab.mouse_start_position));
 
 	float3 camera_target_offset = float3_subtract(camera->target, camera->position);
 	float3 camera_forward = float3_normalize(camera_target_offset);
@@ -725,9 +738,9 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	float3 camera_right = float3_cross(camera->up, camera_forward);
 	float3 camera_up = float3_cross(camera_right, camera_forward);
 
-	if (editor->grab) {
+	if (editor->mode == EDITOR_MODE_GRABBING) {
 		TransformComponent *transform = &pstate->transforms[pstate->selected_entity];
-		float distance = float3_dot(float3_subtract(editor->cached_selection_transform.position, camera->position), camera_forward);
+		float distance = float3_dot(float3_subtract(editor->grab.cached_transform.position, camera->position), camera_forward);
 		float fov_radians = deg2radf(camera->fov);
 		float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
 		float frustum_width = frustum_height * (screen_size.x / screen_size.y);
@@ -739,52 +752,52 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 		for (uint32_t key = KEY_CODE_0; key < KEY_CODE_9 + 1; ++key) {
 			if (input_key_pressed(key)) {
-				if (editor->number_input == 0)
-					*transform = editor->cached_selection_transform;
-				editor->number_input *= 10;
-				editor->number_input += key - KEY_CODE_0;
+				if (editor->grab.number_input == 0)
+					*transform = editor->grab.cached_transform;
+				editor->grab.number_input *= 10;
+				editor->grab.number_input += key - KEY_CODE_0;
 			}
 		}
 		if (input_key_pressed(KEY_CODE_MINUS))
-			editor->axis_reverse = true;
+			editor->grab.axis_reverse = true;
 
-		if (editor->axis_mode == AXIS_MODE_NONE && editor->number_input == 0) {
+		if (editor->grab.axis_mode == AXIS_MODE_NONE && editor->grab.number_input == 0) {
 			// TODO: The postion/rotation/scale are in local space, extract/calculate the world position
 			float3 move_x = float3_scale(camera_right, offset.x * units_per_pixel.x);
 			float3 move_y = float3_scale(camera_up, -offset.y * units_per_pixel.y);
 
 			transform->position = float3_add(
-				float3_add(editor->cached_selection_transform.position, move_x),
+				float3_add(editor->grab.cached_transform.position, move_x),
 				move_y);
-		} else if (editor->axis_mode != AXIS_MODE_NONE && editor->number_input == 0) {
+		} else if (editor->grab.axis_mode != AXIS_MODE_NONE && editor->grab.number_input == 0) {
 			// TODO: Move on camera view's relation to the global axis
 
 			float3 axis = { 0 };
-			if (editor->axis_mode == AXIS_MODE_X)
+			if (editor->grab.axis_mode == AXIS_MODE_X)
 				axis = float3_dot(FLOAT3_X, camera_right) > 0 ? FLOAT3_X : float3_negate(FLOAT3_X);
-			else if (editor->axis_mode == AXIS_MODE_Z)
+			else if (editor->grab.axis_mode == AXIS_MODE_Z)
 				axis = float3_dot(FLOAT3_Z, camera_up) > 0 ? float3_negate(FLOAT3_Z) : FLOAT3_Z;
-			else if (editor->axis_mode == AXIS_MODE_Y)
+			else if (editor->grab.axis_mode == AXIS_MODE_Y)
 				axis = FLOAT3_Y;
 			float3 move_x = float3_scale(axis, offset.x * units_per_pixel.x);
 			float3 move_y = float3_scale(axis, offset.y * units_per_pixel.y);
 
 			transform->position = float3_add(
-				float3_add(editor->cached_selection_transform.position, move_x),
+				float3_add(editor->grab.cached_transform.position, move_x),
 				move_y);
-		} else if (editor->number_input || editor->axis_reverse) {
+		} else if (editor->grab.number_input || editor->grab.axis_reverse) {
 			if (input_key_pressed(KEY_CODE_BACKSPACE))
-				editor->number_input /= 10;
+				editor->grab.number_input /= 10;
 
 			float3 move = { 0 };
-			float scale = editor->number_input * (editor->axis_reverse ? -1.f : 1.f);
-			if (editor->axis_mode == AXIS_MODE_X)
+			float scale = editor->grab.number_input * (editor->grab.axis_reverse ? -1.f : 1.f);
+			if (editor->grab.axis_mode == AXIS_MODE_X)
 				move = float3_scale(FLOAT3_X, scale);
-			else if (editor->axis_mode == AXIS_MODE_Z)
+			else if (editor->grab.axis_mode == AXIS_MODE_Z)
 				move = float3_scale(FLOAT3_Z, scale);
-			else if (editor->axis_mode == AXIS_MODE_Y)
+			else if (editor->grab.axis_mode == AXIS_MODE_Y)
 				move = float3_scale(FLOAT3_Y, scale);
-			transform->position = float3_add(editor->cached_selection_transform.position, move);
+			transform->position = float3_add(editor->grab.cached_transform.position, move);
 		}
 
 		float4x4 translation = float4x4_translation(transform->position);
@@ -794,20 +807,26 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		transform->global = float4x4_multiply(translation, float4x4_multiply(rotation, scale));
 
 		if (input_mouse_pressed(MOUSE_BUTTON_LEFT) || input_key_pressed(KEY_CODE_ENTER)) {
-			editor->axis_mode = AXIS_MODE_NONE;
-			editor->axis_reverse = false;
-			editor->grab = false;
-			editor->number_input = 0;
-		}
-		if (input_mouse_pressed(MOUSE_BUTTON_RIGHT) || input_key_pressed(KEY_CODE_ESCAPE)) {
-			editor->axis_mode = AXIS_MODE_NONE;
-			editor->axis_reverse = false;
-			editor->grab = false;
-			editor->number_input = 0;
+			editor->redo_steps[editor->redo_write_cursor].entity = pstate->selected_entity;
+			editor->redo_steps[editor->redo_write_cursor].cached = editor->grab.cached_transform;
 
-			*transform = editor->cached_selection_transform;
+			editor->redo_write_cursor = (editor->redo_write_cursor + 1) % countof(editor->redo_steps);
+			editor->redo_count++;
+			editor->redo_count = MIN(countof(editor->redo_steps), editor->redo_count);
 		}
+		if (input_mouse_pressed(MOUSE_BUTTON_RIGHT) || input_key_pressed(KEY_CODE_ESCAPE))
+			*transform = editor->grab.cached_transform;
+
 	} else {
+		if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
+			double2 mouse_position = input_mouse_position();
+			uint32_t node_index = 0;
+			vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &node_index);
+			LOG_INFO("Node index = %d", node_index);
+
+			pstate->selected_entity = node_index;
+		}
+
 		if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
 			float2 shift = float2_scale(mouse_delta, editor->pan_speed);
 			shift.y *= -1;
@@ -850,6 +869,31 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 				},
 				camera->target);
 		}
+	}
+
+	if (editor->redo_count &&
+		input_key_down(KEY_CODE_LEFTCTRL) && input_key_pressed(KEY_CODE_Z)) {
+		int32_t last_step = editor->redo_write_cursor - 1;
+		if (last_step < 0)
+			last_step = countof(editor->redo_steps) - 1;
+
+		TransformComponent *transform = &pstate->transforms[editor->redo_steps[last_step].entity];
+		*transform = editor->redo_steps[last_step].cached;
+
+		editor->redo_write_cursor = last_step;
+		editor->redo_count--;
+	}
+	if (input_mouse_pressed(MOUSE_BUTTON_LEFT) || input_key_pressed(KEY_CODE_ENTER)) {
+		editor->grab.axis_mode = AXIS_MODE_NONE;
+		editor->grab.axis_reverse = false;
+		editor->mode = EDITOR_MODE_VIEWING;
+		editor->grab.number_input = 0;
+	}
+	if (input_mouse_pressed(MOUSE_BUTTON_RIGHT) || input_key_pressed(KEY_CODE_ESCAPE)) {
+		editor->grab.axis_mode = AXIS_MODE_NONE;
+		editor->grab.axis_reverse = false;
+		editor->mode = EDITOR_MODE_VIEWING;
+		editor->grab.number_input = 0;
 	}
 }
 
