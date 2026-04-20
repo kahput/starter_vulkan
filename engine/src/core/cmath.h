@@ -95,6 +95,8 @@ ENGINE_API float4x4 float4x4_translation(float3 translation);
 ENGINE_API float4x4 float4x4_rotation(float angle, float3 axis);
 ENGINE_API float4x4 float4x4_scaling(float3 scale);
 
+ENGINE_API float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale);
+
 ENGINE_API float4x4 float4x4_perspective(float fovy_radians, float aspect,
 	float near_z, float far_z);
 ENGINE_API float4x4 float4x4_orthographic(float left, float right, float top,

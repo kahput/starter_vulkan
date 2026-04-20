@@ -63,11 +63,18 @@ typedef struct {
 typedef uint32_t Entity;
 
 typedef struct {
-	uint32_t parent_index;
+	float3 position;
+	float3 rotation;
+	float3 scale;
 
-	float3 position, scale, rotation;
-	float4x4 local, global;
-} TransformComponent;
+	float4x4 local_matrix;
+	float4x4 global_matrix;
+
+	uint32_t parent_index;
+	uint32_t child_index;
+	uint32_t sibling_index;
+} Transform3;
+typedef Transform3 TransformComponent;
 
 typedef struct {
 	uint32_t mesh_group_index;
@@ -94,7 +101,6 @@ typedef enum {
 typedef enum {
 	EDITOR_MODE_VIEWING,
 	EDITOR_MODE_TRANSFORM,
-	EDITOR_MODE_ADDING,
 } EditorMode;
 
 typedef struct {
@@ -106,26 +112,25 @@ typedef struct {
 	bool rotating;
 
 	float2 mouse_start_position;
-	TransformComponent cached_transform;
+	TransformComponent cached;
 } EditorTransformInfo;
-
-typedef struct {
-	uint32_t entity;
-} EditorAddInfo;
 
 typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
 	Camera camera;
 
+	Entity selected_entity;
+
 	EditorMode mode;
-	EditorAddInfo add;
 	EditorTransformInfo transform;
 
 	struct {
-		TransformComponent cached;
+		TransformComponent cached_transform;
+		// TODO: add redo, extend undo/redo for all changes
+		/* MeshComponent cached_mesh; */
 		Entity entity;
-	} redo_steps[32];
-	uint32_t redo_count, redo_write_cursor;
+	} undo_steps[32];
+	uint32_t undo_count, undo_write_cursor;
 } Editor;
 
 typedef struct {
@@ -175,7 +180,6 @@ typedef struct {
 	MeshComponent meshes[MAX_ENTITIES];
 	uint32_t components[MAX_ENTITIES];
 
-	Entity selected_entity;
 	Entity player;
 
 	Camera *camera;
@@ -184,6 +188,46 @@ typedef struct {
 Editor editor_make(Arena *arena);
 void editor_update(PermanentState *state, Editor *editor, float dt);
 void editor_draw(PermanentState *state, Editor *editor);
+
+bool scene_serialize(String path, PermanentState *pstate) {
+	File file = filesystem_open(path, FILE_MODE_WRITE);
+	if (file.handle == NULL)
+		return false;
+
+	file_write_struct(&file, uint32_t, pstate->entity_count);
+	file_write_count(&file, pstate->entity_count, pstate->transforms);
+	file_write_count(&file, pstate->entity_count, pstate->meshes);
+	file_write_count(&file, pstate->entity_count, pstate->components);
+
+	filesystem_close(&file);
+
+	return true;
+}
+
+void scene_deserialize(String path, PermanentState *pstate) {
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	Span file = filesystem_read(scratch.arena, path);
+
+	pstate->entity_count = *(uint32_t *)file.buffer;
+	file.buffer += 4;
+
+	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
+		pstate->transforms[entity] = *(TransformComponent *)file.buffer;
+		file.buffer += sizeof(TransformComponent);
+	}
+
+	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
+		pstate->meshes[entity] = *(MeshComponent *)file.buffer;
+		file.buffer += sizeof(MeshComponent);
+	}
+
+	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
+		pstate->components[entity] = *(ComponentFlags *)file.buffer;
+		file.buffer += sizeof(ComponentFlags);
+	}
+
+	arena_scratch_end(scratch);
+}
 
 bool window_resize(EventCode code, void *event, void *receiver) {
 	WindowResizeEvent *resize_event = event;
@@ -431,6 +475,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->camera = &pstate->editor.camera;
 		pstate->state = GAME_STATE_EDITOR;
 
+		if (file_exists(S("assets/scene/test.scene")))
+			scene_deserialize(S("assets/scene/test.scene"), pstate);
+
 		arena_scratch_end(scratch);
 
 		pstate->initialized = true;
@@ -564,7 +611,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 					vulkan_uniformset_bind(pstate->context, group);
 
-					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform->global);
+					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), transform->global_matrix.elements);
 
 					vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
 					if (mesh->index_count > 0) {
@@ -672,7 +719,7 @@ Editor editor_make(Arena *arena) {
 
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		},
-		.redo_write_cursor = 0,
+		.undo_write_cursor = 0,
 	};
 
 	return result;
@@ -687,18 +734,19 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	else
 		window_set_cursor_locked(pstate->display, false);
 
-	if (pstate->selected_entity) {
+	bool entity_updated = false;
+	if (editor->selected_entity) {
 		bool is_rotating = false;
 		if (input_key_pressed(KEY_CODE_G) || (is_rotating = input_key_pressed(KEY_CODE_R))) {
 			editor->mode = editor->mode == EDITOR_MODE_TRANSFORM ? EDITOR_MODE_VIEWING : EDITOR_MODE_TRANSFORM;
 			if (editor->mode == EDITOR_MODE_TRANSFORM) {
 				editor->transform.rotating = is_rotating;
-				editor->transform.cached_transform = pstate->transforms[pstate->selected_entity];
+				editor->transform.cached = pstate->transforms[editor->selected_entity];
 				editor->transform.mouse_start_position = float2_from_double2(input_mouse_position());
 			}
 		}
 
-		float3 position = pstate->transforms[pstate->selected_entity].position;
+		float3 position = pstate->transforms[editor->selected_entity].position;
 		/* LOG_INFO("EntityPosition = %.2f, %.2f, %.2f", position.x, position.y, position.z); */
 
 		if (editor->mode == EDITOR_MODE_TRANSFORM) {
@@ -717,27 +765,68 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 					editor->transform.axis_mode = AXIS_MODE_Z;
 			}
 		}
+
+		uint32_t group_count = arena_array_count(pstate->assets.mesh_groups);
+		MeshComponent *add_entity_mesh = &pstate->meshes[editor->selected_entity];
+		if (input_key_pressed(KEY_CODE_RIGHTBRACKET)) {
+			add_entity_mesh->mesh_group_index = (add_entity_mesh->mesh_group_index % (group_count - 1)) + 1;
+		}
+		if (input_key_pressed(KEY_CODE_LEFTBRACKET)) {
+			add_entity_mesh->mesh_group_index = add_entity_mesh->mesh_group_index > 1
+												  ? add_entity_mesh->mesh_group_index - 1
+												  : group_count - 1;
+		}
+
+		if (input_key_down(KEY_CODE_LEFTSHIFT) && input_key_pressed(KEY_CODE_D)) {
+			TransformComponent transform_selected = pstate->transforms[editor->selected_entity];
+			MeshComponent mesh_selected = pstate->meshes[editor->selected_entity];
+
+			float3 place_position = transform_selected.position;
+
+			Entity entity = pstate->entity_count++;
+			ASSERT(entity < MAX_ENTITIES);
+			pstate->transforms[entity] = (TransformComponent){
+				.position = transform_selected.position,
+				.scale = transform_selected.scale,
+				.rotation = transform_selected.rotation,
+				.global_matrix = transform_selected.global_matrix,
+			};
+			pstate->meshes[entity] = (MeshComponent){
+				.mesh_group_index = mesh_selected.mesh_group_index,
+				.material_index = mesh_selected.material_index
+			};
+
+			pstate->components[entity] = COMPONENT_FLAG_DRAWABLE;
+			editor->selected_entity = entity;
+		}
+	}
+
+	if (input_key_down(KEY_CODE_LEFTCTRL) && input_key_pressed(KEY_CODE_S)) {
+		if (pstate->entity_count > 0) {
+			String path = S("assets/scene/test.scene");
+			filesystem_make_directory(stringpath_directory(path));
+
+			if (scene_serialize(path, pstate))
+				LOG_INFO("Serialized scene to '%.*s'", SARG(path));
+		}
 	}
 
 	if (input_key_down(KEY_CODE_LEFTSHIFT) && input_key_pressed(KEY_CODE_A)) {
-		editor->mode = EDITOR_MODE_ADDING;
-
 		float3 place_position = { 0 };
 
-		editor->add.entity = pstate->entity_count++;
-		Entity entity = editor->add.entity;
+		Entity entity = pstate->entity_count++;
 		ASSERT(entity < MAX_ENTITIES);
 		pstate->transforms[entity] = (TransformComponent){
 			.position = place_position,
 			.scale = FLOAT3_ONE,
-			.global = float4x4_translation(place_position),
+			.global_matrix = float4x4_translation(place_position),
 		};
 		pstate->meshes[entity] = (MeshComponent){
 			.mesh_group_index = 1,
 		};
 
 		pstate->components[entity] = COMPONENT_FLAG_DRAWABLE;
-		pstate->selected_entity = entity;
+		editor->selected_entity = entity;
 	}
 
 	float2 screen_size = float2_from_uint2(window_size_pixel(pstate->display));
@@ -754,11 +843,11 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		case EDITOR_MODE_VIEWING: {
 			if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
 				double2 mouse_position = input_mouse_position();
-				uint32_t node_index = 0;
-				vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &node_index);
-				LOG_INFO("Node index = %d", node_index);
+				uint32_t entity = 0;
+				vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &entity);
+				LOG_INFO("Entity = %d", entity);
 
-				pstate->selected_entity = node_index;
+				editor->selected_entity = entity;
 			}
 
 			if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
@@ -804,22 +893,24 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 					camera->target);
 			}
 
-			if (editor->redo_count &&
+			if (editor->undo_count &&
 				input_key_down(KEY_CODE_LEFTCTRL) && input_key_pressed(KEY_CODE_Z)) {
-				int32_t last_step = editor->redo_write_cursor - 1;
+				int32_t last_step = editor->undo_write_cursor - 1;
 				if (last_step < 0)
-					last_step = countof(editor->redo_steps) - 1;
+					last_step = countof(editor->undo_steps) - 1;
 
-				TransformComponent *transform = &pstate->transforms[editor->redo_steps[last_step].entity];
-				*transform = editor->redo_steps[last_step].cached;
+				Entity entity = editor->undo_steps[last_step].entity;
+				TransformComponent *transform = &pstate->transforms[editor->undo_steps[last_step].entity];
+				pstate->transforms[entity] = editor->undo_steps[last_step].cached_transform;
+				/* pstate->meshes[entity] = editor->undo_steps[last_step].cached_mesh; */
 
-				editor->redo_write_cursor = last_step;
-				editor->redo_count--;
+				editor->undo_write_cursor = last_step;
+				editor->undo_count--;
 			}
 		} break;
 		case EDITOR_MODE_TRANSFORM: {
-			TransformComponent *transform = &pstate->transforms[pstate->selected_entity];
-			float distance = float3_dot(float3_subtract(editor->transform.cached_transform.position, camera->position), camera_forward);
+			TransformComponent *transform = &pstate->transforms[editor->selected_entity];
+			float distance = float3_dot(float3_subtract(editor->transform.cached.position, camera->position), camera_forward);
 			float fov_radians = deg2radf(camera->fov);
 			float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
 			float frustum_width = frustum_height * (screen_size.x / screen_size.y);
@@ -832,7 +923,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			for (uint32_t key = KEY_CODE_0; key < KEY_CODE_9 + 1; ++key) {
 				if (input_key_pressed(key)) {
 					if (editor->transform.number_input == 0)
-						*transform = editor->transform.cached_transform;
+						*transform = editor->transform.cached;
 					editor->transform.number_input *= 10;
 					editor->transform.number_input += key - KEY_CODE_0;
 				}
@@ -853,7 +944,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 					rotation = float3_scale(FLOAT3_Z, scale);
 				else if (editor->transform.axis_mode == AXIS_MODE_Y)
 					rotation = float3_scale(FLOAT3_Y, scale);
-				transform->rotation = float3_add(editor->transform.cached_transform.position, rotation);
+				transform->rotation = float3_add(editor->transform.cached.rotation, rotation);
 
 			} else {
 				if (editor->transform.axis_mode == AXIS_MODE_XYZ && editor->transform.number_input == 0) {
@@ -862,7 +953,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 					float3 move_y = float3_scale(camera_up, -mouse_offset.y * units_per_pixel.y);
 
 					transform->position = float3_add(
-						float3_add(editor->transform.cached_transform.position, move_x),
+						float3_add(editor->transform.cached.position, move_x),
 						move_y);
 				} else if (editor->transform.axis_mode && editor->transform.number_input == 0) {
 					// TODO: Move on camera view's relation to the global axis
@@ -883,7 +974,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 					float3 move_y = float3_scale(axis, sign.y * mouse_offset.y * units_per_pixel.y);
 
 					transform->position = float3_add(
-						float3_add(editor->transform.cached_transform.position, move_x),
+						float3_add(editor->transform.cached.position, move_x),
 						move_y);
 				} else if (editor->transform.number_input || editor->transform.axis_reverse) {
 					if (input_key_pressed(KEY_CODE_BACKSPACE))
@@ -897,7 +988,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 						move = float3_scale(FLOAT3_Z, scale);
 					else if (editor->transform.axis_mode == AXIS_MODE_Y)
 						move = float3_scale(FLOAT3_Y, scale);
-					transform->position = float3_add(editor->transform.cached_transform.position, move);
+					transform->position = float3_add(editor->transform.cached.position, move);
 				}
 			}
 
@@ -906,37 +997,18 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 				transform->position.y = (int32_t)transform->position.y;
 				transform->position.z = (int32_t)transform->position.z;
 			}
-
-			float4x4 translation = float4x4_translation(transform->position);
-			float4x4 scale = float4x4_scaling(transform->scale);
-			float4x4 rotation_x = float4x4_rotation(transform->rotation.x, FLOAT3_X);
-			float4x4 rotation_y = float4x4_rotation(transform->rotation.y, FLOAT3_Y);
-			float4x4 rotation_z = float4x4_rotation(transform->rotation.z, FLOAT3_Z);
-			float4x4 rotation = float4x4_multiply(rotation_z, float4x4_multiply(rotation_y, rotation_x));
-
-			transform->global = float4x4_multiply(translation, float4x4_multiply(rotation, scale));
+			transform->global_matrix = float4x4_compose(transform->position, transform->rotation, transform->scale);
 
 			if (input_mouse_pressed(MOUSE_BUTTON_LEFT) || input_key_pressed(KEY_CODE_ENTER)) {
-				editor->redo_steps[editor->redo_write_cursor].entity = pstate->selected_entity;
-				editor->redo_steps[editor->redo_write_cursor].cached = editor->transform.cached_transform;
+				editor->undo_steps[editor->undo_write_cursor].entity = editor->selected_entity;
+				editor->undo_steps[editor->undo_write_cursor].cached_transform = editor->transform.cached;
 
-				editor->redo_write_cursor = (editor->redo_write_cursor + 1) % countof(editor->redo_steps);
-				editor->redo_count++;
-				editor->redo_count = MIN(countof(editor->redo_steps), editor->redo_count);
+				editor->undo_write_cursor = (editor->undo_write_cursor + 1) % countof(editor->undo_steps);
+				editor->undo_count++;
+				editor->undo_count = MIN(countof(editor->undo_steps), editor->undo_count);
 			}
 			if (input_mouse_pressed(MOUSE_BUTTON_RIGHT) || input_key_pressed(KEY_CODE_ESCAPE))
-				*transform = editor->transform.cached_transform;
-		} break;
-		case EDITOR_MODE_ADDING: {
-			uint32_t group_count = arena_array_count(pstate->assets.mesh_groups);
-			MeshComponent *add_entity_mesh = &pstate->meshes[editor->add.entity];
-			if (input_key_pressed(KEY_CODE_RIGHTBRACKET))
-				add_entity_mesh->mesh_group_index = (add_entity_mesh->mesh_group_index % (group_count - 1)) + 1;
-			if (input_key_pressed(KEY_CODE_LEFTBRACKET)) {
-				add_entity_mesh->mesh_group_index = add_entity_mesh->mesh_group_index > 1
-													  ? add_entity_mesh->mesh_group_index - 1
-													  : group_count - 1;
-			}
+				*transform = editor->transform.cached;
 		} break;
 	}
 
@@ -947,7 +1019,6 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 	) {
 		editor->transform = (EditorTransformInfo){ 0 };
-		editor->add = (EditorAddInfo){ 0 };
 		editor->mode = EDITOR_MODE_VIEWING;
 	}
 }
@@ -1022,7 +1093,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 			for (uint32_t mesh_index = mesh_group.x; mesh_index < mesh_group.x + mesh_group.y; ++mesh_index) {
 				Mesh *mesh = &pstate->assets.meshes[mesh_index];
-				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform.global);
+				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), &transform.global_matrix);
 
 				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
 				if (mesh->index_count > 0) {
@@ -1048,9 +1119,9 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		PipelineDesc pipeline = DEFAULT_PIPELINE;
 		vulkan_shader_bind(pstate->context, pstate->line_shader, pipeline);
 
-		if (pstate->selected_entity) {
-			TransformComponent *transform = &pstate->transforms[pstate->selected_entity];
-			MeshComponent *mesh_component = &pstate->meshes[pstate->selected_entity];
+		if (editor->selected_entity) {
+			TransformComponent *transform = &pstate->transforms[editor->selected_entity];
+			MeshComponent *mesh_component = &pstate->meshes[editor->selected_entity];
 
 			ASSERT(mesh_component->mesh_group_index || mesh_component->mesh_group_index < arena_array_count(pstate->assets.mesh_groups));
 			uint32x2 mesh_group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
@@ -1117,7 +1188,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 					sizeof(points), points);
 			}
 
-			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), transform->global.elements);
+			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), transform->global_matrix.elements);
 
 			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->line_shader, 1);
 			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, offset, size, buffer);

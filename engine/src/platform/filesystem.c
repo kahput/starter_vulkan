@@ -12,13 +12,46 @@
 
 #include "dirent.h"
 
-bool filesystem_file_exists(String path) {
+bool file_exists(String path) {
 	FILE *file = fopen((const char *)path.chars, "r");
 	if (file) {
 		fclose(file);
 		return true;
 	}
 	return false;
+}
+
+File filesystem_open(String path, FileMode mode) {
+	FILE *file = fopen((const char *)path.chars, mode == FILE_MODE_READ ? "rb" : "wb");
+	if (file == NULL)
+		LOG_WARN("Failed to open file at '%.*s'", SARG(path));
+
+	return (File){ .handle = file };
+}
+
+size_t filesystem_write(File *file, size_t element_size, uint32_t element_count, void *data) {
+	size_t written = 0;
+	if (file->handle)
+		written = fwrite(data, element_size, element_count, file->handle);
+	return written;
+}
+
+void filesystem_close(File *file) {
+	if (file->handle)
+		fclose(file->handle);
+}
+
+ENGINE_API void filesystem_make_directory(String directory) {
+	struct stat st = { 0 };
+
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	String null_terminated = string_copy(scratch.arena, directory);
+
+	if (stat(null_terminated.chars, &st) == -1) {
+		mkdir(null_terminated.chars, 0700);
+	}
+
+	arena_scratch_end(scratch);
 }
 
 Span filesystem_read(Arena *arena, String path) {

@@ -120,7 +120,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 					ASSERT_MESSAGE(false, "Expected png or jpeg");
 
 				String output_path = string_format(arena, "%s/%s.%s", directory.chars, name.chars, extension);
-				if (filesystem_file_exists(output_path) == false) {
+				if (file_exists(output_path) == false) {
 					dst->pixels = stbi_load_from_memory(buffer_data, src->buffer_view->size, &dst->width, &dst->height, &dst->channels, 4);
 					stbi_write_png(output_path.chars, dst->width, dst->height, 4, dst->pixels, STBI_default);
 					stbi_image_free(dst->pixels);

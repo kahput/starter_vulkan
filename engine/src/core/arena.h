@@ -35,7 +35,7 @@ ENGINE_API ArenaTemp arena_temp_begin(Arena *arena);
 ENGINE_API void arena_temp_end(ArenaTemp temp);
 
 ENGINE_API ArenaTemp arena_scratch_begin(Arena *conflict);
-#define arena_scratch_end(scratch) arena_temp_end(scratch)
+static inline void arena_scratch_end(ArenaTemp scratch) { arena_temp_end(scratch); }
 
 #define arena_put(arena, T, ...)                                        \
 	do {                                                                \
