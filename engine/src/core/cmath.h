@@ -109,7 +109,8 @@ ENGINE_API float4x4 float4x4_orthographic(float left, float right, float top,
 ENGINE_API float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
 
 ENGINE_API void float4x4_print(float4x4 m);
-ENGINE_API void float4_print(float4 v);
+ENGINE_API void float2_print(float2 v);
 ENGINE_API void float3_print(float3 v);
+ENGINE_API void float4_print(float4 v);
 
 #endif /* CMATH_H_ */

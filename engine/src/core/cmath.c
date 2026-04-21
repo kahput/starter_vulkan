@@ -440,10 +440,14 @@ void float4x4_print(float4x4 m) {
 		m.elements[3], m.elements[7], m.elements[11], m.elements[15]);
 }
 
-void float4_print(float4 v) {
-	LOG_INFO("Vector4f { %.2f, %.2f, %.2f, %.2f }", v.x, v.y, v.z, v.w);
+void float2_print(float2 v) {
+	LOG_INFO("float2 { %.2f, %.2f, %.2f }", v.x, v.y);
 }
 
 void float3_print(float3 v) {
-	LOG_INFO("Vector3f { %.2f, %.2f, %.2f }", v.x, v.y, v.z);
+	LOG_INFO("float3 { %.2f, %.2f, %.2f }", v.x, v.y, v.z);
+}
+
+void float4_print(float4 v) {
+	LOG_INFO("float4 { %.2f, %.2f, %.2f, %.2f }", v.x, v.y, v.z, v.w);
 }

@@ -107,6 +107,13 @@ typedef enum {
 } AxisMode;
 
 typedef enum {
+	TRS_MODE_NONE,
+	TRS_MODE_TRANSLATION,
+	TRS_MODE_ROTATION,
+	TRS_MODE_SCALING
+} TRSMode;
+
+typedef enum {
 	EDITOR_MODE_VIEWING,
 	EDITOR_MODE_TRANSFORM,
 } EditorMode;
@@ -114,10 +121,10 @@ typedef enum {
 typedef struct {
 	uint32_t number_input;
 
-	AxisMode axis_mode;
+	AxisMode axis;
 	bool axis_reverse;
 
-	bool rotating;
+	TRSMode mode;
 
 	float2 mouse_start_position;
 	TransformComponent cached;
@@ -189,7 +196,6 @@ typedef struct {
 	ColliderComponent colliders[MAX_ENTITIES];
 	uint32_t components[MAX_ENTITIES];
 
-	Entity test_collidable_entity;
 	Entity player;
 
 	Camera *camera;
@@ -302,11 +308,10 @@ float4x4 to_world(PermanentState *pstate, Transform3 *transform) {
 
 		if (transform->child_index) {
 			Transform3 *p = &pstate->transforms[transform->child_index];
-			do {
-				p->global_matrix = to_world(pstate, p);
+			while (p != pstate->transforms) { // Entity 0 == Invalid
+				p->dirty = true;
 				p = &pstate->transforms[p->sibling_index];
-
-			} while (p->sibling_index);
+			}
 		}
 
 		transform->dirty = false;
@@ -612,25 +617,38 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			.target = { 0.0f, 0.0f, 0.0f },
 			.fov = 45.f,
 
-			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC
+			.projection = CAMERA_PROJECTION_PERSPECTIVE
 		};
 		pstate->target_azimuth = C_PIf * 0.5f;
 		pstate->target_theta = C_PIf / 3.f;
 
 		// Test entity
-		Entity ce = pstate->test_collidable_entity = pstate->entity_count++;
-		pstate->transforms[ce] = (TransformComponent){
-			.position = { 10.f, 1.0f, -6.0f },
+		Entity collidable_entity = pstate->entity_count++;
+		pstate->transforms[collidable_entity] = (TransformComponent){
+			.position = { 10.f, 1.0f, -5.5f },
 			.scale = FLOAT3_ONE,
 			.dirty = true,
 		};
-		pstate->colliders[ce] = (ColliderComponent){
+		pstate->colliders[collidable_entity] = (ColliderComponent){
 			.aabb = {
 			  .center = FLOAT3_ZERO,
 			  .extent = { 1.0f, 2.0f, 4.0f },
 			},
 		};
-		pstate->components[ce] = COMPONENT_FLAG_TRANSFORM | COMPONENT_FLAG_COLLIDABLE;
+		pstate->components[collidable_entity] = COMPONENT_FLAG_TRANSFORM | COMPONENT_FLAG_COLLIDABLE;
+		collidable_entity = pstate->entity_count++;
+		pstate->transforms[collidable_entity] = (TransformComponent){
+			.position = { 5.5f, 1.0f, -10.0f },
+			.scale = FLOAT3_ONE,
+			.dirty = true,
+		};
+		pstate->colliders[collidable_entity] = (ColliderComponent){
+			.aabb = {
+			  .center = FLOAT3_ZERO,
+			  .extent = { 4.0f, 2.0f, 1.0f },
+			},
+		};
+		pstate->components[collidable_entity] = COMPONENT_FLAG_TRANSFORM | COMPONENT_FLAG_COLLIDABLE;
 
 		pstate->editor = editor_make(&pstate->arena);
 
@@ -646,6 +664,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	}
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
+
+	if (input_key_pressed(KEY_CODE_P))
+		pstate->game_camera.projection = !pstate->game_camera.projection;
 
 	switch (pstate->state) {
 		case GAME_STATE_PLAY: {
@@ -677,34 +698,41 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			move = float3_normalize_safe(move, EPSILON);
 			float player_move_speed = 10.f;
 			if (float3_length_squared(move) > 0) {
-				float3 old_position = transform->position;
-				float3 new_position = float3_add(transform->position, float3_scale(move, player_move_speed * dt));
-
-				float3 ro = old_position;
-				float3 rd = float3_normalize_safe(float3_subtract(new_position, old_position), EPSILON);
-
-				Transform3 *collision_transform = &pstate->transforms[pstate->test_collidable_entity];
-				ColliderComponent *shape = &pstate->colliders[pstate->test_collidable_entity];
-
-				float3 center = float4x4_transform(to_world(pstate, collision_transform), shape->aabb.center);
-				float3 extent = float3_add(shape->aabb.extent, float3_fill(0.5f));
+				float3 move_delta = float3_scale(move, player_move_speed * dt);
 
 				float t_remaining = 1.0f;
-				float3 move_delta = float3_scale(move, player_move_speed * dt);
 				for (uint32_t iteration = 0; iteration < 4 && t_remaining > 0.0f; ++iteration) {
-                    // Collision detection
-					Raycast3Result result = raycast_aabb3(ro, rd, center, extent);
+					// Collision detection
+					float3 ro = transform->position;
+					float3 rd = float3_normalize_safe(move_delta, EPSILON);
+
+					Raycast3Result nearest = RAY3_NO_HIT;
+					for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
+						ComponentFlags flags = pstate->components[entity];
+						if (FLAG_GET(flags, COMPONENT_FLAG_TRANSFORM) == false ||
+							FLAG_GET(flags, COMPONENT_FLAG_COLLIDABLE) == false)
+							continue;
+						Transform3 *collision_transform = &pstate->transforms[entity];
+						ColliderComponent *shape = &pstate->colliders[entity];
+
+						float3 center = float4x4_transform(to_world(pstate, collision_transform), shape->aabb.center);
+						// NOTE: Minkowski sum
+						float3 extent = float3_add(shape->aabb.extent, float3_fill(0.5f));
+
+						Raycast3Result result = raycast_aabb3(ro, rd, center, extent);
+						if (result.t < nearest.t)
+							nearest = result;
+					}
 
 					// Collision resolution
-					float t_actual = result.t / (player_move_speed * dt);
+					float t_actual = nearest.t / (player_move_speed * dt);
 					float t_min = fminf(1.0f, t_actual);
 
 					transform->dirty = true;
 					transform->position = float3_add(transform->position, float3_scale(move_delta, t_min - 0.001f));
 
-					move_delta = float3_subtract(move_delta, float3_scale(result.normal, float3_dot(move_delta, result.normal)));
-					rd = float3_normalize_safe(move_delta, EPSILON);
-					t_remaining -= t_min * t_remaining;
+					move_delta = float3_subtract(move_delta, float3_scale(nearest.normal, float3_dot(move_delta, nearest.normal)));
+					t_remaining -= t_min;
 				}
 			}
 
@@ -1023,6 +1051,7 @@ Editor editor_make(Arena *arena) {
 
 	return result;
 }
+
 void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	Camera *camera = &editor->camera;
 	float2 mouse_delta = (float2){ input_mouse_dx(), input_mouse_dy() };
@@ -1034,14 +1063,19 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 	bool entity_updated = false;
 	if (editor->selected_entity) {
-		bool is_rotating = false;
-		if (input_key_pressed(KEY_CODE_G) || (is_rotating = input_key_pressed(KEY_CODE_R))) {
-			editor->mode = editor->mode == EDITOR_MODE_TRANSFORM ? EDITOR_MODE_VIEWING : EDITOR_MODE_TRANSFORM;
-			if (editor->mode == EDITOR_MODE_TRANSFORM) {
-				editor->transform.rotating = is_rotating;
-				editor->transform.cached = pstate->transforms[editor->selected_entity];
-				editor->transform.mouse_start_position = float2_from_double2(input_mouse_position());
-			}
+		TRSMode was = editor->transform.mode;
+		if (input_key_pressed(KEY_CODE_G))
+			editor->transform.mode = TRS_MODE_TRANSLATION;
+		if (input_key_pressed(KEY_CODE_R))
+			editor->transform.mode = TRS_MODE_ROTATION;
+		if (input_key_pressed(KEY_CODE_S))
+			editor->transform.mode = TRS_MODE_SCALING;
+
+		if (editor->transform.mode && was != editor->transform.mode) {
+			editor->mode = EDITOR_MODE_TRANSFORM;
+			editor->transform.axis = AXIS_MODE_XYZ;
+			editor->transform.cached = pstate->transforms[editor->selected_entity];
+			editor->transform.mouse_start_position = float2_from_double2(input_mouse_position());
 		}
 
 		float3 position = pstate->transforms[editor->selected_entity].position;
@@ -1056,23 +1090,23 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 			if (exclude == false) {
 				if (x_axis)
-					editor->transform.axis_mode = AXIS_MODE_X;
+					editor->transform.axis = AXIS_MODE_X;
 				if (y_axis)
-					editor->transform.axis_mode = AXIS_MODE_Y;
+					editor->transform.axis = AXIS_MODE_Y;
 				if (z_axis)
-					editor->transform.axis_mode = AXIS_MODE_Z;
+					editor->transform.axis = AXIS_MODE_Z;
 			}
 		}
 
 		uint32_t group_count = arena_array_count(pstate->assets.mesh_groups);
-		MeshComponent *add_entity_mesh = &pstate->meshes[editor->selected_entity];
-		if (input_key_pressed(KEY_CODE_RIGHTBRACKET)) {
-			add_entity_mesh->mesh_group_index = (add_entity_mesh->mesh_group_index % (group_count - 1)) + 1;
+		MeshComponent *entity_mesh = &pstate->meshes[editor->selected_entity];
+		if (input_key_pressed(KEY_CODE_Q)) {
+			entity_mesh->mesh_group_index = entity_mesh->mesh_group_index > 1
+											  ? entity_mesh->mesh_group_index - 1
+											  : group_count - 1;
 		}
-		if (input_key_pressed(KEY_CODE_LEFTBRACKET)) {
-			add_entity_mesh->mesh_group_index = add_entity_mesh->mesh_group_index > 1
-												  ? add_entity_mesh->mesh_group_index - 1
-												  : group_count - 1;
+		if (input_key_pressed(KEY_CODE_E)) {
+			entity_mesh->mesh_group_index = (entity_mesh->mesh_group_index % (group_count - 1)) + 1;
 		}
 
 		if (input_key_down(KEY_CODE_LEFTSHIFT) && input_key_pressed(KEY_CODE_D)) {
@@ -1236,6 +1270,10 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 				.x = frustum_width / screen_size.x,
 				.y = frustum_height / screen_size.y,
 			};
+			float2 pixels_per_unit = {
+				.x = screen_size.x / frustum_width,
+				.y = screen_size.x / frustum_height,
+			};
 
 			for (uint32_t key = KEY_CODE_0; key < KEY_CODE_9 + 1; ++key) {
 				if (input_key_pressed(key)) {
@@ -1248,72 +1286,148 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			if (input_key_pressed(KEY_CODE_MINUS))
 				editor->transform.axis_reverse = true;
 
-			if (editor->transform.rotating && editor->transform.axis_mode) {
-				// Angle 0 is the angle from the
-				if (input_key_pressed(KEY_CODE_BACKSPACE))
-					editor->transform.number_input /= 10;
+			switch (editor->transform.mode) {
+				case TRS_MODE_TRANSLATION: {
+					if (editor->transform.axis == AXIS_MODE_XYZ && editor->transform.number_input == 0) {
+						float3 move_x = float3_scale(camera_right, mouse_offset.x * units_per_pixel.x);
+						float3 move_y = float3_scale(camera_up, -mouse_offset.y * units_per_pixel.y);
 
-				float3 rotation = { 0 };
-				float scale = deg2radf(editor->transform.number_input) * (editor->transform.axis_reverse ? -1.f : 1.f);
-				if (editor->transform.axis_mode == AXIS_MODE_X)
-					rotation = float3_scale(FLOAT3_X, scale);
-				else if (editor->transform.axis_mode == AXIS_MODE_Z)
-					rotation = float3_scale(FLOAT3_Z, scale);
-				else if (editor->transform.axis_mode == AXIS_MODE_Y)
-					rotation = float3_scale(FLOAT3_Y, scale);
-				transform->rotation = float3_add(editor->transform.cached.rotation, rotation);
+						transform->position = float3_add(
+							float3_add(editor->transform.cached.position, move_x),
+							move_y);
+					} else if (editor->transform.axis && editor->transform.number_input == 0) {
+						float3 axis = { 0 };
+						if (editor->transform.axis == AXIS_MODE_X)
+							axis = FLOAT3_X;
+						else if (editor->transform.axis == AXIS_MODE_Z)
+							axis = FLOAT3_Z;
+						else if (editor->transform.axis == AXIS_MODE_Y)
+							axis = FLOAT3_Y;
 
-			} else {
-				if (editor->transform.axis_mode == AXIS_MODE_XYZ && editor->transform.number_input == 0) {
-					// TODO: The postion/rotation/scale are in local space, extract/calculate the world position
-					float3 move_x = float3_scale(camera_right, mouse_offset.x * units_per_pixel.x);
-					float3 move_y = float3_scale(camera_up, -mouse_offset.y * units_per_pixel.y);
+						float2 sign = {
+							float3_dot(axis, camera_right) < 0.0f ? -1.0f : 1.0f,
+							float3_dot(axis, camera_up) < 0.0f ? 1.0f : -1.0f
+						};
+						float3 move_x = float3_scale(axis, sign.x * mouse_offset.x * units_per_pixel.x);
+						float3 move_y = float3_scale(axis, sign.y * mouse_offset.y * units_per_pixel.y);
 
-					transform->position = float3_add(
-						float3_add(editor->transform.cached.position, move_x),
-						move_y);
-				} else if (editor->transform.axis_mode && editor->transform.number_input == 0) {
-					// TODO: Move on camera view's relation to the global axis
+						transform->position = float3_add(
+							float3_add(editor->transform.cached.position, move_x),
+							move_y);
+					} else if (editor->transform.number_input) {
+						if (input_key_pressed(KEY_CODE_BACKSPACE))
+							editor->transform.number_input /= 10;
 
-					float3 axis = { 0 };
-					if (editor->transform.axis_mode == AXIS_MODE_X)
-						axis = FLOAT3_X;
-					else if (editor->transform.axis_mode == AXIS_MODE_Z)
-						axis = FLOAT3_Z;
-					else if (editor->transform.axis_mode == AXIS_MODE_Y)
-						axis = FLOAT3_Y;
+						float3 move = { 0 };
+						float scale = editor->transform.number_input * (editor->transform.axis_reverse ? -1.f : 1.f);
+						if (editor->transform.axis == AXIS_MODE_X)
+							move = float3_scale(FLOAT3_X, scale);
+						else if (editor->transform.axis == AXIS_MODE_Z)
+							move = float3_scale(FLOAT3_Z, scale);
+						else if (editor->transform.axis == AXIS_MODE_Y)
+							move = float3_scale(FLOAT3_Y, scale);
+						transform->position = float3_add(editor->transform.cached.position, move);
+					}
 
-					float2 sign = {
-						float3_dot(axis, camera_right) < 0.0f ? -1.0f : 1.0f,
-						float3_dot(axis, camera_up) < 0.0f ? 1.0f : -1.0f
+					if (input_key_down(KEY_CODE_LEFTCTRL)) {
+						transform->position.x = (int32_t)transform->position.x;
+						transform->position.y = (int32_t)transform->position.y;
+						transform->position.z = (int32_t)transform->position.z;
+					}
+
+				} break;
+				case TRS_MODE_ROTATION: {
+					if (editor->transform.axis == AXIS_MODE_XYZ) {
+					} else if (editor->transform.number_input) {
+						// Angle 0 is the angle from the
+						if (input_key_pressed(KEY_CODE_BACKSPACE))
+							editor->transform.number_input /= 10;
+
+						float3 rotation = { 0 };
+						float scale = deg2radf(editor->transform.number_input) * (editor->transform.axis_reverse ? -1.f : 1.f);
+						if (editor->transform.axis == AXIS_MODE_X)
+							rotation = float3_scale(FLOAT3_X, scale);
+						else if (editor->transform.axis == AXIS_MODE_Z)
+							rotation = float3_scale(FLOAT3_Z, scale);
+						else if (editor->transform.axis == AXIS_MODE_Y)
+							rotation = float3_scale(FLOAT3_Y, scale);
+						transform->rotation = float3_add(editor->transform.cached.rotation, rotation);
+					} else {
+						float3 axis = { 0 };
+						if (editor->transform.axis == AXIS_MODE_X)
+							axis = FLOAT3_X;
+						else if (editor->transform.axis == AXIS_MODE_Z)
+							axis = FLOAT3_Z;
+						else if (editor->transform.axis == AXIS_MODE_Y)
+							axis = FLOAT3_Y;
+
+						float2 sign = {
+							float3_dot(axis, camera_right) < 0.0f ? -1.0f : 1.0f,
+							float3_dot(axis, camera_up) < 0.0f ? 1.0f : -1.0f
+						};
+						float3 move_x = float3_scale(axis, sign.x * mouse_offset.x * units_per_pixel.x);
+						float3 move_y = float3_scale(axis, sign.y * mouse_offset.y * units_per_pixel.y);
+
+						transform->rotation = float3_add(
+							float3_add(editor->transform.cached.rotation, move_x),
+							move_y);
+					}
+
+					if (input_key_down(KEY_CODE_LEFTCTRL)) {
+						float snap = deg2radf(15.0f);
+						transform->rotation.x = (int32_t)(transform->rotation.x / snap) * snap;
+						transform->rotation.y = (int32_t)(transform->rotation.y / snap) * snap;
+						transform->rotation.z = (int32_t)(transform->rotation.z / snap) * snap;
+					}
+				} break;
+				case TRS_MODE_SCALING: {
+					float2 object_to_screen = {
+						(screen_size.x * 0.5f) + -1 * (float3_dot(camera_right, transform->position) * pixels_per_unit.x),
+						(screen_size.y * 0.5f) + -1 * (float3_dot(camera_up, transform->position) * pixels_per_unit.y),
 					};
-					float3 move_x = float3_scale(axis, sign.x * mouse_offset.x * units_per_pixel.x);
-					float3 move_y = float3_scale(axis, sign.y * mouse_offset.y * units_per_pixel.y);
+					float2 start_delta = float2_subtract(object_to_screen, editor->transform.mouse_start_position);
+					start_delta.x /= screen_size.x;
+					start_delta.y /= screen_size.y;
+					float2 current_delta = float2_subtract(object_to_screen, mouse_position);
+					current_delta.x /= screen_size.x;
+					current_delta.y /= screen_size.y;
 
-					transform->position = float3_add(
-						float3_add(editor->transform.cached.position, move_x),
-						move_y);
-				} else if (editor->transform.number_input || editor->transform.axis_reverse) {
-					if (input_key_pressed(KEY_CODE_BACKSPACE))
-						editor->transform.number_input /= 10;
+					if (editor->transform.axis == AXIS_MODE_XYZ) {
+						transform->scale = float3_scale(editor->transform.cached.scale, float2_length(current_delta) / float2_length(start_delta));
+					} else if (editor->transform.number_input) {
+						if (input_key_pressed(KEY_CODE_BACKSPACE))
+							editor->transform.number_input /= 10;
 
-					float3 move = { 0 };
-					float scale = editor->transform.number_input * (editor->transform.axis_reverse ? -1.f : 1.f);
-					if (editor->transform.axis_mode == AXIS_MODE_X)
-						move = float3_scale(FLOAT3_X, scale);
-					else if (editor->transform.axis_mode == AXIS_MODE_Z)
-						move = float3_scale(FLOAT3_Z, scale);
-					else if (editor->transform.axis_mode == AXIS_MODE_Y)
-						move = float3_scale(FLOAT3_Y, scale);
-					transform->position = float3_add(editor->transform.cached.position, move);
-				}
+						float3 scaling = { 0 };
+						float scale = editor->transform.number_input * (editor->transform.axis_reverse ? -1.f : 1.f);
+						if (editor->transform.axis == AXIS_MODE_X)
+							scaling = float3_scale(FLOAT3_X, scale);
+						else if (editor->transform.axis == AXIS_MODE_Z)
+							scaling = float3_scale(FLOAT3_Z, scale);
+						else if (editor->transform.axis == AXIS_MODE_Y)
+							scaling = float3_scale(FLOAT3_Y, scale);
+						transform->scale = float3_add(editor->transform.cached.scale, scaling);
+					} else {
+						float scale = float2_length(current_delta) / float2_length(start_delta);
+						if (editor->transform.axis == AXIS_MODE_X)
+							transform->scale.x = editor->transform.cached.scale.x * scale;
+						if (editor->transform.axis == AXIS_MODE_Z)
+							transform->scale.y = editor->transform.cached.scale.y * scale;
+						if (editor->transform.axis == AXIS_MODE_Y)
+							transform->scale.z = editor->transform.cached.scale.z * scale;
+					}
+
+					if (input_key_down(KEY_CODE_LEFTCTRL)) {
+						transform->scale.x = (int32_t)transform->scale.x;
+						transform->scale.y = (int32_t)transform->scale.y;
+						transform->scale.z = (int32_t)transform->scale.z;
+					}
+				} break;
+				case TRS_MODE_NONE: {
+					ASSERT(false);
+				} break;
 			}
 
-			if (input_key_down(KEY_CODE_LEFTCTRL)) {
-				transform->position.x = (int32_t)transform->position.x;
-				transform->position.y = (int32_t)transform->position.y;
-				transform->position.z = (int32_t)transform->position.z;
-			}
 			transform->dirty = true;
 
 			if (input_mouse_pressed(MOUSE_BUTTON_LEFT) || input_key_pressed(KEY_CODE_ENTER)) {
