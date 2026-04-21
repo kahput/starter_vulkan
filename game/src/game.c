@@ -199,6 +199,99 @@ Editor editor_make(Arena *arena);
 void editor_update(PermanentState *state, Editor *editor, float dt);
 void editor_draw(PermanentState *state, Editor *editor);
 
+typedef struct {
+	bool hit;
+	float t;
+	float3 normal, point;
+} Raycast3Result;
+static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
+
+Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
+	float denominator = float3_dot(rd, pn);
+	if (fabsf(denominator) < EPSILON)
+		return RAY3_NO_HIT;
+
+	float t = (float3_dot(po, pn) - float3_dot(ro, pn)) / denominator;
+
+	if (t < 0.0f)
+		return RAY3_NO_HIT;
+
+	float3 point = float3_add(ro, float3_scale(rd, t));
+
+	Raycast3Result result = {
+		.hit = true,
+		.t = t,
+		.normal = pn,
+		.point = point,
+	};
+
+	return result;
+}
+
+Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent) {
+	float3 min = float3_subtract(center, extent);
+	float3 max = float3_add(center, extent);
+
+	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
+	if (float3_length(rd)) {
+		// left
+		float3 po = float3_subtract(center, (float3){ extent.x, 0.0f, 0.0f });
+		float3 pn = { -1.0f, 0.0f, 0.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// right
+		po = float3_add(center, (float3){ extent.x, 0.0f, 0.0f });
+		pn = (float3){ 1.0f, 0.0f, 0.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// front
+		po = float3_add(center, (float3){ 0.0f, 0.0f, extent.z });
+		pn = (float3){ 0.0f, 0.0f, 1.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// back
+		po = float3_subtract(center, (float3){ 0.0f, 0.0f, extent.z });
+		pn = (float3){ 0.0f, 0.0f, -1.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// NOTE: no vertical movement, ignoring top and bottom for now
+	}
+
+	return result;
+}
+
 float4x4 to_world(PermanentState *pstate, Transform3 *transform) {
 	if (transform->dirty) {
 		transform->local_matrix = float4x4_compose(transform->position, transform->rotation, transform->scale);
@@ -594,53 +687,25 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				ColliderComponent *shape = &pstate->colliders[pstate->test_collidable_entity];
 
 				float3 center = float4x4_transform(to_world(pstate, collision_transform), shape->aabb.center);
-				float3 min = float3_subtract(center, float3_add(shape->aabb.extent, float3_fill(0.5f)));
-				float3 max = float3_add(center, float3_add(shape->aabb.extent, float3_fill(0.5f)));
+				float3 extent = float3_add(shape->aabb.extent, float3_fill(0.5f));
 
-				// Collision detection
-				float3 plane_left_normal =
-					float3_normalize_safe(
-						float3_cross(
-							float3_subtract((float3){ min.x, min.y, max.z }, min),
-							float3_subtract((float3){ min.x, max.y, min.z }, min)),
-						EPSILON);
-				float ray_normal_relative_movement = float3_dot(plane_left_normal, rd);
-
-				float time_to_collide = 1.0f;
-				if (fabsf(ray_normal_relative_movement) > EPSILON) {
-					float plane_offset_along_normal = float3_dot((float3){ min.x, min.y, max.z }, plane_left_normal);
-					float ray_offset_along_normal = float3_dot(ro, plane_left_normal);
-					float ray_to_plane_distance = plane_offset_along_normal - ray_offset_along_normal;
-					float ray_to_plane = ray_to_plane_distance / ray_normal_relative_movement;
-					float3 ray_plane_collsion_point = float3_add(ro, float3_scale(rd, ray_to_plane));
-
-					if ((ray_plane_collsion_point.x < min.x || ray_plane_collsion_point.x > max.x) ||
-						(ray_plane_collsion_point.y < min.y || ray_plane_collsion_point.y > max.y) ||
-						(ray_plane_collsion_point.z < min.z || ray_plane_collsion_point.z > max.z)) {
-						// no hit
-					} else if (ray_to_plane >= 0) {
-						time_to_collide = ray_to_plane;
-					}
-
-					/* LOG_INFO("Plane normal = %.2f, %.2f, %.2f", plane_left_normal.x, plane_left_normal.y, plane_left_normal.z); */
-					/* LOG_INFO("normal relative movement %.2f", normal_relative_movement); */
-					/* LOG_INFO("plane offset along normal %.2f", plane_offset_along_normal); */
-					/* LOG_INFO("ray offset along normal %.2f", ray_offset_along_normal); */
-					/* LOG_INFO("ray to plane distance along normal %.2f", ray_to_plane_distance); */
-					LOG_INFO("ray to plane %.2f", ray_to_plane);
-					/* float3_print(ray_plane_collsion_point); */
-				}
-
-				// Collision resolution
+				float t_remaining = 1.0f;
 				float3 move_delta = float3_scale(move, player_move_speed * dt);
-				if (time_to_collide < (player_move_speed * dt)) {
-					LOG_INFO("Should be the last time");
-				}
-				float actual_t = time_to_collide / (player_move_speed * dt);
-				float t = minf(1.0f, actual_t);
+				for (uint32_t iteration = 0; iteration < 4 && t_remaining > 0.0f; ++iteration) {
+                    // Collision detection
+					Raycast3Result result = raycast_aabb3(ro, rd, center, extent);
 
-				transform->dirty = true;
-				transform->position = float3_add(transform->position, float3_scale(move_delta, t - 0.001f));
+					// Collision resolution
+					float t_actual = result.t / (player_move_speed * dt);
+					float t_min = fminf(1.0f, t_actual);
+
+					transform->dirty = true;
+					transform->position = float3_add(transform->position, float3_scale(move_delta, t_min - 0.001f));
+
+					move_delta = float3_subtract(move_delta, float3_scale(result.normal, float3_dot(move_delta, result.normal)));
+					rd = float3_normalize_safe(move_delta, EPSILON);
+					t_remaining -= t_min * t_remaining;
+				}
 			}
 
 			camera->target = transform->position;
