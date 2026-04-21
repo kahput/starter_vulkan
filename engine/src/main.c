@@ -5,7 +5,6 @@
 #include "game_interface.h"
 #include "input/input_types.h"
 #include "platform.h"
-#include "renderer.h"
 #include "renderer/r_internal.h"
 #include "renderer/backend/vulkan_api.h"
 #include "event.h"

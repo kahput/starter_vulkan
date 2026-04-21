@@ -150,9 +150,9 @@ ENGINE_API void *arena_array_ensure(Arena *arena, void *arr, size_t item_size, u
 #define arena_darray_push(arena, arr, T)                       \
 	((arr) = arena_array_ensure((arena), (arr), sizeof(T), 1), \
 		arena_array_push(arr))
-#define arena_darray_put(arena, arr, T, ...)                      \
-	do {                                                          \
+#define arena_darray_put(arena, arr, T, ...)                     \
+	do {                                                         \
 		(arr) = arena_array_ensure((arena), (arr), sizeof(T), 1); \
-		T _val = __VA_ARGS__;                                     \
-		(arr)[HEADER(arr, ArenaArrayHeader)->count++] = _val;     \
+			T _val = __VA_ARGS__;                                \
+		(arr)[HEADER(arr, ArenaArrayHeader)->count++] = _val;    \
 	} while (0)

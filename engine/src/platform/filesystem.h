@@ -23,7 +23,7 @@ typedef struct {
 
 ENGINE_API File filesystem_open(String path, FileMode mode);
 ENGINE_API size_t filesystem_write(File *file, size_t element_size, uint32_t element_count, void *data);
-ENGINE_API void filesystem_close(File *file);
+ENGINE_API void file_close(File *file);
 
 ENGINE_API void filesystem_make_directory(String directory);
 

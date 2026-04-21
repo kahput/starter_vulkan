@@ -89,7 +89,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	VkRenderingAttachmentInfo depth_info = { 0 };
 	if (desc.use_depth) {
 		VulkanImage *depth_target = NULL;
-		if (desc.use_depth && desc.depth_attachment.target.id == 0) {
+		if (desc.depth_attachment.target.id == 0) {
 			depth_target = &context->frame_targets[context->frame_target_count++];
 			ASSERT(context->frame_target_count < countof(context->frame_targets));
 			vulkan_image_scratch_ensure(

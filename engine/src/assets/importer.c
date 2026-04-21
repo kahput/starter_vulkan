@@ -148,19 +148,19 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 				dst->properties[7].as.float32x1 = pbr->roughness_factor;
 
 				if (pbr->base_color_texture.texture)
-					dst->properties[0].as.uint32x1 = cgltf_image_index(data, pbr->base_color_texture.texture->image);
+					dst->properties[0].as.uint32x1 = cgltf_image_index(data, pbr->base_color_texture.texture->image) + 1;
 				if (pbr->metallic_roughness_texture.texture)
-					dst->properties[1].as.uint32x1 = cgltf_image_index(data, pbr->metallic_roughness_texture.texture->image);
+					dst->properties[1].as.uint32x1 = cgltf_image_index(data, pbr->metallic_roughness_texture.texture->image) + 1;
 			}
 
 			if (src->normal_texture.texture)
-				dst->properties[2].as.uint32x1 = cgltf_image_index(data, src->normal_texture.texture->image);
+				dst->properties[2].as.uint32x1 = cgltf_image_index(data, src->normal_texture.texture->image) + 1;
 			if (src->occlusion_texture.texture)
-				dst->properties[3].as.uint32x1 = cgltf_image_index(data, src->occlusion_texture.texture->image);
+				dst->properties[3].as.uint32x1 = cgltf_image_index(data, src->occlusion_texture.texture->image) + 1;
 
 			memory_copy(&dst->properties[8].as.float32x3, src->emissive_factor, sizeof(float3));
 			if (src->emissive_texture.texture)
-				dst->properties[4].as.uint32x1 = cgltf_image_index(data, src->emissive_texture.texture->image);
+				dst->properties[4].as.uint32x1 = cgltf_image_index(data, src->emissive_texture.texture->image) + 1;
 		}
 
 		// Meshes
@@ -201,7 +201,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 				MeshSource *mesh = &result.meshes[primitive_global_index];
 
 				if (primitive->material)
-					result.mesh_to_material[primitive_global_index] = cgltf_material_index(data, primitive->material);
+					result.mesh_to_material[primitive_global_index] = cgltf_material_index(data, primitive->material) + 1;
 
 				// TODO: Per mesh bounding box instead of per primitive?
 				Interval3 *interval = &result.bounding_boxes[primitive_global_index];

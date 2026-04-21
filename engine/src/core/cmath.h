@@ -41,6 +41,7 @@ static inline float maxf(float a, float b) { return a > b ? a : b; }
 static inline float2 float2_make(float x, float y) { return (float2){ x, y }; }
 static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.x, (float)d.y }; }
 static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
+static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y }; }
 
 ENGINE_API float2 float2_negate(float2 v);
 
@@ -55,6 +56,7 @@ ENGINE_API float2 float2_scale(float2 v, float s);
 ENGINE_API float2 float2_lerp(float2 start, float2 end, float t);
 ENGINE_API float2 float2_clamp(float2 v, float2 min, float2 max);
 
+static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
 static inline float3 float3_fill(float value) { return (float3){ value, value, value }; }
 static inline float3 float3_wrap(float v[3]) {
 	return (float3){ .x = v[0], .y = v[1], .z = v[2] };
@@ -71,6 +73,7 @@ ENGINE_API float float3_dot(float3 a, float3 b);
 ENGINE_API float3 float3_cross(float3 a, float3 b);
 
 ENGINE_API float float3_length(float3 v);
+ENGINE_API float float3_length_squared(float3 v);
 ENGINE_API float3 float3_normalize(float3 v);
 ENGINE_API float3 float3_normalize_safe(float3 v, float epsilon);
 
@@ -96,6 +99,7 @@ ENGINE_API float4x4 float4x4_rotation(float angle, float3 axis);
 ENGINE_API float4x4 float4x4_scaling(float3 scale);
 
 ENGINE_API float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale);
+ENGINE_API float3 float4x4_transform(float4x4 m, float3 v);
 
 ENGINE_API float4x4 float4x4_perspective(float fovy_radians, float aspect,
 	float near_z, float far_z);

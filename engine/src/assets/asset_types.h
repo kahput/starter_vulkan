@@ -51,6 +51,7 @@ typedef struct {
 		float32x4 float32x4;
 
 		uint32_t uint32x1;
+		uint32x2 uint32x2;
 	} as;
 } MaterialProperty;
 

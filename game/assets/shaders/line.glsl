@@ -61,10 +61,14 @@ void main() {
 #ifdef SHADER_STAGE_FRAGMENT
 #pragma shader_stage(fragment)
 
+layout(set = 1, binding = 1) uniform Material {
+    vec4 color;
+};
+
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    out_color = vec4(1.0f, 1.0f, 1.0f, 1.0f); 
+    out_color = color; 
 }
 
 #endif

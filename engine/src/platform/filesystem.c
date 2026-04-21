@@ -36,7 +36,7 @@ size_t filesystem_write(File *file, size_t element_size, uint32_t element_count,
 	return written;
 }
 
-void filesystem_close(File *file) {
+void file_close(File *file) {
 	if (file->handle)
 		fclose(file->handle);
 }
