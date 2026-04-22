@@ -85,6 +85,8 @@ ENGINE_API float3 float3_lerp(float3 start, float3 end, float t);
 ENGINE_API float float3_angle(float3 a, float3 b);
 ENGINE_API float3 float3_rotate(float3 v, float angle, float3 axis);
 
+static inline float4 float4_from_float3(float3 v) { return (float4){ v.x, v.y, v.z, 0.0f };}
+
 // float float4_dot_product(Vector4f v);
 
 ENGINE_API float4x4 float4x4_identity(void);
@@ -99,7 +101,7 @@ ENGINE_API float4x4 float4x4_rotation(float angle, float3 axis);
 ENGINE_API float4x4 float4x4_scaling(float3 scale);
 
 ENGINE_API float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale);
-ENGINE_API float3 float4x4_transform(float4x4 m, float3 v);
+ENGINE_API float3 float4x4_transform(float4x4 m, float4 v);
 
 ENGINE_API float4x4 float4x4_perspective(float fovy_radians, float aspect,
 	float near_z, float far_z);

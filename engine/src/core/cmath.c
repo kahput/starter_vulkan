@@ -332,11 +332,11 @@ float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 	return result;
 }
 
-float3 float4x4_transform(float4x4 m, float3 v) {
+float3 float4x4_transform(float4x4 m, float4 v) {
 	float3 result = {
-		m.elements[0] * v.x + m.elements[4] * v.y + m.elements[8] * v.z + m.elements[12] * 1.0f,
-		m.elements[1] * v.x + m.elements[5] * v.y + m.elements[9] * v.z + m.elements[13] * 1.0f,
-		m.elements[2] * v.x + m.elements[6] * v.y + m.elements[10] * v.z + m.elements[14] * 1.0f,
+		m.elements[0] * v.x + m.elements[4] * v.y + m.elements[8] * v.z + m.elements[12] * v.w,
+		m.elements[1] * v.x + m.elements[5] * v.y + m.elements[9] * v.z + m.elements[13] * v.w,
+		m.elements[2] * v.x + m.elements[6] * v.y + m.elements[10] * v.z + m.elements[14] * v.w,
 	};
 
 	return result;
