@@ -180,7 +180,6 @@ typedef struct {
 	Editor editor;
 
 	Camera game_camera;
-	float target_azimuth, target_theta;
 
 	struct {
 		RhiTexture *textures;
@@ -199,6 +198,8 @@ typedef struct {
 	uint32_t components[MAX_ENTITIES];
 
 	Entity player;
+
+	bool debug_draw_collisions;
 
 	Camera *camera;
 } PermanentState;
@@ -300,23 +301,91 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent)
 	return result;
 }
 
-float4x4 to_world(PermanentState *pstate, Transform3 *transform) {
+void scene_entity_set_parent(PermanentState *pstate, Entity parent, Entity entity) {
+	if (parent == 0 || entity == 0)
+		return;
+
+	ASSERT(parent < pstate->entity_count && entity < pstate->entity_count);
+	TransformComponent *transform = &pstate->transforms[entity];
+	TransformComponent *parent_transform = &pstate->transforms[parent];
+
+	ASSERT(transform->parent_index == 0); // TODO: Reparenting
+	transform->parent_index = parent;
+
+	Entity *child_index = &parent_transform->child_index;
+	while (*child_index) {
+		ASSERT(*child_index < pstate->entity_count);
+		TransformComponent *child = &pstate->transforms[*child_index];
+
+		if (*child_index == entity)
+			break;
+		child_index = &child->sibling_index;
+	}
+
+	*child_index = entity;
+}
+
+Entity scene_entity_copy(PermanentState *pstate, Entity source) {
+	ASSERT(source && source < pstate->entity_count);
+
+	ASSERT(pstate->entity_count < MAX_ENTITIES);
+	Entity target = pstate->entity_count++;
+
+	memory_copy(pstate->transforms + target, pstate->transforms + source, sizeof(TransformComponent));
+
+	pstate->transforms[target].parent_index = 0;
+	pstate->transforms[target].child_index = 0;
+	pstate->transforms[target].sibling_index = 0;
+
+	memory_copy(pstate->colliders + target, pstate->colliders + source, sizeof(ColliderComponent));
+	memory_copy(pstate->meshes + target, pstate->meshes + source, sizeof(MeshComponent));
+	memory_copy(pstate->components + target, pstate->components + source, sizeof(ComponentFlags));
+
+	// Keep parent
+	scene_entity_set_parent(pstate, pstate->transforms[source].parent_index, target);
+
+	// Copy all children
+	Entity child = pstate->transforms[source].child_index;
+	while (child) {
+		ASSERT(child < pstate->entity_count);
+		Entity child_copy = pstate->entity_count++;
+
+		memory_copy(pstate->transforms + child_copy, pstate->transforms + child, sizeof(TransformComponent));
+
+		pstate->transforms[child_copy].parent_index = 0;
+		pstate->transforms[child_copy].child_index = 0;
+		pstate->transforms[child_copy].sibling_index = 0;
+
+		memory_copy(pstate->colliders + child_copy, pstate->colliders + child, sizeof(ColliderComponent));
+		memory_copy(pstate->meshes + child_copy, pstate->meshes + child, sizeof(MeshComponent));
+		memory_copy(pstate->components + child_copy, pstate->components + child, sizeof(ComponentFlags));
+
+		scene_entity_set_parent(pstate, target, child_copy);
+
+		child = pstate->transforms[child].sibling_index;
+	}
+
+	return target;
+}
+
+float4x4 scene_transform_world(PermanentState *pstate, Transform3 *transform) {
 	if (transform->dirty) {
 		transform->local_matrix = float4x4_compose(transform->position, transform->rotation, transform->scale);
+
+		// NOTE: Validity dependent on parent being updated before child
 		if (transform->parent_index)
 			transform->global_matrix = float4x4_multiply(pstate->transforms[transform->parent_index].global_matrix, transform->local_matrix);
 		else
 			transform->global_matrix = transform->local_matrix;
-
-		if (transform->child_index) {
-			Transform3 *p = &pstate->transforms[transform->child_index];
-			while (p != pstate->transforms) { // Entity 0 == Invalid
-				p->dirty = true;
-				p = &pstate->transforms[p->sibling_index];
-			}
-		}
-
 		transform->dirty = false;
+
+		uint32_t child_index = transform->child_index;
+		while (child_index) { // Entity 0 == Invalid
+			Transform3 *child = &pstate->transforms[child_index];
+			child->dirty = true;
+			child->global_matrix = scene_transform_world(pstate, child);
+			child_index = child->sibling_index;
+		}
 	}
 
 	return transform->global_matrix;
@@ -636,8 +705,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			.projection = CAMERA_PROJECTION_PERSPECTIVE
 		};
-		pstate->target_azimuth = C_PIf * 0.5f;
-		pstate->target_theta = C_PIf / 3.f;
 
 		// Test entity
 		/* Entity collidable_entity = pstate->entity_count++; */
@@ -684,6 +751,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 	if (input_key_pressed(KEY_CODE_P))
 		pstate->game_camera.projection = !pstate->game_camera.projection;
+	if (input_key_pressed(KEY_CODE_3))
+		pstate->debug_draw_collisions = !pstate->debug_draw_collisions;
 
 	switch (pstate->state) {
 		case GAME_STATE_PLAY: {
@@ -707,11 +776,29 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			Camera *camera = &pstate->game_camera;
 			TransformComponent *transform = &pstate->transforms[pstate->player];
 
-			float3 move = {
-				.x = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
-				.y = 0,
-				.z = input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W),
-			};
+			float3 camera_target_offset = float3_subtract(camera->target, camera->position);
+			float3 camera_forward = float3_normalize(camera_target_offset);
+
+			float3 camera_right = float3_cross(camera->up, camera_forward);
+			float3 camera_up = float3_cross(camera_right, camera_forward);
+
+			/* float3 move = { */
+			/* 	.x = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A), */
+			/* 	.y = 0, */
+			/* 	.z = input_key_down(KEY_CODE_S) - input_key_down(KEY_CODE_W), */
+			/* }; */
+			float3 world_up = { 0.0f, 1.0f, 0.0f };
+			float3 forward = float3_normalize_safe(
+				float3_subtract(
+					camera_forward,
+					float3_scale(world_up, float3_dot(camera_forward, world_up))),
+				EPSILON);
+			float3 right = float3_cross(forward, world_up);
+
+			float3 move_y = float3_scale(forward, input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S));
+			float3 move_x = float3_scale(right, input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A));
+			float3 move = float3_add(move_x, move_y);
+
 			move = float3_normalize_safe(move, EPSILON);
 			float player_move_speed = 10.f;
 			if (float3_length_squared(move) > 0) {
@@ -731,7 +818,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 							continue;
 						Transform3 *collision_transform = &pstate->transforms[entity];
 						ColliderComponent *shape = &pstate->colliders[entity];
-						float4x4 trs = to_world(pstate, collision_transform);
+						float4x4 trs = scene_transform_world(pstate, collision_transform);
 
 						float3 translation = { trs.elements[12], trs.elements[13], trs.elements[14] };
 						float3 center = float3_add(shape->aabb.center, translation);
@@ -763,7 +850,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 
 			camera->target = transform->position;
-			camera->position.x = transform->position.x + 20;
+			camera->position.x = transform->position.x + 0;
 			camera->position.z = transform->position.z + 20;
 			// .position = { 0.0f, 20, 30 },
 		} break;
@@ -890,7 +977,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 					vulkan_uniformset_bind(pstate->context, group);
 
-					float4x4 model_matrix = to_world(pstate, transform);
+					float4x4 model_matrix = scene_transform_world(pstate, transform);
 					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
 					vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
@@ -903,78 +990,80 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 
 			// Collision shapes
-			vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
-			for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
-				if (FLAG_GET(pstate->components[entity], COMPONENT_FLAG_TRANSFORM) == false ||
-					FLAG_GET(pstate->components[entity], COMPONENT_FLAG_COLLIDABLE) == false)
-					continue;
-				TransformComponent *transform = &pstate->transforms[entity];
-				ColliderComponent *shape = &pstate->colliders[entity];
+			if (pstate->debug_draw_collisions) {
+				vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
+				for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
+					if (FLAG_GET(pstate->components[entity], COMPONENT_FLAG_TRANSFORM) == false ||
+						FLAG_GET(pstate->components[entity], COMPONENT_FLAG_COLLIDABLE) == false)
+						continue;
+					TransformComponent *transform = &pstate->transforms[entity];
+					ColliderComponent *shape = &pstate->colliders[entity];
 
-				float3 min = float3_subtract(shape->aabb.center, shape->aabb.extent);
-				float3 max = float3_add(shape->aabb.center, shape->aabb.extent);
+					float3 min = float3_subtract(shape->aabb.center, shape->aabb.extent);
+					float3 max = float3_add(shape->aabb.center, shape->aabb.extent);
 
-				float thickness = 1.5f;
+					float thickness = 1.5f;
 
-				float4 outline[] = {
-					{ min.x, min.y, min.z, thickness },
-					{ min.x, max.y, min.z, thickness },
+					float4 outline[] = {
+						{ min.x, min.y, min.z, thickness },
+						{ min.x, max.y, min.z, thickness },
 
-					{ min.x, min.y, max.z, thickness },
-					{ min.x, max.y, max.z, thickness },
+						{ min.x, min.y, max.z, thickness },
+						{ min.x, max.y, max.z, thickness },
 
-					{ max.x, min.y, min.z, thickness },
-					{ max.x, max.y, min.z, thickness },
+						{ max.x, min.y, min.z, thickness },
+						{ max.x, max.y, min.z, thickness },
 
-					{ max.x, min.y, max.z, thickness },
-					{ max.x, max.y, max.z, thickness },
+						{ max.x, min.y, max.z, thickness },
+						{ max.x, max.y, max.z, thickness },
 
-					{ min.x, min.y, min.z, thickness },
-					{ min.x, min.y, max.z, thickness },
+						{ min.x, min.y, min.z, thickness },
+						{ min.x, min.y, max.z, thickness },
 
-					{ min.x, min.y, min.z, thickness },
-					{ max.x, min.y, min.z, thickness },
+						{ min.x, min.y, min.z, thickness },
+						{ max.x, min.y, min.z, thickness },
 
-					{ max.x, min.y, max.z, thickness },
-					{ max.x, min.y, min.z, thickness },
+						{ max.x, min.y, max.z, thickness },
+						{ max.x, min.y, min.z, thickness },
 
-					{ max.x, min.y, max.z, thickness },
-					{ min.x, min.y, max.z, thickness },
+						{ max.x, min.y, max.z, thickness },
+						{ min.x, min.y, max.z, thickness },
 
-					{ min.x, max.y, min.z, thickness },
-					{ min.x, max.y, max.z, thickness },
+						{ min.x, max.y, min.z, thickness },
+						{ min.x, max.y, max.z, thickness },
 
-					{ min.x, max.y, min.z, thickness },
-					{ max.x, max.y, min.z, thickness },
+						{ min.x, max.y, min.z, thickness },
+						{ max.x, max.y, min.z, thickness },
 
-					{ max.x, max.y, max.z, thickness },
-					{ max.x, max.y, min.z, thickness },
+						{ max.x, max.y, max.z, thickness },
+						{ max.x, max.y, min.z, thickness },
 
-					{ max.x, max.y, max.z, thickness },
-					{ min.x, max.y, max.z, thickness },
-				};
+						{ max.x, max.y, max.z, thickness },
+						{ min.x, max.y, max.z, thickness },
+					};
 
-				size_t size = sizeof(outline);
+					size_t size = sizeof(outline);
 
-				RhiBuffer buffer = pstate->frame_storage_buffer;
-				size_t storage_offset = vulkan_buffer_push(pstate->context, buffer, size, NULL);
-				size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &(float4){ 1.0f, 0.2f, 0.1f, 1.0f });
+					RhiBuffer buffer = pstate->frame_storage_buffer;
+					size_t storage_offset = vulkan_buffer_push(pstate->context, buffer, size, NULL);
+					size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &(float4){ 1.0f, 0.2f, 0.1f, 1.0f });
 
-				vulkan_buffer_write(
-					pstate->context,
-					pstate->frame_storage_buffer,
-					storage_offset,
-					size, outline);
+					vulkan_buffer_write(
+						pstate->context,
+						pstate->frame_storage_buffer,
+						storage_offset,
+						size, outline);
 
-				float4x4 model_matrix = to_world(pstate, transform);
-				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
+					float4x4 model_matrix = scene_transform_world(pstate, transform);
+					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
-				RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
-				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, storage_offset, size, buffer);
-				vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
-				vulkan_uniformset_bind(pstate->context, group);
+					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
+					vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, storage_offset, size, buffer);
+					vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+					vulkan_uniformset_bind(pstate->context, group);
 
-				vulkan_renderer_draw(pstate->context, (sizeof(outline) / sizeof(float4)) * 6);
+					vulkan_renderer_draw(pstate->context, (sizeof(outline) / sizeof(float4)) * 6);
+				}
 			}
 
 			vulkan_drawlist_end(pstate->context);
@@ -1094,7 +1183,9 @@ void editor_select_entity(Editor *editor, Entity entity, bool multi) {
 			return;
 		}
 	}
-	editor->selected_entities[editor->selected_entity_count++] = editor->active_entity = entity;
+
+	editor->selected_entities[editor->selected_entity_count++] = entity;
+	editor->active_entity = entity;
 }
 
 void editor_update(PermanentState *pstate, Editor *editor, float dt) {
@@ -1114,7 +1205,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			editor->transform.mode = TRS_MODE_TRANSLATION;
 		if (input_key_pressed(KEY_CODE_R))
 			editor->transform.mode = TRS_MODE_ROTATION;
-		if (input_key_pressed(KEY_CODE_S))
+		if (input_key_down(KEY_CODE_LEFTSHIFT) == false && input_key_pressed(KEY_CODE_S))
 			editor->transform.mode = TRS_MODE_SCALING;
 
 		if (editor->transform.mode && was != editor->transform.mode) {
@@ -1161,49 +1252,34 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			}
 		}
 
-		// Add collision component
+		// Add collision component as a child
 		{
 			if (input_key_pressed(KEY_CODE_C)) {
-				pstate->colliders[editor->active_entity] = (ColliderComponent){
+				Entity collider = pstate->entity_count++;
+				pstate->transforms[collider] = (TransformComponent){
+					.position = FLOAT3_ZERO,
+					.scale = FLOAT3_ONE,
+					.dirty = true,
+				};
+
+				pstate->colliders[collider] = (ColliderComponent){
 					.aabb = {
 					  .center = FLOAT3_ZERO,
 					  .extent = FLOAT3_ONE,
 					},
 				};
-				pstate->components[editor->active_entity] |= COMPONENT_FLAG_COLLIDABLE;
+				pstate->components[collider] = COMPONENT_FLAG_TRANSFORM | COMPONENT_FLAG_COLLIDABLE;
+				scene_entity_set_parent(pstate, editor->active_entity, collider);
+				editor_select_entity(editor, collider, false);
 			}
 		}
 
-		// duplicate entity
+		// duplicate entity & children
+		// NOTE: Only copies the first layer down
 		if (input_key_down(KEY_CODE_LEFTSHIFT) && input_key_pressed(KEY_CODE_D)) {
 			ASSERT(pstate->entity_count < MAX_ENTITIES);
-			Entity entity = pstate->entity_count++;
-			ComponentFlags flags = pstate->components[editor->active_entity];
-
-			if (FLAG_GET(flags, COMPONENT_FLAG_TRANSFORM)) {
-				TransformComponent transform = pstate->transforms[editor->active_entity];
-				pstate->transforms[entity] = (TransformComponent){
-					.position = transform.position,
-					.scale = transform.scale,
-					.rotation = transform.rotation,
-					.dirty = true,
-				};
-			}
-			if (FLAG_GET(flags, COMPONENT_FLAG_MESH)) {
-				MeshComponent mesh = pstate->meshes[editor->active_entity];
-				pstate->meshes[entity] = (MeshComponent){
-					.mesh_group_index = mesh.mesh_group_index,
-				};
-			}
-			if (FLAG_GET(flags, COMPONENT_FLAG_COLLIDABLE)) {
-				ColliderComponent collider = pstate->colliders[editor->active_entity];
-				pstate->colliders[entity] = (ColliderComponent){
-					.aabb = collider.aabb,
-				};
-			}
-
-			pstate->components[entity] = flags;
-			editor_select_entity(editor, entity, false);
+			Entity new_entity = scene_entity_copy(pstate, editor->active_entity);
+			editor_select_entity(editor, new_entity, false);
 		}
 
 		// TODO: Make undo-able
@@ -1234,7 +1310,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			filesystem_make_directory(stringpath_directory(path));
 
 			if (scene_serialize(path, pstate))
-				LOG_INFO("Serialized scene to '%.*s'", SARG(path));
+				LOG_INFO("scene serialized to '%.*s'", SARG(path));
 		}
 	}
 
@@ -1523,6 +1599,9 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		input_key_pressed(KEY_CODE_ESCAPE)
 
 	) {
+		if (editor->active_entity)
+			pstate->transforms[editor->active_entity].dirty = true;
+
 		editor->transform = (EditorTransformInfo){ 0 };
 		editor->mode = EDITOR_MODE_VIEWING;
 	}
@@ -1597,7 +1676,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 			for (uint32_t mesh_index = mesh_group.x; mesh_index < mesh_group.x + mesh_group.y; ++mesh_index) {
 				Mesh *mesh = &pstate->assets.meshes[mesh_index];
-				float4x4 model_matrix = to_world(pstate, transform);
+				float4x4 model_matrix = scene_transform_world(pstate, transform);
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
 				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
@@ -1653,7 +1732,6 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 			size_t size = line_segment_count * line_segment_size;
 
 			RhiBuffer buffer = pstate->frame_storage_buffer;
-			size_t offset = vulkan_buffer_push(pstate->context, buffer, size, NULL);
 			float3 bounding_box_size = float3_subtract(max, min);
 
 			float thickness = 1.5f;
@@ -1741,23 +1819,15 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 				{ max.x, max.y, max.z - pick_length, thickness },
 			};
 
-			size_t point_array_size = sizeof(selection);
-			void *point_array = selection;
-
-			vulkan_buffer_write(
-				pstate->context,
-				pstate->frame_storage_buffer,
-				offset + point_array_size * index,
-				point_array_size, point_array);
-
-			float4x4 model_matrix = to_world(pstate, transform);
-			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
-
+			float4x4 model_matrix = scene_transform_world(pstate, transform);
 			float4 color = entity == editor->active_entity ? (float4){ 1.0f, 0.2f, 0.2f, 1.0f } : (float4){ 1.0f, 0.5f, 0.3f, 1.0f };
+
+			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 			size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color);
+			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(selection), selection);
 
 			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, offset, size, buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, point_offset, sizeof(selection), pstate->frame_storage_buffer);
 			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
 			vulkan_uniformset_bind(pstate->context, group);
 

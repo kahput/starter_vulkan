@@ -85,7 +85,7 @@ ENGINE_API float3 float3_lerp(float3 start, float3 end, float t);
 ENGINE_API float float3_angle(float3 a, float3 b);
 ENGINE_API float3 float3_rotate(float3 v, float angle, float3 axis);
 
-static inline float4 float4_from_float3(float3 v) { return (float4){ v.x, v.y, v.z, 0.0f };}
+static inline float4 float4_from_float3(float3 v) { return (float4){ v.x, v.y, v.z, 0.0f }; }
 
 // float float4_dot_product(Vector4f v);
 

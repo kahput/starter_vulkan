@@ -17,8 +17,6 @@ layout(push_constant) uniform constants {
     mat4 model;
 } push;
 
-layout(location = 0) out vec2 uv;
-
 const ivec2 quad[6] = ivec2[6](ivec2(0, -1), ivec2(0, 1), ivec2(1,  1),
         ivec2(0, -1), ivec2(1, 1), ivec2(1, -1) );
 
