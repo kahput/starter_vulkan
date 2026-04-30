@@ -161,7 +161,7 @@ typedef struct {
 	RhiTexture white;
 
 	// These are assets too
-	RhiShader unlit_shader, pbr_shader, postfx_shader;
+	RhiShader unlit_shader, phong_shader, postfx_shader;
 	RhiShader screenline_shader, picker_shader;
 	RhiShader blit_shader;
 
@@ -475,8 +475,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				pstate->context,
 				source.vertex, source.fragment,
 				NULL);
-		source = importer_load_shader(scratch.arena, S("assets/shaders/pbr.vert.spv"), S("assets/shaders/pbr.frag.spv"));
-		pstate->pbr_shader =
+		source = importer_load_shader(scratch.arena, S("assets/shaders/phong.vert.spv"), S("assets/shaders/phong.frag.spv"));
+		pstate->phong_shader =
 			vulkan_shader_make(
 				NULL,
 				pstate->context,
@@ -920,7 +920,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		float4 light = { light_position.x, light_position.y, light_position.z, 1.0f };
 		size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4), &light);
 
-		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 0);
+		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
 		vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
 		vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(float4), pstate->frame_storage_buffer);
 
@@ -943,7 +943,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			pipeline.cull_mode = CULL_MODE_BACK;
 
 			// Entities
-			vulkan_shader_bind(pstate->context, pstate->pbr_shader, pipeline);
+			vulkan_shader_bind(pstate->context, pstate->phong_shader, pipeline);
 			vulkan_uniformset_bind(pstate->context, global_set);
 			for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
 				if (FLAG_GET(pstate->components[entity], COMPONENT_FLAG_DRAWABLE) == false)
@@ -960,7 +960,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					uint32_t material_index = pstate->assets.mesh_to_material[mesh_index];
 					Material *material = &pstate->assets.materials[material_index];
 
-					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->pbr_shader, 1);
+					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 1);
 					vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
 					for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
 						RhiTexture texture = material->textures[texture_index];
