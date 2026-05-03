@@ -24,8 +24,8 @@
 /* static ImageSource *find_loaded_texture(const cgltf_data *data, SModel *scene, const cgltf_texture *gltf_tex); */
 
 ShaderSource importer_load_shader(Arena *arena, String vertex_path, String fragment_path) {
-	Span vfile = filesystem_read(arena, vertex_path);
-	Span ffile = filesystem_read(arena, fragment_path);
+	Buffer vfile = filesystem_read(arena, vertex_path);
+	Buffer ffile = filesystem_read(arena, fragment_path);
 
 	ShaderSource result = { vertex_path, fragment_path, vfile, ffile };
 	return result;

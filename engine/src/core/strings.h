@@ -14,7 +14,7 @@ typedef struct String {
 #define shash(s) string_hash64(S(s))
 
 ENGINE_API String string_wrap(const char *s);
-static inline String string_wrap_span(Span span) { return (String){ .chars = (char *)span.buffer, .length = span.size }; }
+static inline String string_wrap_buffer(Buffer buffer) { return (String){ .chars = (char *)buffer.pointer, .length = buffer.size }; }
 
 ENGINE_API bool string_equals(String a, String b);
 ENGINE_API bool string_equals_ignore_case(String a, String b);
@@ -55,6 +55,7 @@ ENGINE_API String string_copy(Arena *arena, String s);
 ENGINE_API String string_merge(Arena *arena, String a, String b);
 
 ENGINE_API String string_format(Arena *arena, const char *format, ...);
+ENGINE_API String string_format_non_terminated(Arena *arena, const char *format, ...);
 ENGINE_API String string_formatv(Arena *arena, const char *format, va_list args);
 
 ENGINE_API String string_concat(Arena *arena, String head, String tail);

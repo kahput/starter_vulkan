@@ -30,7 +30,7 @@ ENGINE_API bool vulkan_renderer_draw_offset(VulkanContext *context, uint32_t ver
 
 ENGINE_API RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
-	Span vertex, Span fragment, ShaderReflection *out_reflection);
+	Buffer vertex, Buffer fragment, ShaderReflection *out_reflection);
 bool vulkan_shader_destroy(VulkanContext *context, RhiShader shader);
 
 ENGINE_API bool vulkan_shader_bind(

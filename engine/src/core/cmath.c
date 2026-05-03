@@ -323,9 +323,9 @@ float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 
 	float4x4 T = float4x4_translation(position);
 	float4x4 S = float4x4_scaling(scale);
-	float4x4 rotation_x = float4x4_rotation(rotation.x, FLOAT3_X);
-	float4x4 rotation_y = float4x4_rotation(rotation.y, FLOAT3_Y);
-	float4x4 rotation_z = float4x4_rotation(rotation.z, FLOAT3_Z);
+	float4x4 rotation_x = float4x4_rotation(deg2radf(rotation.x), FLOAT3_X);
+	float4x4 rotation_y = float4x4_rotation(deg2radf(rotation.y), FLOAT3_Y);
+	float4x4 rotation_z = float4x4_rotation(deg2radf(rotation.z), FLOAT3_Z);
 	float4x4 R = float4x4_multiply(rotation_z, float4x4_multiply(rotation_y, rotation_x));
 
 	result = float4x4_multiply(T, float4x4_multiply(R, S));

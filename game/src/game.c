@@ -1,11 +1,14 @@
+#include "assets.h"
 #include "assets/asset_types.h"
 #include "assets/importer.h"
+#include "assets/json_parser.h"
 #include "assets/mesh_source.h"
 
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
 #include "core/debug.h"
+#include "core/identifiers.h"
 #include "core/logger.h"
 #include "core/r_types.h"
 #include "core/strings.h"
@@ -179,9 +182,11 @@ typedef struct {
 	GameState state;
 	Editor editor;
 
+	float3 game_camera_start_offset;
 	Camera game_camera;
 
 	struct {
+		RhiShader *shaders;
 		RhiTexture *textures;
 		Material *materials;
 		Mesh *meshes;
@@ -197,7 +202,7 @@ typedef struct {
 	ColliderComponent colliders[MAX_ENTITIES];
 	uint32_t components[MAX_ENTITIES];
 
-	Entity player;
+	Entity player, selection;
 
 	bool debug_draw_collisions;
 
@@ -409,29 +414,29 @@ bool scene_serialize(String path, PermanentState *pstate) {
 
 void scene_deserialize(String path, PermanentState *pstate) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	Span file = filesystem_read(scratch.arena, path);
+	Buffer file = filesystem_read(scratch.arena, path);
 
-	pstate->entity_count = *(uint32_t *)file.buffer;
-	file.buffer += 4;
+	pstate->entity_count = *(uint32_t *)file.pointer;
+	file.pointer += 4;
 
 	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->transforms[entity] = *(TransformComponent *)file.buffer;
-		file.buffer += sizeof(TransformComponent);
+		pstate->transforms[entity] = *(TransformComponent *)file.pointer;
+		file.pointer += sizeof(TransformComponent);
 	}
 
 	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->meshes[entity] = *(MeshComponent *)file.buffer;
-		file.buffer += sizeof(MeshComponent);
+		pstate->meshes[entity] = *(MeshComponent *)file.pointer;
+		file.pointer += sizeof(MeshComponent);
 	}
 
 	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->colliders[entity] = *(ColliderComponent *)file.buffer;
-		file.buffer += sizeof(ColliderComponent);
+		pstate->colliders[entity] = *(ColliderComponent *)file.pointer;
+		file.pointer += sizeof(ColliderComponent);
 	}
 
 	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->components[entity] = *(ComponentFlags *)file.buffer;
-		file.buffer += sizeof(ComponentFlags);
+		pstate->components[entity] = *(ComponentFlags *)file.pointer;
+		file.pointer += sizeof(ComponentFlags);
 	}
 
 	arena_scratch_end(scratch);
@@ -447,6 +452,131 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 		vulkan_texture_resize(pstate->context, pstate->main_color_targets[index], resize_event->width, resize_event->height);
 
 	return false;
+}
+
+bool serialize_entity(PermanentState *pstate, JsonExporter *exporter, Entity entity) {
+	json_begin_map(exporter, S(""));
+	json_write_pair(exporter, S("name"), String, S("entity"));
+
+	ComponentFlags flags = pstate->components[entity];
+
+	if (flags != 0) {
+		json_begin_map(exporter, S("componenets"));
+
+		Transform3 *transform = NULL;
+		if (FLAG_GET(flags, COMPONENT_FLAG_TRANSFORM)) {
+			transform = &pstate->transforms[entity];
+			json_begin_map(exporter, S("transform"));
+
+			json_begin_array(exporter, S("position"));
+            json_write_float3(exporter, transform->position);
+			json_end_array(exporter);
+
+			json_begin_array(exporter, S("rotation"));
+            json_write_float3(exporter, transform->rotation);
+			json_end_array(exporter);
+
+			json_begin_array(exporter, S("scale"));
+            json_write_float3(exporter, transform->scale);
+			json_end_array(exporter);
+
+			json_end_map(exporter);
+		}
+
+		if (FLAG_GET(flags, COMPONENT_FLAG_MESH)) {
+			MeshComponent *mesh = &pstate->meshes[entity];
+			json_begin_map(exporter, S("mesh"));
+			// TODO: Use persistent identifier, and not indices
+			json_write_pair(exporter, S("asset_id"), uint32_t, mesh->mesh_group_index);
+			json_end_map(exporter);
+		}
+
+		if (FLAG_GET(flags, COMPONENT_FLAG_COLLIDABLE)) {
+			ColliderComponent *collider = &pstate->colliders[entity];
+
+			json_begin_map(exporter, S("collider"));
+
+			json_begin_array(exporter, S("center"));
+            json_write_float3(exporter, collider->aabb.center);
+			json_end_array(exporter);
+
+			json_begin_array(exporter, S("extent"));
+            json_write_float3(exporter, collider->aabb.extent);
+			json_end_array(exporter);
+
+			json_end_map(exporter);
+		}
+
+		json_end_map(exporter);
+
+		if (transform && transform->child_index) {
+			json_begin_array(exporter, S("children"));
+			Entity *child_index = &transform->child_index;
+			while (*child_index) {
+				ASSERT(*child_index < pstate->entity_count);
+				serialize_entity(pstate, exporter, *child_index);
+
+				TransformComponent *child = &pstate->transforms[*child_index];
+				child_index = &child->sibling_index;
+			}
+			json_end_array(exporter);
+		}
+	}
+	json_end_map(exporter);
+	return true;
+}
+
+Entity deserialize_entity(PermanentState *pstate, JsonNode *root) {
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+
+	ASSERT(pstate->entity_count < MAX_ENTITIES);
+	Entity entity = pstate->entity_count++;
+
+	String name = json_find(root, S("name"), String);
+	JsonNode *components = json_node(root, S("componenets"));
+
+	if (components) {
+		JsonNode *transform_node = json_node(components, S("transform"));
+		if (transform_node) {
+			Transform3 *transform = &pstate->transforms[entity];
+
+			uint32_t index = 0;
+			for (JsonNode *node = json_list(transform_node, S("position")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&transform->position)[index] = value;
+			}
+
+			index = 0;
+			for (JsonNode *node = json_list(transform_node, S("rotation")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&transform->rotation)[index] = value;
+			}
+
+			index = 0;
+			for (JsonNode *node = json_list(transform_node, S("scale")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&transform->scale)[index] = value;
+			}
+
+			transform->dirty = true;
+			pstate->components[entity] |= COMPONENT_FLAG_TRANSFORM;
+		}
+
+		JsonNode *mesh_node = json_node(components, S("mesh"));
+		if (mesh_node) {
+			MeshComponent *mesh = &pstate->meshes[entity];
+			// TODO: Use persistent identifier, and not indices
+			mesh->mesh_group_index = json_find(mesh_node, S("asset_id"), uint32_t);
+
+			pstate->components[entity] |= COMPONENT_FLAG_MESH;
+		}
+	}
+
+	for (JsonNode *node = json_list(root, S("children")); node; node = node->next)
+		scene_entity_set_parent(pstate, entity, deserialize_entity(pstate, node));
+
+	arena_scratch_end(scratch);
+	return entity;
 }
 
 FrameInfo update_and_draw(GameContext *context, float dt) {
@@ -466,6 +596,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->scene_geometry_buffer = vulkan_buffer_make(pstate->context, BUFFER_USAGE_INDEX | BUFFER_USAGE_VERTEX, BUFFER_MEMORY_DEVICE, MiB(128), NULL);
 
 		ArenaTemp scratch = arena_scratch_begin(NULL);
+
+		AssetStore store = asset_store_make(scratch.arena);
+		asset_store_track_directory(&store, S("assets/"));
+
+		UUID unlit_generated = uuid_generate();
+		UUID unlit = asset_store_find(&store, ASSET_TYPE_SHADER, S("unlit.glsl"));
 
 		ShaderSource source = { 0 };
 		source = importer_load_shader(scratch.arena, S("assets/shaders/unlit.vert.spv"), S("assets/shaders/unlit.frag.spv"));
@@ -697,14 +833,24 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		// Upload all geometry once
 		vulkan_buffer_push(pstate->context, pstate->scene_geometry_buffer, geometry_upload_arena->offset, geometry_upload_arena->base);
 
+		arena_scratch_end(scratch);
+
+		float yaw = deg2radf(54.736f);
+		float pitch = deg2radf(45.f);
+		float arm_length = 40.f;
 		pstate->game_camera = (Camera){
-			.position = { 20, 20, 30 },
+			.position = {
+			  sinf(pitch) * cosf(yaw) * arm_length,
+			  sinf(pitch) * arm_length,
+			  sinf(pitch) * sinf(yaw) * arm_length,
+			},
 			.up = { 0.0f, 1.0f, 0.0f },
 			.target = { 0.0f, 0.0f, 0.0f },
 			.fov = 45.f,
 
-			.projection = CAMERA_PROJECTION_PERSPECTIVE
+			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC
 		};
+		pstate->game_camera_start_offset = pstate->game_camera.position;
 
 		// Test entity
 		/* Entity collidable_entity = pstate->entity_count++; */
@@ -742,8 +888,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		if (file_exists(S("assets/scene/test.scene")))
 			scene_deserialize(S("assets/scene/test.scene"), pstate);
 
-		arena_scratch_end(scratch);
-
 		pstate->initialized = true;
 	}
 
@@ -751,7 +895,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 	if (input_key_pressed(KEY_CODE_P))
 		pstate->game_camera.projection = !pstate->game_camera.projection;
-	if (input_key_pressed(KEY_CODE_3))
+	if (input_key_pressed(KEY_CODE_M))
 		pstate->debug_draw_collisions = !pstate->debug_draw_collisions;
 
 	switch (pstate->state) {
@@ -760,7 +904,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			if (player == 0) {
 				player = pstate->player = pstate->entity_count++;
 
-				float3 start_position = FLOAT3_ZERO;
 				pstate->transforms[player] = (TransformComponent){
 					.position = FLOAT3_ZERO,
 					.scale = FLOAT3_ONE,
@@ -771,6 +914,128 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					/* .material_index = 0, */
 				};
 				pstate->components[player] = COMPONENT_FLAG_DRAWABLE;
+			}
+
+			Entity selection = pstate->selection;
+			if (selection == 0) {
+				JsonNode *root = json_parse(scratch.arena,
+					string_wrap_buffer(
+						filesystem_read(scratch.arena,
+							S("selection_entity.prefab"))));
+				selection = pstate->selection = deserialize_entity(pstate, root);
+
+				pstate->transforms[selection] = (TransformComponent){
+					.position = FLOAT3_ZERO,
+					.scale = FLOAT3_ONE,
+					.dirty = true,
+				};
+				pstate->components[selection] = COMPONENT_FLAG_TRANSFORM;
+
+				// selection mesh
+				{
+					MeshComponent shared_mesh = (MeshComponent){
+						.mesh_group_index = arena_array_count(pstate->assets.mesh_groups) - 1,
+						/* .material_index = 0, */
+					};
+					Entity mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { 0.5f, 0.0f, 0.4f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = FLOAT3_ZERO,
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+
+					mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { 0.4f, 0.0f, -0.5f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = { 0.0f, 90.0f, 0.0f },
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+
+					mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { -0.5f, 0.0f, -0.4f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = { 0.0f, -180.0f, 0.0f },
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+
+					mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { -0.4f, 0.0f, 0.5f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = { 0.0f, -90.0f, 0.0f },
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+
+					mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { 0.4f, 0.0f, 0.5f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = { 0.0f, 90.0f, 0.0f },
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+
+					mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { 0.5f, 0.0f, -0.4f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = { 0.0f, -180.0f, 0.0f },
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+
+					mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { -0.4f, 0.0f, -0.5f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = { 0.0f, -90.0f, 0.0f },
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+
+					mesh_part = pstate->entity_count++;
+					pstate->transforms[mesh_part] = (TransformComponent){
+						.position = { -0.5f, 0.0f, 0.4f },
+						.scale = { 0.1f, 0.1f, 0.3f },
+						.rotation = { 0.0f, 0.0f, 0.0f },
+						.dirty = true,
+					};
+					pstate->meshes[mesh_part] = shared_mesh;
+					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
+					scene_entity_set_parent(pstate, selection, mesh_part);
+				}
+
+				ArenaTemp json_temp = arena_scratch_begin(scratch.arena);
+				JsonExporter exporter = json_exporter_make(json_temp.arena);
+				serialize_entity(pstate, &exporter, selection);
+
+				File file = filesystem_open(S("selection_entity.prefab"), FILE_MODE_WRITE);
+
+				file_write(&file, 1, exporter.arena->offset - exporter.start_offset, (uint8_t *)exporter.arena->base + exporter.start_offset);
+				file_close(&file);
+
+				arena_scratch_end(json_temp);
 			}
 
 			Camera *camera = &pstate->game_camera;
@@ -850,9 +1115,22 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 
 			camera->target = transform->position;
-			camera->position.x = transform->position.x + 0;
-			camera->position.z = transform->position.z + 20;
-			// .position = { 0.0f, 20, 30 },
+			camera->position.x = pstate->game_camera_start_offset.x + transform->position.x;
+			camera->position.z = pstate->game_camera_start_offset.z + transform->position.z;
+
+			// select
+			float2 mouse_position = float2_from_double2(input_mouse_position());
+			float2 window_size = float2_from_uint2(window_size_pixel(context->display));
+
+			float2 mouse_offset = float2_subtract(float2_scale(window_size, 0.5f), mouse_position);
+			float aspect = window_size.x / window_size.y;
+			{
+				// Normalized device coordinates, -1..1
+				float2 ndc = {
+					(mouse_position.x / window_size.x) * 2.0f - 1.0f,
+					(mouse_position.y / window_size.y) * 2.0f - 1.0f,
+				};
+			}
 		} break;
 
 		case GAME_STATE_EDITOR: {
@@ -870,6 +1148,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			/* window_set_cursor_locked(context->display, true); */
 			pstate->camera = &pstate->game_camera;
 		}
+	}
+
+	for (uint32_t index = 0; index < pstate->entity_count; ++index) {
+		Transform3 *t = &pstate->transforms[index];
+		if (t->parent_index == 0 && t->dirty)
+			scene_transform_world(pstate, t);
 	}
 
 	float2 window_size = float2_from_uint2(window_size_pixel(context->display));
@@ -977,7 +1261,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 					vulkan_uniformset_bind(pstate->context, group);
 
-					float4x4 model_matrix = scene_transform_world(pstate, transform);
+					float4x4 model_matrix = transform->global_matrix;
 					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
 					vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
@@ -1242,8 +1526,8 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 			if (input_key_pressed(KEY_CODE_Q)) {
 				entity_mesh->mesh_group_index = entity_mesh->mesh_group_index > 1
-												  ? entity_mesh->mesh_group_index - 1
-												  : group_count - 1;
+					? entity_mesh->mesh_group_index - 1
+					: group_count - 1;
 				pstate->components[editor->active_entity] |= COMPONENT_FLAG_MESH;
 			}
 			if (input_key_pressed(KEY_CODE_E)) {
@@ -1493,7 +1777,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 							editor->transform.number_input /= 10;
 
 						float3 rotation = { 0 };
-						float scale = deg2radf(editor->transform.number_input) * (editor->transform.axis_reverse ? -1.f : 1.f);
+						float scale = editor->transform.number_input * (editor->transform.axis_reverse ? -1.f : 1.f);
 						if (editor->transform.axis == AXIS_MODE_X)
 							rotation = float3_scale(FLOAT3_X, scale);
 						else if (editor->transform.axis == AXIS_MODE_Z)
@@ -1523,7 +1807,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 					}
 
 					if (input_key_down(KEY_CODE_LEFTCTRL)) {
-						float snap = deg2radf(15.0f);
+						float snap = 15.0f;
 						transform->rotation.x = (int32_t)(transform->rotation.x / snap) * snap;
 						transform->rotation.y = (int32_t)(transform->rotation.y / snap) * snap;
 						transform->rotation.z = (int32_t)(transform->rotation.z / snap) * snap;

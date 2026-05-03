@@ -13,7 +13,7 @@ typedef struct {
 Arena arena_make(size_t size);
 ENGINE_API Arena *arena_partition(Arena *arena, size_t size);
 static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .base = buffer, .capacity = size }; }
-static inline Arena arena_wrap_span(Span span) { return (Arena){ .base = span.buffer, .capacity = span.size }; }
+static inline Arena arena_wrap_buffer(Buffer buffer) { return (Arena){ .base = buffer.pointer, .capacity = buffer.size }; }
 void arena_destroy(Arena *arena);
 
 #define arena_wrap_struct(s) \
@@ -65,9 +65,9 @@ typedef struct {
 } ArenaTrie;
 
 static inline ArenaTrie arena_trie_make(Arena *arena) { return (ArenaTrie){ .arena = arena }; }
-ENGINE_API ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Span key, const char *debug_type_name);
-ENGINE_API void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Span key, size_t map_size, size_t map_align);
-ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Span key, size_t size, size_t align, const char *debug_type_name);
+ENGINE_API ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Buffer key, const char *debug_type_name);
+ENGINE_API void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Buffer key, size_t map_size, size_t map_align);
+ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Buffer key, size_t size, size_t align, const char *debug_type_name);
 
 #define arena_trie_wrap(buf, count) ((ArenaTrie){ .arena = &arena_wrap_count(buf, count) })
 #define arena_trie_wrap_array(arr)                                                  \

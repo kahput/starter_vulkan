@@ -334,7 +334,6 @@ String string_formatv(Arena *arena, const char *format, va_list args) {
 	va_list args_copy;
 	va_copy(args_copy, args);
 
-	// Pass 1: Measure
 	int length = vsnprintf(NULL, 0, format, args);
 	if (length < 0) {
 		va_end(args_copy);
@@ -342,17 +341,28 @@ String string_formatv(Arena *arena, const char *format, va_list args) {
 	}
 
 	// Pass 2: Write
-	char *data = arena_push_count(arena, length + 1, char);
-	vsnprintf(data, length + 1, format, args_copy);
+	char *data = NULL;
+	uint32_t push_length = length + 1;
+	data = arena_push_count(arena, push_length, char);
+	vsnprintf(data, push_length, format, args_copy);
 	va_end(args_copy);
 
 	return (String){ .chars = data, .length = (size_t)length };
 }
 
-String string_format(Arena *arena, const char *fmt, ...) {
+String string_format(Arena *arena, const char *format, ...) {
 	va_list args;
-	va_start(args, fmt);
-	String result = string_formatv(arena, fmt, args);
+	va_start(args, format);
+	String result = string_formatv(arena, format, args);
+	va_end(args);
+	return result;
+}
+
+String string_format_non_terminated(Arena *arena, const char *format, ...) {
+	va_list args;
+	va_start(args, format);
+	String result = string_formatv(arena, format, args);
+    arena->offset--;
 	va_end(args);
 	return result;
 }

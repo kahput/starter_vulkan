@@ -2,10 +2,12 @@
 
 #include "common.h"
 #include "core/arena.h"
+#include "core/strings.h"
 
 typedef uint64_t UUID;
 
-UUID identifier_generate(void);
+ENGINE_API UUID uuid_generate(void);
+ENGINE_API UUID uuid_from_path(String path);
 ENGINE_API UUID identifier_create_from_u64(uint64_t uuid);
 
 typedef struct {

@@ -6,28 +6,28 @@
 #include "core/arena.h"
 
 typedef struct asset_entry {
-	struct asset_entry *children[4];
 	UUID id;
-
 	String full_path;
+
 	AssetType type;
 	uint64_t last_modified;
 } AssetEntry;
 
-typedef struct asset_library {
+typedef struct asset_store {
 	Arena *arena;
 	ArenaTrie trie;
 
 	uint32_t tracked_file_count;
-} AssetLibrary;
+} AssetStore;
 
-static inline AssetLibrary asset_library_make(Arena *arena) { return (AssetLibrary){ .arena = arena, .trie = arena_trie_make(arena) }; }
+static inline AssetStore asset_store_make(Arena *arena) { return (AssetStore){ .arena = arena, .trie = arena_trie_make(arena) }; }
 
-ENGINE_API bool asset_library_track_directory(AssetLibrary *tracker, String directory);
-ENGINE_API bool asset_library_track_file(AssetLibrary *tracker, String file_path);
+ENGINE_API bool asset_store_track_directory(AssetStore *store, String directory);
+ENGINE_API bool asset_store_track_file(AssetStore *store, String file_path);
 
-ENGINE_API UUID asset_library_request_shader(AssetLibrary *tracker, String key);
-ENGINE_API UUID asset_library_request_mesh(AssetLibrary *tracker, String key);
-ENGINE_API UUID asset_library_request_image(AssetLibrary *tracker, String key);
+ENGINE_API UUID asset_store_find(AssetStore *store, AssetType type, String key);
+ENGINE_API UUID asset_store_find_shader(AssetStore *store, String key);
+ENGINE_API UUID asset_store_find_model(AssetStore *store, String key);
+ENGINE_API UUID asset_store_find_image(AssetStore *store, String key);
 
-bool asset_library_clear(AssetLibrary *tracker);
+bool asset_store_clear(AssetStore *store);

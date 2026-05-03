@@ -22,14 +22,17 @@ bool file_exists(String path) {
 }
 
 File filesystem_open(String path, FileMode mode) {
-	FILE *file = fopen((const char *)path.chars, mode == FILE_MODE_READ ? "rb" : "wb");
+	const char *val = mode == FILE_MODE_READ ? "rb" : mode == FILE_MODE_WRITE ? "w"
+																			  : "wb";
+
+	FILE *file = fopen((const char *)path.chars, val);
 	if (file == NULL)
 		LOG_WARN("Failed to open file at '%.*s'", SARG(path));
 
 	return (File){ .handle = file };
 }
 
-size_t filesystem_write(File *file, size_t element_size, uint32_t element_count, void *data) {
+size_t file_write(File *file, size_t element_size, uint32_t element_count, void *data) {
 	size_t written = 0;
 	if (file->handle)
 		written = fwrite(data, element_size, element_count, file->handle);
@@ -54,11 +57,11 @@ ENGINE_API void filesystem_make_directory(String directory) {
 	arena_scratch_end(scratch);
 }
 
-Span filesystem_read(Arena *arena, String path) {
+Buffer filesystem_read(Arena *arena, String path) {
 	FILE *file = fopen((const char *)path.chars, "rb");
 	if (file == NULL) {
 		LOG_ERROR("Failed to read file '%s': %s", path.chars, strerror(errno));
-		return (Span){ 0 };
+		return (Buffer){ 0 };
 	}
 
 	fseek(file, 0L, SEEK_END);
@@ -71,7 +74,7 @@ Span filesystem_read(Arena *arena, String path) {
 
 	fclose(file);
 
-	return span_make(byte_content, size);
+	return buffer_make(byte_content, size);
 }
 
 bool filesystem_file_copy(String from, String to) {

@@ -138,30 +138,30 @@ typedef struct { float32x3 min, max; } Interval3;
 // clang-format on
 
 typedef struct {
-	uint8_t *buffer;
+	uint8_t *pointer;
 	size_t size;
-} Span;
+} Buffer;
 
-static inline Span span_make(void *ptr, size_t size) { return (Span){ .buffer = ptr, .size = size }; }
+static inline Buffer buffer_make(void *ptr, size_t size) { return (Buffer){ .pointer = ptr, .size = size }; }
 
-#define span_struct(obj) ((Span){ .buffer = (uint8_t *)&(obj), .size = sizeof(obj) })
-#define span_array(arr) ((Span){ .buffer = (uint8_t *)(arr), .size = sizeof(arr) })
-#define span_count(p, n) ((Span){ .buffer = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
-#define span_literal(lit) ((Span){ .buffer = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
-#define span_string(s) ((Span){ .buffer = (uint8_t *)(s).chars, .size = (s).length })
+#define buffer_wrap_struct(obj) ((Buffer){ .pointer = (uint8_t *)&(obj), .size = sizeof(obj) })
+#define buffer_wrap_array(arr) ((Buffer){ .pointer = (uint8_t *)(arr), .size = sizeof(arr) })
+#define buffer_wrap_count(p, n) ((Buffer){ .pointer = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
+#define buffer_wrap_literal(lit) ((Buffer){ .pointer = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
+#define buffer_wrap_string(s) ((Buffer){ .pointer = (uint8_t *)(s).chars, .size = (s).length })
 
-static inline Span span_subspan(Span s, size_t offset, size_t length) {
+static inline Buffer buffer_subbuffer(Buffer s, size_t offset, size_t length) {
 	if (offset > s.size)
-		return span_make(NULL, 0);
+		return buffer_make(NULL, 0);
 	if (offset + length > s.size)
 		length = s.size - offset;
-	return span_make(s.buffer + offset, length);
+	return buffer_make(s.pointer + offset, length);
 }
-static inline bool span_empty(Span s) { return s.size == 0; }
-static inline bool span_equal(Span a, Span b) {
+static inline bool buffer_empty(Buffer s) { return s.size == 0; }
+static inline bool buffer_equal(Buffer a, Buffer b) {
 	if (a.size != b.size)
 		return false;
-	return memory_equals(a.buffer, b.buffer, a.size);
+	return memory_equals(a.pointer, b.pointer, a.size);
 }
 
 typedef uint32_t Flag;

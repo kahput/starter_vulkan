@@ -22,7 +22,7 @@ typedef struct image {
 
 typedef struct {
 	String vertex_path, fragment_path;
-	Span vertex, fragment;
+	Buffer vertex, fragment;
 } ShaderSource;
 
 typedef enum {

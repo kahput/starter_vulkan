@@ -124,13 +124,6 @@ bool vulkan_uniformset_bind_buffer_range(
 	return true;
 }
 
-bool vulkan_uniformset_bind_buffer_span(VulkanContext *context, RhiUniformSet set_handle, uint32_t binding, Span span, RhiBuffer buffer_handle) {
-	VulkanBuffer *buffer = NULL;
-	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
-
-	size_t offset = span.buffer - (uint8_t *)buffer->mapped;
-	return vulkan_uniformset_bind_buffer_range(context, set_handle, binding, offset, span.size, buffer_handle);
-}
 
 bool vulkan_uniformset_bind_texture(
 	VulkanContext *context, RhiUniformSet set_handle,

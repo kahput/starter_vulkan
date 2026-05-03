@@ -95,6 +95,7 @@ MeshSource mesh_source_cube(Arena *arena, float x, float y, float z) {
 	return mesh_source_list_flatten(arena, &list);
 }
 
+
 void mesh_source_list_push(Arena *arena, MeshSourceList *list, MeshSource source) {
 	MeshSourceNode *node = arena_push_struct(arena, MeshSourceNode);
 	node->mesh = source;

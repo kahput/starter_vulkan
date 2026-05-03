@@ -1,8 +1,10 @@
 #include "json_parser.h"
 
+#include "assets/asset_types.h"
 #include "core/debug.h"
 #include "core/lexer.h"
 #include "core/logger.h"
+#include "core/strings.h"
 
 uint8_t json_zero_buffer[128] = { 0 };
 
@@ -44,7 +46,7 @@ static JsonNode *parse_object(JsonParser *parser) {
 		JsonNode *value = parse_value(parser);
 
 		// Store a JsonNode* in the trie, keyed by the field name
-		arena_trie_put(trie, span_string(key.string), JsonNode *, value);
+		arena_trie_put(trie, buffer_wrap_string(key.string), JsonNode *, value);
 
 		lexer_match(&parser->lexer, TOKEN_COMMA, NULL);
 	}
@@ -182,7 +184,7 @@ JsonNode *json_node(JsonNode *node, String key) {
 	if (node == NULL || node->type != JSON_OBJECT)
 		return NULL;
 
-	JsonNode **found = arena_trie_find((ArenaTrie *)node->value, span_string(key), JsonNode *);
+	JsonNode **found = arena_trie_find((ArenaTrie *)node->value, buffer_wrap_string(key), JsonNode *);
 	return found ? *found : NULL;
 }
 
@@ -256,4 +258,99 @@ uint32_t json_count(JsonNode *n) {
 		JsonNode *first;
 	};
 	return ((struct json_list *)n->value)->count;
+}
+
+static void json_prepare_next_item(JsonExporter *exporter) {
+	uint32_t depth = exporter->array_depth + exporter->map_depth;
+
+	if (exporter->is_first_item[depth] == false) {
+		string_format_non_terminated(exporter->arena, ",\n");
+	} else {
+		string_format_non_terminated(exporter->arena, "\n");
+		exporter->is_first_item[depth] = false;
+	}
+
+	string_format_non_terminated(exporter->arena, "%*s", depth * 4, "");
+}
+
+void json_begin_map(JsonExporter *exporter, String key) {
+	json_prepare_next_item(exporter);
+
+	if (key.length > 0)
+		string_format_non_terminated(exporter->arena, "\"" SFMT "\": {", SARG(key));
+	else
+		string_format_non_terminated(exporter->arena, "{");
+
+	exporter->map_depth++;
+	exporter->is_first_item[exporter->map_depth + exporter->array_depth] = true;
+}
+
+void json_end_map(JsonExporter *exporter) {
+	ASSERT(exporter->map_depth > 0);
+	exporter->map_depth--;
+	uint32_t depth = exporter->map_depth + exporter->array_depth;
+	string_format_non_terminated(exporter->arena, "\n%*s}", depth * 4, "");
+}
+
+void json_begin_array(JsonExporter *exporter, String key) {
+	json_prepare_next_item(exporter);
+	ASSERT(key.length);
+
+	string_format_non_terminated(exporter->arena, "\"" SFMT "\": [", SARG(key));
+
+	exporter->array_depth++;
+	exporter->is_first_item[exporter->map_depth + exporter->array_depth] = true;
+}
+void json_end_array(JsonExporter *exporter) {
+	ASSERT(exporter->array_depth > 0);
+	exporter->array_depth--;
+	uint32_t depth = exporter->map_depth + exporter->array_depth;
+	string_format_non_terminated(exporter->arena, "\n%*s]", depth * 4, "");
+}
+
+void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Buffer buffer) {
+	json_prepare_next_item(exporter);
+	switch (type) {
+		case JSON_bool: {
+			String value = *buffer.pointer ? S("true") : S("false");
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": " SFMT "", SARG(key), SARG(value));
+		} break;
+		case JSON_uint32_t: {
+			uint32_t value = *(uint32_t *)buffer.pointer;
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %u", SARG(key), value);
+		} break;
+		case JSON_int32_t: {
+			int32_t value = *(int32_t *)buffer.pointer;
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %d", SARG(key), value);
+		} break;
+		case JSON_float: {
+			float value = *(float *)buffer.pointer;
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %.3f", SARG(key), value);
+		} break;
+		case JSON_String: {
+			String value = *(String *)buffer.pointer;
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": \"" SFMT "\"", SARG(key), SARG(value));
+		} break;
+		case JSON_ARRAY:
+		case JSON_OBJECT:
+		case JSON_TYPE_COUNT:
+		case JSON_NULL:
+			ASSERT(false);
+			break;
+	}
+}
+
+/* void json_write_pair(JsonExporter *exporter, String key, String value) { */
+/* 	json_prepare_next_item(exporter); */
+/* 	string_format_non_terminated(exporter->arena, "\"" SFMT "\": \"" SFMT "\"", SARG(key), SARG(value)); */
+/* } */
+
+void json_write_float(JsonExporter *exporter, float value) {
+	json_prepare_next_item(exporter);
+	string_format_non_terminated(exporter->arena, "%.3f", value);
+}
+
+void json_write_float3(JsonExporter *exporter, float32x3 value) {
+	json_prepare_next_item(exporter);
+	string_format_non_terminated(exporter->arena, "%.3f, %.3f, %.3f", value.x, value.y, value.z);
 }
