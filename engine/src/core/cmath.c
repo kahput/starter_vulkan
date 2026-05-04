@@ -1,8 +1,6 @@
 #include "cmath.h"
 #include "core/logger.h"
 
-#include <math.h>
-
 float2 float2_negate(float2 v) {
 	float2 result = { -v.x, -v.y };
 	return result;
@@ -450,4 +448,90 @@ void float3_print(float3 v) {
 
 void float4_print(float4 v) {
 	LOG_INFO("float4 { %.2f, %.2f, %.2f, %.2f }", v.x, v.y, v.z, v.w);
+}
+
+Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
+	float denominator = float3_dot(rd, pn);
+	if (fabsf(denominator) < EPSILON)
+		return RAY3_NO_HIT;
+
+	float t = (float3_dot(po, pn) - float3_dot(ro, pn)) / denominator;
+
+	if (t < 0.0f)
+		return RAY3_NO_HIT;
+
+	float3 point = float3_add(ro, float3_scale(rd, t));
+
+	Raycast3Result result = {
+		.hit = true,
+		.t = t,
+		.normal = pn,
+		.point = point,
+	};
+
+	return result;
+}
+
+Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent) {
+	float3 min = float3_subtract(center, extent);
+	float3 max = float3_add(center, extent);
+
+	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
+	if (float3_length(rd)) {
+		// left
+		float3 po = float3_subtract(center, (float3){ extent.x, 0.0f, 0.0f });
+		float3 pn = { -1.0f, 0.0f, 0.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// right
+		po = float3_add(center, (float3){ extent.x, 0.0f, 0.0f });
+		pn = (float3){ 1.0f, 0.0f, 0.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// front
+		po = float3_add(center, (float3){ 0.0f, 0.0f, extent.z });
+		pn = (float3){ 0.0f, 0.0f, 1.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// back
+		po = float3_subtract(center, (float3){ 0.0f, 0.0f, extent.z });
+		pn = (float3){ 0.0f, 0.0f, -1.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// NOTE: no vertical movement, ignoring top and bottom for now
+	}
+
+	return result;
 }

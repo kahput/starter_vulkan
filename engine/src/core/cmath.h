@@ -3,6 +3,8 @@
 
 #include <common.h>
 
+#include <math.h>
+
 #define C_PI 3.14159265358979323846264338327950288
 #define C_PIf ((float)C_PI)
 #define EPSILON 1e-6f
@@ -115,4 +117,14 @@ ENGINE_API void float2_print(float2 v);
 ENGINE_API void float3_print(float3 v);
 ENGINE_API void float4_print(float4 v);
 
+typedef struct {
+	bool hit;
+	float t;
+	float3 normal, point;
+} Raycast3Result;
+static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
+
+// Collision
+Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
+Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent) ;
 #endif /* CMATH_H_ */

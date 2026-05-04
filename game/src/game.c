@@ -23,8 +23,8 @@
 #include "renderer/r_internal.h"
 #include "scene.h"
 
+#include "ecs.h"
 #include "cgltf.h"
-#include <math.h>
 
 #define MAX_ENTITIES 1024
 
@@ -61,42 +61,6 @@ typedef struct {
 	RhiTexture textures[16];
 	uint32_t texture_count;
 } Material;
-
-// ENTITIES
-typedef uint32_t Entity;
-
-typedef struct {
-	float3 position;
-	float3 rotation;
-	float3 scale;
-
-	float4x4 local_matrix;
-	float4x4 global_matrix;
-
-	uint32_t parent_index;
-	uint32_t child_index;
-	uint32_t sibling_index;
-	bool dirty;
-} Transform3;
-typedef Transform3 TransformComponent;
-
-typedef struct {
-	uint32_t mesh_group_index;
-} MeshComponent;
-
-typedef union {
-	struct {
-		float3 center;
-		float3 extent;
-	} aabb;
-} ColliderComponent;
-
-typedef enum {
-	COMPONENT_FLAG_TRANSFORM = 1 << 0,
-	COMPONENT_FLAG_MESH = 1 << 1,
-	COMPONENT_FLAG_DRAWABLE = COMPONENT_FLAG_TRANSFORM | COMPONENT_FLAG_MESH,
-	COMPONENT_FLAG_COLLIDABLE = 1 << 2,
-} ComponentFlags;
 
 // EDITOR
 typedef enum {
@@ -196,12 +160,7 @@ typedef struct {
 		Interval3 *mesh_group_bounds; // per model
 	} assets;
 
-	uint32_t entity_count;
-	TransformComponent transforms[MAX_ENTITIES];
-	MeshComponent meshes[MAX_ENTITIES];
-	ColliderComponent colliders[MAX_ENTITIES];
-	uint32_t components[MAX_ENTITIES];
-
+	ECS *world;
 	Entity player, selection;
 
 	bool debug_draw_collisions;
@@ -213,233 +172,24 @@ Editor editor_make(Arena *arena);
 void editor_update(PermanentState *state, Editor *editor, float dt);
 void editor_draw(PermanentState *state, Editor *editor);
 
-typedef struct {
-	bool hit;
-	float t;
-	float3 normal, point;
-} Raycast3Result;
-static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
 
-Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
-	float denominator = float3_dot(rd, pn);
-	if (fabsf(denominator) < EPSILON)
-		return RAY3_NO_HIT;
+void calculate_transforms_recursive(ECS *world, Entity entity, float4x4 parent_global) {
+	TransformComponent *t = ecs_find(world, entity, TransformComponent);
 
-	float t = (float3_dot(po, pn) - float3_dot(ro, pn)) / denominator;
+	// Calculate local (if dirty) and global
+	t->local_matrix = float4x4_compose(t->position, t->rotation, t->scale);
+	t->global_matrix = float4x4_multiply(parent_global, t->local_matrix);
+	t->dirty = false;
 
-	if (t < 0.0f)
-		return RAY3_NO_HIT;
-
-	float3 point = float3_add(ro, float3_scale(rd, t));
-
-	Raycast3Result result = {
-		.hit = true,
-		.t = t,
-		.normal = pn,
-		.point = point,
-	};
-
-	return result;
-}
-
-Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent) {
-	float3 min = float3_subtract(center, extent);
-	float3 max = float3_add(center, extent);
-
-	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
-	if (float3_length(rd)) {
-		// left
-		float3 po = float3_subtract(center, (float3){ extent.x, 0.0f, 0.0f });
-		float3 pn = { -1.0f, 0.0f, 0.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// right
-		po = float3_add(center, (float3){ extent.x, 0.0f, 0.0f });
-		pn = (float3){ 1.0f, 0.0f, 0.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// front
-		po = float3_add(center, (float3){ 0.0f, 0.0f, extent.z });
-		pn = (float3){ 0.0f, 0.0f, 1.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// back
-		po = float3_subtract(center, (float3){ 0.0f, 0.0f, extent.z });
-		pn = (float3){ 0.0f, 0.0f, -1.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// NOTE: no vertical movement, ignoring top and bottom for now
-	}
-
-	return result;
-}
-
-void scene_entity_set_parent(PermanentState *pstate, Entity parent, Entity entity) {
-	if (parent == 0 || entity == 0)
-		return;
-
-	ASSERT(parent < pstate->entity_count && entity < pstate->entity_count);
-	TransformComponent *transform = &pstate->transforms[entity];
-	TransformComponent *parent_transform = &pstate->transforms[parent];
-
-	ASSERT(transform->parent_index == 0); // TODO: Reparenting
-	transform->parent_index = parent;
-
-	Entity *child_index = &parent_transform->child_index;
-	while (*child_index) {
-		ASSERT(*child_index < pstate->entity_count);
-		TransformComponent *child = &pstate->transforms[*child_index];
-
-		if (*child_index == entity)
-			break;
-		child_index = &child->sibling_index;
-	}
-
-	*child_index = entity;
-}
-
-Entity scene_entity_copy(PermanentState *pstate, Entity source) {
-	ASSERT(source && source < pstate->entity_count);
-
-	ASSERT(pstate->entity_count < MAX_ENTITIES);
-	Entity target = pstate->entity_count++;
-
-	memory_copy(pstate->transforms + target, pstate->transforms + source, sizeof(TransformComponent));
-
-	pstate->transforms[target].parent_index = 0;
-	pstate->transforms[target].child_index = 0;
-	pstate->transforms[target].sibling_index = 0;
-
-	memory_copy(pstate->colliders + target, pstate->colliders + source, sizeof(ColliderComponent));
-	memory_copy(pstate->meshes + target, pstate->meshes + source, sizeof(MeshComponent));
-	memory_copy(pstate->components + target, pstate->components + source, sizeof(ComponentFlags));
-
-	// Keep parent
-	scene_entity_set_parent(pstate, pstate->transforms[source].parent_index, target);
-
-	// Copy all children
-	Entity child = pstate->transforms[source].child_index;
-	while (child) {
-		ASSERT(child < pstate->entity_count);
-		Entity child_copy = pstate->entity_count++;
-
-		memory_copy(pstate->transforms + child_copy, pstate->transforms + child, sizeof(TransformComponent));
-
-		pstate->transforms[child_copy].parent_index = 0;
-		pstate->transforms[child_copy].child_index = 0;
-		pstate->transforms[child_copy].sibling_index = 0;
-
-		memory_copy(pstate->colliders + child_copy, pstate->colliders + child, sizeof(ColliderComponent));
-		memory_copy(pstate->meshes + child_copy, pstate->meshes + child, sizeof(MeshComponent));
-		memory_copy(pstate->components + child_copy, pstate->components + child, sizeof(ComponentFlags));
-
-		scene_entity_set_parent(pstate, target, child_copy);
-
-		child = pstate->transforms[child].sibling_index;
-	}
-
-	return target;
-}
-
-float4x4 scene_transform_world(PermanentState *pstate, Transform3 *transform) {
-	if (transform->dirty) {
-		transform->local_matrix = float4x4_compose(transform->position, transform->rotation, transform->scale);
-
-		// NOTE: Validity dependent on parent being updated before child
-		if (transform->parent_index)
-			transform->global_matrix = float4x4_multiply(pstate->transforms[transform->parent_index].global_matrix, transform->local_matrix);
-		else
-			transform->global_matrix = transform->local_matrix;
-		transform->dirty = false;
-
-		uint32_t child_index = transform->child_index;
-		while (child_index) { // Entity 0 == Invalid
-			Transform3 *child = &pstate->transforms[child_index];
-			child->dirty = true;
-			child->global_matrix = scene_transform_world(pstate, child);
-			child_index = child->sibling_index;
+	// Recurse down children if this entity has a hierarchy
+	HierarchyComponent *node = ecs_find(world, entity, HierarchyComponent);
+	if (node && node->first_child) {
+		Entity child = node->first_child;
+		while (child) {
+			calculate_transforms_recursive(world, child, t->global_matrix);
+			child = ecs_find(world, child, HierarchyComponent)->next_sibling;
 		}
 	}
-
-	return transform->global_matrix;
-}
-
-bool scene_serialize(String path, PermanentState *pstate) {
-	File file = filesystem_open(path, FILE_MODE_WRITE);
-	if (file.handle == NULL)
-		return false;
-
-	file_write_struct(&file, uint32_t, pstate->entity_count);
-	file_write_count(&file, pstate->entity_count, pstate->transforms);
-	file_write_count(&file, pstate->entity_count, pstate->meshes);
-	file_write_count(&file, pstate->entity_count, pstate->colliders);
-	file_write_count(&file, pstate->entity_count, pstate->components);
-
-	file_close(&file);
-
-	return true;
-}
-
-void scene_deserialize(String path, PermanentState *pstate) {
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-	Buffer file = filesystem_read(scratch.arena, path);
-
-	pstate->entity_count = *(uint32_t *)file.pointer;
-	file.pointer += 4;
-
-	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->transforms[entity] = *(TransformComponent *)file.pointer;
-		file.pointer += sizeof(TransformComponent);
-	}
-
-	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->meshes[entity] = *(MeshComponent *)file.pointer;
-		file.pointer += sizeof(MeshComponent);
-	}
-
-	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->colliders[entity] = *(ColliderComponent *)file.pointer;
-		file.pointer += sizeof(ColliderComponent);
-	}
-
-	for (uint32_t entity = 0; entity < pstate->entity_count; ++entity) {
-		pstate->components[entity] = *(ComponentFlags *)file.pointer;
-		file.pointer += sizeof(ComponentFlags);
-	}
-
-	arena_scratch_end(scratch);
 }
 
 bool window_resize(EventCode code, void *event, void *receiver) {
@@ -452,131 +202,6 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 		vulkan_texture_resize(pstate->context, pstate->main_color_targets[index], resize_event->width, resize_event->height);
 
 	return false;
-}
-
-bool serialize_entity(PermanentState *pstate, JsonExporter *exporter, Entity entity) {
-	json_begin_map(exporter, S(""));
-	json_write_pair(exporter, S("name"), String, S("entity"));
-
-	ComponentFlags flags = pstate->components[entity];
-
-	if (flags != 0) {
-		json_begin_map(exporter, S("componenets"));
-
-		Transform3 *transform = NULL;
-		if (FLAG_GET(flags, COMPONENT_FLAG_TRANSFORM)) {
-			transform = &pstate->transforms[entity];
-			json_begin_map(exporter, S("transform"));
-
-			json_begin_array(exporter, S("position"));
-            json_write_float3(exporter, transform->position);
-			json_end_array(exporter);
-
-			json_begin_array(exporter, S("rotation"));
-            json_write_float3(exporter, transform->rotation);
-			json_end_array(exporter);
-
-			json_begin_array(exporter, S("scale"));
-            json_write_float3(exporter, transform->scale);
-			json_end_array(exporter);
-
-			json_end_map(exporter);
-		}
-
-		if (FLAG_GET(flags, COMPONENT_FLAG_MESH)) {
-			MeshComponent *mesh = &pstate->meshes[entity];
-			json_begin_map(exporter, S("mesh"));
-			// TODO: Use persistent identifier, and not indices
-			json_write_pair(exporter, S("asset_id"), uint32_t, mesh->mesh_group_index);
-			json_end_map(exporter);
-		}
-
-		if (FLAG_GET(flags, COMPONENT_FLAG_COLLIDABLE)) {
-			ColliderComponent *collider = &pstate->colliders[entity];
-
-			json_begin_map(exporter, S("collider"));
-
-			json_begin_array(exporter, S("center"));
-            json_write_float3(exporter, collider->aabb.center);
-			json_end_array(exporter);
-
-			json_begin_array(exporter, S("extent"));
-            json_write_float3(exporter, collider->aabb.extent);
-			json_end_array(exporter);
-
-			json_end_map(exporter);
-		}
-
-		json_end_map(exporter);
-
-		if (transform && transform->child_index) {
-			json_begin_array(exporter, S("children"));
-			Entity *child_index = &transform->child_index;
-			while (*child_index) {
-				ASSERT(*child_index < pstate->entity_count);
-				serialize_entity(pstate, exporter, *child_index);
-
-				TransformComponent *child = &pstate->transforms[*child_index];
-				child_index = &child->sibling_index;
-			}
-			json_end_array(exporter);
-		}
-	}
-	json_end_map(exporter);
-	return true;
-}
-
-Entity deserialize_entity(PermanentState *pstate, JsonNode *root) {
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-
-	ASSERT(pstate->entity_count < MAX_ENTITIES);
-	Entity entity = pstate->entity_count++;
-
-	String name = json_find(root, S("name"), String);
-	JsonNode *components = json_node(root, S("componenets"));
-
-	if (components) {
-		JsonNode *transform_node = json_node(components, S("transform"));
-		if (transform_node) {
-			Transform3 *transform = &pstate->transforms[entity];
-
-			uint32_t index = 0;
-			for (JsonNode *node = json_list(transform_node, S("position")); node; node = node->next, index++) {
-				float value = json_as(node, float);
-				((float *)&transform->position)[index] = value;
-			}
-
-			index = 0;
-			for (JsonNode *node = json_list(transform_node, S("rotation")); node; node = node->next, index++) {
-				float value = json_as(node, float);
-				((float *)&transform->rotation)[index] = value;
-			}
-
-			index = 0;
-			for (JsonNode *node = json_list(transform_node, S("scale")); node; node = node->next, index++) {
-				float value = json_as(node, float);
-				((float *)&transform->scale)[index] = value;
-			}
-
-			transform->dirty = true;
-			pstate->components[entity] |= COMPONENT_FLAG_TRANSFORM;
-		}
-
-		JsonNode *mesh_node = json_node(components, S("mesh"));
-		if (mesh_node) {
-			MeshComponent *mesh = &pstate->meshes[entity];
-			// TODO: Use persistent identifier, and not indices
-			mesh->mesh_group_index = json_find(mesh_node, S("asset_id"), uint32_t);
-
-			pstate->components[entity] |= COMPONENT_FLAG_MESH;
-		}
-	}
-
-	for (JsonNode *node = json_list(root, S("children")); node; node = node->next)
-		scene_entity_set_parent(pstate, entity, deserialize_entity(pstate, node));
-
-	arena_scratch_end(scratch);
-	return entity;
 }
 
 FrameInfo update_and_draw(GameContext *context, float dt) {
@@ -673,7 +298,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		/* 	NULL); */
 
 		// DEFAULTS & INVALID
-		pstate->entity_count++;
+		pstate->world = ecs_make(&pstate->arena);
 
 		// TODO: Import the node transforms & cache shared textures
 		SceneSource models[] = {
@@ -853,7 +478,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->game_camera_start_offset = pstate->game_camera.position;
 
 		// Test entity
-		/* Entity collidable_entity = pstate->entity_count++; */
+		/* Entity collidable_entity = scene_entity_spawn(pstate, FLOAT3_ZERO); */
 		/* pstate->transforms[collidable_entity] = (TransformComponent){ */
 		/* .position = { 10.f, 1.0f, -5.5f }, */
 		/* .scale = FLOAT3_ONE, */
@@ -866,7 +491,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		/* }, */
 		/* }; */
 		/* pstate->components[collidable_entity] = COMPONENT_FLAG_TRANSFORM | COMPONENT_FLAG_COLLIDABLE; */
-		/* collidable_entity = pstate->entity_count++; */
+		/* collidable_entity = scene_entity_spawn(pstate, FLOAT3_ZERO); */
 		/* pstate->transforms[collidable_entity] = (TransformComponent){ */
 		/* .position = { 5.5f, 1.0f, -10.0f }, */
 		/* .scale = FLOAT3_ONE, */
@@ -885,9 +510,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->camera = &pstate->editor.camera;
 		pstate->state = GAME_STATE_EDITOR;
 
-		if (file_exists(S("assets/scene/test.scene")))
-			scene_deserialize(S("assets/scene/test.scene"), pstate);
-
 		pstate->initialized = true;
 	}
 
@@ -902,144 +524,130 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		case GAME_STATE_PLAY: {
 			Entity player = pstate->player;
 			if (player == 0) {
-				player = pstate->player = pstate->entity_count++;
-
-				pstate->transforms[player] = (TransformComponent){
-					.position = FLOAT3_ZERO,
-					.scale = FLOAT3_ONE,
-					.dirty = true,
-				};
-				pstate->meshes[player] = (MeshComponent){
-					.mesh_group_index = arena_array_count(pstate->assets.mesh_groups) - 1,
-					/* .material_index = 0, */
-				};
-				pstate->components[player] = COMPONENT_FLAG_DRAWABLE;
+				player = pstate->player = ecs_spawn(pstate->world, FLOAT3_ZERO);
+				ecs_put(pstate->world, player, MeshComponent,
+					{ .mesh_group_index = arena_array_count(pstate->assets.mesh_groups) - 1 });
 			}
 
 			Entity selection = pstate->selection;
 			if (selection == 0) {
-				JsonNode *root = json_parse(scratch.arena,
-					string_wrap_buffer(
-						filesystem_read(scratch.arena,
-							S("selection_entity.prefab"))));
-				selection = pstate->selection = deserialize_entity(pstate, root);
-
-				pstate->transforms[selection] = (TransformComponent){
-					.position = FLOAT3_ZERO,
-					.scale = FLOAT3_ONE,
-					.dirty = true,
-				};
-				pstate->components[selection] = COMPONENT_FLAG_TRANSFORM;
+				/* JsonNode *root = json_parse(scratch.arena, */
+				/* 	string_wrap_buffer( */
+				/* 		filesystem_read(scratch.arena, */
+				/* 			S("selection_entity.prefab")))); */
+				/* selection = pstate->selection = deserialize_entity(pstate, root); */
 
 				// selection mesh
-				{
+				if (selection == 0) {
+					selection = pstate->selection = ecs_spawn(pstate->world, FLOAT3_ZERO);
+
 					MeshComponent shared_mesh = (MeshComponent){
 						.mesh_group_index = arena_array_count(pstate->assets.mesh_groups) - 1,
 						/* .material_index = 0, */
 					};
-					Entity mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { 0.5f, 0.0f, 0.4f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = FLOAT3_ZERO,
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					Entity mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { 0.5f, 0.0f, 0.4f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = FLOAT3_ZERO,
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 
-					mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { 0.4f, 0.0f, -0.5f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = { 0.0f, 90.0f, 0.0f },
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { 0.4f, 0.0f, -0.5f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = { 0.0f, 90.0f, 0.0f },
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 
-					mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { -0.5f, 0.0f, -0.4f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = { 0.0f, -180.0f, 0.0f },
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { -0.5f, 0.0f, -0.4f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = { 0.0f, -180.0f, 0.0f },
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 
-					mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { -0.4f, 0.0f, 0.5f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = { 0.0f, -90.0f, 0.0f },
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { -0.4f, 0.0f, 0.5f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = { 0.0f, -90.0f, 0.0f },
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 
-					mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { 0.4f, 0.0f, 0.5f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = { 0.0f, 90.0f, 0.0f },
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { 0.4f, 0.0f, 0.5f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = { 0.0f, 90.0f, 0.0f },
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 
-					mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { 0.5f, 0.0f, -0.4f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = { 0.0f, -180.0f, 0.0f },
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { 0.5f, 0.0f, -0.4f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = { 0.0f, -180.0f, 0.0f },
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 
-					mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { -0.4f, 0.0f, -0.5f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = { 0.0f, -90.0f, 0.0f },
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { -0.4f, 0.0f, -0.5f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = { 0.0f, -90.0f, 0.0f },
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 
-					mesh_part = pstate->entity_count++;
-					pstate->transforms[mesh_part] = (TransformComponent){
-						.position = { -0.5f, 0.0f, 0.4f },
-						.scale = { 0.1f, 0.1f, 0.3f },
-						.rotation = { 0.0f, 0.0f, 0.0f },
-						.dirty = true,
-					};
-					pstate->meshes[mesh_part] = shared_mesh;
-					pstate->components[mesh_part] = COMPONENT_FLAG_DRAWABLE;
-					scene_entity_set_parent(pstate, selection, mesh_part);
+					mesh_part = ecs_spawn(pstate->world, FLOAT3_ZERO);
+					ecs_put(pstate->world, mesh_part, TransformComponent,
+						{
+						  .position = { -0.5f, 0.0f, 0.4f },
+						  .scale = { 0.1f, 0.1f, 0.3f },
+						  .rotation = { 0.0f, 0.0f, 0.0f },
+						  .dirty = true,
+						});
+					ecs_put(pstate->world, mesh_part, MeshComponent, shared_mesh);
+					ecs_hierarchy_parent(pstate->world, selection, mesh_part);
 				}
 
-				ArenaTemp json_temp = arena_scratch_begin(scratch.arena);
-				JsonExporter exporter = json_exporter_make(json_temp.arena);
-				serialize_entity(pstate, &exporter, selection);
+				/* ArenaTemp json_temp = arena_scratch_begin(scratch.arena); */
+				/* JsonExporter exporter = json_exporter_make(json_temp.arena); */
+				/* serialize_entity(pstate, &exporter, selection); */
 
-				File file = filesystem_open(S("selection_entity.prefab"), FILE_MODE_WRITE);
+				/* File file = filesystem_open(S("selection_entity.prefab"), FILE_MODE_WRITE); */
 
-				file_write(&file, 1, exporter.arena->offset - exporter.start_offset, (uint8_t *)exporter.arena->base + exporter.start_offset);
-				file_close(&file);
+				/* file_write(&file, 1, exporter.arena->offset - exporter.start_offset, (uint8_t *)exporter.arena->base + exporter.start_offset); */
+				/* file_close(&file); */
 
-				arena_scratch_end(json_temp);
+				/* arena_scratch_end(json_temp); */
 			}
 
 			Camera *camera = &pstate->game_camera;
-			TransformComponent *transform = &pstate->transforms[pstate->player];
+			TransformComponent *transform = ecs_find(pstate->world, player, TransformComponent);
 
 			float3 camera_target_offset = float3_subtract(camera->target, camera->position);
 			float3 camera_forward = float3_normalize(camera_target_offset);
@@ -1076,14 +684,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					float3 rd = float3_normalize_safe(move_delta, EPSILON);
 
 					Raycast3Result nearest = RAY3_NO_HIT;
-					for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
-						ComponentFlags flags = pstate->components[entity];
-						if (FLAG_GET(flags, COMPONENT_FLAG_TRANSFORM) == false ||
-							FLAG_GET(flags, COMPONENT_FLAG_COLLIDABLE) == false)
-							continue;
-						Transform3 *collision_transform = &pstate->transforms[entity];
-						ColliderComponent *shape = &pstate->colliders[entity];
-						float4x4 trs = scene_transform_world(pstate, collision_transform);
+					EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(ColliderComponent));
+					Entity entity;
+					while ((entity = ecs_next(&iterator))) {
+						Transform3 *collision_transform = ecs_find(pstate->world, entity, Transform3);
+						ColliderComponent *shape = ecs_find(pstate->world, entity, ColliderComponent);
+						float4x4 trs = collision_transform->global_matrix;
 
 						float3 translation = { trs.elements[12], trs.elements[13], trs.elements[14] };
 						float3 center = float3_add(shape->aabb.center, translation);
@@ -1150,10 +756,29 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		}
 	}
 
-	for (uint32_t index = 0; index < pstate->entity_count; ++index) {
-		Transform3 *t = &pstate->transforms[index];
-		if (t->parent_index == 0 && t->dirty)
-			scene_transform_world(pstate, t);
+	// Update transforms
+	EcsIterator it = ecs_query(pstate->world, COMPONENT_TYPE_TransformComponent);
+	Entity entity;
+
+	while ((entity = ecs_next(&it))) {
+		HierarchyComponent *node = ecs_find(pstate->world, entity, HierarchyComponent);
+
+		// If it has NO parent, it is a root. Start a recursive descent here.
+		if (node == NULL || node->parent == 0) {
+			TransformComponent *t = ecs_find(pstate->world, entity, TransformComponent);
+
+			t->local_matrix = float4x4_compose(t->position, t->rotation, t->scale);
+			t->global_matrix = t->local_matrix; // Roots have no parent matrix
+			t->dirty = false;
+
+			if (node && node->first_child) {
+				Entity child = node->first_child;
+				while (child) {
+					calculate_transforms_recursive(pstate->world, child, t->global_matrix);
+					child = ecs_find(pstate->world, child, HierarchyComponent)->next_sibling;
+				}
+			}
+		}
 	}
 
 	float2 window_size = float2_from_uint2(window_size_pixel(context->display));
@@ -1229,11 +854,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			// Entities
 			vulkan_shader_bind(pstate->context, pstate->phong_shader, pipeline);
 			vulkan_uniformset_bind(pstate->context, global_set);
-			for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
-				if (FLAG_GET(pstate->components[entity], COMPONENT_FLAG_DRAWABLE) == false)
-					continue;
-				TransformComponent *transform = &pstate->transforms[entity];
-				MeshComponent *mesh_component = &pstate->meshes[entity];
+			EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
+
+			Entity entity;
+			while ((entity = ecs_next(&iterator))) {
+				TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
+				MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
 
 				if (mesh_component->mesh_group_index == 0 || mesh_component->mesh_group_index > arena_array_count(pstate->assets.mesh_groups))
 					continue;
@@ -1276,12 +902,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			// Collision shapes
 			if (pstate->debug_draw_collisions) {
 				vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
-				for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
-					if (FLAG_GET(pstate->components[entity], COMPONENT_FLAG_TRANSFORM) == false ||
-						FLAG_GET(pstate->components[entity], COMPONENT_FLAG_COLLIDABLE) == false)
-						continue;
-					TransformComponent *transform = &pstate->transforms[entity];
-					ColliderComponent *shape = &pstate->colliders[entity];
+				EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(ColliderComponent));
+
+				Entity entity;
+				while ((entity = ecs_next(&iterator))) {
+					TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
+					ColliderComponent *shape = ecs_find(pstate->world, entity, ColliderComponent);
 
 					float3 min = float3_subtract(shape->aabb.center, shape->aabb.extent);
 					float3 max = float3_add(shape->aabb.center, shape->aabb.extent);
@@ -1338,7 +964,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 						storage_offset,
 						size, outline);
 
-					float4x4 model_matrix = scene_transform_world(pstate, transform);
+					float4x4 model_matrix = transform->global_matrix;
 					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
 					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
@@ -1495,7 +1121,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		if (editor->transform.mode && was != editor->transform.mode) {
 			editor->mode = EDITOR_MODE_TRANSFORM;
 			editor->transform.axis = AXIS_MODE_XYZ;
-			editor->transform.cached = pstate->transforms[editor->active_entity];
+			editor->transform.cached = *ecs_find(pstate->world, editor->active_entity, TransformComponent);
 			editor->transform.mouse_start_position = float2_from_double2(input_mouse_position());
 		}
 
@@ -1518,42 +1144,31 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		}
 
 		// add/swap mesh component
-		{
+		if (input_key_pressed(KEY_CODE_Q) || input_key_pressed(KEY_CODE_E)) {
 			uint32_t group_count = arena_array_count(pstate->assets.mesh_groups);
-			MeshComponent *entity_mesh = &pstate->meshes[editor->active_entity];
+			MeshComponent *entity_mesh = ecs_push(pstate->world, editor->active_entity, MeshComponent);
 
-			ComponentFlags flags = pstate->components[editor->active_entity];
-
-			if (input_key_pressed(KEY_CODE_Q)) {
+			if (input_key_pressed(KEY_CODE_Q))
 				entity_mesh->mesh_group_index = entity_mesh->mesh_group_index > 1
 					? entity_mesh->mesh_group_index - 1
 					: group_count - 1;
-				pstate->components[editor->active_entity] |= COMPONENT_FLAG_MESH;
-			}
-			if (input_key_pressed(KEY_CODE_E)) {
+
+			if (input_key_pressed(KEY_CODE_E))
 				entity_mesh->mesh_group_index = (entity_mesh->mesh_group_index % (group_count - 1)) + 1;
-				pstate->components[editor->active_entity] |= COMPONENT_FLAG_MESH;
-			}
 		}
 
 		// Add collision component as a child
 		{
 			if (input_key_pressed(KEY_CODE_C)) {
-				Entity collider = pstate->entity_count++;
-				pstate->transforms[collider] = (TransformComponent){
-					.position = FLOAT3_ZERO,
-					.scale = FLOAT3_ONE,
-					.dirty = true,
-				};
-
-				pstate->colliders[collider] = (ColliderComponent){
-					.aabb = {
-					  .center = FLOAT3_ZERO,
-					  .extent = FLOAT3_ONE,
-					},
-				};
-				pstate->components[collider] = COMPONENT_FLAG_TRANSFORM | COMPONENT_FLAG_COLLIDABLE;
-				scene_entity_set_parent(pstate, editor->active_entity, collider);
+				Entity collider = ecs_spawn(pstate->world, FLOAT3_ZERO);
+				ecs_put(pstate->world, collider, ColliderComponent,
+					{
+					  .aabb = {
+						.center = FLOAT3_ZERO,
+						.extent = FLOAT3_ONE,
+					  },
+					});
+				ecs_hierarchy_parent(pstate->world, editor->active_entity, collider);
 				editor_select_entity(editor, collider, false);
 			}
 		}
@@ -1561,53 +1176,32 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		// duplicate entity & children
 		// NOTE: Only copies the first layer down
 		if (input_key_down(KEY_CODE_LEFTSHIFT) && input_key_pressed(KEY_CODE_D)) {
-			ASSERT(pstate->entity_count < MAX_ENTITIES);
-			Entity new_entity = scene_entity_copy(pstate, editor->active_entity);
+			Entity new_entity = ecs_hierarchical_copy(pstate->world, editor->active_entity);
 			editor_select_entity(editor, new_entity, false);
 		}
 
 		// TODO: Make undo-able
 		// delete entity
 		if (input_key_pressed(KEY_CODE_DELETE)) {
-			if (editor->active_entity != pstate->entity_count - 1) {
-				Entity last = pstate->entity_count - 1;
-				Entity target = editor->active_entity;
-
-				memory_copy_struct(&pstate->transforms[target], &pstate->transforms[last]);
-				memory_copy_struct(&pstate->meshes[target], &pstate->meshes[last]);
-				memory_copy_struct(&pstate->components[target], &pstate->components[last]);
-
-				memory_zero_struct(pstate->transforms[last]);
-				memory_zero_struct(pstate->meshes[last]);
-				memory_zero_struct(pstate->components[last]);
-			}
-
-			pstate->entity_count--;
+			ecs_despawn(pstate->world, editor->active_entity);
 			editor_select_entity(editor, 0, false);
 		}
 	}
 
 	// serialize scene
-	if (input_key_down(KEY_CODE_LEFTCTRL) && input_key_pressed(KEY_CODE_S)) {
-		if (pstate->entity_count > 0) {
-			String path = S("assets/scene/test.scene");
-			filesystem_make_directory(stringpath_directory(path));
+	/* if (input_key_down(KEY_CODE_LEFTCTRL) && input_key_pressed(KEY_CODE_S)) { */
+	/* 	if (pstate->entity_count > 0) { */
+	/* 		String path = S("assets/scene/test.scene"); */
+	/* 		filesystem_make_directory(stringpath_directory(path)); */
 
-			if (scene_serialize(path, pstate))
-				LOG_INFO("scene serialized to '%.*s'", SARG(path));
-		}
-	}
+	/* 		if (scene_serialize(path, pstate)) */
+	/* 			LOG_INFO("scene serialized to '%.*s'", SARG(path)); */
+	/* 	} */
+	/* } */
 
 	// add entity
 	if (input_key_down(KEY_CODE_LEFTSHIFT) && input_key_pressed(KEY_CODE_A)) {
-		Entity entity = pstate->entity_count++;
-		ASSERT(entity < MAX_ENTITIES);
-		pstate->transforms[entity] = (TransformComponent){
-			.position = FLOAT3_ZERO,
-			.scale = FLOAT3_ONE,
-			.dirty = true,
-		};
-		pstate->components[entity] = COMPONENT_FLAG_TRANSFORM;
+		Entity entity = ecs_spawn(pstate->world, FLOAT3_ZERO);
 		editor_select_entity(editor, entity, false);
 	}
 
@@ -1683,8 +1277,8 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 					last_step = countof(editor->undo_steps) - 1;
 
 				Entity entity = editor->undo_steps[last_step].entity;
-				TransformComponent *transform = &pstate->transforms[editor->undo_steps[last_step].entity];
-				pstate->transforms[entity] = editor->undo_steps[last_step].cached_transform;
+				TransformComponent *transform = ecs_find(pstate->world, editor->undo_steps[last_step].entity, TransformComponent);
+				ecs_put(pstate->world, entity, TransformComponent, editor->undo_steps[last_step].cached_transform);
 				/* pstate->meshes[entity] = editor->undo_steps[last_step].cached_mesh; */
 
 				editor->undo_write_cursor = last_step;
@@ -1692,7 +1286,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			}
 		} break;
 		case EDITOR_MODE_TRANSFORM: {
-			TransformComponent *transform = &pstate->transforms[editor->active_entity];
+			TransformComponent *transform = ecs_find(pstate->world, editor->active_entity, TransformComponent);
 			float distance = float3_dot(float3_subtract(editor->transform.cached.position, camera->position), camera_forward);
 			float fov_radians = deg2radf(camera->fov);
 			float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
@@ -1884,12 +1478,13 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 	) {
 		if (editor->active_entity)
-			pstate->transforms[editor->active_entity].dirty = true;
+			ecs_find(pstate->world, editor->active_entity, TransformComponent)->dirty = true;
 
 		editor->transform = (EditorTransformInfo){ 0 };
 		editor->mode = EDITOR_MODE_VIEWING;
 	}
 }
+
 void editor_draw(PermanentState *pstate, Editor *editor) {
 	Camera *camera = pstate->camera;
 
@@ -1945,12 +1540,11 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		vulkan_shader_bind(pstate->context, pstate->picker_shader, pipeline);
 		vulkan_uniformset_bind(pstate->context, global_set);
 
-		for (Entity entity = 0; entity < pstate->entity_count; ++entity) {
-			if (FLAG_GET(pstate->components[entity], COMPONENT_FLAG_DRAWABLE) == false)
-				continue;
-
-			TransformComponent *transform = &pstate->transforms[entity];
-			MeshComponent *mesh_component = &pstate->meshes[entity];
+		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
+		Entity entity;
+		while ((entity = ecs_next(&iterator))) {
+			TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
+			MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
 
 			if (mesh_component->mesh_group_index == 0 || mesh_component->mesh_group_index > arena_array_count(pstate->assets.mesh_groups))
 				continue;
@@ -1960,7 +1554,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 			for (uint32_t mesh_index = mesh_group.x; mesh_index < mesh_group.x + mesh_group.y; ++mesh_index) {
 				Mesh *mesh = &pstate->assets.meshes[mesh_index];
-				float4x4 model_matrix = scene_transform_world(pstate, transform);
+				float4x4 model_matrix = transform->global_matrix;
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
 				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
@@ -1989,22 +1583,19 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 		for (uint32_t index = 0; index < editor->selected_entity_count; ++index) {
 			Entity entity = editor->selected_entities[index];
-			ComponentFlags flags = pstate->components[entity];
-			if (FLAG_GET(flags, COMPONENT_FLAG_TRANSFORM) == false)
-				continue;
-
-			TransformComponent *transform = &pstate->transforms[entity];
+			ASSERT(ecs_has(pstate->world, entity, TransformComponent));
+			TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
 			float3 min = { 0 };
 			float3 max = { 0 };
 
-			if (FLAG_GET(flags, COMPONENT_FLAG_MESH)) {
-				MeshComponent *mesh_component = &pstate->meshes[entity];
+			if (ecs_has(pstate->world, entity, MeshComponent)) {
+				MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
 				ASSERT(mesh_component->mesh_group_index && mesh_component->mesh_group_index < arena_array_count(pstate->assets.mesh_groups));
 
 				Interval3 *bounding_box = &pstate->assets.mesh_group_bounds[mesh_component->mesh_group_index];
 				min = bounding_box->min;
 				max = bounding_box->max;
-			} else if (FLAG_GET(flags, COMPONENT_FLAG_COLLIDABLE)) {
+			} else if (ecs_has(pstate->world, entity, ColliderComponent)) {
 				continue;
 			} else {
 				min = float3_negate(float3_scale(transform->scale, 0.5f));
@@ -2103,7 +1694,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 				{ max.x, max.y, max.z - pick_length, thickness },
 			};
 
-			float4x4 model_matrix = scene_transform_world(pstate, transform);
+			float4x4 model_matrix = transform->global_matrix;
 			float4 color = entity == editor->active_entity ? (float4){ 1.0f, 0.2f, 0.2f, 1.0f } : (float4){ 1.0f, 0.5f, 0.3f, 1.0f };
 
 			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
