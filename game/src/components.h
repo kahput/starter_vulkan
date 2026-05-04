@@ -7,9 +7,7 @@ typedef struct {
 	float3 rotation;
 	float3 scale;
 
-	float4x4 local_matrix;
-	float4x4 global_matrix;
-	bool dirty;
+	float4x4 world_matrix;
 } Transform3;
 typedef Transform3 TransformComponent;
 

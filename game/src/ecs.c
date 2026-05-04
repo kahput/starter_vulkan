@@ -1,8 +1,10 @@
 #include "ecs.h"
+#include "assets/json_parser.h"
 #include "common.h"
 #include "core/arena.h"
 #include "core/debug.h"
 #include "core/logger.h"
+#include "platform/filesystem.h"
 #include <limits.h>
 #include <stdint.h>
 
@@ -14,6 +16,9 @@ struct ECS {
 
 	uint32_t entity_count, highest_valid;
 };
+
+static bool serialize_entity(ECS *world, JsonExporter *exporter, Entity entity);
+static Entity deserialize_entity(ECS *world, JsonNode *root);
 
 ECS *ecs_make(Arena *arena) {
 	ECS *ecs = arena_push_struct(arena, ECS);
@@ -55,7 +60,6 @@ Entity ecs_spawn(ECS *world, float3 position) {
 				{
 				  .position = position,
 				  .scale = FLOAT3_ONE,
-				  .dirty = true,
 				});
 
 			if (world->highest_valid < entity)
@@ -198,7 +202,7 @@ void ecs_hierarchy_unparent(ECS *world, Entity entity) {
 	if (node->prev_sibling) {
 		HierarchyComponent *prev = ecs_find(world, node->prev_sibling, HierarchyComponent);
 		prev->next_sibling = node->next_sibling;
-	} else if (node->first_child == entity)
+	} else if (parent->first_child == entity)
 		parent->first_child = node->next_sibling;
 
 	if (node->next_sibling) {
@@ -211,20 +215,65 @@ void ecs_hierarchy_unparent(ECS *world, Entity entity) {
 	node->prev_sibling = 0;
 }
 
-Entity ecs_hierarchical_copy(ECS *world, Entity target) {
-	if (ecs_has(world, target, HierarchyComponent) == false)
-		return ecs_copy(world, target);
+void ecs_hierarchical_despawn(ECS *world, Entity root) {
+	if (ecs_has(world, root, HierarchyComponent) == false) {
+		ecs_despawn(world, root);
+		return;
+	}
 
-	Entity copy = ecs_copy(world, target);
-    ecs_find(world, copy, HierarchyComponent)->first_child = 0;
+	ecs_hierarchy_unparent(world, root);
 
-	HierarchyComponent *hierarchy = ecs_find(world, target, HierarchyComponent);
+	Entity child = ecs_find(world, root, HierarchyComponent)->first_child;
+	while (child) {
+		uint32_t next_child = ecs_find(world, child, HierarchyComponent)->next_sibling;
+		ecs_hierarchical_despawn(world, child);
+		child = next_child;
+	}
+
+	ecs_despawn(world, root);
+}
+
+Entity ecs_hierarchical_copy(ECS *world, Entity root) {
+	if (ecs_has(world, root, HierarchyComponent) == false)
+		return ecs_copy(world, root);
+
+	Entity copy = ecs_copy(world, root);
+	HierarchyComponent *hierarchy = ecs_find(world, root, HierarchyComponent);
+	ecs_hierarchy_parent(world, hierarchy->parent, copy);
+
 	for (Entity child = hierarchy->first_child; child; child = hierarchy->next_sibling) {
 		ecs_hierarchy_parent(world, copy, ecs_hierarchical_copy(world, child));
 		hierarchy = ecs_find(world, child, HierarchyComponent);
 	}
 
 	return copy;
+}
+
+void ecs_serialize_entity(ECS *world, Entity root, String output_path) {
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	ArenaTemp json_temp = arena_scratch_begin(scratch.arena);
+	JsonExporter exporter = json_exporter_make(json_temp.arena);
+	serialize_entity(world, &exporter, root);
+
+	File file = filesystem_open(S("selection_entity.prefab"), FILE_MODE_WRITE);
+
+	file_write(&file, 1, exporter.arena->offset - exporter.start_offset, (uint8_t *)exporter.arena->base + exporter.start_offset);
+	file_close(&file);
+
+	arena_scratch_end(json_temp);
+}
+
+Entity ecs_deserialize_entity(ECS *world, String path) {
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	JsonNode *root = json_parse(scratch.arena,
+		string_wrap_buffer(
+			filesystem_read(scratch.arena,
+				path)));
+
+	Entity result = deserialize_entity(world, root);
+	arena_scratch_end(scratch);
+
+	return result;
 }
 
 EcsIterator ecs_query_make(ECS *world, uint32_t count, ComponentID *component_ids) {
@@ -253,126 +302,145 @@ Entity ecs_next(EcsIterator *it) {
 }
 
 // Serialization
+bool serialize_entity(ECS *world, JsonExporter *exporter, Entity entity) {
+	ASSERT(ecs_valid(world, entity));
 
-/* bool serialize_entity(PermanentState *pstate, JsonExporter *exporter, Entity entity) { */
-/* 	json_begin_map(exporter, S("")); */
-/* 	json_write_pair(exporter, S("name"), String, S("entity")); */
+	json_begin_map(exporter, S(""));
+	json_write_pair(exporter, S("name"), String, S("entity"));
 
-/* 	ComponentFlags flags = pstate->components[entity]; */
+	if (world->flags[entity] != 0) {
+		json_begin_map(exporter, S("componenets"));
 
-/* 	if (flags != 0) { */
-/* 		json_begin_map(exporter, S("componenets")); */
+		if (ecs_has(world, entity, TransformComponent)) {
+			TransformComponent *transform = ecs_find(world, entity, TransformComponent);
+			json_begin_map(exporter, S("transform"));
 
-/* 		Transform3 *transform = NULL; */
-/* 		if (FLAG_GET(flags, COMPONENT_FLAG_TRANSFORM)) { */
-/* 			transform = &pstate->transforms[entity]; */
-/* 			json_begin_map(exporter, S("transform")); */
+			json_begin_array(exporter, S("position"));
+			json_write_float3(exporter, transform->position);
+			json_end_array(exporter);
 
-/* 			json_begin_array(exporter, S("position")); */
-/* 			json_write_float3(exporter, transform->position); */
-/* 			json_end_array(exporter); */
+			json_begin_array(exporter, S("rotation"));
+			json_write_float3(exporter, transform->rotation);
+			json_end_array(exporter);
 
-/* 			json_begin_array(exporter, S("rotation")); */
-/* 			json_write_float3(exporter, transform->rotation); */
-/* 			json_end_array(exporter); */
+			json_begin_array(exporter, S("scale"));
+			json_write_float3(exporter, transform->scale);
+			json_end_array(exporter);
 
-/* 			json_begin_array(exporter, S("scale")); */
-/* 			json_write_float3(exporter, transform->scale); */
-/* 			json_end_array(exporter); */
+			json_end_map(exporter);
+		}
 
-/* 			json_end_map(exporter); */
-/* 		} */
+		if (ecs_has(world, entity, MeshComponent)) {
+			MeshComponent *mesh = ecs_find(world, entity, MeshComponent);
+			json_begin_map(exporter, S("mesh"));
+			// TODO: Use persistent identifier, and not indices
+			json_write_pair(exporter, S("asset_id"), uint32_t, mesh->mesh_group_index);
+			json_end_map(exporter);
+		}
 
-/* 		if (FLAG_GET(flags, COMPONENT_FLAG_MESH)) { */
-/* 			MeshComponent *mesh = &pstate->meshes[entity]; */
-/* 			json_begin_map(exporter, S("mesh")); */
-/* 			// TODO: Use persistent identifier, and not indices */
-/* 			json_write_pair(exporter, S("asset_id"), uint32_t, mesh->mesh_group_index); */
-/* 			json_end_map(exporter); */
-/* 		} */
+		if (ecs_has(world, entity, ColliderComponent)) {
+			ColliderComponent *collider = ecs_find(world, entity, ColliderComponent);
 
-/* 		if (FLAG_GET(flags, COMPONENT_FLAG_COLLIDABLE)) { */
-/* 			ColliderComponent *collider = &pstate->colliders[entity]; */
+			json_begin_map(exporter, S("collider"));
 
-/* 			json_begin_map(exporter, S("collider")); */
+			json_begin_array(exporter, S("center"));
+			json_write_float3(exporter, collider->aabb.center);
+			json_end_array(exporter);
 
-/* 			json_begin_array(exporter, S("center")); */
-/* 			json_write_float3(exporter, collider->aabb.center); */
-/* 			json_end_array(exporter); */
+			json_begin_array(exporter, S("extent"));
+			json_write_float3(exporter, collider->aabb.extent);
+			json_end_array(exporter);
 
-/* 			json_begin_array(exporter, S("extent")); */
-/* 			json_write_float3(exporter, collider->aabb.extent); */
-/* 			json_end_array(exporter); */
+			json_end_map(exporter);
+		}
 
-/* 			json_end_map(exporter); */
-/* 		} */
+		json_end_map(exporter);
 
-/* 		json_end_map(exporter); */
+		if (ecs_has(world, entity, HierarchyComponent)) {
+			HierarchyComponent *hierarchy = ecs_find(world, entity, HierarchyComponent);
+			if (hierarchy->first_child) {
+				json_begin_array(exporter, S("children"));
+				Entity child = hierarchy->first_child;
+				while (child) {
+					serialize_entity(world, exporter, child);
 
-/* 		if (transform && transform->child_index) { */
-/* 			json_begin_array(exporter, S("children")); */
-/* 			Entity *child_index = &transform->child_index; */
-/* 			while (*child_index) { */
-/* 				ASSERT(scene_entity_valid(pstate, *child_index)); */
-/* 				serialize_entity(pstate, exporter, *child_index); */
+					if (ecs_has(world, child, HierarchyComponent)) {
+						HierarchyComponent *child_hierarchy = ecs_find(world, child, HierarchyComponent);
+						child = child_hierarchy->next_sibling;
+					} else
+						child = 0;
+				}
+				json_end_array(exporter);
+			}
+		}
+	}
 
-/* 				TransformComponent *child = &pstate->transforms[*child_index]; */
-/* 				child_index = &child->sibling_index; */
-/* 			} */
-/* 			json_end_array(exporter); */
-/* 		} */
-/* 	} */
-/* 	json_end_map(exporter); */
-/* 	return true; */
-/* } */
+	json_end_map(exporter);
+	return true;
+}
 
-/* Entity deserialize_entity(PermanentState *pstate, JsonNode *root) { */
-/* 	if (root == NULL) */
-/* 		return 0; */
+Entity deserialize_entity(ECS *world, JsonNode *root) {
+	if (root == NULL)
+		return 0;
 
-/* 	ArenaTemp scratch = arena_scratch_begin(NULL); */
-/* 	Entity entity = scene_entity_spawn(pstate, FLOAT3_ZERO); */
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	Entity entity = ecs_spawn(world, FLOAT3_ZERO);
 
-/* 	String name = json_find(root, S("name"), String); */
-/* 	JsonNode *components = json_node(root, S("componenets")); */
+	String name = json_find(root, S("name"), String);
+	JsonNode *components = json_node(root, S("componenets"));
 
-/* 	if (components) { */
-/* 		JsonNode *transform_node = json_node(components, S("transform")); */
-/* 		if (transform_node) { */
-/* 			Transform3 *transform = &pstate->transforms[entity]; */
+	if (components) {
+		JsonNode *transform_node = json_node(components, S("transform"));
+		if (transform_node) {
+			Transform3 *transform = ecs_push(world, entity, TransformComponent);
 
-/* 			uint32_t index = 0; */
-/* 			for (JsonNode *node = json_list(transform_node, S("position")); node; node = node->next, index++) { */
-/* 				float value = json_as(node, float); */
-/* 				((float *)&transform->position)[index] = value; */
-/* 			} */
+			uint32_t index = 0;
+			for (JsonNode *node = json_list(transform_node, S("position")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&transform->position)[index] = value;
+			}
 
-/* 			index = 0; */
-/* 			for (JsonNode *node = json_list(transform_node, S("rotation")); node; node = node->next, index++) { */
-/* 				float value = json_as(node, float); */
-/* 				((float *)&transform->rotation)[index] = value; */
-/* 			} */
+			index = 0;
+			for (JsonNode *node = json_list(transform_node, S("rotation")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&transform->rotation)[index] = value;
+			}
 
-/* 			index = 0; */
-/* 			for (JsonNode *node = json_list(transform_node, S("scale")); node; node = node->next, index++) { */
-/* 				float value = json_as(node, float); */
-/* 				((float *)&transform->scale)[index] = value; */
-/* 			} */
-/* 		} */
+			index = 0;
+			for (JsonNode *node = json_list(transform_node, S("scale")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&transform->scale)[index] = value;
+			}
+		}
 
-/* 		JsonNode *mesh_node = json_node(components, S("mesh")); */
-/* 		if (mesh_node) { */
-/* 			MeshComponent *mesh = &pstate->meshes[entity]; */
-/* 			// TODO: Use persistent identifier, and not indices */
-/* 			mesh->mesh_group_index = json_find(mesh_node, S("asset_id"), uint32_t); */
+		JsonNode *mesh_node = json_node(components, S("mesh"));
+		if (mesh_node) {
+			MeshComponent *mesh = ecs_push(world, entity, MeshComponent);
+			// TODO: Use persistent identifier, and not indices
+			mesh->mesh_group_index = json_find(mesh_node, S("asset_id"), uint32_t);
+		}
 
-/* 			pstate->components[entity] |= COMPONENT_FLAG_MESH; */
-/* 		} */
-/* 	} */
+		JsonNode *collider_node = json_node(components, S("collider"));
+		if (collider_node) {
+			ColliderComponent *collider = ecs_push(world, entity, ColliderComponent);
 
-/* 	for (JsonNode *node = json_list(root, S("children")); node; node = node->next) */
-/* 		scene_entity_parent(pstate, entity, deserialize_entity(pstate, node)); */
+			uint32_t index = 0;
+			for (JsonNode *node = json_list(transform_node, S("center")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&collider->aabb.center)[index] = value;
+			}
 
-/* 	arena_scratch_end(scratch); */
-/* 	return entity; */
-/* } */
+			index = 0;
+			for (JsonNode *node = json_list(transform_node, S("extent")); node; node = node->next, index++) {
+				float value = json_as(node, float);
+				((float *)&collider->aabb.extent)[index] = value;
+			}
+		}
+	}
+
+	for (JsonNode *node = json_list(root, S("children")); node; node = node->next)
+		ecs_hierarchy_parent(world, entity, deserialize_entity(world, node));
+
+	arena_scratch_end(scratch);
+	return entity;
+}

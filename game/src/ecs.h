@@ -2,6 +2,7 @@
 #include "core/arena.h"
 
 #include "components.h"
+#include "core/strings.h"
 
 #define MAX_ENTITIES 1024
 
@@ -47,11 +48,15 @@ void *ecs_push_id(ECS *world, Entity entity, ComponentID type_id);
 void *ecs_find_id(ECS *world, Entity entity, ComponentID type_id);
 void ecs_pop_id(ECS *world, Entity entity, ComponentID type_id);
 
-// NOTE: Component specific APIs
+// TODO: Component specific APIs, maybe move these out?
 void ecs_hierarchy_parent(ECS *world, Entity parent, Entity target);
 void ecs_hierarchy_unparent(ECS *world, Entity entity);
 
-Entity ecs_hierarchical_copy(ECS *world, Entity parent);
+void ecs_hierarchical_despawn(ECS *world, Entity root);
+Entity ecs_hierarchical_copy(ECS *world, Entity root);
+
+void ecs_serialize_entity(ECS *world, Entity root, String output_path);
+Entity ecs_deserialize_entity(ECS *world, String path);
 
 #define ecs_type_id(T) COMPONENT_TYPE_##T
 

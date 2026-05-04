@@ -125,6 +125,7 @@ typedef struct {
 static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
 
 // Collision
-Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
-Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent) ;
+ENGINE_API Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
+ENGINE_API Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
+
 #endif /* CMATH_H_ */

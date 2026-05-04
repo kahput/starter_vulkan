@@ -43,11 +43,7 @@ layout(location = 0) out vec4 out_color;
 
 void main() {
     vec3 color = texture(u_screen, in_uv).rgb;
-  
-    // reinhard tone mapping
-    vec3 mapped = color / (color + vec3(1.0));
-  
-    out_color = vec4(mapped, 1.0);
+    out_color = texture(u_screen, in_uv);
 }
 
 #endif
