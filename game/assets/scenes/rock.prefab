@@ -1,0 +1,20 @@
+
+{
+    "name": "entity",
+    "componenets": {
+        "transform": {
+            "position": [
+                0.000, 0.000, 0.000
+            ],
+            "rotation": [
+                0.000, 0.000, 0.000
+            ],
+            "scale": [
+                3.000, 3.000, 3.000
+            ]
+        },
+        "mesh": {
+            "asset_id": 5
+        }
+    }
+}

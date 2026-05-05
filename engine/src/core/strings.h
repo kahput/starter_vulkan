@@ -63,6 +63,7 @@ ENGINE_API String string_replace(Arena *arena, String source, String find, Strin
 ENGINE_API String string_upper(Arena *arena, String s);
 ENGINE_API String string_lower(Arena *arena, String s);
 
+ENGINE_API String string_terminate(Arena *arena, String s);
 ENGINE_API char *string_cstring(Arena *arena, String s);
 
 typedef struct StringNode {

@@ -1,0 +1,2375 @@
+
+{
+    "assets": [
+        {
+            "id": 3809441917744917055,
+            "path": "assets/pokemon/graphics/fonts/dogicapixel.otf",
+            "type": "<invalid>"
+        },
+        {
+            "id": 11919679899572277811,
+            "path": "assets/pokemon/graphics/fonts/dogicapixelbold.otf",
+            "type": "<invalid>"
+        },
+        {
+            "id": 3721032036075365291,
+            "path": "assets/pokemon/graphics/fonts/PixeloidSans.ttf",
+            "type": "<invalid>"
+        },
+        {
+            "id": 7700008567502227764,
+            "path": "assets/pokemon/graphics/tilesets/decor.psd",
+            "type": "<invalid>"
+        },
+        {
+            "id": 2289526972556839272,
+            "path": "assets/pokemon/audio/scratch.mp3",
+            "type": "<invalid>"
+        },
+        {
+            "id": 14789322089925112205,
+            "path": "assets/pokemon/audio/battle.ogg",
+            "type": "<invalid>"
+        },
+        {
+            "id": 7844581459477530780,
+            "path": "assets/pokemon/audio/overworld.ogg",
+            "type": "<invalid>"
+        },
+        {
+            "id": 2959615517643590385,
+            "path": "assets/pokemon/audio/ice.mp3",
+            "type": "<invalid>"
+        },
+        {
+            "id": 1886912339348290456,
+            "path": "assets/pokemon/audio/splash.wav",
+            "type": "<invalid>"
+        },
+        {
+            "id": 148345883236859006,
+            "path": "assets/pokemon/audio/evolution.mp3",
+            "type": "<invalid>"
+        },
+        {
+            "id": 9529244363522774787,
+            "path": "assets/pokemon/audio/green.wav",
+            "type": "<invalid>"
+        },
+        {
+            "id": 3857247140193967756,
+            "path": "assets/pokemon/audio/explosion.wav",
+            "type": "<invalid>"
+        },
+        {
+            "id": 4645207233294607868,
+            "path": "assets/pokemon/audio/notice.wav",
+            "type": "<invalid>"
+        },
+        {
+            "id": 16909086639063386946,
+            "path": "assets/pokemon/audio/fire.wav",
+            "type": "<invalid>"
+        },
+        {
+            "id": 13751541230953686777,
+            "path": "assets/pokemon/data/maps/plant.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 3011723813235935651,
+            "path": "assets/pokemon/data/maps/hospital2.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 6903313401144157796,
+            "path": "assets/pokemon/data/maps/house.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 9244063405749570750,
+            "path": "assets/pokemon/data/maps/world.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 9877683499602066392,
+            "path": "assets/pokemon/data/maps/water.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 5839349098685232330,
+            "path": "assets/pokemon/data/maps/hospital.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 11856204554180425432,
+            "path": "assets/pokemon/data/maps/fire.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 16536423927284569267,
+            "path": "assets/pokemon/data/maps/arena.tmj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 17440792187825645098,
+            "path": "assets/pokemon/data/tilesets/indoor.tsj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 9456724452744452279,
+            "path": "assets/pokemon/data/tilesets/objects.tsj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 1894008004851434635,
+            "path": "assets/pokemon/data/tilesets/world.tsj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 8361609716215981190,
+            "path": "assets/pokemon/data/tilesets/Grass.tsj",
+            "type": "<invalid>"
+        },
+        {
+            "id": 17309559168221142515,
+            "path": "assets/scenes/selection_entity.prefab",
+            "type": "<invalid>"
+        },
+        {
+            "id": 5901033444998675114,
+            "path": "assets/scenes/rock.prefab",
+            "type": "<invalid>"
+        },
+        {
+            "id": 18350058663947956085,
+            "path": "assets/shaders/vertex.shared",
+            "type": "<invalid>"
+        },
+        {
+            "id": 1351816063056141656,
+            "path": "assets/shaders/global.shared",
+            "type": "<invalid>"
+        },
+        {
+            "id": 11214397475342026662,
+            "path": "assets/models/custom/room.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 9491519199992085228,
+            "path": "assets/models/DragonAttenuation.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 16186707476566891898,
+            "path": "assets/models/Box.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 8966449860050358503,
+            "path": "assets/models/barrel.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5401742643906486224,
+            "path": "assets/models/walls_door.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11323300746366757278,
+            "path": "assets/models/test/BoxTextured.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 6277200769658347001,
+            "path": "assets/models/kenney/survival_kit/tool-hoe.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 6987149525249161722,
+            "path": "assets/models/kenney/survival_kit/fish-large.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1499891058052666997,
+            "path": "assets/models/kenney/survival_kit/rock-c.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 15925573798187452102,
+            "path": "assets/models/kenney/survival_kit/tool-hammer.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 2262829142771807708,
+            "path": "assets/models/kenney/survival_kit/structure-metal-roof.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10602589099642376311,
+            "path": "assets/models/kenney/survival_kit/fish.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 7605983231652867501,
+            "path": "assets/models/kenney/survival_kit/resource-stone.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4631364558721676136,
+            "path": "assets/models/kenney/survival_kit/structure-metal-wall.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 16272003453223935441,
+            "path": "assets/models/kenney/survival_kit/metal-panel-screws.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4648382940604848269,
+            "path": "assets/models/kenney/survival_kit/rock-sand-c.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 6784478652989828494,
+            "path": "assets/models/kenney/survival_kit/tree-autumn-tall.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 3218153112057466313,
+            "path": "assets/models/kenney/survival_kit/campfire-pit.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10342011644859305170,
+            "path": "assets/models/kenney/survival_kit/campfire-stand.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 2129554370705878677,
+            "path": "assets/models/kenney/survival_kit/tent.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10040511163879331888,
+            "path": "assets/models/kenney/survival_kit/metal-panel-narrow.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5533855056418987590,
+            "path": "assets/models/kenney/survival_kit/barrel.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 17890089925554493252,
+            "path": "assets/models/kenney/survival_kit/tool-axe.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1686366203415385887,
+            "path": "assets/models/kenney/survival_kit/resource-wood.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10826479422404451273,
+            "path": "assets/models/kenney/survival_kit/tool-pickaxe-upgraded.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11410261827014896708,
+            "path": "assets/models/kenney/survival_kit/bottle-large.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5144433365808750308,
+            "path": "assets/models/kenney/survival_kit/box-open.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4677851905555365024,
+            "path": "assets/models/kenney/survival_kit/floor.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 834372406712774049,
+            "path": "assets/models/kenney/survival_kit/tool-shovel.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 15812791457746571081,
+            "path": "assets/models/kenney/survival_kit/rock-sand-b.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4308882069315823655,
+            "path": "assets/models/kenney/survival_kit/metal-panel.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1732026583158023783,
+            "path": "assets/models/kenney/survival_kit/tool-hoe-upgraded.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 7387515220024869998,
+            "path": "assets/models/kenney/survival_kit/tree-tall.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1863593233047498666,
+            "path": "assets/models/kenney/survival_kit/signpost.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 3557646279205527550,
+            "path": "assets/models/kenney/survival_kit/structure-canvas.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10101058076725606383,
+            "path": "assets/models/kenney/survival_kit/patch-grass-large.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5910507303492868179,
+            "path": "assets/models/kenney/survival_kit/workbench-anvil.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1842005727790371524,
+            "path": "assets/models/kenney/survival_kit/metal-panel-screws-half.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4295039945628739072,
+            "path": "assets/models/kenney/survival_kit/floor-hole.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 17617431996509403429,
+            "path": "assets/models/kenney/survival_kit/bucket.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 8562187315948904228,
+            "path": "assets/models/kenney/survival_kit/grass.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13452963980965441263,
+            "path": "assets/models/kenney/survival_kit/campfire-fishing-stand.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11919057742108847126,
+            "path": "assets/models/kenney/survival_kit/structure-metal-floor.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11706034236946131962,
+            "path": "assets/models/kenney/survival_kit/structure-metal.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13784154167948291687,
+            "path": "assets/models/kenney/survival_kit/barrel-open.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4349406747913760960,
+            "path": "assets/models/kenney/survival_kit/workbench-grind.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5033404862772256204,
+            "path": "assets/models/kenney/survival_kit/box-large.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 15036514142612639064,
+            "path": "assets/models/kenney/survival_kit/tool-pickaxe.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4551326484039692318,
+            "path": "assets/models/kenney/survival_kit/rock-flat-grass.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4415989057643527827,
+            "path": "assets/models/kenney/survival_kit/chest.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 15086864591829157088,
+            "path": "assets/models/kenney/survival_kit/resource-planks.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10428684328346499553,
+            "path": "assets/models/kenney/survival_kit/fence.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 18169054783512670504,
+            "path": "assets/models/kenney/survival_kit/tent-canvas-half.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 8515091470971994656,
+            "path": "assets/models/kenney/survival_kit/fence-fortified.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 6221761233527430887,
+            "path": "assets/models/kenney/survival_kit/tent-canvas.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13194481445209108601,
+            "path": "assets/models/kenney/survival_kit/rock-flat.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 6908839682922204890,
+            "path": "assets/models/kenney/survival_kit/tool-axe-upgraded.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10816976428822557384,
+            "path": "assets/models/kenney/survival_kit/metal-panel-screws-narrow.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 3890575073052683281,
+            "path": "assets/models/kenney/survival_kit/tool-hammer-upgraded.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13192497987108410882,
+            "path": "assets/models/kenney/survival_kit/bedroll-packed.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 16961585043700804499,
+            "path": "assets/models/kenney/survival_kit/box-large-open.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4804961701207516087,
+            "path": "assets/models/kenney/survival_kit/tree-trunk.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 14310716445070409021,
+            "path": "assets/models/kenney/survival_kit/tool-shovel-upgraded.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 7009639446754178174,
+            "path": "assets/models/kenney/survival_kit/rock-b.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13032162173616745529,
+            "path": "assets/models/kenney/survival_kit/structure.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 2112385929535823569,
+            "path": "assets/models/kenney/survival_kit/floor-old.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10358615095329719734,
+            "path": "assets/models/kenney/survival_kit/tree-autumn.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 8042146258422451224,
+            "path": "assets/models/kenney/survival_kit/resource-stone-large.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 18416105196227639389,
+            "path": "assets/models/kenney/survival_kit/patch-grass.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 12460649476206130031,
+            "path": "assets/models/kenney/survival_kit/box.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4942778004591273582,
+            "path": "assets/models/kenney/survival_kit/tree-log-small.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 9555679917550679954,
+            "path": "assets/models/kenney/survival_kit/structure-roof.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4881468670155027766,
+            "path": "assets/models/kenney/survival_kit/tree-log.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 9370729090473016576,
+            "path": "assets/models/kenney/survival_kit/tree.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11827369755458139091,
+            "path": "assets/models/kenney/survival_kit/bottle.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13964444551485726564,
+            "path": "assets/models/kenney/survival_kit/fence-doorway.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4898277376840433402,
+            "path": "assets/models/kenney/survival_kit/grass-large.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 478247318314523574,
+            "path": "assets/models/kenney/survival_kit/structure-floor.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11107499676959515927,
+            "path": "assets/models/kenney/survival_kit/rock-sand-a.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 14481705272506372075,
+            "path": "assets/models/kenney/survival_kit/workbench.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10824655432172094572,
+            "path": "assets/models/kenney/survival_kit/tree-autumn-trunk.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11527387927013709705,
+            "path": "assets/models/kenney/survival_kit/rock-a.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 12761110377170990389,
+            "path": "assets/models/kenney/survival_kit/bedroll.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1408531358364390074,
+            "path": "assets/models/kenney/survival_kit/structure-metal-doorway.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5331315165663035414,
+            "path": "assets/models/kenney/survival_kit/signpost-single.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 8569543558274810747,
+            "path": "assets/models/kenney/survival_kit/bedroll-frame.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 6745843352493066516,
+            "path": "assets/models/kenney/modular_dungeon/corridor-wide-end.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 527528186330246400,
+            "path": "assets/models/kenney/modular_dungeon/template-floor-detail.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 12369911222311382268,
+            "path": "assets/models/kenney/modular_dungeon/gate-door.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 15134193642813067014,
+            "path": "assets/models/kenney/modular_dungeon/template-floor-layer-raised.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1053939610545523195,
+            "path": "assets/models/kenney/modular_dungeon/room-large-variation.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 978848950195623179,
+            "path": "assets/models/kenney/modular_dungeon/template-detail.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1157474060564129212,
+            "path": "assets/models/kenney/modular_dungeon/template-wall-stairs.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 17567590083207264866,
+            "path": "assets/models/kenney/modular_dungeon/corridor.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13853041714655662247,
+            "path": "assets/models/kenney/modular_dungeon/template-floor-big.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 9150256658656149339,
+            "path": "assets/models/kenney/modular_dungeon/corridor-wide-corner.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 2189853401682494076,
+            "path": "assets/models/kenney/modular_dungeon/template-wall-top.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 8518322732860958795,
+            "path": "assets/models/kenney/modular_dungeon/corridor-intersection.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4969211229918321436,
+            "path": "assets/models/kenney/modular_dungeon/template-floor-detail-a.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 17227383742544249397,
+            "path": "assets/models/kenney/modular_dungeon/template-wall-detail-a.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4208719495073321354,
+            "path": "assets/models/kenney/modular_dungeon/gate-door-window.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 874658091764290876,
+            "path": "assets/models/kenney/modular_dungeon/room-small.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 12729900493264106094,
+            "path": "assets/models/kenney/modular_dungeon/stairs.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5366735311724871710,
+            "path": "assets/models/kenney/modular_dungeon/corridor-transition.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 16070520712162829507,
+            "path": "assets/models/kenney/modular_dungeon/template-corner.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5543526476719218578,
+            "path": "assets/models/kenney/modular_dungeon/corridor-wide-junction.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 16621372964443907528,
+            "path": "assets/models/kenney/modular_dungeon/template-wall.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 14144765152204967733,
+            "path": "assets/models/kenney/modular_dungeon/corridor-junction.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 16000553874632161687,
+            "path": "assets/models/kenney/modular_dungeon/corridor-end.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 12804148959264301332,
+            "path": "assets/models/kenney/modular_dungeon/corridor-wide-intersection.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 1754177075464697516,
+            "path": "assets/models/kenney/modular_dungeon/template-floor.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 3901865154892764129,
+            "path": "assets/models/kenney/modular_dungeon/room-wide-variation.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 434450586793420531,
+            "path": "assets/models/kenney/modular_dungeon/corridor-corner.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 17653482708621634153,
+            "path": "assets/models/kenney/modular_dungeon/gate.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10421225854681129407,
+            "path": "assets/models/kenney/modular_dungeon/room-corner.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4526993959178491767,
+            "path": "assets/models/kenney/modular_dungeon/template-wall-corner.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4789355430841203716,
+            "path": "assets/models/kenney/modular_dungeon/template-floor-layer.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 4985949930324686647,
+            "path": "assets/models/kenney/modular_dungeon/corridor-wide.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 10318560051829535343,
+            "path": "assets/models/kenney/modular_dungeon/stairs-wide.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 696958308347929250,
+            "path": "assets/models/kenney/modular_dungeon/room-wide.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 12284966756831806769,
+            "path": "assets/models/kenney/modular_dungeon/room-large.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 17213409898619111752,
+            "path": "assets/models/kenney/modular_dungeon/room-small-variation.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 11497528777328437708,
+            "path": "assets/models/kenney/modular_dungeon/template-wall-half.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13679692278373135771,
+            "path": "assets/models/characters/mage.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 3498416908030177397,
+            "path": "assets/models/characters/gdbot.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 13342214507488812866,
+            "path": "assets/models/crate.glb",
+            "type": "geometry"
+        },
+        {
+            "id": 5597038007763594091,
+            "name": "in_memory:unit_cube",
+            "type": "geometry"
+        },
+        {
+            "id": 12368050309434479773,
+            "path": "assets/pokemon/graphics/backgrounds/sand.png",
+            "type": "image"
+        },
+        {
+            "id": 1272872727848890405,
+            "path": "assets/pokemon/graphics/backgrounds/forest.png",
+            "type": "image"
+        },
+        {
+            "id": 13442436270209910820,
+            "path": "assets/pokemon/graphics/backgrounds/ice.png",
+            "type": "image"
+        },
+        {
+            "id": 12401484492690440994,
+            "path": "assets/pokemon/graphics/other/star animation/00026.png",
+            "type": "image"
+        },
+        {
+            "id": 4221249943128747517,
+            "path": "assets/pokemon/graphics/other/star animation/00003.png",
+            "type": "image"
+        },
+        {
+            "id": 3187917819813592867,
+            "path": "assets/pokemon/graphics/other/star animation/00010.png",
+            "type": "image"
+        },
+        {
+            "id": 33990714201538878,
+            "path": "assets/pokemon/graphics/other/star animation/00007.png",
+            "type": "image"
+        },
+        {
+            "id": 10795448177037183267,
+            "path": "assets/pokemon/graphics/other/star animation/00008.png",
+            "type": "image"
+        },
+        {
+            "id": 5852860931605279106,
+            "path": "assets/pokemon/graphics/other/star animation/00005.png",
+            "type": "image"
+        },
+        {
+            "id": 14206306131482543569,
+            "path": "assets/pokemon/graphics/other/star animation/00009.png",
+            "type": "image"
+        },
+        {
+            "id": 10560066299974040380,
+            "path": "assets/pokemon/graphics/other/star animation/00020.png",
+            "type": "image"
+        },
+        {
+            "id": 14495581152294440816,
+            "path": "assets/pokemon/graphics/other/star animation/00018.png",
+            "type": "image"
+        },
+        {
+            "id": 3060860583878047666,
+            "path": "assets/pokemon/graphics/other/star animation/00022.png",
+            "type": "image"
+        },
+        {
+            "id": 11102556404252900826,
+            "path": "assets/pokemon/graphics/other/star animation/00015.png",
+            "type": "image"
+        },
+        {
+            "id": 12634602861744100569,
+            "path": "assets/pokemon/graphics/other/star animation/00019.png",
+            "type": "image"
+        },
+        {
+            "id": 4021721892567538080,
+            "path": "assets/pokemon/graphics/other/star animation/00013.png",
+            "type": "image"
+        },
+        {
+            "id": 14100319730119314693,
+            "path": "assets/pokemon/graphics/other/star animation/00002.png",
+            "type": "image"
+        },
+        {
+            "id": 10627493777547473130,
+            "path": "assets/pokemon/graphics/other/star animation/00017.png",
+            "type": "image"
+        },
+        {
+            "id": 7481053068682391372,
+            "path": "assets/pokemon/graphics/other/star animation/00028.png",
+            "type": "image"
+        },
+        {
+            "id": 183428478873777760,
+            "path": "assets/pokemon/graphics/other/star animation/00014.png",
+            "type": "image"
+        },
+        {
+            "id": 5263822042711025679,
+            "path": "assets/pokemon/graphics/other/star animation/00011.png",
+            "type": "image"
+        },
+        {
+            "id": 5902089147344493593,
+            "path": "assets/pokemon/graphics/other/star animation/00024.png",
+            "type": "image"
+        },
+        {
+            "id": 8308637144365177233,
+            "path": "assets/pokemon/graphics/other/star animation/00021.png",
+            "type": "image"
+        },
+        {
+            "id": 2118830058948120617,
+            "path": "assets/pokemon/graphics/other/star animation/00029.png",
+            "type": "image"
+        },
+        {
+            "id": 18111029080065359984,
+            "path": "assets/pokemon/graphics/other/star animation/00006.png",
+            "type": "image"
+        },
+        {
+            "id": 3462873583151005494,
+            "path": "assets/pokemon/graphics/other/star animation/00023.png",
+            "type": "image"
+        },
+        {
+            "id": 6852773823684270842,
+            "path": "assets/pokemon/graphics/other/star animation/00025.png",
+            "type": "image"
+        },
+        {
+            "id": 16531986056741837166,
+            "path": "assets/pokemon/graphics/other/star animation/00027.png",
+            "type": "image"
+        },
+        {
+            "id": 5686028425086766122,
+            "path": "assets/pokemon/graphics/other/star animation/00012.png",
+            "type": "image"
+        },
+        {
+            "id": 15529243259208887672,
+            "path": "assets/pokemon/graphics/other/star animation/00004.png",
+            "type": "image"
+        },
+        {
+            "id": 15330140633220169308,
+            "path": "assets/pokemon/graphics/other/star animation/00016.png",
+            "type": "image"
+        },
+        {
+            "id": 12017452863425605953,
+            "path": "assets/pokemon/graphics/other/shadow.png",
+            "type": "image"
+        },
+        {
+            "id": 15356456440276427249,
+            "path": "assets/pokemon/graphics/tilesets/water/3.png",
+            "type": "image"
+        },
+        {
+            "id": 748539047441031329,
+            "path": "assets/pokemon/graphics/tilesets/water/2.png",
+            "type": "image"
+        },
+        {
+            "id": 3400538073916370486,
+            "path": "assets/pokemon/graphics/tilesets/water/0.png",
+            "type": "image"
+        },
+        {
+            "id": 4087785601955748419,
+            "path": "assets/pokemon/graphics/tilesets/water/1.png",
+            "type": "image"
+        },
+        {
+            "id": 11213392108669906440,
+            "path": "assets/pokemon/graphics/tilesets/coast.png",
+            "type": "image"
+        },
+        {
+            "id": 16623819004671726073,
+            "path": "assets/pokemon/graphics/tilesets/indoor.png",
+            "type": "image"
+        },
+        {
+            "id": 14501024147660308233,
+            "path": "assets/pokemon/graphics/tilesets/world.png",
+            "type": "image"
+        },
+        {
+            "id": 16448220609273792273,
+            "path": "assets/pokemon/graphics/objects/green_tree.png",
+            "type": "image"
+        },
+        {
+            "id": 5062117750165309958,
+            "path": "assets/pokemon/graphics/objects/palm_alt.png",
+            "type": "image"
+        },
+        {
+            "id": 17822769158104414845,
+            "path": "assets/pokemon/graphics/objects/teal_tree_small.png",
+            "type": "image"
+        },
+        {
+            "id": 10987891045569939422,
+            "path": "assets/pokemon/graphics/objects/hospital.png",
+            "type": "image"
+        },
+        {
+            "id": 14368590564363699681,
+            "path": "assets/pokemon/graphics/objects/palm.png",
+            "type": "image"
+        },
+        {
+            "id": 1903486150552356673,
+            "path": "assets/pokemon/graphics/objects/green_tree_bushy.png",
+            "type": "image"
+        },
+        {
+            "id": 10366100235304248443,
+            "path": "assets/pokemon/graphics/objects/sand.png",
+            "type": "image"
+        },
+        {
+            "id": 15770507818562258318,
+            "path": "assets/pokemon/graphics/objects/ruin_pillar_broke.png",
+            "type": "image"
+        },
+        {
+            "id": 12298640053444027526,
+            "path": "assets/pokemon/graphics/objects/ruin_pillar_broke_alt.png",
+            "type": "image"
+        },
+        {
+            "id": 9863876934267315553,
+            "path": "assets/pokemon/graphics/objects/teal_tree_bushy.png",
+            "type": "image"
+        },
+        {
+            "id": 7706172208284319654,
+            "path": "assets/pokemon/graphics/objects/grassrock2.png",
+            "type": "image"
+        },
+        {
+            "id": 5493350795091751264,
+            "path": "assets/pokemon/graphics/objects/gate_pillar.png",
+            "type": "image"
+        },
+        {
+            "id": 7787508207531028474,
+            "path": "assets/pokemon/graphics/objects/ruin_pillar.png",
+            "type": "image"
+        },
+        {
+            "id": 16516463786031084295,
+            "path": "assets/pokemon/graphics/objects/grass.png",
+            "type": "image"
+        },
+        {
+            "id": 8657333389608428835,
+            "path": "assets/pokemon/graphics/objects/palm_small.png",
+            "type": "image"
+        },
+        {
+            "id": 4827398953912609583,
+            "path": "assets/pokemon/graphics/objects/house_large_alt.png",
+            "type": "image"
+        },
+        {
+            "id": 7797868622005210297,
+            "path": "assets/pokemon/graphics/objects/arena_plant.png",
+            "type": "image"
+        },
+        {
+            "id": 18268029678959291619,
+            "path": "assets/pokemon/graphics/objects/house_small_alt.png",
+            "type": "image"
+        },
+        {
+            "id": 6083176216193950559,
+            "path": "assets/pokemon/graphics/objects/arean_fire.png",
+            "type": "image"
+        },
+        {
+            "id": 8186044815663461960,
+            "path": "assets/pokemon/graphics/objects/ruin_gate.png",
+            "type": "image"
+        },
+        {
+            "id": 10343427727502996815,
+            "path": "assets/pokemon/graphics/objects/teal_tree.png",
+            "type": "image"
+        },
+        {
+            "id": 6237705751274403232,
+            "path": "assets/pokemon/graphics/objects/green_tree_small.png",
+            "type": "image"
+        },
+        {
+            "id": 15433972257604289811,
+            "path": "assets/pokemon/graphics/objects/icerock2.png",
+            "type": "image"
+        },
+        {
+            "id": 8068194682661324261,
+            "path": "assets/pokemon/graphics/objects/house_small.png",
+            "type": "image"
+        },
+        {
+            "id": 5870496390398212006,
+            "path": "assets/pokemon/graphics/objects/ice_tree.png",
+            "type": "image"
+        },
+        {
+            "id": 2787771685687864583,
+            "path": "assets/pokemon/graphics/objects/grassrock1.png",
+            "type": "image"
+        },
+        {
+            "id": 12276237239318952077,
+            "path": "assets/pokemon/graphics/objects/gate_top.png",
+            "type": "image"
+        },
+        {
+            "id": 10056130259815877729,
+            "path": "assets/pokemon/graphics/objects/icerock1.png",
+            "type": "image"
+        },
+        {
+            "id": 1603324665165882751,
+            "path": "assets/pokemon/graphics/objects/sandrock1.png",
+            "type": "image"
+        },
+        {
+            "id": 18289611549943576906,
+            "path": "assets/pokemon/graphics/objects/house_large.png",
+            "type": "image"
+        },
+        {
+            "id": 5820401664414576488,
+            "path": "assets/pokemon/graphics/objects/sandrock2.png",
+            "type": "image"
+        },
+        {
+            "id": 15701707352025494799,
+            "path": "assets/pokemon/graphics/objects/arena_water.png",
+            "type": "image"
+        },
+        {
+            "id": 1224949226746522283,
+            "path": "assets/pokemon/graphics/objects/grass_ice.png",
+            "type": "image"
+        },
+        {
+            "id": 3153014055515958026,
+            "path": "assets/pokemon/graphics/icons/Cleaf.png",
+            "type": "image"
+        },
+        {
+            "id": 10005516986654302826,
+            "path": "assets/pokemon/graphics/icons/Cindrill.png",
+            "type": "image"
+        },
+        {
+            "id": 4023435230193455676,
+            "path": "assets/pokemon/graphics/icons/Gulfin.png",
+            "type": "image"
+        },
+        {
+            "id": 5885399846646659640,
+            "path": "assets/pokemon/graphics/icons/Sparchu.png",
+            "type": "image"
+        },
+        {
+            "id": 9243099705771972873,
+            "path": "assets/pokemon/graphics/icons/Ivieron.png",
+            "type": "image"
+        },
+        {
+            "id": 2049951408050071423,
+            "path": "assets/pokemon/graphics/icons/Pluma.png",
+            "type": "image"
+        },
+        {
+            "id": 5915498021669083972,
+            "path": "assets/pokemon/graphics/icons/Friolera.png",
+            "type": "image"
+        },
+        {
+            "id": 9883418681638800072,
+            "path": "assets/pokemon/graphics/icons/Pouch.png",
+            "type": "image"
+        },
+        {
+            "id": 13210298663034882628,
+            "path": "assets/pokemon/graphics/icons/Jacana.png",
+            "type": "image"
+        },
+        {
+            "id": 1381933655497655168,
+            "path": "assets/pokemon/graphics/icons/Finsta.png",
+            "type": "image"
+        },
+        {
+            "id": 9206561938594399092,
+            "path": "assets/pokemon/graphics/icons/Finiette.png",
+            "type": "image"
+        },
+        {
+            "id": 5475233849101475264,
+            "path": "assets/pokemon/graphics/icons/Draem.png",
+            "type": "image"
+        },
+        {
+            "id": 7968201737834215332,
+            "path": "assets/pokemon/graphics/icons/Larvea.png",
+            "type": "image"
+        },
+        {
+            "id": 5812713684509937928,
+            "path": "assets/pokemon/graphics/icons/Charmadillo.png",
+            "type": "image"
+        },
+        {
+            "id": 5463049205529313330,
+            "path": "assets/pokemon/graphics/icons/Plumette.png",
+            "type": "image"
+        },
+        {
+            "id": 7201756343874356961,
+            "path": "assets/pokemon/graphics/icons/Atrox.png",
+            "type": "image"
+        },
+        {
+            "id": 17799020341255250086,
+            "path": "assets/pokemon/graphics/characters/young_girl.png",
+            "type": "image"
+        },
+        {
+            "id": 2066196348507103814,
+            "path": "assets/pokemon/graphics/characters/player.png",
+            "type": "image"
+        },
+        {
+            "id": 10817942250024163893,
+            "path": "assets/pokemon/graphics/characters/young_guy.png",
+            "type": "image"
+        },
+        {
+            "id": 9443850738765718379,
+            "path": "assets/pokemon/graphics/characters/water_boss.png",
+            "type": "image"
+        },
+        {
+            "id": 8978435013861010597,
+            "path": "assets/pokemon/graphics/characters/fire_boss.png",
+            "type": "image"
+        },
+        {
+            "id": 3727606896483465044,
+            "path": "assets/pokemon/graphics/characters/blond.png",
+            "type": "image"
+        },
+        {
+            "id": 11459649437744271201,
+            "path": "assets/pokemon/graphics/characters/hat_girl.png",
+            "type": "image"
+        },
+        {
+            "id": 9172004109914147892,
+            "path": "assets/pokemon/graphics/characters/straw.png",
+            "type": "image"
+        },
+        {
+            "id": 11114976763901915905,
+            "path": "assets/pokemon/graphics/characters/purple_girl.png",
+            "type": "image"
+        },
+        {
+            "id": 4351512989323528571,
+            "path": "assets/pokemon/graphics/characters/grass_boss.png",
+            "type": "image"
+        },
+        {
+            "id": 774401511687451310,
+            "path": "assets/pokemon/graphics/ui/cross.png",
+            "type": "image"
+        },
+        {
+            "id": 5477220448697112575,
+            "path": "assets/pokemon/graphics/ui/arrows_highlight.png",
+            "type": "image"
+        },
+        {
+            "id": 5250416719310614290,
+            "path": "assets/pokemon/graphics/ui/sword_highlight.png",
+            "type": "image"
+        },
+        {
+            "id": 2753279291466827902,
+            "path": "assets/pokemon/graphics/ui/shield_highlight.png",
+            "type": "image"
+        },
+        {
+            "id": 4252970154112705945,
+            "path": "assets/pokemon/graphics/ui/attack.png",
+            "type": "image"
+        },
+        {
+            "id": 7040832406512591972,
+            "path": "assets/pokemon/graphics/ui/health.png",
+            "type": "image"
+        },
+        {
+            "id": 15099034255803102381,
+            "path": "assets/pokemon/graphics/ui/recovery.png",
+            "type": "image"
+        },
+        {
+            "id": 12797931968438078281,
+            "path": "assets/pokemon/graphics/ui/hand.png",
+            "type": "image"
+        },
+        {
+            "id": 6472283600993971559,
+            "path": "assets/pokemon/graphics/ui/sword.png",
+            "type": "image"
+        },
+        {
+            "id": 8197192761052671610,
+            "path": "assets/pokemon/graphics/ui/defense.png",
+            "type": "image"
+        },
+        {
+            "id": 74240936537908886,
+            "path": "assets/pokemon/graphics/ui/shield.png",
+            "type": "image"
+        },
+        {
+            "id": 537781565429869617,
+            "path": "assets/pokemon/graphics/ui/notice.png",
+            "type": "image"
+        },
+        {
+            "id": 10312485251340729250,
+            "path": "assets/pokemon/graphics/ui/speed.png",
+            "type": "image"
+        },
+        {
+            "id": 7436996142581724206,
+            "path": "assets/pokemon/graphics/ui/hand_highlight.png",
+            "type": "image"
+        },
+        {
+            "id": 11281491672307819428,
+            "path": "assets/pokemon/graphics/ui/star.png",
+            "type": "image"
+        },
+        {
+            "id": 16117744233489228907,
+            "path": "assets/pokemon/graphics/ui/arrows.png",
+            "type": "image"
+        },
+        {
+            "id": 17945474968680172315,
+            "path": "assets/pokemon/graphics/ui/energy.png",
+            "type": "image"
+        },
+        {
+            "id": 8074193887321704813,
+            "path": "assets/pokemon/graphics/monsters/Cleaf.png",
+            "type": "image"
+        },
+        {
+            "id": 10760154795245867774,
+            "path": "assets/pokemon/graphics/monsters/Cindrill.png",
+            "type": "image"
+        },
+        {
+            "id": 17579591460480769176,
+            "path": "assets/pokemon/graphics/monsters/Gulfin.png",
+            "type": "image"
+        },
+        {
+            "id": 13901740616686567592,
+            "path": "assets/pokemon/graphics/monsters/Sparchu.png",
+            "type": "image"
+        },
+        {
+            "id": 11787866963450284031,
+            "path": "assets/pokemon/graphics/monsters/Ivieron.png",
+            "type": "image"
+        },
+        {
+            "id": 17120665791889969599,
+            "path": "assets/pokemon/graphics/monsters/Pluma.png",
+            "type": "image"
+        },
+        {
+            "id": 11992248541216712968,
+            "path": "assets/pokemon/graphics/monsters/Friolera.png",
+            "type": "image"
+        },
+        {
+            "id": 15970817207180444830,
+            "path": "assets/pokemon/graphics/monsters/Pouch.png",
+            "type": "image"
+        },
+        {
+            "id": 15278027115012061757,
+            "path": "assets/pokemon/graphics/monsters/Jacana.png",
+            "type": "image"
+        },
+        {
+            "id": 10887077965268395086,
+            "path": "assets/pokemon/graphics/monsters/Finsta.png",
+            "type": "image"
+        },
+        {
+            "id": 6296989005692999513,
+            "path": "assets/pokemon/graphics/monsters/Finiette.png",
+            "type": "image"
+        },
+        {
+            "id": 775644276197978555,
+            "path": "assets/pokemon/graphics/monsters/Draem.png",
+            "type": "image"
+        },
+        {
+            "id": 12649876613525621488,
+            "path": "assets/pokemon/graphics/monsters/Larvea.png",
+            "type": "image"
+        },
+        {
+            "id": 2246925326176226140,
+            "path": "assets/pokemon/graphics/monsters/Charmadillo.png",
+            "type": "image"
+        },
+        {
+            "id": 2218292379869138530,
+            "path": "assets/pokemon/graphics/monsters/Plumette.png",
+            "type": "image"
+        },
+        {
+            "id": 16377335072968533573,
+            "path": "assets/pokemon/graphics/monsters/Atrox.png",
+            "type": "image"
+        },
+        {
+            "id": 15270993879009726531,
+            "path": "assets/pokemon/graphics/attacks/scratch.png",
+            "type": "image"
+        },
+        {
+            "id": 17813370158815828782,
+            "path": "assets/pokemon/graphics/attacks/ice.png",
+            "type": "image"
+        },
+        {
+            "id": 7454121252098225187,
+            "path": "assets/pokemon/graphics/attacks/fire.png",
+            "type": "image"
+        },
+        {
+            "id": 11794553360259304788,
+            "path": "assets/pokemon/graphics/attacks/splash.png",
+            "type": "image"
+        },
+        {
+            "id": 13457456441568139107,
+            "path": "assets/pokemon/graphics/attacks/green.png",
+            "type": "image"
+        },
+        {
+            "id": 6776254075159724078,
+            "path": "assets/pokemon/graphics/attacks/explosion.png",
+            "type": "image"
+        },
+        {
+            "id": 6281395799315296471,
+            "path": "assets/textures/container.jpg",
+            "type": "image"
+        },
+        {
+            "id": 8561430789314651575,
+            "path": "assets/textures/prototype/texture_13.png",
+            "type": "image"
+        },
+        {
+            "id": 12846639606307616876,
+            "path": "assets/textures/prototype/texture_11.png",
+            "type": "image"
+        },
+        {
+            "id": 6562757942453948512,
+            "path": "assets/textures/prototype/texture_04.png",
+            "type": "image"
+        },
+        {
+            "id": 10393676486809263679,
+            "path": "assets/textures/prototype/texture_02.png",
+            "type": "image"
+        },
+        {
+            "id": 14146826124310903663,
+            "path": "assets/textures/prototype/texture_10.png",
+            "type": "image"
+        },
+        {
+            "id": 3262214483069621490,
+            "path": "assets/textures/prototype/texture_08.png",
+            "type": "image"
+        },
+        {
+            "id": 7567799437783455584,
+            "path": "assets/textures/prototype/texture_12.png",
+            "type": "image"
+        },
+        {
+            "id": 8131033053356852144,
+            "path": "assets/textures/prototype/texture_09.png",
+            "type": "image"
+        },
+        {
+            "id": 11210719596194523380,
+            "path": "assets/textures/prototype/texture_03.png",
+            "type": "image"
+        },
+        {
+            "id": 4976152124975773092,
+            "path": "assets/textures/prototype/texture_06.png",
+            "type": "image"
+        },
+        {
+            "id": 1099596781677821308,
+            "path": "assets/textures/prototype/texture_05.png",
+            "type": "image"
+        },
+        {
+            "id": 3110455822591021187,
+            "path": "assets/textures/prototype/texture_01.png",
+            "type": "image"
+        },
+        {
+            "id": 11772648367495731651,
+            "path": "assets/textures/prototype/texture_07.png",
+            "type": "image"
+        },
+        {
+            "id": 369782013114229403,
+            "path": "assets/textures/skybox/top.jpg",
+            "type": "image"
+        },
+        {
+            "id": 17497302282940865870,
+            "path": "assets/textures/skybox/right.jpg",
+            "type": "image"
+        },
+        {
+            "id": 1927925787174336988,
+            "path": "assets/textures/skybox/bottom.jpg",
+            "type": "image"
+        },
+        {
+            "id": 16476588751419411591,
+            "path": "assets/textures/skybox/left.jpg",
+            "type": "image"
+        },
+        {
+            "id": 7927554400072258954,
+            "path": "assets/textures/skybox/back.jpg",
+            "type": "image"
+        },
+        {
+            "id": 17637521686849671339,
+            "path": "assets/textures/skybox/front.jpg",
+            "type": "image"
+        },
+        {
+            "id": 15831642108502689387,
+            "path": "assets/sprites/Beetle.png",
+            "type": "image"
+        },
+        {
+            "id": 15939849501643729257,
+            "path": "assets/sprites/kenney/tile_0119.png",
+            "type": "image"
+        },
+        {
+            "id": 4544375722619018716,
+            "path": "assets/sprites/kenney/tile_0085.png",
+            "type": "image"
+        },
+        {
+            "id": 2169105567673623496,
+            "path": "assets/sprites/kenney/tile_0043.png",
+            "type": "image"
+        },
+        {
+            "id": 5478332453836166065,
+            "path": "assets/sprites/kenney/tile_0018.png",
+            "type": "image"
+        },
+        {
+            "id": 14898048654683358161,
+            "path": "assets/sprites/kenney/tile_0073.png",
+            "type": "image"
+        },
+        {
+            "id": 17208472747027913636,
+            "path": "assets/sprites/kenney/tile_0068.png",
+            "type": "image"
+        },
+        {
+            "id": 15888363786737198265,
+            "path": "assets/sprites/kenney/tile_0010.png",
+            "type": "image"
+        },
+        {
+            "id": 13626491041222088918,
+            "path": "assets/sprites/kenney/tile_0100.png",
+            "type": "image"
+        },
+        {
+            "id": 1257402763437492110,
+            "path": "assets/sprites/kenney/tile_0049.png",
+            "type": "image"
+        },
+        {
+            "id": 5132695932268650661,
+            "path": "assets/sprites/kenney/tile_0129.png",
+            "type": "image"
+        },
+        {
+            "id": 8354789747037306272,
+            "path": "assets/sprites/kenney/tile_0122.png",
+            "type": "image"
+        },
+        {
+            "id": 16595930367784959401,
+            "path": "assets/sprites/kenney/tile_0054.png",
+            "type": "image"
+        },
+        {
+            "id": 6900596701321680692,
+            "path": "assets/sprites/kenney/tile_0087.png",
+            "type": "image"
+        },
+        {
+            "id": 595855605876370088,
+            "path": "assets/sprites/kenney/tile_0017.png",
+            "type": "image"
+        },
+        {
+            "id": 2339315011664781350,
+            "path": "assets/sprites/kenney/tile_0096.png",
+            "type": "image"
+        },
+        {
+            "id": 4808242763330715719,
+            "path": "assets/sprites/kenney/tile_0072.png",
+            "type": "image"
+        },
+        {
+            "id": 16685512617183980949,
+            "path": "assets/sprites/kenney/tile_0000.png",
+            "type": "image"
+        },
+        {
+            "id": 8429833328059107176,
+            "path": "assets/sprites/kenney/tile_0047.png",
+            "type": "image"
+        },
+        {
+            "id": 12616120903265564814,
+            "path": "assets/sprites/kenney/tile_0056.png",
+            "type": "image"
+        },
+        {
+            "id": 2502657740783063014,
+            "path": "assets/sprites/kenney/tile_0084.png",
+            "type": "image"
+        },
+        {
+            "id": 13039287040901340675,
+            "path": "assets/sprites/kenney/tile_0057.png",
+            "type": "image"
+        },
+        {
+            "id": 7343522463860678419,
+            "path": "assets/sprites/kenney/tile_0124.png",
+            "type": "image"
+        },
+        {
+            "id": 11572044210719066032,
+            "path": "assets/sprites/kenney/tile_0123.png",
+            "type": "image"
+        },
+        {
+            "id": 15029600353839439253,
+            "path": "assets/sprites/kenney/tile_0113.png",
+            "type": "image"
+        },
+        {
+            "id": 12041515391675169441,
+            "path": "assets/sprites/kenney/tile_0103.png",
+            "type": "image"
+        },
+        {
+            "id": 9606793326265481556,
+            "path": "assets/sprites/kenney/tile_0125.png",
+            "type": "image"
+        },
+        {
+            "id": 13688443695890925497,
+            "path": "assets/sprites/kenney/tile_0069.png",
+            "type": "image"
+        },
+        {
+            "id": 1114355349103019799,
+            "path": "assets/sprites/kenney/tile_0035.png",
+            "type": "image"
+        },
+        {
+            "id": 9977912368609747310,
+            "path": "assets/sprites/kenney/tile_0127.png",
+            "type": "image"
+        },
+        {
+            "id": 15356055653843737938,
+            "path": "assets/sprites/kenney/tile_0026.png",
+            "type": "image"
+        },
+        {
+            "id": 10210886218728000297,
+            "path": "assets/sprites/kenney/tile_0111.png",
+            "type": "image"
+        },
+        {
+            "id": 17955505617110848157,
+            "path": "assets/sprites/kenney/tile_0037.png",
+            "type": "image"
+        },
+        {
+            "id": 16722028180966207092,
+            "path": "assets/sprites/kenney/tile_0126.png",
+            "type": "image"
+        },
+        {
+            "id": 13056358826639599217,
+            "path": "assets/sprites/kenney/tile_0008.png",
+            "type": "image"
+        },
+        {
+            "id": 16911953216731745714,
+            "path": "assets/sprites/kenney/tile_0014.png",
+            "type": "image"
+        },
+        {
+            "id": 134261154422208903,
+            "path": "assets/sprites/kenney/tile_0027.png",
+            "type": "image"
+        },
+        {
+            "id": 348977521181325414,
+            "path": "assets/sprites/kenney/tile_0006.png",
+            "type": "image"
+        },
+        {
+            "id": 7004475977286655567,
+            "path": "assets/sprites/kenney/tile_0074.png",
+            "type": "image"
+        },
+        {
+            "id": 15644385566684552239,
+            "path": "assets/sprites/kenney/tile_0114.png",
+            "type": "image"
+        },
+        {
+            "id": 11530014294423906851,
+            "path": "assets/sprites/kenney/tile_0040.png",
+            "type": "image"
+        },
+        {
+            "id": 11394614598143033650,
+            "path": "assets/sprites/kenney/tile_0120.png",
+            "type": "image"
+        },
+        {
+            "id": 11040755359865882653,
+            "path": "assets/sprites/kenney/tile_0130.png",
+            "type": "image"
+        },
+        {
+            "id": 11596995671717607428,
+            "path": "assets/sprites/kenney/tile_0038.png",
+            "type": "image"
+        },
+        {
+            "id": 3107210709853485848,
+            "path": "assets/sprites/kenney/tile_0042.png",
+            "type": "image"
+        },
+        {
+            "id": 11478424739169575228,
+            "path": "assets/sprites/kenney/tile_0097.png",
+            "type": "image"
+        },
+        {
+            "id": 11920747414720166709,
+            "path": "assets/sprites/kenney/tile_0048.png",
+            "type": "image"
+        },
+        {
+            "id": 315808331362453004,
+            "path": "assets/sprites/kenney/tile_0098.png",
+            "type": "image"
+        },
+        {
+            "id": 8656405844938508369,
+            "path": "assets/sprites/kenney/tile_0090.png",
+            "type": "image"
+        },
+        {
+            "id": 8683173257867311668,
+            "path": "assets/sprites/kenney/tile_0012.png",
+            "type": "image"
+        },
+        {
+            "id": 14199972581970837430,
+            "path": "assets/sprites/kenney/tile_0001.png",
+            "type": "image"
+        },
+        {
+            "id": 17616537503208591365,
+            "path": "assets/sprites/kenney/tile_0030.png",
+            "type": "image"
+        },
+        {
+            "id": 1735374230522650824,
+            "path": "assets/sprites/kenney/tile_0076.png",
+            "type": "image"
+        },
+        {
+            "id": 796324343301045169,
+            "path": "assets/sprites/kenney/tile_0052.png",
+            "type": "image"
+        },
+        {
+            "id": 10195196850457141034,
+            "path": "assets/sprites/kenney/tile_0020.png",
+            "type": "image"
+        },
+        {
+            "id": 12887697331789750105,
+            "path": "assets/sprites/kenney/tile_0107.png",
+            "type": "image"
+        },
+        {
+            "id": 7669716637877965561,
+            "path": "assets/sprites/kenney/tile_0070.png",
+            "type": "image"
+        },
+        {
+            "id": 6031473491544865471,
+            "path": "assets/sprites/kenney/tile_0086.png",
+            "type": "image"
+        },
+        {
+            "id": 9631692370864539408,
+            "path": "assets/sprites/kenney/tile_0094.png",
+            "type": "image"
+        },
+        {
+            "id": 16851445164873396453,
+            "path": "assets/sprites/kenney/tile_0121.png",
+            "type": "image"
+        },
+        {
+            "id": 8022983440985226585,
+            "path": "assets/sprites/kenney/tile_0032.png",
+            "type": "image"
+        },
+        {
+            "id": 17892833922039946117,
+            "path": "assets/sprites/kenney/tile_0060.png",
+            "type": "image"
+        },
+        {
+            "id": 1104610895208995174,
+            "path": "assets/sprites/kenney/tile_0110.png",
+            "type": "image"
+        },
+        {
+            "id": 17320171590967139062,
+            "path": "assets/sprites/kenney/tile_0002.png",
+            "type": "image"
+        },
+        {
+            "id": 2700829889081637970,
+            "path": "assets/sprites/kenney/tile_0102.png",
+            "type": "image"
+        },
+        {
+            "id": 6302799135369581186,
+            "path": "assets/sprites/kenney/tile_0115.png",
+            "type": "image"
+        },
+        {
+            "id": 11721678852461824809,
+            "path": "assets/sprites/kenney/tile_0046.png",
+            "type": "image"
+        },
+        {
+            "id": 16522054558471371545,
+            "path": "assets/sprites/kenney/tile_0058.png",
+            "type": "image"
+        },
+        {
+            "id": 9499201606693271081,
+            "path": "assets/sprites/kenney/tile_0033.png",
+            "type": "image"
+        },
+        {
+            "id": 18134833625109983161,
+            "path": "assets/sprites/kenney/tile_0063.png",
+            "type": "image"
+        },
+        {
+            "id": 235200898162841660,
+            "path": "assets/sprites/kenney/tile_0016.png",
+            "type": "image"
+        },
+        {
+            "id": 7646273077899551968,
+            "path": "assets/sprites/kenney/tile_0081.png",
+            "type": "image"
+        },
+        {
+            "id": 8761174765782702219,
+            "path": "assets/sprites/kenney/tile_0099.png",
+            "type": "image"
+        },
+        {
+            "id": 4374077420692492624,
+            "path": "assets/sprites/kenney/tile_0091.png",
+            "type": "image"
+        },
+        {
+            "id": 13445195260523787934,
+            "path": "assets/sprites/kenney/tile_0117.png",
+            "type": "image"
+        },
+        {
+            "id": 454540630309826671,
+            "path": "assets/sprites/kenney/tile_0003.png",
+            "type": "image"
+        },
+        {
+            "id": 2360957192740107602,
+            "path": "assets/sprites/kenney/tile_0067.png",
+            "type": "image"
+        },
+        {
+            "id": 3690789143212520166,
+            "path": "assets/sprites/kenney/tile_0013.png",
+            "type": "image"
+        },
+        {
+            "id": 17672182459561878361,
+            "path": "assets/sprites/kenney/tile_0101.png",
+            "type": "image"
+        },
+        {
+            "id": 11489611086424661042,
+            "path": "assets/sprites/kenney/tile_0022.png",
+            "type": "image"
+        },
+        {
+            "id": 1884689877160866617,
+            "path": "assets/sprites/kenney/tile_0028.png",
+            "type": "image"
+        },
+        {
+            "id": 4817626099830755467,
+            "path": "assets/sprites/kenney/tile_0034.png",
+            "type": "image"
+        },
+        {
+            "id": 10098086600983439663,
+            "path": "assets/sprites/kenney/tile_0055.png",
+            "type": "image"
+        },
+        {
+            "id": 14115246340642827537,
+            "path": "assets/sprites/kenney/tile_0025.png",
+            "type": "image"
+        },
+        {
+            "id": 1982690733944056499,
+            "path": "assets/sprites/kenney/tile_0031.png",
+            "type": "image"
+        },
+        {
+            "id": 15158196229911041611,
+            "path": "assets/sprites/kenney/tile_0021.png",
+            "type": "image"
+        },
+        {
+            "id": 4628081550993295113,
+            "path": "assets/sprites/kenney/tile_0036.png",
+            "type": "image"
+        },
+        {
+            "id": 9449783254522091729,
+            "path": "assets/sprites/kenney/tile_0109.png",
+            "type": "image"
+        },
+        {
+            "id": 5434237757450470102,
+            "path": "assets/sprites/kenney/tile_0051.png",
+            "type": "image"
+        },
+        {
+            "id": 505849014578533884,
+            "path": "assets/sprites/kenney/tile_0083.png",
+            "type": "image"
+        },
+        {
+            "id": 18043125039388018157,
+            "path": "assets/sprites/kenney/tile_0024.png",
+            "type": "image"
+        },
+        {
+            "id": 3855727657788547661,
+            "path": "assets/sprites/kenney/tile_0050.png",
+            "type": "image"
+        },
+        {
+            "id": 5475430956571168420,
+            "path": "assets/sprites/kenney/tile_0039.png",
+            "type": "image"
+        },
+        {
+            "id": 9306781220207181721,
+            "path": "assets/sprites/kenney/tile_0064.png",
+            "type": "image"
+        },
+        {
+            "id": 13223582319358616414,
+            "path": "assets/sprites/kenney/tile_0079.png",
+            "type": "image"
+        },
+        {
+            "id": 16768055471927301630,
+            "path": "assets/sprites/kenney/tile_0053.png",
+            "type": "image"
+        },
+        {
+            "id": 8647347429717699667,
+            "path": "assets/sprites/kenney/tile_0095.png",
+            "type": "image"
+        },
+        {
+            "id": 3205124618618234887,
+            "path": "assets/sprites/kenney/tile_0009.png",
+            "type": "image"
+        },
+        {
+            "id": 10066888467798882244,
+            "path": "assets/sprites/kenney/tile_0023.png",
+            "type": "image"
+        },
+        {
+            "id": 10858508922036071807,
+            "path": "assets/sprites/kenney/tile_0062.png",
+            "type": "image"
+        },
+        {
+            "id": 17907351377560716047,
+            "path": "assets/sprites/kenney/tile_0005.png",
+            "type": "image"
+        },
+        {
+            "id": 4916285965114879814,
+            "path": "assets/sprites/kenney/tile_0029.png",
+            "type": "image"
+        },
+        {
+            "id": 6035003044282313049,
+            "path": "assets/sprites/kenney/tile_0116.png",
+            "type": "image"
+        },
+        {
+            "id": 1185974876121275787,
+            "path": "assets/sprites/kenney/tile_0118.png",
+            "type": "image"
+        },
+        {
+            "id": 2482685585960859633,
+            "path": "assets/sprites/kenney/tile_0089.png",
+            "type": "image"
+        },
+        {
+            "id": 13717554606131971388,
+            "path": "assets/sprites/kenney/tile_0075.png",
+            "type": "image"
+        },
+        {
+            "id": 4851821675452404141,
+            "path": "assets/sprites/kenney/tile_0128.png",
+            "type": "image"
+        },
+        {
+            "id": 521940024154653772,
+            "path": "assets/sprites/kenney/tile_0104.png",
+            "type": "image"
+        },
+        {
+            "id": 1282865232401167285,
+            "path": "assets/sprites/kenney/tile_0059.png",
+            "type": "image"
+        },
+        {
+            "id": 6237732593055916607,
+            "path": "assets/sprites/kenney/tile_0044.png",
+            "type": "image"
+        },
+        {
+            "id": 17557070831354179462,
+            "path": "assets/sprites/kenney/tile_0105.png",
+            "type": "image"
+        },
+        {
+            "id": 2418380810247718929,
+            "path": "assets/sprites/kenney/tile_0065.png",
+            "type": "image"
+        },
+        {
+            "id": 3655455807174567218,
+            "path": "assets/sprites/kenney/tile_0045.png",
+            "type": "image"
+        },
+        {
+            "id": 5066837359226843540,
+            "path": "assets/sprites/kenney/tile_0112.png",
+            "type": "image"
+        },
+        {
+            "id": 16350172894984388301,
+            "path": "assets/sprites/kenney/tile_0108.png",
+            "type": "image"
+        },
+        {
+            "id": 4590466447614642104,
+            "path": "assets/sprites/kenney/tile_0088.png",
+            "type": "image"
+        },
+        {
+            "id": 2027063324337299354,
+            "path": "assets/sprites/kenney/tile_0007.png",
+            "type": "image"
+        },
+        {
+            "id": 2812039560135436965,
+            "path": "assets/sprites/kenney/tile_0019.png",
+            "type": "image"
+        },
+        {
+            "id": 12975218618763675338,
+            "path": "assets/sprites/kenney/tile_0041.png",
+            "type": "image"
+        },
+        {
+            "id": 12002471274326161352,
+            "path": "assets/sprites/kenney/tile_0078.png",
+            "type": "image"
+        },
+        {
+            "id": 13426753198133758140,
+            "path": "assets/sprites/kenney/tile_0066.png",
+            "type": "image"
+        },
+        {
+            "id": 11971083648467801789,
+            "path": "assets/sprites/kenney/tile_0082.png",
+            "type": "image"
+        },
+        {
+            "id": 9351513424473482470,
+            "path": "assets/sprites/kenney/tile_0106.png",
+            "type": "image"
+        },
+        {
+            "id": 7459711090581260712,
+            "path": "assets/sprites/kenney/tile_0077.png",
+            "type": "image"
+        },
+        {
+            "id": 9774367617453287362,
+            "path": "assets/sprites/kenney/tile_0061.png",
+            "type": "image"
+        },
+        {
+            "id": 16641398040665998659,
+            "path": "assets/sprites/kenney/tile_0092.png",
+            "type": "image"
+        },
+        {
+            "id": 14625273280879587182,
+            "path": "assets/sprites/kenney/tile_0093.png",
+            "type": "image"
+        },
+        {
+            "id": 12423716167329675184,
+            "path": "assets/sprites/kenney/tile_0004.png",
+            "type": "image"
+        },
+        {
+            "id": 8320210280147855934,
+            "path": "assets/sprites/kenney/tile_0011.png",
+            "type": "image"
+        },
+        {
+            "id": 884203187054069963,
+            "path": "assets/sprites/kenney/tile_0131.png",
+            "type": "image"
+        },
+        {
+            "id": 12606430085835396407,
+            "path": "assets/sprites/kenney/tile_0015.png",
+            "type": "image"
+        },
+        {
+            "id": 5940531444276890854,
+            "path": "assets/sprites/kenney/tile_0080.png",
+            "type": "image"
+        },
+        {
+            "id": 10554589575802795144,
+            "path": "assets/sprites/kenney/tile_0071.png",
+            "type": "image"
+        },
+        {
+            "id": 7411080175628657397,
+            "path": "assets/models/kenney/survival_kit/Textures/colormap.png",
+            "type": "image"
+        },
+        {
+            "id": 1753070084855702119,
+            "path": "assets/models/kenney/modular_dungeon/Textures/colormap.png",
+            "type": "image"
+        },
+        {
+            "id": 11315565414886128810,
+            "path": "assets/models/characters/mage_texture.png",
+            "type": "image"
+        },
+        {
+            "id": 10077098539390241749,
+            "path": "assets/shaders/pbr.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 564931198002975732,
+            "path": "assets/shaders/picker.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 2715136801526354339,
+            "path": "assets/shaders/phong.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 2631887847700501297,
+            "path": "assets/shaders/unlit.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 4881916721481520664,
+            "path": "assets/shaders/procedural.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 5118043720195887569,
+            "path": "assets/shaders/line.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 5940800226678926715,
+            "path": "assets/shaders/postfx.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 15803910727603356793,
+            "path": "assets/shaders/blit.glsl",
+            "type": "shader"
+        },
+        {
+            "id": 13003729225597071855,
+            "path": "assets/shaders/bin/blit.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 14006369264467979356,
+            "path": "assets/shaders/bin/phong.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 14537484337375283307,
+            "path": "assets/shaders/bin/postfx.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 16869746977418470023,
+            "path": "assets/shaders/bin/phong.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 12234669669023970498,
+            "path": "assets/shaders/bin/procedural.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 18233088667873311197,
+            "path": "assets/shaders/bin/line.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 81835062651431231,
+            "path": "assets/shaders/bin/pbr.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 1124782218783551105,
+            "path": "assets/shaders/bin/line.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 2409904680640080773,
+            "path": "assets/shaders/bin/picker.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 6336578804871195018,
+            "path": "assets/shaders/bin/unlit.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 12590850678297838898,
+            "path": "assets/shaders/bin/procedural.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 5068660920447049360,
+            "path": "assets/shaders/bin/blit.frag.spv",
+            "type": "shader"
+        },
+        {
+            "id": 15183691961698034435,
+            "path": "assets/shaders/bin/picker.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 3548590808871857854,
+            "path": "assets/shaders/bin/pbr.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 16847365835810055527,
+            "path": "assets/shaders/bin/unlit.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 3375213616027443769,
+            "path": "assets/shaders/bin/postfx.vert.spv",
+            "type": "shader"
+        }
+    ]
+}

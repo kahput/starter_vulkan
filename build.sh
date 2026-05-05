@@ -1,11 +1,10 @@
 #!/bin/bash
 
-# Resolve the directory this script is in and move one level up to get the project root
 PROJECT_ROOT="$(pwd)"
+WORKING_DIRECOTRY="$PROJECT_ROOT/game"
 BUILD_DIR="$PROJECT_ROOT/build"
 BUILD_TYPE="Debug"
 
-# Function to build the project using CMake with C99
 build() {
     echo "[INFO] Creating build files..."
     mkdir -p "$BUILD_DIR"
@@ -17,17 +16,15 @@ build() {
 
 run() {
     echo "[INFO] running..."
-    cd "${BUILD_DIR}/bin/${BUILD_TYPE}"
+    cd ${WORKING_DIRECOTRY}
     "./program"
 }
 
-# Function to clean the build directory
 clean() {
     echo "[INFO] Cleaning build directory..."
     rm -rf "$BUILD_DIR"
 }
 
-# Main logic
 case "$1" in
     build)
         build

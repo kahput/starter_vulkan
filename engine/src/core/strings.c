@@ -362,7 +362,7 @@ String string_format_non_terminated(Arena *arena, const char *format, ...) {
 	va_list args;
 	va_start(args, format);
 	String result = string_formatv(arena, format, args);
-    arena->offset--;
+	arena->offset--;
 	va_end(args);
 	return result;
 }
@@ -444,6 +444,10 @@ String string_lower(Arena *arena, String s) {
 		copy.chars[index] = tolower(copy.chars[index]);
 
 	return copy;
+}
+
+String string_terminate(Arena *arena, String s) {
+	return string_wrap(string_cstring(arena, s));
 }
 
 char *string_cstring(Arena *arena, String s) {

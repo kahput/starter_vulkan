@@ -36,6 +36,7 @@ static ComponentMetadata component_metadata[COMPONENT_TYPE_MAX] = {
 
 typedef struct ECS ECS;
 ECS *ecs_make(Arena *arena);
+ECS *ecs_make_copy(Arena *arena, ECS *src);
 
 bool ecs_valid(ECS *world, Entity entity);
 

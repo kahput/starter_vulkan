@@ -74,8 +74,8 @@ int main(void) {
 	/* window_set_cursor_locked(engine.display, true); */
 
 	GameContext game_context = {
-		.permanent_memory = arena_push(&engine.memory, MiB(32), 16, true),
-		.permanent_memory_size = MiB(32),
+		.permanent_memory = arena_push(&engine.memory, MiB(128), 16, true),
+		.permanent_memory_size = MiB(128),
 		.transient_memory = arena_push(&engine.memory, MiB(256), 16, true),
 		.transient_memory_size = MiB(256),
 		.render = engine.context,

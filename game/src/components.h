@@ -1,4 +1,5 @@
 #include "core/cmath.h"
+#include "core/identifiers.h"
 
 typedef uint64_t Entity;
 
@@ -12,6 +13,7 @@ typedef struct {
 typedef Transform3 TransformComponent;
 
 typedef struct {
+	UUID group_id;
 	uint32_t mesh_group_index;
 } MeshComponent;
 

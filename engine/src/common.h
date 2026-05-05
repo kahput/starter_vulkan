@@ -68,6 +68,7 @@
 #define STATIC_ASSERT_PASTE_(a, b) a##b
 #define STATIC_ASSERT_PASTE(a, b) STATIC_ASSERT_PASTE_(a, b)
 
+#define STRINGIFY(v) #v
 #define STATIC_ASSERT(COND) typedef char STATIC_ASSERT_PASTE(static_assertion_failed_at_line_, __LINE__)[(COND) ? 1 : -1]
 
 #define KB(bytes) ((uint64_t)(bytes) * 1000ULL)

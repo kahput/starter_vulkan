@@ -40,6 +40,8 @@ compile_commands.json
 Thumbs.db           # Windows
 
 # Ignore compiled object files and libraries
+program
+*.spv
 *.o
 *.a
 *.so

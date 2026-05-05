@@ -5,6 +5,7 @@
 #include "core/lexer.h"
 #include "core/logger.h"
 #include "core/strings.h"
+#include <stdint.h>
 
 uint8_t json_zero_buffer[128] = { 0 };
 
@@ -107,10 +108,10 @@ static JsonNode *parse_value(JsonParser *p) {
 		}
 		case TOKEN_INTEGER: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
-			node->type = JSON_uint32_t;
+			node->type = JSON_uint64_t;
 
-			uint32_t *integer = arena_push_struct(p->arena, uint32_t);
-			*integer = string_to_u32(token.string);
+			uint64_t *integer = arena_push_struct(p->arena, uint64_t);
+			*integer = string_to_u64(token.string);
 			node->value = integer;
 			return node;
 		}
@@ -205,8 +206,8 @@ void *json_value_safe(JsonNode *node, JsonType type) {
 		return json_zero_buffer;
 	if (node->type != type) {
 		// NOTE: Must cast the value to change the bits to be interpreted correctly
-		if (node->type == JSON_uint32_t && type == JSON_float) {
-			*(float *)node->value = (float)(*(uint32_t *)node->value);
+		if (node->type == JSON_uint64_t && type == JSON_float) {
+			*(float *)node->value = (float)(*(uint64_t *)node->value);
 			node->type = type;
 			return node->value;
 		}
@@ -217,6 +218,11 @@ void *json_value_safe(JsonNode *node, JsonType type) {
 		}
 		if (node->type == JSON_float && type == JSON_uint32_t) {
 			*(uint32_t *)node->value = (uint32_t)(*(float *)node->value);
+			node->type = type;
+			return node->value;
+		}
+		if (node->type == JSON_float && type == JSON_uint64_t) {
+			*(uint64_t *)node->value = (uint64_t)(*(float *)node->value);
 			node->type = type;
 			return node->value;
 		}
@@ -294,9 +300,11 @@ void json_end_map(JsonExporter *exporter) {
 
 void json_begin_array(JsonExporter *exporter, String key) {
 	json_prepare_next_item(exporter);
-	ASSERT(key.length);
 
-	string_format_non_terminated(exporter->arena, "\"" SFMT "\": [", SARG(key));
+	if (key.length > 0)
+		string_format_non_terminated(exporter->arena, "\"" SFMT "\": [", SARG(key));
+	else
+		string_format_non_terminated(exporter->arena, "[");
 
 	exporter->array_depth++;
 	exporter->is_first_item[exporter->map_depth + exporter->array_depth] = true;
@@ -318,6 +326,10 @@ void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Buffer 
 		case JSON_uint32_t: {
 			uint32_t value = *(uint32_t *)buffer.pointer;
 			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %u", SARG(key), value);
+		} break;
+		case JSON_uint64_t: {
+			uint64_t value = *(uint64_t *)buffer.pointer;
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %llu", SARG(key), value);
 		} break;
 		case JSON_int32_t: {
 			int32_t value = *(int32_t *)buffer.pointer;

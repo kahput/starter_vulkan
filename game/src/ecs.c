@@ -5,8 +5,6 @@
 #include "core/debug.h"
 #include "core/logger.h"
 #include "platform/filesystem.h"
-#include <limits.h>
-#include <stdint.h>
 
 struct ECS {
 	Arena *arena;
@@ -31,6 +29,18 @@ ECS *ecs_make(Arena *arena) {
 	}
 
 	return ecs;
+}
+ECS *ecs_make_copy(Arena *arena, ECS *src) {
+	ECS *result = ecs_make(arena);
+	result->entity_count = src->entity_count;
+	result->highest_valid = src->highest_valid;
+
+	for (uint32_t type_id = 1; type_id < COMPONENT_TYPE_MAX; ++type_id)
+		memory_copy(result->components[type_id].pointer, src->components[type_id].pointer, src->components[type_id].size);
+
+	memory_copy(result->flags, src->flags, sizeof(src->flags));
+
+	return result;
 }
 
 bool ecs_valid(ECS *world, Entity entity) {
@@ -251,16 +261,15 @@ Entity ecs_hierarchical_copy(ECS *world, Entity root) {
 
 void ecs_serialize_entity(ECS *world, Entity root, String output_path) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	ArenaTemp json_temp = arena_scratch_begin(scratch.arena);
-	JsonExporter exporter = json_exporter_make(json_temp.arena);
+	JsonExporter exporter = json_exporter_make(scratch.arena);
 	serialize_entity(world, &exporter, root);
 
-	File file = filesystem_open(S("selection_entity.prefab"), FILE_MODE_WRITE);
+	File file = filesystem_open(output_path, FILE_MODE_WRITE);
 
 	file_write(&file, 1, exporter.arena->offset - exporter.start_offset, (uint8_t *)exporter.arena->base + exporter.start_offset);
 	file_close(&file);
 
-	arena_scratch_end(json_temp);
+	arena_scratch_end(scratch);
 }
 
 Entity ecs_deserialize_entity(ECS *world, String path) {
@@ -333,8 +342,7 @@ bool serialize_entity(ECS *world, JsonExporter *exporter, Entity entity) {
 		if (ecs_has(world, entity, MeshComponent)) {
 			MeshComponent *mesh = ecs_find(world, entity, MeshComponent);
 			json_begin_map(exporter, S("mesh"));
-			// TODO: Use persistent identifier, and not indices
-			json_write_pair(exporter, S("asset_id"), uint32_t, mesh->mesh_group_index);
+			json_write_pair(exporter, S("asset_id"), uint64_t, mesh->group_id);
 			json_end_map(exporter);
 		}
 
@@ -416,8 +424,7 @@ Entity deserialize_entity(ECS *world, JsonNode *root) {
 		JsonNode *mesh_node = json_node(components, S("mesh"));
 		if (mesh_node) {
 			MeshComponent *mesh = ecs_push(world, entity, MeshComponent);
-			// TODO: Use persistent identifier, and not indices
-			mesh->mesh_group_index = json_find(mesh_node, S("asset_id"), uint32_t);
+			mesh->group_id = json_find(mesh_node, S("asset_id"), uint64_t);
 		}
 
 		JsonNode *collider_node = json_node(components, S("collider"));

@@ -7,14 +7,6 @@
 #include "core/strings.h"
 #include "core/identifiers.h"
 
-typedef enum {
-	ASSET_TYPE_UNDEFINED,
-	ASSET_TYPE_GEOMETRY,
-	ASSET_TYPE_IMAGE,
-	ASSET_TYPE_SHADER,
-	ASSET_TYPE_COUNT,
-} AssetType;
-
 typedef struct image {
 	void *pixels;
 	int32_t width, height, channels;
@@ -72,6 +64,8 @@ typedef struct {
 } Vertex;
 
 typedef struct scene_source {
+    String path;
+
 	MeshSource *meshes;
 	uint32_t mesh_count;
 

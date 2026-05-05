@@ -55,6 +55,11 @@ typedef struct {
 } Mesh;
 
 typedef struct {
+	UUID id;
+	uint32_t start_index, count;
+} MeshGroup;
+
+typedef struct {
 	RhiBuffer uniform_buffer;
 	size_t offset, size;
 
@@ -151,13 +156,21 @@ typedef struct {
 		Mesh *meshes;
 		uint32_t *mesh_to_material;
 
-		uint32x2 *mesh_groups; // aka model
+		MeshGroup *mesh_groups;
 		Interval3 *mesh_group_bounds; // per model
 	} assets;
 
-	ECS *world;
-	Entity player, selection;
+	AssetStore store;
 
+	Arena *scene_arena;
+	size_t editor_offset;
+	ECS *world;
+	ECS *editor_scene;
+
+	struct {
+		bool is_initialized;
+		Entity player, selection;
+	} game;
 	bool debug_draw_collisions;
 
 	Camera *camera;
@@ -170,6 +183,7 @@ void editor_draw(PermanentState *state, Editor *editor);
 void load_assets(PermanentState *state);
 
 void transform_system_update(ECS *world);
+void mesh_system_update(ECS *world, PermanentState *pstate);
 
 bool window_resize(EventCode code, void *event, void *receiver) {
 	WindowResizeEvent *resize_event = event;
@@ -188,7 +202,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	pstate->context = context->render;
 	pstate->display = context->display;
 
-	if (pstate->initialized == false) {
+	if (pstate->initialized == false) { // :init
 		pstate->arena = arena_wrap((uint8_t *)context->permanent_memory + sizeof(PermanentState), context->permanent_memory_size - sizeof(PermanentState));
 
 		event_subscribe(EVENT_PLATFORM_WINDOW_RESIZED, window_resize, pstate);
@@ -219,14 +233,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				NULL);
 		}
 
-		pstate->world = ecs_make(&pstate->arena);
+		pstate->scene_arena = arena_partition(&pstate->arena, MiB(32));
+		pstate->world = pstate->editor_scene = ecs_make(pstate->scene_arena);
 		load_assets(pstate);
-
-		// Gameplay entities
-		Entity player = pstate->player = ecs_spawn(pstate->world, FLOAT3_ZERO);
-		ecs_put(pstate->world, player, MeshComponent,
-			{ .mesh_group_index = arena_array_count(pstate->assets.mesh_groups) - 1 });
-		pstate->selection = ecs_deserialize_entity(pstate->world, S("selection_entity.prefab"));
 
 		// Initialize entity transforms
 		transform_system_update(pstate->world);
@@ -263,9 +272,40 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	if (input_key_pressed(KEY_CODE_M))
 		pstate->debug_draw_collisions = !pstate->debug_draw_collisions;
 
+	if (input_key_pressed(KEY_CODE_TAB)) {
+		pstate->state = !pstate->state;
+		if (pstate->state == GAME_STATE_EDITOR) {
+			window_set_cursor_locked(context->display, false);
+			arena_rewind(pstate->scene_arena, pstate->editor_offset);
+			pstate->world = pstate->editor_scene;
+			pstate->camera = &pstate->editor.camera;
+		} else {
+			/* window_set_cursor_locked(context->display, true); */
+			pstate->camera = &pstate->game_camera;
+			pstate->editor_offset = arena_mark(pstate->scene_arena);
+			memory_zero(&pstate->game, sizeof(pstate->game));
+			pstate->world = ecs_make_copy(pstate->scene_arena, pstate->editor_scene);
+		}
+	}
+
 	switch (pstate->state) {
 		case GAME_STATE_PLAY: {
-			Entity player = pstate->player;
+			// :game
+			if (pstate->game.is_initialized == false) {
+				pstate->game.player = ecs_spawn(pstate->world, FLOAT3_ZERO);
+				ecs_put(pstate->world, pstate->game.player, MeshComponent,
+					{ .group_id = asset_store_find(&pstate->store, ASSET_TYPE_geometry, S("unit_cube")), .mesh_group_index = arena_array_count(pstate->assets.mesh_groups) - 1 });
+
+				pstate->game.selection = ecs_deserialize_entity(pstate->world, S("assets/scenes/selection_entity.prefab"));
+				/* Entity rock = ecs_deserialize_entity(pstate->world, S("assets/scenes/rock.prefab")); */
+
+				mesh_system_update(pstate->world, pstate);
+
+				pstate->game.is_initialized = true;
+			}
+
+			Entity player = pstate->game.player;
+			Entity selection = pstate->game.selection;
 
 			Camera *camera = &pstate->game_camera;
 			TransformComponent *transform = ecs_find(pstate->world, player, TransformComponent);
@@ -295,6 +335,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			move = float3_normalize_safe(move, EPSILON);
 			float player_move_speed = 10.f;
+			// :collision
 			if (float3_length_squared(move) > 0) {
 				float3 move_delta = float3_scale(move, player_move_speed * dt);
 
@@ -366,18 +407,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 	// Update transforms
 	transform_system_update(pstate->world);
-
-	if (input_key_pressed(KEY_CODE_TAB)) {
-		pstate->state = !pstate->state;
-		if (pstate->state == GAME_STATE_EDITOR) {
-			window_set_cursor_locked(context->display, false);
-			pstate->camera = &pstate->editor.camera;
-
-		} else {
-			/* window_set_cursor_locked(context->display, true); */
-			pstate->camera = &pstate->game_camera;
-		}
-	}
 
 	float2 window_size = float2_from_uint2(window_size_pixel(context->display));
 	if (vulkan_frame_begin(pstate->context, window_size.x, window_size.y)) {
@@ -454,16 +483,16 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			vulkan_uniformset_bind(pstate->context, global_set);
 			EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
 
-			Entity entity;
+			Entity entity = 0;
 			while ((entity = ecs_next(&iterator))) {
 				TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
 				MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
 
 				if (mesh_component->mesh_group_index == 0 || mesh_component->mesh_group_index > arena_array_count(pstate->assets.mesh_groups))
 					continue;
-				uint32x2 mesh_group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
+				MeshGroup group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
 
-				for (uint32_t mesh_index = mesh_group.x; mesh_index < mesh_group.x + mesh_group.y; ++mesh_index) {
+				for (uint32_t mesh_index = group.start_index; mesh_index < group.start_index + group.count; ++mesh_index) {
 					Mesh *mesh = &pstate->assets.meshes[mesh_index];
 					uint32_t material_index = pstate->assets.mesh_to_material[mesh_index];
 					Material *material = &pstate->assets.materials[material_index];
@@ -700,6 +729,8 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	Camera *camera = &editor->camera;
 	float2 mouse_delta = (float2){ input_mouse_dx(), input_mouse_dy() };
 
+	// :editor
+
 	if (input_mouse_down(MOUSE_BUTTON_MIDDLE))
 		window_set_cursor_locked(pstate->display, true);
 	else
@@ -745,13 +776,17 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			uint32_t group_count = arena_array_count(pstate->assets.mesh_groups);
 			MeshComponent *entity_mesh = ecs_push(pstate->world, editor->active_entity, MeshComponent);
 
-			if (input_key_pressed(KEY_CODE_Q))
+			if (input_key_pressed(KEY_CODE_Q)) {
 				entity_mesh->mesh_group_index = entity_mesh->mesh_group_index > 1
 					? entity_mesh->mesh_group_index - 1
 					: group_count - 1;
+				entity_mesh->group_id = pstate->assets.mesh_groups[entity_mesh->mesh_group_index].id;
+			}
 
-			if (input_key_pressed(KEY_CODE_E))
+			if (input_key_pressed(KEY_CODE_E)) {
 				entity_mesh->mesh_group_index = (entity_mesh->mesh_group_index % (group_count - 1)) + 1;
+				entity_mesh->group_id = pstate->assets.mesh_groups[entity_mesh->mesh_group_index].id;
+			}
 		}
 
 		// Add collision component as a child
@@ -810,7 +845,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	float3 camera_right = float3_cross(camera->up, camera_forward);
 	float3 camera_up = float3_cross(camera_right, camera_forward);
 
-	// update editor
+	// :trs
 	switch (editor->mode) {
 		case TRS_MODE_NONE: {
 			if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
@@ -1080,6 +1115,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 void editor_draw(PermanentState *pstate, Editor *editor) {
 	Camera *camera = pstate->camera;
+	// :editor
 
 	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
 	float4x4 projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
@@ -1141,11 +1177,11 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 			if (mesh_component->mesh_group_index == 0 || mesh_component->mesh_group_index > arena_array_count(pstate->assets.mesh_groups))
 				continue;
-			uint32x2 mesh_group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
+			MeshGroup group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
 
 			vulkan_push_constants(pstate->context, sizeof(float4x4), sizeof(uint32_t), &entity);
 
-			for (uint32_t mesh_index = mesh_group.x; mesh_index < mesh_group.x + mesh_group.y; ++mesh_index) {
+			for (uint32_t mesh_index = group.start_index; mesh_index < group.start_index + group.count; ++mesh_index) {
 				Mesh *mesh = &pstate->assets.meshes[mesh_index];
 				float4x4 model_matrix = transform->world_matrix;
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
@@ -1183,7 +1219,8 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 			if (ecs_has(pstate->world, entity, MeshComponent)) {
 				MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
-				ASSERT(mesh_component->mesh_group_index && mesh_component->mesh_group_index < arena_array_count(pstate->assets.mesh_groups));
+				uint32_t count = arena_array_count(pstate->assets.mesh_groups);
+				ASSERT(mesh_component->mesh_group_index && mesh_component->mesh_group_index < count);
 
 				Interval3 *bounding_box = &pstate->assets.mesh_group_bounds[mesh_component->mesh_group_index];
 				min = bounding_box->min;
@@ -1368,65 +1405,97 @@ void transform_system_update(ECS *world) {
 	}
 }
 
+void mesh_system_update(ECS *world, PermanentState *pstate) {
+	EcsIterator it = ecs_query(world, ecs_type_id(MeshComponent));
+	Entity entity;
+
+	while ((entity = ecs_next(&it))) {
+		MeshComponent *mesh = ecs_find(world, entity, MeshComponent);
+		if (mesh->mesh_group_index)
+			continue;
+
+		for (uint32_t index = 0; index < arena_array_count(pstate->assets.mesh_groups); ++index) {
+			MeshGroup *group = &pstate->assets.mesh_groups[index];
+			if (mesh->group_id == group->id) {
+				mesh->mesh_group_index = index;
+				break;
+			}
+		}
+
+		ASSERT(mesh->mesh_group_index != 0);
+	}
+}
+
 void load_assets(PermanentState *pstate) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 
-	AssetStore store = asset_store_make(scratch.arena);
-	asset_store_track_directory(&store, S("assets/"));
+	pstate->store = asset_store_make(&pstate->arena);
+	AssetStore *store = &pstate->store;
+	if (file_exists(S("assets/asset_manifest.json")))
+		asset_store_deserialize(store, S("assets/asset_manifest.json"));
+	else {
+		asset_store_track_directory(store, S("assets/"));
+	}
 
 	UUID unlit_generated = uuid_generate();
-	UUID unlit = asset_store_find(&store, ASSET_TYPE_SHADER, S("unlit.glsl"));
+	UUID unlit = asset_store_find(store, ASSET_TYPE_shader, S("shaders/bin/unlit.glsl"));
+
+	UUID wall = asset_store_find(store, ASSET_TYPE_geometry, S("assets/models/kenney/modular_dungeon/room-large.glb"));
 
 	ShaderSource source = { 0 };
-	source = importer_load_shader(scratch.arena, S("assets/shaders/unlit.vert.spv"), S("assets/shaders/unlit.frag.spv"));
+	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/unlit.vert.spv"), S("assets/shaders/bin/unlit.frag.spv"));
 	pstate->unlit_shader =
 		vulkan_shader_make(
 			NULL,
 			pstate->context,
 			source.vertex, source.fragment,
 			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/phong.vert.spv"), S("assets/shaders/phong.frag.spv"));
+	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/phong.vert.spv"), S("assets/shaders/bin/phong.frag.spv"));
 	pstate->phong_shader =
 		vulkan_shader_make(
 			NULL,
 			pstate->context,
 			source.vertex, source.fragment,
 			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/line.vert.spv"), S("assets/shaders/line.frag.spv"));
+	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/line.vert.spv"), S("assets/shaders/bin/line.frag.spv"));
 	pstate->screenline_shader =
 		vulkan_shader_make(
 			NULL,
 			pstate->context,
 			source.vertex, source.fragment,
 			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/picker.vert.spv"), S("assets/shaders/picker.frag.spv"));
+	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/picker.vert.spv"), S("assets/shaders/bin/picker.frag.spv"));
 	pstate->picker_shader =
 		vulkan_shader_make(
 			NULL,
 			pstate->context,
 			source.vertex, source.fragment,
 			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/postfx.vert.spv"), S("assets/shaders/postfx.frag.spv"));
+	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/postfx.vert.spv"), S("assets/shaders/bin/postfx.frag.spv"));
 	pstate->postfx_shader =
 		vulkan_shader_make(
 			NULL,
 			pstate->context,
 			source.vertex, source.fragment,
 			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/blit.vert.spv"), S("assets/shaders/blit.frag.spv"));
+	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/blit.vert.spv"), S("assets/shaders/bin/blit.frag.spv"));
 	pstate->blit_shader =
 		vulkan_shader_make(
 			NULL,
 			pstate->context,
 			source.vertex, source.fragment,
 			NULL);
+	// :shader
 
 	// TODO: Import the node transforms & cache shared textures
 	SceneSource models[] = {
-		importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/room-large.glb")),
-		importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/room-small.glb")),
-		importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/corridor.glb")),
-		importer_load_gltf_scene(scratch.arena, S("assets/models/modular_dungeon/gate-door.glb")),
+		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/room-large.glb")),
+		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/room-small.glb")),
+		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/corridor.glb")),
+		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/gate-door.glb")),
+		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/survival_kit/rock-a.glb")),
+		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/survival_kit/tool-pickaxe.glb")),
+		// :model
 	};
 
 	// Prep Upload
@@ -1436,7 +1505,7 @@ void load_assets(PermanentState *pstate) {
 	Mesh *meshes = NULL;
 	uint32_t *mesh_to_material = NULL;
 	Interval3 *mesh_group_bounds = NULL;
-	uint32x2 *mesh_groups = NULL;
+	MeshGroup *mesh_groups = NULL;
 
 	// Defaults
 	arena_darray_push(scratch.arena, mesh_groups, uint32x2); // 0 == invalid
@@ -1541,7 +1610,12 @@ void load_assets(PermanentState *pstate) {
 			largest.max = float3_max(largest.max, mesh_bounding_box.max);
 		}
 
-		arena_darray_put(scratch.arena, mesh_groups, uint32x2, { mesh_offset, model->mesh_count });
+		arena_darray_put(scratch.arena, mesh_groups, MeshGroup,
+			{
+			  .id = asset_store_find(store, ASSET_TYPE_geometry, model->path),
+			  .start_index = mesh_offset,
+			  .count = model->mesh_count,
+			});
 		arena_darray_put(scratch.arena, mesh_group_bounds, Interval3, largest);
 
 		arena_push_copy(geometry_upload_arena, model->vertices, model->vertices_size, 1);
@@ -1556,8 +1630,12 @@ void load_assets(PermanentState *pstate) {
 			.max = { 0.5f, 1, 0.5f },
 		};
 
-		uint32x2 group = { arena_array_count(meshes), 1 };
-		arena_darray_put(scratch.arena, mesh_groups, uint32x2, group);
+		MeshGroup group = {
+			.id = asset_store_register(store, ASSET_TYPE_geometry, S("unit_cube")),
+			.start_index = arena_array_count(meshes),
+			.count = 1,
+		};
+		arena_darray_put(scratch.arena, mesh_groups, MeshGroup, group);
 
 		Mesh *player_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
 		player_mesh->buffer = pstate->scene_geometry_buffer;
@@ -1568,16 +1646,18 @@ void load_assets(PermanentState *pstate) {
 		arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
 		arena_darray_put(scratch.arena, mesh_group_bounds, Interval3, player_bounds);
 	}
+	// :generated
 
 	pstate->assets.textures = arena_array_copy(&pstate->arena, textures, RhiTexture);
 	pstate->assets.meshes = arena_array_copy(&pstate->arena, meshes, Mesh);
 	pstate->assets.materials = arena_array_copy(&pstate->arena, materials, Material);
 	pstate->assets.mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
 	pstate->assets.mesh_group_bounds = arena_array_copy(&pstate->arena, mesh_group_bounds, Interval3);
-	pstate->assets.mesh_groups = arena_array_copy(&pstate->arena, mesh_groups, uint32x2);
+	pstate->assets.mesh_groups = arena_array_copy(&pstate->arena, mesh_groups, MeshGroup);
 
 	// Upload all geometry once
 	vulkan_buffer_push(pstate->context, pstate->scene_geometry_buffer, geometry_upload_arena->offset, geometry_upload_arena->base);
 
+	asset_store_serialize(store, S("assets/asset_manifest.json"));
 	arena_scratch_end(scratch);
 }

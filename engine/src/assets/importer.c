@@ -78,6 +78,7 @@ static MaterialProperty default_properties[MATERIAL_PROPERTY_COUNT] = {
 
 SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 	SceneSource result = { 0 };
+	result.path = string_copy(arena, path);
 
 	cgltf_options options = { 0 };
 	cgltf_data *data = NULL;

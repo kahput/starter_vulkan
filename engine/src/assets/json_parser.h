@@ -9,6 +9,7 @@ typedef enum {
 	JSON_NULL,
 	JSON_bool,
 	JSON_uint32_t,
+	JSON_uint64_t,
 	JSON_int32_t,
 	JSON_float,
 	JSON_String,
@@ -72,9 +73,9 @@ ENGINE_API void json_write_pair_(JsonExporter *exporter, String key, JsonType ty
 ENGINE_API void json_write_float(JsonExporter *exporter, float value);
 ENGINE_API void json_write_float3(JsonExporter *exporter, float32x3 value);
 
-#define json_write_pair(exporter, key, T, ...)                                  \
-	do {                                                                        \
-		T _val = __VA_ARGS__;                                                   \
+#define json_write_pair(exporter, key, T, ...)                                   \
+	do {                                                                         \
+		T _val = __VA_ARGS__;                                                    \
 		json_write_pair_((exporter), (key), JSON_##T, buffer_wrap_struct(_val)); \
 	} while (0)
 

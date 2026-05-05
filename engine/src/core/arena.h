@@ -28,7 +28,7 @@ ENGINE_API void *arena_push_copy(Arena *arena, void *src, size_t size, size_t al
 void arena_pop(Arena *arena, size_t size);
 
 ENGINE_API size_t arena_mark(Arena *arena);
-void arena_rewind(Arena *arena, size_t position);
+ENGINE_API void arena_rewind(Arena *arena, size_t position);
 void arena_reset(Arena *arena);
 
 ENGINE_API ArenaTemp arena_temp_begin(Arena *arena);
