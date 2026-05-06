@@ -787,6 +787,11 @@
             "type": "geometry"
         },
         {
+            "id": 4532017792427544554,
+            "name": "in_memory:quad",
+            "type": "geometry"
+        },
+        {
             "id": 12368050309434479773,
             "path": "assets/pokemon/graphics/backgrounds/sand.png",
             "type": "image"

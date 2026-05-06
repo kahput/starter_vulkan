@@ -142,8 +142,8 @@ UUID asset_store_register(AssetStore *store, AssetType type, String key) {
 	String k = string_format(scratch.arena, "in_memory:%s", string_cstring(scratch.arena, key));
 	AssetEntry *entry = arena_trie_find(&store->trie, buffer_wrap_string(k), AssetEntry);
 	if (entry) {
-		return entry->id;
 		arena_scratch_end(scratch);
+		return entry->id;
 	}
 
 	entry = asset_map_push(store, type, key);

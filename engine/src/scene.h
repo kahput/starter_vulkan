@@ -10,7 +10,7 @@ typedef enum {
 
 typedef struct camera {
 	float3 position, target, up;
-	float fov;
+	float fov, ortho_size;
 
 	CameraProjection projection;
 } Camera;

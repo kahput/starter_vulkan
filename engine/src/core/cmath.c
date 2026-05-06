@@ -1,6 +1,12 @@
 #include "cmath.h"
 #include "core/logger.h"
 
+bool float2_equal(float2 a, float2 b) {
+	bool result = a.x == b.x && a.y == b.y;
+
+	return result;
+}
+
 float2 float2_negate(float2 v) {
 	float2 result = { -v.x, -v.y };
 	return result;
@@ -11,11 +17,18 @@ float float2_length(float2 v) {
 }
 float2 float2_normalize(float2 v) {
 	float length = float2_length(v);
+	float2 result = { .x = v.x / length, .y = v.y / length };
+
+	return result;
+}
+
+float2 float2_normalize_safe(float2 v, float epsilon) {
+	float length = float2_length(v);
 	if (length < EPSILON) {
 		return (float2){ 0 };
 	}
-	float2 result = { .x = v.x / length, .y = v.y / length };
 
+	float2 result = { .x = v.x / length, .y = v.y / length };
 	return result;
 }
 
@@ -56,6 +69,11 @@ float3 float3_subtract(float3 a, float3 b) {
 float3 float3_scale(float3 v, float s) {
 	float3 result = { v.x * s, v.y * s, v.z * s };
 
+	return result;
+}
+
+bool float3_equal(float3 a, float3 b) {
+	bool result = a.x == b.x && a.y == b.y && a.z == b.z;
 	return result;
 }
 
@@ -117,6 +135,16 @@ float3 float3_max(float3 a, float3 b) {
 		.y = maxf(a.y, b.y),
 		.z = maxf(a.z, b.z),
 	};
+
+	return result;
+}
+
+float3 float3_lerp(float3 start, float3 end, float amount) {
+	float3 result = { 0 };
+
+	result.x = start.x + amount * (end.x - start.x);
+	result.y = start.y + amount * (end.y - start.y);
+	result.z = start.z + amount * (end.z - start.z);
 
 	return result;
 }

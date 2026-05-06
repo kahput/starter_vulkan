@@ -14,11 +14,17 @@ typedef struct {
 } float4x4;
 typedef float32x2 float2;
 typedef float32x3 float3;
-typedef float32x3 ray3;
+typedef struct {
+	float3 origin;
+	float3 direction;
+} Ray3;
 typedef float32x4 float4;
 
 #define FLOAT_MAX 3.40282347e+38F
 #define FLOAT_MIN -FLOAT_MAX
+
+#define FLOAT2_ZERO (float2){ 0.0f, 0.0f }
+#define FLOAT2_ONE (float2){ 1.0f, 1.0f }
 
 #define FLOAT3_X (float3){ 1.0f, 0.0f, 0.0f }
 #define FLOAT3_Y (float3){ 0.0f, 1.0f, 0.0f }
@@ -45,10 +51,12 @@ static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.
 static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
 static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y }; }
 
+ENGINE_API bool float2_equal(float2 a, float2 b);
 ENGINE_API float2 float2_negate(float2 v);
 
 ENGINE_API float float2_length(float2 v);
 ENGINE_API float2 float2_normalize(float2 v);
+ENGINE_API float2 float2_normalize_safe(float2 v, float epsilon);
 
 ENGINE_API float2 float2_add(float2 a, float2 b);
 ENGINE_API float2 float2_subtract(float2 a, float2 b);
@@ -64,6 +72,7 @@ static inline float3 float3_wrap(float v[3]) {
 	return (float3){ .x = v[0], .y = v[1], .z = v[2] };
 }
 
+ENGINE_API bool float3_equal(float3 a, float3 b);
 ENGINE_API float3 float3_negate(float3 v);
 ENGINE_API float float2_dot(float2 a, float2 b);
 

@@ -72,7 +72,7 @@ void main() {
     vec3 reflection = reflect(-light_direction, normal);
     vec3 view_direction = normalize(global.camera_position.xyz - in_position);
 
-    float ambient_strength = 0.05f;
+    float ambient_strength = 0.5f;
     float specular_strength = 0.5f;
 
     vec3 ambient = vec3(ambient_strength);

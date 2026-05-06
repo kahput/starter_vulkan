@@ -26,8 +26,6 @@
 #include "ecs.h"
 #include "cgltf.h"
 
-#define MAX_ENTITIES 1024
-
 static MaterialProperty default_properties[] = {
 	{ .name = { .chars = "u_base_color_texture", .length = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
 	{ .name = { .chars = "u_metallic_roughness_texture", .length = 28 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
@@ -128,9 +126,10 @@ typedef struct {
 	RhiTexture white;
 
 	// These are assets too
-	RhiShader unlit_shader, phong_shader, postfx_shader;
+	RhiShader unlit_shader, phong_shader, billboard_shader;
 	RhiShader screenline_shader, picker_shader;
-	RhiShader blit_shader;
+	RhiShader postfx_shader, blit_shader;
+	// :shader
 
 	RhiBuffer frame_uniform_buffer;
 	RhiBuffer frame_storage_buffer;
@@ -169,7 +168,10 @@ typedef struct {
 
 	struct {
 		bool is_initialized;
-		Entity player, selection;
+		Entity player, selection, pickaxe_pivot;
+
+		float animation_duration, animation_elapsed;
+		bool playing;
 	} game;
 	bool debug_draw_collisions;
 
@@ -196,6 +198,24 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 
 	return false;
 }
+
+/* Ray3 ray_from_mouse_position(Camera *camera, uint2 window_dimensions, uint2 mouse_position) { */
+/* 	float4 ndc_near = { */
+/* 		.x = ((float)mouse_position.x / window_dimensions.x) * 2 - 1, */
+/* 		.y = 1 - ((float)mouse_position.x / window_dimensions.x) * 2, */
+/* 		.z = 0.0f, */
+/* 		.w = 1.0f, */
+/* 	}; */
+
+/* 	float4 ndc_far = { */
+/* 		.x = ((float)mouse_position.x / window_dimensions.x) * 2 - 1, */
+/* 		.y = 1 - ((float)mouse_position.x / window_dimensions.x) * 2, */
+/* 		.z = 1.0f, */
+/* 		.w = 1.0f, */
+/* 	}; */
+
+/* 	float half_fov = camera->fov * 0.5f; */
+/* } */
 
 FrameInfo update_and_draw(GameContext *context, float dt) {
 	PermanentState *pstate = context->permanent_memory;
@@ -251,7 +271,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			},
 			.up = { 0.0f, 1.0f, 0.0f },
 			.target = { 0.0f, 0.0f, 0.0f },
-			.fov = 45.f,
+			.ortho_size = 96.0f,
 
 			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC
 		};
@@ -293,11 +313,49 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			// :game
 			if (pstate->game.is_initialized == false) {
 				pstate->game.player = ecs_spawn(pstate->world, FLOAT3_ZERO);
-				ecs_put(pstate->world, pstate->game.player, MeshComponent,
-					{ .group_id = asset_store_find(&pstate->store, ASSET_TYPE_geometry, S("unit_cube")), .mesh_group_index = arena_array_count(pstate->assets.mesh_groups) - 1 });
+
+				TransformComponent *player_transform = ecs_find(pstate->world, pstate->game.player, TransformComponent);
+				MeshComponent cube_mesh = {
+					.group_id = asset_store_find(&pstate->store, ASSET_TYPE_geometry, S("in_memory:unit_cube")),
+				};
+				ecs_put(pstate->world, pstate->game.player, MeshComponent, cube_mesh);
+
+				Entity eyes[] = {
+					ecs_spawn(pstate->world, (float3){ 0.25f, 0.5f, 0.5f }),
+					ecs_spawn(pstate->world, (float3){ -0.25f, 0.5f, 0.5f }),
+				};
+
+				for (uint32_t index = 0; index < countof(eyes); ++index) {
+					Entity e = eyes[index];
+
+					TransformComponent *transform = ecs_find(pstate->world, e, TransformComponent);
+					transform->scale = (float3){ 0.25f, 0.25f, 0.25f };
+					ecs_put(pstate->world, e, MeshComponent, cube_mesh);
+
+					ecs_hierarchy_parent(pstate->world, pstate->game.player, e);
+				}
+
+				Entity pickaxe_pivot = pstate->game.pickaxe_pivot = ecs_spawn(pstate->world, (float3){ 0.75f, 0.25f, 0.25f });
+				Entity pickaxe = ecs_spawn(pstate->world, FLOAT3_ZERO);
+				ecs_put(pstate->world, pickaxe, TransformComponent,
+					{
+					  .position = { 0.0f, -0.25f, 0.0f },
+					  .scale = float3_fill(8.0f),
+					  .rotation = { 0.0f, 90.0f, 0.0f },
+					});
+
+				MeshComponent pickaxe_mesh = {
+					.group_id = asset_store_find(
+						&pstate->store,
+						ASSET_TYPE_geometry,
+						S("assets/models/kenney/survival_kit/tool-pickaxe.glb")),
+				};
+				ecs_put(pstate->world, pickaxe, MeshComponent, pickaxe_mesh);
+				ecs_hierarchy_parent(pstate->world, pickaxe_pivot, pickaxe);
+				ecs_hierarchy_parent(pstate->world, pstate->game.player, pickaxe_pivot);
 
 				pstate->game.selection = ecs_deserialize_entity(pstate->world, S("assets/scenes/selection_entity.prefab"));
-				/* Entity rock = ecs_deserialize_entity(pstate->world, S("assets/scenes/rock.prefab")); */
+				Entity rock = ecs_deserialize_entity(pstate->world, S("assets/scenes/rock.prefab"));
 
 				mesh_system_update(pstate->world, pstate);
 
@@ -313,8 +371,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			float3 camera_target_offset = float3_subtract(camera->target, camera->position);
 			float3 camera_forward = float3_normalize(camera_target_offset);
 
-			float3 camera_right = float3_cross(camera->up, camera_forward);
-			float3 camera_up = float3_cross(camera_right, camera_forward);
+			float3 camera_right = float3_normalize(float3_cross(camera->up, camera_forward));
+			float3 camera_up = float3_cross(camera_forward, camera_right);
 
 			/* float3 move = { */
 			/* 	.x = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A), */
@@ -385,19 +443,74 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			camera->position.x = pstate->game_camera_start_offset.x + transform->position.x;
 			camera->position.z = pstate->game_camera_start_offset.z + transform->position.z;
 
-			// select
 			float2 mouse_position = float2_from_double2(input_mouse_position());
 			float2 window_size = float2_from_uint2(window_size_pixel(context->display));
 
-			float2 mouse_offset = float2_subtract(float2_scale(window_size, 0.5f), mouse_position);
-			float aspect = window_size.x / window_size.y;
-			{
-				// Normalized device coordinates, -1..1
-				float2 ndc = {
-					(mouse_position.x / window_size.x) * 2.0f - 1.0f,
-					(mouse_position.y / window_size.y) * 2.0f - 1.0f,
-				};
+			// Calculate the positon where the camera view ray intersects world y 0
+
+			/*
+			float distance = float3_dot(float3_subtract(editor->transform.cached.position, camera->position), camera_forward);
+			float fov_radians = deg2radf(camera->fov);
+			float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
+			float frustum_width = frustum_height * (screen_size.x / screen_size.y);
+
+			float2 units_per_pixel = {
+				.x = frustum_width / screen_size.x,
+				.y = frustum_height / screen_size.y,
+			};
+			*/
+
+			float2 ndc = {
+				.x = -1 * ((mouse_position.x / window_size.x) * 2.0f - 1.0f),
+				.y = -1 * ((mouse_position.y / window_size.y) * 2.0f - 1.0f),
+			};
+			float2 extent = {
+				ndc.x * (window_size.x / camera->ortho_size),
+				ndc.y * (window_size.y / camera->ortho_size),
+			};
+
+			float3 forward_offset = float3_scale(camera_forward, 0.1f);
+			float3 right_offset = float3_scale(camera_right, extent.x);
+			float3 up_offset = float3_scale(camera_up, extent.y);
+
+			float3 ro = float3_add(camera->position, float3_add(forward_offset, float3_add(right_offset, up_offset)));
+			float3 rd = camera_forward;
+
+			float t = -ro.y / rd.y;
+
+			float3 mouse_floor = float3_add(ro, float3_scale(rd, t));
+			float3 mouse_offset = float3_subtract(mouse_floor, transform->position);
+			float3 mouse_direction = float3_normalize_safe(mouse_offset, EPSILON);
+
+			if (float3_equal(mouse_direction, FLOAT3_ZERO) == false) {
+				float rotation = -rad2degf(atan2(mouse_direction.z, mouse_direction.x));
+				transform->rotation.y = rotation + 90.0f;
 			}
+
+			if (input_mouse_pressed(MOUSE_BUTTON_LEFT) && pstate->game.playing == false) {
+				pstate->game.animation_duration = 0.5f;
+				pstate->game.animation_elapsed = 0.0f;
+				pstate->game.playing = true;
+			}
+
+			if (pstate->game.playing == true) {
+				TransformComponent *pivot_transform = ecs_find(pstate->world, pstate->game.pickaxe_pivot, TransformComponent);
+
+				float half_duration = pstate->game.animation_duration * 0.5f;
+
+				pstate->game.animation_elapsed += dt;
+				float elapsed = pstate->game.animation_elapsed;
+				if (elapsed < half_duration) {
+					float t = elapsed / half_duration;
+					pivot_transform->rotation.x = lerpf(0.0f, 75.0f, t);
+				} else if (elapsed < half_duration * 2.0f) {
+					float t = (elapsed - half_duration) / half_duration;
+					pivot_transform->rotation.x = lerpf(75.0f, 0.0f, t);
+				} else {
+					pstate->game.playing = false;
+				}
+			}
+
 		} break;
 
 		case GAME_STATE_EDITOR: {
@@ -416,12 +529,10 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
 			projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
 		} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
-			float ortho_size = 96.0f;
-
 			float aspect = window_size.x / window_size.y;
 			projection = float4x4_orthographic(
-				-window_size.x / ortho_size, window_size.x / ortho_size,
-				-window_size.y / ortho_size, window_size.y / ortho_size,
+				-window_size.x / camera->ortho_size, window_size.x / camera->ortho_size,
+				-window_size.y / camera->ortho_size, window_size.y / camera->ortho_size,
 				0.1f, 1000.f);
 		}
 		projection.elements[5] *= -1;
@@ -931,7 +1042,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			};
 			float2 pixels_per_unit = {
 				.x = screen_size.x / frustum_width,
-				.y = screen_size.x / frustum_height,
+				.y = screen_size.y / frustum_height,
 			};
 
 			for (uint32_t key = KEY_CODE_0; key < KEY_CODE_9 + 1; ++key) {
@@ -1427,15 +1538,15 @@ void mesh_system_update(ECS *world, PermanentState *pstate) {
 }
 
 void load_assets(PermanentState *pstate) {
+	// :assets
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 
 	pstate->store = asset_store_make(&pstate->arena);
 	AssetStore *store = &pstate->store;
 	if (file_exists(S("assets/asset_manifest.json")))
 		asset_store_deserialize(store, S("assets/asset_manifest.json"));
-	else {
+	else
 		asset_store_track_directory(store, S("assets/"));
-	}
 
 	UUID unlit_generated = uuid_generate();
 	UUID unlit = asset_store_find(store, ASSET_TYPE_shader, S("shaders/bin/unlit.glsl"));
@@ -1485,6 +1596,13 @@ void load_assets(PermanentState *pstate) {
 			pstate->context,
 			source.vertex, source.fragment,
 			NULL);
+	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/billboard.vert.spv"), S("assets/shaders/bin/billboard.frag.spv"));
+	pstate->billboard_shader =
+		vulkan_shader_make(
+			NULL,
+			pstate->context,
+			source.vertex, source.fragment,
+			NULL);
 	// :shader
 
 	// TODO: Import the node transforms & cache shared textures
@@ -1494,6 +1612,7 @@ void load_assets(PermanentState *pstate) {
 		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/corridor.glb")),
 		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/gate-door.glb")),
 		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/survival_kit/rock-a.glb")),
+		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/survival_kit/rock-b.glb")),
 		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/survival_kit/tool-pickaxe.glb")),
 		// :model
 	};
@@ -1624,8 +1743,8 @@ void load_assets(PermanentState *pstate) {
 
 	// Add cube asset for player
 	{ // This is the code necessary for pushing a single mesh resource
-		MeshSource player_src = mesh_source_cube(scratch.arena, 0, 0.5f, 0);
-		Interval3 player_bounds = {
+		MeshSource cube = mesh_source_cube(scratch.arena, 0, 0.5f, 0);
+		Interval3 cube_bounds = {
 			.min = { -0.5f, 0, -0.5f },
 			.max = { 0.5f, 1, 0.5f },
 		};
@@ -1637,14 +1756,37 @@ void load_assets(PermanentState *pstate) {
 		};
 		arena_darray_put(scratch.arena, mesh_groups, MeshGroup, group);
 
-		Mesh *player_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
-		player_mesh->buffer = pstate->scene_geometry_buffer;
-		player_mesh->vertex_count = player_src.vertex_count;
-		player_mesh->vertex_offset = geometry_upload_arena->offset;
-		arena_push_copy(geometry_upload_arena, player_src.vertices, player_src.vertex_size * player_src.vertex_count, 1);
+		Mesh *cube_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
+		cube_mesh->buffer = pstate->scene_geometry_buffer;
+		cube_mesh->vertex_count = cube.vertex_count;
+		cube_mesh->vertex_offset = geometry_upload_arena->offset;
+		arena_push_copy(geometry_upload_arena, cube.vertices, cube.vertex_size * cube.vertex_count, 1);
 
 		arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
-		arena_darray_put(scratch.arena, mesh_group_bounds, Interval3, player_bounds);
+		arena_darray_put(scratch.arena, mesh_group_bounds, Interval3, cube_bounds);
+	}
+	{
+		MeshSource quad_src = mesh_source_quad3(scratch.arena, (float3){ 0.0f, 0.5f, 0.0f }, 1.0f);
+		Interval3 quad_bounds = {
+			.min = { -0.5f, 0.0f, -0.1f },
+			.max = { 0.5f, 1.0f, 0.1f },
+		};
+
+		MeshGroup group = {
+			.id = asset_store_register(store, ASSET_TYPE_geometry, S("quad")),
+			.start_index = arena_array_count(meshes),
+			.count = 1,
+		};
+		arena_darray_put(scratch.arena, mesh_groups, MeshGroup, group);
+
+		Mesh *quad_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
+		quad_mesh->buffer = pstate->scene_geometry_buffer;
+		quad_mesh->vertex_count = quad_src.vertex_count;
+		quad_mesh->vertex_offset = geometry_upload_arena->offset;
+		arena_push_copy(geometry_upload_arena, quad_src.vertices, quad_src.vertex_size * quad_src.vertex_count, 1);
+
+		arena_darray_put(scratch.arena, mesh_to_material, uint32_t, 0);
+		arena_darray_put(scratch.arena, mesh_group_bounds, Interval3, quad_bounds);
 	}
 	// :generated
 
