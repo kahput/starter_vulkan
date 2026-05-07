@@ -28,6 +28,14 @@ typedef enum {
 } LightType;
 
 typedef struct {
+	float4 color;
+	float3 position;
+	float constant_attenuation;
+
+	float4x4 light_matrix;
+} LightData;
+
+typedef struct {
 	LightType type;
 	uint32x3 _pad0;
 	union {

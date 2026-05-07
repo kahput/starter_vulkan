@@ -54,17 +54,13 @@ typedef struct material_source {
 
 typedef struct {
 	float32x3 position;
-	float _pad0;
 	float32x3 normal;
-	float _pad1;
-	float32x2 uv;
-	float2 _pad2;
+	float32x2 uv0;
 	float32x4 tangent;
-	float32x4 color;
 } Vertex;
 
 typedef struct scene_source {
-    String path;
+	String path;
 
 	MeshSource *meshes;
 	uint32_t mesh_count;

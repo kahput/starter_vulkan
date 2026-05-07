@@ -234,7 +234,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 							offset = offsetof(Vertex, tangent);
 							break;
 						case cgltf_attribute_type_texcoord:
-							offset = offsetof(Vertex, uv);
+							offset = offsetof(Vertex, uv0);
 							break;
 						/* case cgltf_attribute_type_color: */
 						/* case cgltf_attribute_type_joints: */

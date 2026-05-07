@@ -1,15 +1,18 @@
 #version 450
-#extension GL_GOOGLE_include_directive : require
-
-// -----------------------------------------------------------------------------
-// VERTEX SHADER
-// -----------------------------------------------------------------------------
-#ifdef SHADER_STAGE_VERTEX
 #pragma shader_stage(vertex)
 
-#include "global.shared"
+layout(set = 0, binding = 0) uniform GlobalParameters {
+    mat4 projection;
+    mat4 view;
+    vec4 camera_position;
+    vec2 viewport;
+} global;
 
-layout(set = 1, binding = 0) readonly buffer LineData {
+layout(set = 0, binding = 1) readonly buffer LightData {
+    vec4 lights[];
+};
+
+layout(set = 1, binding = 1) readonly buffer LineData {
     vec4 line_points[];
 };
 
@@ -51,22 +54,3 @@ void main() {
 
     gl_Position = vertex_position;
 }
-#endif
-
-// -----------------------------------------------------------------------------
-// FRAGMENT SHADER
-// -----------------------------------------------------------------------------
-#ifdef SHADER_STAGE_FRAGMENT
-#pragma shader_stage(fragment)
-
-layout(set = 1, binding = 1) uniform Material {
-    vec4 color;
-};
-
-layout(location = 0) out vec4 out_color;
-
-void main() {
-    out_color = color; 
-}
-
-#endif

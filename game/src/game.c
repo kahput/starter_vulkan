@@ -122,11 +122,12 @@ typedef struct {
 	VulkanContext *context;
 	Window *display;
 
-	RhiSampler linear_sampler, nearest_sampler;
+	RhiSampler linear_sampler, nearest_sampler, shadow_sampler;
 	RhiTexture white;
 
 	// These are assets too
-	RhiShader unlit_shader, phong_shader, billboard_shader;
+	RhiShader shadow_shader;
+	RhiShader unlit_shader, phong_shader;
 	RhiShader screenline_shader, picker_shader;
 	RhiShader postfx_shader, blit_shader;
 	// :shader
@@ -137,6 +138,7 @@ typedef struct {
 	RhiBuffer scene_uniform_buffer;
 	RhiBuffer scene_geometry_buffer;
 
+	RhiTexture shadow_depth_target;
 	RhiTexture main_color_targets[2];
 	/* RhiTexture main_depth_target; */
 	uint32_t previous_target, current_target;
@@ -217,6 +219,274 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 /* 	float half_fov = camera->fov * 0.5f; */
 /* } */
 
+static float4x4 light_matrix = { 0 };
+void draw_shadow_pass(PermanentState *pstate) {
+	// :shadow
+	Camera light_camera = {
+		.position = { 0.0f, 20.0f, -30.0f },
+		.up = FLOAT3_Y,
+		.ortho_size = 10.f,
+		.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
+	};
+	Camera *camera = &light_camera;
+
+	float4x4 projection = float4x4_orthographic(
+		-camera->ortho_size, camera->ortho_size,
+		-camera->ortho_size, camera->ortho_size,
+		0.01f, 100.f);
+	projection.elements[5] *= -1;
+	float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
+	light_matrix = float4x4_multiply(projection, view);
+
+	DrawListDesc shadow_pass = {
+		.name = S("shadow_pass"),
+		.depth_attachment = {
+		  .target = pstate->shadow_depth_target,
+		  .clear.depth = 1.0f,
+		  .load = CLEAR,
+		  .store = STORE,
+		},
+		.use_depth = true,
+	};
+
+	if (vulkan_drawlist_begin(pstate->context, shadow_pass)) {
+		PipelineDesc pipeline = DEFAULT_PIPELINE;
+        pipeline.cull_mode = CULL_MODE_BACK;
+		vulkan_shader_bind(pstate->context, pstate->shadow_shader, pipeline);
+
+		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
+		Entity entity = 0;
+		while ((entity = ecs_next(&iterator))) {
+			TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
+			MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
+
+			if (mesh_component->mesh_group_index == 0 || mesh_component->mesh_group_index > arena_array_count(pstate->assets.mesh_groups))
+				continue;
+			MeshGroup group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
+
+			for (uint32_t mesh_index = group.start_index; mesh_index < group.start_index + group.count; ++mesh_index) {
+				Mesh *mesh = &pstate->assets.meshes[mesh_index];
+
+				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), float4x4_multiply(projection, view).elements);
+				vulkan_push_constants(pstate->context, sizeof(float4x4), sizeof(float4x4), transform->world_matrix.elements);
+
+				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
+				if (mesh->index_count > 0) {
+					vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
+					vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
+				} else
+					vulkan_renderer_draw(pstate->context, mesh->vertex_count);
+			}
+		}
+
+		vulkan_drawlist_end(pstate->context);
+	}
+}
+void draw_main_pass(PermanentState *pstate) {
+	Camera *camera = pstate->camera;
+
+	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
+	float4x4 projection = float4x4_identity();
+	if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
+		projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
+	} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
+		float aspect = window_size.x / window_size.y;
+		projection = float4x4_orthographic(
+			-window_size.x / camera->ortho_size, window_size.x / camera->ortho_size,
+			-window_size.y / camera->ortho_size, window_size.y / camera->ortho_size,
+			0.1f, 1000.f);
+	}
+	projection.elements[5] *= -1;
+	float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
+
+	typedef struct {
+		float4x4 projection, view;
+		float4 camera_position;
+		float2 viewport;
+	} GlobalData;
+
+	size_t global_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData), NULL);
+	vulkan_buffer_write(
+		pstate->context, pstate->frame_uniform_buffer,
+		global_offset + offsetof(GlobalData, projection),
+		sizeof_member(GlobalData, projection), &projection);
+	vulkan_buffer_write(
+		pstate->context, pstate->frame_uniform_buffer,
+		global_offset + offsetof(GlobalData, view),
+		sizeof_member(GlobalData, view), &view);
+	vulkan_buffer_write(
+		pstate->context, pstate->frame_uniform_buffer,
+		global_offset + offsetof(GlobalData, camera_position),
+		sizeof_member(GlobalData, camera_position), &camera->position);
+	vulkan_buffer_write(
+		pstate->context, pstate->frame_uniform_buffer,
+		global_offset + offsetof(GlobalData, viewport),
+		sizeof_member(GlobalData, viewport), &window_size);
+
+	LightData light = {
+		.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+		.position = { 0.0f, 20.0f, -30.0f },
+		.constant_attenuation = 1.0f,
+		.light_matrix = light_matrix,
+
+	};
+	size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(LightData), &light);
+
+	RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
+	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
+	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
+
+	vulkan_texture_prepare_sample(pstate->context, pstate->shadow_depth_target);
+	vulkan_uniformset_bind_texture(pstate->context, global_set, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
+
+	// :main_pass
+	DrawListDesc main_pass = {
+		.name = S("main_pass"),
+		.color_attachments[0] = {
+		  .target = pstate->main_color_targets[pstate->current_target],
+		  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+		  .store = STORE,
+		  .load = CLEAR,
+		},
+		.color_attachment_count = 1,
+		.use_depth = true,
+		.msaa_level = 8,
+	};
+
+	if (vulkan_drawlist_begin(pstate->context, main_pass)) {
+		PipelineDesc pipeline = DEFAULT_PIPELINE;
+		/* pipeline.polygon_mode = POLYGON_MODE_LINE; */
+		pipeline.cull_mode = CULL_MODE_BACK;
+
+		// Entities
+		vulkan_shader_bind(pstate->context, pstate->phong_shader, pipeline);
+		vulkan_uniformset_bind(pstate->context, global_set);
+		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
+
+		Entity entity = 0;
+		while ((entity = ecs_next(&iterator))) {
+			TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
+			MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
+
+			if (mesh_component->mesh_group_index == 0 || mesh_component->mesh_group_index > arena_array_count(pstate->assets.mesh_groups))
+				continue;
+			MeshGroup group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
+
+			for (uint32_t mesh_index = group.start_index; mesh_index < group.start_index + group.count; ++mesh_index) {
+				Mesh *mesh = &pstate->assets.meshes[mesh_index];
+				uint32_t material_index = pstate->assets.mesh_to_material[mesh_index];
+				Material *material = &pstate->assets.materials[material_index];
+
+				RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 1);
+				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
+				for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
+					RhiTexture texture = material->textures[texture_index];
+					if (texture.id == 0)
+						texture = pstate->white;
+
+					vulkan_uniformset_bind_texture(
+						pstate->context,
+						group,
+						1 + texture_index,
+						texture,
+						pstate->nearest_sampler);
+				}
+
+				vulkan_uniformset_bind(pstate->context, group);
+
+				float4x4 model_matrix = transform->world_matrix;
+				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
+
+				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
+				if (mesh->index_count > 0) {
+					vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
+					vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
+				} else
+					vulkan_renderer_draw(pstate->context, mesh->vertex_count);
+			}
+		}
+
+		// Collision shapes
+		if (pstate->debug_draw_collisions) {
+			vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
+			EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(ColliderComponent));
+
+			Entity entity;
+			while ((entity = ecs_next(&iterator))) {
+				TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
+				ColliderComponent *shape = ecs_find(pstate->world, entity, ColliderComponent);
+
+				float3 min = float3_subtract(shape->aabb.center, shape->aabb.extent);
+				float3 max = float3_add(shape->aabb.center, shape->aabb.extent);
+
+				float thickness = 1.5f;
+
+				float4 outline[] = {
+					{ min.x, min.y, min.z, thickness },
+					{ min.x, max.y, min.z, thickness },
+
+					{ min.x, min.y, max.z, thickness },
+					{ min.x, max.y, max.z, thickness },
+
+					{ max.x, min.y, min.z, thickness },
+					{ max.x, max.y, min.z, thickness },
+
+					{ max.x, min.y, max.z, thickness },
+					{ max.x, max.y, max.z, thickness },
+
+					{ min.x, min.y, min.z, thickness },
+					{ min.x, min.y, max.z, thickness },
+
+					{ min.x, min.y, min.z, thickness },
+					{ max.x, min.y, min.z, thickness },
+
+					{ max.x, min.y, max.z, thickness },
+					{ max.x, min.y, min.z, thickness },
+
+					{ max.x, min.y, max.z, thickness },
+					{ min.x, min.y, max.z, thickness },
+
+					{ min.x, max.y, min.z, thickness },
+					{ min.x, max.y, max.z, thickness },
+
+					{ min.x, max.y, min.z, thickness },
+					{ max.x, max.y, min.z, thickness },
+
+					{ max.x, max.y, max.z, thickness },
+					{ max.x, max.y, min.z, thickness },
+
+					{ max.x, max.y, max.z, thickness },
+					{ min.x, max.y, max.z, thickness },
+				};
+
+				size_t size = sizeof(outline);
+
+				RhiBuffer buffer = pstate->frame_storage_buffer;
+				size_t storage_offset = vulkan_buffer_push(pstate->context, buffer, size, NULL);
+				size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &(float4){ 1.0f, 0.2f, 0.1f, 1.0f });
+
+				vulkan_buffer_write(
+					pstate->context,
+					pstate->frame_storage_buffer,
+					storage_offset,
+					size, outline);
+
+				float4x4 model_matrix = transform->world_matrix;
+				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
+
+				RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
+				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+				vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, storage_offset, size, buffer);
+				vulkan_uniformset_bind(pstate->context, group);
+
+				vulkan_renderer_draw(pstate->context, (sizeof(outline) / sizeof(float4)) * 6);
+			}
+		}
+
+		vulkan_drawlist_end(pstate->context);
+	}
+}
+
 FrameInfo update_and_draw(GameContext *context, float dt) {
 	PermanentState *pstate = context->permanent_memory;
 	pstate->context = context->render;
@@ -235,6 +505,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->linear_sampler = vulkan_sampler_make(pstate->context, LINEAR_SAMPLER);
 		pstate->nearest_sampler = vulkan_sampler_make(pstate->context, NEAREST_SAMPLER);
+		pstate->shadow_sampler = vulkan_sampler_make(pstate->context, SHADOW_SAMPLER);
+
 		pstate->white = vulkan_texture_make(pstate->context, 1, 1, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
 
 		uint32x2 window_size = window_size_pixel(pstate->display);
@@ -252,6 +524,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 				NULL);
 		}
+		pstate->shadow_depth_target = vulkan_texture_make(
+			pstate->context,
+			1024, 1024,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH,
+			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			NULL);
 
 		pstate->scene_arena = arena_partition(&pstate->arena, MiB(32));
 		pstate->world = pstate->editor_scene = ecs_make(pstate->scene_arena);
@@ -272,6 +550,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			.up = { 0.0f, 1.0f, 0.0f },
 			.target = { 0.0f, 0.0f, 0.0f },
 			.ortho_size = 96.0f,
+            .fov = 45.f,
 
 			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC
 		};
@@ -354,7 +633,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				ecs_hierarchy_parent(pstate->world, pickaxe_pivot, pickaxe);
 				ecs_hierarchy_parent(pstate->world, pstate->game.player, pickaxe_pivot);
 
-				pstate->game.selection = ecs_deserialize_entity(pstate->world, S("assets/scenes/selection_entity.prefab"));
+				/* pstate->game.selection = ecs_deserialize_entity(pstate->world, S("assets/scenes/selection_entity.prefab")); */
 				Entity rock = ecs_deserialize_entity(pstate->world, S("assets/scenes/rock.prefab"));
 
 				mesh_system_update(pstate->world, pstate);
@@ -523,199 +802,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 	float2 window_size = float2_from_uint2(window_size_pixel(context->display));
 	if (vulkan_frame_begin(pstate->context, window_size.x, window_size.y)) {
-		Camera *camera = pstate->camera;
-
-		float4x4 projection = float4x4_identity();
-		if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
-			projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
-		} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
-			float aspect = window_size.x / window_size.y;
-			projection = float4x4_orthographic(
-				-window_size.x / camera->ortho_size, window_size.x / camera->ortho_size,
-				-window_size.y / camera->ortho_size, window_size.y / camera->ortho_size,
-				0.1f, 1000.f);
-		}
-		projection.elements[5] *= -1;
-		float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
-
-		typedef struct {
-			float4x4 projection, view;
-			float4 camera_position;
-			float2 viewport;
-		} GlobalData;
-
-		size_t global_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData), NULL);
-		vulkan_buffer_write(
-			pstate->context, pstate->frame_uniform_buffer,
-			global_offset + offsetof(GlobalData, projection),
-			sizeof_member(GlobalData, projection), &projection);
-		vulkan_buffer_write(
-			pstate->context, pstate->frame_uniform_buffer,
-			global_offset + offsetof(GlobalData, view),
-			sizeof_member(GlobalData, view), &view);
-		vulkan_buffer_write(
-			pstate->context, pstate->frame_uniform_buffer,
-			global_offset + offsetof(GlobalData, camera_position),
-			sizeof_member(GlobalData, camera_position), &camera->position);
-		vulkan_buffer_write(
-			pstate->context, pstate->frame_uniform_buffer,
-			global_offset + offsetof(GlobalData, viewport),
-			sizeof_member(GlobalData, viewport), &window_size);
-
-		float3 light_position = { 0.0f, 20.0f, -30.0f };
-		light_position = float3_scale(float3_normalize(light_position), 20);
-		float4 light = { light_position.x, light_position.y, light_position.z, 1.0f };
-		size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4), &light);
-
-		RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
-		vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
-		vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(float4), pstate->frame_storage_buffer);
-
-		DrawListDesc main_pass = {
-			.name = S("main_pass"),
-			.color_attachments[0] = {
-			  .target = pstate->main_color_targets[pstate->current_target],
-			  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-			  .store = STORE,
-			  .load = CLEAR,
-			},
-			.color_attachment_count = 1,
-			.use_depth = true,
-			.msaa_level = 8,
-		};
-
-		if (vulkan_drawlist_begin(pstate->context, main_pass)) {
-			PipelineDesc pipeline = DEFAULT_PIPELINE;
-			/* pipeline.polygon_mode = POLYGON_MODE_LINE; */
-			pipeline.cull_mode = CULL_MODE_BACK;
-
-			// Entities
-			vulkan_shader_bind(pstate->context, pstate->phong_shader, pipeline);
-			vulkan_uniformset_bind(pstate->context, global_set);
-			EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
-
-			Entity entity = 0;
-			while ((entity = ecs_next(&iterator))) {
-				TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
-				MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
-
-				if (mesh_component->mesh_group_index == 0 || mesh_component->mesh_group_index > arena_array_count(pstate->assets.mesh_groups))
-					continue;
-				MeshGroup group = pstate->assets.mesh_groups[mesh_component->mesh_group_index];
-
-				for (uint32_t mesh_index = group.start_index; mesh_index < group.start_index + group.count; ++mesh_index) {
-					Mesh *mesh = &pstate->assets.meshes[mesh_index];
-					uint32_t material_index = pstate->assets.mesh_to_material[mesh_index];
-					Material *material = &pstate->assets.materials[material_index];
-
-					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 1);
-					vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
-					for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
-						RhiTexture texture = material->textures[texture_index];
-						if (texture.id == 0)
-							texture = pstate->white;
-
-						vulkan_uniformset_bind_texture(
-							pstate->context,
-							group,
-							1 + texture_index,
-							texture,
-							pstate->nearest_sampler);
-					}
-
-					vulkan_uniformset_bind(pstate->context, group);
-
-					float4x4 model_matrix = transform->world_matrix;
-					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
-
-					vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
-					if (mesh->index_count > 0) {
-						vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
-						vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
-					} else
-						vulkan_renderer_draw(pstate->context, mesh->vertex_count);
-				}
-			}
-
-			// Collision shapes
-			if (pstate->debug_draw_collisions) {
-				vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
-				EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(ColliderComponent));
-
-				Entity entity;
-				while ((entity = ecs_next(&iterator))) {
-					TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
-					ColliderComponent *shape = ecs_find(pstate->world, entity, ColliderComponent);
-
-					float3 min = float3_subtract(shape->aabb.center, shape->aabb.extent);
-					float3 max = float3_add(shape->aabb.center, shape->aabb.extent);
-
-					float thickness = 1.5f;
-
-					float4 outline[] = {
-						{ min.x, min.y, min.z, thickness },
-						{ min.x, max.y, min.z, thickness },
-
-						{ min.x, min.y, max.z, thickness },
-						{ min.x, max.y, max.z, thickness },
-
-						{ max.x, min.y, min.z, thickness },
-						{ max.x, max.y, min.z, thickness },
-
-						{ max.x, min.y, max.z, thickness },
-						{ max.x, max.y, max.z, thickness },
-
-						{ min.x, min.y, min.z, thickness },
-						{ min.x, min.y, max.z, thickness },
-
-						{ min.x, min.y, min.z, thickness },
-						{ max.x, min.y, min.z, thickness },
-
-						{ max.x, min.y, max.z, thickness },
-						{ max.x, min.y, min.z, thickness },
-
-						{ max.x, min.y, max.z, thickness },
-						{ min.x, min.y, max.z, thickness },
-
-						{ min.x, max.y, min.z, thickness },
-						{ min.x, max.y, max.z, thickness },
-
-						{ min.x, max.y, min.z, thickness },
-						{ max.x, max.y, min.z, thickness },
-
-						{ max.x, max.y, max.z, thickness },
-						{ max.x, max.y, min.z, thickness },
-
-						{ max.x, max.y, max.z, thickness },
-						{ min.x, max.y, max.z, thickness },
-					};
-
-					size_t size = sizeof(outline);
-
-					RhiBuffer buffer = pstate->frame_storage_buffer;
-					size_t storage_offset = vulkan_buffer_push(pstate->context, buffer, size, NULL);
-					size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &(float4){ 1.0f, 0.2f, 0.1f, 1.0f });
-
-					vulkan_buffer_write(
-						pstate->context,
-						pstate->frame_storage_buffer,
-						storage_offset,
-						size, outline);
-
-					float4x4 model_matrix = transform->world_matrix;
-					vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
-
-					RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
-					vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, storage_offset, size, buffer);
-					vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
-					vulkan_uniformset_bind(pstate->context, group);
-
-					vulkan_renderer_draw(pstate->context, (sizeof(outline) / sizeof(float4)) * 6);
-				}
-			}
-
-			vulkan_drawlist_end(pstate->context);
-		}
+		draw_shadow_pass(pstate);
+		draw_main_pass(pstate);
 
 		pstate->previous_target = pstate->current_target;
 		pstate->current_target = (pstate->current_target + 1) % countof(pstate->main_color_targets);
@@ -757,6 +845,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		};
 
 		vulkan_texture_prepare_sample(pstate->context, pstate->main_color_targets[pstate->previous_target]);
+		vulkan_texture_prepare_sample(pstate->context, pstate->shadow_depth_target);
 		if (vulkan_drawlist_begin(pstate->context, present_pass)) {
 			PipelineDesc pipeline = {
 				.cull_mode = CULL_MODE_BACK,
@@ -766,7 +855,10 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			vulkan_shader_bind(pstate->context, pstate->blit_shader, pipeline);
 
 			RhiUniformSet set = vulkan_uniformset_push(pstate->context, pstate->blit_shader, 0);
-			vulkan_uniformset_bind_texture(pstate->context, set, 0, pstate->main_color_targets[pstate->previous_target], pstate->linear_sampler);
+
+			RhiTexture output = pstate->main_color_targets[pstate->previous_target];
+			/* RhiTexture output = pstate->shadow_depth_target; */
+			vulkan_uniformset_bind_texture(pstate->context, set, 0, output, pstate->linear_sampler);
 			vulkan_uniformset_bind(pstate->context, set);
 
 			vulkan_renderer_draw(pstate->context, 6);
@@ -1443,8 +1535,8 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(selection), selection);
 
 			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, point_offset, sizeof(selection), pstate->frame_storage_buffer);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, sizeof(selection), pstate->frame_storage_buffer);
 			vulkan_uniformset_bind(pstate->context, group);
 
 			vulkan_renderer_draw(pstate->context, line_segment_count * 2 * 6);
@@ -1474,8 +1566,8 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, size, scratch.arena->base);
 
 			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, point_offset, size, pstate->frame_storage_buffer);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, size, pstate->frame_storage_buffer);
 			vulkan_uniformset_bind(pstate->context, group);
 
 			vulkan_renderer_draw(pstate->context, (slices + 1) * 2 * 6);
@@ -1537,6 +1629,22 @@ void mesh_system_update(ECS *world, PermanentState *pstate) {
 	}
 }
 
+static inline RhiShader load_shader(VulkanContext *context, String vertex, String fragment) {
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	String vertex_path = string_format(scratch.arena, "assets/shaders/vertex/bin/%.*s.vertex.spv", SARG(vertex));
+	String fragment_path = string_format(scratch.arena, "assets/shaders/fragment/bin/%.*s.fragment.spv", SARG(fragment));
+	ShaderSource source = importer_load_shader(scratch.arena, vertex_path, fragment_path);
+	RhiShader result =
+		vulkan_shader_make(
+			NULL,
+			context,
+			source.vertex, source.fragment,
+			NULL);
+
+	arena_scratch_end(scratch);
+	return result;
+}
+
 void load_assets(PermanentState *pstate) {
 	// :assets
 	ArenaTemp scratch = arena_scratch_begin(NULL);
@@ -1554,55 +1662,17 @@ void load_assets(PermanentState *pstate) {
 	UUID wall = asset_store_find(store, ASSET_TYPE_geometry, S("assets/models/kenney/modular_dungeon/room-large.glb"));
 
 	ShaderSource source = { 0 };
-	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/unlit.vert.spv"), S("assets/shaders/bin/unlit.frag.spv"));
-	pstate->unlit_shader =
-		vulkan_shader_make(
-			NULL,
-			pstate->context,
-			source.vertex, source.fragment,
-			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/phong.vert.spv"), S("assets/shaders/bin/phong.frag.spv"));
-	pstate->phong_shader =
-		vulkan_shader_make(
-			NULL,
-			pstate->context,
-			source.vertex, source.fragment,
-			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/line.vert.spv"), S("assets/shaders/bin/line.frag.spv"));
-	pstate->screenline_shader =
-		vulkan_shader_make(
-			NULL,
-			pstate->context,
-			source.vertex, source.fragment,
-			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/picker.vert.spv"), S("assets/shaders/bin/picker.frag.spv"));
-	pstate->picker_shader =
-		vulkan_shader_make(
-			NULL,
-			pstate->context,
-			source.vertex, source.fragment,
-			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/postfx.vert.spv"), S("assets/shaders/bin/postfx.frag.spv"));
-	pstate->postfx_shader =
-		vulkan_shader_make(
-			NULL,
-			pstate->context,
-			source.vertex, source.fragment,
-			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/blit.vert.spv"), S("assets/shaders/bin/blit.frag.spv"));
-	pstate->blit_shader =
-		vulkan_shader_make(
-			NULL,
-			pstate->context,
-			source.vertex, source.fragment,
-			NULL);
-	source = importer_load_shader(scratch.arena, S("assets/shaders/bin/billboard.vert.spv"), S("assets/shaders/bin/billboard.frag.spv"));
-	pstate->billboard_shader =
-		vulkan_shader_make(
-			NULL,
-			pstate->context,
-			source.vertex, source.fragment,
-			NULL);
+
+	pstate->shadow_shader = load_shader(pstate->context, S("shadow"), S("blank"));
+
+	pstate->unlit_shader = load_shader(pstate->context, S("basic"), S("unlit"));
+	pstate->picker_shader = load_shader(pstate->context, S("basic"), S("picker"));
+
+	pstate->phong_shader = load_shader(pstate->context, S("base"), S("phong"));
+	pstate->screenline_shader = load_shader(pstate->context, S("line"), S("flat"));
+
+	pstate->postfx_shader = load_shader(pstate->context, S("quad"), S("postfx"));
+	pstate->blit_shader = load_shader(pstate->context, S("quad"), S("blit"));
 	// :shader
 
 	// TODO: Import the node transforms & cache shared textures

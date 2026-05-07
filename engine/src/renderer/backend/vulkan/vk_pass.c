@@ -9,8 +9,8 @@ VkSampleCountFlags to_sample_count(uint32_t sample_count);
 
 bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 	VkExtent2D extent = {
-		context->swapchain.extent.width,
-		context->swapchain.extent.height
+		0,
+		0
 	};
 
 	bool use_msaa = desc.msaa_level > 1 && context->device.sample_count > VK_SAMPLE_COUNT_1_BIT;
@@ -39,6 +39,10 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 			dst->storeOp = (VkAttachmentStoreOp)src->store;
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
 
+			ASSERT(extent.width == 0 || extent.width > context->swapchain.extent.width);
+			ASSERT(extent.height == 0 || extent.height > context->swapchain.extent.height);
+			extent = context->swapchain.extent;
+
 			if (use_msaa) {
 				ASSERT(context->frame_target_count < countof(context->frame_targets));
 				VulkanImage *target = &context->frame_targets[context->frame_target_count++];
@@ -64,8 +68,10 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
 			dst->storeOp = (VkAttachmentStoreOp)src->store;
 
-			extent.width = MIN(extent.width, image->width);
-			extent.height = MIN(extent.height, image->height);
+			ASSERT(extent.width == 0 || extent.width > image->width);
+			ASSERT(extent.height == 0 || extent.height > image->height);
+			extent.width = image->width;
+			extent.height = image->height;
 
 			if (use_msaa) {
 				ASSERT(context->frame_target_count < countof(context->frame_targets));
@@ -88,27 +94,36 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
 
 	VkRenderingAttachmentInfo depth_info = { 0 };
 	if (desc.use_depth) {
-		VulkanImage *depth_target = NULL;
+		VulkanImage *image = NULL;
 		if (desc.depth_attachment.target.id == 0) {
-			depth_target = &context->frame_targets[context->frame_target_count++];
+			image = &context->frame_targets[context->frame_target_count++];
 			ASSERT(context->frame_target_count < countof(context->frame_targets));
 			vulkan_image_scratch_ensure(
-				context, depth_target,
+				context, image,
 				extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+			depth_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		} else {
-			VULKAN_GET_OR_RETURN(depth_target, context->image_pool, desc.depth_attachment.target, MAX_TEXTURES, true, false);
-			vulkan_image_transition_auto(depth_target, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+			VULKAN_GET_OR_RETURN(image, context->image_pool, desc.depth_attachment.target, MAX_TEXTURES, true, false);
+			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+			ASSERT(extent.width == 0 || extent.width > image->width);
+			ASSERT(extent.height == 0 || extent.height > image->height);
+			extent.width = image->width;
+			extent.height = image->height;
+
+			depth_info.loadOp = (VkAttachmentLoadOp)desc.depth_attachment.load;
+			depth_info.storeOp = (VkAttachmentStoreOp)desc.depth_attachment.store;
 		}
 
 		context->bound_pass.depth_format = context->device.depth_format;
 
 		depth_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 		depth_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		depth_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		depth_info.clearValue.depthStencil.depth = 1.0f;
 
-		depth_info.imageView = depth_target->view;
+		depth_info.imageView = image->view;
 	}
 
 	VkRenderingInfo pass_info = {

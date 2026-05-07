@@ -28,32 +28,24 @@ add_subdirectory(engine)
 
 set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/game/assets")
 if(EXISTS ${ASSETS_DIR})
-  file(GLOB_RECURSE ASSET_FILES "${ASSETS_DIR}/*.glsl")
-  foreach(ASSET_FILE ${ASSET_FILES})
-    file(RELATIVE_PATH REL_PATH "${ASSETS_DIR}" "${ASSET_FILE}")
-    get_filename_component(ASSET_DIR "${ASSET_FILE}" DIRECTORY)
-    get_filename_component(DEST_NAME "${ASSET_FILE}" NAME_WE)
+    file(GLOB_RECURSE SHADERS "${ASSETS_DIR}/*.vertex" "${ASSETS_DIR}/*.fragment")
+    foreach(SHADER ${SHADERS})
+        file(RELATIVE_PATH REL_PATH "${ASSETS_DIR}" "${SHADER}")
+        get_filename_component(ASSET_DIR "${SHADER}" DIRECTORY)
+        get_filename_component(DEST_NAME "${SHADER}" NAME)
+        set(SPV_FILE "${ASSET_DIR}/bin/${DEST_NAME}.spv")
 
-    set(VERT_SPV_FILE "${ASSET_DIR}/bin/${DEST_NAME}.vert.spv")
-    set(FRAG_SPV_FILE "${ASSET_DIR}/bin/${DEST_NAME}.frag.spv")
+        get_filename_component(REL_DIR "${REL_PATH}" DIRECTORY) 
 
-    get_filename_component(REL_DIR "${REL_PATH}" DIRECTORY) 
+        add_custom_command(
+            OUTPUT "${SPV_FILE}"
+            COMMAND glslc "${SHADER}" -o "${SPV_FILE}"
+            DEPENDS "${SHADER}"
+            COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_DIR}/bin/${DEST_NAME}.spv"
+            VERBATIM)
 
-    add_custom_command(
-      OUTPUT "${VERT_SPV_FILE}"
-      COMMAND glslc -DSHADER_STAGE_VERTEX "${ASSET_FILE}" -o "${VERT_SPV_FILE}"
-      DEPENDS "${ASSET_FILE}"
-      COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_DIR}/bin/${DEST_NAME}.vert.spv"
-      VERBATIM)
-    add_custom_command(
-      OUTPUT "${FRAG_SPV_FILE}"
-      COMMAND glslc -DSHADER_STAGE_FRAGMENT "${ASSET_FILE}" -o "${FRAG_SPV_FILE}"
-      DEPENDS "${ASSET_FILE}"
-      COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_DIR}/bin/${DEST_NAME}.frag.spv"
-      VERBATIM)
-
-    list(APPEND SHADER_OUTPUTS "${VERT_SPV_FILE}" "${FRAG_SPV_FILE}")
-  endforeach()
+        list(APPEND SHADER_OUTPUTS "${SPV_FILE}")
+    endforeach()
 
   add_custom_target(compile_shaders ALL DEPENDS ${SHADER_OUTPUTS})
 endif()

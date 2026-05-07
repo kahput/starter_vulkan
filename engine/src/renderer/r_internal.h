@@ -191,6 +191,15 @@ typedef enum sampler_address_mode {
 	SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER = 3
 } SamplerAddressMode;
 
+typedef enum sampler_border_color {
+	SAMPLER_BORDER_COLORF_TRANSPARENT_BLACK = 0,
+	SAMPLER_BORDER_COLORI_TRANSPARENT_BLACK = 1,
+	SAMPLER_BORDER_COLORF_OPAQUE_BLACK = 2,
+	SAMPLER_BORDER_COLORI_OPAQUE_BLACK = 3,
+	SAMPLER_BORDER_COLORF_OPAQUE_WHITE = 4,
+	SAMPLER_BORDER_COLORI_OPAQUE_WHITE = 5,
+} SamplerBorderColor;
+
 typedef struct sampler_desc {
 	SamplerFilter min_filter;
 	SamplerFilter mag_filter;
@@ -200,6 +209,8 @@ typedef struct sampler_desc {
 	SamplerAddressMode address_mode_u;
 	SamplerAddressMode address_mode_v;
 	SamplerAddressMode address_mode_w;
+
+	SamplerBorderColor border_color;
 
 	bool anisotropy_enable;
 } SamplerDesc;
@@ -245,14 +256,15 @@ typedef struct {
 		.topology_line_list = false,                \
 	}
 
-#define LINEAR_SAMPLER                                 \
-	(SamplerDesc) {                                    \
-		.min_filter = FILTER_LINEAR,                   \
-		.mag_filter = FILTER_LINEAR,                   \
-		.address_mode_u = SAMPLER_ADDRESS_MODE_REPEAT, \
-		.address_mode_v = SAMPLER_ADDRESS_MODE_REPEAT, \
-		.address_mode_w = SAMPLER_ADDRESS_MODE_REPEAT, \
-		.anisotropy_enable = true                      \
+#define LINEAR_SAMPLER                                      \
+	(SamplerDesc) {                                         \
+		.min_filter = FILTER_LINEAR,                        \
+		.mag_filter = FILTER_LINEAR,                        \
+		.address_mode_u = SAMPLER_ADDRESS_MODE_REPEAT,      \
+		.address_mode_v = SAMPLER_ADDRESS_MODE_REPEAT,      \
+		.address_mode_w = SAMPLER_ADDRESS_MODE_REPEAT,      \
+		.border_color = SAMPLER_BORDER_COLORF_OPAQUE_BLACK, \
+		.anisotropy_enable = true                           \
 	}
 
 #define NEAREST_SAMPLER                                       \
@@ -262,5 +274,17 @@ typedef struct {
 		.address_mode_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
 		.address_mode_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
 		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
+		.border_color = SAMPLER_BORDER_COLORF_OPAQUE_BLACK,   \
 		.anisotropy_enable = false                            \
+	}
+
+#define SHADOW_SAMPLER                                          \
+	(SamplerDesc) {                                             \
+		.min_filter = FILTER_LINEAR,                        \
+		.mag_filter = FILTER_LINEAR,                        \
+		.address_mode_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
+		.address_mode_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
+		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
+		.border_color = SAMPLER_BORDER_COLORF_OPAQUE_WHITE,     \
+		.anisotropy_enable = false                              \
 	}

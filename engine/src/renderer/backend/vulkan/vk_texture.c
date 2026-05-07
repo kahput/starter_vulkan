@@ -135,8 +135,8 @@ bool vulkan_texture_prepare_attachment(VulkanContext *context, RhiTexture image_
 	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
-								 ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-								 : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
 
@@ -147,8 +147,8 @@ bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture image_hand
 	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
-								 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-								 : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
 	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
 
@@ -197,13 +197,13 @@ RhiSampler vulkan_sampler_make(VulkanContext *context, SamplerDesc description) 
 		.mipLodBias = 0.0f,
 		.anisotropyEnable = description.anisotropy_enable,
 		.maxAnisotropy = description.anisotropy_enable
-						   ? context->device.properties.limits.maxSamplerAnisotropy
-						   : 0.0f,
+			? context->device.properties.limits.maxSamplerAnisotropy
+			: 0.0f,
 		.compareEnable = VK_FALSE,
 		.compareOp = VK_COMPARE_OP_ALWAYS,
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
-		.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+		.borderColor = (VkBorderColor)description.border_color,
 		.unnormalizedCoordinates = VK_FALSE
 	};
 

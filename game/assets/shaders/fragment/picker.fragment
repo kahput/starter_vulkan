@@ -1,0 +1,13 @@
+#version 450
+#pragma shader_stage(fragment)
+
+layout(location = 0) out uint out_id;
+
+layout(push_constant) uniform constants {
+    mat4 model;
+    uint node_id;
+} push;
+
+void main() {
+    out_id = push.node_id;
+}

@@ -78,9 +78,9 @@ MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, float 
 
 		vertices[face_index].position = positions[index];
 		vertices[face_index].normal = normals[orientation];
-		vertices[face_index].uv = uvs[face_index];
+		vertices[face_index].uv0 = uvs[face_index];
 		vertices[face_index].tangent = (float4){ 0 };
-		vertices[face_index].color = (float4){ 0 };
+		/* vertices[face_index].color = (float4){ 0 }; */
 	}
 
 	return rv;
