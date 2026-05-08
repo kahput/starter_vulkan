@@ -33,6 +33,9 @@ typedef float32x4 float4;
 #define FLOAT3_ZERO (float3){ 0.0f, 0.0f, 0.0f }
 #define FLOAT3_ONE (float3){ 1.0f, 1.0f, 1.0f }
 
+#define FLOAT4_ZERO (float4){ 0.0f, 0.0f, 0.0f, 0.0f }
+#define FLOAT4_ONE (float4){ 1.0f, 1.0f, 1.0f, 1.0f }
+
 static inline float deg2radf(float degree) { return degree * (C_PIf / 180.f); }
 static inline float rad2degf(float radians) {
 	return radians * (180.0f / C_PIf);

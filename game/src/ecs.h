@@ -56,6 +56,7 @@ void ecs_hierarchy_unparent(ECS *world, Entity entity);
 void ecs_hierarchical_despawn(ECS *world, Entity root);
 Entity ecs_hierarchical_copy(ECS *world, Entity root);
 
+// TODO: stream
 void ecs_serialize_entity(ECS *world, Entity root, String output_path);
 Entity ecs_deserialize_entity(ECS *world, String path);
 

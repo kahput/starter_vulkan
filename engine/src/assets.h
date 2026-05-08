@@ -35,6 +35,7 @@ ENGINE_API AssetStore asset_store_make(Arena *arena);
 ENGINE_API bool asset_store_track_directory(AssetStore *store, String directory);
 ENGINE_API bool asset_store_track_file(AssetStore *store, String file_path);
 
+// TODO: stream
 ENGINE_API bool asset_store_serialize(AssetStore *store, String output);
 ENGINE_API bool asset_store_deserialize(AssetStore *store, String src);
 
