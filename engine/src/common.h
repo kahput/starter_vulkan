@@ -68,6 +68,11 @@
 #define STATIC_ASSERT_PASTE_(a, b) a##b
 #define STATIC_ASSERT_PASTE(a, b) STATIC_ASSERT_PASTE_(a, b)
 
+#define WRAPPER_STRUCT(T) \
+	struct {              \
+		T wrapped;        \
+	}
+
 #define STRINGIFY(v) #v
 #define STATIC_ASSERT(COND) typedef char STATIC_ASSERT_PASTE(static_assertion_failed_at_line_, __LINE__)[(COND) ? 1 : -1]
 
@@ -136,6 +141,12 @@ typedef int32x4 int4;
 typedef struct { float min, max; } Interval;
 typedef struct { float32x2 min, max; } Interval2;
 typedef struct { float32x3 min, max; } Interval3;
+
+typedef struct { uint8_t r, g, b, a; } Color;
+
+#define rgba(r, g, b, a) (Color){r, g, b, a}
+#define rgb(r, g, b) (Color){r, g, b, 255}
+
 // clang-format on
 
 typedef struct {

@@ -24,6 +24,8 @@
 #include "scene.h"
 
 #include "ecs.h"
+#include "ui.h"
+
 #include "cgltf.h"
 #include <stdint.h>
 
@@ -191,6 +193,8 @@ typedef struct {
 		bool playing;
 	} game;
 	bool debug_draw_collisions;
+
+	UIContext ui;
 
 	Camera *camera;
 } PermanentState;
@@ -486,10 +490,6 @@ void draw_main_pass(PermanentState *pstate) {
 }
 
 typedef struct {
-	uint8_t r, g, b, a;
-} Color;
-
-typedef struct {
 	float2 position, uv;
 	uint32_t color;
 	uint32_t _pad0;
@@ -532,65 +532,6 @@ void push_rectangle(Arena *arena, float x, float y, float w, float h, Color colo
 
 void push_rectangle2(Arena *arena, float2 position, float2 size, Color color) {
 	push_rectangle(arena, position.x, position.y, size.x, size.y, color);
-}
-
-bool point_rectangle_intersection(float2 point, float rect_x, float rect_y, float rect_w, float rect_h) {
-	if (point.x < rect_x || point.x >= rect_x + rect_w ||
-		point.y < rect_y || point.y >= rect_y + rect_h)
-		return false;
-	return true;
-}
-
-#define UI_ID(index) __LINE__ + index
-
-void ui_begin(void) {
-	g_ui.mouse_position = float2_from_double2(input_mouse_position());
-	g_ui.mouse_down = input_mouse_down(MOUSE_BUTTON_LEFT);
-	g_ui.hot_item = 0;
-}
-void ui_end(void) {
-	if (g_ui.mouse_down == 0)
-		g_ui.active_item = 0;
-	else if (g_ui.active_item == 0)
-		g_ui.active_item = -1;
-}
-
-static Arena *ui_arena = NULL;
-bool ui_button(int32_t id, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
-	float2 mouse = g_ui.mouse_position;
-
-	bool hovered =
-		mouse.x >= x && mouse.x < x + w &&
-		mouse.y >= y && mouse.y < y + h;
-
-	if (hovered) {
-		g_ui.hot_item = id;
-		if (g_ui.active_item == 0 && g_ui.mouse_down)
-			g_ui.active_item = id;
-	}
-
-	push_rectangle(ui_arena, x + 8, y + 8, w, h, (Color){ 0, 0, 0, 255 });
-
-	if (g_ui.hot_item == id) {
-		if (g_ui.active_item == id) {
-			push_rectangle(ui_arena, x + 2, y + 2, w, h, (Color){ 255, 255, 255, 255 });
-		} else {
-			push_rectangle(ui_arena, x, y, w, h, (Color){ 255, 255, 255, 255 });
-		}
-	} else {
-		if (g_ui.active_item == id) {
-			push_rectangle(ui_arena, x + 2, y + 2, w, h, (Color){ 255, 255, 255, 255 });
-		} else {
-			push_rectangle(ui_arena, x, y, w, h, (Color){ 170, 170, 170, 170 });
-		}
-	}
-
-	if (g_ui.mouse_down == 0 &&
-		g_ui.hot_item == id &&
-		g_ui.active_item == id)
-		return true;
-
-	return false;
 }
 
 FrameInfo update_and_draw(GameContext *context, float dt) {
@@ -645,6 +586,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->scene_arena = arena_partition(&pstate->arena, MiB(32));
 		pstate->world = pstate->editor_scene = ecs_make(pstate->scene_arena);
+		pstate->ui = ui_make();
 		load_assets(pstate);
 
 		// Initialize entity transforms
@@ -659,6 +601,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	}
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
+	Arena *ui_arena = arena_partition(scratch.arena, MiB(4));
+	arena_put(ui_arena, uint32_t, 0);
 
 	if (input_key_pressed(KEY_CODE_P))
 		pstate->game_camera.projection = !pstate->game_camera.projection;
@@ -680,9 +624,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			pstate->world = ecs_make_copy(pstate->scene_arena, pstate->editor_scene);
 		}
 	}
-
-	ui_arena = arena_partition(scratch.arena, MiB(4));
-	arena_put(ui_arena, uint32_t, 0);
 
 	switch (pstate->state) {
 		case GAME_STATE_PLAY: {
@@ -906,14 +847,66 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 
 			// :ui game
-			ui_begin();
+			ui_frame_begin(&pstate->ui);
+			ui_container({
+			  .background_color = { 0, 0, 0, 0 },
+			  .layout = {
+				.sizing = { .width = FIXED(window_size.x), .height = FIXED(window_size.y) },
+				.padding = { 32, 32, 32, 32 },
+				.child_gap = 32,
+			  },
+			}) {
+				// This
+				ui_container({
+				  .background_color = { 255, 0, 0, 255 },
+				  .layout = {
+					.child_gap = 32,
+					.sizing = { FIXED(200), FIXED(200) },
+				  },
+				}) {
+				}
 
-			if (ui_button(UI_ID(0), 200, 200, 80, 80)) {
-				LOG_INFO("Button clicked");
-			};
-			push_rectangle(ui_arena, 0.0f, 0.0f, 100.f, 100.f, (Color){ 255, 0, 0, 255 });
+				// Vs this
+				if (ui_button(UI_ID(0), S("message"), &UI_DARK)) {
+					LOG_INFO("Button clicked");
+				}
 
-			ui_end();
+				ui_container({
+				  .background_color = { 255, 0, 255, 255 },
+				  .layout = {
+					.sizing = { .height = FIXED(255) },
+					.direction = UI_VERTICAL,
+					.padding = { 8, 8, 8, 8 },
+				  },
+				}) {
+					ui_container({
+					  .background_color = { 0, 0, 0, 255 },
+					  .layout = {
+						.sizing = { FIXED(16), FIXED(32) },
+					  },
+					}) {
+					}
+				}
+				/* ELEMENT({ */
+				/* .background_color = { 0, 255, 0, 255 }, */
+				/* .layout = { */
+				/* .sizing = { GROW, GROW }, */
+				/* }, */
+				/* }); */
+			}
+			ui_frame_end();
+
+			for (uint32_t index = 0; index < pstate->ui.previous_element_count; ++index) {
+				UIElementData *element = &pstate->ui.previous_elements[index];
+
+				push_rectangle2(ui_arena, element->position, element->size, element->color);
+			}
+
+			/* if (ui_button(UI_ID(0), 200, 200, 80, 80)) { */
+			/* 	LOG_INFO("Button clicked"); */
+			/* }; */
+			/* push_rectangle(ui_arena, 0.0f, 0.0f, 100.f, 100.f, (Color){ 255, 0, 0, 255 }); */
+
 		} break;
 
 		case GAME_STATE_EDITOR: {
@@ -951,6 +944,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 				PipelineDesc pipeline = DEFAULT_PIPELINE;
 				pipeline.cull_mode = CULL_MODE_NONE;
+				pipeline.blend_enable = true;
 
 				vulkan_shader_bind(pstate->context, pstate->batch_shader, pipeline);
 				RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->batch_shader, 0);
