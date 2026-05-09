@@ -851,42 +851,62 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			ui_container({
 			  .background_color = { 0, 0, 0, 0 },
 			  .layout = {
+				.direction = UI_VERTICAL,
 				.sizing = { .width = FIXED(window_size.x), .height = FIXED(window_size.y) },
 				.padding = { 32, 32, 32, 32 },
 				.child_gap = 32,
 			  },
 			}) {
-				// This
 				ui_container({
-				  .background_color = { 255, 0, 0, 255 },
+				  .background_color = { 0 },
 				  .layout = {
+					.sizing = { .width = GROW, .height = FIT },
 					.child_gap = 32,
-					.sizing = { FIXED(200), FIXED(200) },
 				  },
 				}) {
-				}
-
-				// Vs this
-				if (ui_button(UI_ID(0), S("message"), &UI_DARK)) {
-					LOG_INFO("Button clicked");
-				}
-
-				ui_container({
-				  .background_color = { 255, 0, 255, 255 },
-				  .layout = {
-					.sizing = { .height = FIXED(255) },
-					.direction = UI_VERTICAL,
-					.padding = { 8, 8, 8, 8 },
-				  },
-				}) {
+					// This
 					ui_container({
-					  .background_color = { 0, 0, 0, 255 },
+					  .background_color = { 255, 0, 0, 255 },
 					  .layout = {
-						.sizing = { FIXED(16), FIXED(32) },
+						.child_gap = 32,
+						.sizing = { FIXED(200), FIXED(200) },
 					  },
 					}) {
 					}
+
+					// Vs this
+					if (ui_button(UI_ID(0), S("message"), &UI_DARK)) {
+						LOG_INFO("Button clicked");
+					}
+
+					ui_container({
+					  .background_color = { 255, 0, 255, 255 },
+					  .layout = {
+						.sizing = { .height = FIXED(255) },
+						.direction = UI_VERTICAL,
+						.padding = { 8, 8, 8, 8 },
+					  },
+					}) {
+						ui_container({
+						  .background_color = { 0, 0, 0, 255 },
+						  .layout = {
+							.sizing = { FIXED(16), FIXED(32) },
+						  },
+						}) {
+						}
+					}
 				}
+
+				static float x = 0.0f;
+				ui_container({
+				  .background_color = { 0, 255, 255, 255 },
+				  .layout.sizing = { .width = GROW, .height = FIXED(32) },
+				}) {
+					if (ui_sliderf(UI_ID(0), &x, 0.0f, 10.f, &UI_DARK)) {
+						LOG_INFO("Value changed: %.2f", x);
+					}
+				}
+
 				/* ELEMENT({ */
 				/* .background_color = { 0, 255, 0, 255 }, */
 				/* .layout = { */

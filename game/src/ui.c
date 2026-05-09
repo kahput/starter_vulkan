@@ -6,13 +6,20 @@
 
 static UIContext *context = NULL;
 
+static void grow_children(UIElement *parent);
+
 UITheme UI_DARK = {
-	.panel = { 18, 18, 18, 255 },
 	.panel = { 30, 30, 30, 220 },
 	.button_idle = { 55, 55, 60, 255 },
 	.button_hover = { 80, 80, 88, 255 },
 	.button_pressed = { 100, 80, 160, 255 },
-    .button_height = 200.f,
+	.button_height = 200.f,
+	.slider_height = 32.f,
+
+	.track = { 30, 30, 30, 220 },
+	.thumb_idle = { 55, 55, 60, 255 },
+	.thumb_hover = { 80, 80, 88, 255 },
+	.thumb_pressed = { 100, 80, 160, 255 },
 	.text = { 220, 220, 220, 255 },
 	.accent = { 130, 100, 210, 255 },
 };
@@ -39,6 +46,11 @@ void ui_frame_end(void) {
 	else if (context->active_item == 0)
 		context->active_item = -1;
 
+	// Grow
+	for (uint32_t index = 1; index < context->element_count; ++index) {
+		grow_children(&context->elements[index]);
+	}
+
 	// position
 	for (uint32_t index = 1; index < context->element_count; ++index) {
 		UIElement *element = &context->elements[index];
@@ -52,7 +64,7 @@ void ui_frame_end(void) {
 
 		element->offset = float2_add(element->offset, parent->child_offset);
 
-		if (parent->description.layout.direction == UI_HORIOZONTAL)
+		if (parent->description.layout.direction == UI_HORIZONTAL)
 			parent->child_offset.x += element->size.x + parent->description.layout.child_gap;
 		else
 			parent->child_offset.y += element->size.y + parent->description.layout.child_gap;
@@ -102,118 +114,6 @@ void ui_begin_element(int32_t ui_id, UIElementDesc description) {
 	context->depth_parent[++context->current_depth] = current_index;
 }
 
-static void grow_children(UIElement *parent) {
-	if (parent->children_count == 0)
-		return;
-
-	float2 remaining_size = parent->size;
-
-	UIPadding padding = parent->description.layout.padding;
-
-	remaining_size.x -= padding.left + padding.right;
-	remaining_size.y -= padding.top + padding.bottom;
-
-	uint32_t growable[MAX_CHILDREN] = { 0 };
-	uint32_t growable_x_count = 0, growable_y_count = 0;
-	uint32_t growable_count = 0;
-
-	for (uint32_t index = 0; index < parent->children_count; ++index) {
-		UIElement *child = &context->elements[parent->children[index]];
-
-		if (parent->description.layout.direction == UI_HORIOZONTAL) {
-			remaining_size.x -= child->size.x;
-		} else
-			remaining_size.y -= child->size.y;
-
-		if (child->description.layout.sizing.width.type == UI_SIZE_GROW)
-			growable[growable_x_count++ + growable_y_count] = parent->children[index];
-		if (child->description.layout.sizing.height.type == UI_SIZE_GROW)
-			growable[growable_x_count + growable_y_count++] = parent->children[index];
-	}
-
-	if (parent->description.layout.direction == UI_HORIOZONTAL)
-		remaining_size.x -= (parent->children_count - 1) * (float)parent->description.layout.child_gap;
-	else
-		remaining_size.y -= (parent->children_count - 1) * (float)parent->description.layout.child_gap;
-
-	growable_count = growable_x_count + growable_y_count;
-	if (growable_count == 0)
-		return;
-
-	while (remaining_size.x > 0.0f) {
-		if (growable_x_count == 0)
-			break;
-		float smallest = context->elements[growable[0]].size.x;
-		float second_smallest = INFINITY;
-		float width_to_add = remaining_size.x;
-
-		for (uint32_t growable_index = 0; growable_index < growable_count; ++growable_index) {
-			UIElement *child = &context->elements[growable[growable_index]];
-			if (child->description.layout.sizing.width.type != UI_SIZE_GROW)
-				continue;
-
-			if (child->size.x < smallest) {
-				second_smallest = smallest;
-				smallest = child->size.x;
-			}
-			if (child->size.x > smallest) {
-				second_smallest = minf(second_smallest, child->size.x);
-				width_to_add = second_smallest - smallest;
-			}
-		}
-
-		width_to_add = minf(width_to_add, remaining_size.x / growable_count);
-
-		for (uint32_t growable_index = 0; growable_index < growable_count; ++growable_index) {
-			UIElement *child = &context->elements[growable[growable_index]];
-			if (child->description.layout.sizing.width.type != UI_SIZE_GROW)
-				continue;
-
-			if (child->size.x == smallest) {
-				child->size.x += width_to_add;
-				remaining_size.x -= width_to_add;
-			}
-		}
-	}
-
-	while (remaining_size.y > 0.0f) {
-		if (growable_y_count == 0)
-			break;
-
-		float smallest = context->elements[growable[0]].size.y;
-		float second_smallest = INFINITY;
-		float height_to_add = remaining_size.y;
-
-		for (uint32_t growable_index = 0; growable_index < growable_count; ++growable_index) {
-			UIElement *child = &context->elements[growable[growable_index]];
-			if (child->description.layout.sizing.height.type != UI_SIZE_GROW)
-				continue;
-
-			if (child->size.y < smallest) {
-				second_smallest = smallest;
-				smallest = child->size.y;
-			}
-			if (child->size.y > smallest) {
-				second_smallest = minf(second_smallest, child->size.y);
-				height_to_add = second_smallest - smallest;
-			}
-		}
-
-		height_to_add = minf(height_to_add, remaining_size.y / growable_count);
-
-		for (uint32_t growable_index = 0; growable_index < growable_count; ++growable_index) {
-			UIElement *child = &context->elements[growable[growable_index]];
-			if (child->description.layout.sizing.height.type != UI_SIZE_GROW)
-				continue;
-
-			if (child->size.y == smallest) {
-				child->size.y += height_to_add;
-				remaining_size.y -= height_to_add;
-			}
-		}
-	}
-}
-
 void ui_end_element(void) {
 	size_t max_elements = countof(context->elements);
 	uint32_t current_index = context->depth_parent[context->current_depth];
@@ -226,16 +126,26 @@ void ui_end_element(void) {
 	if (element->description.layout.sizing.height.type == UI_SIZE_FIT)
 		element->size.y += padding.top + padding.bottom;
 
+	if (element->children_count) {
+		float child_gap = (element->children_count - 1) * element->description.layout.child_gap;
+
+		if (element->description.layout.direction == UI_HORIZONTAL) {
+			if (element->description.layout.sizing.width.type == UI_SIZE_FIT)
+				element->size.x += child_gap;
+		} else {
+			if (element->description.layout.sizing.height.type == UI_SIZE_FIT) {
+				element->size.y += child_gap;
+			}
+		}
+	}
+
 	if (element->parent) {
 		UIElement *parent = &context->elements[element->parent];
-		float child_gap = (parent->children_count - 1) * parent->description.layout.child_gap;
 
 		switch (parent->description.layout.direction) {
-			case UI_HORIOZONTAL:
-				if (parent->description.layout.sizing.width.type == UI_SIZE_FIT) {
-					parent->size.x += child_gap;
+			case UI_HORIZONTAL:
+				if (parent->description.layout.sizing.width.type == UI_SIZE_FIT)
 					parent->size.x += element->size.x;
-				}
 				if (parent->description.layout.sizing.height.type == UI_SIZE_FIT)
 					parent->size.y = maxf(parent->size.y, element->size.y);
 				break;
@@ -243,16 +153,12 @@ void ui_end_element(void) {
 			case UI_VERTICAL:
 				if (parent->description.layout.sizing.width.type == UI_SIZE_FIT)
 					parent->size.x = maxf(parent->size.x, element->size.x);
-				if (parent->description.layout.sizing.height.type == UI_SIZE_FIT) {
-					parent->size.y += child_gap;
+				if (parent->description.layout.sizing.height.type == UI_SIZE_FIT)
 					parent->size.y += element->size.y;
-				}
 
 				break;
 		}
 	}
-
-	grow_children(element);
 	context->current_depth--;
 }
 
@@ -306,6 +212,17 @@ bool ui_pressed(int32_t id) {
 	return ui_interact(id).pressed;
 }
 
+void ui_rect(int32_t id, float2 size, Color color) {
+	ui_begin_element(id,
+		(UIElementDesc){
+		  .background_color = color,
+		  .layout = {
+			.sizing = { FIXED(size.x), FIXED(size.y) },
+		  },
+		});
+	ui_end_element();
+}
+
 bool ui_button(int32_t id, String label, UITheme *theme) {
 	UIInteraction ix = ui_interact(id);
 
@@ -321,7 +238,7 @@ bool ui_button(int32_t id, String label, UITheme *theme) {
 		  .layout = {
 			.sizing = { GROW, FIXED(theme->button_height) },
 			.padding = PAD_XY(12, 0),
-			.direction = UI_HORIOZONTAL,
+			.direction = UI_HORIZONTAL,
 		  },
 		});
 
@@ -329,4 +246,153 @@ bool ui_button(int32_t id, String label, UITheme *theme) {
 
 	ui_end_element();
 	return ix.pressed;
+}
+
+bool ui_sliderf(int32_t id, float *value, float min, float max, UITheme *theme) {
+	UIElementData *data = ui_find_previous(id);
+	UIInteraction ix = ui_interact(id);
+
+	bool changed = false;
+	if (ix.held && data) {
+		float t = (context->mouse_position.x - data->position.x) / data->size.x;
+		float newv = min + CLAMP(t, 0.0f, 1.0f) * (max - min);
+		if (newv != *value) {
+			*value = newv;
+			changed = true;
+		}
+	}
+
+	float t = (max > min) ? CLAMP((*value - min) / (max - min), 0.0f, 1.0f) : 0.0f;
+	float track_w = data ? data->size.x : 0.0f;
+	float thumb_w = theme->slider_height; // square thumb
+	float fill_w = fmaxf(0.0f, track_w * t - thumb_w);
+
+	Color thumb = ix.held ? theme->thumb_pressed
+		: ix.hovered	  ? theme->thumb_hover
+						  : theme->thumb_idle;
+
+	ui_begin_element(id, (UIElementDesc){
+						   .background_color = theme->track,
+						   .layout = {
+							 .sizing = { GROW, FIXED(theme->slider_height) },
+							 .direction = UI_HORIZONTAL,
+						   },
+						 });
+	// Fill stretches from left up to just before the thumb centre
+	ui_rect(id ^ 0x1, (float2){ fill_w, theme->slider_height }, theme->fill);
+	// Thumb sits immediately after the fill, centred on the value position
+	ui_rect(id ^ 0x2, (float2){ thumb_w, theme->slider_height }, thumb);
+	ui_end_element();
+
+	return changed;
+}
+
+void grow_children(UIElement *parent) {
+	if (parent->children_count == 0)
+		return;
+
+	// base available area inside padding
+	float2 remaining_size = parent->size;
+	UIPadding padding = parent->description.layout.padding;
+	remaining_size.x -= (padding.left + padding.right);
+	remaining_size.y -= (padding.top + padding.bottom);
+
+	bool is_horizontal = parent->description.layout.direction == UI_HORIZONTAL;
+
+	uint32_t growable_main[MAX_CHILDREN];
+	uint32_t growable_cross[MAX_CHILDREN];
+	uint32_t growable_main_count = 0;
+	uint32_t growable_cross_count = 0;
+
+	for (uint32_t index = 0; index < parent->children_count; ++index) {
+		UIElement *child = &context->elements[parent->children[index]];
+
+		bool grows_x = child->description.layout.sizing.width.type == UI_SIZE_GROW;
+		bool grows_y = child->description.layout.sizing.height.type == UI_SIZE_GROW;
+
+		if (is_horizontal) {
+			remaining_size.x -= child->size.x;
+			if (grows_x)
+				growable_main[growable_main_count++] = parent->children[index];
+			if (grows_y)
+				growable_cross[growable_cross_count++] = parent->children[index];
+		} else {
+			remaining_size.y -= child->size.y;
+			if (grows_y)
+				growable_main[growable_main_count++] = parent->children[index];
+			if (grows_x)
+				growable_cross[growable_cross_count++] = parent->children[index];
+		}
+	}
+
+	// subtract gaps on the main axis
+	float total_gap = (parent->children_count - 1) * parent->description.layout.child_gap;
+	if (is_horizontal) {
+		remaining_size.x -= total_gap;
+	} else {
+		remaining_size.y -= total_gap;
+	}
+
+	// MAIN AXIS: Equalize and distribute shared space
+	float *remaining_main = is_horizontal ? &remaining_size.x : &remaining_size.y;
+	while (*remaining_main > 0.1f && growable_main_count > 0) {
+		float smallest = INFINITY;
+
+		// find the absolute smallest size
+		for (uint32_t i = 0; i < growable_main_count; ++i) {
+			UIElement *child = &context->elements[growable_main[i]];
+			float size = is_horizontal ? child->size.x : child->size.y;
+			if (size < smallest) {
+				smallest = size;
+			}
+		}
+
+		// find the second smallest size and count how many elements share the smallest size
+		float second_smallest = INFINITY;
+		uint32_t num_smallest = 0;
+
+		for (uint32_t i = 0; i < growable_main_count; ++i) {
+			UIElement *child = &context->elements[growable_main[i]];
+			float size = is_horizontal ? child->size.x : child->size.y;
+
+			if (size == smallest) {
+				num_smallest++;
+			} else if (size > smallest && size < second_smallest) {
+				second_smallest = size;
+			}
+		}
+
+		// calculate how much space we can add to the smallest items without passing the second smallest
+		float space_needed_to_level = (second_smallest - smallest) * num_smallest;
+		float add_per_item = 0;
+
+		if (second_smallest != INFINITY && *remaining_main >= space_needed_to_level) {
+			add_per_item = second_smallest - smallest; // Level them up to second_smallest
+		} else {
+			add_per_item = *remaining_main / (float)num_smallest; // Split whatever is left
+		}
+
+		// apply the growth
+		for (uint32_t i = 0; i < growable_main_count; ++i) {
+			UIElement *child = &context->elements[growable_main[i]];
+			float *size = is_horizontal ? &child->size.x : &child->size.y;
+
+			if (*size == smallest) {
+				*size += add_per_item;
+				*remaining_main -= add_per_item;
+			}
+		}
+	}
+
+	// CROSS AXIS: Stretch to fill parent
+	float cross_space = is_horizontal ? remaining_size.y : remaining_size.x;
+
+	for (uint32_t i = 0; i < growable_cross_count; ++i) {
+		UIElement *child = &context->elements[growable_cross[i]];
+		if (is_horizontal) {
+			child->size.y = cross_space;
+		} else {
+			child->size.x = cross_space;
+		}
+	}
 }

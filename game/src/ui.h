@@ -9,7 +9,7 @@
 #define MAX_UI_ELEMENTS 1024
 
 typedef enum {
-	UI_HORIOZONTAL,
+	UI_HORIZONTAL,
 	UI_VERTICAL,
 } UIDirection;
 
@@ -129,8 +129,11 @@ bool ui_hovered(int32_t id);
 bool ui_held(int32_t id);
 bool ui_pressed(int32_t id);
 
-bool ui_button(int32_t ui_id, String label, UITheme *theme);
-bool ui_push_slider(int32_t ui_id, int32_t max, int32_t value);
+void ui_rect(int32_t id, float2 size, Color color);
+/* void ui_image(int32_t id, RhiTexture texture, float2 size, Color tint); */
+
+bool ui_button(int32_t id, String label, UITheme *theme);
+bool ui_sliderf(int32_t id, float *value, float min, float max, UITheme *theme);
 
 #define UI_ID(index) __LINE__ + index
 #define ui_container(...) for (uint8_t _ = (ui_begin_element(UI_ID(0), (WRAPPER_STRUCT(UIElementDesc)){ __VA_ARGS__ }.wrapped), 0); !_; (_++, ui_end_element()))
