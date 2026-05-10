@@ -21,7 +21,7 @@ ENGINE_API bool vulkan_renderer_on_resize(VulkanContext *context, uint32_t new_w
 ENGINE_API bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height);
 ENGINE_API bool vulkan_frame_end(VulkanContext *context);
 
-ENGINE_API bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc);
+ENGINE_API bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc);
 ENGINE_API bool vulkan_drawlist_end(VulkanContext *context);
 
 ENGINE_API bool vulkan_renderer_draw(VulkanContext *context, uint32_t vertex_count);
@@ -69,7 +69,6 @@ ENGINE_API bool vulkan_sampler_destroy(VulkanContext *context, RhiSampler sample
 ENGINE_API RhiUniformSet vulkan_uniformset_push(VulkanContext *context, RhiShader shader, uint32_t set_number); // Transient
 ENGINE_API bool vulkan_uniformset_bind_buffer(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer);
 ENGINE_API bool vulkan_uniformset_bind_buffer_range(VulkanContext *context, RhiUniformSet set, uint32_t binding, size_t offset, size_t size, RhiBuffer buffer);
-ENGINE_API bool vulkan_uniformset_bind_buffer_array_index(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer, uint32_t index);
 ENGINE_API bool vulkan_uniformset_bind_texture(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiTexture texture, RhiSampler sampler);
 ENGINE_API bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet uniform);
 

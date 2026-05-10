@@ -4,6 +4,7 @@
 #include "assets/json_parser.h"
 #include "assets/mesh_source.h"
 
+#include "commands.h"
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
@@ -48,25 +49,9 @@ typedef enum {
 } GameState;
 
 typedef struct {
-	// NOTE: Might want to allow for storing vertex/index buffer separately
-	RhiBuffer buffer;
-
-	size_t vertex_offset, vertex_count;
-	size_t index_offset, index_count;
-} Mesh;
-
-typedef struct {
 	UUID id;
 	uint32_t start_index, count;
 } MeshGroup;
-
-typedef struct {
-	RhiBuffer uniform_buffer;
-	size_t offset, size;
-
-	RhiTexture textures[16];
-	uint32_t texture_count;
-} Material;
 
 // EDITOR
 typedef enum {
@@ -142,7 +127,7 @@ typedef struct {
 	RhiShader shadow_shader;
 	RhiShader unlit_shader, phong_shader;
 	RhiShader screenline_shader, picker_shader;
-	RhiShader batch_shader;
+	RhiShader quad_shader, quad_textured_shader;
 
 	RhiShader postfx_shader, blit_shader, composite_shader;
 	// :shader
@@ -154,11 +139,8 @@ typedef struct {
 	RhiBuffer scene_geometry_buffer;
 
 	RhiTexture shadow_depth_target;
-	RhiTexture main_color_targets[2];
+	RhiTexture main_color_target;
 	RhiTexture ui_color_target;
-
-	/* RhiTexture main_depth_target; */
-	uint32_t previous_target, current_target;
 	RhiTexture picker_target;
 
 	GameState state;
@@ -208,6 +190,8 @@ void load_assets(PermanentState *state);
 void transform_system_update(ECS *world);
 void mesh_system_update(ECS *world, PermanentState *pstate);
 
+void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc desc);
+
 bool window_resize(EventCode code, void *event, void *receiver) {
 	WindowResizeEvent *resize_event = event;
 	PermanentState *pstate = receiver;
@@ -215,8 +199,7 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 	vulkan_renderer_on_resize(pstate->context, resize_event->width, resize_event->height);
 	vulkan_texture_resize(pstate->context, pstate->picker_target, resize_event->width, resize_event->height);
 	vulkan_texture_resize(pstate->context, pstate->ui_color_target, resize_event->width, resize_event->height);
-	for (uint32_t index = 0; index < countof(pstate->main_color_targets); ++index)
-		vulkan_texture_resize(pstate->context, pstate->main_color_targets[index], resize_event->width, resize_event->height);
+	vulkan_texture_resize(pstate->context, pstate->main_color_target, resize_event->width, resize_event->height);
 
 	return false;
 }
@@ -240,7 +223,7 @@ void draw_shadow_pass(PermanentState *pstate) {
 	float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
 	light_matrix = float4x4_multiply(projection, view);
 
-	DrawListDesc shadow_pass = {
+	DrawlistDesc shadow_pass = {
 		.name = S("shadow_pass"),
 		.depth_attachment = {
 		  .target = pstate->shadow_depth_target,
@@ -272,9 +255,9 @@ void draw_shadow_pass(PermanentState *pstate) {
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), float4x4_multiply(projection, view).elements);
 				vulkan_push_constants(pstate->context, sizeof(float4x4), sizeof(float4x4), transform->world_matrix.elements);
 
-				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
+				vulkan_buffer_bind_vertex(pstate->context, mesh->handle, mesh->vertex_offset);
 				if (mesh->index_count > 0) {
-					vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
+					vulkan_buffer_bind_index(pstate->context, mesh->handle, mesh->index_offset);
 					vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 				} else
 					vulkan_renderer_draw(pstate->context, mesh->vertex_count);
@@ -284,7 +267,8 @@ void draw_shadow_pass(PermanentState *pstate) {
 		vulkan_drawlist_end(pstate->context);
 	}
 }
-void draw_main_pass(PermanentState *pstate) {
+
+void draw_main_pass(PermanentState *pstate, DrawlistBuffer *list) {
 	Camera *camera = pstate->camera;
 
 	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
@@ -342,10 +326,10 @@ void draw_main_pass(PermanentState *pstate) {
 	vulkan_uniformset_bind_texture(pstate->context, global_set, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
 
 	// :main_pass
-	DrawListDesc main_pass = {
+	DrawlistDesc main_pass = {
 		.name = S("main_pass"),
 		.color_attachments[0] = {
-		  .target = pstate->main_color_targets[pstate->current_target],
+		  .target = pstate->main_color_target,
 		  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
 		  .store = STORE,
 		  .load = CLEAR,
@@ -379,7 +363,11 @@ void draw_main_pass(PermanentState *pstate) {
 				uint32_t material_index = pstate->assets.mesh_to_material[mesh_index];
 				Material *material = &pstate->assets.materials[material_index];
 
+				RhiShader shader = material->shader;
+
 				RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 1);
+
+				// TODO: ASSERT on this in the reflection code
 				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
 				for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
 					RhiTexture texture = material->textures[texture_index];
@@ -397,11 +385,14 @@ void draw_main_pass(PermanentState *pstate) {
 				vulkan_uniformset_bind(pstate->context, group);
 
 				float4x4 model_matrix = transform->world_matrix;
+
+				ASSERT(material->uniform_buffer.id);
+				drawlist_push_mesh(list, model_matrix, *mesh, *material);
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
-				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
+				vulkan_buffer_bind_vertex(pstate->context, mesh->handle, mesh->vertex_offset);
 				if (mesh->index_count > 0) {
-					vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
+					vulkan_buffer_bind_index(pstate->context, mesh->handle, mesh->index_offset);
 					vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 				} else
 					vulkan_renderer_draw(pstate->context, mesh->vertex_count);
@@ -499,41 +490,6 @@ static inline uint32_t color_pack(Color c) {
 	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);
 }
 
-void push_rectangle(Arena *arena, float x, float y, float w, float h, Color color) {
-	*((uint32_t *)arena->base) += 1;
-
-	float x0 = x;
-	float y0 = y;
-	float x1 = x + w;
-	float y1 = y + h;
-
-	float u0 = 0.0f;
-	float v0 = 0.0f;
-	float u1 = 1.0f;
-	float v1 = 1.0f;
-
-	uint32_t packed = color_pack(color);
-
-	// clang-format off
-    Vertex2 quad[] = {
-        // pos      // tex
-		(Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
-        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed},
-        (Vertex2){.position = {x0, y0}, .uv = {u0, v0}, .color = packed}, 
-
-        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
-        (Vertex2){.position = {x1, y1}, .uv = {u1, v1}, .color = packed},
-        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed}
-    };
-
-	// clang-format on
-	arena_push_copy(arena, quad, sizeof(quad), alignof(Vertex2));
-}
-
-void push_rectangle2(Arena *arena, float2 position, float2 size, Color color) {
-	push_rectangle(arena, position.x, position.y, size.x, size.y, color);
-}
-
 FrameInfo update_and_draw(GameContext *context, float dt) {
 	PermanentState *pstate = context->permanent_memory;
 	pstate->context = context->render;
@@ -563,14 +519,14 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_R32,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_READBACK,
 			NULL);
-		for (uint32_t index = 0; index < countof(pstate->main_color_targets); ++index) {
-			pstate->main_color_targets[index] = vulkan_texture_make(
-				pstate->context,
-				window_size.x, window_size.y,
-				TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
-				TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
-				NULL);
-		}
+
+		pstate->main_color_target = vulkan_texture_make(
+			pstate->context,
+			window_size.x, window_size.y,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
+			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			NULL);
+
 		pstate->shadow_depth_target = vulkan_texture_make(
 			pstate->context,
 			1024, 1024,
@@ -601,8 +557,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	}
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	Arena *ui_arena = arena_partition(scratch.arena, MiB(4));
-	arena_put(ui_arena, uint32_t, 0);
+	DrawlistBuffer *ui_pass = drawlist_make(scratch.arena, MiB(1));
+	DrawlistBuffer *main_pass = drawlist_make(scratch.arena, MiB(2));
 
 	if (input_key_pressed(KEY_CODE_P))
 		pstate->game_camera.projection = !pstate->game_camera.projection;
@@ -864,7 +820,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					.child_gap = 32,
 				  },
 				}) {
-					// This
 					ui_container({
 					  .background_color = { 255, 0, 0, 255 },
 					  .layout = {
@@ -897,15 +852,16 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					}
 				}
 
-				static float x = 0.0f;
+				static uint8_t tint = 255;
+
 				ui_container({
-				  .background_color = { 0, 255, 255, 255 },
-				  .layout.sizing = { .width = GROW, .height = FIXED(32) },
+				  .layout.direction = UI_HORIZONTAL,
+				  .layout.sizing = { .width = GROW },
 				}) {
-					if (ui_sliderf(UI_ID(0), &x, 0.0f, 10.f, &UI_DARK)) {
-						LOG_INFO("Value changed: %.2f", x);
-					}
+					tint = (uint8_t)ui_sliderf(UI_ID(0), (float)tint, 0.f, 255.f, &UI_DARK);
 				}
+
+				ui_image(UI_ID(0), pstate->assets.textures[1], (float2){ 100, 100 }, rgb(tint, tint, tint));
 
 				/* ELEMENT({ */
 				/* .background_color = { 0, 255, 0, 255 }, */
@@ -914,12 +870,18 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				/* }, */
 				/* }); */
 			}
-			ui_frame_end();
+			ui_frame_end(ui_pass);
 
 			for (uint32_t index = 0; index < pstate->ui.previous_element_count; ++index) {
 				UIElementData *element = &pstate->ui.previous_elements[index];
 
-				push_rectangle2(ui_arena, element->position, element->size, element->color);
+				if (element->image.id) {
+					uint2 image_size = vulkan_texture_size(pstate->context, element->image);
+					Rectangle src = { 0, 0, image_size.x, image_size.y };
+					Rectangle dst = { element->position.x, element->position.y, element->size.x, element->size.y };
+					drawlist_push_texture_ex(ui_pass, element->image, src, dst, (float2){ 0 }, 0.0f, element->color);
+				} else
+					drawlist_push_rectv(ui_pass, element->position, element->size, element->color);
 			}
 
 			/* if (ui_button(UI_ID(0), 200, 200, 80, 80)) { */
@@ -941,11 +903,28 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	if (vulkan_frame_begin(pstate->context, window_size.x, window_size.y)) {
 		// :pass
 		draw_shadow_pass(pstate);
-		draw_main_pass(pstate);
+		draw_main_pass(pstate, main_pass);
+
+		DrawlistDesc main_pass_desc = {
+			.name = S("main_pass"),
+			.color_attachments[0] = {
+			  .target = pstate->main_color_target,
+			  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+			  .store = STORE,
+			  .load = CLEAR,
+			},
+			.color_attachment_count = 1,
+			.use_depth = true,
+			.msaa_level = 8,
+		};
+		pass_submit(pstate, main_pass, main_pass_desc);
 
 		// :pass
 		// :ui draw
-		DrawListDesc ui_pass = {
+		if (pstate->state == GAME_STATE_EDITOR)
+			editor_draw(pstate, &pstate->editor);
+
+		DrawlistDesc ui_pass_desc = {
 			.color_attachments[0] = {
 			  .target = pstate->ui_color_target,
 			  .load = CLEAR,
@@ -954,45 +933,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			},
 			.color_attachment_count = 1,
 		};
+		pass_submit(pstate, ui_pass, ui_pass_desc);
 
-		if (vulkan_drawlist_begin(pstate->context, ui_pass)) {
-			uint32_t draw_count = *(uint32_t *)ui_arena->base;
-			if (draw_count) {
-				float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
-				float4x4 view = float4x4_identity();
-				float4x4 view_projection = float4x4_multiply(projection, view);
-
-				PipelineDesc pipeline = DEFAULT_PIPELINE;
-				pipeline.cull_mode = CULL_MODE_NONE;
-				pipeline.blend_enable = true;
-
-				vulkan_shader_bind(pstate->context, pstate->batch_shader, pipeline);
-				RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->batch_shader, 0);
-
-				size_t global_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4x4), view_projection.elements);
-				vulkan_uniformset_bind_buffer_range(pstate->context, set0, 0, global_data_offset, sizeof(float4x4), pstate->frame_uniform_buffer);
-
-				void *data = (uint8_t *)ui_arena->base + sizeof(uint32_t);
-				size_t offset = ui_arena->offset - sizeof(uint32_t);
-				size_t vertex_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, offset, data);
-				vulkan_uniformset_bind_buffer_range(pstate->context, set0, 1, vertex_data_offset, offset, pstate->frame_storage_buffer);
-				vulkan_uniformset_bind(pstate->context, set0);
-
-				/* RhiUniformSet set1 = vulkan_uniformset_push(pstate->context, pstate->batch_shader, 1); */
-				/* float4 color = { 0.0f, 0.0f, 0.0f, 1.0f }; */
-				/* size_t color_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color); */
-				/* vulkan_uniformset_bind_buffer_range(pstate->context, set1, 0, color_offset, sizeof(float4), pstate->frame_uniform_buffer); */
-				/* vulkan_uniformset_bind(pstate->context, set1); */
-
-				vulkan_renderer_draw(pstate->context, draw_count * 6);
-			}
-			vulkan_drawlist_end(pstate->context);
-		}
-
-		if (pstate->state == GAME_STATE_EDITOR)
-			editor_draw(pstate, &pstate->editor);
-
-		DrawListDesc present_pass = {
+		DrawlistDesc present_pass = {
 			.color_attachments[0] = {
 			  .clear.color = { 1.0f, 0.0f, 1.0f, 1.0f },
 			  .load = CLEAR,
@@ -1001,7 +944,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			.color_attachment_count = 1,
 		};
 
-		vulkan_texture_prepare_sample(pstate->context, pstate->main_color_targets[pstate->previous_target]);
+		vulkan_texture_prepare_sample(pstate->context, pstate->main_color_target);
 		vulkan_texture_prepare_sample(pstate->context, pstate->ui_color_target);
 		if (vulkan_drawlist_begin(pstate->context, present_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
@@ -1012,7 +955,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			/* RhiTexture output = pstate->ui_color_target; */
 			/* RhiTexture output = pstate->shadow_depth_target; */
 
-			RhiTexture layer0 = pstate->main_color_targets[pstate->previous_target];
+			RhiTexture layer0 = pstate->main_color_target;
 			RhiTexture layer1 = pstate->ui_color_target;
 			vulkan_uniformset_bind_texture(pstate->context, set0, 0, layer0, pstate->linear_sampler);
 			vulkan_uniformset_bind_texture(pstate->context, set0, 1, layer1, pstate->linear_sampler);
@@ -1023,15 +966,11 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			vulkan_drawlist_end(pstate->context);
 		}
 
-		pstate->previous_target = 0;
-		pstate->current_target = 0;
-
 		vulkan_frame_end(pstate->context);
 	}
 
 	vulkan_buffer_reset(pstate->context, pstate->frame_storage_buffer);
 	vulkan_buffer_reset(pstate->context, pstate->frame_uniform_buffer);
-	pstate->current_target = pstate->previous_target = 0;
 
 	/* LOG_INFO("FPS = %.2f", 1 / dt); */
 
@@ -1513,7 +1452,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
 	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(float4), pstate->frame_storage_buffer);
 
-	DrawListDesc picker_pass = {
+	DrawlistDesc picker_pass = {
 		.color_attachments[0] = {
 		  .target = pstate->picker_target,
 		  .clear.color = { 0 },
@@ -1546,9 +1485,9 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 				float4x4 model_matrix = transform->world_matrix;
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
-				vulkan_buffer_bind_vertex(pstate->context, mesh->buffer, mesh->vertex_offset);
+				vulkan_buffer_bind_vertex(pstate->context, mesh->handle, mesh->vertex_offset);
 				if (mesh->index_count > 0) {
-					vulkan_buffer_bind_index(pstate->context, mesh->buffer, mesh->index_offset);
+					vulkan_buffer_bind_index(pstate->context, mesh->handle, mesh->index_offset);
 					vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
 				} else
 					vulkan_renderer_draw(pstate->context, mesh->vertex_count);
@@ -1557,9 +1496,9 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		vulkan_drawlist_end(pstate->context);
 	}
 
-	DrawListDesc debug_lines_pass = {
+	DrawlistDesc debug_lines_pass = {
 		.color_attachments[0] = {
-		  .target = pstate->main_color_targets[pstate->current_target],
+		  .target = pstate->main_color_target,
 		  .load = LOAD,
 		  .store = STORE,
 		},
@@ -1734,9 +1673,6 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 		vulkan_drawlist_end(pstate->context);
 	}
-
-	pstate->previous_target = pstate->current_target;
-	pstate->current_target = (pstate->current_target + 1) % countof(pstate->main_color_targets);
 }
 
 static inline void calculate_transforms(ECS *world, Entity entity, float4x4 parent_global) {
@@ -1830,7 +1766,8 @@ void load_assets(PermanentState *pstate) {
 
 	pstate->postfx_shader = load_shader(pstate->context, S("quad"), S("postfx"));
 	pstate->blit_shader = load_shader(pstate->context, S("quad"), S("blit"));
-	pstate->batch_shader = load_shader(pstate->context, S("batch"), S("vertex_color"));
+	pstate->quad_shader = load_shader(pstate->context, S("batch"), S("vertex_color"));
+	pstate->quad_textured_shader = load_shader(pstate->context, S("batch"), S("textured"));
 	pstate->composite_shader = load_shader(pstate->context, S("quad"), S("composite"));
 	// :shader
 
@@ -1861,6 +1798,7 @@ void load_assets(PermanentState *pstate) {
 	arena_darray_push(scratch.arena, mesh_group_bounds, Interval3); // 0 == invalid
 	arena_darray_push(scratch.arena, textures, RhiTexture); // 0 == default
 	Material *default_mat = arena_darray_push(scratch.arena, materials, Material); // 0 == default
+	default_mat->shader = pstate->phong_shader;
 	MaterialParameters parameters = {
 		.base_color_factor = default_properties[5].as.float32x4,
 		.metallic_factor = default_properties[6].as.float32x1,
@@ -1900,6 +1838,7 @@ void load_assets(PermanentState *pstate) {
 		for (uint32_t material_index = 0; material_index < model->material_count; ++material_index) {
 			MaterialSource *src = &model->materials[material_index];
 			Material *dst = arena_darray_push(scratch.arena, materials, Material);
+			dst->shader = pstate->phong_shader;
 			dst->uniform_buffer = pstate->scene_uniform_buffer;
 
 			MaterialParameters parameters = {
@@ -1940,7 +1879,7 @@ void load_assets(PermanentState *pstate) {
 			if (vertices_size == 0 && indices_size == 0)
 				continue;
 
-			dst->buffer = pstate->scene_geometry_buffer;
+			dst->handle = pstate->scene_geometry_buffer;
 
 			dst->vertex_offset = vertex_offset;
 			dst->index_offset = index_offset;
@@ -1987,7 +1926,7 @@ void load_assets(PermanentState *pstate) {
 		arena_darray_put(scratch.arena, mesh_groups, MeshGroup, group);
 
 		Mesh *cube_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
-		cube_mesh->buffer = pstate->scene_geometry_buffer;
+		cube_mesh->handle = pstate->scene_geometry_buffer;
 		cube_mesh->vertex_count = cube.vertex_count;
 		cube_mesh->vertex_offset = geometry_upload_arena->offset;
 		arena_push_copy(geometry_upload_arena, cube.vertices, cube.vertex_size * cube.vertex_count, 1);
@@ -2010,7 +1949,7 @@ void load_assets(PermanentState *pstate) {
 		arena_darray_put(scratch.arena, mesh_groups, MeshGroup, group);
 
 		Mesh *quad_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
-		quad_mesh->buffer = pstate->scene_geometry_buffer;
+		quad_mesh->handle = pstate->scene_geometry_buffer;
 		quad_mesh->vertex_count = quad_src.vertex_count;
 		quad_mesh->vertex_offset = geometry_upload_arena->offset;
 		arena_push_copy(geometry_upload_arena, quad_src.vertices, quad_src.vertex_size * quad_src.vertex_count, 1);
@@ -2032,4 +1971,276 @@ void load_assets(PermanentState *pstate) {
 
 	asset_store_serialize(store, S("assets/asset_manifest.json"));
 	arena_scratch_end(scratch);
+}
+
+static inline void push_rect(Arena *arena, float x, float y, float w, float h, Color color) {
+	float x0 = x;
+	float y0 = y;
+	float x1 = x + w;
+	float y1 = y + h;
+
+	float u0 = 0.0f;
+	float v0 = 0.0f;
+	float u1 = 1.0f;
+	float v1 = 1.0f;
+
+	uint32_t packed = color_pack(color);
+
+	// clang-format off
+    Vertex2 quad[] = {
+        // pos      // tex
+        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
+        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed},
+        (Vertex2){.position = {x0, y0}, .uv = {u0, v0}, .color = packed}, 
+
+        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
+        (Vertex2){.position = {x1, y1}, .uv = {u1, v1}, .color = packed},
+        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed}
+    };
+	// clang-format on
+
+	arena_push_copy(arena, quad, sizeof(quad), alignof(Vertex2));
+}
+
+static inline void push_texture(Arena *arena, Rectangle src, Rectangle dst, uint2 image_size, Color tint) {
+	float x0 = dst.x;
+	float y0 = dst.y;
+	float x1 = dst.x + dst.width;
+	float y1 = dst.y + dst.height;
+
+	float u0 = src.x / image_size.x;
+	float v0 = src.y / image_size.y;
+	float u1 = (src.x + src.width) / image_size.x;
+	float v1 = (src.y + src.height) / image_size.y;
+
+	uint32_t packed = color_pack(tint);
+
+	// clang-format off
+    Vertex2 quad[] = {
+        // pos      // tex
+        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
+        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed},
+        (Vertex2){.position = {x0, y0}, .uv = {u0, v0}, .color = packed}, 
+
+        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
+        (Vertex2){.position = {x1, y1}, .uv = {u1, v1}, .color = packed},
+        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed}
+    };
+	// clang-format on
+
+	arena_push_copy(arena, quad, sizeof(quad), alignof(Vertex2));
+}
+
+void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc desc) {
+	vulkan_texture_prepare_sample(pstate->context, pstate->shadow_depth_target);
+	if (vulkan_drawlist_begin(pstate->context, desc)) {
+		for (size_t base_address = 0; base_address < buffer->offset;) {
+			DrawCommandBase *base = (DrawCommandBase *)buffer->push_buffer + base_address;
+			if (base->type == 0)
+				break;
+
+			switch (base->type) {
+				case DCT_DrawCommandRectangle: {
+					ArenaTemp scratch = arena_scratch_begin(NULL);
+					uint32_t rect_count = 0;
+					while (base_address < buffer->capacity && base->type == DCT_DrawCommandRectangle) {
+						DrawCommandRectangle *cmd = (DrawCommandRectangle *)base;
+
+						float x = cmd->rect.x - cmd->origin.x;
+						float y = cmd->rect.y - cmd->origin.y;
+						push_rect(scratch.arena, x, y, cmd->rect.width, cmd->rect.height, cmd->color);
+
+						rect_count++;
+						base_address += base->size;
+						base = (DrawCommandBase *)buffer->push_buffer + base_address;
+					}
+
+					size_t vertex_data_size = rect_count * 6 * sizeof(Vertex2);
+					size_t vertex_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, vertex_data_size, (uint8_t *)scratch.arena->base + scratch.position);
+
+					uint2 window_size = window_size_pixel(pstate->display);
+					float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
+					float4x4 view = float4x4_identity();
+					float4x4 view_projection = float4x4_multiply(projection, view);
+
+					PipelineDesc pipeline = DEFAULT_PIPELINE;
+					pipeline.cull_mode = CULL_MODE_NONE;
+					pipeline.blend_enable = true;
+
+					vulkan_shader_bind(pstate->context, pstate->quad_shader, pipeline);
+					RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->quad_shader, 0);
+
+					size_t global_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4x4), view_projection.elements);
+					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 0, global_data_offset, sizeof(float4x4), pstate->frame_uniform_buffer);
+
+					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 1, vertex_offset, vertex_data_size, pstate->frame_storage_buffer);
+					vulkan_uniformset_bind(pstate->context, set0);
+
+					vulkan_renderer_draw(pstate->context, rect_count * 6);
+
+					arena_scratch_end(scratch);
+				} break;
+				case DCT_DrawCommandTexture: {
+					DrawCommandTexture *cmd_last = (DrawCommandTexture *)base;
+					RhiTexture texture = cmd_last->texture;
+
+					ArenaTemp scratch = arena_scratch_begin(NULL);
+					uint32_t textured_rect_count = 0;
+					while (base_address < buffer->capacity && base->type == DCT_DrawCommandTexture) {
+						base = (DrawCommandBase *)buffer->push_buffer + base_address;
+						DrawCommandTexture *cmd = (DrawCommandTexture *)base;
+						if (cmd->texture.id != texture.id) {
+							break;
+						}
+
+						uint2 image_size = vulkan_texture_size(pstate->context, cmd->texture);
+
+						Rectangle dst = {
+							.x = cmd->dest.x + cmd->origin.x,
+							.y = cmd->dest.y + cmd->origin.y,
+							.width = cmd->dest.width,
+							.height = cmd->dest.height,
+						};
+						push_texture(scratch.arena, cmd->src, dst, image_size, cmd->tint);
+
+						textured_rect_count++;
+						base_address += base->size;
+					}
+
+					size_t vertex_data_size = textured_rect_count * 6 * sizeof(Vertex2);
+					size_t vertex_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, vertex_data_size, (uint8_t *)scratch.arena->base + scratch.position);
+
+					uint2 window_size = window_size_pixel(pstate->display);
+					float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
+					float4x4 view = float4x4_identity();
+					float4x4 view_projection = float4x4_multiply(projection, view);
+
+					PipelineDesc pipeline = DEFAULT_PIPELINE;
+					pipeline.cull_mode = CULL_MODE_NONE;
+					pipeline.blend_enable = true;
+
+					vulkan_shader_bind(pstate->context, pstate->quad_textured_shader, pipeline);
+					RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->quad_shader, 0);
+
+					size_t global_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4x4), view_projection.elements);
+					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 0, global_data_offset, sizeof(float4x4), pstate->frame_uniform_buffer);
+
+					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 1, vertex_offset, vertex_data_size, pstate->frame_storage_buffer);
+					vulkan_uniformset_bind(pstate->context, set0);
+
+					RhiUniformSet set1 = vulkan_uniformset_push(pstate->context, pstate->quad_textured_shader, 1);
+					vulkan_uniformset_bind_texture(pstate->context, set1, 0, texture, pstate->nearest_sampler);
+					vulkan_uniformset_bind(pstate->context, set1);
+
+					vulkan_renderer_draw(pstate->context, textured_rect_count * 6);
+
+					arena_scratch_end(scratch);
+				} break;
+
+				case DCT_DrawCommandMesh: {
+					Camera *camera = pstate->camera;
+
+					float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
+					float4x4 projection = float4x4_identity();
+					if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
+						projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
+					} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
+						float aspect = window_size.x / window_size.y;
+						projection = float4x4_orthographic(
+							-window_size.x / camera->ortho_size, window_size.x / camera->ortho_size,
+							-window_size.y / camera->ortho_size, window_size.y / camera->ortho_size,
+							0.1f, 1000.f);
+					}
+					projection.elements[5] *= -1;
+					float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
+
+					typedef struct {
+						float4x4 projection, view;
+						float4 camera_position;
+						float2 viewport;
+					} GlobalData;
+
+					size_t global_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData), NULL);
+					vulkan_buffer_write(
+						pstate->context, pstate->frame_uniform_buffer,
+						global_offset + offsetof(GlobalData, projection),
+						sizeof_member(GlobalData, projection), &projection);
+					vulkan_buffer_write(
+						pstate->context, pstate->frame_uniform_buffer,
+						global_offset + offsetof(GlobalData, view),
+						sizeof_member(GlobalData, view), &view);
+					vulkan_buffer_write(
+						pstate->context, pstate->frame_uniform_buffer,
+						global_offset + offsetof(GlobalData, camera_position),
+						sizeof_member(GlobalData, camera_position), &camera->position);
+					vulkan_buffer_write(
+						pstate->context, pstate->frame_uniform_buffer,
+						global_offset + offsetof(GlobalData, viewport),
+						sizeof_member(GlobalData, viewport), &window_size);
+
+					LightData light = {
+						.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+						.position = { 0.0f, 20.0f, -30.0f },
+						.constant_attenuation = 1.0f,
+						.light_matrix = light_matrix,
+
+					};
+					size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(LightData), &light);
+
+					RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
+					vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
+					vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
+					vulkan_uniformset_bind_texture(pstate->context, global_set, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
+
+					PipelineDesc pipeline = DEFAULT_PIPELINE;
+					pipeline.cull_mode = CULL_MODE_BACK;
+
+					while (base_address < buffer->capacity && base->type == DCT_DrawCommandMesh) {
+						DrawCommandMesh *cmd = (DrawCommandMesh *)base;
+
+						// TODO: ASSERT on this in the reflection code
+						Material *material = &cmd->material;
+						Mesh *mesh = &cmd->mesh;
+
+						vulkan_shader_bind(pstate->context, material->shader, pipeline);
+						vulkan_uniformset_bind(pstate->context, global_set);
+
+						RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 1);
+
+						vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
+						for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
+							RhiTexture texture = material->textures[texture_index];
+							if (texture.id == 0)
+								texture = pstate->white;
+
+							vulkan_uniformset_bind_texture(
+								pstate->context,
+								group,
+								1 + texture_index,
+								texture,
+								pstate->nearest_sampler);
+						}
+
+						vulkan_uniformset_bind(pstate->context, group);
+						vulkan_push_constants(pstate->context, 0, sizeof(float4x4), cmd->world_from_model.elements);
+
+						vulkan_buffer_bind_vertex(pstate->context, mesh->handle, mesh->vertex_offset);
+						if (mesh->index_count > 0) {
+							vulkan_buffer_bind_index(pstate->context, mesh->handle, mesh->index_offset);
+							vulkan_renderer_draw_indexed(pstate->context, mesh->index_count);
+						} else
+							vulkan_renderer_draw(pstate->context, mesh->vertex_count);
+
+						base_address += base->size;
+						base = (DrawCommandBase *)buffer->push_buffer + base_address;
+					}
+
+				} break;
+				default:
+					INVALID_PATH;
+			}
+		}
+
+		vulkan_drawlist_end(pstate->context);
+	}
 }

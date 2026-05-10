@@ -45,6 +45,7 @@ static inline void arena_scratch_end(ArenaTemp scratch) { arena_temp_end(scratch
 #define arena_push_count(arena, count, T) ((T *)arena_push((arena), sizeof(T) * (count), alignof(T), true))
 #define arena_push_struct(arena, T) ((T *)arena_push((arena), sizeof(T), alignof(T), true))
 #define arena_push_pool(arena, capacity, T) pool_create((arena), sizeof(T), alignof(T), capacity, true)
+#define arena_push_size(arena, size) (uint8_t*)arena_push((arena), size, 1, true)
 
 typedef struct arena_trie_node {
 	struct arena_trie_node *children[4];
@@ -150,9 +151,9 @@ ENGINE_API void *arena_array_ensure(Arena *arena, void *arr, size_t item_size, u
 #define arena_darray_push(arena, arr, T)                       \
 	((arr) = arena_array_ensure((arena), (arr), sizeof(T), 1), \
 		arena_array_push(arr))
-#define arena_darray_put(arena, arr, T, ...)                     \
-	do {                                                         \
+#define arena_darray_put(arena, arr, T, ...)                      \
+	do {                                                          \
 		(arr) = arena_array_ensure((arena), (arr), sizeof(T), 1); \
-			T _val = __VA_ARGS__;                                \
-		(arr)[HEADER(arr, ArenaArrayHeader)->count++] = _val;    \
+		T _val = __VA_ARGS__;                                     \
+		(arr)[HEADER(arr, ArenaArrayHeader)->count++] = _val;     \
 	} while (0)

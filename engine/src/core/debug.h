@@ -16,6 +16,7 @@
 	#define ASSERT(condition) ((void)0)
 	#define ASSERT_MESSAGE(condition, message) ((void)0)
 	#define ASSERT_FORMAT(condition, fmt, ...) ((void)0)
+	#define INVALID_PATH ((void)0)
 #else
 	#define ASSERT(condition)                                    \
 		do {                                                     \
@@ -42,4 +43,6 @@
 				abort();                                   \
 			}                                              \
 		} while (0)
+
+	#define INVALID_PATH ASSERT(!"InvalidCodePath")
 #endif

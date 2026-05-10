@@ -46,6 +46,7 @@ static inline float clampf(float value, float min, float max) {
 }
 static inline float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
 static inline float lerpf(float start, float end, float t) { return start + (end - start) * t; }
+/* static inline float mapf(float value, float old_min, float old_max, float new_min, float new_max) {} */
 static inline float minf(float a, float b) { return a < b ? a : b; }
 static inline float maxf(float a, float b) { return a > b ? a : b; }
 
@@ -129,6 +130,7 @@ ENGINE_API void float2_print(float2 v);
 ENGINE_API void float3_print(float3 v);
 ENGINE_API void float4_print(float4 v);
 
+// NOTE: Maybe move to shapes/geometry
 typedef struct {
 	bool hit;
 	float t;
@@ -139,5 +141,9 @@ static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } 
 // Collision
 ENGINE_API Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
 ENGINE_API Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
+
+typedef struct {
+	float x, y, width, height;
+} Rectangle;
 
 #endif /* CMATH_H_ */

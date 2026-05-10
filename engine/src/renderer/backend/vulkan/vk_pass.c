@@ -7,7 +7,7 @@
 
 VkSampleCountFlags to_sample_count(uint32_t sample_count);
 
-bool vulkan_drawlist_begin(VulkanContext *context, DrawListDesc desc) {
+bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 	VkExtent2D extent = {
 		0,
 		0

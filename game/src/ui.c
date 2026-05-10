@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "commands.h"
 #include "common.h"
 #include "core/debug.h"
 #include "input.h"
@@ -14,12 +15,13 @@ UITheme UI_DARK = {
 	.button_hover = { 80, 80, 88, 255 },
 	.button_pressed = { 100, 80, 160, 255 },
 	.button_height = 200.f,
-	.slider_height = 32.f,
+	.slider_thickness = 32.f,
 
 	.track = { 30, 30, 30, 220 },
 	.thumb_idle = { 55, 55, 60, 255 },
 	.thumb_hover = { 80, 80, 88, 255 },
 	.thumb_pressed = { 100, 80, 160, 255 },
+	.fill = { 100, 80, 160, 255 },
 	.text = { 220, 220, 220, 255 },
 	.accent = { 130, 100, 210, 255 },
 };
@@ -40,7 +42,7 @@ void ui_frame_begin(UIContext *ctx) {
 	context->hot_item = 0;
 }
 
-void ui_frame_end(void) {
+void ui_frame_end(DrawlistBuffer *buffer) {
 	if (context->mouse_down == 0)
 		context->active_item = 0;
 	else if (context->active_item == 0)
@@ -82,6 +84,7 @@ void ui_frame_end(void) {
 			.position = element->offset,
 			.size = element->size,
 			.color = element->color,
+			.image = element->description.background_image,
 		};
 	}
 
@@ -223,6 +226,18 @@ void ui_rect(int32_t id, float2 size, Color color) {
 	ui_end_element();
 }
 
+void ui_image(int32_t id, RhiTexture texture, float2 size, Color tint) {
+	ui_begin_element(id,
+		(UIElementDesc){
+		  .background_image = texture,
+		  .background_color = tint,
+		  .layout = {
+			.sizing = { FIXED(size.x), FIXED(size.y) },
+		  },
+		});
+	ui_end_element();
+}
+
 bool ui_button(int32_t id, String label, UITheme *theme) {
 	UIInteraction ix = ui_interact(id);
 
@@ -248,43 +263,55 @@ bool ui_button(int32_t id, String label, UITheme *theme) {
 	return ix.pressed;
 }
 
-bool ui_sliderf(int32_t id, float *value, float min, float max, UITheme *theme) {
+float ui_sliderf(int32_t id, float value, float min, float max, UITheme *theme) {
 	UIElementData *data = ui_find_previous(id);
 	UIInteraction ix = ui_interact(id);
 
-	bool changed = false;
+	uint32_t axis = UI_HORIZONTAL;
+	if (context->current_depth > 0)
+		axis = context->elements[context->depth_parent[context->current_depth]].description.layout.direction;
+	ASSERT(axis == 0 || axis == 1);
+
+	float result = value;
 	if (ix.held && data) {
-		float t = (context->mouse_position.x - data->position.x) / data->size.x;
-		float newv = min + CLAMP(t, 0.0f, 1.0f) * (max - min);
-		if (newv != *value) {
-			*value = newv;
-			changed = true;
-		}
+		float t = ((&context->mouse_position.x)[axis] - (&data->position.x)[axis]) / (&data->size.x)[axis];
+		result = min + clampf(t, 0.0f, 1.0f) * (max - min);
 	}
 
-	float t = (max > min) ? CLAMP((*value - min) / (max - min), 0.0f, 1.0f) : 0.0f;
-	float track_w = data ? data->size.x : 0.0f;
-	float thumb_w = theme->slider_height; // square thumb
-	float fill_w = fmaxf(0.0f, track_w * t - thumb_w);
+	float t = (max > min) ? CLAMP((result - min) / (max - min), 0.0f, 1.0f) : 0.0f;
+	float track_main = data ? (&data->size.x)[axis] : 0.0f;
+	float thumb_main = theme->slider_thickness; // square thumb
+	float fill_main = fmaxf(0.0f, track_main * t - thumb_main);
 
 	Color thumb = ix.held ? theme->thumb_pressed
 		: ix.hovered	  ? theme->thumb_hover
 						  : theme->thumb_idle;
 
+	float2 fill_size = { 0 }, thumb_size = { 0 };
+
+	(&fill_size.x)[axis] = fill_main;
+	(&fill_size.x)[axis ^ 1] = theme->slider_thickness;
+
+	(&thumb_size.x)[axis] = thumb_main;
+	(&thumb_size.x)[axis ^ 1] = theme->slider_thickness;
+
+	UIAxisSize sizing[2];
+	sizing[axis] = GROW;
+	sizing[axis ^ 1] = FIXED(theme->slider_thickness);
+
 	ui_begin_element(id, (UIElementDesc){
 						   .background_color = theme->track,
 						   .layout = {
-							 .sizing = { GROW, FIXED(theme->slider_height) },
-							 .direction = UI_HORIZONTAL,
+							 .sizing = { sizing[0], sizing[1] },
+							 .direction = axis,
 						   },
 						 });
-	// Fill stretches from left up to just before the thumb centre
-	ui_rect(id ^ 0x1, (float2){ fill_w, theme->slider_height }, theme->fill);
-	// Thumb sits immediately after the fill, centred on the value position
-	ui_rect(id ^ 0x2, (float2){ thumb_w, theme->slider_height }, thumb);
+
+	ui_rect(id ^ 0x1, fill_size, theme->fill);
+	ui_rect(id ^ 0x2, thumb_size, thumb);
 	ui_end_element();
 
-	return changed;
+	return result;
 }
 
 void grow_children(UIElement *parent) {

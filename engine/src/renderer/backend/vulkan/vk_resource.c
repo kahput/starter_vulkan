@@ -98,6 +98,7 @@ bool vulkan_uniformset_bind_buffer_range(
 	VULKAN_GET_OR_RETURN(buffer, context->buffer_pool, buffer_handle, MAX_BUFFERS, true, false);
 
 	// TODO: This expects a certain order
+
 	set->buffer_ranges[set->range_count++] = offset + buffer->frame_size * context->current_frame;
 
 	VkDescriptorBufferInfo buffer_info = {

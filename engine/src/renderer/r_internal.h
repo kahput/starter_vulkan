@@ -82,23 +82,6 @@ typedef enum {
 	TEXTURE_USAGE_READBACK = 1u << 2
 } TextureUsageFlags;
 
-typedef enum {
-	TEXTURE_FORMAT_RGBA8,
-	TEXTURE_FORMAT_RGBA8_SRGB,
-
-	TEXTURE_FORMAT_RGB8,
-	TEXTURE_FORMAT_RGB8_SRGB,
-
-	TEXTURE_FORMAT_R8,
-	TEXTURE_FORMAT_R32,
-
-	TEXTURE_FORMAT_RGBA16F,
-	TEXTURE_FORMAT_RGBA32F,
-
-	TEXTURE_FORMAT_DEPTH,
-	TEXTURE_FORMAT_DEPTH_STENCIL
-} TextureFormat;
-
 typedef struct shader_attribute {
 	String name;
 	ShaderAttributeFormat format;
@@ -239,7 +222,7 @@ typedef struct {
 
 	uint32_t width, height;
 	uint32_t msaa_level;
-} DrawListDesc;
+} DrawlistDesc;
 
 // TODO: Move these
 
