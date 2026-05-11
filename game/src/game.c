@@ -27,7 +27,6 @@
 #include "ecs.h"
 #include "ui.h"
 
-#include "cgltf.h"
 #include <stdint.h>
 
 static MaterialProperty default_properties[] = {
@@ -150,6 +149,7 @@ typedef struct {
 	Camera game_camera;
 
 	struct {
+		Font font;
 		RhiShader *shaders;
 		RhiTexture *textures;
 		Material *materials;
@@ -268,7 +268,7 @@ void draw_shadow_pass(PermanentState *pstate) {
 	}
 }
 
-void draw_main_pass(PermanentState *pstate, DrawlistBuffer *list) {
+void draw_main_pass(PermanentState *pstate) {
 	Camera *camera = pstate->camera;
 
 	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
@@ -387,7 +387,7 @@ void draw_main_pass(PermanentState *pstate, DrawlistBuffer *list) {
 				float4x4 model_matrix = transform->world_matrix;
 
 				ASSERT(material->uniform_buffer.id);
-				drawlist_push_mesh(list, model_matrix, *mesh, *material);
+				/* drawlist_push_mesh(list, model_matrix, *mesh, *material); */
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
 				vulkan_buffer_bind_vertex(pstate->context, mesh->handle, mesh->vertex_offset);
@@ -483,7 +483,7 @@ void draw_main_pass(PermanentState *pstate, DrawlistBuffer *list) {
 typedef struct {
 	float2 position, uv;
 	uint32_t color;
-	uint32_t _pad0;
+	uint32_t texture_id;
 } Vertex2;
 
 static inline uint32_t color_pack(Color c) {
@@ -558,7 +558,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	DrawlistBuffer *ui_pass = drawlist_make(scratch.arena, MiB(1));
-	DrawlistBuffer *main_pass = drawlist_make(scratch.arena, MiB(2));
+	/* DrawlistBuffer *main_pass = drawlist_make(scratch.arena, MiB(2)); */
 
 	if (input_key_pressed(KEY_CODE_P))
 		pstate->game_camera.projection = !pstate->game_camera.projection;
@@ -861,7 +861,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					tint = (uint8_t)ui_sliderf(UI_ID(0), (float)tint, 0.f, 255.f, &UI_DARK);
 				}
 
-				ui_image(UI_ID(0), pstate->assets.textures[1], (float2){ 100, 100 }, rgb(tint, tint, tint));
+				/* ui_image(UI_ID(0), pstate->assets.font.atlas, (float2){ 512, 512 }, rgb(tint, tint, tint)); */
 
 				/* ELEMENT({ */
 				/* .background_color = { 0, 255, 0, 255 }, */
@@ -884,6 +884,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					drawlist_push_rectv(ui_pass, element->position, element->size, element->color);
 			}
 
+			/* drawlist_push_rectv(ui_pass, (float2){ 100, 400 }, (float2){ 10, 10 }, rgb(255, 255, 0)); */
+			drawlist_push_text(ui_pass, &pstate->assets.font, "This works! There is some\n lighting issues around the\n T though.", (float2){ 100, 400 }, rgb(0, 255, 0));
+
 			/* if (ui_button(UI_ID(0), 200, 200, 80, 80)) { */
 			/* 	LOG_INFO("Button clicked"); */
 			/* }; */
@@ -903,21 +906,21 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	if (vulkan_frame_begin(pstate->context, window_size.x, window_size.y)) {
 		// :pass
 		draw_shadow_pass(pstate);
-		draw_main_pass(pstate, main_pass);
+		draw_main_pass(pstate);
 
-		DrawlistDesc main_pass_desc = {
-			.name = S("main_pass"),
-			.color_attachments[0] = {
-			  .target = pstate->main_color_target,
-			  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-			  .store = STORE,
-			  .load = CLEAR,
-			},
-			.color_attachment_count = 1,
-			.use_depth = true,
-			.msaa_level = 8,
-		};
-		pass_submit(pstate, main_pass, main_pass_desc);
+		/* DrawlistDesc main_pass_desc = { */
+		/* .name = S("main_pass"), */
+		/* .color_attachments[0] = { */
+		/* .target = pstate->main_color_target, */
+		/* .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f }, */
+		/* .store = STORE, */
+		/* .load = CLEAR, */
+		/* }, */
+		/* .color_attachment_count = 1, */
+		/* .use_depth = true, */
+		/* .msaa_level = 8, */
+		/* }; */
+		/* pass_submit(pstate, main_pass, main_pass_desc); */
 
 		// :pass
 		// :ui draw
@@ -1771,6 +1774,13 @@ void load_assets(PermanentState *pstate) {
 	pstate->composite_shader = load_shader(pstate->context, S("quad"), S("composite"));
 	// :shader
 
+	pstate->assets.font = importer_load_font(&pstate->arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), 64);
+	pstate->assets.font.atlas = vulkan_texture_make(
+		pstate->context,
+		pstate->assets.font.atlas_src.width, pstate->assets.font.atlas_src.height,
+		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED,
+		pstate->assets.font.atlas_src.pixels);
+
 	// TODO: Import the node transforms & cache shared textures
 	SceneSource models[] = {
 		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/room-large.glb")),
@@ -1973,36 +1983,7 @@ void load_assets(PermanentState *pstate) {
 	arena_scratch_end(scratch);
 }
 
-static inline void push_rect(Arena *arena, float x, float y, float w, float h, Color color) {
-	float x0 = x;
-	float y0 = y;
-	float x1 = x + w;
-	float y1 = y + h;
-
-	float u0 = 0.0f;
-	float v0 = 0.0f;
-	float u1 = 1.0f;
-	float v1 = 1.0f;
-
-	uint32_t packed = color_pack(color);
-
-	// clang-format off
-    Vertex2 quad[] = {
-        // pos      // tex
-        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
-        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed},
-        (Vertex2){.position = {x0, y0}, .uv = {u0, v0}, .color = packed}, 
-
-        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
-        (Vertex2){.position = {x1, y1}, .uv = {u1, v1}, .color = packed},
-        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed}
-    };
-	// clang-format on
-
-	arena_push_copy(arena, quad, sizeof(quad), alignof(Vertex2));
-}
-
-static inline void push_texture(Arena *arena, Rectangle src, Rectangle dst, uint2 image_size, Color tint) {
+static inline void push_textured_quad(Arena *arena, Rectangle src, Rectangle dst, uint2 image_size, uint32_t texture_index, Color tint) {
 	float x0 = dst.x;
 	float y0 = dst.y;
 	float x1 = dst.x + dst.width;
@@ -2018,20 +1999,65 @@ static inline void push_texture(Arena *arena, Rectangle src, Rectangle dst, uint
 	// clang-format off
     Vertex2 quad[] = {
         // pos      // tex
-        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
-        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed},
-        (Vertex2){.position = {x0, y0}, .uv = {u0, v0}, .color = packed}, 
+        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed, .texture_id = texture_index},
+        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed, .texture_id = texture_index},
+        (Vertex2){.position = {x0, y0}, .uv = {u0, v0}, .color = packed, .texture_id = texture_index}, 
 
-        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed},
-        (Vertex2){.position = {x1, y1}, .uv = {u1, v1}, .color = packed},
-        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed}
+        (Vertex2){.position = {x0, y1}, .uv = {u0, v1}, .color = packed, .texture_id = texture_index},
+        (Vertex2){.position = {x1, y1}, .uv = {u1, v1}, .color = packed, .texture_id = texture_index},
+        (Vertex2){.position = {x1, y0}, .uv = {u1, v0}, .color = packed, .texture_id = texture_index}
     };
 	// clang-format on
 
 	arena_push_copy(arena, quad, sizeof(quad), alignof(Vertex2));
 }
 
+void batch2d_flush(
+	VulkanContext *context,
+	RhiShader shader, RhiUniformSet global,
+	RhiBuffer storage_buffer, uint32_t quad_count, void *quads,
+	uint32_t texture_count, RhiTexture *textures, RhiSampler sampler) {
+	PipelineDesc pipeline = DEFAULT_PIPELINE;
+	pipeline.cull_mode = CULL_MODE_NONE;
+	pipeline.blend_enable = true;
+
+	size_t vertex_data_size = quad_count * 6 * sizeof(Vertex2);
+	size_t vertex_offset = vulkan_buffer_push(context, storage_buffer, vertex_data_size, quads);
+
+	vulkan_shader_bind(context, shader, pipeline);
+
+	vulkan_uniformset_bind_buffer_range(context, global, 1, vertex_offset, vertex_data_size, storage_buffer);
+	vulkan_uniformset_bind(context, global);
+
+	RhiUniformSet set1 = vulkan_uniformset_push(context, shader, 1);
+
+	for (uint32_t index = 0; index < texture_count; ++index)
+		vulkan_uniformset_bind_texture_index(context, set1, 0, index, textures[index], sampler);
+
+	vulkan_uniformset_bind(context, set1);
+
+	vulkan_renderer_draw(context, quad_count * 6);
+}
+
 void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc desc) {
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+
+	uint32_t max_quads_per_batch = 4096;
+	Arena *batch2d_geometry = arena_partition(scratch.arena, sizeof(Vertex2) * 6 * max_quads_per_batch);
+	RhiTexture batch2d_textures[32] = { pstate->white };
+	uint32_t batch2d_texture_count = 1, batch2d_quad_count = 0;
+
+	RhiUniformSet batch2d_global = vulkan_uniformset_push(pstate->context, pstate->quad_textured_shader, 0);
+	{
+		uint2 window_size = window_size_pixel(pstate->display);
+		float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
+		float4x4 view = float4x4_identity();
+		float4x4 view_projection = float4x4_multiply(projection, view);
+
+		size_t global_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4x4), view_projection.elements);
+		vulkan_uniformset_bind_buffer_range(pstate->context, batch2d_global, 0, global_data_offset, sizeof(float4x4), pstate->frame_uniform_buffer);
+	}
+
 	vulkan_texture_prepare_sample(pstate->context, pstate->shadow_depth_target);
 	if (vulkan_drawlist_begin(pstate->context, desc)) {
 		for (size_t base_address = 0; base_address < buffer->offset;) {
@@ -2039,102 +2065,67 @@ void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc de
 			if (base->type == 0)
 				break;
 
+			if (batch2d_texture_count == countof(batch2d_textures) || batch2d_quad_count == max_quads_per_batch) {
+				batch2d_flush(
+					pstate->context,
+					pstate->quad_textured_shader,
+					batch2d_global,
+					pstate->frame_storage_buffer,
+					batch2d_quad_count,
+					batch2d_geometry->base,
+					batch2d_texture_count,
+					batch2d_textures,
+					pstate->nearest_sampler);
+
+				batch2d_quad_count = 0;
+				batch2d_texture_count = 1;
+				arena_reset(batch2d_geometry);
+			}
+
 			switch (base->type) {
 				case DCT_DrawCommandRectangle: {
-					ArenaTemp scratch = arena_scratch_begin(NULL);
-					uint32_t rect_count = 0;
-					while (base_address < buffer->capacity && base->type == DCT_DrawCommandRectangle) {
-						DrawCommandRectangle *cmd = (DrawCommandRectangle *)base;
+					DrawCommandRectangle *cmd = (DrawCommandRectangle *)base;
 
-						float x = cmd->rect.x - cmd->origin.x;
-						float y = cmd->rect.y - cmd->origin.y;
-						push_rect(scratch.arena, x, y, cmd->rect.width, cmd->rect.height, cmd->color);
+					Rectangle dst = {
+						.x = cmd->rect.x + cmd->origin.x,
+						.y = cmd->rect.y + cmd->origin.y,
+						.width = cmd->rect.width,
+						.height = cmd->rect.height,
+					};
+					Rectangle src = { 0, 0, cmd->rect.width, cmd->rect.height };
+					uint2 size = { cmd->rect.width, cmd->rect.height };
+					push_textured_quad(batch2d_geometry, src, dst, size, 0, cmd->color);
 
-						rect_count++;
-						base_address += base->size;
-						base = (DrawCommandBase *)buffer->push_buffer + base_address;
-					}
-
-					size_t vertex_data_size = rect_count * 6 * sizeof(Vertex2);
-					size_t vertex_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, vertex_data_size, (uint8_t *)scratch.arena->base + scratch.position);
-
-					uint2 window_size = window_size_pixel(pstate->display);
-					float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
-					float4x4 view = float4x4_identity();
-					float4x4 view_projection = float4x4_multiply(projection, view);
-
-					PipelineDesc pipeline = DEFAULT_PIPELINE;
-					pipeline.cull_mode = CULL_MODE_NONE;
-					pipeline.blend_enable = true;
-
-					vulkan_shader_bind(pstate->context, pstate->quad_shader, pipeline);
-					RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->quad_shader, 0);
-
-					size_t global_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4x4), view_projection.elements);
-					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 0, global_data_offset, sizeof(float4x4), pstate->frame_uniform_buffer);
-
-					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 1, vertex_offset, vertex_data_size, pstate->frame_storage_buffer);
-					vulkan_uniformset_bind(pstate->context, set0);
-
-					vulkan_renderer_draw(pstate->context, rect_count * 6);
-
-					arena_scratch_end(scratch);
+					batch2d_quad_count++;
+					base_address += base->size;
 				} break;
 				case DCT_DrawCommandTexture: {
-					DrawCommandTexture *cmd_last = (DrawCommandTexture *)base;
-					RhiTexture texture = cmd_last->texture;
+					DrawCommandTexture *cmd = (DrawCommandTexture *)base;
 
-					ArenaTemp scratch = arena_scratch_begin(NULL);
-					uint32_t textured_rect_count = 0;
-					while (base_address < buffer->capacity && base->type == DCT_DrawCommandTexture) {
-						base = (DrawCommandBase *)buffer->push_buffer + base_address;
-						DrawCommandTexture *cmd = (DrawCommandTexture *)base;
-						if (cmd->texture.id != texture.id) {
+					uint32_t texture_index = 0xFFFFFFFF;
+					for (uint32_t index = 0; index < batch2d_texture_count; ++index) {
+						if (batch2d_textures[index].id == cmd->texture.id) {
+							texture_index = index;
 							break;
 						}
-
-						uint2 image_size = vulkan_texture_size(pstate->context, cmd->texture);
-
-						Rectangle dst = {
-							.x = cmd->dest.x + cmd->origin.x,
-							.y = cmd->dest.y + cmd->origin.y,
-							.width = cmd->dest.width,
-							.height = cmd->dest.height,
-						};
-						push_texture(scratch.arena, cmd->src, dst, image_size, cmd->tint);
-
-						textured_rect_count++;
-						base_address += base->size;
 					}
 
-					size_t vertex_data_size = textured_rect_count * 6 * sizeof(Vertex2);
-					size_t vertex_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, vertex_data_size, (uint8_t *)scratch.arena->base + scratch.position);
+					if (texture_index == 0xFFFFFFFF) {
+						texture_index = batch2d_texture_count++;
+						batch2d_textures[texture_index] = cmd->texture;
+					}
 
-					uint2 window_size = window_size_pixel(pstate->display);
-					float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
-					float4x4 view = float4x4_identity();
-					float4x4 view_projection = float4x4_multiply(projection, view);
+					uint2 image_size = vulkan_texture_size(pstate->context, cmd->texture);
+					Rectangle dst = {
+						.x = cmd->dest.x + cmd->origin.x,
+						.y = cmd->dest.y + cmd->origin.y,
+						.width = cmd->dest.width,
+						.height = cmd->dest.height,
+					};
+					push_textured_quad(batch2d_geometry, cmd->src, dst, image_size, texture_index, cmd->tint);
 
-					PipelineDesc pipeline = DEFAULT_PIPELINE;
-					pipeline.cull_mode = CULL_MODE_NONE;
-					pipeline.blend_enable = true;
-
-					vulkan_shader_bind(pstate->context, pstate->quad_textured_shader, pipeline);
-					RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->quad_shader, 0);
-
-					size_t global_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4x4), view_projection.elements);
-					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 0, global_data_offset, sizeof(float4x4), pstate->frame_uniform_buffer);
-
-					vulkan_uniformset_bind_buffer_range(pstate->context, set0, 1, vertex_offset, vertex_data_size, pstate->frame_storage_buffer);
-					vulkan_uniformset_bind(pstate->context, set0);
-
-					RhiUniformSet set1 = vulkan_uniformset_push(pstate->context, pstate->quad_textured_shader, 1);
-					vulkan_uniformset_bind_texture(pstate->context, set1, 0, texture, pstate->nearest_sampler);
-					vulkan_uniformset_bind(pstate->context, set1);
-
-					vulkan_renderer_draw(pstate->context, textured_rect_count * 6);
-
-					arena_scratch_end(scratch);
+					batch2d_quad_count++;
+					base_address += base->size;
 				} break;
 
 				case DCT_DrawCommandMesh: {
@@ -2241,6 +2232,21 @@ void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc de
 			}
 		}
 
+		if (batch2d_quad_count) {
+			batch2d_flush(
+				pstate->context,
+				pstate->quad_textured_shader,
+				batch2d_global,
+				pstate->frame_storage_buffer,
+				batch2d_quad_count,
+				batch2d_geometry->base,
+				batch2d_texture_count,
+				batch2d_textures,
+				pstate->nearest_sampler);
+		}
+
 		vulkan_drawlist_end(pstate->context);
 	}
+
+	arena_scratch_end(scratch);
 }

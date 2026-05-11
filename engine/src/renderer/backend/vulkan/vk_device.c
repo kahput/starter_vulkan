@@ -47,11 +47,14 @@ bool vulkan_device_create(Arena *arena, VulkanContext *context) {
 
 	VkPhysicalDeviceVulkan13Features vk13_features = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-		.dynamicRendering = VK_TRUE
+		.dynamicRendering = VK_TRUE,
 	};
 	VkPhysicalDeviceVulkan12Features vk12_features = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
 		.pNext = &vk13_features,
+		.runtimeDescriptorArray = VK_TRUE,
+		.descriptorBindingPartiallyBound = VK_TRUE,
+		.shaderSampledImageArrayNonUniformIndexing = VK_TRUE, // NOTE: Works perfectly fine without
 		.descriptorIndexing = VK_TRUE,
 	};
 	VkPhysicalDeviceFeatures features = { .samplerAnisotropy = true, .fillModeNonSolid = true };
@@ -117,6 +120,24 @@ bool select_physical_device(Arena *arena, VulkanContext *context) {
 bool is_device_suitable(Arena *arena, VkPhysicalDevice physical_device, VkSurfaceKHR surface, VulkanDevice *device) {
 	vkGetPhysicalDeviceProperties(physical_device, &device->properties);
 	vkGetPhysicalDeviceFeatures(physical_device, &device->features);
+
+	// Bindless
+	{
+		VkPhysicalDeviceDescriptorIndexingFeatures indexing_features = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT,
+		};
+		VkPhysicalDeviceFeatures2 device_features = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+			.pNext = &indexing_features,
+		};
+		vkGetPhysicalDeviceFeatures2(physical_device, &device_features);
+
+		bool bindless_supported = indexing_features.descriptorBindingPartiallyBound && indexing_features.runtimeDescriptorArray;
+		if (bindless_supported == false) {
+			ASSERT(false);
+			return false;
+		}
+	}
 
 	if (device->properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
 		return false;
@@ -211,5 +232,5 @@ VkFormat find_supported_depth_format(VulkanDevice *device) {
 	}
 
 	ASSERT(false);
-    return VK_FORMAT_UNDEFINED;
+	return VK_FORMAT_UNDEFINED;
 }

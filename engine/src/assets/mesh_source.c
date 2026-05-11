@@ -8,7 +8,7 @@
 
 MeshSource mesh_source_quad3(Arena *arena, float32x3 offset, float size) {
 	MeshSource rv = {
-		.vertex_size = sizeof(Vertex),
+		.vertex_size = sizeof(Vertex3),
 		.vertex_count = 6,
 	};
 
@@ -17,11 +17,11 @@ MeshSource mesh_source_quad3(Arena *arena, float32x3 offset, float size) {
 
 MeshSource mesh_source_cube_face(Arena *arena, float x, float y, float z, float size, uint8_t orientation) {
 	MeshSource rv = {
-		.vertex_size = sizeof(Vertex),
+		.vertex_size = sizeof(Vertex3),
 		.vertex_count = 6,
 	};
 
-	Vertex *vertices = arena_push_count(arena, rv.vertex_count, Vertex);
+	Vertex3 *vertices = arena_push_count(arena, rv.vertex_count, Vertex3);
 	rv.vertices = (uint8_t *)vertices;
 
 	/**

@@ -1,19 +1,20 @@
 #include "importer.h"
-#include "assets/asset_types.h"
 
-#include "assets/mesh_source.h"
 #include "common.h"
+#include "core/arena.h"
+#include "core/debug.h"
+#include "core/logger.h"
 #include "core/strings.h"
 
-#include "core/debug.h"
+#include "assets/mesh_source.h"
+#include "assets/asset_types.h"
+
 #include "platform/filesystem.h"
 
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
+#include <stb/stb_truetype.h>
 #include <stb/stb_image_write.h>
-
-#include "core/arena.h"
-#include "core/logger.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +23,96 @@
 
 // static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 /* static ImageSource *find_loaded_texture(const cgltf_data *data, SModel *scene, const cgltf_texture *gltf_tex); */
+
+Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t codepoint_count, const int32_t *codepoints) {
+	ArenaTemp scratch = arena_scratch_begin(arena);
+	Font result = { 0 };
+
+	Buffer file = filesystem_read(arena, path);
+	if (file.size == 0) {
+		LOG_WARN("%s - failed to load font: %.*s", __func__, SARG(path));
+		arena_scratch_end(scratch);
+		return result;
+	}
+
+	stbtt_fontinfo font_info = { 0 };
+	if (stbtt_InitFont(&font_info, file.pointer, 0)) {
+		float scale_factor = stbtt_ScaleForPixelHeight(&font_info, (float)font_size);
+
+		int32_t ascent = 0, descent = 0, line_gap = 0;
+		stbtt_GetFontVMetrics(&font_info, &ascent, &descent, &line_gap);
+
+		result.line_height = (ascent - descent + line_gap) * scale_factor;
+
+		codepoint_count = codepoint_count ? codepoint_count : 96;
+		int32_t *codepoints = arena_push_count(arena, 96, int32_t);
+		for (uint32_t index = 0; index < 96; ++index)
+			codepoints[index] = index + 32;
+
+		result.glyphs = arena_push_count(arena, 128, Glyph);
+		result.atlas_src = (ImageSource){
+			.pixels = arena_push_size(arena, 512 * 512 * 4),
+			.width = 512,
+			.height = 512,
+			.channels = 4
+		};
+
+		uint32_t padding = 2;
+		uint32_t row = 0;
+		uint32_t col = padding;
+
+		uint8_t temp_bitmap[512 * 512] = { 0 };
+
+		for (uint32_t index = 0; index < codepoint_count; ++index) {
+			int32_t codepoint_width = 0, codepoint_height = 0;
+			int32_t codepoint = codepoints[index];
+
+			int glyph_index = stbtt_FindGlyphIndex(&font_info, codepoint);
+
+			if (glyph_index) {
+				int32_t x0, y0, x1, y1, advance;
+				stbtt_GetGlyphBitmapBox(&font_info, glyph_index, scale_factor, scale_factor, &x0, &y0, &x1, &y1);
+				stbtt_GetGlyphHMetrics(&font_info, glyph_index, &advance, NULL);
+
+				uint32_t width = x1 - x0, height = y1 - y0;
+
+				if (col + width + padding >= 512) {
+					col = padding;
+					row += (uint32_t)(font_size + 0.5f);
+					ASSERT(row + y1 - y0 < 512);
+				}
+				stbtt_MakeGlyphBitmap(&font_info, (uint8_t *)temp_bitmap + col + (row * 512), width, height, 512, scale_factor, scale_factor, glyph_index);
+
+				result.glyphs[codepoint] = (Glyph){
+					.atlas_rect = { .x = col, .y = row, .width = width, .height = height },
+					.bearing = { x0, y0 },
+					.size = { width, height },
+					.advance_x = (int32_t)(advance * scale_factor),
+				};
+
+				col += width + padding;
+			}
+		}
+
+		uint8_t *src = temp_bitmap;
+		uint8_t *dst = result.atlas_src.pixels;
+		for (uint32_t i = 0; i < 512 * 512; i++) {
+			*dst++ = 255;
+			*dst++ = 255;
+			*dst++ = 255;
+			*dst++ = *src++;
+		}
+	} else
+		LOG_WARN("%s - failed to process font data");
+
+	arena_temp_end(scratch);
+	return result;
+}
+
+Font importer_load_font(Arena *arena, String path, float font_size) {
+	Font result = importer_load_font_ex(arena, path, font_size, 0, NULL);
+	return result;
+}
 
 ShaderSource importer_load_shader(Arena *arena, String vertex_path, String fragment_path) {
 	Buffer vfile = filesystem_read(arena, vertex_path);
@@ -179,7 +270,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 				cgltf_primitive *primitive = &mesh->primitives[primitive_index];
 				result.mesh_count++;
 
-				result.vertices_size += primitive->attributes->data->count * sizeof(Vertex);
+				result.vertices_size += primitive->attributes->data->count * sizeof(Vertex3);
 				result.indices_size += primitive->indices->count * sizeof(uint32_t);
 			}
 		}
@@ -211,7 +302,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 
 				ASSERT(primitive->attributes && primitive->attributes->data && primitive->indices);
 				mesh->vertex_count = primitive->attributes->data->count;
-				mesh->vertex_size = sizeof(Vertex);
+				mesh->vertex_size = sizeof(Vertex3);
 
 				mesh->vertices = result.vertices + vertices_offset;
 				vertices_offset += mesh->vertex_count * mesh->vertex_size;
@@ -225,16 +316,16 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 					size_t offset = 0;
 					switch (attribute->type) {
 						case cgltf_attribute_type_position:
-							offset = offsetof(Vertex, position);
+							offset = offsetof(Vertex3, position);
 							break;
 						case cgltf_attribute_type_normal:
-							offset = offsetof(Vertex, normal);
+							offset = offsetof(Vertex3, normal);
 							break;
 						case cgltf_attribute_type_tangent:
-							offset = offsetof(Vertex, tangent);
+							offset = offsetof(Vertex3, tangent);
 							break;
 						case cgltf_attribute_type_texcoord:
-							offset = offsetof(Vertex, uv0);
+							offset = offsetof(Vertex3, uv0);
 							break;
 						/* case cgltf_attribute_type_color: */
 						/* case cgltf_attribute_type_joints: */

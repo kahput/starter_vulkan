@@ -40,8 +40,18 @@
 // }
 
 bool vulkan_descriptor_layout_create(VulkanContext *context, VkDescriptorSetLayoutBinding *bindings, uint32_t binding_count, VkDescriptorSetLayout *out_layout) {
+	VkDescriptorBindingFlags partially_bound_flag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+	VkDescriptorSetLayoutBindingFlagsCreateInfo flags_create_info = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO };
+	for (uint32_t index = 0; index < binding_count; ++index) {
+		if (bindings[index].descriptorCount > 1) {
+			flags_create_info.bindingCount = 1;
+			flags_create_info.pBindingFlags = &partially_bound_flag;
+		}
+	}
+
 	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.pNext = flags_create_info.bindingCount ? &flags_create_info : NULL,
 		.bindingCount = binding_count,
 		.pBindings = bindings,
 	};

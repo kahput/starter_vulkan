@@ -70,6 +70,8 @@ ENGINE_API RhiUniformSet vulkan_uniformset_push(VulkanContext *context, RhiShade
 ENGINE_API bool vulkan_uniformset_bind_buffer(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer);
 ENGINE_API bool vulkan_uniformset_bind_buffer_range(VulkanContext *context, RhiUniformSet set, uint32_t binding, size_t offset, size_t size, RhiBuffer buffer);
 ENGINE_API bool vulkan_uniformset_bind_texture(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiTexture texture, RhiSampler sampler);
+ENGINE_API bool vulkan_uniformset_bind_texture_index(VulkanContext *context, RhiUniformSet set, uint32_t binding, uint32_t index, RhiTexture texture, RhiSampler sampler);
+ENGINE_API bool vulkan_uniformset_bind_texture_array(VulkanContext *context, RhiUniformSet set, uint32_t binding, uint32_t texture_count, RhiTexture *textures, RhiSampler *samplers);
 ENGINE_API bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet uniform);
 
 ENGINE_API bool vulkan_push_constants(VulkanContext *context, size_t offset, size_t size, void *data);

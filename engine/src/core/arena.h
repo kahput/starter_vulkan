@@ -29,7 +29,7 @@ void arena_pop(Arena *arena, size_t size);
 
 ENGINE_API size_t arena_mark(Arena *arena);
 ENGINE_API void arena_rewind(Arena *arena, size_t position);
-void arena_reset(Arena *arena);
+ENGINE_API void arena_reset(Arena *arena);
 
 ENGINE_API ArenaTemp arena_temp_begin(Arena *arena);
 ENGINE_API void arena_temp_end(ArenaTemp temp);

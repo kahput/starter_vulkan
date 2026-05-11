@@ -7,10 +7,28 @@
 #include "core/strings.h"
 #include "core/identifiers.h"
 
+#include "core/r_types.h"
+
 typedef struct image {
 	void *pixels;
 	int32_t width, height, channels;
 } ImageSource;
+
+typedef struct {
+	Rectangle atlas_rect;
+	float2 bearing, size;
+	float advance_x;
+} Glyph;
+
+typedef struct {
+	RhiTexture atlas;
+	ImageSource atlas_src;
+
+	uint32_t line_height;
+
+	Glyph *glyphs;
+	uint32_t glyph_count;
+} Font;
 
 typedef struct {
 	String vertex_path, fragment_path;
@@ -57,7 +75,7 @@ typedef struct {
 	float32x3 normal;
 	float32x2 uv0;
 	float32x4 tangent;
-} Vertex;
+} Vertex3;
 
 typedef struct scene_source {
 	String path;

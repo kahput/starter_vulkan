@@ -1,4 +1,4 @@
-file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "deps/*/*.c" "deps/*/*.h")
+file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "vendor/*/*.c" "vendor/*/*.h")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 find_package(Vulkan REQUIRED)
@@ -12,7 +12,7 @@ target_include_directories(${PROJECT_NAME}
                            PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} "${CMAKE_BINARY_DIR}/engine"
-                          "${CMAKE_SOURCE_DIR}/engine/deps")
+                          "${CMAKE_SOURCE_DIR}/engine/vendor")
 
 # Platform-specific configurations
 if(WIN32)

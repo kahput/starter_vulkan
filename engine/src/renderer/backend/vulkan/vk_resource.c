@@ -158,6 +158,71 @@ bool vulkan_uniformset_bind_texture(
 	return true;
 }
 
+ENGINE_API bool vulkan_uniformset_bind_texture_index(VulkanContext *context, RhiUniformSet set_handle, uint32_t binding, uint32_t index, RhiTexture texture_handle, RhiSampler sampler_handle) {
+	VulkanUniformSet *set = NULL;
+	VULKAN_GET_OR_RETURN(set, context->set_pool, set_handle, MAX_UNIFORM_SETS, true, false);
+
+	VulkanImage *image = NULL;
+	VULKAN_GET_OR_RETURN(image, context->image_pool, texture_handle, MAX_TEXTURES, true, false);
+
+	VulkanSampler *sampler = NULL;
+	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_handle, MAX_SAMPLERS, true, false);
+
+	VkDescriptorImageInfo image_info = {
+		.sampler = sampler->handle,
+		.imageView = image->view,
+		.imageLayout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+	};
+
+	VkWriteDescriptorSet descriptor_write = {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = set->handle,
+		.dstBinding = binding,
+		.dstArrayElement = index,
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.descriptorCount = 1,
+		.pImageInfo = &image_info,
+	};
+	vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
+
+	return true;
+}
+
+bool vulkan_uniformset_bind_texture_array(VulkanContext *context, RhiUniformSet set_handle, uint32_t binding, uint32_t texture_count, RhiTexture *textures, RhiSampler *samplers) {
+	VulkanUniformSet *set = NULL;
+	VULKAN_GET_OR_RETURN(set, context->set_pool, set_handle, MAX_UNIFORM_SETS, true, false);
+
+	for (uint32_t index = 0; index < texture_count; ++index) {
+		RhiTexture texture_handle = textures[index];
+		RhiSampler sampler_handle = samplers[index];
+
+		VulkanImage *image = NULL;
+		VULKAN_GET_OR_RETURN(image, context->image_pool, texture_handle, MAX_TEXTURES, true, false);
+
+		VulkanSampler *sampler = NULL;
+		VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_handle, MAX_SAMPLERS, true, false);
+
+		VkDescriptorImageInfo image_info = {
+			.sampler = sampler->handle,
+			.imageView = image->view,
+			.imageLayout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+		};
+
+		VkWriteDescriptorSet descriptor_write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = set->handle,
+			.dstBinding = binding,
+			.dstArrayElement = index,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.descriptorCount = 1,
+			.pImageInfo = &image_info,
+		};
+		vkUpdateDescriptorSets(context->device.logical, 1, &descriptor_write, 0, NULL);
+	}
+
+	return true;
+}
+
 bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet set_handle) {
 	VulkanUniformSet *set = NULL;
 	VULKAN_GET_OR_RETURN(set, context->set_pool, set_handle, MAX_UNIFORM_SETS, true, false);

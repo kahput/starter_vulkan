@@ -5,11 +5,16 @@
 #include <core/cmath.h>
 #include <core/r_types.h>
 
+#include "assets/asset_types.h"
 #include "renderer/r_internal.h"
 
 typedef enum {
+	// 2D
 	DCT_DrawCommandRectangle = 1,
 	DCT_DrawCommandTexture,
+	DCT_DrawCommandText,
+
+	// 3D
 	DCT_DrawCommandMesh,
 
 	DCT_MAX,
@@ -62,11 +67,15 @@ DrawlistBuffer *drawlist_make(Arena *arena, size_t max_size);
 DrawCommandBase *drawlist_push(DrawlistBuffer *list, size_t size, DrawCommandType type);
 #define drawlist_push_command(list, T) (T *)drawlist_push((list), sizeof(T), DCT_##T)
 
-/* void drawlist_push_mesh(DrawCommandBuffer *list, Mesh *mesh, Material *material, Transform3 transform); */
+// 2D
 void drawlist_push_rect(DrawlistBuffer *list, Rectangle rect, Color color);
 void drawlist_push_rectv(DrawlistBuffer *list, float2 position, float2 size, Color color);
 
 void drawlist_push_texture_ex(DrawlistBuffer *list, RhiTexture texture, Rectangle src, Rectangle dst, float2 origin, float rotation, Color tint);
+
+void drawlist_push_text(DrawlistBuffer *list, Font *font, const char *text, float2 position, Color color);
+
+// 3D
 void drawlist_push_mesh(DrawlistBuffer *list, float4x4 transform, Mesh mesh, Material material);
 
 #endif /* COMMANDS_H_ */
