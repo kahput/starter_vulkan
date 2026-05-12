@@ -72,6 +72,7 @@ int main(void) {
 	}
 
 	/* window_set_cursor_locked(engine.display, true); */
+    window_set_fullscreen(engine.display, true);
 
 	GameContext game_context = {
 		.permanent_memory = arena_push(&engine.memory, MiB(128), 16, true),

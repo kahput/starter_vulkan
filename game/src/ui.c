@@ -28,9 +28,10 @@ UITheme UI_DARK = {
 	.accent = { 130, 100, 210, 255 },
 };
 
-UIContext ui_make(void) {
+UIContext ui_make(Font *font) {
 	UIContext result = {
 		.element_count = 1,
+		.font = font,
 	};
 
 	return result;
@@ -193,9 +194,9 @@ void ui_end_element(void) {
 }
 
 static UIElementData *ui_find_previous(int32_t id) {
-	for (uint32_t i = 0; i < context->previous_element_count; ++i)
-		if (context->previous_elements[i].id == id)
-			return &context->previous_elements[i];
+	for (uint32_t index = 0; index < context->previous_element_count; ++index)
+		if (context->previous_elements[index].id == id)
+			return &context->previous_elements[index];
 
 	return NULL;
 }
@@ -203,7 +204,7 @@ static UIElementData *ui_find_previous(int32_t id) {
 typedef struct {
 	bool hovered;
 	bool held;
-	bool pressed; // true the frame mouse is released over the element
+	bool pressed;
 } UIInteraction;
 
 static UIInteraction ui_interact(int32_t id) {
@@ -278,14 +279,12 @@ bool ui_button(int32_t id, String label, UITheme *theme) {
 		(UIElementDesc){
 		  .background_color = bg,
 		  .layout = {
-			.sizing = { GROW, FIXED(theme->button_height) },
-			.padding = PAD_XY(12, 0),
+			.sizing = { FIT, FIT },
 			.direction = UI_HORIZONTAL,
+			.padding = PAD(8),
 		  },
 		});
-
-	/* ui_label(id ^ 0x1, label, theme->text); */
-
+	ui_text(id, label);
 	ui_end_element();
 	return ix.pressed;
 }
@@ -341,18 +340,18 @@ float ui_sliderf(int32_t id, float value, float min, float max, UITheme *theme) 
 	return result;
 }
 
-void ui_text(int32_t id, Font *font, String text) {
+void ui_text(int32_t id, String text) {
 	float width = 0.0f, height = 0.0f;
 	for (const char *c = text.chars; *c; ++c) {
 		ASSERT(*c >= 32 && *c <= 126);
-		Glyph *glyph = &font->glyphs[(uint8_t)*c];
+		Glyph *glyph = &context->font->glyphs[(uint8_t)*c];
 		width += glyph->advance_x;
 
 		if (height == 0.0f)
 			height = glyph->atlas_rect.height;
 
 		if (*c == '\n') {
-			height += font->line_height;
+			height += context->font->line_height;
 			continue;
 		}
 	}

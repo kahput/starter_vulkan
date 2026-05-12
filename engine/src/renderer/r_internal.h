@@ -220,7 +220,7 @@ typedef struct {
 	AttachmentDesc depth_attachment;
 	bool use_depth;
 
-	uint32_t width, height;
+    Rectangle viewport;
 	uint32_t msaa_level;
 } DrawlistDesc;
 
@@ -263,8 +263,8 @@ typedef struct {
 
 #define SHADOW_SAMPLER                                          \
 	(SamplerDesc) {                                             \
-		.min_filter = FILTER_LINEAR,                        \
-		.mag_filter = FILTER_LINEAR,                        \
+		.min_filter = FILTER_LINEAR,                            \
+		.mag_filter = FILTER_LINEAR,                            \
 		.address_mode_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
 		.address_mode_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
 		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \

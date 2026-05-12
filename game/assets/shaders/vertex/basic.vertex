@@ -8,13 +8,27 @@ layout(set = 0, binding = 0) uniform GlobalParameters {
     vec2 viewport;
 } global;
 
-layout(set = 0, binding = 1) readonly buffer LightData {
-    vec4 lights[];
+struct LightData {
+    vec4  color;
+    vec3  position;
+
+    /* vec3  spot_direction; */
+    /* float spot_exponent; */
+    /* float spot_cutoff; */
+    /* float spot_cosCutoff; */
+
+    float constant_attenuation;
+    /* float linear_attenuation; */
+    /* float quadratic_attenuation; */
+
+    mat4  lightspace_matrix;
 };
 
-layout(push_constant) uniform constants {
-    mat4 model;
-} push;
+layout(set = 0, binding = 1) readonly buffer LightBlock {
+    LightData lights[];
+};
+
+layout (set = 0, binding = 2) uniform sampler2DShadow u_shadow_depth;
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
@@ -25,7 +39,11 @@ layout(location = 0) out OutBlock {
     vec2 uv;
 } vs_out;
 
+layout(push_constant) uniform constants {
+    mat4 model;
+} pc;
+
 void main() {
-    gl_Position = global.projection * global.view * push.model * vec4(in_position.xyz, 1.0f);
+    gl_Position = global.projection * global.view * pc.model * vec4(in_position.xyz, 1.0f);
     vs_out.uv = in_uv0;
 }

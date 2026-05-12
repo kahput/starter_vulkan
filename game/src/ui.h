@@ -123,6 +123,7 @@ typedef struct {
 	int32_t hot_item;
 	int32_t active_item;
 
+	Font *font;
 } UIContext;
 
 #define FIXED(n) ((UIAxisSize){ UI_SIZE_FIXED, .size.min = (n) })
@@ -133,7 +134,7 @@ typedef struct {
 #define PAD_XY(x, y) ((UIPadding){ x, x, y, y })
 #define PAD4(l, r, t, b) ((UIPadding){ l, r, t, b })
 
-UIContext ui_make(void);
+UIContext ui_make(Font *font);
 
 void ui_frame_begin(UIContext *context);
 void ui_frame_end(DrawlistBuffer *buffer);
@@ -148,12 +149,13 @@ bool ui_pressed(int32_t id);
 void ui_rect(int32_t id, float2 size, Color color);
 void ui_image(int32_t id, RhiTexture texture, float2 size, Color tint);
 
+// NOTE: children have the same ID as parent
 bool ui_button(int32_t id, String label, UITheme *theme);
 float ui_sliderf(int32_t id, float value, float min, float max, UITheme *theme);
-void ui_text(int32_t id, Font *font, String text);
+void ui_text(int32_t id, String text);
 
-#define UI_ID(index) __LINE__ + index
-#define ui_container(...) for (uint8_t _ = (ui_begin_element(UI_ID(0), (WRAPPER_STRUCT(UIElementDesc)){ __VA_ARGS__ }.wrapped), 0); !_; (_++, ui_end_element()))
+#define LINE_ID(index) (uint32_t)(__LINE__ << 8) + (index)
+#define ui_container(...) for (uint8_t _ = (ui_begin_element(LINE_ID(0), (WRAPPER_STRUCT(UIElementDesc)){ __VA_ARGS__ }.wrapped), 0); !_; (_++, ui_end_element()))
 
 /* bool ui_button(int32_t id, uint32_t x, uint32_t y, uint32_t w, uint32_t h); */
 

@@ -80,6 +80,10 @@ typedef struct {
 	TransformComponent cached;
 } EditorTransformInfo;
 
+typedef enum {
+	CONTENT_BROWSER,
+} EditorSidebarTab;
+
 typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
 	Camera3D camera;
@@ -95,6 +99,8 @@ typedef struct Editor {
 
 	TRSMode mode;
 	EditorTransformInfo transform;
+
+	EditorSidebarTab current_tab;
 
 	bool adding;
 
@@ -172,7 +178,10 @@ typedef struct {
 	RhiTexture output_target;
 	UIContext game_ui;
 
-	float2 viewport_size;
+	Rectangle viewport;
+
+	// TEMPORARY
+	RhiUniformSet game_current_frame_global;
 
 	struct {
 		bool is_initialized;
@@ -204,9 +213,12 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 	vulkan_renderer_on_resize(pstate->context, resize_event->width, resize_event->height);
 
 	vulkan_texture_resize(pstate->context, pstate->main_color_target, resize_event->width, resize_event->height);
+	vulkan_texture_resize(pstate->context, pstate->output_target, resize_event->width, resize_event->height);
 	vulkan_texture_resize(pstate->context, pstate->ui_color_target, resize_event->width, resize_event->height);
 
-	pstate->viewport_size = (float2){ resize_event->width, resize_event->height };
+	pstate->viewport = (Rectangle){
+		0, 0, resize_event->width, resize_event->height
+	};
 
 	vulkan_texture_resize(pstate->context, pstate->editor.main_color_target, resize_event->width, resize_event->height);
 	vulkan_texture_resize(pstate->context, pstate->editor.picker_target, resize_event->width, resize_event->height);
@@ -281,15 +293,16 @@ void draw_shadow_pass(PermanentState *pstate) {
 void draw_main_pass(PermanentState *pstate) {
 	Camera3D *camera = pstate->camera;
 
-	float2 viewport = pstate->viewport_size;
+
+	Rectangle viewport = pstate->viewport;
 	float4x4 projection = float4x4_identity();
 	if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
-		projection = float4x4_perspective(deg2radf(camera->fov), viewport.x / viewport.y, 0.01f, 1000.f);
+		projection = float4x4_perspective(deg2radf(camera->fov), viewport.width / viewport.height, 0.01f, 1000.f);
 	} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
-		float aspect = viewport.x / viewport.y;
+		float aspect = viewport.width / viewport.height;
 		projection = float4x4_orthographic(
-			-viewport.x / camera->ortho_size, viewport.x / camera->ortho_size,
-			-viewport.y / camera->ortho_size, viewport.y / camera->ortho_size,
+			-viewport.width / camera->ortho_size, viewport.width / camera->ortho_size,
+			-viewport.height / camera->ortho_size, viewport.height / camera->ortho_size,
 			0.1f, 1000.f);
 	}
 	projection.elements[5] *= -1;
@@ -314,10 +327,12 @@ void draw_main_pass(PermanentState *pstate) {
 		pstate->context, pstate->frame_uniform_buffer,
 		global_offset + offsetof(GlobalData, camera_position),
 		sizeof_member(GlobalData, camera_position), &camera->position);
+
+	float2 viewport_size = { viewport.width, viewport.height };
 	vulkan_buffer_write(
 		pstate->context, pstate->frame_uniform_buffer,
 		global_offset + offsetof(GlobalData, viewport),
-		sizeof_member(GlobalData, viewport), &viewport);
+		sizeof_member(GlobalData, viewport), &viewport_size);
 
 	LightData light = {
 		.color = { 1.0f, 1.0f, 1.0f, 1.0f },
@@ -328,12 +343,12 @@ void draw_main_pass(PermanentState *pstate) {
 	};
 	size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(LightData), &light);
 
-	RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
-	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
-	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
+	pstate->game_current_frame_global = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
+	vulkan_uniformset_bind_buffer_range(pstate->context, pstate->game_current_frame_global, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
+	vulkan_uniformset_bind_buffer_range(pstate->context, pstate->game_current_frame_global, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
 
 	vulkan_texture_prepare_sample(pstate->context, pstate->shadow_depth_target);
-	vulkan_uniformset_bind_texture(pstate->context, global_set, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
+	vulkan_uniformset_bind_texture(pstate->context, pstate->game_current_frame_global, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
 
 	// :main_pass
 	DrawlistDesc main_pass = {
@@ -345,8 +360,7 @@ void draw_main_pass(PermanentState *pstate) {
 		  .load = CLEAR,
 		},
 		.color_attachment_count = 1,
-		.width = viewport.x,
-		.height = viewport.y,
+		.viewport = pstate->viewport,
 		.use_depth = true,
 		.msaa_level = 8,
 	};
@@ -358,7 +372,7 @@ void draw_main_pass(PermanentState *pstate) {
 
 		// Entities
 		vulkan_shader_bind(pstate->context, pstate->phong_shader, pipeline);
-		vulkan_uniformset_bind(pstate->context, global_set);
+		vulkan_uniformset_bind(pstate->context, pstate->game_current_frame_global);
 		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
 
 		Entity entity = 0;
@@ -539,7 +553,10 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
-		pstate->viewport_size = float2_from_uint2(window_size);
+
+		pstate->viewport = (Rectangle){
+			0, 0, window_size.x, window_size.y
+		};
 
 		pstate->main_color_target = vulkan_texture_make(
 			pstate->context,
@@ -571,14 +588,16 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->scene_arena = arena_partition(&pstate->arena, MiB(32));
 		pstate->world = pstate->editor_scene = ecs_make(pstate->scene_arena);
-		pstate->game_ui = ui_make();
 		load_assets(pstate);
+		pstate->game_ui = ui_make(&pstate->assets.font[FONT_SIZE_64]);
 
 		// Initialize entity transforms
 		transform_system_update(pstate->world);
 
 		pstate->camera = &pstate->editor.camera;
 		pstate->state = GAME_STATE_EDITOR;
+
+		pstate->editor.ui_context = ui_make(&pstate->assets.font[FONT_SIZE_16]);
 
 		pstate->initialized = true;
 	}
@@ -605,7 +624,11 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			pstate->editor_offset = arena_mark(pstate->scene_arena);
 			memory_zero(&pstate->game, sizeof(pstate->game));
 			pstate->world = ecs_make_copy(pstate->scene_arena, pstate->editor_scene);
-			pstate->viewport_size = float2_from_uint2(window_size_pixel(pstate->display));
+
+			float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
+			pstate->viewport = (Rectangle){
+				0, 0, window_size.x, window_size.y
+			};
 		}
 	}
 
@@ -763,7 +786,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			camera->position.z = pstate->game_camera_start_offset.z + transform->position.z;
 
 			float2 mouse_position = float2_from_double2(input_mouse_position());
-			float2 viewport = pstate->viewport_size;
+
+			float2 viewport = { pstate->viewport.width, pstate->viewport.height };
 
 			// Calculate the positon where the camera view ray intersects world y 0
 
@@ -855,12 +879,17 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 						.padding = PAD(32),
 					  },
 					}) {
-						ui_text(UI_ID(0), &pstate->assets.font[FONT_SIZE_64], S("Hello world!"));
+						ui_text(LINE_ID(0), S("Hello world!"));
 					}
 
 					// Vs this
-					if (ui_button(UI_ID(0), S("message"), &UI_DARK)) {
-						LOG_INFO("Button clicked");
+					ui_container({
+					  .background_color = UI_DARK.button_idle,
+					  .layout = { .sizing = { GROW, GROW } },
+					}) {
+						if (ui_button(LINE_ID(0), S("message"), &UI_DARK)) {
+							LOG_INFO("Button clicked");
+						}
 					}
 
 					ui_container({
@@ -1080,7 +1109,6 @@ Editor editor_make(Arena *arena) {
 		.pan_speed = 0.005f,
 		.zoom_speed = 0.05f,
 		.sensitivity = 0.005f,
-		.ui_context = ui_make(),
 		.camera = {
 		  .position = { 0.0f, 20, 30 },
 		  .target = { 0.0f, 0.0, 0.0f },
@@ -1239,11 +1267,20 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		case TRS_MODE_NONE: {
 			if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
 				double2 mouse_position = input_mouse_position();
-				uint32_t entity = 0;
-				vulkan_texture_read_pixel(pstate->context, pstate->editor.picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &entity);
 
-				editor_select_entity(editor, entity, input_key_down(KEY_CODE_LEFTSHIFT));
-				LOG_INFO("acitve = %d, count = %d", entity, editor->selected_entity_count);
+				bool inside_bounds_x = mouse_position.x >= pstate->viewport.x &&
+					mouse_position.x < pstate->viewport.x + pstate->viewport.width;
+
+				bool inside_bounds_y = mouse_position.y >= pstate->viewport.y &&
+					mouse_position.y < pstate->viewport.y + pstate->viewport.height;
+
+				if (inside_bounds_x && inside_bounds_y) {
+					uint32_t entity = 0;
+					vulkan_texture_read_pixel(pstate->context, pstate->editor.picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &entity);
+
+					editor_select_entity(editor, entity, input_key_down(KEY_CODE_LEFTSHIFT));
+					LOG_INFO("acitve = %d, count = %d", entity, editor->selected_entity_count);
+				}
 			}
 
 			if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
@@ -1502,6 +1539,74 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	}
 }
 
+void editor_sidebar_contents(PermanentState *pstate, UIDirection direction) {
+	Editor *editor = &pstate->editor;
+
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	UIElementDesc button_container = {
+		.background_color = rgb(0, 0, 0),
+		.layout = {
+		  .padding = PAD(8) },
+	};
+
+	String tab_string[5] = {
+		[CONTENT_BROWSER] = S("content browser"),
+		S("UNUSED"),
+		S("UNUSED"),
+		S("UNUSED"),
+		S("UNUSED"),
+	};
+
+	ui_container({ .background_color = rgb(0, 0, 0),
+	  .layout = {
+		.direction = UI_VERTICAL,
+		.sizing = { GROW, GROW },
+		.child_gap = 16,
+	  } }) {
+		ui_container({ .background_color = rgb(255, 0, 0),
+		  .layout = {
+			.direction = UI_HORIZONTAL,
+			.sizing = { GROW, FIT },
+			.child_gap = 8,
+			.padding = PAD(4) } }) {
+			for (uint32_t index = 0; index < 5; ++index) {
+				if (ui_button(LINE_ID(index), tab_string[index], &UI_DARK)) {
+					editor->current_tab = index;
+				}
+			}
+		}
+
+		switch (editor->current_tab) {
+			case CONTENT_BROWSER: {
+				ui_container({ .background_color = rgb(0, 0, 0),
+				  .layout = {
+					.direction = UI_HORIZONTAL,
+					.sizing = { GROW, FIT },
+					.child_gap = 16,
+					.padding = PAD(16),
+				  } }) {
+					ui_text(LINE_ID(0), S("Content browser"));
+				}
+
+			} break;
+			default: {
+				ui_container({ .background_color = rgb(0, 0, 0),
+				  .layout = {
+					.direction = UI_HORIZONTAL,
+					.sizing = { GROW, FIT },
+					.child_gap = 16,
+					.padding = PAD(16),
+				  } }) {
+					ui_text(LINE_ID(0), S("UNUSED"));
+				}
+
+			} break;
+		}
+	}
+
+	arena_scratch_end(scratch);
+}
+
 void editor_draw(PermanentState *pstate, Editor *editor) {
 	Camera3D *camera = pstate->camera;
 	// :editor
@@ -1511,7 +1616,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
 
 	bool is_landscape = window_size.x >= window_size.y;
-	ui_frame_begin(&pstate->game_ui);
+	ui_frame_begin(&editor->ui_context);
 	ui_container({
 	  .layout = {
 		.direction = is_landscape ? UI_HORIZONTAL : UI_VERTICAL,
@@ -1522,12 +1627,9 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 			ui_container({
 			  .background_color = { 5, 5, 5, 255 },
 			  .layout = {
-				.sizing = { FIXED(300), GROW },
-				.padding = PAD(32),
+				.sizing = { FIXED(500), GROW },
 			  },
-			}) {
-				ui_text(UI_ID(0), &pstate->assets.font[FONT_SIZE_64], S("Hello world!"));
-			}
+			}) editor_sidebar_contents(pstate, UI_HORIZONTAL);
 
 		ui_container({
 		  .background_color = rgb(255, 255, 255),
@@ -1543,23 +1645,23 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 			ui_container({
 			  .background_color = { 5, 5, 5, 255 },
 			  .layout = {
-				.sizing = { GROW, FIXED(250) },
-				.padding = PAD(32),
+				.sizing = { GROW, FIXED(300) },
 			  },
-			}) {
-				ui_text(UI_ID(0), &pstate->assets.font[FONT_SIZE_64], S("Hello world!"));
-			}
+			}) editor_sidebar_contents(pstate, UI_VERTICAL);
 	}
 	ui_frame_end(editor_ui);
 
-	for (uint32_t index = 0; index < pstate->game_ui.previous_element_count; ++index) {
-		UIElementData *element = &pstate->game_ui.previous_elements[index];
+	for (uint32_t index = 0; index < editor->ui_context.previous_element_count; ++index) {
+		UIElementData *element = &editor->ui_context.previous_elements[index];
 
 		if (element->image.id) {
-			Rectangle src = { 0, 0, element->size.x, element->size.y };
+			Rectangle src = { element->position.x, element->position.y, element->size.x, element->size.y };
 			Rectangle dst = { element->position.x, element->position.y, element->size.x, element->size.y };
+
+			/* drawlist_push_rect(editor_ui, src, rgb(255, 0, 0)); */
 			drawlist_push_texture_ex(editor_ui, element->image, src, dst, (float2){ 0 }, 0.0f, element->color);
-			pstate->viewport_size = element->size;
+
+			pstate->viewport = dst;
 		} else if (element->text.chars) {
 			drawlist_push_text(editor_ui, &pstate->assets.font[FONT_SIZE_16], element->text, element->position, rgb(255, 255, 255));
 		} else
@@ -1609,6 +1711,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		  .load = CLEAR,
 		  .store = STORE,
 		},
+		.viewport = pstate->viewport,
 		.color_attachment_count = 1,
 		.use_depth = true,
 	};
@@ -1616,7 +1719,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	if (vulkan_drawlist_begin(pstate->context, picker_pass)) {
 		PipelineDesc pipeline = DEFAULT_PIPELINE;
 		vulkan_shader_bind(pstate->context, pstate->picker_shader, pipeline);
-		vulkan_uniformset_bind(pstate->context, global_set);
+		vulkan_uniformset_bind(pstate->context, pstate->game_current_frame_global);
 
 		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
 		Entity entity;

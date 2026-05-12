@@ -8,10 +8,7 @@
 VkSampleCountFlags to_sample_count(uint32_t sample_count);
 
 bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
-	VkExtent2D extent = {
-		0,
-		0
-	};
+	VkRect2D viewport_rect = { 0 };
 
 	bool use_msaa = desc.msaa_level > 1 && context->device.sample_count > VK_SAMPLE_COUNT_1_BIT;
 	VkSampleCountFlags sample_count = MIN(to_sample_count(desc.msaa_level), context->device.sample_count);
@@ -40,9 +37,11 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 			dst->storeOp = (VkAttachmentStoreOp)src->store;
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
 
-			ASSERT(extent.width == 0 || extent.width > context->swapchain.extent.width);
-			ASSERT(extent.height == 0 || extent.height > context->swapchain.extent.height);
-			extent = context->swapchain.extent;
+			ASSERT(viewport_rect.extent.width == 0 ||
+				viewport_rect.offset.x + viewport_rect.extent.width > context->swapchain.extent.width);
+			ASSERT(viewport_rect.extent.height == 0 ||
+				viewport_rect.offset.y + viewport_rect.extent.height > context->swapchain.extent.height);
+			viewport_rect.extent = context->swapchain.extent;
 
 			if (use_msaa) {
 				ASSERT(context->frame_target_count < countof(context->frame_targets));
@@ -69,10 +68,12 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
 			dst->storeOp = (VkAttachmentStoreOp)src->store;
 
-			ASSERT(extent.width == 0 || extent.width > image->width);
-			ASSERT(extent.height == 0 || extent.height > image->height);
-			extent.width = image->width;
-			extent.height = image->height;
+			ASSERT(viewport_rect.extent.width == 0 ||
+				viewport_rect.offset.x + viewport_rect.extent.width > image->width);
+			ASSERT(viewport_rect.extent.height == 0 ||
+				viewport_rect.offset.y + viewport_rect.extent.height > image->height);
+			viewport_rect.extent.width = image->width;
+			viewport_rect.extent.height = image->height;
 
 			if (use_msaa) {
 				ASSERT(context->frame_target_count < countof(context->frame_targets));
@@ -83,7 +84,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 
 				vulkan_image_scratch_ensure(
 					context, target,
-					extent, image->info.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT);
+					viewport_rect.extent, image->info.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT);
 
 				dst->imageView = target->view;
 				dst->resolveImageView = image->view;
@@ -101,7 +102,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 			ASSERT(context->frame_target_count < countof(context->frame_targets));
 			vulkan_image_scratch_ensure(
 				context, image,
-				extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
+				viewport_rect.extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
 
 			depth_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -109,10 +110,12 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 			VULKAN_GET_OR_RETURN(image, context->image_pool, desc.depth_attachment.target, MAX_TEXTURES, true, false);
 			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-			ASSERT(extent.width == 0 || extent.width > image->width);
-			ASSERT(extent.height == 0 || extent.height > image->height);
-			extent.width = image->width;
-			extent.height = image->height;
+			ASSERT(viewport_rect.extent.width == 0 ||
+				viewport_rect.offset.x + viewport_rect.extent.width > image->width);
+			ASSERT(viewport_rect.extent.height == 0 ||
+				viewport_rect.offset.y + viewport_rect.extent.height > image->height);
+			viewport_rect.extent.width = image->width;
+			viewport_rect.extent.height = image->height;
 
 			depth_info.loadOp = (VkAttachmentLoadOp)desc.depth_attachment.load;
 			depth_info.storeOp = (VkAttachmentStoreOp)desc.depth_attachment.store;
@@ -127,16 +130,18 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 		depth_info.imageView = image->view;
 	}
 
-	if (desc.width) {
-		ASSERT(desc.height);
-		ASSERT(extent.width >= desc.width && extent.height >= desc.height);
-		extent.width = desc.width;
-		extent.height = desc.height;
+	if (desc.viewport.width && desc.viewport.height) {
+		Rectangle viewport = desc.viewport;
+		ASSERT(viewport_rect.extent.width >= viewport.x + viewport.width && viewport_rect.extent.height >= viewport.y + viewport.height);
+		viewport_rect.offset.x = viewport.x;
+		viewport_rect.offset.y = viewport.y;
+		viewport_rect.extent.width = viewport.width;
+		viewport_rect.extent.height = viewport.height;
 	}
 
 	VkRenderingInfo pass_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-		.renderArea = { .extent = extent },
+		.renderArea = viewport_rect,
 		.layerCount = 1,
 		.colorAttachmentCount = desc.color_attachment_count,
 		.pColorAttachments = color_attachments,
@@ -148,20 +153,15 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 	vkCmdBeginRendering(context->command_buffers[context->current_frame], &pass_info);
 
 	VkViewport viewport = {
-		.x = 0,
-		.y = 0,
-		.width = extent.width,
-		.height = extent.height,
+		.x = viewport_rect.offset.x,
+		.y = viewport_rect.offset.y,
+		.width = viewport_rect.extent.width,
+		.height = viewport_rect.extent.height,
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
 	vkCmdSetViewport(context->command_buffers[context->current_frame], 0, 1, &viewport);
-
-	VkRect2D scissor = {
-		.offset = { 0.0f, 0.0f },
-		.extent = extent
-	};
-	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &scissor);
+	vkCmdSetScissor(context->command_buffers[context->current_frame], 0, 1, &viewport_rect);
 
 	context->bound_pass.state = VULKAN_RESOURCE_STATE_INITIALIZED;
 	return true;
