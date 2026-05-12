@@ -16,7 +16,7 @@ typedef struct image {
 
 typedef struct {
 	Rectangle atlas_rect;
-	float2 bearing, size;
+	float2 bearing;
 	float advance_x;
 } Glyph;
 

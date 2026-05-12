@@ -26,7 +26,11 @@ typedef enum {
 
 typedef struct UISize {
 	UISizeType type;
-	float value;
+
+	union {
+		float min;
+		float percent;
+	} size;
 } UIAxisSize;
 
 typedef struct {
@@ -47,6 +51,7 @@ typedef struct UILayoutDescription {
 typedef struct {
 	UILayout layout;
 
+	String text;
 	RhiTexture background_image;
 	Color background_color;
 } UIElementDesc;
@@ -70,6 +75,7 @@ typedef struct {
 	int32_t id;
 	float2 position, size;
 
+	String text;
 	RhiTexture image;
 	Color color;
 } UIElementData;
@@ -119,9 +125,9 @@ typedef struct {
 
 } UIContext;
 
-#define FIXED(n) ((UIAxisSize){ UI_SIZE_FIXED, (float)(n) })
-#define GROW ((UIAxisSize){ UI_SIZE_GROW, 0.0f })
-#define FIT ((UIAxisSize){ UI_SIZE_FIT, 0.0f })
+#define FIXED(n) ((UIAxisSize){ UI_SIZE_FIXED, .size.min = (n) })
+#define GROW ((UIAxisSize){ UI_SIZE_GROW, { 0 } })
+#define FIT ((UIAxisSize){ UI_SIZE_FIT, { 0 } })
 
 #define PAD(n) ((UIPadding){ n, n, n, n })
 #define PAD_XY(x, y) ((UIPadding){ x, x, y, y })
@@ -144,6 +150,7 @@ void ui_image(int32_t id, RhiTexture texture, float2 size, Color tint);
 
 bool ui_button(int32_t id, String label, UITheme *theme);
 float ui_sliderf(int32_t id, float value, float min, float max, UITheme *theme);
+void ui_text(int32_t id, Font *font, String text);
 
 #define UI_ID(index) __LINE__ + index
 #define ui_container(...) for (uint8_t _ = (ui_begin_element(UI_ID(0), (WRAPPER_STRUCT(UIElementDesc)){ __VA_ARGS__ }.wrapped), 0); !_; (_++, ui_end_element()))

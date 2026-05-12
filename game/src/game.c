@@ -82,7 +82,7 @@ typedef struct {
 
 typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
-	Camera camera;
+	Camera3D camera;
 
 	Entity active_entity;
 	Entity selected_entities[64];
@@ -102,15 +102,13 @@ typedef struct Editor {
 	uint32_t undo_count, undo_write_cursor;
 } Editor;
 
-typedef struct {
-	float2 mouse_position;
-	bool mouse_down;
+typedef enum {
+	FONT_SIZE_16,
+	FONT_SIZE_32,
+	FONT_SIZE_64,
 
-	int32_t hot_item;
-	int32_t active_item;
-} GUI;
-
-GUI g_ui = { 0 };
+	FONT_SIZE_MAX,
+} FontSize;
 
 typedef struct {
 	Arena arena;
@@ -146,10 +144,10 @@ typedef struct {
 	Editor editor;
 
 	float3 game_camera_start_offset;
-	Camera game_camera;
+	Camera3D game_camera;
 
 	struct {
-		Font font;
+		Font font[FONT_SIZE_MAX];
 		RhiShader *shaders;
 		RhiTexture *textures;
 		Material *materials;
@@ -178,7 +176,7 @@ typedef struct {
 
 	UIContext ui;
 
-	Camera *camera;
+	Camera3D *camera;
 } PermanentState;
 
 Editor editor_make(Arena *arena);
@@ -190,7 +188,7 @@ void load_assets(PermanentState *state);
 void transform_system_update(ECS *world);
 void mesh_system_update(ECS *world, PermanentState *pstate);
 
-void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc desc);
+void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffer, DrawlistDesc desc);
 
 bool window_resize(EventCode code, void *event, void *receiver) {
 	WindowResizeEvent *resize_event = event;
@@ -207,13 +205,13 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 static float4x4 light_matrix = { 0 };
 void draw_shadow_pass(PermanentState *pstate) {
 	// :shadow
-	Camera light_camera = {
+	Camera3D light_camera = {
 		.position = { 0.0f, 20.0f, -30.0f },
 		.up = FLOAT3_Y,
 		.ortho_size = 10.f,
 		.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
 	};
-	Camera *camera = &light_camera;
+	Camera3D *camera = &light_camera;
 
 	float4x4 projection = float4x4_orthographic(
 		-camera->ortho_size, camera->ortho_size,
@@ -269,7 +267,7 @@ void draw_shadow_pass(PermanentState *pstate) {
 }
 
 void draw_main_pass(PermanentState *pstate) {
-	Camera *camera = pstate->camera;
+	Camera3D *camera = pstate->camera;
 
 	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
 	float4x4 projection = float4x4_identity();
@@ -588,7 +586,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				float yaw = deg2radf(90.0f); // deg2radf(54.736f);
 				float pitch = deg2radf(45.f);
 				float arm_length = 40.f;
-				pstate->game_camera = (Camera){
+				pstate->game_camera = (Camera3D){
 					.position = {
 					  sinf(pitch) * cosf(yaw) * arm_length,
 					  sinf(pitch) * arm_length,
@@ -656,7 +654,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			Entity player = pstate->game.player;
 			Entity selection = pstate->game.selection;
 
-			Camera *camera = &pstate->game_camera;
+			Camera3D *camera = &pstate->game_camera;
 			TransformComponent *transform = ecs_find(pstate->world, player, TransformComponent);
 
 			float3 camera_target_offset = float3_subtract(camera->target, camera->position);
@@ -823,10 +821,11 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					ui_container({
 					  .background_color = { 255, 0, 0, 255 },
 					  .layout = {
-						.child_gap = 32,
-						.sizing = { FIXED(200), FIXED(200) },
+						.sizing = { FIT, FIT },
+						.padding = PAD(32),
 					  },
 					}) {
+						ui_text(UI_ID(0), &pstate->assets.font[FONT_SIZE_64], S("Hello world!"));
 					}
 
 					// Vs this
@@ -837,7 +836,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					ui_container({
 					  .background_color = { 255, 0, 255, 255 },
 					  .layout = {
-						.sizing = { .height = FIXED(255) },
+						.sizing = { .width = FIXED(800), .height = FIXED(255) },
 						.direction = UI_VERTICAL,
 						.padding = { 8, 8, 8, 8 },
 					  },
@@ -854,12 +853,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 				static uint8_t tint = 255;
 
-				ui_container({
-				  .layout.direction = UI_HORIZONTAL,
-				  .layout.sizing = { .width = GROW },
-				}) {
-					tint = (uint8_t)ui_sliderf(UI_ID(0), (float)tint, 0.f, 255.f, &UI_DARK);
-				}
+				/* ui_container({ */
+				/* .layout.direction = UI_HORIZONTAL, */
+				/* .layout.sizing = { .width = GROW }, */
+				/* }) { */
+				/* tint = (uint8_t)ui_sliderf(UI_ID(0), (float)tint, 0.f, 255.f, &UI_DARK); */
+				/* } */
 
 				/* ui_image(UI_ID(0), pstate->assets.font.atlas, (float2){ 512, 512 }, rgb(tint, tint, tint)); */
 
@@ -880,17 +879,33 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					Rectangle src = { 0, 0, image_size.x, image_size.y };
 					Rectangle dst = { element->position.x, element->position.y, element->size.x, element->size.y };
 					drawlist_push_texture_ex(ui_pass, element->image, src, dst, (float2){ 0 }, 0.0f, element->color);
+				} else if (element->text.chars) {
+					drawlist_push_text(ui_pass, &pstate->assets.font[FONT_SIZE_64], element->text, element->position, rgb(255, 255, 255));
 				} else
 					drawlist_push_rectv(ui_pass, element->position, element->size, element->color);
 			}
 
+			/* drawlist_push_text(ui_pass, &pstate->assets.font, "Hello world!", (float2){ 100, 400 }, rgb(0, 0, 0)); */
+
 			/* drawlist_push_rectv(ui_pass, (float2){ 100, 400 }, (float2){ 10, 10 }, rgb(255, 255, 0)); */
-			drawlist_push_text(ui_pass, &pstate->assets.font, "This works! There is some\n lighting issues around the\n T though.", (float2){ 100, 400 }, rgb(0, 255, 0));
 
 			/* if (ui_button(UI_ID(0), 200, 200, 80, 80)) { */
 			/* 	LOG_INFO("Button clicked"); */
 			/* }; */
 			/* push_rectangle(ui_arena, 0.0f, 0.0f, 100.f, 100.f, (Color){ 255, 0, 0, 255 }); */
+
+			static float fps = 0.0f;
+			uint32_t fps_average_count = 0;
+			static float fps_update_timer = 0.0f;
+			fps_update_timer += dt;
+
+			if (fps_update_timer > 0.3f) {
+				fps = 1 / dt;
+				fps_update_timer = 0.0f;
+			}
+
+			String fps_text = string_format(scratch.arena, "%.1f", fps);
+			drawlist_push_text(ui_pass, &pstate->assets.font[FONT_SIZE_16], fps_text, (float2){ 10, 10 }, rgb(0, 0, 0));
 
 		} break;
 
@@ -936,7 +951,13 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			},
 			.color_attachment_count = 1,
 		};
-		pass_submit(pstate, ui_pass, ui_pass_desc);
+		Camera3D ui_camera = {
+			.position = { 0.0f, 0.0f, 1.0f },
+			.target = { 0.0f, 0.0f, 0.0f },
+			.up = { 0.0f, 1.0f, 0.0f },
+			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
+		};
+		pass_submit(pstate, &ui_camera, ui_pass, ui_pass_desc);
 
 		DrawlistDesc present_pass = {
 			.color_attachments[0] = {
@@ -1028,7 +1049,7 @@ static void editor_select_entity(Editor *editor, Entity entity, bool multi) {
 }
 
 void editor_update(PermanentState *pstate, Editor *editor, float dt) {
-	Camera *camera = &editor->camera;
+	Camera3D *camera = &editor->camera;
 	float2 mouse_delta = (float2){ input_mouse_dx(), input_mouse_dy() };
 
 	// :editor
@@ -1416,7 +1437,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 }
 
 void editor_draw(PermanentState *pstate, Editor *editor) {
-	Camera *camera = pstate->camera;
+	Camera3D *camera = pstate->camera;
 	// :editor
 
 	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
@@ -1774,12 +1795,15 @@ void load_assets(PermanentState *pstate) {
 	pstate->composite_shader = load_shader(pstate->context, S("quad"), S("composite"));
 	// :shader
 
-	pstate->assets.font = importer_load_font(&pstate->arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), 64);
-	pstate->assets.font.atlas = vulkan_texture_make(
-		pstate->context,
-		pstate->assets.font.atlas_src.width, pstate->assets.font.atlas_src.height,
-		TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED,
-		pstate->assets.font.atlas_src.pixels);
+	for (uint32_t index = FONT_SIZE_16; index < FONT_SIZE_MAX; ++index) {
+		Font *font = &pstate->assets.font[index];
+		*font = importer_load_font(&pstate->arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), 1 << (index + 4));
+		font->atlas = vulkan_texture_make(
+			pstate->context,
+			font->atlas_src.width, font->atlas_src.height,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED,
+			font->atlas_src.pixels);
+	}
 
 	// TODO: Import the node transforms & cache shared textures
 	SceneSource models[] = {
@@ -2039,7 +2063,7 @@ void batch2d_flush(
 	vulkan_renderer_draw(context, quad_count * 6);
 }
 
-void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc desc) {
+void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffer, DrawlistDesc desc) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 
 	uint32_t max_quads_per_batch = 4096;
@@ -2051,7 +2075,7 @@ void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc de
 	{
 		uint2 window_size = window_size_pixel(pstate->display);
 		float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
-		float4x4 view = float4x4_identity();
+		float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
 		float4x4 view_projection = float4x4_multiply(projection, view);
 
 		size_t global_data_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4x4), view_projection.elements);
@@ -2129,8 +2153,6 @@ void pass_submit(PermanentState *pstate, DrawlistBuffer *buffer, DrawlistDesc de
 				} break;
 
 				case DCT_DrawCommandMesh: {
-					Camera *camera = pstate->camera;
-
 					float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
 					float4x4 projection = float4x4_identity();
 					if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {

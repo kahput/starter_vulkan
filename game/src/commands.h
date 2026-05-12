@@ -73,7 +73,7 @@ void drawlist_push_rectv(DrawlistBuffer *list, float2 position, float2 size, Col
 
 void drawlist_push_texture_ex(DrawlistBuffer *list, RhiTexture texture, Rectangle src, Rectangle dst, float2 origin, float rotation, Color tint);
 
-void drawlist_push_text(DrawlistBuffer *list, Font *font, const char *text, float2 position, Color color);
+void drawlist_push_text(DrawlistBuffer *list, Font *font, String text, float2 position, Color color);
 
 // 3D
 void drawlist_push_mesh(DrawlistBuffer *list, float4x4 transform, Mesh mesh, Material material);

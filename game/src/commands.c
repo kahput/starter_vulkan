@@ -1,5 +1,6 @@
 #include "commands.h"
 #include "assets/asset_types.h"
+#include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
 #include "core/debug.h"
@@ -49,27 +50,57 @@ void drawlist_push_texture_ex(DrawlistBuffer *list, RhiTexture texture, Rectangl
 	cmd->tint = tint;
 }
 
-void drawlist_push_text(DrawlistBuffer *list, Font *font, const char *text, float2 position, Color color) {
+float2 measure_text(Font *font, String text) {
+	float max_width = 0.0f;
+	float width = 0.0f, height = 0.0f;
+
+	for (uint32_t index = 0; index < text.length; ++index) {
+		uint8_t c = text.chars[index];
+
+		if (c == '\n') {
+			max_width = maxf(max_width, width);
+			width = 0.0f;
+			height += font->line_height;
+		}
+
+		Glyph *glyph = &font->glyphs[c];
+
+		width += glyph->advance_x;
+		height = maxf(height, glyph->atlas_rect.height);
+	}
+
+	return (float2){
+		.x = maxf(max_width, width),
+		.y = height,
+	};
+}
+
+void drawlist_push_text(DrawlistBuffer *list, Font *font, String text, float2 position, Color color) {
+	float2 dimensions = measure_text(font, text);
+
 	float cursor_x = position.x;
-	float cursor_y = position.y;
-	for (const char *c = text; *c; ++c) {
-		if (*c == '\n') {
-            cursor_x = position.x;
-            cursor_y += font->line_height;
+	float cursor_y = position.y + dimensions.y;
+	for (uint32_t index = 0; index < text.length; ++index) {
+		uint8_t c = text.chars[index];
+
+		if (c == '\n') {
+			cursor_x = position.x;
+			cursor_y += font->line_height;
 			continue;
 		}
 
-		ASSERT(*c >= 32 && *c <= 126);
-		Glyph *glyph = &font->glyphs[(uint8_t)*c];
+		ASSERT(c >= 32 && c <= 126);
+		Glyph *glyph = &font->glyphs[(uint8_t)c];
 		Rectangle src = glyph->atlas_rect;
 		Rectangle dst = {
 			.x = cursor_x + glyph->bearing.x,
 			.y = cursor_y + glyph->bearing.y,
-			.width = glyph->size.x,
-			.height = glyph->size.y,
+			.width = glyph->atlas_rect.width,
+			.height = glyph->atlas_rect.height,
 		};
 
-		drawlist_push_texture_ex(list, font->atlas, src, dst, (float2){ 0 }, 0.0f, color);
+		if (c != 32)
+			drawlist_push_texture_ex(list, font->atlas, src, dst, (float2){ 0 }, 0.0f, color);
 		cursor_x += glyph->advance_x;
 	}
 }

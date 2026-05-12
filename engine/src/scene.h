@@ -8,12 +8,17 @@ typedef enum {
 	CAMERA_PROJECTION_ORTHOGRAPHIC
 } CameraProjection;
 
-typedef struct camera {
+typedef struct {
 	float3 position, target, up;
 	float fov, ortho_size;
 
 	CameraProjection projection;
-} Camera;
+} Camera3D;
+
+typedef struct {
+	float2 offset, target;
+    float rotation, zoom;
+} Camera2D;
 
 typedef struct alignas(16) material_paramters {
 	float4 base_color_factor;

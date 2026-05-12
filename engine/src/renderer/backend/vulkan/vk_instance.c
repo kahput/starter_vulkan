@@ -67,7 +67,7 @@ bool vulkan_instance_create(VulkanContext *context) {
 		.ppEnabledExtensionNames = extensions,
 	};
 
-#ifndef NDEBUG
+#ifndef DIST
 
 	uint32_t requested_layers = sizeof(layers) / sizeof(*layers), available_layers = 0;
 	vkEnumerateInstanceLayerProperties(&available_layers, NULL);

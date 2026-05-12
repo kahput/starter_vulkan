@@ -80,9 +80,9 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 				dst->resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-				ASSERT(vulkan_image_scratch_ensure(
+				vulkan_image_scratch_ensure(
 					context, target,
-					extent, image->info.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT));
+					extent, image->info.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT);
 
 				dst->imageView = target->view;
 				dst->resolveImageView = image->view;

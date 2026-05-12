@@ -26,8 +26,9 @@ File filesystem_open(String path, FileMode mode) {
 																			  : "wb";
 
 	FILE *file = fopen((const char *)path.chars, val);
-	if (file == NULL)
+	if (file == NULL) {
 		LOG_WARN("Failed to open file at '%.*s'", SARG(path));
+    }
 
 	return (File){ .handle = file };
 }

@@ -24,7 +24,7 @@
 // static void calculate_tangents(Vertex *vertices, uint32_t vertex_count, uint32_t *indices, uint32_t index_count);
 /* static ImageSource *find_loaded_texture(const cgltf_data *data, SModel *scene, const cgltf_texture *gltf_tex); */
 
-Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t codepoint_count, const int32_t *codepoints) {
+Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t codepoint_count, const int32_t *codepoints) { // custom code points not implemented yet
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Font result = { 0 };
 
@@ -40,7 +40,9 @@ Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t 
 		float scale_factor = stbtt_ScaleForPixelHeight(&font_info, (float)font_size);
 
 		int32_t ascent = 0, descent = 0, line_gap = 0;
-		stbtt_GetFontVMetrics(&font_info, &ascent, &descent, &line_gap);
+		if (!stbtt_GetFontVMetricsOS2(&font_info, &ascent, &descent, &line_gap)) {
+			stbtt_GetFontVMetrics(&font_info, &ascent, &descent, &line_gap);
+		}
 
 		result.line_height = (ascent - descent + line_gap) * scale_factor;
 
@@ -63,6 +65,7 @@ Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t 
 
 		uint8_t temp_bitmap[512 * 512] = { 0 };
 
+		int32_t min_y = 0;
 		for (uint32_t index = 0; index < codepoint_count; ++index) {
 			int32_t codepoint_width = 0, codepoint_height = 0;
 			int32_t codepoint = codepoints[index];
@@ -83,16 +86,18 @@ Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t 
 				}
 				stbtt_MakeGlyphBitmap(&font_info, (uint8_t *)temp_bitmap + col + (row * 512), width, height, 512, scale_factor, scale_factor, glyph_index);
 
+				min_y = MIN(min_y, y0);
 				result.glyphs[codepoint] = (Glyph){
 					.atlas_rect = { .x = col, .y = row, .width = width, .height = height },
 					.bearing = { x0, y0 },
-					.size = { width, height },
 					.advance_x = (int32_t)(advance * scale_factor),
 				};
 
 				col += width + padding;
 			}
 		}
+
+       LOG_INFO("MIN_Y = %d", min_y);
 
 		uint8_t *src = temp_bitmap;
 		uint8_t *dst = result.atlas_src.pixels;
@@ -102,8 +107,9 @@ Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t 
 			*dst++ = 255;
 			*dst++ = *src++;
 		}
-	} else
+	} else {
 		LOG_WARN("%s - failed to process font data");
+	}
 
 	arena_temp_end(scratch);
 	return result;
@@ -367,14 +373,6 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 		// Node -> Entity
 		for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
 			cgltf_node *cgltf_node = &data->nodes[node_index];
-
-			int32_t mesh_index = -1;
-			const char *name = NULL;
-			if (cgltf_node->mesh) {
-				mesh_index = cgltf_mesh_index(data, cgltf_node->mesh);
-				name = data->meshes[mesh_index].name;
-			}
-			LOG_INFO("NODE[%d]('%s') -> Mesh[%d]('%s')", node_index, cgltf_node->name, mesh_index, name);
 
 			/* Entity entity = pstate->entity_count++; */
 			/* TransformComponent *transform = &pstate->transforms[entity]; */

@@ -17,7 +17,7 @@ typedef struct {
 } GameContext;
 
 typedef struct FrameInfo {
-	Camera camera;
+	Camera3D camera;
 } FrameInfo;
 
 typedef struct {
