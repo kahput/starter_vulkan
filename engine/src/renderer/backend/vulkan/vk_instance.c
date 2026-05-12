@@ -160,6 +160,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
 fn_create_utils_debug_messenger *vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messenger_default;
 fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger = vulkan_destroy_utils_debug_messenger_default;
 fn_set_debug_utils_object_name *vkSetDebugUtilsObjectName = vulkan_set_debug_utils_object_name_default;
+fn_cmd_begin_debug_utils_label *vkCmdBeginDebugUtilsLabel = vulkan_cmd_begin_debug_utils_label_default;
+fn_cmd_end_debug_utils_label *vkCmdEndDebugUtilsLabel = vulkan_cmd_end_debug_utils_label_default;
 
 VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messenger_default) {
 	return VK_ERROR_EXTENSION_NOT_PRESENT;
@@ -173,10 +175,21 @@ VK_SET_DEBUG_UTILS_OBJECT_NAME(vulkan_set_debug_utils_object_name_default) {
 	return VK_SUCCESS;
 }
 
+VK_CMD_BEGIN_DEBUG_UTILS_LABEL(vulkan_cmd_begin_debug_utils_label_default) {
+	return;
+}
+
+VK_CMD_END_DEBUG_UTILS_LABEL(vulkan_cmd_end_debug_utils_label_default) {
+	return;
+}
+
 void vulkan_load_extensions(VulkanContext *context) {
 	vkCreateDebugUtilsMessenger = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context->instance, "vkCreateDebugUtilsMessengerEXT");
 	vkDestroyDebugUtilsMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context->instance, "vkDestroyDebugUtilsMessengerEXT");
 	vkSetDebugUtilsObjectName = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(context->instance, "vkSetDebugUtilsObjectNameEXT");
+	vkCmdBeginDebugUtilsLabel = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetInstanceProcAddr(context->instance, "vkCmdBeginDebugUtilsLabelEXT");
+	vkCmdEndDebugUtilsLabel = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetInstanceProcAddr(context->instance, "vkCmdEndDebugUtilsLabelEXT");
+
 	if (vkCreateDebugUtilsMessenger == NULL) {
 		LOG_ERROR("Failed to load vkCreateDebugUtilsMessenger extension");
 		vkCreateDebugUtilsMessenger = vulkan_create_utils_debug_messenger_default;
@@ -188,5 +201,13 @@ void vulkan_load_extensions(VulkanContext *context) {
 	if (vkSetDebugUtilsObjectName == NULL) {
 		LOG_ERROR("Failed to load vkSetDebugUtilsObjectName extension");
 		vkSetDebugUtilsObjectName = vulkan_set_debug_utils_object_name_default;
+	}
+	if (vkCmdBeginDebugUtilsLabel == NULL) {
+		LOG_ERROR("Failed to load vkCmdEndDebugUtilsLabel extension");
+		vkCmdBeginDebugUtilsLabel = vulkan_cmd_begin_debug_utils_label_default;
+	}
+	if (vkCmdEndDebugUtilsLabel == NULL) {
+		LOG_ERROR("Failed to load vkCmdEndDebugUtilsLabel extension");
+		vkCmdEndDebugUtilsLabel = vulkan_cmd_end_debug_utils_label_default;
 	}
 }

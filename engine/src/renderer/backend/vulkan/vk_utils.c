@@ -1,6 +1,7 @@
 #include "core/debug.h"
 #include "vk_internal.h"
 #include "renderer/backend/vulkan_api.h"
+#include <vulkan/vulkan_core.h>
 
 void vulkan_utils_set_object_name(VulkanContext *context, uint64_t object_handle, VkObjectType type, String name) {
 	VkDebugUtilsObjectNameInfoEXT name_info = {
@@ -10,6 +11,19 @@ void vulkan_utils_set_object_name(VulkanContext *context, uint64_t object_handle
 		.pObjectName = name.chars,
 	};
 	vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+}
+
+void vulkan_utils_begin_label(VulkanContext *context, const char *name) {
+	VkDebugUtilsLabelEXT label_info = {
+		.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+		.pLabelName = name,
+		.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+	};
+	vkCmdBeginDebugUtilsLabel(context->command_buffers[context->current_frame], &label_info);
+}
+
+void vulkan_utils_end_label(VulkanContext *context) {
+	vkCmdEndDebugUtilsLabel(context->command_buffers[context->current_frame]);
 }
 
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *context) {

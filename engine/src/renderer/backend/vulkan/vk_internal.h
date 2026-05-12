@@ -101,6 +101,7 @@ typedef struct vulkan_attachment {
 } VulkanAttachment;
 
 typedef struct vulkan_pass {
+	String name;
 	VulkanResourceState state;
 
 	VkFormat color_formats[4];
@@ -196,6 +197,10 @@ size_t vulkan_memory_required_alignment(VulkanContext *context, VkBufferUsageFla
 uint32_t vulkan_memory_type_find(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
 void vulkan_utils_set_object_name(VulkanContext *context, uint64_t object_handle, VkObjectType type, String name);
+
+void vulkan_utils_begin_label(VulkanContext *context, const char *name);
+void vulkan_utils_end_label(VulkanContext *context);
+
 VkFormat vulkan_utils_to_vkformat(VulkanContext *context, TextureFormat format);
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 uint32_t vulkan_utils_format_to_stride(VkFormat format);
@@ -204,7 +209,7 @@ typedef struct {
 	PipelineDesc desc;
 	VkFormat color_formats[4];
 	VkFormat depth_format;
-    VkSampleCountFlags sample_count;
+	VkSampleCountFlags sample_count;
 } PipelineStateKey;
 
 typedef struct vulkan_pipeline {
@@ -297,6 +302,10 @@ struct vulkan_context {
 	VKAPI_ATTR void VKAPI_CALL name(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks *pAllocator)
 #define VK_SET_DEBUG_UTILS_OBJECT_NAME(name) \
 	VkResult name(VkDevice device, const VkDebugUtilsObjectNameInfoEXT *pNameInfo)
+#define VK_CMD_BEGIN_DEBUG_UTILS_LABEL(name) \
+	void name(VkCommandBuffer commandBuffer, const VkDebugUtilsLabelEXT *pLabelInfo)
+#define VK_CMD_END_DEBUG_UTILS_LABEL(name) \
+	void name(VkCommandBuffer commandBuffer)
 
 // create
 VK_CREATE_UTIL_DEBUG_MESSENGER(vulkan_create_utils_debug_messenger_default);
@@ -312,3 +321,13 @@ extern fn_destroy_utils_debug_messenger *vkDestroyDebugUtilsMessenger;
 typedef VK_SET_DEBUG_UTILS_OBJECT_NAME(fn_set_debug_utils_object_name);
 VK_SET_DEBUG_UTILS_OBJECT_NAME(vulkan_set_debug_utils_object_name_default);
 extern fn_set_debug_utils_object_name *vkSetDebugUtilsObjectName;
+
+// begin label
+typedef VK_CMD_BEGIN_DEBUG_UTILS_LABEL(fn_cmd_begin_debug_utils_label);
+VK_CMD_BEGIN_DEBUG_UTILS_LABEL(vulkan_cmd_begin_debug_utils_label_default);
+extern fn_cmd_begin_debug_utils_label *vkCmdBeginDebugUtilsLabel;
+
+// end label
+typedef VK_CMD_END_DEBUG_UTILS_LABEL(fn_cmd_end_debug_utils_label);
+VK_CMD_END_DEBUG_UTILS_LABEL(vulkan_cmd_end_debug_utils_label_default);
+extern fn_cmd_end_debug_utils_label *vkCmdEndDebugUtilsLabel;

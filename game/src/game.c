@@ -84,6 +84,11 @@ typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
 	Camera3D camera;
 
+	RhiTexture picker_target;
+	RhiTexture main_color_target;
+
+	UIContext ui_context;
+
 	Entity active_entity;
 	Entity selected_entities[64];
 	uint32_t selected_entity_count;
@@ -135,11 +140,6 @@ typedef struct {
 	RhiBuffer scene_uniform_buffer;
 	RhiBuffer scene_geometry_buffer;
 
-	RhiTexture shadow_depth_target;
-	RhiTexture main_color_target;
-	RhiTexture ui_color_target;
-	RhiTexture picker_target;
-
 	GameState state;
 	Editor editor;
 
@@ -165,6 +165,15 @@ typedef struct {
 	ECS *world;
 	ECS *editor_scene;
 
+	// game targets
+	RhiTexture shadow_depth_target;
+	RhiTexture main_color_target;
+	RhiTexture ui_color_target;
+	RhiTexture output_target;
+	UIContext game_ui;
+
+	float2 viewport_size;
+
 	struct {
 		bool is_initialized;
 		Entity player, selection, pickaxe_pivot;
@@ -173,8 +182,6 @@ typedef struct {
 		bool playing;
 	} game;
 	bool debug_draw_collisions;
-
-	UIContext ui;
 
 	Camera3D *camera;
 } PermanentState;
@@ -195,9 +202,14 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 	PermanentState *pstate = receiver;
 
 	vulkan_renderer_on_resize(pstate->context, resize_event->width, resize_event->height);
-	vulkan_texture_resize(pstate->context, pstate->picker_target, resize_event->width, resize_event->height);
-	vulkan_texture_resize(pstate->context, pstate->ui_color_target, resize_event->width, resize_event->height);
+
 	vulkan_texture_resize(pstate->context, pstate->main_color_target, resize_event->width, resize_event->height);
+	vulkan_texture_resize(pstate->context, pstate->ui_color_target, resize_event->width, resize_event->height);
+
+	pstate->viewport_size = (float2){ resize_event->width, resize_event->height };
+
+	vulkan_texture_resize(pstate->context, pstate->editor.main_color_target, resize_event->width, resize_event->height);
+	vulkan_texture_resize(pstate->context, pstate->editor.picker_target, resize_event->width, resize_event->height);
 
 	return false;
 }
@@ -269,15 +281,15 @@ void draw_shadow_pass(PermanentState *pstate) {
 void draw_main_pass(PermanentState *pstate) {
 	Camera3D *camera = pstate->camera;
 
-	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
+	float2 viewport = pstate->viewport_size;
 	float4x4 projection = float4x4_identity();
 	if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
-		projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
+		projection = float4x4_perspective(deg2radf(camera->fov), viewport.x / viewport.y, 0.01f, 1000.f);
 	} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
-		float aspect = window_size.x / window_size.y;
+		float aspect = viewport.x / viewport.y;
 		projection = float4x4_orthographic(
-			-window_size.x / camera->ortho_size, window_size.x / camera->ortho_size,
-			-window_size.y / camera->ortho_size, window_size.y / camera->ortho_size,
+			-viewport.x / camera->ortho_size, viewport.x / camera->ortho_size,
+			-viewport.y / camera->ortho_size, viewport.y / camera->ortho_size,
 			0.1f, 1000.f);
 	}
 	projection.elements[5] *= -1;
@@ -305,7 +317,7 @@ void draw_main_pass(PermanentState *pstate) {
 	vulkan_buffer_write(
 		pstate->context, pstate->frame_uniform_buffer,
 		global_offset + offsetof(GlobalData, viewport),
-		sizeof_member(GlobalData, viewport), &window_size);
+		sizeof_member(GlobalData, viewport), &viewport);
 
 	LightData light = {
 		.color = { 1.0f, 1.0f, 1.0f, 1.0f },
@@ -325,7 +337,7 @@ void draw_main_pass(PermanentState *pstate) {
 
 	// :main_pass
 	DrawlistDesc main_pass = {
-		.name = S("main_pass"),
+		.name = S("geometry_pass"),
 		.color_attachments[0] = {
 		  .target = pstate->main_color_target,
 		  .clear.color = { 1.0f, 1.0f, 1.0f, 1.0f },
@@ -333,6 +345,8 @@ void draw_main_pass(PermanentState *pstate) {
 		  .load = CLEAR,
 		},
 		.color_attachment_count = 1,
+		.width = viewport.x,
+		.height = viewport.y,
 		.use_depth = true,
 		.msaa_level = 8,
 	};
@@ -510,18 +524,27 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->white = vulkan_texture_make(pstate->context, 1, 1, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
 
+		pstate->editor = editor_make(&pstate->arena);
+
 		uint32x2 window_size = window_size_pixel(pstate->display);
-		pstate->picker_target = vulkan_texture_make(
+		pstate->editor.picker_target = vulkan_texture_make(
 			pstate->context,
 			window_size.x, window_size.y,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_R32,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_READBACK,
 			NULL);
+		pstate->editor.main_color_target = vulkan_texture_make(
+			pstate->context,
+			window_size.x, window_size.y,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
+			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			NULL);
+		pstate->viewport_size = float2_from_uint2(window_size);
 
 		pstate->main_color_target = vulkan_texture_make(
 			pstate->context,
 			window_size.x, window_size.y,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
 
@@ -531,7 +554,15 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
+
 		pstate->ui_color_target = vulkan_texture_make(
+			pstate->context,
+			window_size.x, window_size.y,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
+			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			NULL);
+
+		pstate->output_target = vulkan_texture_make(
 			pstate->context,
 			window_size.x, window_size.y,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
@@ -540,13 +571,11 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->scene_arena = arena_partition(&pstate->arena, MiB(32));
 		pstate->world = pstate->editor_scene = ecs_make(pstate->scene_arena);
-		pstate->ui = ui_make();
+		pstate->game_ui = ui_make();
 		load_assets(pstate);
 
 		// Initialize entity transforms
 		transform_system_update(pstate->world);
-
-		pstate->editor = editor_make(&pstate->arena);
 
 		pstate->camera = &pstate->editor.camera;
 		pstate->state = GAME_STATE_EDITOR;
@@ -576,6 +605,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			pstate->editor_offset = arena_mark(pstate->scene_arena);
 			memory_zero(&pstate->game, sizeof(pstate->game));
 			pstate->world = ecs_make_copy(pstate->scene_arena, pstate->editor_scene);
+			pstate->viewport_size = float2_from_uint2(window_size_pixel(pstate->display));
 		}
 	}
 
@@ -733,7 +763,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			camera->position.z = pstate->game_camera_start_offset.z + transform->position.z;
 
 			float2 mouse_position = float2_from_double2(input_mouse_position());
-			float2 window_size = float2_from_uint2(window_size_pixel(context->display));
+			float2 viewport = pstate->viewport_size;
 
 			// Calculate the positon where the camera view ray intersects world y 0
 
@@ -750,12 +780,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			*/
 
 			float2 ndc = {
-				.x = -1 * ((mouse_position.x / window_size.x) * 2.0f - 1.0f),
-				.y = -1 * ((mouse_position.y / window_size.y) * 2.0f - 1.0f),
+				.x = -1 * ((mouse_position.x / viewport.x) * 2.0f - 1.0f),
+				.y = -1 * ((mouse_position.y / viewport.y) * 2.0f - 1.0f),
 			};
 			float2 extent = {
-				ndc.x * (window_size.x / camera->ortho_size),
-				ndc.y * (window_size.y / camera->ortho_size),
+				ndc.x * (viewport.x / camera->ortho_size),
+				ndc.y * (viewport.y / camera->ortho_size),
 			};
 
 			float3 forward_offset = float3_scale(camera_forward, 0.1f);
@@ -801,12 +831,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 
 			// :ui game
-			ui_frame_begin(&pstate->ui);
+			ui_frame_begin(&pstate->game_ui);
 			ui_container({
 			  .background_color = { 0, 0, 0, 0 },
 			  .layout = {
 				.direction = UI_VERTICAL,
-				.sizing = { .width = FIXED(window_size.x), .height = FIXED(window_size.y) },
+				.sizing = { .width = FIXED(viewport.x), .height = FIXED(viewport.y) },
 				.padding = { 32, 32, 32, 32 },
 				.child_gap = 32,
 			  },
@@ -871,8 +901,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 			ui_frame_end(ui_pass);
 
-			for (uint32_t index = 0; index < pstate->ui.previous_element_count; ++index) {
-				UIElementData *element = &pstate->ui.previous_elements[index];
+			for (uint32_t index = 0; index < pstate->game_ui.previous_element_count; ++index) {
+				UIElementData *element = &pstate->game_ui.previous_elements[index];
 
 				if (element->image.id) {
 					uint2 image_size = vulkan_texture_size(pstate->context, element->image);
@@ -937,12 +967,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		/* }; */
 		/* pass_submit(pstate, main_pass, main_pass_desc); */
 
-		// :pass
-		// :ui draw
-		if (pstate->state == GAME_STATE_EDITOR)
-			editor_draw(pstate, &pstate->editor);
-
 		DrawlistDesc ui_pass_desc = {
+			.name = S("game_ui_pass"),
 			.color_attachments[0] = {
 			  .target = pstate->ui_color_target,
 			  .load = CLEAR,
@@ -959,8 +985,10 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		};
 		pass_submit(pstate, &ui_camera, ui_pass, ui_pass_desc);
 
-		DrawlistDesc present_pass = {
+		DrawlistDesc composite_pass = {
+			.name = S("composite_pass"),
 			.color_attachments[0] = {
+			  .target = pstate->output_target,
 			  .clear.color = { 1.0f, 0.0f, 1.0f, 1.0f },
 			  .load = CLEAR,
 			  .store = STORE,
@@ -970,7 +998,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		vulkan_texture_prepare_sample(pstate->context, pstate->main_color_target);
 		vulkan_texture_prepare_sample(pstate->context, pstate->ui_color_target);
-		if (vulkan_drawlist_begin(pstate->context, present_pass)) {
+		if (vulkan_drawlist_begin(pstate->context, composite_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
 			vulkan_shader_bind(pstate->context, pstate->composite_shader, pipeline);
 
@@ -983,6 +1011,43 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			RhiTexture layer1 = pstate->ui_color_target;
 			vulkan_uniformset_bind_texture(pstate->context, set0, 0, layer0, pstate->linear_sampler);
 			vulkan_uniformset_bind_texture(pstate->context, set0, 1, layer1, pstate->linear_sampler);
+			vulkan_uniformset_bind(pstate->context, set0);
+
+			vulkan_renderer_draw(pstate->context, 6);
+
+			vulkan_drawlist_end(pstate->context);
+		}
+
+		// :pass
+		// :ui draw
+		if (pstate->state == GAME_STATE_EDITOR)
+			editor_draw(pstate, &pstate->editor);
+
+		DrawlistDesc present_pass = {
+			.name = S("present_pass"),
+			.color_attachments[0] = {
+			  .clear.color = { 1.0f, 0.0f, 1.0f, 1.0f },
+			  .load = CLEAR,
+			  .store = STORE,
+			},
+			.color_attachment_count = 1,
+		};
+
+		vulkan_texture_prepare_sample(pstate->context, pstate->output_target);
+		vulkan_texture_prepare_sample(pstate->context, pstate->editor.main_color_target);
+		if (vulkan_drawlist_begin(pstate->context, present_pass)) {
+			PipelineDesc pipeline = DEFAULT_PIPELINE;
+			vulkan_shader_bind(pstate->context, pstate->blit_shader, pipeline);
+
+			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->blit_shader, 0);
+
+			/* RhiTexture output = pstate->ui_color_target; */
+			/* RhiTexture output = pstate->shadow_depth_target; */
+
+			RhiTexture output = pstate->output_target;
+			if (pstate->state == GAME_STATE_EDITOR)
+				output = pstate->editor.main_color_target;
+			vulkan_uniformset_bind_texture(pstate->context, set0, 0, output, pstate->linear_sampler);
 			vulkan_uniformset_bind(pstate->context, set0);
 
 			vulkan_renderer_draw(pstate->context, 6);
@@ -1015,6 +1080,7 @@ Editor editor_make(Arena *arena) {
 		.pan_speed = 0.005f,
 		.zoom_speed = 0.05f,
 		.sensitivity = 0.005f,
+		.ui_context = ui_make(),
 		.camera = {
 		  .position = { 0.0f, 20, 30 },
 		  .target = { 0.0f, 0.0, 0.0f },
@@ -1174,7 +1240,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 			if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
 				double2 mouse_position = input_mouse_position();
 				uint32_t entity = 0;
-				vulkan_texture_read_pixel(pstate->context, pstate->picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &entity);
+				vulkan_texture_read_pixel(pstate->context, pstate->editor.picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &entity);
 
 				editor_select_entity(editor, entity, input_key_down(KEY_CODE_LEFTSHIFT));
 				LOG_INFO("acitve = %d, count = %d", entity, editor->selected_entity_count);
@@ -1440,7 +1506,66 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	Camera3D *camera = pstate->camera;
 	// :editor
 
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	DrawlistBuffer *editor_ui = drawlist_make(scratch.arena, MiB(1));
 	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
+
+	bool is_landscape = window_size.x >= window_size.y;
+	ui_frame_begin(&pstate->game_ui);
+	ui_container({
+	  .layout = {
+		.direction = is_landscape ? UI_HORIZONTAL : UI_VERTICAL,
+		.sizing = { .width = FIXED(window_size.x), .height = FIXED(window_size.y) },
+	  },
+	}) {
+		if (is_landscape)
+			ui_container({
+			  .background_color = { 5, 5, 5, 255 },
+			  .layout = {
+				.sizing = { FIXED(300), GROW },
+				.padding = PAD(32),
+			  },
+			}) {
+				ui_text(UI_ID(0), &pstate->assets.font[FONT_SIZE_64], S("Hello world!"));
+			}
+
+		ui_container({
+		  .background_color = rgb(255, 255, 255),
+		  .background_image = pstate->main_color_target,
+		  .layout = {
+			.sizing = { GROW, GROW },
+			.padding = PAD(32),
+		  },
+		}) {
+		}
+
+		if (is_landscape == false)
+			ui_container({
+			  .background_color = { 5, 5, 5, 255 },
+			  .layout = {
+				.sizing = { GROW, FIXED(250) },
+				.padding = PAD(32),
+			  },
+			}) {
+				ui_text(UI_ID(0), &pstate->assets.font[FONT_SIZE_64], S("Hello world!"));
+			}
+	}
+	ui_frame_end(editor_ui);
+
+	for (uint32_t index = 0; index < pstate->game_ui.previous_element_count; ++index) {
+		UIElementData *element = &pstate->game_ui.previous_elements[index];
+
+		if (element->image.id) {
+			Rectangle src = { 0, 0, element->size.x, element->size.y };
+			Rectangle dst = { element->position.x, element->position.y, element->size.x, element->size.y };
+			drawlist_push_texture_ex(editor_ui, element->image, src, dst, (float2){ 0 }, 0.0f, element->color);
+			pstate->viewport_size = element->size;
+		} else if (element->text.chars) {
+			drawlist_push_text(editor_ui, &pstate->assets.font[FONT_SIZE_16], element->text, element->position, rgb(255, 255, 255));
+		} else
+			drawlist_push_rectv(editor_ui, element->position, element->size, element->color);
+	}
+
 	float4x4 projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
 	projection.elements[5] *= -1;
 	float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
@@ -1477,8 +1602,9 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(float4), pstate->frame_storage_buffer);
 
 	DrawlistDesc picker_pass = {
+		.name = S("EDITOR:picker_pass"),
 		.color_attachments[0] = {
-		  .target = pstate->picker_target,
+		  .target = pstate->editor.picker_target,
 		  .clear.color = { 0 },
 		  .load = CLEAR,
 		  .store = STORE,
@@ -1520,183 +1646,24 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		vulkan_drawlist_end(pstate->context);
 	}
 
-	DrawlistDesc debug_lines_pass = {
+	vulkan_texture_prepare_sample(pstate->context, pstate->main_color_target);
+	DrawlistDesc ui_pass_desc = {
+		.name = S("EDITOR:ui_pass"),
 		.color_attachments[0] = {
-		  .target = pstate->main_color_target,
-		  .load = LOAD,
+		  .target = pstate->editor.main_color_target,
+		  .load = CLEAR,
 		  .store = STORE,
+		  .clear.color = { 0.0f, 0.0f, 0.0f, 0.0f },
 		},
 		.color_attachment_count = 1,
 	};
-
-	if (vulkan_drawlist_begin(pstate->context, debug_lines_pass)) {
-		PipelineDesc pipeline = DEFAULT_PIPELINE;
-		vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
-
-		for (uint32_t index = 0; index < editor->selected_entity_count; ++index) {
-			Entity entity = editor->selected_entities[index];
-			ASSERT(ecs_has(pstate->world, entity, TransformComponent));
-			TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
-			float3 min = { 0 };
-			float3 max = { 0 };
-
-			if (ecs_has(pstate->world, entity, MeshComponent)) {
-				MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
-				uint32_t count = arena_array_count(pstate->assets.mesh_groups);
-				ASSERT(mesh_component->mesh_group_index && mesh_component->mesh_group_index < count);
-
-				Interval3 *bounding_box = &pstate->assets.mesh_group_bounds[mesh_component->mesh_group_index];
-				min = bounding_box->min;
-				max = bounding_box->max;
-			} else if (ecs_has(pstate->world, entity, ColliderComponent)) {
-				continue;
-			} else {
-				min = float3_negate(float3_scale(transform->scale, 0.5f));
-				max = float3_scale(transform->scale, 0.5f);
-			}
-
-			uint32_t line_segment_count = 24;
-			size_t line_segment_size = 2 * sizeof(float4);
-			size_t size = line_segment_count * line_segment_size;
-
-			RhiBuffer buffer = pstate->frame_storage_buffer;
-			float3 bounding_box_size = float3_subtract(max, min);
-
-			float thickness = 1.5f;
-			float pick_length = minf(bounding_box_size.z, minf(bounding_box_size.x, bounding_box_size.y)) * 0.25f;
-
-			float4 selection[] = {
-				// 0
-				{ min.x, min.y, min.z, thickness },
-				{ min.x + pick_length, min.y, min.z, thickness },
-
-				{ min.x, min.y, min.z, thickness },
-				{ min.x, min.y + pick_length, min.z, thickness },
-
-				{ min.x, min.y, min.z, thickness },
-				{ min.x, min.y, min.z + pick_length, thickness },
-
-				// 1
-				{ max.x, min.y, min.z, thickness },
-				{ max.x - pick_length, min.y, min.z, thickness },
-
-				{ max.x, min.y, min.z, thickness },
-				{ max.x, min.y + pick_length, min.z, thickness },
-
-				{ max.x, min.y, min.z, thickness },
-				{ max.x, min.y, min.z + pick_length, thickness },
-
-				// 2
-				{ min.x, max.y, min.z, thickness },
-				{ min.x + pick_length, max.y, min.z, thickness },
-
-				{ min.x, max.y, min.z, thickness },
-				{ min.x, max.y - pick_length, min.z, thickness },
-
-				{ min.x, max.y, min.z, thickness },
-				{ min.x, max.y, min.z + pick_length, thickness },
-
-				// 3
-				{ max.x, max.y, min.z, thickness },
-				{ max.x - pick_length, max.y, min.z, thickness },
-
-				{ max.x, max.y, min.z, thickness },
-				{ max.x, max.y - pick_length, min.z, thickness },
-
-				{ max.x, max.y, min.z, thickness },
-				{ max.x, max.y, min.z + pick_length, thickness },
-
-				// 4
-				{ min.x, min.y, max.z, thickness },
-				{ min.x + pick_length, min.y, max.z, thickness },
-
-				{ min.x, min.y, max.z, thickness },
-				{ min.x, min.y + pick_length, max.z, thickness },
-
-				{ min.x, min.y, max.z, thickness },
-				{ min.x, min.y, max.z - pick_length, thickness },
-
-				// 5
-				{ max.x, min.y, max.z, thickness },
-				{ max.x - pick_length, min.y, max.z, thickness },
-
-				{ max.x, min.y, max.z, thickness },
-				{ max.x, min.y + pick_length, max.z, thickness },
-
-				{ max.x, min.y, max.z, thickness },
-				{ max.x, min.y, max.z - pick_length, thickness },
-
-				// 6
-				{ min.x, max.y, max.z, thickness },
-				{ min.x + pick_length, max.y, max.z, thickness },
-
-				{ min.x, max.y, max.z, thickness },
-				{ min.x, max.y - pick_length, max.z, thickness },
-
-				{ min.x, max.y, max.z, thickness },
-				{ min.x, max.y, max.z - pick_length, thickness },
-
-				// 7
-				{ max.x, max.y, max.z, thickness },
-				{ max.x - pick_length, max.y, max.z, thickness },
-
-				{ max.x, max.y, max.z, thickness },
-				{ max.x, max.y - pick_length, max.z, thickness },
-
-				{ max.x, max.y, max.z, thickness },
-				{ max.x, max.y, max.z - pick_length, thickness },
-			};
-
-			float4x4 model_matrix = transform->world_matrix;
-			float4 color = entity == editor->active_entity ? (float4){ 1.0f, 0.2f, 0.2f, 1.0f } : (float4){ 1.0f, 0.5f, 0.3f, 1.0f };
-
-			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
-			size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color);
-			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(selection), selection);
-
-			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, sizeof(selection), pstate->frame_storage_buffer);
-			vulkan_uniformset_bind(pstate->context, group);
-
-			vulkan_renderer_draw(pstate->context, line_segment_count * 2 * 6);
-		}
-
-		if (editor->adding) {
-			uint32_t slices = 20;
-			float spacing = 1.0f, thickness = 1.0f;
-
-			ArenaTemp scratch = arena_scratch_begin(NULL);
-			size_t initial_offset = arena_mark(scratch.arena);
-			int32_t half_slices = slices / 2;
-			for (int32_t index = -half_slices; index <= half_slices; ++index) {
-				arena_put(scratch.arena, float4, { (float)index * spacing, 0.0f, (float)-half_slices * spacing, thickness });
-				arena_put(scratch.arena, float4, { (float)index * spacing, 0.0f, (float)half_slices * spacing, thickness });
-
-				arena_put(scratch.arena, float4, { (float)-half_slices * spacing, 0.0f, (float)index * spacing, thickness });
-				arena_put(scratch.arena, float4, { (float)half_slices * spacing, 0.0f, (float)index * spacing, thickness });
-			}
-			size_t size = arena_mark(scratch.arena) - initial_offset;
-
-			float4x4 model_matrix = float4x4_identity();
-			float4 color = (float4){ 0.0f, 0.0f, 0.0f, 1.0f };
-
-			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
-			size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color);
-			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, size, scratch.arena->base);
-
-			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
-			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, size, pstate->frame_storage_buffer);
-			vulkan_uniformset_bind(pstate->context, group);
-
-			vulkan_renderer_draw(pstate->context, (slices + 1) * 2 * 6);
-
-			arena_temp_end(scratch);
-		}
-
-		vulkan_drawlist_end(pstate->context);
-	}
+	Camera3D ui_camera = {
+		.position = { 0.0f, 0.0f, 1.0f },
+		.target = { 0.0f, 0.0f, 0.0f },
+		.up = { 0.0f, 1.0f, 0.0f },
+		.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
+	};
+	pass_submit(pstate, &ui_camera, editor_ui, ui_pass_desc);
 }
 
 static inline void calculate_transforms(ECS *world, Entity entity, float4x4 parent_global) {
@@ -1761,7 +1728,6 @@ static inline RhiShader load_shader(VulkanContext *context, String vertex, Strin
 	arena_scratch_end(scratch);
 	return result;
 }
-
 void load_assets(PermanentState *pstate) {
 	// :assets
 	ArenaTemp scratch = arena_scratch_begin(NULL);

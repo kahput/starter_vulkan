@@ -17,6 +17,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 	VkSampleCountFlags sample_count = MIN(to_sample_count(desc.msaa_level), context->device.sample_count);
 
 	context->bound_pass = (VulkanPass){
+		.name = desc.name,
 		.sample_count = sample_count,
 	};
 
@@ -126,6 +127,13 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 		depth_info.imageView = image->view;
 	}
 
+	if (desc.width) {
+		ASSERT(desc.height);
+		ASSERT(extent.width >= desc.width && extent.height >= desc.height);
+		extent.width = desc.width;
+		extent.height = desc.height;
+	}
+
 	VkRenderingInfo pass_info = {
 		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 		.renderArea = { .extent = extent },
@@ -135,6 +143,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 		.pDepthAttachment = desc.use_depth ? &depth_info : NULL,
 	};
 
+	if (context->bound_pass.name.length)
+		vulkan_utils_begin_label(context, desc.name.chars);
 	vkCmdBeginRendering(context->command_buffers[context->current_frame], &pass_info);
 
 	VkViewport viewport = {
@@ -159,6 +169,9 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 
 bool vulkan_drawlist_end(VulkanContext *context) {
 	vkCmdEndRendering(context->command_buffers[context->current_frame]);
+
+	if (context->bound_pass.name.length)
+		vulkan_utils_end_label(context);
 
 	context->bound_pass = (VulkanPass){ 0 };
 	return true;
