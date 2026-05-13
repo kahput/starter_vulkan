@@ -81,8 +81,12 @@ typedef struct {
 } EditorTransformInfo;
 
 typedef enum {
-	CONTENT_BROWSER,
-} EditorSidebarTab;
+	EDITOR_TAB_HIERARCHY,
+	EDITOR_TAB_INSPECTOR,
+	EDITOR_TAB_CONTENT_BROWSER,
+
+	EDITOR_TAB_MAX,
+} EditorTab;
 
 typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
@@ -91,8 +95,6 @@ typedef struct Editor {
 	RhiTexture picker_target;
 	RhiTexture main_color_target;
 
-	UIContext ui_context;
-
 	Entity active_entity;
 	Entity selected_entities[64];
 	uint32_t selected_entity_count;
@@ -100,7 +102,7 @@ typedef struct Editor {
 	TRSMode mode;
 	EditorTransformInfo transform;
 
-	EditorSidebarTab current_tab;
+	EditorTab current_tab;
 
 	bool adding;
 
@@ -122,7 +124,9 @@ typedef enum {
 } FontSize;
 
 typedef struct {
-	Arena arena;
+	Arena persistent_arena;
+	Arena *frame_arena;
+
 	bool initialized;
 
 	VulkanContext *context;
@@ -168,15 +172,18 @@ typedef struct {
 
 	Arena *scene_arena;
 	size_t editor_offset;
+
+	Camera3D *active_camera;
 	ECS *world;
 	ECS *editor_scene;
+
+	UIContext ui;
 
 	// game targets
 	RhiTexture shadow_depth_target;
 	RhiTexture main_color_target;
 	RhiTexture ui_color_target;
 	RhiTexture output_target;
-	UIContext game_ui;
 
 	Rectangle viewport;
 
@@ -192,7 +199,6 @@ typedef struct {
 	} game;
 	bool debug_draw_collisions;
 
-	Camera3D *camera;
 } PermanentState;
 
 Editor editor_make(Arena *arena);
@@ -291,8 +297,7 @@ void draw_shadow_pass(PermanentState *pstate) {
 }
 
 void draw_main_pass(PermanentState *pstate) {
-	Camera3D *camera = pstate->camera;
-
+	Camera3D *camera = pstate->active_camera;
 
 	Rectangle viewport = pstate->viewport;
 	float4x4 projection = float4x4_identity();
@@ -522,7 +527,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	pstate->display = context->display;
 
 	if (pstate->initialized == false) { // :init
-		pstate->arena = arena_wrap((uint8_t *)context->permanent_memory + sizeof(PermanentState), context->permanent_memory_size - sizeof(PermanentState));
+		pstate->persistent_arena = arena_wrap((uint8_t *)context->permanent_memory + sizeof(PermanentState), context->permanent_memory_size - sizeof(PermanentState));
+		pstate->frame_arena = arena_partition(&pstate->persistent_arena, MiB(32));
 
 		event_subscribe(EVENT_PLATFORM_WINDOW_RESIZED, window_resize, pstate);
 
@@ -538,29 +544,27 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->white = vulkan_texture_make(pstate->context, 1, 1, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
 
-		pstate->editor = editor_make(&pstate->arena);
+		pstate->editor = editor_make(&pstate->persistent_arena);
 
 		uint32x2 window_size = window_size_pixel(pstate->display);
+		Rectangle viewport = pstate->viewport = (Rectangle){ 0, 0, window_size.x, window_size.y };
+
 		pstate->editor.picker_target = vulkan_texture_make(
 			pstate->context,
-			window_size.x, window_size.y,
+			viewport.width, viewport.height,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_R32,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_READBACK,
 			NULL);
 		pstate->editor.main_color_target = vulkan_texture_make(
 			pstate->context,
-			window_size.x, window_size.y,
+			viewport.width, viewport.height,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
 
-		pstate->viewport = (Rectangle){
-			0, 0, window_size.x, window_size.y
-		};
-
 		pstate->main_color_target = vulkan_texture_make(
 			pstate->context,
-			window_size.x, window_size.y,
+			viewport.width, viewport.height,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
@@ -574,36 +578,35 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 		pstate->ui_color_target = vulkan_texture_make(
 			pstate->context,
-			window_size.x, window_size.y,
+			viewport.width, viewport.height,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
 
 		pstate->output_target = vulkan_texture_make(
 			pstate->context,
-			window_size.x, window_size.y,
+			viewport.width, viewport.height,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
 
-		pstate->scene_arena = arena_partition(&pstate->arena, MiB(32));
+		pstate->scene_arena = arena_partition(&pstate->persistent_arena, MiB(32));
 		pstate->world = pstate->editor_scene = ecs_make(pstate->scene_arena);
 		load_assets(pstate);
-		pstate->game_ui = ui_make(&pstate->assets.font[FONT_SIZE_64]);
 
 		// Initialize entity transforms
 		transform_system_update(pstate->world);
 
-		pstate->camera = &pstate->editor.camera;
+		pstate->active_camera = &pstate->editor.camera;
 		pstate->state = GAME_STATE_EDITOR;
-
-		pstate->editor.ui_context = ui_make(&pstate->assets.font[FONT_SIZE_16]);
 
 		pstate->initialized = true;
 	}
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	DrawlistBuffer *ui_pass = drawlist_make(scratch.arena, MiB(1));
+	DrawlistBuffer *drawlist_ui = drawlist_make(scratch.arena, MiB(1));
+	pstate->ui.mouse_down = input_mouse_down(MOUSE_BUTTON_LEFT);
+	pstate->ui.mouse_position = float2_from_double2(input_mouse_position());
 	/* DrawlistBuffer *main_pass = drawlist_make(scratch.arena, MiB(2)); */
 
 	if (input_key_pressed(KEY_CODE_P))
@@ -617,10 +620,10 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			window_set_cursor_locked(context->display, false);
 			arena_rewind(pstate->scene_arena, pstate->editor_offset);
 			pstate->world = pstate->editor_scene;
-			pstate->camera = &pstate->editor.camera;
+			pstate->active_camera = &pstate->editor.camera;
 		} else {
 			/* window_set_cursor_locked(context->display, true); */
-			pstate->camera = &pstate->game_camera;
+			pstate->active_camera = &pstate->game_camera;
 			pstate->editor_offset = arena_mark(pstate->scene_arena);
 			memory_zero(&pstate->game, sizeof(pstate->game));
 			pstate->world = ecs_make_copy(pstate->scene_arena, pstate->editor_scene);
@@ -855,103 +858,26 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 
 			// :ui game
-			ui_frame_begin(&pstate->game_ui);
-			ui_container({
-			  .background_color = { 0, 0, 0, 0 },
-			  .layout = {
-				.direction = UI_VERTICAL,
-				.sizing = { .width = FIXED(viewport.x), .height = FIXED(viewport.y) },
-				.padding = { 32, 32, 32, 32 },
-				.child_gap = 32,
-			  },
-			}) {
-				ui_container({
-				  .background_color = { 0 },
-				  .layout = {
-					.sizing = { .width = GROW, .height = FIT },
-					.child_gap = 32,
-				  },
-				}) {
-					ui_container({
-					  .background_color = { 255, 0, 0, 255 },
-					  .layout = {
-						.sizing = { FIT, FIT },
-						.padding = PAD(32),
-					  },
-					}) {
-						ui_text(LINE_ID(0), S("Hello world!"));
-					}
 
-					// Vs this
-					ui_container({
-					  .background_color = UI_DARK.button_idle,
-					  .layout = { .sizing = { GROW, GROW } },
-					}) {
-						if (ui_button(LINE_ID(0), S("message"), &UI_DARK)) {
-							LOG_INFO("Button clicked");
-						}
-					}
+			ui_frame_begin(&pstate->ui);
 
-					ui_container({
-					  .background_color = { 255, 0, 255, 255 },
-					  .layout = {
-						.sizing = { .width = FIXED(800), .height = FIXED(255) },
-						.direction = UI_VERTICAL,
-						.padding = { 8, 8, 8, 8 },
-					  },
-					}) {
-						ui_container({
-						  .background_color = { 0, 0, 0, 255 },
-						  .layout = {
-							.sizing = { FIXED(16), FIXED(32) },
-						  },
-						}) {
-						}
-					}
-				}
+			ui_widget_push(LINE_ID(0), FIT(), FIT());
+			ui_background_color(rgb(0, 0, 0));
+			ui_absolute_position(float2_make(32, 32));
+			ui_padding_all(16);
+            ui_child_gap(16);
 
-				static uint8_t tint = 255;
+			ui_widget_push(LINE_ID(0), FIXED(100), FIXED(100));
+			ui_background_color(rgb(255, 0, 0));
+			ui_widget_pop();
 
-				/* ui_container({ */
-				/* .layout.direction = UI_HORIZONTAL, */
-				/* .layout.sizing = { .width = GROW }, */
-				/* }) { */
-				/* tint = (uint8_t)ui_sliderf(UI_ID(0), (float)tint, 0.f, 255.f, &UI_DARK); */
-				/* } */
+			ui_widget_push(LINE_ID(0), FIXED(150), FIXED(250));
+			ui_background_color(rgb(0, 255, 0));
+			ui_widget_pop();
 
-				/* ui_image(UI_ID(0), pstate->assets.font.atlas, (float2){ 512, 512 }, rgb(tint, tint, tint)); */
+			ui_widget_pop();
 
-				/* ELEMENT({ */
-				/* .background_color = { 0, 255, 0, 255 }, */
-				/* .layout = { */
-				/* .sizing = { GROW, GROW }, */
-				/* }, */
-				/* }); */
-			}
-			ui_frame_end(ui_pass);
-
-			for (uint32_t index = 0; index < pstate->game_ui.previous_element_count; ++index) {
-				UIElementData *element = &pstate->game_ui.previous_elements[index];
-
-				if (element->image.id) {
-					uint2 image_size = vulkan_texture_size(pstate->context, element->image);
-					Rectangle src = { 0, 0, image_size.x, image_size.y };
-					Rectangle dst = { element->position.x, element->position.y, element->size.x, element->size.y };
-					drawlist_push_texture_ex(ui_pass, element->image, src, dst, (float2){ 0 }, 0.0f, element->color);
-				} else if (element->text.chars) {
-					drawlist_push_text(ui_pass, &pstate->assets.font[FONT_SIZE_64], element->text, element->position, rgb(255, 255, 255));
-				} else
-					drawlist_push_rectv(ui_pass, element->position, element->size, element->color);
-			}
-
-			/* drawlist_push_text(ui_pass, &pstate->assets.font, "Hello world!", (float2){ 100, 400 }, rgb(0, 0, 0)); */
-
-			/* drawlist_push_rectv(ui_pass, (float2){ 100, 400 }, (float2){ 10, 10 }, rgb(255, 255, 0)); */
-
-			/* if (ui_button(UI_ID(0), 200, 200, 80, 80)) { */
-			/* 	LOG_INFO("Button clicked"); */
-			/* }; */
-			/* push_rectangle(ui_arena, 0.0f, 0.0f, 100.f, 100.f, (Color){ 255, 0, 0, 255 }); */
+			ui_frame_end(drawlist_ui);
 
 			static float fps = 0.0f;
 			uint32_t fps_average_count = 0;
@@ -964,7 +890,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 
 			String fps_text = string_format(scratch.arena, "%.1f", fps);
-			drawlist_push_text(ui_pass, &pstate->assets.font[FONT_SIZE_16], fps_text, (float2){ 10, 10 }, rgb(0, 0, 0));
+			drawlist_push_text(drawlist_ui, &pstate->assets.font[FONT_SIZE_16], fps_text, (float2){ 10, 10 }, rgb(0, 0, 0));
 
 		} break;
 
@@ -1012,7 +938,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			.up = { 0.0f, 1.0f, 0.0f },
 			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
 		};
-		pass_submit(pstate, &ui_camera, ui_pass, ui_pass_desc);
+		pass_submit(pstate, &ui_camera, drawlist_ui, ui_pass_desc);
 
 		DrawlistDesc composite_pass = {
 			.name = S("composite_pass"),
@@ -1089,6 +1015,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 	vulkan_buffer_reset(pstate->context, pstate->frame_storage_buffer);
 	vulkan_buffer_reset(pstate->context, pstate->frame_uniform_buffer);
+
+	arena_reset(pstate->frame_arena);
 
 	/* LOG_INFO("FPS = %.2f", 1 / dt); */
 
@@ -1539,170 +1467,14 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	}
 }
 
-void editor_sidebar_contents(PermanentState *pstate, UIDirection direction) {
-	Editor *editor = &pstate->editor;
-
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-	UIElementDesc button_container = {
-		.background_color = rgb(0, 0, 0),
-		.layout = {
-		  .padding = PAD(8) },
-	};
-
-	String tab_string[5] = {
-		[CONTENT_BROWSER] = S("content browser"),
-		S("UNUSED"),
-		S("UNUSED"),
-		S("UNUSED"),
-		S("UNUSED"),
-	};
-
-	ui_container({ .background_color = rgb(0, 0, 0),
-	  .layout = {
-		.direction = UI_VERTICAL,
-		.sizing = { GROW, GROW },
-		.child_gap = 16,
-	  } }) {
-		ui_container({ .background_color = rgb(255, 0, 0),
-		  .layout = {
-			.direction = UI_HORIZONTAL,
-			.sizing = { GROW, FIT },
-			.child_gap = 8,
-			.padding = PAD(4) } }) {
-			for (uint32_t index = 0; index < 5; ++index) {
-				if (ui_button(LINE_ID(index), tab_string[index], &UI_DARK)) {
-					editor->current_tab = index;
-				}
-			}
-		}
-
-		switch (editor->current_tab) {
-			case CONTENT_BROWSER: {
-				ui_container({ .background_color = rgb(0, 0, 0),
-				  .layout = {
-					.direction = UI_HORIZONTAL,
-					.sizing = { GROW, FIT },
-					.child_gap = 16,
-					.padding = PAD(16),
-				  } }) {
-					ui_text(LINE_ID(0), S("Content browser"));
-				}
-
-			} break;
-			default: {
-				ui_container({ .background_color = rgb(0, 0, 0),
-				  .layout = {
-					.direction = UI_HORIZONTAL,
-					.sizing = { GROW, FIT },
-					.child_gap = 16,
-					.padding = PAD(16),
-				  } }) {
-					ui_text(LINE_ID(0), S("UNUSED"));
-				}
-
-			} break;
-		}
-	}
-
-	arena_scratch_end(scratch);
-}
-
 void editor_draw(PermanentState *pstate, Editor *editor) {
-	Camera3D *camera = pstate->camera;
+	Camera3D *camera = pstate->active_camera;
 	// :editor
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	DrawlistBuffer *editor_ui = drawlist_make(scratch.arena, MiB(1));
-	float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
+	DrawlistBuffer *drawlist_ui = drawlist_make(scratch.arena, MiB(1));
 
-	bool is_landscape = window_size.x >= window_size.y;
-	ui_frame_begin(&editor->ui_context);
-	ui_container({
-	  .layout = {
-		.direction = is_landscape ? UI_HORIZONTAL : UI_VERTICAL,
-		.sizing = { .width = FIXED(window_size.x), .height = FIXED(window_size.y) },
-	  },
-	}) {
-		if (is_landscape)
-			ui_container({
-			  .background_color = { 5, 5, 5, 255 },
-			  .layout = {
-				.sizing = { FIXED(500), GROW },
-			  },
-			}) editor_sidebar_contents(pstate, UI_HORIZONTAL);
-
-		ui_container({
-		  .background_color = rgb(255, 255, 255),
-		  .background_image = pstate->main_color_target,
-		  .layout = {
-			.sizing = { GROW, GROW },
-			.padding = PAD(32),
-		  },
-		}) {
-		}
-
-		if (is_landscape == false)
-			ui_container({
-			  .background_color = { 5, 5, 5, 255 },
-			  .layout = {
-				.sizing = { GROW, FIXED(300) },
-			  },
-			}) editor_sidebar_contents(pstate, UI_VERTICAL);
-	}
-	ui_frame_end(editor_ui);
-
-	for (uint32_t index = 0; index < editor->ui_context.previous_element_count; ++index) {
-		UIElementData *element = &editor->ui_context.previous_elements[index];
-
-		if (element->image.id) {
-			Rectangle src = { element->position.x, element->position.y, element->size.x, element->size.y };
-			Rectangle dst = { element->position.x, element->position.y, element->size.x, element->size.y };
-
-			/* drawlist_push_rect(editor_ui, src, rgb(255, 0, 0)); */
-			drawlist_push_texture_ex(editor_ui, element->image, src, dst, (float2){ 0 }, 0.0f, element->color);
-
-			pstate->viewport = dst;
-		} else if (element->text.chars) {
-			drawlist_push_text(editor_ui, &pstate->assets.font[FONT_SIZE_16], element->text, element->position, rgb(255, 255, 255));
-		} else
-			drawlist_push_rectv(editor_ui, element->position, element->size, element->color);
-	}
-
-	float4x4 projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
-	projection.elements[5] *= -1;
-	float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
-
-	typedef struct {
-		float4x4 projection, view;
-		float4 camera_position;
-		float2 viewport;
-	} GlobalData;
-
-	size_t global_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(GlobalData), NULL);
-	vulkan_buffer_write(
-		pstate->context, pstate->frame_uniform_buffer,
-		global_offset + offsetof(GlobalData, projection),
-		sizeof_member(GlobalData, projection), &projection);
-	vulkan_buffer_write(
-		pstate->context, pstate->frame_uniform_buffer,
-		global_offset + offsetof(GlobalData, view),
-		sizeof_member(GlobalData, view), &view);
-	vulkan_buffer_write(
-		pstate->context, pstate->frame_uniform_buffer,
-		global_offset + offsetof(GlobalData, camera_position),
-		sizeof_member(GlobalData, camera_position), &camera->position);
-	vulkan_buffer_write(
-		pstate->context, pstate->frame_uniform_buffer,
-		global_offset + offsetof(GlobalData, viewport),
-		sizeof_member(GlobalData, viewport), &window_size);
-
-	float4 light_position = { 0.0f, 20.0f, -30.0f, 100.0f };
-	size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(float4), &light_position);
-
-	RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 0);
-	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
-	vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(float4), pstate->frame_storage_buffer);
-
+	drawlist_push_texture_ex(drawlist_ui, pstate->main_color_target, pstate->viewport, pstate->viewport, (float2){ 0 }, 0.0f, rgb(255, 255, 255));
 	DrawlistDesc picker_pass = {
 		.name = S("EDITOR:picker_pass"),
 		.color_attachments[0] = {
@@ -1766,7 +1538,187 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		.up = { 0.0f, 1.0f, 0.0f },
 		.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
 	};
-	pass_submit(pstate, &ui_camera, editor_ui, ui_pass_desc);
+	pass_submit(pstate, &ui_camera, drawlist_ui, ui_pass_desc);
+
+	DrawlistDesc debug_lines_pass = {
+		.name = S("EDITOR:selection_pass"),
+		.color_attachments[0] = {
+		  .target = pstate->editor.main_color_target,
+		  .load = LOAD,
+		  .store = STORE,
+		},
+		.viewport = pstate->viewport,
+		.color_attachment_count = 1,
+	};
+	if (vulkan_drawlist_begin(pstate->context, debug_lines_pass)) {
+		PipelineDesc pipeline = DEFAULT_PIPELINE;
+		vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
+		vulkan_uniformset_bind(pstate->context, pstate->game_current_frame_global);
+
+		for (uint32_t index = 0; index < editor->selected_entity_count; ++index) {
+			Entity entity = editor->selected_entities[index];
+			ASSERT(ecs_has(pstate->world, entity, TransformComponent));
+			TransformComponent *transform = ecs_find(pstate->world, entity, TransformComponent);
+			float3 min = { 0 };
+			float3 max = { 0 };
+
+			if (ecs_has(pstate->world, entity, MeshComponent)) {
+				MeshComponent *mesh_component = ecs_find(pstate->world, entity, MeshComponent);
+				uint32_t count = arena_array_count(pstate->assets.mesh_groups);
+				ASSERT(mesh_component->mesh_group_index && mesh_component->mesh_group_index < count);
+
+				Interval3 *bounding_box = &pstate->assets.mesh_group_bounds[mesh_component->mesh_group_index];
+				min = bounding_box->min;
+				max = bounding_box->max;
+			} else if (ecs_has(pstate->world, entity, ColliderComponent)) {
+				continue;
+			} else {
+				min = float3_negate(float3_scale(transform->scale, 0.5f));
+				max = float3_scale(transform->scale, 0.5f);
+			}
+
+			uint32_t line_segment_count = 24;
+			size_t line_segment_size = 2 * sizeof(float4);
+			size_t size = line_segment_count * line_segment_size;
+
+			RhiBuffer buffer = pstate->frame_storage_buffer;
+			float3 bounding_box_size = float3_subtract(max, min);
+
+			float thickness = 1.5f;
+			float pick_length = minf(bounding_box_size.z, minf(bounding_box_size.x, bounding_box_size.y)) * 0.25f;
+
+			float4 selection[] = {
+				// 0
+				{ min.x, min.y, min.z, thickness },
+				{ min.x + pick_length, min.y, min.z, thickness },
+
+				{ min.x, min.y, min.z, thickness },
+				{ min.x, min.y + pick_length, min.z, thickness },
+
+				{ min.x, min.y, min.z, thickness },
+				{ min.x, min.y, min.z + pick_length, thickness },
+
+				// 1
+				{ max.x, min.y, min.z, thickness },
+				{ max.x - pick_length, min.y, min.z, thickness },
+
+				{ max.x, min.y, min.z, thickness },
+				{ max.x, min.y + pick_length, min.z, thickness },
+
+				{ max.x, min.y, min.z, thickness },
+				{ max.x, min.y, min.z + pick_length, thickness },
+
+				// 2
+				{ min.x, max.y, min.z, thickness },
+				{ min.x + pick_length, max.y, min.z, thickness },
+
+				{ min.x, max.y, min.z, thickness },
+				{ min.x, max.y - pick_length, min.z, thickness },
+
+				{ min.x, max.y, min.z, thickness },
+				{ min.x, max.y, min.z + pick_length, thickness },
+
+				// 3
+				{ max.x, max.y, min.z, thickness },
+				{ max.x - pick_length, max.y, min.z, thickness },
+
+				{ max.x, max.y, min.z, thickness },
+				{ max.x, max.y - pick_length, min.z, thickness },
+
+				{ max.x, max.y, min.z, thickness },
+				{ max.x, max.y, min.z + pick_length, thickness },
+
+				// 4
+				{ min.x, min.y, max.z, thickness },
+				{ min.x + pick_length, min.y, max.z, thickness },
+
+				{ min.x, min.y, max.z, thickness },
+				{ min.x, min.y + pick_length, max.z, thickness },
+
+				{ min.x, min.y, max.z, thickness },
+				{ min.x, min.y, max.z - pick_length, thickness },
+
+				// 5
+				{ max.x, min.y, max.z, thickness },
+				{ max.x - pick_length, min.y, max.z, thickness },
+
+				{ max.x, min.y, max.z, thickness },
+				{ max.x, min.y + pick_length, max.z, thickness },
+
+				{ max.x, min.y, max.z, thickness },
+				{ max.x, min.y, max.z - pick_length, thickness },
+
+				// 6
+				{ min.x, max.y, max.z, thickness },
+				{ min.x + pick_length, max.y, max.z, thickness },
+
+				{ min.x, max.y, max.z, thickness },
+				{ min.x, max.y - pick_length, max.z, thickness },
+
+				{ min.x, max.y, max.z, thickness },
+				{ min.x, max.y, max.z - pick_length, thickness },
+
+				// 7
+				{ max.x, max.y, max.z, thickness },
+				{ max.x - pick_length, max.y, max.z, thickness },
+
+				{ max.x, max.y, max.z, thickness },
+				{ max.x, max.y - pick_length, max.z, thickness },
+
+				{ max.x, max.y, max.z, thickness },
+				{ max.x, max.y, max.z - pick_length, thickness },
+			};
+
+			float4x4 model_matrix = transform->world_matrix;
+			float4 color = entity == editor->active_entity ? (float4){ 1.0f, 0.2f, 0.2f, 1.0f } : (float4){ 1.0f, 0.5f, 0.3f, 1.0f };
+
+			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
+			size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color);
+			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(selection), selection);
+
+			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, sizeof(selection), pstate->frame_storage_buffer);
+			vulkan_uniformset_bind(pstate->context, group);
+
+			vulkan_renderer_draw(pstate->context, line_segment_count * 2 * 6);
+		}
+
+		if (editor->adding) {
+			uint32_t slices = 20;
+			float spacing = 1.0f, thickness = 1.0f;
+
+			ArenaTemp scratch = arena_scratch_begin(NULL);
+			size_t initial_offset = arena_mark(scratch.arena);
+			int32_t half_slices = slices / 2;
+			for (int32_t index = -half_slices; index <= half_slices; ++index) {
+				arena_put(scratch.arena, float4, { (float)index * spacing, 0.0f, (float)-half_slices * spacing, thickness });
+				arena_put(scratch.arena, float4, { (float)index * spacing, 0.0f, (float)half_slices * spacing, thickness });
+
+				arena_put(scratch.arena, float4, { (float)-half_slices * spacing, 0.0f, (float)index * spacing, thickness });
+				arena_put(scratch.arena, float4, { (float)half_slices * spacing, 0.0f, (float)index * spacing, thickness });
+			}
+			size_t size = arena_mark(scratch.arena) - initial_offset;
+
+			float4x4 model_matrix = float4x4_identity();
+			float4 color = (float4){ 0.0f, 0.0f, 0.0f, 1.0f };
+
+			vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
+			size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color);
+			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, size, scratch.arena->base);
+
+			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
+			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, size, pstate->frame_storage_buffer);
+			vulkan_uniformset_bind(pstate->context, group);
+
+			vulkan_renderer_draw(pstate->context, (slices + 1) * 2 * 6);
+
+			arena_temp_end(scratch);
+		}
+
+		vulkan_drawlist_end(pstate->context);
+	}
 }
 
 static inline void calculate_transforms(ECS *world, Entity entity, float4x4 parent_global) {
@@ -1816,7 +1768,7 @@ void mesh_system_update(ECS *world, PermanentState *pstate) {
 	}
 }
 
-static inline RhiShader load_shader(VulkanContext *context, String vertex, String fragment) {
+static inline RhiShader load_shader(VulkanContext *context, String name, String vertex, String fragment) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	String vertex_path = string_format(scratch.arena, "assets/shaders/vertex/bin/%.*s.vertex.spv", SARG(vertex));
 	String fragment_path = string_format(scratch.arena, "assets/shaders/fragment/bin/%.*s.fragment.spv", SARG(fragment));
@@ -1825,6 +1777,7 @@ static inline RhiShader load_shader(VulkanContext *context, String vertex, Strin
 		vulkan_shader_make(
 			NULL,
 			context,
+			name,
 			source.vertex, source.fragment,
 			NULL);
 
@@ -1835,7 +1788,7 @@ void load_assets(PermanentState *pstate) {
 	// :assets
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 
-	pstate->store = asset_store_make(&pstate->arena);
+	pstate->store = asset_store_make(&pstate->persistent_arena);
 	AssetStore *store = &pstate->store;
 	if (file_exists(S("assets/asset_manifest.json")))
 		asset_store_deserialize(store, S("assets/asset_manifest.json"));
@@ -1849,24 +1802,24 @@ void load_assets(PermanentState *pstate) {
 
 	ShaderSource source = { 0 };
 
-	pstate->shadow_shader = load_shader(pstate->context, S("shadow"), S("blank"));
+	pstate->shadow_shader = load_shader(pstate->context, S("shadow_shader"), S("shadow"), S("blank"));
 
-	pstate->unlit_shader = load_shader(pstate->context, S("basic"), S("unlit"));
-	pstate->picker_shader = load_shader(pstate->context, S("basic"), S("picker"));
+	pstate->unlit_shader = load_shader(pstate->context, S("unlit_shader"), S("basic"), S("unlit"));
+	pstate->picker_shader = load_shader(pstate->context, S("picker_shader"), S("basic"), S("picker"));
 
-	pstate->phong_shader = load_shader(pstate->context, S("base"), S("phong"));
-	pstate->screenline_shader = load_shader(pstate->context, S("line"), S("flat"));
+	pstate->phong_shader = load_shader(pstate->context, S("phong_shader"), S("base"), S("phong"));
+	pstate->screenline_shader = load_shader(pstate->context, S("screenline_shader"), S("line"), S("flat"));
 
-	pstate->postfx_shader = load_shader(pstate->context, S("quad"), S("postfx"));
-	pstate->blit_shader = load_shader(pstate->context, S("quad"), S("blit"));
-	pstate->quad_shader = load_shader(pstate->context, S("batch"), S("vertex_color"));
-	pstate->quad_textured_shader = load_shader(pstate->context, S("batch"), S("textured"));
-	pstate->composite_shader = load_shader(pstate->context, S("quad"), S("composite"));
+	pstate->postfx_shader = load_shader(pstate->context, S("postfx_shader"), S("quad"), S("postfx"));
+	pstate->blit_shader = load_shader(pstate->context, S("blit_shader"), S("quad"), S("blit"));
+	pstate->quad_shader = load_shader(pstate->context, S("quad_shader"), S("batch"), S("vertex_color"));
+	pstate->quad_textured_shader = load_shader(pstate->context, S("textured_quad_shader"), S("batch"), S("textured"));
+	pstate->composite_shader = load_shader(pstate->context, S("composite_shader"), S("quad"), S("composite"));
 	// :shader
 
 	for (uint32_t index = FONT_SIZE_16; index < FONT_SIZE_MAX; ++index) {
 		Font *font = &pstate->assets.font[index];
-		*font = importer_load_font(&pstate->arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), 1 << (index + 4));
+		*font = importer_load_font(&pstate->persistent_arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), 1 << (index + 4));
 		font->atlas = vulkan_texture_make(
 			pstate->context,
 			font->atlas_src.width, font->atlas_src.height,
@@ -2062,12 +2015,12 @@ void load_assets(PermanentState *pstate) {
 	}
 	// :generated
 
-	pstate->assets.textures = arena_array_copy(&pstate->arena, textures, RhiTexture);
-	pstate->assets.meshes = arena_array_copy(&pstate->arena, meshes, Mesh);
-	pstate->assets.materials = arena_array_copy(&pstate->arena, materials, Material);
-	pstate->assets.mesh_to_material = arena_array_copy(&pstate->arena, mesh_to_material, uint32_t);
-	pstate->assets.mesh_group_bounds = arena_array_copy(&pstate->arena, mesh_group_bounds, Interval3);
-	pstate->assets.mesh_groups = arena_array_copy(&pstate->arena, mesh_groups, MeshGroup);
+	pstate->assets.textures = arena_array_copy(&pstate->persistent_arena, textures, RhiTexture);
+	pstate->assets.meshes = arena_array_copy(&pstate->persistent_arena, meshes, Mesh);
+	pstate->assets.materials = arena_array_copy(&pstate->persistent_arena, materials, Material);
+	pstate->assets.mesh_to_material = arena_array_copy(&pstate->persistent_arena, mesh_to_material, uint32_t);
+	pstate->assets.mesh_group_bounds = arena_array_copy(&pstate->persistent_arena, mesh_group_bounds, Interval3);
+	pstate->assets.mesh_groups = arena_array_copy(&pstate->persistent_arena, mesh_groups, MeshGroup);
 
 	// Upload all geometry once
 	vulkan_buffer_push(pstate->context, pstate->scene_geometry_buffer, geometry_upload_arena->offset, geometry_upload_arena->base);

@@ -8,9 +8,27 @@ layout(set = 0, binding = 0) uniform GlobalParameters {
     vec2 viewport;
 } global;
 
-layout(set = 0, binding = 1) readonly buffer LightData {
-    vec4 lights[];
+struct LightData {
+    vec4  color;
+    vec3  position;
+
+    /* vec3  spot_direction; */
+    /* float spot_exponent; */
+    /* float spot_cutoff; */
+    /* float spot_cosCutoff; */
+
+    float constant_attenuation;
+    /* float linear_attenuation; */
+    /* float quadratic_attenuation; */
+
+    mat4  lightspace_matrix;
 };
+
+layout(set = 0, binding = 1) readonly buffer LightBlock {
+    LightData lights[];
+};
+
+layout (set = 0, binding = 2) uniform sampler2DShadow u_shadow_depth;
 
 layout(set = 1, binding = 1) readonly buffer LineData {
     vec4 line_points[];

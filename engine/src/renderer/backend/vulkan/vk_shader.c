@@ -27,7 +27,7 @@ bool reflect_shader_interface(
 
 RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
-	Buffer vertex, Buffer fragment, ShaderReflection *out_reflection) {
+	String name, Buffer vertex, Buffer fragment, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
 	if (vertex.pointer == NULL || vertex.size == 0 || fragment.pointer == NULL || fragment.size == 0) {
@@ -63,6 +63,10 @@ RhiShader vulkan_shader_make(
 	shader->first_free = arena_freelist_wrap_array(shader->variants, VulkanPipeline);
 	arena_list_pop(shader->first_free, VulkanPipeline);
 	shader->variant_count = 1;
+
+    size_t length = MIN(sizeof(shader->name) - 1, name.length);
+    memory_copy(shader->name, name.chars, length);
+    shader->name[length] = '\0';
 
 	return (RhiShader){ indexof(context->shader_pool, shader) };
 }
@@ -279,6 +283,7 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 
 	if (variant == popped_slot) {
 		create_shader_variant(context, shader, pass, desc, variant);
+        vulkan_utils_set_object_name(context, (uint64_t)variant->handle, VK_OBJECT_TYPE_PIPELINE, string_wrap(shader->name));
 		shader->variant_count++;
 
 		variant->next = NULL;

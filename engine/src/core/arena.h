@@ -92,7 +92,7 @@ ENGINE_API void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Buffer ke
 #define arena_trie_store(trie, T, ...)                                         \
 	do {                                                                       \
 		struct {                                                               \
-			Span key;                                                          \
+			Buffer key;                                                          \
 			T value;                                                           \
 		} _values[] = __VA_ARGS__;                                             \
 		for (uint32_t index = 0; index < countof(_values); ++index) {          \

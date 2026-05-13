@@ -224,6 +224,8 @@ typedef struct vulkan_pipeline {
 
 typedef struct vulkan_shader {
 	VulkanResourceState state;
+    char name[256]; 
+
 	VkShaderModule vertex_shader, fragment_shader;
 
 	VkVertexInputAttributeDescription attributes[MAX_INPUT_ATTRIBUTES];

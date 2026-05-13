@@ -13,9 +13,11 @@
 #define MAX_UI_ELEMENTS 1024
 
 typedef enum {
-	UI_HORIZONTAL,
-	UI_VERTICAL,
-} UIDirection;
+	AXIS2_X,
+	AXIS2_Y,
+
+	AXIS2_MAX,
+} Axis2;
 
 typedef enum {
 	UI_SIZE_FIT,
@@ -26,85 +28,56 @@ typedef enum {
 
 typedef struct UISize {
 	UISizeType type;
-
-	union {
-		float min;
-		float percent;
-	} size;
+	float minimum;
+	float preferred;
 } UIAxisSize;
 
-typedef struct {
-	UIAxisSize width, height;
-} UISizing;
+typedef enum {
+	WIDGET_FLAG_PRESSABLE = 1 << 0,
+	WIDGET_FLAG_SCROLLABLE = 1 << 1,
 
-typedef struct UIPadding {
-	uint16_t left, right, top, bottom;
-} UIPadding;
+	WIDGET_FLAG_ROUNDED,
+	WIDGET_FLAG_BORDER,
+	WIDGET_FLAG_TEXT,
+	WIDGET_FLAG_IMAGE,
 
-typedef struct UILayoutDescription {
-	UISizing sizing;
-	UIPadding padding;
-	uint16_t child_gap;
-	UIDirection direction;
-} UILayout;
-
-typedef struct {
-	UILayout layout;
-
-	String text;
-	RhiTexture background_image;
-	Color background_color;
-} UIElementDesc;
+	WIDGET_FLAG_ANIMATE_HOT = 1 << 2,
+	WIDGET_FLAG_ANIMATE_ACTIVE = 1 << 3
+} UIWidgetFlags;
 
 #define MAX_CHILDREN 32
 typedef struct {
-	int32_t id;
-	UIElementDesc description;
+	uint32_t id;
 
-	float2 offset, size;
-	Color color;
-
-	float2 child_offset;
-
+	// Hierarchy
 	uint32_t parent;
 	uint32_t children[MAX_CHILDREN];
 	uint32_t children_count;
-} UIElement;
 
-typedef struct {
-	int32_t id;
-	float2 position, size;
+	float child_offset_accumulator[AXIS2_MAX];
+
+	// Passed
+	UIWidgetFlags flags;
 
 	String text;
-	RhiTexture image;
-	Color color;
-} UIElementData;
+	Color background_color;
+	Axis2 orientation;
+	uint16_t padding[2][2];
+	uint32_t child_gap;
+	UIAxisSize semantic_size[AXIS2_MAX];
+
+	// Computed
+	Rectangle rect;
+	float offset[AXIS2_MAX];
+	float size[AXIS2_MAX];
+} UIWidget;
 
 typedef struct {
-	Color panel;
-
-	Color button_idle;
-	Color button_hover;
-	Color button_pressed;
-
-	Color track;
-	Color fill;
-	Color thumb_idle;
-	Color thumb_hover;
-	Color thumb_pressed;
-
-	Color text;
-	Color text_muted;
-	Color accent;
-	Color danger;
-	Color success;
-
-	float button_height;
-	float slider_thickness;
-	float label_height;
-} UITheme;
-
-extern UITheme UI_DARK;
+	bool held;
+	bool pressed;
+	bool released;
+	bool hovering;
+} UIInteraction;
 
 #define MAX_DEPTH 8
 typedef struct {
@@ -114,49 +87,42 @@ typedef struct {
 	uint32_t depth_parent[MAX_DEPTH];
 	uint32_t current_depth;
 
-	UIElement elements[MAX_UI_ELEMENTS]; // 0 == invalid
-	uint32_t element_count;
+	UIWidget widgets[MAX_UI_ELEMENTS];
+	uint32_t widget_count;
 
-	UIElementData previous_elements[MAX_UI_ELEMENTS];
-	uint32_t previous_element_count;
+	struct {
+		uint32_t id;
+		Rectangle rect;
+	} cached_widgets[MAX_UI_ELEMENTS];
+	uint32_t cached_widget_count;
 
 	int32_t hot_item;
 	int32_t active_item;
-
-	Font *font;
 } UIContext;
 
-#define FIXED(n) ((UIAxisSize){ UI_SIZE_FIXED, .size.min = (n) })
-#define GROW ((UIAxisSize){ UI_SIZE_GROW, { 0 } })
-#define FIT ((UIAxisSize){ UI_SIZE_FIT, { 0 } })
-
-#define PAD(n) ((UIPadding){ n, n, n, n })
-#define PAD_XY(x, y) ((UIPadding){ x, x, y, y })
-#define PAD4(l, r, t, b) ((UIPadding){ l, r, t, b })
-
-UIContext ui_make(Font *font);
+#define FIXED(...) ((UIAxisSize){ .type = UI_SIZE_FIXED, __VA_ARGS__ })
+#define FIT(...) ((UIAxisSize){ .type = UI_SIZE_FIT, __VA_ARGS__ })
+#define GROW(...) ((UIAxisSize){ .type = UI_SIZE_GROW, __VA_ARGS__ })
 
 void ui_frame_begin(UIContext *context);
 void ui_frame_end(DrawlistBuffer *buffer);
 
-void ui_begin_element(int32_t ui_id, UIElementDesc element);
-void ui_end_element(void);
+void ui_widget_push(uint32_t id, UIAxisSize width, UIAxisSize height);
+void ui_widget_pop(void);
 
-bool ui_hovered(int32_t id);
-bool ui_held(int32_t id);
-bool ui_pressed(int32_t id);
+void ui_push_row(uint32_t id, UIAxisSize width, UIAxisSize height);
+void ui_push_column(uint32_t id, UIAxisSize width, UIAxisSize height);
 
-void ui_rect(int32_t id, float2 size, Color color);
-void ui_image(int32_t id, RhiTexture texture, float2 size, Color tint);
+void ui_background_color(Color color);
+void ui_absolute_position(float2 pos);
+void ui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom);
+void ui_padding_all(uint16_t padding);
+void ui_child_gap(uint16_t gap);
 
-// NOTE: children have the same ID as parent
-bool ui_button(int32_t id, String label, UITheme *theme);
-float ui_sliderf(int32_t id, float value, float min, float max, UITheme *theme);
-void ui_text(int32_t id, String text);
+bool ui_hovered(void);
+bool ui_held(void);
+bool ui_pressed(void);
 
 #define LINE_ID(index) (uint32_t)(__LINE__ << 8) + (index)
-#define ui_container(...) for (uint8_t _ = (ui_begin_element(LINE_ID(0), (WRAPPER_STRUCT(UIElementDesc)){ __VA_ARGS__ }.wrapped), 0); !_; (_++, ui_end_element()))
-
-/* bool ui_button(int32_t id, uint32_t x, uint32_t y, uint32_t w, uint32_t h); */
 
 #endif /* UI_H_ */
