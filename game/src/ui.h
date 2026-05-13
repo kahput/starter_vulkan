@@ -115,9 +115,12 @@ void ui_push_column(uint32_t id, UIAxisSize width, UIAxisSize height);
 
 void ui_background_color(Color color);
 void ui_absolute_position(float2 pos);
+void ui_orientation(Axis2 axis);
 void ui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom);
 void ui_padding_all(uint16_t padding);
 void ui_child_gap(uint16_t gap);
+
+void ui_rect(uint32_t id, float width, float height, Color color);
 
 bool ui_hovered(void);
 bool ui_held(void);

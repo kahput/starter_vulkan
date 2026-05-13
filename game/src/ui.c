@@ -2,6 +2,7 @@
 #include "commands.h"
 #include "common.h"
 #include "core/cmath.h"
+#include <math.h>
 
 UIContext *g_ctx = NULL;
 
@@ -18,7 +19,18 @@ void ui_frame_begin(UIContext *context) {
 	g_ctx->widget_count = 1;
 }
 
+static void grow_children(UIWidget *widget);
+
 void ui_frame_end(DrawlistBuffer *buffer) {
+	// Grow
+	for (uint32_t index = 1; index < g_ctx->widget_count; ++index) {
+		UIWidget *widget = &g_ctx->widgets[index];
+		if (widget->children_count == 0)
+			continue;
+
+		grow_children(&g_ctx->widgets[index]);
+	}
+
 	// Position
 	for (uint32_t index = 1; index < g_ctx->widget_count; ++index) {
 		UIWidget *widget = &g_ctx->widgets[index + 1];
@@ -90,15 +102,14 @@ void ui_widget_pop(void) {
 	UIWidget *widget = widget_peek();
 	g_ctx->current_depth--;
 
-	// Fit
-	if (widget->semantic_size[AXIS2_X].type != UI_SIZE_FIT && widget->semantic_size[AXIS2_Y].type != UI_SIZE_FIT)
+	bool fit[AXIS2_MAX] = {
+		widget->semantic_size[AXIS2_X].type == UI_SIZE_FIT || widget->semantic_size[AXIS2_X].type == UI_SIZE_GROW,
+		widget->semantic_size[AXIS2_Y].type == UI_SIZE_FIT || widget->semantic_size[AXIS2_Y].type == UI_SIZE_GROW
+	};
+	if (fit[AXIS2_X] == false && fit[AXIS2_Y] == false)
 		return;
 
-	bool fit[AXIS2_MAX] = {
-		widget->semantic_size[AXIS2_X].type == UI_SIZE_FIT,
-		widget->semantic_size[AXIS2_Y].type == UI_SIZE_FIT
-	};
-
+	// Fit
 	uint32_t padding[AXIS2_MAX] = {
 		widget->padding[AXIS2_X][0] + widget->padding[AXIS2_X][1],
 		widget->padding[AXIS2_Y][0] + widget->padding[AXIS2_Y][1]
@@ -113,9 +124,9 @@ void ui_widget_pop(void) {
 	for (uint32_t index = 0; index < widget->children_count; ++index) {
 		UIWidget *child = &g_ctx->widgets[widget->children[index]];
 
-		widget->size[main] += child->size[AXIS2_X];
+		widget->size[main] += child->size[main] * fit[main];
 
-		if (widget->semantic_size[cross].type == UI_SIZE_FIT)
+		if (fit[cross])
 			widget->size[cross] = MAX(widget->size[cross], child->size[cross]);
 	}
 
@@ -161,6 +172,12 @@ void ui_absolute_position(float2 pos) {
 	widget->offset[AXIS2_Y] = pos.y;
 }
 
+void ui_orientation(Axis2 axis) {
+	UIWidget *widget = widget_peek();
+
+	widget->orientation = axis;
+}
+
 void ui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom) {
 	UIWidget *widget = widget_peek();
 
@@ -177,4 +194,75 @@ void ui_child_gap(uint16_t gap) {
 	UIWidget *widget = widget_peek();
 
 	widget->child_gap = gap;
+}
+
+void ui_rect(uint32_t id, float width, float height, Color color) {
+	ui_widget_push(LINE_ID(0), FIXED(width), FIXED(height));
+	ui_background_color(color);
+	ui_widget_pop();
+}
+
+void grow_children(UIWidget *parent) {
+	uint32_t main = parent->orientation;
+	uint32_t cross = !main;
+
+	float remaining_main = parent->size[main];
+	remaining_main -= parent->padding[main][0] + parent->padding[main][1];
+	float cross_size = parent->size[cross];
+	cross_size -= parent->padding[main][0] + parent->padding[main][1];
+
+	for (uint32_t index = 0; index < parent->children_count; ++index) {
+		UIWidget *child = &g_ctx->widgets[parent->children[index]];
+		remaining_main -= child->size[main];
+	}
+	remaining_main -= (parent->children_count - 1) * parent->child_gap;
+
+	UIWidget *growable[AXIS2_MAX][MAX_CHILDREN] = { 0 };
+	uint32_t growable_count[AXIS2_MAX] = { 0 };
+
+	for (uint32_t index = 0; index < parent->children_count; ++index) {
+		UIWidget *child = &g_ctx->widgets[parent->children[index]];
+
+		if (child->semantic_size[main].type == UI_SIZE_GROW)
+			growable[main][growable_count[main]++] = child;
+		if (child->semantic_size[cross].type == UI_SIZE_GROW)
+			growable[cross][growable_count[cross]++] = child;
+	}
+
+	while (remaining_main > 0.01f && growable_count[main]) {
+		float smallest = growable[main][0]->size[main];
+		float second_smallest = INFINITY;
+		uint32_t smallest_count = 1;
+
+		for (uint32_t index = 1; index < growable_count[main]; ++index) {
+			UIWidget *child = growable[main][index];
+
+			if (child->size[main] == smallest) {
+				smallest_count++;
+			} else if (child->size[main] < smallest) {
+				second_smallest = smallest;
+				smallest = child->size[main];
+				smallest_count = 1;
+			} else if (child->size[main] < second_smallest) {
+				second_smallest = child->size[main];
+			}
+		}
+
+		float space_to_add = remaining_main / smallest_count;
+		if (second_smallest != INFINITY)
+			space_to_add = minf(space_to_add, second_smallest - smallest);
+
+		for (uint32_t index = 0; index < growable_count[main]; ++index) {
+			UIWidget *child = growable[main][index];
+			if (child->size[main] == smallest) {
+				child->size[main] += space_to_add;
+				remaining_main -= space_to_add;
+			}
+		}
+	}
+
+	for (uint32_t index = 0; index < growable_count[cross]; ++index) {
+		UIWidget *child = growable[cross][index];
+		child->size[cross] = maxf(child->size[cross], cross_size);
+	}
 }
