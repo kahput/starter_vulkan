@@ -861,28 +861,25 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			ui_frame_begin(&pstate->ui);
 
-			ui_widget_push(LINE_ID(0), FIT(), FIXED(735));
+			ui_widget_push(LINE_ID(0), FIXED(1000), FIT());
 			{
-				ui_background_color(rgb(0, 0, 0));
-				ui_orientation(AXIS2_Y);
-				/* ui_absolute_position(float2_make(32, 32)); */
-				ui_padding_all(16);
-				ui_child_gap(16);
+				ui_background_color(rgb(10, 30, 230));
+				ui_padding_all(32);
+				ui_child_gap(32);
 
-				ui_rect(LINE_ID(0), 100, 100, rgb(255, 0, 0));
+				ui_text(LINE_ID(0), S("One Two Three Four"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
 
-				ui_widget_push(LINE_ID(0), GROW(), GROW());
+				ui_widget_push(LINE_ID(0), FIXED(300), GROW());
+				ui_background_color(rgb(210, 220, 30));
+				ui_widget_pop();
+
+				ui_widget_push(LINE_ID(0), FIT(), FIT());
 				{
-					ui_background_color(rgb(0, 0, 255));
-					ui_rect(LINE_ID(0), 100, 200, rgb(255, 255, 0));
+					ui_background_color(rgb(10, 10, 180));
+					ui_padding_all(32);
+					ui_text(LINE_ID(0), S("Five Six Seven Eight Nine Ten"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
 				}
 				ui_widget_pop();
-
-				ui_widget_push(LINE_ID(0), GROW(), FIXED(100));
-				ui_background_color(rgb(0, 255, 255));
-				ui_widget_pop();
-
-				ui_rect(LINE_ID(0), 150, 250, rgb(0, 255, 0));
 			}
 			ui_widget_pop();
 

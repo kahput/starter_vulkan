@@ -58,13 +58,17 @@ typedef struct {
 
 	// Passed
 	UIWidgetFlags flags;
+	char output_string[256];
 
 	String text;
-	Color background_color;
+	Color color;
 	Axis2 orientation;
 	uint16_t padding[2][2];
 	uint32_t child_gap;
 	UIAxisSize semantic_size[AXIS2_MAX];
+
+	// TEMPORARY
+	Font *font;
 
 	// Computed
 	Rectangle rect;
@@ -121,6 +125,7 @@ void ui_padding_all(uint16_t padding);
 void ui_child_gap(uint16_t gap);
 
 void ui_rect(uint32_t id, float width, float height, Color color);
+void ui_text(uint32_t id, String text, Font *font, Color color);
 
 bool ui_hovered(void);
 bool ui_held(void);

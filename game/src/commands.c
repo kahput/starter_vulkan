@@ -59,8 +59,7 @@ float2 measure_text(Font *font, String text) {
 
 		if (c == '\n') {
 			max_width = maxf(max_width, width);
-			width = 0.0f;
-			height += font->line_height;
+			break;
 		}
 
 		Glyph *glyph = &font->glyphs[c];
