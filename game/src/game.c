@@ -182,7 +182,7 @@ typedef struct {
 	// game targets
 	RhiTexture shadow_depth_target;
 	RhiTexture main_color_target;
-	RhiTexture ui_color_target;
+	RhiTexture imgui_color_target;
 	RhiTexture output_target;
 
 	Rectangle viewport;
@@ -220,7 +220,7 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 
 	vulkan_texture_resize(pstate->context, pstate->main_color_target, resize_event->width, resize_event->height);
 	vulkan_texture_resize(pstate->context, pstate->output_target, resize_event->width, resize_event->height);
-	vulkan_texture_resize(pstate->context, pstate->ui_color_target, resize_event->width, resize_event->height);
+	vulkan_texture_resize(pstate->context, pstate->imgui_color_target, resize_event->width, resize_event->height);
 
 	pstate->viewport = (Rectangle){
 		0, 0, resize_event->width, resize_event->height
@@ -558,7 +558,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->editor.main_color_target = vulkan_texture_make(
 			pstate->context,
 			viewport.width, viewport.height,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA16F,
+			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
 
@@ -576,7 +576,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
 
-		pstate->ui_color_target = vulkan_texture_make(
+		pstate->imgui_color_target = vulkan_texture_make(
 			pstate->context,
 			viewport.width, viewport.height,
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
@@ -605,7 +605,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	DrawlistBuffer *drawlist_ui = drawlist_make(scratch.arena, MiB(1));
-	pstate->ui.mouse_down = input_mouse_down(MOUSE_BUTTON_LEFT);
+	pstate->ui.mouse_left = input_mouse_down(MOUSE_BUTTON_LEFT);
+	pstate->ui.mouse_right = input_mouse_down(MOUSE_BUTTON_RIGHT);
 	pstate->ui.mouse_position = float2_from_double2(input_mouse_position());
 	/* DrawlistBuffer *main_pass = drawlist_make(scratch.arena, MiB(2)); */
 
@@ -859,31 +860,51 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			// :ui game
 
-			ui_frame_begin(&pstate->ui);
+			imgui_frame_begin(&pstate->ui);
 
-			ui_widget_push(LINE_ID(0), FIXED(1000), FIT());
+			imgui_widget_push(shash("root"), FIT(), FIT(), 0);
 			{
-				ui_background_color(rgb(10, 30, 230));
-				ui_padding_all(32);
-				ui_child_gap(32);
+				imgui_absolute_position(300, 300);
+				imgui_align_y(UI_ALIGN_CENTER);
+				imgui_orientation(AXIS2_Y);
+				imgui_background_color(rgb(105, 50, 53));
+				imgui_padding_all(16);
+				imgui_child_gap(16);
 
-				ui_text(LINE_ID(0), S("One Two Three Four"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
+				if (imgui_button(S("Something"), &pstate->assets.font[FONT_SIZE_32]).left_clicked) {
+					LOG_INFO("Something pressed");
+				};
 
-				ui_widget_push(LINE_ID(0), FIXED(300), GROW());
-				ui_background_color(rgb(210, 220, 30));
-				ui_widget_pop();
-
-				ui_widget_push(LINE_ID(0), FIT(), FIT());
+				imgui_widget_push(shash("copy_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
 				{
-					ui_background_color(rgb(10, 10, 180));
-					ui_padding_all(32);
-					ui_text(LINE_ID(0), S("Five Six Seven Eight Nine Ten"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
-				}
-				ui_widget_pop();
-			}
-			ui_widget_pop();
+					if (imgui_active()) {
+						imgui_offset(2, 2);
+					}
+					if (imgui_clicked())
+						LOG_INFO("Copy pressed & released");
 
-			ui_frame_end(drawlist_ui);
+					imgui_background_color(rgb(135, 80, 83));
+					imgui_align_y(UI_ALIGN_CENTER);
+					imgui_padding(8, 8, 4, 4);
+					imgui_text(S("Copy##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
+				}
+				imgui_widget_pop();
+
+				imgui_widget_push(shash("paste_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
+				{
+					if (imgui_active()) {
+						imgui_offset(2, 2);
+					}
+					imgui_background_color(rgb(135, 80, 83));
+					imgui_align_y(UI_ALIGN_CENTER);
+					imgui_padding(8, 8, 4, 4);
+					imgui_text(S("Paste##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
+				}
+				imgui_widget_pop();
+			}
+			imgui_widget_pop();
+
+			imgui_frame_end(drawlist_ui);
 
 			static float fps = 0.0f;
 			uint32_t fps_average_count = 0;
@@ -928,23 +949,23 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		/* }; */
 		/* pass_submit(pstate, main_pass, main_pass_desc); */
 
-		DrawlistDesc ui_pass_desc = {
-			.name = S("game_ui_pass"),
+		DrawlistDesc imgui_pass_desc = {
+			.name = S("game_imgui_pass"),
 			.color_attachments[0] = {
-			  .target = pstate->ui_color_target,
+			  .target = pstate->imgui_color_target,
 			  .load = CLEAR,
 			  .store = STORE,
 			  .clear.color = { 0.0f, 0.0f, 0.0f, 0.0f },
 			},
 			.color_attachment_count = 1,
 		};
-		Camera3D ui_camera = {
+		Camera3D imgui_camera = {
 			.position = { 0.0f, 0.0f, 1.0f },
 			.target = { 0.0f, 0.0f, 0.0f },
 			.up = { 0.0f, 1.0f, 0.0f },
 			.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
 		};
-		pass_submit(pstate, &ui_camera, drawlist_ui, ui_pass_desc);
+		pass_submit(pstate, &imgui_camera, drawlist_ui, imgui_pass_desc);
 
 		DrawlistDesc composite_pass = {
 			.name = S("composite_pass"),
@@ -958,18 +979,18 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		};
 
 		vulkan_texture_prepare_sample(pstate->context, pstate->main_color_target);
-		vulkan_texture_prepare_sample(pstate->context, pstate->ui_color_target);
+		vulkan_texture_prepare_sample(pstate->context, pstate->imgui_color_target);
 		if (vulkan_drawlist_begin(pstate->context, composite_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
 			vulkan_shader_bind(pstate->context, pstate->composite_shader, pipeline);
 
 			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->composite_shader, 0);
 
-			/* RhiTexture output = pstate->ui_color_target; */
+			/* RhiTexture output = pstate->imgui_color_target; */
 			/* RhiTexture output = pstate->shadow_depth_target; */
 
 			RhiTexture layer0 = pstate->main_color_target;
-			RhiTexture layer1 = pstate->ui_color_target;
+			RhiTexture layer1 = pstate->imgui_color_target;
 			vulkan_uniformset_bind_texture(pstate->context, set0, 0, layer0, pstate->linear_sampler);
 			vulkan_uniformset_bind_texture(pstate->context, set0, 1, layer1, pstate->linear_sampler);
 			vulkan_uniformset_bind(pstate->context, set0);
@@ -1002,7 +1023,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->blit_shader, 0);
 
-			/* RhiTexture output = pstate->ui_color_target; */
+			/* RhiTexture output = pstate->imgui_color_target; */
 			/* RhiTexture output = pstate->shadow_depth_target; */
 
 			RhiTexture output = pstate->output_target;
@@ -1528,8 +1549,8 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	}
 
 	vulkan_texture_prepare_sample(pstate->context, pstate->main_color_target);
-	DrawlistDesc ui_pass_desc = {
-		.name = S("EDITOR:ui_pass"),
+	DrawlistDesc imgui_pass_desc = {
+		.name = S("EDITOR:imgui_pass"),
 		.color_attachments[0] = {
 		  .target = pstate->editor.main_color_target,
 		  .load = CLEAR,
@@ -1538,13 +1559,13 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		},
 		.color_attachment_count = 1,
 	};
-	Camera3D ui_camera = {
+	Camera3D imgui_camera = {
 		.position = { 0.0f, 0.0f, 1.0f },
 		.target = { 0.0f, 0.0f, 0.0f },
 		.up = { 0.0f, 1.0f, 0.0f },
 		.projection = CAMERA_PROJECTION_ORTHOGRAPHIC,
 	};
-	pass_submit(pstate, &ui_camera, drawlist_ui, ui_pass_desc);
+	pass_submit(pstate, &imgui_camera, drawlist_ui, imgui_pass_desc);
 
 	DrawlistDesc debug_lines_pass = {
 		.name = S("EDITOR:selection_pass"),

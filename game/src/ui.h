@@ -28,26 +28,47 @@ typedef enum {
 
 typedef struct UISize {
 	UISizeType type;
-	float minimum;
-	float preferred;
+	float min, max;
 } UIAxisSize;
 
 typedef enum {
-	WIDGET_FLAG_PRESSABLE = 1 << 0,
+	UI_ALIGN_LEFT,
+	UI_ALIGN_RIGHT,
+	UI_ALIGN_CENTER,
+
+	UI_ALIGN_TOP = UI_ALIGN_LEFT,
+	UI_ALIGN_BOTTOM = UI_ALIGN_RIGHT,
+} UIAlign;
+
+typedef enum {
+	WIDGET_FLAG_CLICKABLE = 1 << 0,
 	WIDGET_FLAG_SCROLLABLE = 1 << 1,
+	WIDGET_FLAG_DRAGGABLE = 1 << 2,
+	WIDGET_FLAG_RESIZABLE = 1 << 3,
 
-	WIDGET_FLAG_ROUNDED,
-	WIDGET_FLAG_BORDER,
-	WIDGET_FLAG_TEXT,
-	WIDGET_FLAG_IMAGE,
+	WIDGET_FLAG_INTERACTABLE =
+		WIDGET_FLAG_CLICKABLE |
+		WIDGET_FLAG_SCROLLABLE |
+		WIDGET_FLAG_DRAGGABLE |
+		WIDGET_FLAG_RESIZABLE,
 
-	WIDGET_FLAG_ANIMATE_HOT = 1 << 2,
-	WIDGET_FLAG_ANIMATE_ACTIVE = 1 << 3
+	WIDGET_FLAG_ABSOLUTE = 1 << 4,
+	WIDGET_FLAG_BACKGROUND = 1 << 5,
+	WIDGET_FLAG_ROUNDED = 1 << 6,
+	WIDGET_FLAG_BORDER = 1 << 7,
+	WIDGET_FLAG_TEXT = 1 << 8,
+	WIDGET_FLAG_IMAGE = 1 << 9,
+
+	WIDGET_FLAG_ANIMATE_HOT = 1 << 10,
+	WIDGET_FLAG_ANIMATE_ACTIVE = 1 << 11,
+
+	WIDGET_FLAG_ANIMATE =
+		WIDGET_FLAG_ANIMATE_HOT | WIDGET_FLAG_ANIMATE_ACTIVE,
 } UIWidgetFlags;
 
 #define MAX_CHILDREN 32
 typedef struct {
-	uint32_t id;
+	uint64_t id;
 
 	// Hierarchy
 	uint32_t parent;
@@ -61,8 +82,9 @@ typedef struct {
 	char output_string[256];
 
 	String text;
-	Color color;
+	Color background_color, text_color;
 	Axis2 orientation;
+	UIAlign align[AXIS2_MAX];
 	uint16_t padding[2][2];
 	uint32_t child_gap;
 	UIAxisSize semantic_size[AXIS2_MAX];
@@ -77,16 +99,21 @@ typedef struct {
 } UIWidget;
 
 typedef struct {
-	bool held;
-	bool pressed;
-	bool released;
+	uint64_t id;
+	Rectangle rect;
+    bool resizing;
+} UIWidgetCache;
+
+typedef struct {
 	bool hovering;
+	bool held;
+	bool left_clicked, right_clicked;
 } UIInteraction;
 
 #define MAX_DEPTH 8
 typedef struct {
 	float2 mouse_position;
-	bool mouse_down;
+	bool mouse_left, mouse_right;
 
 	uint32_t depth_parent[MAX_DEPTH];
 	uint32_t current_depth;
@@ -94,42 +121,48 @@ typedef struct {
 	UIWidget widgets[MAX_UI_ELEMENTS];
 	uint32_t widget_count;
 
-	struct {
-		uint32_t id;
-		Rectangle rect;
-	} cached_widgets[MAX_UI_ELEMENTS];
+	UIWidgetCache cached_widgets[MAX_UI_ELEMENTS];
 	uint32_t cached_widget_count;
 
-	int32_t hot_item;
-	int32_t active_item;
+	uint64_t hot_item;
+	uint64_t active_item;
+	float2 press_offset;
 } UIContext;
 
-#define FIXED(...) ((UIAxisSize){ .type = UI_SIZE_FIXED, __VA_ARGS__ })
+#define FIXED(n) ((UIAxisSize){ .type = UI_SIZE_FIXED, .min = (n), .max = (n) })
 #define FIT(...) ((UIAxisSize){ .type = UI_SIZE_FIT, __VA_ARGS__ })
 #define GROW(...) ((UIAxisSize){ .type = UI_SIZE_GROW, __VA_ARGS__ })
 
-void ui_frame_begin(UIContext *context);
-void ui_frame_end(DrawlistBuffer *buffer);
+void imgui_frame_begin(UIContext *context);
+void imgui_frame_end(DrawlistBuffer *buffer);
 
-void ui_widget_push(uint32_t id, UIAxisSize width, UIAxisSize height);
-void ui_widget_pop(void);
+void imgui_widget_push(uint64_t id, UIAxisSize width, UIAxisSize height, UIWidgetFlags flags);
+void imgui_widget_pop(void);
 
-void ui_push_row(uint32_t id, UIAxisSize width, UIAxisSize height);
-void ui_push_column(uint32_t id, UIAxisSize width, UIAxisSize height);
+void imgui_background_color(Color color);
+void imgui_absolute_position(float x, float y);
+void imgui_offset(float x, float y);
+void imgui_orientation(Axis2 axis);
 
-void ui_background_color(Color color);
-void ui_absolute_position(float2 pos);
-void ui_orientation(Axis2 axis);
-void ui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom);
-void ui_padding_all(uint16_t padding);
-void ui_child_gap(uint16_t gap);
+void imgui_align_x(UIAlign align);
+void imgui_align_y(UIAlign align);
 
-void ui_rect(uint32_t id, float width, float height, Color color);
-void ui_text(uint32_t id, String text, Font *font, Color color);
+void imgui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom);
+void imgui_padding_all(uint16_t padding);
+void imgui_child_gap(uint16_t gap);
 
-bool ui_hovered(void);
-bool ui_held(void);
-bool ui_pressed(void);
+void imgui_rect(uint64_t id, float width, float height, Color color);
+void imgui_text(String text, Font *font, Color color);
+
+UIInteraction imgui_button(String label, Font *font);
+
+bool imgui_hovered(void);
+bool imgui_held(void);
+bool imgui_right_clicked(void);
+bool imgui_clicked(void);
+
+bool imgui_hot(void);
+bool imgui_active(void);
 
 #define LINE_ID(index) (uint32_t)(__LINE__ << 8) + (index)
 
