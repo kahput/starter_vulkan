@@ -862,47 +862,63 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			imgui_frame_begin(&pstate->ui);
 
-			imgui_widget_push(shash("root"), FIT(), FIT(), 0);
+			imgui_layout_begin(shash("root"), FIT(), FIT(), 0);
 			{
+				imgui_align_x(UI_ALIGN_RIGHT);
 				imgui_absolute_position(300, 300);
-				imgui_align_y(UI_ALIGN_CENTER);
-				imgui_orientation(AXIS2_Y);
 				imgui_background_color(rgb(105, 50, 53));
-				imgui_padding_all(16);
-				imgui_child_gap(16);
 
-				if (imgui_button(S("Something"), &pstate->assets.font[FONT_SIZE_32]).left_clicked) {
-					LOG_INFO("Something pressed");
-				};
-
-				imgui_widget_push(shash("copy_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
+				imgui_layout_begin(shash("buttons_container"), FIT(), FIT(), 0);
 				{
-					if (imgui_active()) {
-						imgui_offset(2, 2);
-					}
-					if (imgui_clicked())
-						LOG_INFO("Copy pressed & released");
-
-					imgui_background_color(rgb(135, 80, 83));
 					imgui_align_y(UI_ALIGN_CENTER);
-					imgui_padding(8, 8, 4, 4);
-					imgui_text(S("Copy##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
-				}
-				imgui_widget_pop();
+					imgui_orientation(AXIS2_Y);
+					imgui_padding_all(16);
+					imgui_child_gap(16);
 
-				imgui_widget_push(shash("paste_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
-				{
-					if (imgui_active()) {
-						imgui_offset(2, 2);
+					if (imgui_button(S("Something"), &pstate->assets.font[FONT_SIZE_32]).left_clicked) {
+						LOG_INFO("Something pressed");
 					}
-					imgui_background_color(rgb(135, 80, 83));
-					imgui_align_y(UI_ALIGN_CENTER);
-					imgui_padding(8, 8, 4, 4);
-					imgui_text(S("Paste##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
+
+					imgui_layout_begin(shash("copy_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
+					{
+						if (imgui_active()) {
+							imgui_offset(2, 2);
+						}
+						imgui_background_color(rgb(135, 80, 83));
+						imgui_align_y(UI_ALIGN_CENTER);
+						imgui_padding(8, 8, 4, 4);
+						imgui_text(S("Copy##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
+
+						UIInteraction i = imgui_layout_end();
+					}
+
+					imgui_layout_begin(shash("paste_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
+					{
+						if (imgui_active()) {
+							imgui_offset(2, 2);
+						}
+						imgui_background_color(rgb(135, 80, 83));
+						imgui_align_y(UI_ALIGN_CENTER);
+						imgui_padding(8, 8, 4, 4);
+						imgui_text(S("Paste##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
+						imgui_layout_end();
+					}
+					imgui_layout_end();
 				}
-				imgui_widget_pop();
+
+				static float my_layout_float = 0.0f;
+				imgui_scrollbar(shash("scrollbar"), &my_layout_float, 0.0f, 10.0f);
 			}
-			imgui_widget_pop();
+			imgui_layout_end();
+
+			imgui_layout_begin(shash("viewport"), FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), 0);
+			{
+                imgui_align_x(UI_ALIGN_RIGHT);
+
+				static float my_layout_float = 0.0f;
+				imgui_scrollbar(shash("viewport_scrollbar"), &my_layout_float, 0.0f, 10.0f);
+				imgui_layout_end();
+			}
 
 			imgui_frame_end(drawlist_ui);
 

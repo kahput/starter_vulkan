@@ -13,7 +13,7 @@ UIContext *context = NULL;
 UIWidget *widget_peek(void) {
 	return &context->widgets[context->depth_parent[context->current_depth]];
 }
-UIWidget *widget_find(uint64_t id) {
+UIWidget *find_widget(uint64_t id) {
 	for (uint32_t index = 0; index < context->widget_count; ++index) {
 		UIWidget *widget = &context->widgets[index];
 		if (widget->id == id)
@@ -28,7 +28,6 @@ uint32_t widget_peek_index(void) {
 }
 
 UIWidgetCache *find_cached_widget(uint64_t id);
-UIInteraction imgui_interact(uint64_t id);
 
 void imgui_frame_begin(UIContext *ctx) {
 	context = ctx;
@@ -69,6 +68,7 @@ void imgui_frame_end(DrawlistBuffer *buffer) {
 	for (uint32_t index = context->widget_count - 1; index >= 1; --index) {
 		UIWidget *widget = &context->widgets[index];
 		fit_children(widget, AXIS2_Y, widget->orientation == AXIS2_Y);
+
 		widget->size[AXIS2_Y] = maxf(widget->size[AXIS2_Y], widget->semantic_size[AXIS2_Y].min);
 	}
 
@@ -87,7 +87,7 @@ void imgui_frame_end(DrawlistBuffer *buffer) {
 		UIWidget *parent = &context->widgets[widget->parent];
 
 		widget->offset[AXIS2_X] += parent->offset[AXIS2_X] + parent->padding[AXIS2_X][0] + parent->child_offset_accumulator[AXIS2_X];
-		widget->offset[AXIS2_Y] += parent->offset[AXIS2_Y] + parent->padding[AXIS2_Y][1] + parent->child_offset_accumulator[AXIS2_Y];
+		widget->offset[AXIS2_Y] += parent->offset[AXIS2_Y] + parent->padding[AXIS2_Y][0] + parent->child_offset_accumulator[AXIS2_Y];
 
 		// Alignment
 		float remaining[AXIS2_MAX] = { 0 };
@@ -145,13 +145,22 @@ void imgui_frame_end(DrawlistBuffer *buffer) {
 		}
 	}
 
+	// Cache
 	context->cached_widget_count = 0;
 	for (uint32_t index = 0; index < context->widget_count; ++index) {
 		UIWidget *widget = &context->widgets[index];
 		if (widget->flags & WIDGET_FLAG_INTERACTABLE) {
 			UIWidgetCache *cached = &context->cached_widgets[context->cached_widget_count++];
 			cached->id = widget->id;
-			cached->rect = widget->rect;
+			cached->outer = widget->rect;
+
+			cached->inner = widget->rect;
+
+			cached->inner.x -= widget->padding[AXIS2_X][0];
+			cached->inner.y -= widget->padding[AXIS2_Y][0];
+
+			cached->inner.width -= widget->padding[AXIS2_X][0] + widget->padding[AXIS2_X][1];
+			cached->inner.height -= widget->padding[AXIS2_Y][0] + widget->padding[AXIS2_Y][1];
 
 			context->cached_widget_count++;
 		}
@@ -185,7 +194,7 @@ UIWidget *widget_push(uint64_t id, UIWidgetFlags flags) {
 	return widget;
 }
 
-void imgui_widget_push(uint64_t id, UIAxisSize width, UIAxisSize height, UIWidgetFlags flags) {
+void imgui_layout_begin(uint64_t id, UIAxisSize width, UIAxisSize height, UIWidgetFlags flags) {
 	UIWidget *widget = widget_push(id, flags);
 
 	widget->semantic_size[AXIS2_X] = width;
@@ -194,18 +203,23 @@ void imgui_widget_push(uint64_t id, UIAxisSize width, UIAxisSize height, UIWidge
 	widget->semantic_size[AXIS2_X].max = widget->semantic_size[AXIS2_X].max <= 0.0f ? FLOAT_MAX : widget->semantic_size[AXIS2_X].max;
 	widget->semantic_size[AXIS2_Y].max = widget->semantic_size[AXIS2_Y].max <= 0.0f ? FLOAT_MAX : widget->semantic_size[AXIS2_Y].max;
 
-	UIWidgetCache *cached = find_cached_widget(id);
-	if (cached) {
-		widget->size[AXIS2_X] = cached->rect.width;
-		widget->size[AXIS2_Y] = cached->rect.height;
-	}
-
-	if (widget->flags & WIDGET_FLAG_INTERACTABLE)
-		imgui_interact(widget->id);
+	/* UIWidgetCache *cached = find_cached_widget(id); */
+	/* if (cached) { */
+	/* 	widget->size[AXIS2_X] = cached->outer.width; */
+	/* 	widget->size[AXIS2_Y] = cached->outer.height; */
+	/* } */
 }
 
-void imgui_widget_pop(void) {
+UIInteraction imgui_layout_end(void) {
+	UIWidget *widget = widget_peek();
 	context->current_depth--;
+
+	UIWidgetCache *cached = find_cached_widget(widget->id);
+	UIInteraction interaction = { 0 };
+	if (cached && widget->flags & WIDGET_FLAG_INTERACTABLE)
+		interaction = imgui_interact(widget->id, cached->outer, widget->flags);
+
+	return interaction;
 }
 
 void imgui_background_color(Color color) {
@@ -261,10 +275,52 @@ void imgui_child_gap(uint16_t gap) {
 	widget->child_gap = gap;
 }
 
+Rectangle imgui_content_region(uint64_t id) {
+	UIWidget *widget = find_widget(id);
+	UIWidgetCache *cache = find_cached_widget(id);
+	Rectangle result = { 0 };
+
+	if (widget && cache) {
+		result = cache->outer;
+
+		if (widget->parent) {
+			UIWidget *parent = &context->widgets[widget->parent];
+
+			result.x -= parent->padding[AXIS2_X][0];
+			result.y -= parent->padding[AXIS2_Y][0];
+
+			result.width -= parent->padding[AXIS2_X][0] + parent->padding[AXIS2_X][1];
+			result.height -= parent->padding[AXIS2_Y][0] + parent->padding[AXIS2_Y][1];
+		}
+	} else if (cache)
+		result = cache->outer;
+
+	return result;
+}
+
+Rectangle imgui_rect_last_frame(uint64_t id) {
+	UIWidgetCache *cache = find_cached_widget(id);
+	if (cache)
+		return cache->outer;
+
+	return (Rectangle){ 0 };
+}
+
+bool imgui_active(void) {
+	return widget_peek()->id == context->active_item;
+}
+bool imgui_hot(void) {
+	return widget_peek()->id == context->hot_item;
+}
+
+float2 imgui_mouse_position(void) {
+	return context->mouse_position;
+}
+
 void imgui_rect(uint64_t id, float width, float height, Color color) {
-	imgui_widget_push(id, FIXED(width), FIXED(height), WIDGET_FLAG_BACKGROUND);
+	imgui_layout_begin(id, FIXED(width), FIXED(height), WIDGET_FLAG_BACKGROUND);
 	imgui_background_color(color);
-	imgui_widget_pop();
+	imgui_layout_end();
 }
 
 static void measure_text(String text, Font *font, uint32_t *min_width, uint32_t *preferred_width, uint32_t *height) {
@@ -307,7 +363,7 @@ void imgui_text(String text, Font *font, Color color) {
 	/* widget->size[AXIS2_X] = preferred_width; */
 	/* widget->size[AXIS2_Y] = height; */
 
-	imgui_widget_pop();
+	imgui_layout_end();
 }
 
 UIWidgetCache *find_cached_widget(uint64_t id) {
@@ -320,41 +376,33 @@ UIWidgetCache *find_cached_widget(uint64_t id) {
 	return NULL;
 }
 
-UIInteraction imgui_interact(uint64_t id) {
-	UIWidget *widget = widget_peek();
+UIInteraction imgui_interact(uint64_t id, Rectangle area, UIWidgetFlags flags) {
 	UIInteraction interact = { 0 };
-	if ((widget->flags & WIDGET_FLAG_INTERACTABLE) == 0)
-		return interact;
-
-	UIWidgetCache *cache = find_cached_widget(id);
-	if (cache == NULL)
+	if ((flags & WIDGET_FLAG_INTERACTABLE) == 0)
 		return interact;
 
 	float2 mouse = context->mouse_position;
-	bool hovered =
-		cache->rect.x <= mouse.x && cache->rect.x + cache->rect.width > mouse.x &&
-		cache->rect.y <= mouse.y && cache->rect.y + cache->rect.height > mouse.y;
+	bool hovered = rect_contains(area, mouse.x, mouse.y);
 
 	if (hovered) {
 		context->hot_item = id;
 		interact.hovering = true;
 
 		if (context->active_item == 0 && (context->mouse_left || context->mouse_right)) {
-			interact.held = true;
+			interact.pressed[MOUSE_BUTTON_LEFT] = context->mouse_left;
+			interact.pressed[MOUSE_BUTTON_RIGHT] = context->mouse_right;
 
-			context->press_offset = (float2){
-				mouse.x - cache->rect.x,
-				mouse.y - cache->rect.y,
-			};
 			context->active_item = id;
 		}
 	}
+
+	if (context->active_item == id)
+		interact.held = true;
 
 	if (context->mouse_left == 0 &&
 		context->hot_item == id &&
 		context->active_item == id) {
 		interact.left_clicked = true;
-		cache->resizing = false;
 	}
 
 	return interact;
@@ -378,7 +426,6 @@ UIInteraction imgui_button(String label, Font *font) {
 	uint32_t padding = 8;
 	imgui_padding_all(padding);
 
-
 	uint32_t preferred_width = 0, minimum_width = 0, height = 0;
 	measure_text(label, font, &minimum_width, &preferred_width, &height);
 
@@ -391,35 +438,63 @@ UIInteraction imgui_button(String label, Font *font) {
 	widget->size[AXIS2_X] = preferred_width;
 	widget->size[AXIS2_Y] = height;
 
-	UIInteraction interaction = imgui_interact(id);
-	imgui_widget_pop();
+	UIInteraction interaction = { 0 };
+
+	UIWidgetCache *cache = find_cached_widget(id);
+	if (cache)
+		interaction = imgui_interact(id, cache->outer, id);
+	imgui_layout_end();
 
 	return interaction;
 }
 
-bool imgui_hovered(void) {
-	return imgui_interact(widget_peek()->id).hovering;
-}
+bool imgui_scrollbar(uint64_t id, float *value, float min, float max) {
+	uint64_t track_id = id;
+	uint64_t thumb_id = hash64_combine(id, shash("thumb"));
 
-bool imgui_held(void) {
-	return imgui_interact(widget_peek()->id).held;
-}
+	bool changed = false;
 
-bool imgui_clicked(void) {
-	return imgui_interact(widget_peek()->id).left_clicked;
-}
-bool imgui_right_clicked(void) {
-	return imgui_interact(widget_peek()->id).right_clicked;
-}
+	UIWidgetCache *cached = find_cached_widget(track_id);
+	if (cached && context->active_item == id) {
+		float draggable_height = cached->inner.height;
+		float offset_y = clampf(context->mouse_position.y - cached->outer.y, 64, draggable_height - 64);
 
-bool imgui_hot(void) {
-	return context->hot_item == widget_peek()->id;
-}
-bool imgui_active(void) {
-	return context->active_item == widget_peek()->id;
-}
+		*value = (offset_y / draggable_height) * max;
+		changed = true;
+	}
 
-float2 mouse_position(void);
+	imgui_layout_begin(track_id, FIT(8), GROW(), WIDGET_FLAG_CLICKABLE);
+	{
+		Color track_color = rgb(80, 80, 80);
+		Color thumb_color = rgb(30, 30, 30);
+
+		/* imgui_background_color(track_color); */
+		imgui_align_x(UI_ALIGN_RIGHT);
+
+		float t_slider = clampf(*value, min, max) / max;
+
+		imgui_layout_begin(thumb_id, FIXED(4), FIXED(128), 0);
+		{
+			float draggable_height = cached ? cached->inner.height : 0.0f;
+			float y = clampf((t_slider * draggable_height) - 64, 0.0f, draggable_height);
+			imgui_offset(0.0f, y);
+			imgui_background_color(thumb_color);
+		}
+		imgui_layout_end(); // thumb
+
+		UIInteraction interaction = imgui_layout_end(); // track
+		UIWidget *widget = find_widget(thumb_id);
+		if (interaction.hovering || interaction.held) {
+            widget->background_color.r -= 10;
+            widget->background_color.g -= 10;
+            widget->background_color.b -= 10;
+            /* widget->offset[AXIS2_X] -= 2; */
+            widget->size[AXIS2_X] += 8;
+		}
+	}
+
+	return changed;
+}
 
 void remaining_size(UIWidget *widget, float size[2]) {
 	uint32_t main = widget->orientation;

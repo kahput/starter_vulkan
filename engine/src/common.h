@@ -96,6 +96,12 @@ static inline uint64_t hash64(void *memory, size_t size) {
 	return h;
 }
 
+// From https://stackoverflow.com/a/5889254
+static inline uint64_t hash64_combine(uint64_t lhs, uint64_t rhs) {
+	lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);
+	return lhs;
+}
+
 #define hash_struct(s) hash64(&(s), sizeof((s)))
 #define hash_array(array) hash64((array), sizeof((array)))
 #define hash_count(memory, count) hash64((memory), sizeof(*(memory)) * (count))

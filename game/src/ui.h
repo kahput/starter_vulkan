@@ -3,6 +3,7 @@
 
 #include "commands.h"
 #include "core/strings.h"
+#include "input/input_types.h"
 
 #include <common.h>
 #include <core/arena.h>
@@ -80,7 +81,6 @@ typedef struct {
 	// Passed
 	UIWidgetFlags flags;
 	char output_string[256];
-
 	String text;
 	Color background_color, text_color;
 	Axis2 orientation;
@@ -100,13 +100,14 @@ typedef struct {
 
 typedef struct {
 	uint64_t id;
-	Rectangle rect;
-    bool resizing;
+	Rectangle outer, inner;
+	bool resizing;
 } UIWidgetCache;
 
 typedef struct {
 	bool hovering;
 	bool held;
+	bool pressed[MOUSE_BUTTON_COUNT];
 	bool left_clicked, right_clicked;
 } UIInteraction;
 
@@ -126,7 +127,6 @@ typedef struct {
 
 	uint64_t hot_item;
 	uint64_t active_item;
-	float2 press_offset;
 } UIContext;
 
 #define FIXED(n) ((UIAxisSize){ .type = UI_SIZE_FIXED, .min = (n), .max = (n) })
@@ -136,8 +136,10 @@ typedef struct {
 void imgui_frame_begin(UIContext *context);
 void imgui_frame_end(DrawlistBuffer *buffer);
 
-void imgui_widget_push(uint64_t id, UIAxisSize width, UIAxisSize height, UIWidgetFlags flags);
-void imgui_widget_pop(void);
+UIInteraction imgui_interact(uint64_t id, Rectangle area, UIWidgetFlags flags);
+
+void imgui_layout_begin(uint64_t id, UIAxisSize width, UIAxisSize height, UIWidgetFlags flags);
+UIInteraction imgui_layout_end(void);
 
 void imgui_background_color(Color color);
 void imgui_absolute_position(float x, float y);
@@ -151,18 +153,19 @@ void imgui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom)
 void imgui_padding_all(uint16_t padding);
 void imgui_child_gap(uint16_t gap);
 
+Rectangle imgui_content_region(uint64_t id);
+Rectangle imgui_rect_last_frame(uint64_t id);
+
+bool imgui_active(void);
+bool imgui_hot(void);
+
+float2 imgui_mouse_position(void);
+
 void imgui_rect(uint64_t id, float width, float height, Color color);
 void imgui_text(String text, Font *font, Color color);
 
 UIInteraction imgui_button(String label, Font *font);
-
-bool imgui_hovered(void);
-bool imgui_held(void);
-bool imgui_right_clicked(void);
-bool imgui_clicked(void);
-
-bool imgui_hot(void);
-bool imgui_active(void);
+bool imgui_scrollbar(uint64_t id, float *value, float min, float max);
 
 #define LINE_ID(index) (uint32_t)(__LINE__ << 8) + (index)
 
