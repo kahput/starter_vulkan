@@ -36,7 +36,7 @@ Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t 
 	}
 
 	stbtt_fontinfo font_info = { 0 };
-	if (stbtt_InitFont(&font_info, file.pointer, 0)) {
+	if (stbtt_InitFont(&font_info, file.memory, 0)) {
 		float scale_factor = stbtt_ScaleForPixelHeight(&font_info, (float)font_size);
 
 		int32_t ascent = 0, descent = 0, line_gap = 0;
@@ -148,7 +148,7 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	memory_copy(result.pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
-	LOG_DEBUG("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.chars, result.width, result.height, result.channels == 4 ? "RGBA8" : "RGB8");
+	LOG_INFO("IMPORTER: '%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.chars, result.width, result.height, result.channels == 4 ? "RGBA8" : "RGB8");
 	arena_scratch_end(scratch);
 	return result;
 }

@@ -123,6 +123,30 @@ typedef enum {
 	FONT_SIZE_MAX,
 } FontSize;
 
+typedef enum {
+	SPRITE_ATLAS_TINY_TOWN,
+	SPRITE_IMAGE_GREEN_POTION,
+	SPRITE_IMAGE_PICKAXE,
+	// :sprites
+
+	SPRITE_IMAGE_MAX,
+} SpriteID;
+
+typedef enum {
+	SHADER_SHADOW,
+	SHADER_UNLIT,
+	SHADER_PHONG,
+	SHADER_LINE,
+	SHADER_PICKER,
+	SHADER_RECTANGLE,
+	SHADER_POST_EFFECTS,
+	SHADER_BLIT,
+	SHADER_COMPOSITE,
+	// :shader
+
+	SHADER_MAX,
+} ShaderID;
+
 typedef struct {
 	Arena persistent_arena;
 	Arena *frame_arena;
@@ -134,15 +158,6 @@ typedef struct {
 
 	RhiSampler linear_sampler, nearest_sampler, shadow_sampler;
 	RhiTexture white;
-
-	// These are assets too
-	RhiShader shadow_shader;
-	RhiShader unlit_shader, phong_shader;
-	RhiShader screenline_shader, picker_shader;
-	RhiShader quad_shader, quad_textured_shader;
-
-	RhiShader postfx_shader, blit_shader, composite_shader;
-	// :shader
 
 	RhiBuffer frame_uniform_buffer;
 	RhiBuffer frame_storage_buffer;
@@ -156,9 +171,10 @@ typedef struct {
 	float3 game_camera_start_offset;
 	Camera3D game_camera;
 
+	Texture2D sprites[SPRITE_IMAGE_MAX];
 	struct {
+		RhiShader shaders[SHADER_MAX];
 		Font font[FONT_SIZE_MAX];
-		RhiShader *shaders;
 		RhiTexture *textures;
 		Material *materials;
 		Mesh *meshes;
@@ -200,6 +216,11 @@ typedef struct {
 	bool debug_draw_collisions;
 
 } PermanentState;
+
+RhiShader get_shader(PermanentState *pstate, ShaderID id) {
+	ASSERT(id < SHADER_MAX);
+	return pstate->assets.shaders[id];
+}
 
 Editor editor_make(Arena *arena);
 void editor_update(PermanentState *state, Editor *editor, float dt);
@@ -265,7 +286,7 @@ void draw_shadow_pass(PermanentState *pstate) {
 	if (vulkan_drawlist_begin(pstate->context, shadow_pass)) {
 		PipelineDesc pipeline = DEFAULT_PIPELINE;
 		pipeline.cull_mode = CULL_MODE_BACK;
-		vulkan_shader_bind(pstate->context, pstate->shadow_shader, pipeline);
+		vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_SHADOW), pipeline);
 
 		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
 		Entity entity = 0;
@@ -295,7 +316,6 @@ void draw_shadow_pass(PermanentState *pstate) {
 		vulkan_drawlist_end(pstate->context);
 	}
 }
-
 void draw_main_pass(PermanentState *pstate) {
 	Camera3D *camera = pstate->active_camera;
 
@@ -348,7 +368,7 @@ void draw_main_pass(PermanentState *pstate) {
 	};
 	size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(LightData), &light);
 
-	pstate->game_current_frame_global = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
+	pstate->game_current_frame_global = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_PHONG), 0);
 	vulkan_uniformset_bind_buffer_range(pstate->context, pstate->game_current_frame_global, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
 	vulkan_uniformset_bind_buffer_range(pstate->context, pstate->game_current_frame_global, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
 
@@ -376,7 +396,7 @@ void draw_main_pass(PermanentState *pstate) {
 		pipeline.cull_mode = CULL_MODE_BACK;
 
 		// Entities
-		vulkan_shader_bind(pstate->context, pstate->phong_shader, pipeline);
+		vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_PHONG), pipeline);
 		vulkan_uniformset_bind(pstate->context, pstate->game_current_frame_global);
 		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
 
@@ -396,7 +416,7 @@ void draw_main_pass(PermanentState *pstate) {
 
 				RhiShader shader = material->shader;
 
-				RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 1);
+				RhiUniformSet group = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_PHONG), 1);
 
 				// TODO: ASSERT on this in the reflection code
 				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
@@ -432,7 +452,7 @@ void draw_main_pass(PermanentState *pstate) {
 
 		// Collision shapes
 		if (pstate->debug_draw_collisions) {
-			vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
+			vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_LINE), pipeline);
 			EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(ColliderComponent));
 
 			Entity entity;
@@ -498,7 +518,7 @@ void draw_main_pass(PermanentState *pstate) {
 				float4x4 model_matrix = transform->world_matrix;
 				vulkan_push_constants(pstate->context, 0, sizeof(float4x4), model_matrix.elements);
 
-				RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
+				RhiUniformSet group = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_LINE), 1);
 				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
 				vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, storage_offset, size, buffer);
 				vulkan_uniformset_bind(pstate->context, group);
@@ -516,10 +536,6 @@ typedef struct {
 	uint32_t color;
 	uint32_t texture_id;
 } Vertex2;
-
-static inline uint32_t color_pack(Color c) {
-	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);
-}
 
 FrameInfo update_and_draw(GameContext *context, float dt) {
 	PermanentState *pstate = context->permanent_memory;
@@ -589,6 +605,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
 			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
 			NULL);
+		// :targets
 
 		pstate->scene_arena = arena_partition(&pstate->persistent_arena, MiB(32));
 		pstate->world = pstate->editor_scene = ecs_make(pstate->scene_arena);
@@ -699,6 +716,21 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				ecs_put(pstate->world, pickaxe, MeshComponent, pickaxe_mesh);
 				ecs_hierarchy_parent(pstate->world, pickaxe_pivot, pickaxe);
 				ecs_hierarchy_parent(pstate->world, pstate->game.player, pickaxe_pivot);
+
+				// Player inventory
+				ecs_put(pstate->world, pickaxe, ItemComponent,
+					{
+					  .name = S("Iron Pickaxe"),
+					  .description = S("An pickaxe fitting for a beginner"),
+					  .atlas = pstate->sprites[SPRITE_ATLAS_TINY_TOWN],
+					  .stackable = false,
+					});
+				ecs_put(pstate->world, pstate->game.player, InventoryComponent,
+					{
+					  .slots[0] = { .item = pickaxe, .quantity = 1 },
+					  .capacity = 8,
+					});
+				Entity bucket = ecs_spawn(pstate->world, (float3){ 0 });
 
 				/* pstate->game.selection = ecs_deserialize_entity(pstate->world, S("assets/scenes/selection_entity.prefab")); */
 				Entity rock = ecs_deserialize_entity(pstate->world, S("assets/scenes/rock.prefab"));
@@ -862,63 +894,65 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			imgui_frame_begin(&pstate->ui);
 
-			imgui_layout_begin(shash("root"), FIT(), FIT(), 0);
-			{
-				imgui_anchor(IMGUI_ANCHOR_RIGHT);
-				imgui_absolute_position(300, 300);
-				imgui_background_color(rgb(105, 50, 53));
+#define BACKGROUND_COLOR_DARK rgb(24, 20, 37) // 181425 — near-black panel
+#define BACKGROUND_COLOR_MID rgb(38, 43, 68) // 262b44 — button resting
+#define BACKGROUND_COLOR_HOVER rgb(58, 68, 102) // 3a4466 — button hover
+#define BACKGROUND_COLOR_HELD rgb(18, 60, 137) // 124e89 — button pressed (blue shift)
+#define ACCENT_COLOR rgb(0, 153, 219) // 2ce8f5 — cyan highlight
+#define TEXT_COLOR rgb(255, 255, 255) // ffffff — white
+#define TEXT_COLOR_DIM rgb(139, 155, 180) // 8b9bb4 — blue-grey
 
-				imgui_layout_begin(shash("buttons_container"), FIT(), FIT(), 0);
-				{
-					imgui_anchor(IMGUI_ANCHOR_TOP);
-					imgui_orientation(AXIS2_Y);
-					imgui_padding_all(16);
-					imgui_child_gap(16);
+			static bool show_inventory = false;
 
-					if (imgui_button(S("Something"), &pstate->assets.font[FONT_SIZE_32]).left_clicked) {
-						LOG_INFO("Something pressed");
-					}
-
-					imgui_layout_begin(shash("copy_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
-					{
-						if (imgui_active()) {
-							imgui_offset(2, 2);
-						}
-						imgui_background_color(rgb(135, 80, 83));
-						imgui_anchor(IMGUI_ANCHOR_TOP);
-						imgui_padding(8, 8, 4, 4);
-						imgui_text(S("Copy##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
-
-						UIInteraction i = imgui_layout_end();
-					}
-
-					imgui_layout_begin(shash("paste_container"), GROW(), FIT(), WIDGET_FLAG_CLICKABLE);
-					{
-						if (imgui_active()) {
-							imgui_offset(2, 2);
-						}
-						imgui_background_color(rgb(135, 80, 83));
-						imgui_anchor(IMGUI_ANCHOR_TOP);
-						imgui_padding(8, 8, 4, 4);
-						imgui_text(S("Paste##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
-						imgui_layout_end();
-					}
-					imgui_layout_end();
-				}
-
-				static float my_layout_float = 0.0f;
-				imgui_scrollbar(shash("scrollbar"), &my_layout_float, 0.0f, 10.0f);
-			}
-			imgui_layout_end();
-
-			imgui_layout_begin(shash("viewport"), FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), 0);
+			imgui_widget_begin(shash("root"), FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), 0);
 			{
 				imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
+				imgui_padding(0, 32, 32, 0);
 
-				static float my_layout_float = 0.0f;
-				imgui_scrollbar(shash("viewport_scrollbar"), &my_layout_float, 0.0f, 10.0f);
-				imgui_layout_end();
+				if (show_inventory) {
+					imgui_widget_begin(shash("inventory"), FIT(), FIT(), 0);
+
+					{
+						imgui_child_gap(6);
+						imgui_padding_xy(12);
+						imgui_orientation(AXIS2_Y);
+						imgui_background_color(BACKGROUND_COLOR_DARK);
+
+#define ID(str, ...) string_hash64(string_format(pstate->frame_arena, (str), __VA_ARGS__))
+						for (uint32_t row = 0; row < 3; ++row) {
+							imgui_widget_begin(ID("row[%u]", row), FIT(), FIT(), 0);
+							{
+								imgui_child_gap(6);
+
+								for (uint32_t column = 0; column < 8; ++column) {
+									uint64_t slot_id = ID("slot[%u,%u", row, column);
+									Rectangle slot_rect = imgui_rect_last_frame(slot_id);
+									ImguiInteraction interct = imgui_interact(slot_id, slot_rect, IMGUI_FLAG_INTERACTABLE);
+									Color color = interct.held ? BACKGROUND_COLOR_HELD : interct.hovering ? BACKGROUND_COLOR_HOVER
+																										  : BACKGROUND_COLOR_MID;
+									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_INTERACTABLE | IMGUI_FLAG_IMAGE);
+									imgui_background_color(color);
+									imgui_padding_xy(8);
+									imgui_background_image(pstate->sprites[SPRITE_IMAGE_PICKAXE]);
+									imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
+
+									imgui_widget_text(S("x256"), &pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
+									imgui_widget_end();
+								}
+
+								imgui_widget_end();
+							}
+						}
+#undef ID
+					}
+					imgui_widget_end();
+				}
+
+				imgui_widget_end();
 			}
+
+			if (input_key_pressed(KEY_CODE_E))
+				show_inventory = !show_inventory;
 
 			imgui_frame_end(drawlist_ui);
 
@@ -998,9 +1032,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		vulkan_texture_prepare_sample(pstate->context, pstate->imgui_color_target);
 		if (vulkan_drawlist_begin(pstate->context, composite_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
-			vulkan_shader_bind(pstate->context, pstate->composite_shader, pipeline);
+			vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_COMPOSITE), pipeline);
 
-			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->composite_shader, 0);
+			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_COMPOSITE), 0);
 
 			/* RhiTexture output = pstate->imgui_color_target; */
 			/* RhiTexture output = pstate->shadow_depth_target; */
@@ -1035,9 +1069,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		vulkan_texture_prepare_sample(pstate->context, pstate->editor.main_color_target);
 		if (vulkan_drawlist_begin(pstate->context, present_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
-			vulkan_shader_bind(pstate->context, pstate->blit_shader, pipeline);
+			vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_BLIT), pipeline);
 
-			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, pstate->blit_shader, 0);
+			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_BLIT), 0);
 
 			/* RhiTexture output = pstate->imgui_color_target; */
 			/* RhiTexture output = pstate->shadow_depth_target; */
@@ -1533,7 +1567,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 	if (vulkan_drawlist_begin(pstate->context, picker_pass)) {
 		PipelineDesc pipeline = DEFAULT_PIPELINE;
-		vulkan_shader_bind(pstate->context, pstate->picker_shader, pipeline);
+		vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_PICKER), pipeline);
 		vulkan_uniformset_bind(pstate->context, pstate->game_current_frame_global);
 
 		EcsIterator iterator = ecs_query(pstate->world, ecs_type_id(TransformComponent), ecs_type_id(MeshComponent));
@@ -1595,7 +1629,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	};
 	if (vulkan_drawlist_begin(pstate->context, debug_lines_pass)) {
 		PipelineDesc pipeline = DEFAULT_PIPELINE;
-		vulkan_shader_bind(pstate->context, pstate->screenline_shader, pipeline);
+		vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_LINE), pipeline);
 		vulkan_uniformset_bind(pstate->context, pstate->game_current_frame_global);
 
 		for (uint32_t index = 0; index < editor->selected_entity_count; ++index) {
@@ -1719,7 +1753,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 			size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color);
 			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(selection), selection);
 
-			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
+			RhiUniformSet group = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_LINE), 1);
 			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
 			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, sizeof(selection), pstate->frame_storage_buffer);
 			vulkan_uniformset_bind(pstate->context, group);
@@ -1750,7 +1784,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 			size_t uniform_offset = vulkan_buffer_push(pstate->context, pstate->frame_uniform_buffer, sizeof(float4), &color);
 			size_t point_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, size, scratch.arena->base);
 
-			RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->screenline_shader, 1);
+			RhiUniformSet group = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_LINE), 1);
 			vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, uniform_offset, sizeof(float4), pstate->frame_uniform_buffer);
 			vulkan_uniformset_bind_buffer_range(pstate->context, group, 1, point_offset, size, pstate->frame_storage_buffer);
 			vulkan_uniformset_bind(pstate->context, group);
@@ -1845,22 +1879,44 @@ void load_assets(PermanentState *pstate) {
 
 	ShaderSource source = { 0 };
 
-	pstate->shadow_shader = load_shader(pstate->context, S("shadow_shader"), S("shadow"), S("blank"));
+	pstate->assets.shaders[SHADER_SHADOW] = load_shader(pstate->context, S("shadow"), S("shadow"), S("blank"));
 
-	pstate->unlit_shader = load_shader(pstate->context, S("unlit_shader"), S("basic"), S("unlit"));
-	pstate->picker_shader = load_shader(pstate->context, S("picker_shader"), S("basic"), S("picker"));
+	pstate->assets.shaders[SHADER_UNLIT] = load_shader(pstate->context, S("unlit"), S("basic"), S("unlit"));
+	pstate->assets.shaders[SHADER_PICKER] = load_shader(pstate->context, S("picker"), S("basic"), S("picker"));
 
-	pstate->phong_shader = load_shader(pstate->context, S("phong_shader"), S("base"), S("phong"));
-	pstate->screenline_shader = load_shader(pstate->context, S("screenline_shader"), S("line"), S("flat"));
+	pstate->assets.shaders[SHADER_PHONG] = load_shader(pstate->context, S("phong"), S("base"), S("phong"));
+	pstate->assets.shaders[SHADER_LINE] = load_shader(pstate->context, S("screenline"), S("line"), S("flat"));
 
-	pstate->postfx_shader = load_shader(pstate->context, S("postfx_shader"), S("quad"), S("postfx"));
-	pstate->blit_shader = load_shader(pstate->context, S("blit_shader"), S("quad"), S("blit"));
-	pstate->quad_shader = load_shader(pstate->context, S("quad_shader"), S("batch"), S("vertex_color"));
-	pstate->quad_textured_shader = load_shader(pstate->context, S("textured_quad_shader"), S("batch"), S("textured"));
-	pstate->composite_shader = load_shader(pstate->context, S("composite_shader"), S("quad"), S("composite"));
+	pstate->assets.shaders[SHADER_POST_EFFECTS] = load_shader(pstate->context, S("postfx"), S("quad"), S("postfx"));
+	pstate->assets.shaders[SHADER_BLIT] = load_shader(pstate->context, S("blit"), S("quad"), S("blit"));
+	pstate->assets.shaders[SHADER_RECTANGLE] = load_shader(pstate->context, S("textured_quad"), S("batch"), S("textured"));
+	pstate->assets.shaders[SHADER_COMPOSITE] = load_shader(pstate->context, S("composite"), S("quad"), S("composite"));
 	// :shader
 
-    LOG_DEBUG("Hello world!");
+	ImageSource sprite_src = importer_load_image(scratch.arena, S("assets/sprites/kenney/tiny_town_tilemap_packed.png"));
+	pstate->sprites[SPRITE_ATLAS_TINY_TOWN] = (Texture2D){
+		.handle = vulkan_texture_make(pstate->context, sprite_src.width, sprite_src.height, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, sprite_src.pixels),
+		.format = TEXTURE_FORMAT_RGBA8_SRGB,
+		.width = sprite_src.width,
+		.height = sprite_src.height,
+	};
+	sprite_src = importer_load_image(scratch.arena, S("assets/sprites/kenney/tile_0114.png"));
+	pstate->sprites[SPRITE_IMAGE_GREEN_POTION] = (Texture2D){
+		.handle = vulkan_texture_make(pstate->context, sprite_src.width, sprite_src.height, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, sprite_src.pixels),
+		.format = TEXTURE_FORMAT_RGBA8_SRGB,
+		.width = sprite_src.width,
+		.height = sprite_src.height,
+	};
+	sprite_src = importer_load_image(scratch.arena, S("assets/sprites/kenney/pickaxe.png"));
+	pstate->sprites[SPRITE_IMAGE_PICKAXE] = (Texture2D){
+		.handle = vulkan_texture_make(pstate->context, sprite_src.width, sprite_src.height, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, sprite_src.pixels),
+		.format = TEXTURE_FORMAT_RGBA8_SRGB,
+		.width = sprite_src.width,
+		.height = sprite_src.height,
+	};
+	// :sprites
+
+	LOG_DEBUG("Hello world!");
 
 	for (uint32_t index = FONT_SIZE_16; index < FONT_SIZE_MAX; ++index) {
 		Font *font = &pstate->assets.font[index];
@@ -1899,7 +1955,7 @@ void load_assets(PermanentState *pstate) {
 	arena_darray_push(scratch.arena, mesh_group_bounds, Interval3); // 0 == invalid
 	arena_darray_push(scratch.arena, textures, RhiTexture); // 0 == default
 	Material *default_mat = arena_darray_push(scratch.arena, materials, Material); // 0 == default
-	default_mat->shader = pstate->phong_shader;
+	default_mat->shader = get_shader(pstate, SHADER_PHONG);
 	MaterialParameters parameters = {
 		.base_color_factor = default_properties[5].as.float32x4,
 		.metallic_factor = default_properties[6].as.float32x1,
@@ -1939,7 +1995,7 @@ void load_assets(PermanentState *pstate) {
 		for (uint32_t material_index = 0; material_index < model->material_count; ++material_index) {
 			MaterialSource *src = &model->materials[material_index];
 			Material *dst = arena_darray_push(scratch.arena, materials, Material);
-			dst->shader = pstate->phong_shader;
+			dst->shader = get_shader(pstate, SHADER_PHONG);
 			dst->uniform_buffer = pstate->scene_uniform_buffer;
 
 			MaterialParameters parameters = {
@@ -2138,7 +2194,7 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 	RhiTexture batch2d_textures[32] = { pstate->white };
 	uint32_t batch2d_texture_count = 1, batch2d_quad_count = 0;
 
-	RhiUniformSet batch2d_global = vulkan_uniformset_push(pstate->context, pstate->quad_textured_shader, 0);
+	RhiUniformSet batch2d_global = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_RECTANGLE), 0);
 	{
 		uint2 window_size = window_size_pixel(pstate->display);
 		float4x4 projection = float4x4_orthographic(0.0f, window_size.x, 0.0f, window_size.y, -50, 50.f);
@@ -2159,7 +2215,7 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 			if (batch2d_texture_count == countof(batch2d_textures) || batch2d_quad_count == max_quads_per_batch) {
 				batch2d_flush(
 					pstate->context,
-					pstate->quad_textured_shader,
+					get_shader(pstate, SHADER_RECTANGLE),
 					batch2d_global,
 					pstate->frame_storage_buffer,
 					batch2d_quad_count,
@@ -2267,7 +2323,7 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 					};
 					size_t light_offset = vulkan_buffer_push(pstate->context, pstate->frame_storage_buffer, sizeof(LightData), &light);
 
-					RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 0);
+					RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_PHONG), 0);
 					vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
 					vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
 					vulkan_uniformset_bind_texture(pstate->context, global_set, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
@@ -2285,7 +2341,7 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 						vulkan_shader_bind(pstate->context, material->shader, pipeline);
 						vulkan_uniformset_bind(pstate->context, global_set);
 
-						RhiUniformSet group = vulkan_uniformset_push(pstate->context, pstate->phong_shader, 1);
+						RhiUniformSet group = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_PHONG), 1);
 
 						vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
 						for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
@@ -2324,7 +2380,7 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 		if (batch2d_quad_count) {
 			batch2d_flush(
 				pstate->context,
-				pstate->quad_textured_shader,
+				get_shader(pstate, SHADER_RECTANGLE),
 				batch2d_global,
 				pstate->frame_storage_buffer,
 				batch2d_quad_count,

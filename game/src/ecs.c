@@ -21,11 +21,14 @@ static Entity deserialize_entity(ECS *world, JsonNode *root);
 ECS *ecs_make(Arena *arena) {
 	ECS *ecs = arena_push_struct(arena, ECS);
 	ecs->arena = arena;
+	memory_zero_array(ecs->components);
 
-	for (uint32_t index = 1; index < COMPONENT_TYPE_MAX; ++index) {
+	for (uint32_t index = 0; index < COMPONENT_TYPE_MAX; ++index) {
 		ComponentMetadata data = component_metadata[index];
 		ecs->components[index].size = data.element_size * MAX_ENTITIES;
-		ecs->components[index].pointer = arena_push(arena, ecs->components[index].size, data.element_align, true);
+
+		if (data.element_size)
+			ecs->components[index].memory = arena_push(arena, ecs->components[index].size, data.element_align, true);
 	}
 
 	return ecs;
@@ -36,7 +39,7 @@ ECS *ecs_make_copy(Arena *arena, ECS *src) {
 	result->highest_valid = src->highest_valid;
 
 	for (uint32_t type_id = 1; type_id < COMPONENT_TYPE_MAX; ++type_id)
-		memory_copy(result->components[type_id].pointer, src->components[type_id].pointer, src->components[type_id].size);
+		memory_copy(result->components[type_id].memory, src->components[type_id].memory, src->components[type_id].size);
 
 	memory_copy(result->flags, src->flags, sizeof(src->flags));
 
@@ -108,7 +111,7 @@ void ecs_despawn(ECS *world, Entity entity) {
 	if (ecs_valid(world, entity)) {
 		for (uint32_t index = 0; index < COMPONENT_TYPE_MAX; ++index) {
 			ComponentMetadata metadata = component_metadata[index];
-			void *pointer = world->components[index].pointer + metadata.element_size * entity;
+			void *pointer = world->components[index].memory + metadata.element_size * entity;
 
 			memory_zero(pointer, metadata.element_size);
 		}
@@ -128,7 +131,7 @@ void *ecs_push_id(ECS *world, Entity entity, ComponentID type_id) {
 	}
 
 	ComponentMetadata metadata = component_metadata[type_id];
-	void *pointer = world->components[type_id].pointer + metadata.element_size * entity;
+	void *pointer = world->components[type_id].memory + metadata.element_size * entity;
 	world->flags[entity] |= component_flag(type_id);
 
 	return pointer;
@@ -147,7 +150,7 @@ void *ecs_find_id(ECS *world, Entity entity, ComponentID type_id) {
 
 	ComponentMetadata metadata = component_metadata[type_id];
 
-	void *pointer = world->components[type_id].pointer + metadata.element_size * entity;
+	void *pointer = world->components[type_id].memory + metadata.element_size * entity;
 	return pointer;
 }
 
@@ -160,7 +163,7 @@ void ecs_pop_id(ECS *world, Entity entity, ComponentID type_id) {
 		return;
 
 	ComponentMetadata metadata = component_metadata[type_id];
-	void *pointer = world->components[type_id].pointer + metadata.element_size * entity;
+	void *pointer = world->components[type_id].memory + metadata.element_size * entity;
 	memory_zero(pointer, metadata.element_size);
 
 	world->flags[entity] &= ~component_flag(type_id);
@@ -173,6 +176,18 @@ bool ecs_has_id(ECS *world, Entity entity, ComponentID type_id) {
 	}
 	if (ecs_valid(world, entity) == false || FLAG_GET(world->flags[entity], component_flag(type_id)) == false)
 		return false;
+
+	return true;
+}
+
+bool ecs_has_ids(ECS *world, Entity entity, uint32_t type_count, ComponentID *type_ids) {
+	ASSERT(type_count == 0 || type_ids);
+
+	for (uint32_t index = 0; index < type_count; ++index) {
+		ASSERT(component_valid(type_ids[index]));
+		if (ecs_has_id(world, entity, type_ids[index]) == false)
+			return false;
+	}
 
 	return true;
 }
@@ -291,7 +306,7 @@ EcsIterator ecs_query_make(ECS *world, uint32_t count, ComponentID *component_id
 	for (uint32_t index = 0; index < count; ++index) {
 		ComponentID type_id = component_ids[index];
 		ASSERT(type_id < COMPONENT_TYPE_MAX);
-		/* ASSERT(component_valid(type_id)); */
+		ASSERT(component_valid(type_id));
 
 		result.mask |= component_flag(type_id);
 	}

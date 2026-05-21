@@ -92,7 +92,7 @@ ArenaTemp arena_scratch_begin(Arena *conflict) {
 ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Buffer key, const char *debug_type_name) {
 	ArenaTrieNode **node = root;
 
-	for (uint64_t hash_index = hash64(key.pointer, key.size); *node; hash_index <<= 2) {
+	for (uint64_t hash_index = hash64(key.memory, key.size); *node; hash_index <<= 2) {
 		Buffer node_key = buffer_make((uint8_t *)(*node) + sizeof(ArenaTrieNode), (*node)->key_size);
 		if (buffer_equal(node_key, key)) {
 			ASSERT_FORMAT(
@@ -113,7 +113,7 @@ ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Buffer 
 	*node = arena_push(arena, sizeof(ArenaTrieNode) + key.size, alignof(ArenaTrieNode), true);
 	(*node)->key_size = key.size;
 	(*node)->debug_type_name = debug_type_name;
-	memory_copy((uint8_t *)(*node) + sizeof(ArenaTrieNode), key.pointer, (*node)->key_size);
+	memory_copy((uint8_t *)(*node) + sizeof(ArenaTrieNode), key.memory, (*node)->key_size);
 
 	return (*node);
 }
@@ -121,9 +121,9 @@ ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Buffer 
 void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Buffer key, size_t map_size, size_t map_align) {
 	ArenaTrieHeader **node = root;
 
-	for (uint64_t hash = hash64(key.pointer, key.size); *node; hash <<= 2) {
+	for (uint64_t hash = hash64(key.memory, key.size); *node; hash <<= 2) {
 		void *node_key = (uint8_t *)(*node) + key_offset;
-		if (memory_equals(node_key, key.pointer, key.size)) {
+		if (memory_equals(node_key, key.memory, key.size)) {
 			return (uint8_t *)(*node) + value_offset;
 		}
 
@@ -136,7 +136,7 @@ void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_o
 	ASSERT(map_size >= sizeof(ArenaTrieNode));
 
 	(*node) = arena_push(arena, map_size, 16, true);
-	memory_copy((uint8_t *)(*node) + key_offset, key.pointer, key.size);
+	memory_copy((uint8_t *)(*node) + key_offset, key.memory, key.size);
 
 	return (uint8_t *)(*node) + value_offset;
 }

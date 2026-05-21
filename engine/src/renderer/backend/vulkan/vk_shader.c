@@ -30,7 +30,7 @@ RhiShader vulkan_shader_make(
 	String name, Buffer vertex, Buffer fragment, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
-	if (vertex.pointer == NULL || vertex.size == 0 || fragment.pointer == NULL || fragment.size == 0) {
+	if (vertex.memory == NULL || vertex.size == 0 || fragment.memory == NULL || fragment.size == 0) {
 		LOG_ERROR("Vulkan: invalid shader code passed, aborting %s", __func__);
 		return INVALID_RHI(RhiShader);
 	}
@@ -38,7 +38,7 @@ RhiShader vulkan_shader_make(
 	VkShaderModuleCreateInfo vsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 		.codeSize = vertex.size,
-		.pCode = (uint32_t *)vertex.pointer,
+		.pCode = (uint32_t *)vertex.memory,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &shader->vertex_shader) != VK_SUCCESS) {
@@ -49,7 +49,7 @@ RhiShader vulkan_shader_make(
 	VkShaderModuleCreateInfo fsm_create_info = {
 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 		.codeSize = fragment.size,
-		.pCode = (uint32_t *)fragment.pointer,
+		.pCode = (uint32_t *)fragment.memory,
 	};
 
 	if (vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &shader->fragment_shader) != VK_SUCCESS) {
@@ -244,7 +244,7 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		return false;
 	}
 
-	LOG_INFO("shader[ID = %2d] pipeline[INDEX = %d] sucessfully compiled", indexof(context->shader_pool, shader), indexof(shader->variants, variant));
+	LOG_INFO("shader[%s] pipeline[INDEX = %d] sucessfully compiled", shader->name, indexof(shader->variants, variant));
 	return true;
 }
 
@@ -372,13 +372,13 @@ bool reflect_shader_interface(
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 
-	result = spvReflectCreateShaderModule(vertex.size, vertex.pointer, &vertex_module);
+	result = spvReflectCreateShaderModule(vertex.size, vertex.memory, &vertex_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect vertex shader");
 		return false;
 	}
 
-	result = spvReflectCreateShaderModule(fragment.size, fragment.pointer, &fragment_module);
+	result = spvReflectCreateShaderModule(fragment.size, fragment.memory, &fragment_module);
 	if (result != SPV_REFLECT_RESULT_SUCCESS) {
 		LOG_ERROR("Failed to reflect fragment shader");
 		spvReflectDestroyShaderModule(&vertex_module);

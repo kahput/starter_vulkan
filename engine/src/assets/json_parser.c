@@ -320,27 +320,27 @@ void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Buffer 
 	json_prepare_next_item(exporter);
 	switch (type) {
 		case JSON_bool: {
-			String value = *buffer.pointer ? S("true") : S("false");
+			String value = *buffer.memory ? S("true") : S("false");
 			string_format_non_terminated(exporter->arena, "\"" SFMT "\": " SFMT "", SARG(key), SARG(value));
 		} break;
 		case JSON_uint32_t: {
-			uint32_t value = *(uint32_t *)buffer.pointer;
+			uint32_t value = *(uint32_t *)buffer.memory;
 			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %u", SARG(key), value);
 		} break;
 		case JSON_uint64_t: {
-			uint64_t value = *(uint64_t *)buffer.pointer;
+			uint64_t value = *(uint64_t *)buffer.memory;
 			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %llu", SARG(key), value);
 		} break;
 		case JSON_int32_t: {
-			int32_t value = *(int32_t *)buffer.pointer;
+			int32_t value = *(int32_t *)buffer.memory;
 			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %d", SARG(key), value);
 		} break;
 		case JSON_float: {
-			float value = *(float *)buffer.pointer;
+			float value = *(float *)buffer.memory;
 			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %.3f", SARG(key), value);
 		} break;
 		case JSON_String: {
-			String value = *(String *)buffer.pointer;
+			String value = *(String *)buffer.memory;
 			string_format_non_terminated(exporter->arena, "\"" SFMT "\": \"" SFMT "\"", SARG(key), SARG(value));
 		} break;
 		case JSON_ARRAY:
