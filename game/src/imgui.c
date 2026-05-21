@@ -1,4 +1,4 @@
-#include "ui.h"
+#include "imgui.h"
 #include "commands.h"
 #include "common.h"
 #include "core/cmath.h"
@@ -95,9 +95,14 @@ void imgui_frame_end(DrawlistBuffer *buffer) {
 
 		uint32_t main = parent->orientation;
 		uint32_t cross = !parent->orientation;
+
+		ASSERT(parent->anchor >= IMGUI_ANCHOR_TOPLEFT && parent->anchor < IMGUI_ANCHOR_MAX);
+		uint32_t align_x = (parent->anchor % 3);
+		uint32_t align_y = (parent->anchor / 3);
+
 		float scalar[AXIS2_MAX] = {
-			parent->align[AXIS2_X] ? parent->align[AXIS2_X] == UI_ALIGN_RIGHT ? 1.0f : 0.5f : 0.0f,
-			parent->align[AXIS2_Y] ? parent->align[AXIS2_Y] == UI_ALIGN_BOTTOM ? 1.0f : 0.5f : 0.0f,
+			align_x * 0.5f,
+			align_y * 0.5f,
 		};
 		widget->offset[main] += remaining[main] * scalar[main];
 		widget->offset[cross] += (remaining[cross] - widget->size[cross]) * scalar[cross];
@@ -202,12 +207,6 @@ void imgui_layout_begin(uint64_t id, UIAxisSize width, UIAxisSize height, UIWidg
 
 	widget->semantic_size[AXIS2_X].max = widget->semantic_size[AXIS2_X].max <= 0.0f ? FLOAT_MAX : widget->semantic_size[AXIS2_X].max;
 	widget->semantic_size[AXIS2_Y].max = widget->semantic_size[AXIS2_Y].max <= 0.0f ? FLOAT_MAX : widget->semantic_size[AXIS2_Y].max;
-
-	/* UIWidgetCache *cached = find_cached_widget(id); */
-	/* if (cached) { */
-	/* 	widget->size[AXIS2_X] = cached->outer.width; */
-	/* 	widget->size[AXIS2_Y] = cached->outer.height; */
-	/* } */
 }
 
 UIInteraction imgui_layout_end(void) {
@@ -250,11 +249,8 @@ void imgui_orientation(Axis2 axis) {
 	widget->orientation = axis;
 }
 
-void imgui_align_x(UIAlign align) {
-	widget_peek()->align[AXIS2_X] = align;
-}
-void imgui_align_y(UIAlign align) {
-	widget_peek()->align[AXIS2_Y] = align;
+void imgui_anchor(ImguiAnchor anchor) {
+	widget_peek()->anchor = anchor;
 }
 
 void imgui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom) {
@@ -469,7 +465,7 @@ bool imgui_scrollbar(uint64_t id, float *value, float min, float max) {
 		Color thumb_color = rgb(30, 30, 30);
 
 		/* imgui_background_color(track_color); */
-		imgui_align_x(UI_ALIGN_RIGHT);
+		imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
 
 		float t_slider = clampf(*value, min, max) / max;
 
@@ -485,11 +481,11 @@ bool imgui_scrollbar(uint64_t id, float *value, float min, float max) {
 		UIInteraction interaction = imgui_layout_end(); // track
 		UIWidget *widget = find_widget(thumb_id);
 		if (interaction.hovering || interaction.held) {
-            widget->background_color.r -= 10;
-            widget->background_color.g -= 10;
-            widget->background_color.b -= 10;
-            /* widget->offset[AXIS2_X] -= 2; */
-            widget->size[AXIS2_X] += 8;
+			widget->background_color.r -= 10;
+			widget->background_color.g -= 10;
+			widget->background_color.b -= 10;
+			/* widget->offset[AXIS2_X] -= 2; */
+			widget->size[AXIS2_X] += 8;
 		}
 	}
 

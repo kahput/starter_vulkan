@@ -186,9 +186,10 @@ VkFormat vulkan_utils_to_vkformat(VulkanContext *context, TextureFormat format) 
 		case TEXTURE_FORMAT_DEPTH:
 			return context->device.depth_format;
 		case TEXTURE_FORMAT_DEPTH_STENCIL:
-			break;
+		case TEXTURE_FORMAT_MAX:
+			ASSERT_MESSAGE(false, "Unsupported/Unhandled texture format");
+			return VK_FORMAT_UNDEFINED;
 	}
 
-	ASSERT_MESSAGE(false, "Unsupported/Unhandled texture format");
 	return VK_FORMAT_UNDEFINED;
 }

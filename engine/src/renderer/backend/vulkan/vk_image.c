@@ -39,8 +39,6 @@ bool vulkan_image_make_internal(
 		return false;
 	}
 
-	LOG_INFO("VkImage created");
-
 	VkMemoryRequirements memory_requirements;
 	vkGetImageMemoryRequirements(context->device.logical, image->handle, &memory_requirements);
 
@@ -56,8 +54,6 @@ bool vulkan_image_make_internal(
 	}
 
 	vkBindImageMemory(context->device.logical, image->handle, image->memory, 0);
-
-	LOG_INFO("VkDeviceMemory[%d] allocated for VkImage", memory_requirements.size);
 
 	return true;
 }
@@ -331,12 +327,12 @@ bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *image, VkE
 
 	VkImageUsageFlags usage =
 		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
-			? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-			: VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+		: VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 	VkImageLayout layout =
 		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
-			? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-			: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	if (vulkan_image_make_internal(
 			context, sample_count,

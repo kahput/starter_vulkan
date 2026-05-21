@@ -24,11 +24,10 @@ bool file_exists(String path) {
 File filesystem_open(String path, FileMode mode) {
 	const char *val = mode == FILE_MODE_READ ? "rb" : mode == FILE_MODE_WRITE ? "w"
 																			  : "wb";
-
 	FILE *file = fopen((const char *)path.chars, val);
 	if (file == NULL) {
 		LOG_WARN("Failed to open file at '%.*s'", SARG(path));
-    }
+	}
 
 	return (File){ .handle = file };
 }
@@ -61,7 +60,7 @@ ENGINE_API void filesystem_make_directory(String directory) {
 Buffer filesystem_read(Arena *arena, String path) {
 	FILE *file = fopen((const char *)path.chars, "rb");
 	if (file == NULL) {
-		LOG_ERROR("Failed to read file '%s': %s", path.chars, strerror(errno));
+		LOG_WARN("FILEIO: [%s] failed to read: %s", path.chars, strerror(errno));
 		return (Buffer){ 0 };
 	}
 
@@ -74,6 +73,8 @@ Buffer filesystem_read(Arena *arena, String path) {
 	byte_content[size] = '\0';
 
 	fclose(file);
+
+	LOG_INFO("FILEIO: [%.*s] successfully read", path.length, path.chars);
 
 	return buffer_make(byte_content, size);
 }

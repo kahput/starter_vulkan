@@ -34,14 +34,12 @@ bool asset_store_track_directory(AssetStore *store, String directory) {
 	StringList file_list = filesystem_directory_files(scratch.arena, directory, true);
 	StringNode *file = file_list.first;
 
-	logger_indent();
 	while (file) {
 		asset_store_track_file(store, file->string);
 
 		file = file->next;
 	}
-	logger_dedent();
-   
+
 	arena_scratch_end(scratch);
 	return true;
 }
@@ -200,7 +198,7 @@ UUID asset_store_find(AssetStore *store, AssetType type, String key) {
 	};
 
 	ASSERT(false);
-    return 0;
+	return 0;
 }
 
 UUID asset_store_find_shader(AssetStore *store, String key) {

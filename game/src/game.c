@@ -25,7 +25,7 @@
 #include "scene.h"
 
 #include "ecs.h"
-#include "ui.h"
+#include "imgui.h"
 
 #include <stdint.h>
 
@@ -864,13 +864,13 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			imgui_layout_begin(shash("root"), FIT(), FIT(), 0);
 			{
-				imgui_align_x(UI_ALIGN_RIGHT);
+				imgui_anchor(IMGUI_ANCHOR_RIGHT);
 				imgui_absolute_position(300, 300);
 				imgui_background_color(rgb(105, 50, 53));
 
 				imgui_layout_begin(shash("buttons_container"), FIT(), FIT(), 0);
 				{
-					imgui_align_y(UI_ALIGN_CENTER);
+					imgui_anchor(IMGUI_ANCHOR_TOP);
 					imgui_orientation(AXIS2_Y);
 					imgui_padding_all(16);
 					imgui_child_gap(16);
@@ -885,7 +885,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 							imgui_offset(2, 2);
 						}
 						imgui_background_color(rgb(135, 80, 83));
-						imgui_align_y(UI_ALIGN_CENTER);
+						imgui_anchor(IMGUI_ANCHOR_TOP);
 						imgui_padding(8, 8, 4, 4);
 						imgui_text(S("Copy##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
 
@@ -898,7 +898,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 							imgui_offset(2, 2);
 						}
 						imgui_background_color(rgb(135, 80, 83));
-						imgui_align_y(UI_ALIGN_CENTER);
+						imgui_anchor(IMGUI_ANCHOR_TOP);
 						imgui_padding(8, 8, 4, 4);
 						imgui_text(S("Paste##3"), &pstate->assets.font[FONT_SIZE_32], rgb(255, 255, 255));
 						imgui_layout_end();
@@ -913,7 +913,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			imgui_layout_begin(shash("viewport"), FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), 0);
 			{
-                imgui_align_x(UI_ALIGN_RIGHT);
+				imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
 
 				static float my_layout_float = 0.0f;
 				imgui_scrollbar(shash("viewport_scrollbar"), &my_layout_float, 0.0f, 10.0f);
@@ -1859,6 +1859,8 @@ void load_assets(PermanentState *pstate) {
 	pstate->quad_textured_shader = load_shader(pstate->context, S("textured_quad_shader"), S("batch"), S("textured"));
 	pstate->composite_shader = load_shader(pstate->context, S("composite_shader"), S("quad"), S("composite"));
 	// :shader
+
+    LOG_DEBUG("Hello world!");
 
 	for (uint32_t index = FONT_SIZE_16; index < FONT_SIZE_MAX; ++index) {
 		Font *font = &pstate->assets.font[index];

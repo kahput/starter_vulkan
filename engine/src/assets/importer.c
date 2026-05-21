@@ -97,8 +97,6 @@ Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t 
 			}
 		}
 
-       LOG_INFO("MIN_Y = %d", min_y);
-
 		uint8_t *src = temp_bitmap;
 		uint8_t *dst = result.atlas_src.pixels;
 		for (uint32_t i = 0; i < 512 * 512; i++) {
@@ -133,12 +131,10 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	ImageSource result = { 0 };
 
 	String filename = string_copy(scratch.arena, stringpath_filename(path));
-	LOG_INFO("Loading %s...", filename.chars);
 
-	logger_indent();
 	uint8_t *pixels = stbi_load(path.chars, &result.width, &result.height, &result.channels, 4);
 	if (pixels == NULL) {
-		LOG_ERROR("Failed to load image [ %s ]", path.chars);
+		LOG_ERROR("[%s] failed to load", path.chars);
 		static uint8_t magenta[] = { 255, 0, 255, 255 };
 		result.width = result.height = 1;
 		result.channels = 4;
@@ -152,10 +148,7 @@ ImageSource importer_load_image(Arena *arena, String path) {
 	memory_copy(result.pixels, pixels, pixel_buffer_size);
 	stbi_image_free(pixels);
 
-	LOG_DEBUG("%s: { width = %d, height = %d, channels = %d }", filename.chars, result.width, result.height, result.channels);
-	LOG_INFO("%s loaded", filename.chars);
-	logger_dedent();
-
+	LOG_DEBUG("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.chars, result.width, result.height, result.channels == 4 ? "RGBA8" : "RGB8");
 	arena_scratch_end(scratch);
 	return result;
 }
@@ -187,10 +180,13 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 	if (cgltf_result == cgltf_result_success)
 		cgltf_result = cgltf_validate(data);
 
+	logger_set_prefix("GLTF: ");
 	LOG_INFO("Loading %.*s", SARG(path));
+	logger_indent();
 
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	String directory = string_copy(scratch.arena, stringpath_directory(path));
+	String filename = string_copy(scratch.arena, stringpath_filename(path));
 
 	if (cgltf_result == cgltf_result_success) {
 		result.image_count = data->images_count;
@@ -270,7 +266,6 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 
 			mesh_offsets[mesh_index] = mesh_offset;
 			mesh_offset += mesh->primitives_count;
-			LOG_INFO("Primitive count = %d", mesh->primitives_count);
 
 			for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
 				cgltf_primitive *primitive = &mesh->primitives[primitive_index];
@@ -337,7 +332,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 						/* case cgltf_attribute_type_joints: */
 						/* case cgltf_attribute_type_weights: */
 						default:
-							LOG_WARN("Unsupported attribute type");
+							LOG_WARN("Unsupported attribute '%s' in '%.*s'", attribute->name, filename.length, filename.chars);
 							continue;
 							break;
 					}
@@ -400,6 +395,9 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 		LOG_ERROR("Failed to load '%.*s'", SARG(path));
 
 	cgltf_free(data);
+
+    logger_dedent();
+	logger_clear_prefix();
 
 	return result;
 }

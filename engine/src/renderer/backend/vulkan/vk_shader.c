@@ -64,9 +64,9 @@ RhiShader vulkan_shader_make(
 	arena_list_pop(shader->first_free, VulkanPipeline);
 	shader->variant_count = 1;
 
-    size_t length = MIN(sizeof(shader->name) - 1, name.length);
-    memory_copy(shader->name, name.chars, length);
-    shader->name[length] = '\0';
+	size_t length = MIN(sizeof(shader->name) - 1, name.length);
+	memory_copy(shader->name, name.chars, length);
+	shader->name[length] = '\0';
 
 	return (RhiShader){ indexof(context->shader_pool, shader) };
 }
@@ -244,7 +244,7 @@ bool create_shader_variant(VulkanContext *context, VulkanShader *shader, VulkanP
 		return false;
 	}
 
-	LOG_INFO("Vulkan: VkPipeline created");
+	LOG_INFO("shader[ID = %2d] pipeline[INDEX = %d] sucessfully compiled", indexof(context->shader_pool, shader), indexof(shader->variants, variant));
 	return true;
 }
 
@@ -283,7 +283,7 @@ bool vulkan_shader_bind(VulkanContext *context, RhiShader rshader, PipelineDesc 
 
 	if (variant == popped_slot) {
 		create_shader_variant(context, shader, pass, desc, variant);
-        vulkan_utils_set_object_name(context, (uint64_t)variant->handle, VK_OBJECT_TYPE_PIPELINE, string_wrap(shader->name));
+		vulkan_utils_set_object_name(context, (uint64_t)variant->handle, VK_OBJECT_TYPE_PIPELINE, string_wrap(shader->name));
 		shader->variant_count++;
 
 		variant->next = NULL;

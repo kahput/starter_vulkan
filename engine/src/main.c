@@ -49,7 +49,6 @@ typedef struct engine {
 	VulkanContext *context;
 
 	uint64_t start_time;
-
 } Engine;
 
 static Engine engine = { 0 };

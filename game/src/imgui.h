@@ -33,13 +33,20 @@ typedef struct UISize {
 } UIAxisSize;
 
 typedef enum {
-	UI_ALIGN_LEFT,
-	UI_ALIGN_RIGHT,
-	UI_ALIGN_CENTER,
+	IMGUI_ANCHOR_TOPLEFT,
+	IMGUI_ANCHOR_TOP,
+	IMGUI_ANCHOR_TOPRIGHT,
 
-	UI_ALIGN_TOP = UI_ALIGN_LEFT,
-	UI_ALIGN_BOTTOM = UI_ALIGN_RIGHT,
-} UIAlign;
+	IMGUI_ANCHOR_LEFT,
+	IMGUI_ANCHOR_CENTER,
+	IMGUI_ANCHOR_RIGHT,
+
+	IMGUI_ANCHOR_BOTTOMLEFT,
+	IMGUI_ANCHOR_BOTTOM,
+	IMGUI_ANCHOR_BOTTOMRIGHT,
+
+	IMGUI_ANCHOR_MAX,
+} ImguiAnchor;
 
 typedef enum {
 	WIDGET_FLAG_CLICKABLE = 1 << 0,
@@ -84,7 +91,7 @@ typedef struct {
 	String text;
 	Color background_color, text_color;
 	Axis2 orientation;
-	UIAlign align[AXIS2_MAX];
+	ImguiAnchor anchor;
 	uint16_t padding[2][2];
 	uint32_t child_gap;
 	UIAxisSize semantic_size[AXIS2_MAX];
@@ -146,8 +153,7 @@ void imgui_absolute_position(float x, float y);
 void imgui_offset(float x, float y);
 void imgui_orientation(Axis2 axis);
 
-void imgui_align_x(UIAlign align);
-void imgui_align_y(UIAlign align);
+void imgui_anchor(ImguiAnchor anchor);
 
 void imgui_padding(uint16_t left, uint16_t right, uint16_t top, uint16_t bottom);
 void imgui_padding_all(uint16_t padding);

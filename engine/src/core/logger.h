@@ -12,10 +12,10 @@ typedef enum {
 } LogLevel;
 
 #ifndef NDEBUG
-	#define LOG_TRACE(...) logger_log(LOG_LEVEL_TRACE, __FILE__, __LINE__, __VA_ARGS__)
-	#define LOG_DEBUG(...) logger_log(LOG_LEVEL_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-	#define LOG_INFO(...) logger_log(LOG_LEVEL_INFO, __FILE__, __LINE__, __VA_ARGS__)
-	#define LOG_WARN(...) logger_log(LOG_LEVEL_WARN, __FILE__, __LINE__, __VA_ARGS__)
+	#define LOG_TRACE(...) logger_log(LOG_LEVEL_TRACE, __VA_ARGS__)
+	#define LOG_DEBUG(...) logger_log(LOG_LEVEL_DEBUG, __VA_ARGS__)
+	#define LOG_INFO(...) logger_log(LOG_LEVEL_INFO, __VA_ARGS__)
+	#define LOG_WARN(...) logger_log(LOG_LEVEL_WARN, __VA_ARGS__)
 #else
 	#define LOG_TRACE(...)
 	#define LOG_DEBUG(...)
@@ -29,7 +29,10 @@ const char *logger_level_to_string(LogLevel level);
 void logger_set_level(LogLevel level);
 void logger_set_quiet(bool enable);
 
+ENGINE_API void logger_set_prefix(const char *prefix);
+ENGINE_API void logger_clear_prefix(void);
+
 ENGINE_API void logger_indent(void);
 ENGINE_API void logger_dedent(void);
 
-ENGINE_API void logger_log(LogLevel level, const char *file, int line, const char *fmt, ...);
+ENGINE_API void logger_log(LogLevel level, const char *fmt, ...);

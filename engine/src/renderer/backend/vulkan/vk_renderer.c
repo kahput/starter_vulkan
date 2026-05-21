@@ -18,6 +18,7 @@ VulkanContext *vulkan_renderer_make(Arena *arena, struct window *display) {
 	uint32_t version = 0;
 	vkEnumerateInstanceVersion(&version);
 
+	LOG_INFO("Initializing vulkan context...");
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
 	context->image_pool = arena_push_pool(arena, MAX_TEXTURES, VulkanImage);

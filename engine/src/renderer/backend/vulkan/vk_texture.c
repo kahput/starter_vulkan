@@ -46,7 +46,7 @@ RhiTexture vulkan_texture_make(
 		return INVALID_RHI(RhiTexture);
 	}
 
-	LOG_INFO("Vulkan Texture created");
+	LOG_INFO("texture[ID = %d] loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, texture_format_to_string[format]);
 	image->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 	return (RhiTexture){ indexof(context->image_pool, image) };
 }
@@ -213,7 +213,7 @@ RhiSampler vulkan_sampler_make(VulkanContext *context, SamplerDesc description) 
 		return INVALID_RHI(RhiSampler);
 	}
 
-	LOG_INFO("VkSampler created");
+	LOG_INFO("sampler[ID = %u] created", indexof(context->sampler_pool, sampler));
 	sampler->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	return (RhiSampler){ indexof(context->sampler_pool, sampler) };
@@ -251,6 +251,7 @@ uint32_t to_stride(TextureFormat format) {
 		case TEXTURE_FORMAT_DEPTH:
 			return 4;
 		case TEXTURE_FORMAT_DEPTH_STENCIL:
+		case TEXTURE_FORMAT_MAX:
 			ASSERT_MESSAGE(false, "Not yet implemented");
 			return 0;
 	}
