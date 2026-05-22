@@ -22,8 +22,8 @@ typedef enum {
 	#define LOG_INFO(...)
 	#define LOG_WARN(...)
 #endif
-#define LOG_ERROR(...) logger_log(LOG_LEVEL_ERROR, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_FATAL(...) logger_log(LOG_LEVEL_FATAL, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_ERROR(...) logger_log(LOG_LEVEL_ERROR, __VA_ARGS__)
+#define LOG_FATAL(...) logger_log(LOG_LEVEL_FATAL, __VA_ARGS__)
 
 const char *logger_level_to_string(LogLevel level);
 void logger_set_level(LogLevel level);

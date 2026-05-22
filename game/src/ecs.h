@@ -16,7 +16,6 @@ typedef enum {
 	COMPONENT_TYPE_MeshComponent,
 	COMPONENT_TYPE_ColliderComponent,
 
-	COMPONENT_TYPE_ItemComponent,
 	COMPONENT_TYPE_InventoryComponent,
 	// :component
 
@@ -35,7 +34,6 @@ static ComponentMetadata component_metadata[COMPONENT_TYPE_MAX] = {
 	COMPONENT_METADATA(MeshComponent),
 	COMPONENT_METADATA(ColliderComponent),
 	COMPONENT_METADATA(HierarchyComponent),
-	COMPONENT_METADATA(ItemComponent),
 	COMPONENT_METADATA(InventoryComponent),
 // :component
 #undef COMPONENT_METADATA

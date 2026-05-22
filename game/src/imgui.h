@@ -50,9 +50,10 @@ typedef enum {
 
 typedef enum {
 	IMGUI_FLAG_CLICKABLE = 1 << 0,
-	IMGUI_FLAG_SCROLLABLE = 1 << 1,
-	IMGUI_FLAG_DRAGGABLE = 1 << 2,
-	IMGUI_FLAG_RESIZABLE = 1 << 3,
+	IMGUI_FLAG_TOGGLEABLE = 1 << 1,
+	IMGUI_FLAG_SCROLLABLE = 1 << 2,
+	IMGUI_FLAG_DRAGGABLE = 1 << 3,
+	IMGUI_FLAG_RESIZABLE = 1 << 4,
 
 	IMGUI_FLAG_INTERACTABLE =
 		IMGUI_FLAG_CLICKABLE |
@@ -60,16 +61,17 @@ typedef enum {
 		IMGUI_FLAG_DRAGGABLE |
 		IMGUI_FLAG_RESIZABLE,
 
-	IMGUI_FLAG_ABSOLUTE = 1 << 4,
-    IMGUI_FLAG_OVERLAY = 1 << 5,
-	IMGUI_FLAG_BACKGROUND = 1 << 6,
-	IMGUI_FLAG_ROUNDED = 1    << 7,
-	IMGUI_FLAG_BORDER = 1     << 8,
-	IMGUI_FLAG_TEXT = 1       << 9,
-	IMGUI_FLAG_IMAGE = 1      << 10,
+	IMGUI_FLAG_ABSOLUTE = 1 << 5,
+	IMGUI_FLAG_OVERLAY = 1 << 6,
+	IMGUI_FLAG_BACKGROUND = 1 << 7,
+	IMGUI_FLAG_ROUNDED = 1 << 8,
+	IMGUI_FLAG_BORDER = 1 << 9,
+	IMGUI_FLAG_TEXT = 1 << 10,
+	IMGUI_FLAG_IMAGE = 1 << 11,
+	IMGUI_FLAG_FLOATING = 1 << 12,
 
-	IMGUI_FLAG_ANIMATE_HOT = 1 << 11,
-	IMGUI_FLAG_ANIMATE_ACTIVE = 1 << 12,
+	IMGUI_FLAG_ANIMATE_HOT = 1 << 13,
+	IMGUI_FLAG_ANIMATE_ACTIVE = 1 << 14,
 
 	IMGUI_FLAG_ANIMATE =
 		IMGUI_FLAG_ANIMATE_HOT | IMGUI_FLAG_ANIMATE_ACTIVE,
@@ -97,6 +99,7 @@ typedef struct {
 	uint16_t padding[2][2];
 	uint32_t child_gap;
 	UIAxisSize semantic_size[AXIS2_MAX];
+    void *payload;
 
 	// TEMPORARY
 	Font *font;
@@ -110,14 +113,13 @@ typedef struct {
 typedef struct {
 	uint64_t id;
 	Rectangle outer, inner;
-	bool resizing;
+
+	void *payload;
 } UIWidgetCache;
 
 typedef struct {
-	bool hovering;
-	bool held;
-	bool pressed[MOUSE_BUTTON_COUNT];
-	bool left_clicked, right_clicked;
+	bool held, hovering;
+	bool pressed, clicked;
 } ImguiInteraction;
 
 #define MAX_DEPTH 8
@@ -136,6 +138,8 @@ typedef struct {
 
 	uint64_t hot_item;
 	uint64_t active_item;
+
+	void *payload;
 } UIContext;
 
 #define FIXED(n) ((UIAxisSize){ .type = UI_SIZE_FIXED, .min = (n), .max = (n) })
@@ -148,10 +152,11 @@ void imgui_frame_end(DrawlistBuffer *buffer);
 ImguiInteraction imgui_interact(uint64_t id, Rectangle area, ImguiFlags flags);
 
 void imgui_widget_begin(uint64_t id, UIAxisSize width, UIAxisSize height, ImguiFlags flags);
-ImguiInteraction imgui_widget_end(void);
+void imgui_widget_end(void);
 
 void imgui_background_color(Color color);
 void imgui_background_image(Texture2D image);
+void imgui_payload(void *payload);
 void imgui_offset(float x, float y);
 void imgui_orientation(Axis2 axis);
 
@@ -163,12 +168,10 @@ void imgui_padding_y(uint16_t padding);
 void imgui_padding_xy(uint16_t padding);
 void imgui_child_gap(uint16_t gap);
 
-Rectangle imgui_content_region(uint64_t id);
+bool imgui_is_active(uint64_t id);
+bool imgui_is_hot(uint64_t id);
+
 Rectangle imgui_rect_last_frame(uint64_t id);
-
-bool imgui_active(void);
-bool imgui_hot(void);
-
 float2 imgui_mouse_position(void);
 
 void imgui_widget_rect(uint64_t id, float width, float height, Color color);
@@ -179,5 +182,4 @@ ImguiInteraction imgui_button(String label, Font *font);
 bool imgui_scrollbar(uint64_t id, float *value, float min, float max);
 
 #define LINE_ID(index) (uint32_t)(__LINE__ << 8) + (index)
-
 #endif /* UI_H_ */

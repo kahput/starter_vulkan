@@ -281,7 +281,7 @@ void ecs_serialize_entity(ECS *world, Entity root, String output_path) {
 
 	File file = filesystem_open(output_path, FILE_MODE_WRITE);
 
-	file_write(&file, 1, exporter.arena->offset - exporter.start_offset, (uint8_t *)exporter.arena->base + exporter.start_offset);
+	file_write(&file, exporter.arena->offset - exporter.start_offset, (uint8_t *)exporter.arena->base + exporter.start_offset);
 	file_close(&file);
 
 	arena_scratch_end(scratch);
@@ -329,60 +329,60 @@ Entity ecs_next(EcsIterator *it) {
 bool serialize_entity(ECS *world, JsonExporter *exporter, Entity entity) {
 	ASSERT(ecs_valid(world, entity));
 
-	json_begin_map(exporter, S(""));
+	json_map_begin(exporter, S(""));
 	json_write_pair(exporter, S("name"), String, S("entity"));
 
 	if (world->flags[entity] != 0) {
-		json_begin_map(exporter, S("componenets"));
+		json_map_begin(exporter, S("componenets"));
 
 		if (ecs_has(world, entity, TransformComponent)) {
 			TransformComponent *transform = ecs_find(world, entity, TransformComponent);
-			json_begin_map(exporter, S("transform"));
+			json_map_begin(exporter, S("transform"));
 
-			json_begin_array(exporter, S("position"));
+			json_array_begin(exporter, S("position"));
 			json_write_float3(exporter, transform->position);
-			json_end_array(exporter);
+			json_array_end(exporter);
 
-			json_begin_array(exporter, S("rotation"));
+			json_array_begin(exporter, S("rotation"));
 			json_write_float3(exporter, transform->rotation);
-			json_end_array(exporter);
+			json_array_end(exporter);
 
-			json_begin_array(exporter, S("scale"));
+			json_array_begin(exporter, S("scale"));
 			json_write_float3(exporter, transform->scale);
-			json_end_array(exporter);
+			json_array_end(exporter);
 
-			json_end_map(exporter);
+			json_map_end(exporter);
 		}
 
 		if (ecs_has(world, entity, MeshComponent)) {
 			MeshComponent *mesh = ecs_find(world, entity, MeshComponent);
-			json_begin_map(exporter, S("mesh"));
+			json_map_begin(exporter, S("mesh"));
 			json_write_pair(exporter, S("asset_id"), uint64_t, mesh->group_id);
-			json_end_map(exporter);
+			json_map_end(exporter);
 		}
 
 		if (ecs_has(world, entity, ColliderComponent)) {
 			ColliderComponent *collider = ecs_find(world, entity, ColliderComponent);
 
-			json_begin_map(exporter, S("collider"));
+			json_map_begin(exporter, S("collider"));
 
-			json_begin_array(exporter, S("center"));
+			json_array_begin(exporter, S("center"));
 			json_write_float3(exporter, collider->aabb.center);
-			json_end_array(exporter);
+			json_array_end(exporter);
 
-			json_begin_array(exporter, S("extent"));
+			json_array_begin(exporter, S("extent"));
 			json_write_float3(exporter, collider->aabb.extent);
-			json_end_array(exporter);
+			json_array_end(exporter);
 
-			json_end_map(exporter);
+			json_map_end(exporter);
 		}
 
-		json_end_map(exporter);
+		json_map_end(exporter);
 
 		if (ecs_has(world, entity, HierarchyComponent)) {
 			HierarchyComponent *hierarchy = ecs_find(world, entity, HierarchyComponent);
 			if (hierarchy->first_child) {
-				json_begin_array(exporter, S("children"));
+				json_array_begin(exporter, S("children"));
 				Entity child = hierarchy->first_child;
 				while (child) {
 					serialize_entity(world, exporter, child);
@@ -393,12 +393,12 @@ bool serialize_entity(ECS *world, JsonExporter *exporter, Entity entity) {
 					} else
 						child = 0;
 				}
-				json_end_array(exporter);
+				json_array_end(exporter);
 			}
 		}
 	}
 
-	json_end_map(exporter);
+	json_map_end(exporter);
 	return true;
 }
 

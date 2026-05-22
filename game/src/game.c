@@ -148,6 +148,14 @@ typedef enum {
 } ShaderID;
 
 typedef struct {
+	String name;
+	String description;
+
+	Texture2D image;
+	bool stackable;
+} Item;
+
+typedef struct {
 	Arena persistent_arena;
 	Arena *frame_arena;
 
@@ -212,6 +220,8 @@ typedef struct {
 
 		float animation_duration, animation_elapsed;
 		bool playing;
+
+		Item items[2];
 	} game;
 	bool debug_draw_collisions;
 
@@ -322,7 +332,7 @@ void draw_main_pass(PermanentState *pstate) {
 	Rectangle viewport = pstate->viewport;
 	float4x4 projection = float4x4_identity();
 	if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
-		projection = float4x4_perspective(deg2radf(camera->fov), viewport.width / viewport.height, 0.01f, 1000.f);
+		projection = float4x4_perspective(to_radians(camera->fov), viewport.width / viewport.height, 0.01f, 1000.f);
 	} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
 		float aspect = viewport.width / viewport.height;
 		projection = float4x4_orthographic(
@@ -657,8 +667,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		case GAME_STATE_PLAY: {
 			// :game
 			if (pstate->game.is_initialized == false) {
-				float yaw = deg2radf(90.0f); // deg2radf(54.736f);
-				float pitch = deg2radf(45.f);
+				float yaw = to_radians(90.0f); // deg2radf(54.736f);
+				float pitch = to_radians(45.f);
 				float arm_length = 40.f;
 				pstate->game_camera = (Camera3D){
 					.position = {
@@ -718,17 +728,30 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				ecs_hierarchy_parent(pstate->world, pstate->game.player, pickaxe_pivot);
 
 				// Player inventory
-				ecs_put(pstate->world, pickaxe, ItemComponent,
-					{
-					  .name = S("Iron Pickaxe"),
-					  .description = S("An pickaxe fitting for a beginner"),
-					  .atlas = pstate->sprites[SPRITE_ATLAS_TINY_TOWN],
-					  .stackable = false,
-					});
+				/* ecs_put(pstate->world, pickaxe, ItemComponent, */
+				/* { */
+				/* .name = S("Iron Pickaxe"), */
+				/* .description = S("An pickaxe fitting for a beginner"), */
+				/* .atlas = pstate->sprites[SPRITE_ATLAS_TINY_TOWN], */
+				/* .stackable = false, */
+				/* }); */
+
+				JsonNode *root = json_parse(pstate->frame_arena, string_wrap_buffer(filesystem_read(pstate->frame_arena, S("assets/items.json"))));
+				uint32_t index = 0;
+				for (JsonNode *node = json_list(root, S("items")); node; node = node->next, index++) {
+					pstate->game.items[index] = (Item){
+						.name = string_copy(pstate->scene_arena, json_find(node, S("name"), String)),
+						.description = string_copy(pstate->scene_arena, json_find(node, S("description"), String)),
+						.image = pstate->sprites[SPRITE_IMAGE_GREEN_POTION + index],
+						.stackable = json_find(node, S("stackable"), bool),
+					};
+				}
+
 				ecs_put(pstate->world, pstate->game.player, InventoryComponent,
 					{
-					  .slots[0] = { .item = pickaxe, .quantity = 1 },
-					  .capacity = 8,
+					  .slots[4] = { .item_index = 0, .quantity = 8 },
+					  .slots[12] = { .item_index = 1, .quantity = 1 },
+					  .capacity = 24,
 					});
 				Entity bucket = ecs_spawn(pstate->world, (float3){ 0 });
 
@@ -862,7 +885,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			float3 mouse_direction = float3_normalize_safe(mouse_offset, EPSILON);
 
 			if (float3_equal(mouse_direction, FLOAT3_ZERO) == false) {
-				float rotation = -rad2degf(atan2(mouse_direction.z, mouse_direction.x));
+				float rotation = -to_degrees(atan2(mouse_direction.z, mouse_direction.x));
 				transform->rotation.y = rotation + 90.0f;
 			}
 
@@ -904,6 +927,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			static bool show_inventory = false;
 
+			InventoryComponent *player_inventory = ecs_find(pstate->world, pstate->game.player, InventoryComponent);
 			imgui_widget_begin(shash("root"), FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), 0);
 			{
 				imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
@@ -927,16 +951,48 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 								for (uint32_t column = 0; column < 8; ++column) {
 									uint64_t slot_id = ID("slot[%u,%u", row, column);
 									Rectangle slot_rect = imgui_rect_last_frame(slot_id);
-									ImguiInteraction interct = imgui_interact(slot_id, slot_rect, IMGUI_FLAG_INTERACTABLE);
-									Color color = interct.held ? BACKGROUND_COLOR_HELD : interct.hovering ? BACKGROUND_COLOR_HOVER
-																										  : BACKGROUND_COLOR_MID;
-									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_INTERACTABLE | IMGUI_FLAG_IMAGE);
-									imgui_background_color(color);
-									imgui_padding_xy(8);
-									imgui_background_image(pstate->sprites[SPRITE_IMAGE_PICKAXE]);
-									imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
+									InventorySlot *slot = &player_inventory->slots[column + row * 8];
 
-									imgui_widget_text(S("x256"), &pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
+									ImguiInteraction interct = imgui_interact(slot_id, slot_rect, IMGUI_FLAG_INTERACTABLE);
+									Color color = interct.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID;
+									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_INTERACTABLE);
+									imgui_background_color(color);
+                                    imgui_payload(slot);
+									imgui_padding_xy(8);
+
+									Item item = pstate->game.items[slot->item_index];
+
+									uint64_t drop_source_id = shash("DROP_SOURCE");
+
+									// if (imgui_begin_drop_target(slot_id))
+									if (input_mouse_released(MOUSE_BUTTON_LEFT) && interct.hovering && pstate->ui.active_item != 0) {
+										InventorySlot *dst = slot;
+										InventorySlot *src = pstate->ui.payload;
+
+										uint32_t index = dst->item_index;
+										uint32_t quantity = dst->quantity;
+										dst->item_index = src->item_index;
+										dst->quantity = src->quantity;
+										src->item_index = index;
+										src->quantity = quantity;
+										LOG_INFO("The target is %u,%u", row, column);
+									}
+
+									imgui_widget_begin(drop_source_id, FIXED(64), FIT(64), IMGUI_FLAG_FLOATING);
+									if (interct.held && slot->quantity > 0) {
+										imgui_background_image(item.image);
+										imgui_offset(mouse_position.x - 32, mouse_position.y - 32);
+										imgui_padding_xy(8);
+									}
+									imgui_widget_end();
+
+									if (interct.held == false && slot->quantity > 0) {
+										imgui_background_image(item.image);
+										imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
+
+										if (slot->quantity > 1)
+											imgui_widget_text(string_format(pstate->frame_arena, "x%u", slot->quantity), &pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
+									}
 									imgui_widget_end();
 								}
 
@@ -1352,7 +1408,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 		case TRS_MODE_SCALING: { // Shared state
 			TransformComponent *transform = ecs_find(pstate->world, editor->active_entity, TransformComponent);
 			float distance = float3_dot(float3_subtract(editor->transform.cached.position, camera->position), camera_forward);
-			float fov_radians = deg2radf(camera->fov);
+			float fov_radians = to_radians(camera->fov);
 			float frustum_height = 2 * tanf(fov_radians * 0.5f) * distance;
 			float frustum_width = frustum_height * (screen_size.x / screen_size.y);
 
@@ -1869,8 +1925,7 @@ void load_assets(PermanentState *pstate) {
 	AssetStore *store = &pstate->store;
 	if (file_exists(S("assets/asset_manifest.json")))
 		asset_store_deserialize(store, S("assets/asset_manifest.json"));
-	else
-		asset_store_track_directory(store, S("assets/"));
+	asset_store_track_directory(store, S("assets/"));
 
 	UUID unlit_generated = uuid_generate();
 	UUID unlit = asset_store_find(store, ASSET_TYPE_shader, S("shaders/bin/unlit.glsl"));
@@ -2279,7 +2334,7 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 					float2 window_size = float2_from_uint2(window_size_pixel(pstate->display));
 					float4x4 projection = float4x4_identity();
 					if (camera->projection == CAMERA_PROJECTION_PERSPECTIVE) {
-						projection = float4x4_perspective(deg2radf(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
+						projection = float4x4_perspective(to_radians(camera->fov), window_size.x / window_size.y, 0.01f, 1000.f);
 					} else if (camera->projection == CAMERA_PROJECTION_ORTHOGRAPHIC) {
 						float aspect = window_size.x / window_size.y;
 						projection = float4x4_orthographic(

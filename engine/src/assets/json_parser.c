@@ -279,7 +279,7 @@ static void json_prepare_next_item(JsonExporter *exporter) {
 	string_format_non_terminated(exporter->arena, "%*s", depth * 4, "");
 }
 
-void json_begin_map(JsonExporter *exporter, String key) {
+void json_map_begin(JsonExporter *exporter, String key) {
 	json_prepare_next_item(exporter);
 
 	if (key.length > 0)
@@ -291,14 +291,14 @@ void json_begin_map(JsonExporter *exporter, String key) {
 	exporter->is_first_item[exporter->map_depth + exporter->array_depth] = true;
 }
 
-void json_end_map(JsonExporter *exporter) {
+void json_map_end(JsonExporter *exporter) {
 	ASSERT(exporter->map_depth > 0);
 	exporter->map_depth--;
 	uint32_t depth = exporter->map_depth + exporter->array_depth;
 	string_format_non_terminated(exporter->arena, "\n%*s}", depth * 4, "");
 }
 
-void json_begin_array(JsonExporter *exporter, String key) {
+void json_array_begin(JsonExporter *exporter, String key) {
 	json_prepare_next_item(exporter);
 
 	if (key.length > 0)
@@ -309,7 +309,7 @@ void json_begin_array(JsonExporter *exporter, String key) {
 	exporter->array_depth++;
 	exporter->is_first_item[exporter->map_depth + exporter->array_depth] = true;
 }
-void json_end_array(JsonExporter *exporter) {
+void json_array_end(JsonExporter *exporter) {
 	ASSERT(exporter->array_depth > 0);
 	exporter->array_depth--;
 	uint32_t depth = exporter->map_depth + exporter->array_depth;

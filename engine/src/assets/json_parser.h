@@ -63,11 +63,11 @@ typedef struct {
 
 static inline JsonExporter json_exporter_make(Arena *arena) { return (JsonExporter){ .arena = arena, .start_offset = arena->offset, .is_first_item[0] = true }; }
 
-ENGINE_API void json_begin_map(JsonExporter *exporter, String key);
-ENGINE_API void json_end_map(JsonExporter *exporter);
+ENGINE_API void json_map_begin(JsonExporter *exporter, String key);
+ENGINE_API void json_map_end(JsonExporter *exporter);
 
-ENGINE_API void json_begin_array(JsonExporter *exporter, String key);
-ENGINE_API void json_end_array(JsonExporter *exporter);
+ENGINE_API void json_array_begin(JsonExporter *exporter, String key);
+ENGINE_API void json_array_end(JsonExporter *exporter);
 
 ENGINE_API void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Buffer buffer);
 ENGINE_API void json_write_float(JsonExporter *exporter, float value);

@@ -33,15 +33,7 @@ typedef struct {
 } HierarchyComponent;
 
 typedef struct {
-	String name;
-	String description;
-
-	Texture2D atlas;
-	bool stackable;
-} ItemComponent;
-
-typedef struct {
-	Entity item;
+	uint32_t item_index;
 	uint8_t quantity;
 } InventorySlot;
 

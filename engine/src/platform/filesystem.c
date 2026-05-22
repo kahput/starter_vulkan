@@ -32,10 +32,10 @@ File filesystem_open(String path, FileMode mode) {
 	return (File){ .handle = file };
 }
 
-size_t file_write(File *file, size_t element_size, uint32_t element_count, void *data) {
+size_t file_write(File *file, uint64_t size, void *data) {
 	size_t written = 0;
 	if (file->handle)
-		written = fwrite(data, element_size, element_count, file->handle);
+		written = fwrite(data, size, 1, file->handle);
 	return written;
 }
 

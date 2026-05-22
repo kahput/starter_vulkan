@@ -22,19 +22,10 @@ out OutBlock {
     flat layout(location = 2) uint texture_id;
 } vs_out;
 
-vec4 color_unpack(uint color) {
-    return vec4(
-        ((color >> 0) & 0xFF) / 255.f,
-        ((color >> 8) & 0xFF) / 255.f,
-        ((color >> 16) & 0xFF) / 255.f,
-        ((color >> 24) & 0xFF) / 255.f
-    );
-}
-
 void main() {
     VertexData vertex = batch.vertex_data[gl_VertexIndex];
     gl_Position = global.view_projection * vec4(vertex.position, 0.0f, 1.0f);
     vs_out.uv = vertex.uv;
-    vs_out.color = color_unpack(vertex.color);
+    vs_out.color = unpackUnorm4x8(vertex.color);
     vs_out.texture_id = vertex.texture_id;
 }

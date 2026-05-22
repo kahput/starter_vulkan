@@ -1,0 +1,17 @@
+
+{
+    "items": [
+        {
+            "name": "Iron Pickaxe",
+            "description": "A pickaxe fitting of a beginner",
+            "image": 2138486171365272178,
+            "stackable": false
+        },
+        {
+            "name": "Green Potion",
+            "description": "A healthy brew of stamina",
+            "image": 15644385566684552239,
+            "stackable": true
+        }
+    ]
+}
