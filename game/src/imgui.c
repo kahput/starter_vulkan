@@ -152,15 +152,17 @@ void imgui_frame_end(DrawlistBuffer *buffer) {
 			cached->inner.width -= widget->padding[AXIS2_X][0] + widget->padding[AXIS2_X][1];
 			cached->inner.height -= widget->padding[AXIS2_Y][0] + widget->padding[AXIS2_Y][1];
 
-			cached->payload = widget->payload;
-
 			context->cached_widget_count++;
 		}
 	}
 
 	if (context->mouse_left == 0 && context->mouse_right == 0) {
 		context->active_item = 0;
-		context->payload = NULL;
+
+		context->drag_drop_active = false;
+		context->drag_drop_data_id = 0;
+		context->drag_drop_delivering = false;
+		context->drag_drop_data = NULL;
 	} else if (context->active_item == 0)
 		context->active_item = -1;
 
@@ -219,10 +221,40 @@ void imgui_background_image(Texture2D image) {
 	widget->image = image;
 }
 
-void imgui_payload(void *payload) {
-	UIWidget *widget = widget_peek();
+bool imgui_drag_data(uint64_t data_id, uint64_t data_size, void *data) {
+	if (widget_peek()->id == context->active_item && context->drag_drop_active == false) {
+		context->drag_drop_active = true;
+		context->drag_drop_data_id = data_id;
+		context->drag_drop_data = data;
 
-	widget->payload = payload;
+		return true;
+	}
+
+	ASSERT(widget_peek()->id == context->active_item ? context->drag_drop_data_id == data_id : true);
+
+	return widget_peek()->id == context->active_item;
+}
+
+bool imgui_can_drop_data(uint64_t data_id) {
+	bool mouse_released = context->active_item && context->mouse_left == false;
+	if (context->drag_drop_data_id == data_id && context->hot_item == widget_peek()->id && mouse_released) {
+        context->drag_drop_delivering = true;
+		return true;
+    }
+
+	return false;
+}
+void *imgui_drop_data(void) {
+	ASSERT(context->drag_drop_active && context->drag_drop_delivering);
+	ASSERT(context->drag_drop_data_id && context->drag_drop_data);
+
+	void *data = context->drag_drop_data;
+	context->drag_drop_data_id = 0;
+	context->drag_drop_active = 0;
+	context->drag_drop_delivering = 0;
+	context->drag_drop_data = 0;
+
+	return data;
 }
 
 void imgui_offset(float x, float y) {
@@ -368,18 +400,20 @@ ImguiInteraction imgui_interact(uint64_t id, Rectangle area, ImguiFlags flags) {
 		context->hot_item = id;
 		interact.hovering = true;
 
-		if (context->active_item == 0 && (context->mouse_left || context->mouse_right)) {
+		if (context->active_item == 0 && context->mouse_left) {
 			interact.pressed = context->mouse_left;
 
 			context->active_item = id;
-
-			if (cached && cached->payload)
-				context->payload = cached->payload;
+			context->drag_start_position = mouse;
 		}
 	}
 
-	if (context->active_item == id && context->mouse_left)
+	if (context->active_item == id && context->mouse_left) {
 		interact.held = true;
+
+		if (float2_equal(mouse, context->drag_start_position) == false)
+			interact.dragging = true;
+	}
 
 	if (context->mouse_left == false && context->active_item == id) {
 		if (context->hot_item == id)

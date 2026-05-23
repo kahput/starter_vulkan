@@ -125,8 +125,9 @@ typedef enum {
 
 typedef enum {
 	SPRITE_ATLAS_TINY_TOWN,
-	SPRITE_IMAGE_GREEN_POTION,
+
 	SPRITE_IMAGE_PICKAXE,
+	SPRITE_IMAGE_GREEN_POTION,
 	// :sprites
 
 	SPRITE_IMAGE_MAX,
@@ -742,15 +743,16 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					pstate->game.items[index] = (Item){
 						.name = string_copy(pstate->scene_arena, json_find(node, S("name"), String)),
 						.description = string_copy(pstate->scene_arena, json_find(node, S("description"), String)),
-						.image = pstate->sprites[SPRITE_IMAGE_GREEN_POTION + index],
+						.image = pstate->sprites[SPRITE_IMAGE_PICKAXE + index],
 						.stackable = json_find(node, S("stackable"), bool),
 					};
 				}
 
 				ecs_put(pstate->world, pstate->game.player, InventoryComponent,
 					{
-					  .slots[4] = { .item_index = 0, .quantity = 8 },
-					  .slots[12] = { .item_index = 1, .quantity = 1 },
+					  .slots[4] = { .item_index = 1, .quantity = 8 },
+					  .slots[12] = { .item_index = 0, .quantity = 1 },
+					  .slots[18] = { .item_index = 1, .quantity = 6 },
 					  .capacity = 24,
 					});
 				Entity bucket = ecs_spawn(pstate->world, (float3){ 0 });
@@ -928,7 +930,10 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			static bool show_inventory = false;
 
 			InventoryComponent *player_inventory = ecs_find(pstate->world, pstate->game.player, InventoryComponent);
-			imgui_widget_begin(shash("root"), FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), 0);
+			uint64_t drag_drop_data_id = shash("ITEM");
+			uint64_t root_id = shash("root");
+
+			imgui_widget_begin(root_id, FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), IMGUI_FLAG_INTERACTABLE);
 			{
 				imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
 				imgui_padding(0, 32, 32, 0);
@@ -952,47 +957,55 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 									uint64_t slot_id = ID("slot[%u,%u", row, column);
 									Rectangle slot_rect = imgui_rect_last_frame(slot_id);
 									InventorySlot *slot = &player_inventory->slots[column + row * 8];
-
-									ImguiInteraction interct = imgui_interact(slot_id, slot_rect, IMGUI_FLAG_INTERACTABLE);
-									Color color = interct.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID;
-									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_INTERACTABLE);
-									imgui_background_color(color);
-                                    imgui_payload(slot);
-									imgui_padding_xy(8);
-
+									ImguiInteraction interact = imgui_interact(slot_id, slot_rect, IMGUI_FLAG_INTERACTABLE);
 									Item item = pstate->game.items[slot->item_index];
 
-									uint64_t drop_source_id = shash("DROP_SOURCE");
+									Color color = interact.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID;
+									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_INTERACTABLE);
+									imgui_background_color(color);
+									imgui_padding_xy(8);
 
-									// if (imgui_begin_drop_target(slot_id))
-									if (input_mouse_released(MOUSE_BUTTON_LEFT) && interct.hovering && pstate->ui.active_item != 0) {
-										InventorySlot *dst = slot;
-										InventorySlot *src = pstate->ui.payload;
-
-										uint32_t index = dst->item_index;
-										uint32_t quantity = dst->quantity;
-										dst->item_index = src->item_index;
-										dst->quantity = src->quantity;
-										src->item_index = index;
-										src->quantity = quantity;
-										LOG_INFO("The target is %u,%u", row, column);
-									}
-
-									imgui_widget_begin(drop_source_id, FIXED(64), FIT(64), IMGUI_FLAG_FLOATING);
-									if (interct.held && slot->quantity > 0) {
-										imgui_background_image(item.image);
-										imgui_offset(mouse_position.x - 32, mouse_position.y - 32);
-										imgui_padding_xy(8);
-									}
-									imgui_widget_end();
-
-									if (interct.held == false && slot->quantity > 0) {
+									if (imgui_drag_data(drag_drop_data_id, sizeof(InventorySlot), slot) == false && slot->quantity > 0) {
 										imgui_background_image(item.image);
 										imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
 
 										if (slot->quantity > 1)
-											imgui_widget_text(string_format(pstate->frame_arena, "x%u", slot->quantity), &pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
+											imgui_widget_text(
+												string_format(pstate->frame_arena, "x%u", slot->quantity),
+												&pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
 									}
+
+									if (imgui_can_drop_data(drag_drop_data_id)) {
+										InventorySlot *dst = slot;
+										InventorySlot *src = imgui_drop_data();
+
+										if (src != dst && src->item_index == dst->item_index && item.stackable) {
+											dst->quantity += src->quantity;
+
+											src->quantity = 0;
+											src->item_index = 0;
+										} else {
+											uint32_t dst_item_index = dst->item_index, dst_quantity = dst->quantity;
+											dst->item_index = src->item_index;
+											dst->quantity = src->quantity;
+
+											src->quantity = dst_quantity;
+											src->item_index = dst_item_index;
+										}
+
+										ASSERT(src);
+										LOG_INFO("%u,%u: item_index = %u, quantity = %u", row, column, src->item_index, src->quantity);
+									}
+
+									uint64_t drop_source_id = shash("DROP_SOURCE");
+									imgui_widget_begin(drop_source_id, FIXED(64), FIT(64), IMGUI_FLAG_FLOATING);
+									if (interact.held && slot->quantity > 0) {
+										imgui_background_image(item.image);
+										imgui_offset(mouse_position.x, mouse_position.y);
+										imgui_padding_xy(8);
+									}
+									imgui_widget_end();
+
 									imgui_widget_end();
 								}
 
@@ -1003,6 +1016,10 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					}
 					imgui_widget_end();
 				}
+
+				ImguiInteraction root_interact = imgui_interact(root_id, imgui_rect_last_frame(root_id), IMGUI_FLAG_INTERACTABLE);
+				if (imgui_can_drop_data(drag_drop_data_id))
+					LOG_INFO("Item should be dropped outside");
 
 				imgui_widget_end();
 			}

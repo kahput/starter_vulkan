@@ -99,7 +99,6 @@ typedef struct {
 	uint16_t padding[2][2];
 	uint32_t child_gap;
 	UIAxisSize semantic_size[AXIS2_MAX];
-    void *payload;
 
 	// TEMPORARY
 	Font *font;
@@ -113,12 +112,10 @@ typedef struct {
 typedef struct {
 	uint64_t id;
 	Rectangle outer, inner;
-
-	void *payload;
 } UIWidgetCache;
 
 typedef struct {
-	bool held, hovering;
+	bool held, hovering, dragging;
 	bool pressed, clicked;
 } ImguiInteraction;
 
@@ -139,7 +136,11 @@ typedef struct {
 	uint64_t hot_item;
 	uint64_t active_item;
 
-	void *payload;
+	float2 drag_start_position;
+
+	bool drag_drop_active, drag_drop_delivering;
+	uint64_t drag_drop_data_id, drag_drop_source_id;
+	void *drag_drop_data;
 } UIContext;
 
 #define FIXED(n) ((UIAxisSize){ .type = UI_SIZE_FIXED, .min = (n), .max = (n) })
@@ -156,7 +157,6 @@ void imgui_widget_end(void);
 
 void imgui_background_color(Color color);
 void imgui_background_image(Texture2D image);
-void imgui_payload(void *payload);
 void imgui_offset(float x, float y);
 void imgui_orientation(Axis2 axis);
 
@@ -170,6 +170,11 @@ void imgui_child_gap(uint16_t gap);
 
 bool imgui_is_active(uint64_t id);
 bool imgui_is_hot(uint64_t id);
+
+// Drag & Drop
+bool imgui_drag_data(uint64_t data_id, uint64_t data_size, void *data);
+bool imgui_can_drop_data(uint64_t data_id);
+void *imgui_drop_data(void);
 
 Rectangle imgui_rect_last_frame(uint64_t id);
 float2 imgui_mouse_position(void);
