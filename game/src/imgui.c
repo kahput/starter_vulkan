@@ -156,13 +156,16 @@ void imgui_frame_end(DrawlistBuffer *buffer) {
 		}
 	}
 
+	context->last_pressed_id = 0, context->last_released_id = 0;
 	if (context->mouse_left == 0 && context->mouse_right == 0) {
 		context->active_item = 0;
 
-		context->drag_drop_active = false;
-		context->drag_drop_data_id = 0;
-		context->drag_drop_delivering = false;
-		context->drag_drop_data = NULL;
+		if (context->drag_drop_toggle == false) {
+			context->drag_drop_data_id = 0;
+			context->drag_drop_active = false;
+			context->drag_drop_data = NULL;
+			context->drag_drop_source_id = 0;
+		}
 	} else if (context->active_item == 0)
 		context->active_item = -1;
 
@@ -222,37 +225,40 @@ void imgui_background_image(Texture2D image) {
 }
 
 bool imgui_drag_data(uint64_t data_id, uint64_t data_size, void *data) {
-	if (widget_peek()->id == context->active_item && context->drag_drop_active == false) {
-		context->drag_drop_active = true;
-		context->drag_drop_data_id = data_id;
-		context->drag_drop_data = data;
-
-		return true;
+	if (context->drag_drop_active == false) {
+		if (context->last_pressed_id == widget_peek()->id) {
+			context->last_pressed_id = 0;
+			context->drag_drop_active = true;
+			context->drag_drop_data_id = data_id;
+			context->drag_drop_data = data;
+			context->drag_drop_toggle = FLAG_GET(widget_peek()->flags, IMGUI_FLAG_TOGGLEABLE);
+			context->drag_drop_source_id = widget_peek()->id;
+		}
 	}
 
-	ASSERT(widget_peek()->id == context->active_item ? context->drag_drop_data_id == data_id : true);
-
-	return widget_peek()->id == context->active_item;
+	return context->drag_drop_source_id == widget_peek()->id;
 }
 
-bool imgui_can_drop_data(uint64_t data_id) {
-	bool mouse_released = context->active_item && context->mouse_left == false;
-	if (context->drag_drop_data_id == data_id && context->hot_item == widget_peek()->id && mouse_released) {
-        context->drag_drop_delivering = true;
-		return true;
-    }
+void *imgui_drop_data(uint64_t data_id) {
+	if (context->drag_drop_active == false || context->drag_drop_data_id != data_id)
+		return NULL;
 
-	return false;
-}
-void *imgui_drop_data(void) {
-	ASSERT(context->drag_drop_active && context->drag_drop_delivering);
-	ASSERT(context->drag_drop_data_id && context->drag_drop_data);
+	bool dropped = false;
+	if (context->drag_drop_toggle == false)
+		dropped = context->last_released_id == widget_peek()->id;
+	else {
+		dropped = context->last_pressed_id == widget_peek()->id;
+		context->last_pressed_id = 0;
+	}
 
-	void *data = context->drag_drop_data;
-	context->drag_drop_data_id = 0;
-	context->drag_drop_active = 0;
-	context->drag_drop_delivering = 0;
-	context->drag_drop_data = 0;
+	void *data = NULL;
+	if (dropped) {
+		data = context->drag_drop_data;
+		context->drag_drop_data_id = 0;
+		context->drag_drop_active = false;
+		context->drag_drop_data = NULL;
+		context->drag_drop_source_id = 0;
+	}
 
 	return data;
 }
@@ -386,12 +392,8 @@ UIWidgetCache *find_cached_widget(uint64_t id) {
 	return NULL;
 }
 
-ImguiInteraction imgui_interact(uint64_t id, Rectangle area, ImguiFlags flags) {
+ImguiInteraction imgui_interact(uint64_t id, Rectangle area) {
 	ImguiInteraction interact = { 0 };
-	if ((flags & IMGUI_FLAG_INTERACTABLE) == 0)
-		return interact;
-
-	UIWidgetCache *cached = find_cached_widget(id);
 
 	float2 mouse = context->mouse_position;
 	bool hovered = rect_contains(area, mouse.x, mouse.y);
@@ -402,6 +404,7 @@ ImguiInteraction imgui_interact(uint64_t id, Rectangle area, ImguiFlags flags) {
 
 		if (context->active_item == 0 && context->mouse_left) {
 			interact.pressed = context->mouse_left;
+			context->last_pressed_id = id;
 
 			context->active_item = id;
 			context->drag_start_position = mouse;
@@ -414,6 +417,9 @@ ImguiInteraction imgui_interact(uint64_t id, Rectangle area, ImguiFlags flags) {
 		if (float2_equal(mouse, context->drag_start_position) == false)
 			interact.dragging = true;
 	}
+
+	if (context->active_item && context->mouse_left == false && hovered)
+		context->last_released_id = id;
 
 	if (context->mouse_left == false && context->active_item == id) {
 		if (context->hot_item == id)
@@ -457,7 +463,7 @@ ImguiInteraction imgui_button(String label, Font *font) {
 
 	UIWidgetCache *cache = find_cached_widget(id);
 	if (cache)
-		interaction = imgui_interact(id, cache->outer, id);
+		interaction = imgui_interact(id, cache->outer);
 	imgui_widget_end();
 
 	return interaction;
@@ -491,7 +497,7 @@ bool imgui_scrollbar(uint64_t id, float *value, float min, float max) {
 
 		float t_slider = clampf(*value, min, max) / max;
 
-		ImguiInteraction interaction = imgui_interact(track_id, cached ? cached->outer : (Rectangle){ 0 }, IMGUI_FLAG_INTERACTABLE);
+		ImguiInteraction interaction = imgui_interact(track_id, cached ? cached->outer : (Rectangle){ 0 });
 
 		imgui_widget_begin(thumb_id, FIXED(4), FIXED(128), 0);
 		{

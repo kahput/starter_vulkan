@@ -636,6 +636,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 	pstate->ui.mouse_left = input_mouse_down(MOUSE_BUTTON_LEFT);
 	pstate->ui.mouse_right = input_mouse_down(MOUSE_BUTTON_RIGHT);
 	pstate->ui.mouse_position = float2_from_double2(input_mouse_position());
+	pstate->ui.mouse_left_pressed = input_mouse_pressed(MOUSE_BUTTON_LEFT);
 	/* DrawlistBuffer *main_pass = drawlist_make(scratch.arena, MiB(2)); */
 
 	if (input_key_pressed(KEY_CODE_P))
@@ -939,8 +940,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				imgui_padding(0, 32, 32, 0);
 
 				if (show_inventory) {
-					imgui_widget_begin(shash("inventory"), FIT(), FIT(), 0);
-
+					uint64_t inventory_id = shash("inventory");
+					imgui_widget_begin(inventory_id, FIT(), FIT(), IMGUI_FLAG_INTERACTABLE);
 					{
 						imgui_child_gap(6);
 						imgui_padding_xy(12);
@@ -952,33 +953,21 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 							imgui_widget_begin(ID("row[%u]", row), FIT(), FIT(), 0);
 							{
 								imgui_child_gap(6);
-
 								for (uint32_t column = 0; column < 8; ++column) {
 									uint64_t slot_id = ID("slot[%u,%u", row, column);
 									Rectangle slot_rect = imgui_rect_last_frame(slot_id);
 									InventorySlot *slot = &player_inventory->slots[column + row * 8];
-									ImguiInteraction interact = imgui_interact(slot_id, slot_rect, IMGUI_FLAG_INTERACTABLE);
+									ImguiInteraction interact = imgui_interact(slot_id, slot_rect);
 									Item item = pstate->game.items[slot->item_index];
 
 									Color color = interact.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID;
-									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_INTERACTABLE);
+									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_TOGGLEABLE);
 									imgui_background_color(color);
 									imgui_padding_xy(8);
 
-									if (imgui_drag_data(drag_drop_data_id, sizeof(InventorySlot), slot) == false && slot->quantity > 0) {
-										imgui_background_image(item.image);
-										imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
-
-										if (slot->quantity > 1)
-											imgui_widget_text(
-												string_format(pstate->frame_arena, "x%u", slot->quantity),
-												&pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
-									}
-
-									if (imgui_can_drop_data(drag_drop_data_id)) {
+									InventorySlot *src = imgui_drop_data(drag_drop_data_id);
+									if (src) {
 										InventorySlot *dst = slot;
-										InventorySlot *src = imgui_drop_data();
-
 										if (src != dst && src->item_index == dst->item_index && item.stackable) {
 											dst->quantity += src->quantity;
 
@@ -996,15 +985,27 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 										ASSERT(src);
 										LOG_INFO("%u,%u: item_index = %u, quantity = %u", row, column, src->item_index, src->quantity);
 									}
+									item = pstate->game.items[slot->item_index];
 
-									uint64_t drop_source_id = shash("DROP_SOURCE");
-									imgui_widget_begin(drop_source_id, FIXED(64), FIT(64), IMGUI_FLAG_FLOATING);
-									if (interact.held && slot->quantity > 0) {
+									if (slot->quantity)
+										imgui_drag_data(drag_drop_data_id, sizeof(InventorySlot), slot);
+
+									if (slot->quantity && pstate->ui.drag_drop_source_id == slot_id) {
+										uint64_t drop_source_id = shash("DROP_SOURCE");
+										imgui_widget_begin(drop_source_id, FIXED(64), FIT(64), IMGUI_FLAG_FLOATING);
 										imgui_background_image(item.image);
 										imgui_offset(mouse_position.x, mouse_position.y);
 										imgui_padding_xy(8);
+										imgui_widget_end();
+									} else if (slot->quantity) {
+										imgui_background_image(item.image);
+										imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
+
+										if (slot->quantity > 1)
+											imgui_widget_text(
+												string_format(pstate->frame_arena, "x%u", slot->quantity),
+												&pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
 									}
-									imgui_widget_end();
 
 									imgui_widget_end();
 								}
@@ -1014,12 +1015,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 						}
 #undef ID
 					}
+
 					imgui_widget_end();
 				}
-
-				ImguiInteraction root_interact = imgui_interact(root_id, imgui_rect_last_frame(root_id), IMGUI_FLAG_INTERACTABLE);
-				if (imgui_can_drop_data(drag_drop_data_id))
-					LOG_INFO("Item should be dropped outside");
 
 				imgui_widget_end();
 			}

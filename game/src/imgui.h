@@ -57,6 +57,7 @@ typedef enum {
 
 	IMGUI_FLAG_INTERACTABLE =
 		IMGUI_FLAG_CLICKABLE |
+        IMGUI_FLAG_TOGGLEABLE |
 		IMGUI_FLAG_SCROLLABLE |
 		IMGUI_FLAG_DRAGGABLE |
 		IMGUI_FLAG_RESIZABLE,
@@ -122,7 +123,8 @@ typedef struct {
 #define MAX_DEPTH 8
 typedef struct {
 	float2 mouse_position;
-	bool mouse_left, mouse_right;
+	bool mouse_left, mouse_left_pressed;
+	bool mouse_right;
 
 	uint32_t depth_parent[MAX_DEPTH];
 	uint32_t current_depth;
@@ -136,9 +138,10 @@ typedef struct {
 	uint64_t hot_item;
 	uint64_t active_item;
 
+	uint64_t last_pressed_id, last_released_id;
 	float2 drag_start_position;
 
-	bool drag_drop_active, drag_drop_delivering;
+	bool drag_drop_active, drag_drop_toggle;
 	uint64_t drag_drop_data_id, drag_drop_source_id;
 	void *drag_drop_data;
 } UIContext;
@@ -150,7 +153,7 @@ typedef struct {
 void imgui_frame_begin(UIContext *context);
 void imgui_frame_end(DrawlistBuffer *buffer);
 
-ImguiInteraction imgui_interact(uint64_t id, Rectangle area, ImguiFlags flags);
+ImguiInteraction imgui_interact(uint64_t id, Rectangle area);
 
 void imgui_widget_begin(uint64_t id, UIAxisSize width, UIAxisSize height, ImguiFlags flags);
 void imgui_widget_end(void);
@@ -173,8 +176,7 @@ bool imgui_is_hot(uint64_t id);
 
 // Drag & Drop
 bool imgui_drag_data(uint64_t data_id, uint64_t data_size, void *data);
-bool imgui_can_drop_data(uint64_t data_id);
-void *imgui_drop_data(void);
+void *imgui_drop_data(uint64_t data_id);
 
 Rectangle imgui_rect_last_frame(uint64_t id);
 float2 imgui_mouse_position(void);
