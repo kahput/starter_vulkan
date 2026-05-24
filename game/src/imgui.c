@@ -122,6 +122,10 @@ void imgui_frame_end(DrawlistBuffer *buffer) {
 		UIWidget *widget = &context->widgets[index];
 		if (FLAG_GET(widget->flags, IMGUI_FLAG_FLOATING)) {
 			arena_darray_put(scratch.arena, floating_widgets, UIWidget *, widget);
+			for (uint32_t index = 0; index < widget->children_count; ++index) {
+				UIWidget *child = &context->widgets[widget->children[index]];
+				child->flags |= IMGUI_FLAG_FLOATING;
+			}
 			continue;
 		}
 
@@ -376,8 +380,9 @@ void imgui_widget_text(String text, Font *font, Color color, ImguiFlags flags) {
 	widget->semantic_size[AXIS2_X] = GROW(.min = minimum_width, .max = preferred_width);
 	widget->semantic_size[AXIS2_Y] = FIXED(height);
 
-	/* widget->size[AXIS2_X] = preferred_width; */
-	/* widget->size[AXIS2_Y] = height; */
+    // NOTE: This is needed because height isn't clamped to min before FIT sizing,
+    // but is increased at WRAP 
+	widget->size[AXIS2_Y] = height;
 
 	imgui_widget_end();
 }

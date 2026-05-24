@@ -849,7 +849,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			float2 mouse_position = float2_from_double2(input_mouse_position());
 
-			float2 viewport = { pstate->viewport.width, pstate->viewport.height };
+			Rectangle viewport = pstate->viewport;
 
 			// Calculate the positon where the camera view ray intersects world y 0
 
@@ -866,12 +866,12 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			*/
 
 			float2 ndc = {
-				.x = -1 * ((mouse_position.x / viewport.x) * 2.0f - 1.0f),
-				.y = -1 * ((mouse_position.y / viewport.y) * 2.0f - 1.0f),
+				.x = -1 * ((mouse_position.x / viewport.width) * 2.0f - 1.0f),
+				.y = -1 * ((mouse_position.y / viewport.height) * 2.0f - 1.0f),
 			};
 			float2 extent = {
-				ndc.x * (viewport.x / camera->ortho_size),
-				ndc.y * (viewport.y / camera->ortho_size),
+				ndc.x * (viewport.width / camera->ortho_size),
+				ndc.y * (viewport.height / camera->ortho_size),
 			};
 
 			float3 forward_offset = float3_scale(camera_forward, 0.1f);
@@ -936,10 +936,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 			imgui_widget_begin(root_id, FIXED(pstate->viewport.width), FIXED(pstate->viewport.height), IMGUI_FLAG_INTERACTABLE);
 			{
-				imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
-				imgui_padding(0, 32, 32, 0);
-
 				if (show_inventory) {
+					imgui_padding(0, 32, 32, 0);
+					imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
 					uint64_t inventory_id = shash("inventory");
 					imgui_widget_begin(inventory_id, FIT(), FIT(), IMGUI_FLAG_INTERACTABLE);
 					{
@@ -960,44 +959,32 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 									ImguiInteraction interact = imgui_interact(slot_id, slot_rect);
 									Item item = pstate->game.items[slot->item_index];
 
-									Color color = interact.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID;
 									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_TOGGLEABLE);
-									imgui_background_color(color);
-									imgui_padding_xy(8);
+									imgui_background_color(interact.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID);
+									imgui_padding_xy(interact.hovering ? 6 : 8);
 
 									InventorySlot *src = imgui_drop_data(drag_drop_data_id);
-									if (src) {
-										InventorySlot *dst = slot;
-										if (src != dst && src->item_index == dst->item_index && item.stackable) {
-											dst->quantity += src->quantity;
-
-											src->quantity = 0;
-											src->item_index = 0;
+									if (src && src != slot) {
+										if (src->item_index == slot->item_index && item.stackable) {
+											slot->quantity += src->quantity;
+											*src = (InventorySlot){ 0 };
 										} else {
-											uint32_t dst_item_index = dst->item_index, dst_quantity = dst->quantity;
-											dst->item_index = src->item_index;
-											dst->quantity = src->quantity;
+											InventorySlot temp = *slot;
+											*slot = *src;
+											*src = temp;
+										}
+										item = pstate->game.items[slot->item_index];
+									}
 
-											src->quantity = dst_quantity;
-											src->item_index = dst_item_index;
+									bool is_drag_slot = false;
+									if (slot->quantity) {
+										is_drag_slot = imgui_drag_data(drag_drop_data_id, sizeof(InventorySlot), slot);
+										if (is_drag_slot) {
+											imgui_widget_begin(shash("DRAG_ITEM"), FIXED(64), FIT(64), IMGUI_FLAG_FLOATING);
+											imgui_offset(mouse_position.x, mouse_position.y);
+											imgui_padding_xy(8);
 										}
 
-										ASSERT(src);
-										LOG_INFO("%u,%u: item_index = %u, quantity = %u", row, column, src->item_index, src->quantity);
-									}
-									item = pstate->game.items[slot->item_index];
-
-									if (slot->quantity)
-										imgui_drag_data(drag_drop_data_id, sizeof(InventorySlot), slot);
-
-									if (slot->quantity && pstate->ui.drag_drop_source_id == slot_id) {
-										uint64_t drop_source_id = shash("DROP_SOURCE");
-										imgui_widget_begin(drop_source_id, FIXED(64), FIT(64), IMGUI_FLAG_FLOATING);
-										imgui_background_image(item.image);
-										imgui_offset(mouse_position.x, mouse_position.y);
-										imgui_padding_xy(8);
-										imgui_widget_end();
-									} else if (slot->quantity) {
 										imgui_background_image(item.image);
 										imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
 
@@ -1005,6 +992,45 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 											imgui_widget_text(
 												string_format(pstate->frame_arena, "x%u", slot->quantity),
 												&pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
+
+										if (is_drag_slot)
+											imgui_widget_end();
+									}
+
+									if (slot->quantity >= 1 &&
+										interact.hovering &&
+										is_drag_slot == false) {
+										imgui_widget_begin(shash("TOOL_TIP"), FIT(), FIT(), IMGUI_FLAG_FLOATING);
+										imgui_orientation(AXIS2_Y);
+
+										float2 offset_padding = {
+											.x = pstate->ui.drag_drop_active ? 48 : 16,
+											.y = pstate->ui.drag_drop_active ? 48 : 32,
+										};
+										imgui_offset(mouse_position.x + offset_padding.x, mouse_position.y + offset_padding.y);
+
+										imgui_widget_begin(shash("TOOL_TIP_TITLE"), FIT(128), FIT(), 0);
+										{
+											imgui_background_color(BACKGROUND_COLOR_DARK);
+											imgui_padding_xy(8);
+											imgui_widget_text(
+												string_format(pstate->frame_arena, "%.*s", SARG(item.name)),
+												&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
+											imgui_widget_end();
+										}
+
+										imgui_widget_begin(shash("TOOL_TIP_DESCRIPTION"), FIT(128), FIT(), 0);
+										{
+											imgui_background_color(BACKGROUND_COLOR_MID);
+											imgui_padding_xy(8);
+
+											imgui_widget_text(
+												string_format(pstate->frame_arena, "%.*s", SARG(item.description)),
+												&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
+											imgui_widget_end();
+										}
+
+										imgui_widget_end();
 									}
 
 									imgui_widget_end();
@@ -1013,7 +1039,83 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 								imgui_widget_end();
 							}
 						}
-#undef ID
+					}
+
+					imgui_widget_end();
+				} else {
+					imgui_padding(0, 0, 0, 16);
+					imgui_anchor(IMGUI_ANCHOR_BOTTOM);
+
+					imgui_widget_begin(shash("hotbar"), FIT(), FIT(), 0);
+					imgui_background_color(BACKGROUND_COLOR_DARK);
+					imgui_padding_xy(8);
+					imgui_child_gap(6);
+					for (uint32_t column = 0; column < 8; ++column) {
+						uint64_t slot_id = ID("hotbar_slot[%u]", column);
+						Rectangle slot_rect = imgui_rect_last_frame(slot_id);
+						InventorySlot *slot = &player_inventory->slots[column];
+						ImguiInteraction interact = imgui_interact(slot_id, slot_rect);
+						Item item = pstate->game.items[slot->item_index];
+
+						imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_TOGGLEABLE);
+						imgui_background_color(interact.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID);
+						imgui_padding_xy(interact.hovering ? 6 : 8);
+
+						if (slot->quantity) {
+							imgui_background_image(item.image);
+							imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
+
+							if (slot->quantity > 1)
+								imgui_widget_text(
+									string_format(pstate->frame_arena, "x%u", slot->quantity),
+									&pstate->assets.font[FONT_SIZE_16], WHITE, IMGUI_FLAG_OVERLAY);
+						}
+
+						if (slot->quantity >= 1 &&
+							interact.hovering) {
+							uint64_t tool_tip_id = shash("TOOL_TIP");
+							Rectangle tool_tip_rect = imgui_rect_last_frame(tool_tip_id);
+							imgui_widget_begin(shash("TOOL_TIP"), FIT(), FIT(), IMGUI_FLAG_FLOATING | IMGUI_FLAG_INTERACTABLE);
+							imgui_orientation(AXIS2_Y);
+
+							float2 offset_padding = {
+								.x = pstate->ui.drag_drop_active ? 48 : 16,
+								.y = pstate->ui.drag_drop_active ? 48 : 32,
+							};
+							float2 tool_tip_position = {
+								mouse_position.x + offset_padding.x,
+								mouse_position.y + offset_padding.y
+							};
+							if (tool_tip_position.y + tool_tip_rect.height > viewport.height)
+								tool_tip_position.y = mouse_position.y - tool_tip_rect.height;
+
+							imgui_offset(tool_tip_position.x, tool_tip_position.y);
+
+							imgui_widget_begin(shash("TOOL_TIP_TITLE"), FIT(128), FIT(), 0);
+							{
+								imgui_background_color(BACKGROUND_COLOR_DARK);
+								imgui_padding_xy(8);
+								imgui_widget_text(
+									string_format(pstate->frame_arena, "%.*s", SARG(item.name)),
+									&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
+								imgui_widget_end();
+							}
+
+							imgui_widget_begin(shash("TOOL_TIP_DESCRIPTION"), FIT(128), FIT(), 0);
+							{
+								imgui_background_color(BACKGROUND_COLOR_MID);
+								imgui_padding_xy(8);
+
+								imgui_widget_text(
+									string_format(pstate->frame_arena, "%.*s", SARG(item.description)),
+									&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
+								imgui_widget_end();
+							}
+
+							imgui_widget_end();
+						}
+
+						imgui_widget_end();
 					}
 
 					imgui_widget_end();
@@ -1021,6 +1123,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 				imgui_widget_end();
 			}
+#undef ID
 
 			if (input_key_pressed(KEY_CODE_E))
 				show_inventory = !show_inventory;
