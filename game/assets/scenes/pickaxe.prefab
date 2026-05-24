@@ -1,0 +1,38 @@
+
+{
+    "name": "entity",
+    "componenets": {
+        "transform": {
+            "position": [
+                0.750, 0.250, 0.250
+            ],
+            "rotation": [
+                0.000, 0.000, 0.000
+            ],
+            "scale": [
+                1.000, 1.000, 1.000
+            ]
+        }
+    },
+    "children": [
+        {
+            "name": "entity",
+            "componenets": {
+                "transform": {
+                    "position": [
+                        0.000, -0.250, 0.000
+                    ],
+                    "rotation": [
+                        0.000, 90.000, 0.000
+                    ],
+                    "scale": [
+                        8.000, 8.000, 8.000
+                    ]
+                },
+                "mesh": {
+                    "asset_id": 15036514142612639064
+                }
+            }
+        }
+    ]
+}

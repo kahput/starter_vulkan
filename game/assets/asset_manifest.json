@@ -242,6 +242,16 @@
             "type": "<invalid>"
         },
         {
+            "id": 9137007516976820580,
+            "path": "assets/scenes/player.prefab",
+            "type": "<invalid>"
+        },
+        {
+            "id": 6098878112773311515,
+            "path": "assets/scenes/pickaxe.prefab",
+            "type": "<invalid>"
+        },
+        {
             "id": 11214397475342026662,
             "path": "assets/models/custom/room.glb",
             "type": "geometry"

@@ -60,9 +60,7 @@ static inline bool component_valid(ComponentID type_id) {
 
 static inline uint32_t component_flag(ComponentID id) {
 	ASSERT(id < INT32_MAX);
-	if (id == 0)
-		return 0;
-	return (1ULL << (id - 1));
+	return (1ULL << id);
 }
 
 Entity ecs_spawn(ECS *world, float3 position) {
@@ -119,6 +117,20 @@ void ecs_despawn(ECS *world, Entity entity) {
 		world->flags[entity] = 0;
 		world->entity_count--;
 	}
+}
+
+void ecs_disable(ECS *world, Entity entity) {
+	if (ecs_valid(world, entity) == false)
+		return;
+
+	world->flags[entity] |= component_flag(COMPONENT_TYPE_INACTIVE);
+}
+
+void ecs_enable(ECS *world, Entity entity) {
+	if (ecs_valid(world, entity) == false)
+		return;
+
+	world->flags[entity] &= ~component_flag(COMPONENT_TYPE_INACTIVE);
 }
 
 void *ecs_push_id(ECS *world, Entity entity, ComponentID type_id) {
@@ -192,6 +204,20 @@ bool ecs_has_ids(ECS *world, Entity entity, uint32_t type_count, ComponentID *ty
 	return true;
 }
 
+void ecs_disable_id(ECS *world, Entity entity, ComponentID type_id) {
+	if (ecs_valid(world, entity) == false || component_valid(type_id) == false)
+		return;
+
+	world->flags[entity] &= ~component_flag(type_id);
+}
+
+void ecs_enable_id(ECS *world, Entity entity, ComponentID type_id) {
+	if (ecs_valid(world, entity) == false || component_valid(type_id) == false)
+		return;
+
+	world->flags[entity] |= component_flag(type_id);
+}
+
 void ecs_hierarchy_parent(ECS *world, Entity parent_entity, Entity child_entity) {
 	HierarchyComponent *parent = ecs_has(world, parent_entity, HierarchyComponent)
 		? ecs_find(world, parent_entity, HierarchyComponent)
@@ -240,6 +266,37 @@ void ecs_hierarchy_unparent(ECS *world, Entity entity) {
 	node->prev_sibling = 0;
 }
 
+bool ecs_hierarchy_has_child(ECS *world, Entity _parent, Entity _child) {
+	if (ecs_has(world, _parent, HierarchyComponent) == false)
+		return false;
+
+	HierarchyComponent *parent = ecs_find(world, _parent, HierarchyComponent);
+	if (parent->first_child == 0)
+		return false;
+	if (parent->first_child == _child)
+		return true;
+
+	if (ecs_has(world, _child, HierarchyComponent) == false)
+		return false;
+
+	HierarchyComponent *child = ecs_find(world, parent->first_child, HierarchyComponent);
+	while (child->next_sibling) {
+		if (child->next_sibling == _child)
+			return true;
+
+		child = ecs_find(world, child->next_sibling, HierarchyComponent);
+	}
+
+	return false;
+}
+
+bool ecs_hierarchy_has_parent(ECS *world, Entity child) {
+	if (ecs_has(world, child, HierarchyComponent) == false)
+		return false;
+
+	return ecs_find(world, child, HierarchyComponent)->parent != 0;
+}
+
 void ecs_hierarchical_despawn(ECS *world, Entity root) {
 	if (ecs_has(world, root, HierarchyComponent) == false) {
 		ecs_despawn(world, root);
@@ -272,6 +329,38 @@ Entity ecs_hierarchical_copy(ECS *world, Entity root) {
 	}
 
 	return copy;
+}
+
+void ecs_hierarchical_disable(ECS *world, Entity root) {
+	if (ecs_has(world, root, HierarchyComponent) == false) {
+		ecs_disable(world, root);
+		return;
+	}
+
+	Entity child = ecs_find(world, root, HierarchyComponent)->first_child;
+	while (child) {
+		uint32_t next_child = ecs_find(world, child, HierarchyComponent)->next_sibling;
+		ecs_hierarchical_disable(world, child);
+		child = next_child;
+	}
+
+	ecs_disable(world, root);
+}
+
+void ecs_hierarchical_enable(ECS *world, Entity root) {
+	if (ecs_has(world, root, HierarchyComponent) == false) {
+		ecs_enable(world, root);
+		return;
+	}
+
+	Entity child = ecs_find(world, root, HierarchyComponent)->first_child;
+	while (child) {
+		uint32_t next_child = ecs_find(world, child, HierarchyComponent)->next_sibling;
+		ecs_hierarchical_enable(world, child);
+		child = next_child;
+	}
+
+	ecs_enable(world, root);
 }
 
 void ecs_serialize_entity(ECS *world, Entity root, String output_path) {
@@ -317,7 +406,11 @@ EcsIterator ecs_query_make(ECS *world, uint32_t count, ComponentID *component_id
 Entity ecs_next(EcsIterator *it) {
 	while (it->current <= it->world->highest_valid) {
 		Entity entity = it->current++;
-		if (FLAG_GET(it->world->flags[entity], it->mask)) {
+		uint32_t flags = it->world->flags[entity];
+		if (FLAG_GET(flags, component_flag(COMPONENT_TYPE_INACTIVE)))
+			continue;
+
+		if (FLAG_GET(flags, it->mask)) {
 			return entity;
 		}
 	}

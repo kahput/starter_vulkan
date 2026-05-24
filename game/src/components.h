@@ -40,5 +40,6 @@ typedef struct {
 #define MAX_INVENTORY_SLOTS 32
 typedef struct {
 	InventorySlot slots[MAX_INVENTORY_SLOTS];
+	InventorySlot *active_item;
 	uint32_t capacity;
 } InventoryComponent;

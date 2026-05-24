@@ -669,7 +669,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		case GAME_STATE_PLAY: {
 			// :game
 			if (pstate->game.is_initialized == false) {
-				float yaw = to_radians(90.0f); // deg2radf(54.736f);
+				float yaw = to_radians(90.0f); // to_radians(54.736f);
 				float pitch = to_radians(45.f);
 				float arm_length = 40.f;
 				pstate->game_camera = (Camera3D){
@@ -687,47 +687,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				};
 				pstate->game_camera_start_offset = pstate->game_camera.position;
 
-				pstate->game.player = ecs_spawn(pstate->world, FLOAT3_ZERO);
-
-				TransformComponent *player_transform = ecs_find(pstate->world, pstate->game.player, TransformComponent);
-				MeshComponent cube_mesh = {
-					.group_id = asset_store_find(&pstate->store, ASSET_TYPE_geometry, S("in_memory:unit_cube")),
-				};
-				ecs_put(pstate->world, pstate->game.player, MeshComponent, cube_mesh);
-
-				Entity eyes[] = {
-					ecs_spawn(pstate->world, (float3){ 0.25f, 0.5f, 0.5f }),
-					ecs_spawn(pstate->world, (float3){ -0.25f, 0.5f, 0.5f }),
-				};
-
-				for (uint32_t index = 0; index < countof(eyes); ++index) {
-					Entity e = eyes[index];
-
-					TransformComponent *transform = ecs_find(pstate->world, e, TransformComponent);
-					transform->scale = (float3){ 0.25f, 0.25f, 0.25f };
-					ecs_put(pstate->world, e, MeshComponent, cube_mesh);
-
-					ecs_hierarchy_parent(pstate->world, pstate->game.player, e);
-				}
-
-				Entity pickaxe_pivot = pstate->game.pickaxe_pivot = ecs_spawn(pstate->world, (float3){ 0.75f, 0.25f, 0.25f });
-				Entity pickaxe = ecs_spawn(pstate->world, FLOAT3_ZERO);
-				ecs_put(pstate->world, pickaxe, TransformComponent,
-					{
-					  .position = { 0.0f, -0.25f, 0.0f },
-					  .scale = float3_fill(8.0f),
-					  .rotation = { 0.0f, 90.0f, 0.0f },
-					});
-
-				MeshComponent pickaxe_mesh = {
-					.group_id = asset_store_find(
-						&pstate->store,
-						ASSET_TYPE_geometry,
-						S("assets/models/kenney/survival_kit/tool-pickaxe.glb")),
-				};
-				ecs_put(pstate->world, pickaxe, MeshComponent, pickaxe_mesh);
-				ecs_hierarchy_parent(pstate->world, pickaxe_pivot, pickaxe);
-				ecs_hierarchy_parent(pstate->world, pstate->game.player, pickaxe_pivot);
+				pstate->game.player = ecs_deserialize_entity(pstate->world, S("assets/scenes/player.prefab"));
+				pstate->game.pickaxe_pivot = ecs_deserialize_entity(pstate->world, S("assets/scenes/pickaxe.prefab"));
+				ecs_hierarchy_parent(pstate->world, pstate->game.player, pstate->game.pickaxe_pivot);
 
 				// Player inventory
 				/* ecs_put(pstate->world, pickaxe, ItemComponent, */
@@ -738,25 +700,28 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				/* .stackable = false, */
 				/* }); */
 
-				JsonNode *root = json_parse(pstate->frame_arena, string_wrap_buffer(filesystem_read(pstate->frame_arena, S("assets/items.json"))));
+				JsonNode *root = json_parse(
+					pstate->frame_arena,
+					string_wrap_buffer(filesystem_read(pstate->frame_arena, S("assets/items.json"))));
 				uint32_t index = 0;
 				for (JsonNode *node = json_list(root, S("items")); node; node = node->next, index++) {
 					pstate->game.items[index] = (Item){
 						.name = string_copy(pstate->scene_arena, json_find(node, S("name"), String)),
 						.description = string_copy(pstate->scene_arena, json_find(node, S("description"), String)),
+						// TODO: asset store UUID -> SpriteID (runtime handle) conversion
+						// .image = json_find(node, S("image"), UUID),
 						.image = pstate->sprites[SPRITE_IMAGE_PICKAXE + index],
 						.stackable = json_find(node, S("stackable"), bool),
 					};
 				}
 
-				ecs_put(pstate->world, pstate->game.player, InventoryComponent,
-					{
-					  .slots[4] = { .item_index = 1, .quantity = 8 },
-					  .slots[12] = { .item_index = 0, .quantity = 1 },
-					  .slots[18] = { .item_index = 1, .quantity = 6 },
-					  .capacity = 24,
-					});
-				Entity bucket = ecs_spawn(pstate->world, (float3){ 0 });
+				InventoryComponent *player_inventory = ecs_push(pstate->world, pstate->game.player, InventoryComponent);
+
+				player_inventory->slots[0] = (InventorySlot){ .item_index = 0, .quantity = 1 };
+				player_inventory->slots[4] = (InventorySlot){ .item_index = 1, .quantity = 8 };
+				player_inventory->slots[18] = (InventorySlot){ .item_index = 1, .quantity = 6 };
+				player_inventory->active_item = &player_inventory->slots[0];
+				player_inventory->capacity = 24;
 
 				/* pstate->game.selection = ecs_deserialize_entity(pstate->world, S("assets/scenes/selection_entity.prefab")); */
 				Entity rock = ecs_deserialize_entity(pstate->world, S("assets/scenes/rock.prefab"));
@@ -961,6 +926,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 									imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_TOGGLEABLE);
 									imgui_background_color(interact.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID);
+									if (slot == player_inventory->active_item)
+										imgui_background_color(BACKGROUND_COLOR_HELD);
 									imgui_padding_xy(interact.hovering ? 6 : 8);
 
 									InventorySlot *src = imgui_drop_data(drag_drop_data_id);
@@ -1059,6 +1026,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 						imgui_widget_begin(slot_id, FIXED(64), FIXED(64), IMGUI_FLAG_TOGGLEABLE);
 						imgui_background_color(interact.hovering ? BACKGROUND_COLOR_HOVER : BACKGROUND_COLOR_MID);
+						if (slot == player_inventory->active_item)
+							imgui_background_color(BACKGROUND_COLOR_HELD);
 						imgui_padding_xy(interact.hovering ? 6 : 8);
 
 						if (slot->quantity) {
@@ -1125,8 +1094,34 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			}
 #undef ID
 
-			if (input_key_pressed(KEY_CODE_E))
+			for (uint32_t key = KEY_CODE_1; key < KEY_CODE_9; key++) {
+				if (input_key_pressed(key))
+					player_inventory->active_item = &player_inventory->slots[key - KEY_CODE_1];
+			}
+
+			if (input_key_pressed(KEY_CODE_E) || input_key_pressed(KEY_CODE_ESCAPE))
 				show_inventory = !show_inventory;
+
+			bool pickaxe_active = player_inventory->active_item->quantity > 0 && player_inventory->active_item->item_index == 0;
+			if (pickaxe_active && ecs_hierarchy_has_parent(pstate->world, pstate->game.pickaxe_pivot) == false) {
+				ecs_hierarchy_parent(pstate->world, pstate->game.player, pstate->game.pickaxe_pivot);
+
+				pstate->game.animation_duration = 0.0f;
+				pstate->game.animation_elapsed = 0.0f;
+				pstate->game.playing = false;
+
+				ecs_find(pstate->world, pstate->game.pickaxe_pivot, TransformComponent)->rotation.x = 0;
+				ecs_hierarchical_enable(pstate->world, pstate->game.pickaxe_pivot);
+			}
+			if (pickaxe_active == false && ecs_hierarchy_has_parent(pstate->world, pstate->game.pickaxe_pivot) == true) {
+				ecs_hierarchy_unparent(pstate->world, pstate->game.pickaxe_pivot);
+
+				pstate->game.animation_duration = 0.0f;
+				pstate->game.animation_elapsed = 0.0f;
+				pstate->game.playing = false;
+				ecs_find(pstate->world, pstate->game.pickaxe_pivot, TransformComponent)->rotation.x = 0;
+				ecs_hierarchical_disable(pstate->world, pstate->game.pickaxe_pivot);
+			}
 
 			imgui_frame_end(drawlist_ui);
 
@@ -2088,8 +2083,6 @@ void load_assets(PermanentState *pstate) {
 		.height = sprite_src.height,
 	};
 	// :sprites
-
-	LOG_DEBUG("Hello world!");
 
 	for (uint32_t index = FONT_SIZE_16; index < FONT_SIZE_MAX; ++index) {
 		Font *font = &pstate->assets.font[index];

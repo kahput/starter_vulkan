@@ -7,7 +7,7 @@
 #define MAX_ENTITIES 1024
 
 typedef enum {
-	COMPONENT_TYPE_NILL,
+	COMPONENT_TYPE_INACTIVE,
 
 	COMPONENT_TYPE_Transform3,
 	COMPONENT_TYPE_TransformComponent = COMPONENT_TYPE_Transform3,
@@ -49,18 +49,30 @@ Entity ecs_spawn(ECS *world, float3 position);
 Entity ecs_copy(ECS *world, Entity target);
 void ecs_despawn(ECS *world, Entity entity);
 
+void ecs_disable(ECS *world, Entity entity);
+void ecs_enable(ECS *world, Entity entity);
+
 bool ecs_has_id(ECS *world, Entity entity, ComponentID type_id);
 bool ecs_has_ids(ECS *world, Entity entity, uint32_t type_count, ComponentID *type_ids);
 void *ecs_push_id(ECS *world, Entity entity, ComponentID type_id);
 void *ecs_find_id(ECS *world, Entity entity, ComponentID type_id);
 void ecs_pop_id(ECS *world, Entity entity, ComponentID type_id);
 
+void ecs_disable_id(ECS *world, Entity entity, ComponentID type_id);
+void ecs_enable_id(ECS *world, Entity entity, ComponentID type_id);
+
 // TODO: Component specific APIs, maybe move these out?
 void ecs_hierarchy_parent(ECS *world, Entity parent, Entity target);
 void ecs_hierarchy_unparent(ECS *world, Entity entity);
 
+bool ecs_hierarchy_has_child(ECS *world, Entity parent, Entity child);
+bool ecs_hierarchy_has_parent(ECS *world, Entity child);
+
 void ecs_hierarchical_despawn(ECS *world, Entity root);
 Entity ecs_hierarchical_copy(ECS *world, Entity root);
+
+void ecs_hierarchical_disable(ECS *world, Entity root);
+void ecs_hierarchical_enable(ECS *world, Entity root);
 
 // TODO: stream
 void ecs_serialize_entity(ECS *world, Entity root, String output_path);
