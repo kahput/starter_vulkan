@@ -1030,6 +1030,9 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 							imgui_background_color(BACKGROUND_COLOR_HELD);
 						imgui_padding_xy(interact.hovering ? 6 : 8);
 
+						if (interact.pressed)
+							player_inventory->active_item = &player_inventory->slots[column];
+
 						if (slot->quantity) {
 							imgui_background_image(item.image);
 							imgui_anchor(IMGUI_ANCHOR_TOPRIGHT);
@@ -1719,8 +1722,8 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	DrawlistBuffer *drawlist_ui = drawlist_make(scratch.arena, MiB(1));
-
 	drawlist_push_texture_ex(drawlist_ui, pstate->main_color_target, pstate->viewport, pstate->viewport, (float2){ 0 }, 0.0f, rgb(255, 255, 255));
+
 	DrawlistDesc picker_pass = {
 		.name = S("EDITOR:picker_pass"),
 		.color_attachments[0] = {

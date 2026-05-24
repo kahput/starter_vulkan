@@ -9,7 +9,7 @@
 struct ECS {
 	Arena *arena;
 
-	uint32_t flags[MAX_ENTITIES];
+	ComponentBitset bitset[MAX_ENTITIES];
 	Buffer components[COMPONENT_TYPE_MAX];
 
 	uint32_t entity_count, highest_valid;
@@ -41,32 +41,60 @@ ECS *ecs_make_copy(Arena *arena, ECS *src) {
 	for (uint32_t type_id = 1; type_id < COMPONENT_TYPE_MAX; ++type_id)
 		memory_copy(result->components[type_id].memory, src->components[type_id].memory, src->components[type_id].size);
 
-	memory_copy(result->flags, src->flags, sizeof(src->flags));
-
+	memory_copy_array(result->bitset, src->bitset);
 	return result;
 }
 
-bool ecs_valid(ECS *world, Entity entity) {
-	if (entity != 0 && entity < MAX_ENTITIES && world->flags[entity] != 0)
-		return true;
-	return false;
+static inline bool _ecs_bitset_zero(ComponentBitset bitset) {
+	for (uint32_t index = 0; index < ECS_BITSET_SIZE; ++index) {
+		if (bitset[index] != 0)
+			return false;
+	}
+
+	return true;
 }
 
-static inline bool component_valid(ComponentID type_id) {
-	if (type_id == 0 || type_id >= COMPONENT_TYPE_MAX)
+static inline void _ecs_bitset_flip(ComponentBitset bitset, ComponentID id, bool on) {
+	uint32_t index = id / ECS_BITSET_WIDTH;
+
+	if (on)
+		bitset[index] |= 1ULL << (id % ECS_BITSET_WIDTH);
+	else
+		bitset[index] &= ~(1ULL << (id % ECS_BITSET_WIDTH));
+}
+
+static inline bool _ecs_bitset_test(ComponentBitset bitset, ComponentID id) {
+	uint32_t index = id / ECS_BITSET_WIDTH;
+	return bitset[index] & (1ULL << (id % ECS_BITSET_WIDTH));
+}
+
+static inline bool _ecs_bitset_mask(ComponentBitset target, ComponentBitset mask) {
+	for (uint32_t index = 0; index < ECS_BITSET_SIZE; ++index) {
+		if ((target[index] & mask[index]) != mask[index])
+			return false;
+	}
+
+	return true;
+}
+
+static inline bool _ecs_component_valid(ComponentID type_id) {
+	if (type_id >= COMPONENT_TYPE_MAX)
 		return false;
 	return true;
 }
 
-static inline uint32_t component_flag(ComponentID id) {
-	ASSERT(id < INT32_MAX);
-	return (1ULL << id);
+bool ecs_valid(ECS *world, Entity entity) {
+	if (entity == 0 || entity > MAX_ENTITIES || _ecs_bitset_zero(world->bitset[entity]))
+		return false;
+
+	return true;
 }
 
 Entity ecs_spawn(ECS *world, float3 position) {
 	for (Entity entity = 1; entity < MAX_ENTITIES; ++entity) {
-		if (world->flags[entity] == 0) {
-			world->flags[entity] = component_flag(COMPONENT_TYPE_TransformComponent);
+		if (_ecs_bitset_zero(world->bitset[entity])) {
+			ecs_enable_id(world, entity, COMPONENT_TAG_ACTIVE);
+			ecs_enable_id(world, entity, ecs_type_id(TransformComponent));
 			ecs_put(world, entity, TransformComponent,
 				{
 				  .position = position,
@@ -92,7 +120,7 @@ Entity ecs_copy(ECS *world, Entity target) {
 	Entity entity = ecs_spawn(world, FLOAT3_ZERO);
 
 	for (uint32_t type_id = 1; type_id < COMPONENT_TYPE_MAX; ++type_id) {
-		if (FLAG_GET(world->flags[target], component_flag(type_id)) == false)
+		if (ecs_has_id(world, target, type_id) == false)
 			continue;
 
 		ComponentMetadata metadata = component_metadata[type_id];
@@ -114,50 +142,44 @@ void ecs_despawn(ECS *world, Entity entity) {
 			memory_zero(pointer, metadata.element_size);
 		}
 
-		world->flags[entity] = 0;
+		memory_zero_array(world->bitset[entity]);
 		world->entity_count--;
 	}
 }
 
-void ecs_disable(ECS *world, Entity entity) {
-	if (ecs_valid(world, entity) == false)
-		return;
-
-	world->flags[entity] |= component_flag(COMPONENT_TYPE_INACTIVE);
+void ecs_enable(ECS *world, Entity entity) {
+	ecs_enable_id(world, entity, COMPONENT_TAG_ACTIVE);
 }
 
-void ecs_enable(ECS *world, Entity entity) {
-	if (ecs_valid(world, entity) == false)
-		return;
-
-	world->flags[entity] &= ~component_flag(COMPONENT_TYPE_INACTIVE);
+void ecs_disable(ECS *world, Entity entity) {
+	ecs_disable_id(world, entity, COMPONENT_TAG_ACTIVE);
 }
 
 void *ecs_push_id(ECS *world, Entity entity, ComponentID type_id) {
 	// NOTE: Maybe return entity 0 component data instead?
 	if (ecs_valid(world, entity) == false)
 		return NULL;
-	if (component_valid(type_id) == false) {
+	if (_ecs_component_valid(type_id) == false) {
 		LOG_WARN("ecs_push_id - invalid type_id of %d passed, aborting", type_id);
 		return NULL;
 	}
 
 	ComponentMetadata metadata = component_metadata[type_id];
 	void *pointer = world->components[type_id].memory + metadata.element_size * entity;
-	world->flags[entity] |= component_flag(type_id);
 
+	ecs_enable_id(world, entity, type_id);
 	return pointer;
 }
 
 void *ecs_find_id(ECS *world, Entity entity, ComponentID type_id) {
 	if (ecs_valid(world, entity) == false)
 		return NULL;
-	if (component_valid(type_id) == false) {
+	if (_ecs_component_valid(type_id) == false) {
 		LOG_WARN("ecs_push_id - invalid type_id of %d passed, aborting", type_id);
 		return NULL;
 	}
 
-	if (FLAG_GET(world->flags[entity], component_flag(type_id)) == false)
+	if (ecs_has_id(world, entity, type_id) == false)
 		return NULL;
 
 	ComponentMetadata metadata = component_metadata[type_id];
@@ -167,55 +189,56 @@ void *ecs_find_id(ECS *world, Entity entity, ComponentID type_id) {
 }
 
 void ecs_pop_id(ECS *world, Entity entity, ComponentID type_id) {
-	if (component_valid(type_id) == false) {
+	if (_ecs_component_valid(type_id) == false) {
 		LOG_WARN("ecs_push_id - invalid type_id of %d passed, aborting", type_id);
 		return;
 	}
-	if (ecs_valid(world, entity) == false || FLAG_GET(world->flags[entity], component_flag(type_id)) == false)
+	if (ecs_valid(world, entity) == false || ecs_has_id(world, entity, type_id) == false)
 		return;
 
 	ComponentMetadata metadata = component_metadata[type_id];
 	void *pointer = world->components[type_id].memory + metadata.element_size * entity;
 	memory_zero(pointer, metadata.element_size);
 
-	world->flags[entity] &= ~component_flag(type_id);
+	ecs_disable_id(world, entity, type_id);
 }
 
 bool ecs_has_id(ECS *world, Entity entity, ComponentID type_id) {
-	if (component_valid(type_id) == false) {
+	if (_ecs_component_valid(type_id) == false) {
 		LOG_WARN("ecs_push_id - invalid type_id of %d passed, aborting", type_id);
 		return false;
 	}
-	if (ecs_valid(world, entity) == false || FLAG_GET(world->flags[entity], component_flag(type_id)) == false)
+	if (ecs_valid(world, entity) == false)
 		return false;
 
-	return true;
+	return _ecs_bitset_test(world->bitset[entity], type_id);
 }
 
 bool ecs_has_ids(ECS *world, Entity entity, uint32_t type_count, ComponentID *type_ids) {
 	ASSERT(type_count == 0 || type_ids);
-
-	for (uint32_t index = 0; index < type_count; ++index) {
-		ASSERT(component_valid(type_ids[index]));
+	for (uint32_t index = 0; index < type_count; ++index)
 		if (ecs_has_id(world, entity, type_ids[index]) == false)
 			return false;
-	}
 
 	return true;
 }
 
 void ecs_disable_id(ECS *world, Entity entity, ComponentID type_id) {
-	if (ecs_valid(world, entity) == false || component_valid(type_id) == false)
+	if (ecs_valid(world, entity) == false || _ecs_component_valid(type_id) == false)
 		return;
 
-	world->flags[entity] &= ~component_flag(type_id);
+	_ecs_bitset_flip(world->bitset[entity], type_id, false);
 }
 
 void ecs_enable_id(ECS *world, Entity entity, ComponentID type_id) {
-	if (ecs_valid(world, entity) == false || component_valid(type_id) == false)
+	if (_ecs_component_valid(type_id) == false)
 		return;
+	if (type_id != COMPONENT_TAG_ACTIVE && ecs_valid(world, entity) == false) {
+		ASSERT(false);
+		return;
+	}
 
-	world->flags[entity] |= component_flag(type_id);
+	_ecs_bitset_flip(world->bitset[entity], type_id, true);
 }
 
 void ecs_hierarchy_parent(ECS *world, Entity parent_entity, Entity child_entity) {
@@ -395,9 +418,9 @@ EcsIterator ecs_query_make(ECS *world, uint32_t count, ComponentID *component_id
 	for (uint32_t index = 0; index < count; ++index) {
 		ComponentID type_id = component_ids[index];
 		ASSERT(type_id < COMPONENT_TYPE_MAX);
-		ASSERT(component_valid(type_id));
+		ASSERT(_ecs_component_valid(type_id));
 
-		result.mask |= component_flag(type_id);
+		_ecs_bitset_flip(result.mask, type_id, true);
 	}
 
 	return result;
@@ -406,13 +429,13 @@ EcsIterator ecs_query_make(ECS *world, uint32_t count, ComponentID *component_id
 Entity ecs_next(EcsIterator *it) {
 	while (it->current <= it->world->highest_valid) {
 		Entity entity = it->current++;
-		uint32_t flags = it->world->flags[entity];
-		if (FLAG_GET(flags, component_flag(COMPONENT_TYPE_INACTIVE)))
+		if (ecs_has_id(it->world, entity, COMPONENT_TAG_ACTIVE) == false)
 			continue;
 
-		if (FLAG_GET(flags, it->mask)) {
-			return entity;
-		}
+		if (_ecs_bitset_mask(it->world->bitset[entity], it->mask) == false)
+			continue;
+
+		return entity;
 	}
 
 	return 0;
@@ -425,7 +448,7 @@ bool serialize_entity(ECS *world, JsonExporter *exporter, Entity entity) {
 	json_map_begin(exporter, S(""));
 	json_write_pair(exporter, S("name"), String, S("entity"));
 
-	if (world->flags[entity] != 0) {
+	if (ecs_valid(world, entity)) {
 		json_map_begin(exporter, S("componenets"));
 
 		if (ecs_has(world, entity, TransformComponent)) {

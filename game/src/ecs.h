@@ -7,7 +7,7 @@
 #define MAX_ENTITIES 1024
 
 typedef enum {
-	COMPONENT_TYPE_INACTIVE,
+	COMPONENT_TAG_ACTIVE,
 
 	COMPONENT_TYPE_Transform3,
 	COMPONENT_TYPE_TransformComponent = COMPONENT_TYPE_Transform3,
@@ -21,7 +21,10 @@ typedef enum {
 
 	COMPONENT_TYPE_MAX,
 } ComponentID;
-STATIC_ASSERT(COMPONENT_TYPE_MAX < 32);
+
+#define ECS_BITSET_WIDTH 64
+#define ECS_BITSET_SIZE (COMPONENT_TYPE_MAX + 63) / 64
+typedef uint64_t ComponentBitset[ECS_BITSET_SIZE];
 
 typedef struct {
 	size_t element_size, element_align;
@@ -94,7 +97,7 @@ Entity ecs_deserialize_entity(ECS *world, String path);
 
 typedef struct {
 	ECS *world;
-	uint32_t mask;
+	ComponentBitset mask;
 	Entity current;
 } EcsIterator;
 
