@@ -152,6 +152,96 @@
             "type": "<invalid>"
         },
         {
+            "id": 4787537253514599946,
+            "path": "assets/asset_manifest.json",
+            "type": "<invalid>"
+        },
+        {
+            "id": 473933333075850533,
+            "path": "assets/items.json",
+            "type": "<invalid>"
+        },
+        {
+            "id": 1446119593836605777,
+            "path": "assets/shaders/fragment/vertex_color.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 5898797512147872463,
+            "path": "assets/shaders/fragment/picker.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 5291474011405837524,
+            "path": "assets/shaders/fragment/composite.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 5491938100863535076,
+            "path": "assets/shaders/fragment/phong.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 2710217946389605456,
+            "path": "assets/shaders/fragment/blank.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 11820705676907550250,
+            "path": "assets/shaders/fragment/textured.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 14532766939491096474,
+            "path": "assets/shaders/fragment/blit.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 17063244221993641774,
+            "path": "assets/shaders/fragment/flat.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 2392190190766150783,
+            "path": "assets/shaders/fragment/unlit.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 7118989008582366651,
+            "path": "assets/shaders/fragment/postfx.fragment",
+            "type": "<invalid>"
+        },
+        {
+            "id": 7894763913215591603,
+            "path": "assets/shaders/vertex/shadow.vertex",
+            "type": "<invalid>"
+        },
+        {
+            "id": 17656086012295406040,
+            "path": "assets/shaders/vertex/line.vertex",
+            "type": "<invalid>"
+        },
+        {
+            "id": 16284628056454949292,
+            "path": "assets/shaders/vertex/base.vertex",
+            "type": "<invalid>"
+        },
+        {
+            "id": 11643440694515887731,
+            "path": "assets/shaders/vertex/basic.vertex",
+            "type": "<invalid>"
+        },
+        {
+            "id": 3407572741047236448,
+            "path": "assets/shaders/vertex/quad.vertex",
+            "type": "<invalid>"
+        },
+        {
+            "id": 8332306414090078245,
+            "path": "assets/shaders/vertex/batch.vertex",
+            "type": "<invalid>"
+        },
+        {
             "id": 11214397475342026662,
             "path": "assets/models/custom/room.glb",
             "type": "geometry"
@@ -789,6 +879,11 @@
         {
             "id": 4532017792427544554,
             "name": "in_memory:quad",
+            "type": "geometry"
+        },
+        {
+            "id": 718818009158249137,
+            "path": "assets/models/kenney/modular_dungeon/room-large_fixed.glb",
             "type": "geometry"
         },
         {
@@ -2257,6 +2352,46 @@
             "type": "image"
         },
         {
+            "id": 2138486171365272178,
+            "path": "assets/sprites/kenney/pickaxe.png",
+            "type": "image"
+        },
+        {
+            "id": 17551699076825687695,
+            "path": "assets/sprites/kenney/tiny_town_tilemap_packed.png",
+            "type": "image"
+        },
+        {
+            "id": 10458013441383575857,
+            "path": "assets/models/kenney/modular_dungeon/room-large_fixed_colormap.png",
+            "type": "image"
+        },
+        {
+            "id": 13695960796527049817,
+            "path": "assets/models/characters/gdbot_Image.png",
+            "type": "image"
+        },
+        {
+            "id": 17886579741834486467,
+            "path": "assets/models/characters/gdbot_diffuse.png",
+            "type": "image"
+        },
+        {
+            "id": 4203868640990925399,
+            "path": "assets/models/characters/gdbot_roughness.png",
+            "type": "image"
+        },
+        {
+            "id": 10543261884397004758,
+            "path": "assets/models/characters/gdbot_smiley.png",
+            "type": "image"
+        },
+        {
+            "id": 3525840935563854639,
+            "path": "assets/models/characters/gdbot_normal.png",
+            "type": "image"
+        },
+        {
             "id": 10077098539390241749,
             "path": "assets/shaders/pbr.glsl",
             "type": "shader"
@@ -2374,6 +2509,91 @@
         {
             "id": 3375213616027443769,
             "path": "assets/shaders/bin/postfx.vert.spv",
+            "type": "shader"
+        },
+        {
+            "id": 5167976062579828871,
+            "path": "assets/shaders/fragment/bin/postfx.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 2686219425642784960,
+            "path": "assets/shaders/fragment/bin/textured.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 11650884278721106184,
+            "path": "assets/shaders/fragment/bin/unlit.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 7174805003107794471,
+            "path": "assets/shaders/fragment/bin/flat.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 7713552673067438574,
+            "path": "assets/shaders/fragment/bin/phong.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 18355368001157166054,
+            "path": "assets/shaders/fragment/bin/blank.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 552588684477980017,
+            "path": "assets/shaders/fragment/bin/picker.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 681758878639651272,
+            "path": "assets/shaders/fragment/bin/vertex_color.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 17178724226693711703,
+            "path": "assets/shaders/fragment/bin/blit.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 4517849787064407496,
+            "path": "assets/shaders/fragment/bin/composite.fragment.spv",
+            "type": "shader"
+        },
+        {
+            "id": 11236513299074493510,
+            "path": "assets/shaders/vertex/bin/base.vertex.spv",
+            "type": "shader"
+        },
+        {
+            "id": 17318427066921855876,
+            "path": "assets/shaders/vertex/bin/batch.vertex.spv",
+            "type": "shader"
+        },
+        {
+            "id": 16226556323407052859,
+            "path": "assets/shaders/vertex/bin/shadow.vertex.spv",
+            "type": "shader"
+        },
+        {
+            "id": 2292660800194542896,
+            "path": "assets/shaders/vertex/bin/batcher.vertex.spv",
+            "type": "shader"
+        },
+        {
+            "id": 16458017833291250309,
+            "path": "assets/shaders/vertex/bin/quad.vertex.spv",
+            "type": "shader"
+        },
+        {
+            "id": 13046204256472884769,
+            "path": "assets/shaders/vertex/bin/line.vertex.spv",
+            "type": "shader"
+        },
+        {
+            "id": 5991313025536935464,
+            "path": "assets/shaders/vertex/bin/basic.vertex.spv",
             "type": "shader"
         }
     ]

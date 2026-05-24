@@ -8,7 +8,7 @@
 typedef enum {
 	FILE_MODE_READ,
 	FILE_MODE_WRITE,
-    FILE_MODE_WRITE_BINARY,
+	FILE_MODE_WRITE_BINARY,
 } FileMode;
 
 ENGINE_API bool file_exists(String path);
@@ -23,7 +23,7 @@ typedef struct {
 /* ENGINE_API void file_write_end(void); */
 
 ENGINE_API File filesystem_open(String path, FileMode mode);
-ENGINE_API size_t file_write(File *file, size_t element_size, uint32_t element_count, void *data);
+ENGINE_API uint64_t file_write(File *file, uint64_t size, void *data);
 ENGINE_API void file_close(File *file);
 
 ENGINE_API void filesystem_make_directory(String directory);

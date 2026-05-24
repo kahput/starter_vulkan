@@ -150,36 +150,47 @@ typedef struct { float32x3 min, max; } Interval3;
 
 typedef struct { uint8_t r, g, b, a; } Color;
 
-#define rgba(r, g, b, a) (Color){r, g, b, a}
-#define rgb(r, g, b) (Color){r, g, b, 255}
-
 // clang-format on
+#define rgba(r, g, b, a) \
+	(Color) { r, g, b, a }
+#define rgb(r, g, b) (Color){ r, g, b, 255 }
+
+#define RED rgb(255, 0, 0)
+#define GREEN rgb(0, 255, 0)
+#define BLUE rgb(0, 0, 255)
+
+#define WHITE rgb(255, 255, 255)
+#define BACLK rgb(0, 0, 0)
+
+static inline uint32_t color_pack(Color c) {
+	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);
+}
 
 typedef struct {
-	uint8_t *pointer;
 	size_t size;
+	uint8_t *memory;
 } Buffer;
 
-static inline Buffer buffer_make(void *ptr, size_t size) { return (Buffer){ .pointer = ptr, .size = size }; }
+static inline Buffer buffer_make(void *ptr, size_t size) { return (Buffer){ .memory = ptr, .size = size }; }
 
-#define buffer_wrap_struct(obj) ((Buffer){ .pointer = (uint8_t *)&(obj), .size = sizeof(obj) })
-#define buffer_wrap_array(arr) ((Buffer){ .pointer = (uint8_t *)(arr), .size = sizeof(arr) })
-#define buffer_wrap_count(p, n) ((Buffer){ .pointer = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
-#define buffer_wrap_literal(lit) ((Buffer){ .pointer = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
-#define buffer_wrap_string(s) ((Buffer){ .pointer = (uint8_t *)(s).chars, .size = (s).length })
+#define buffer_wrap_struct(obj) ((Buffer){ .memory = (uint8_t *)&(obj), .size = sizeof(obj) })
+#define buffer_wrap_array(arr) ((Buffer){ .memory = (uint8_t *)(arr), .size = sizeof(arr) })
+#define buffer_wrap_count(p, n) ((Buffer){ .memory = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
+#define buffer_wrap_literal(lit) ((Buffer){ .memory = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
+#define buffer_wrap_string(s) ((Buffer){ .memory = (uint8_t *)(s).chars, .size = (s).length })
 
 static inline Buffer buffer_subbuffer(Buffer s, size_t offset, size_t length) {
 	if (offset > s.size)
 		return buffer_make(NULL, 0);
 	if (offset + length > s.size)
 		length = s.size - offset;
-	return buffer_make(s.pointer + offset, length);
+	return buffer_make(s.memory + offset, length);
 }
 static inline bool buffer_empty(Buffer s) { return s.size == 0; }
 static inline bool buffer_equal(Buffer a, Buffer b) {
 	if (a.size != b.size)
 		return false;
-	return memory_equals(a.pointer, b.pointer, a.size);
+	return memory_equals(a.memory, b.memory, a.size);
 }
 
 typedef uint32_t Flag;

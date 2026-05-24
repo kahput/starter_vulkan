@@ -13,7 +13,7 @@ typedef struct {
 Arena arena_make(size_t size);
 ENGINE_API Arena *arena_partition(Arena *arena, size_t size);
 static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .base = buffer, .capacity = size }; }
-static inline Arena arena_wrap_buffer(Buffer buffer) { return (Arena){ .base = buffer.pointer, .capacity = buffer.size }; }
+static inline Arena arena_wrap_buffer(Buffer buffer) { return (Arena){ .base = buffer.memory, .capacity = buffer.size }; }
 void arena_destroy(Arena *arena);
 
 #define arena_wrap_struct(s) \

@@ -15,6 +15,8 @@ typedef enum {
 
 	COMPONENT_TYPE_MeshComponent,
 	COMPONENT_TYPE_ColliderComponent,
+
+	COMPONENT_TYPE_InventoryComponent,
 	// :component
 
 	COMPONENT_TYPE_MAX,
@@ -27,11 +29,14 @@ typedef struct {
 
 // TODO: Introspect this
 static ComponentMetadata component_metadata[COMPONENT_TYPE_MAX] = {
-	[COMPONENT_TYPE_TransformComponent] = { sizeof(TransformComponent), alignof(TransformComponent) },
-	[COMPONENT_TYPE_MeshComponent] = { sizeof(MeshComponent), alignof(MeshComponent) },
-	[COMPONENT_TYPE_ColliderComponent] = { sizeof(ColliderComponent), alignof(ColliderComponent) },
-	[COMPONENT_TYPE_HierarchyComponent] = { sizeof(HierarchyComponent), alignof(HierarchyComponent) },
-	// :component
+#define COMPONENT_METADATA(T) [COMPONENT_TYPE_##T] = { sizeof(T), alignof(T) }
+	COMPONENT_METADATA(TransformComponent),
+	COMPONENT_METADATA(MeshComponent),
+	COMPONENT_METADATA(ColliderComponent),
+	COMPONENT_METADATA(HierarchyComponent),
+	COMPONENT_METADATA(InventoryComponent),
+// :component
+#undef COMPONENT_METADATA
 };
 
 typedef struct ECS ECS;
@@ -45,6 +50,7 @@ Entity ecs_copy(ECS *world, Entity target);
 void ecs_despawn(ECS *world, Entity entity);
 
 bool ecs_has_id(ECS *world, Entity entity, ComponentID type_id);
+bool ecs_has_ids(ECS *world, Entity entity, uint32_t type_count, ComponentID *type_ids);
 void *ecs_push_id(ECS *world, Entity entity, ComponentID type_id);
 void *ecs_find_id(ECS *world, Entity entity, ComponentID type_id);
 void ecs_pop_id(ECS *world, Entity entity, ComponentID type_id);
@@ -71,6 +77,8 @@ Entity ecs_deserialize_entity(ECS *world, String path);
 		T _val = __VA_ARGS__;               \
 		*ecs_push(world, entity, T) = _val; \
 	} while (0)
+
+#define ecs_matches(world, entity, ...) ecs_has_ids((world), (entity), countof((ComponentID[]){ __VA_ARGS__ }), (ComponentID[]){ __VA_ARGS__ })
 
 typedef struct {
 	ECS *world;

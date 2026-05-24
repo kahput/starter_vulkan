@@ -29,13 +29,13 @@ static AssetType asset_type_from_string(String type);
 bool asset_store_track_directory(AssetStore *store, String directory) {
 	ArenaTemp scratch = arena_scratch_begin(store->arena);
 
-	ASSERT(store->asset_directory.length == 0);
 	store->asset_directory = string_copy(store->arena, directory);
 	StringList file_list = filesystem_directory_files(scratch.arena, directory, true);
 	StringNode *file = file_list.first;
 
 	while (file) {
-		asset_store_track_file(store, file->string);
+		if (asset_store_find(store, file_extension_to_asset_type(stringpath_extension(file->string)), file->string) == 0)
+			asset_store_track_file(store, file->string);
 
 		file = file->next;
 	}
@@ -96,8 +96,8 @@ bool asset_store_track_file(AssetStore *store, String file_path) {
 bool asset_store_serialize(AssetStore *store, String output) {
 	ArenaTemp scratch = arena_scratch_begin(store->arena);
 	JsonExporter exporter[] = { json_exporter_make(scratch.arena) };
-	json_begin_map(exporter, S(""));
-	json_begin_array(exporter, S("assets"));
+	json_map_begin(exporter, S(""));
+	json_array_begin(exporter, S("assets"));
 
 	for (uint32_t type = 0; type < ASSET_TYPE_MAX; ++type) {
 		AssetEntry *entires = store->assets[type];
@@ -106,7 +106,7 @@ bool asset_store_serialize(AssetStore *store, String output) {
 		for (uint32_t entry_index = 0; entry_index < count; ++entry_index) {
 			AssetEntry *entry = entires + entry_index;
 
-			json_begin_map(exporter, S(""));
+			json_map_begin(exporter, S(""));
 
 			json_write_pair(exporter, S("id"), uint64_t, entry->id);
 			if (string_find_first(entry->full_path, S("in_memory")) != -1)
@@ -115,16 +115,16 @@ bool asset_store_serialize(AssetStore *store, String output) {
 				json_write_pair(exporter, S("path"), String, entry->full_path);
 			json_write_pair(exporter, S("type"), String, asset_type_to_string(type));
 
-			json_end_map(exporter);
+			json_map_end(exporter);
 		}
 	}
 
-	json_end_array(exporter);
-	json_end_map(exporter);
+	json_array_end(exporter);
+	json_map_end(exporter);
 
 	File file = filesystem_open(output, FILE_MODE_WRITE);
 
-	file_write(&file, 1, exporter->arena->offset - exporter->start_offset, (uint8_t *)exporter->arena->base + exporter->start_offset);
+	file_write(&file, exporter->arena->offset - exporter->start_offset, (uint8_t *)exporter->arena->base + exporter->start_offset);
 	file_close(&file);
 
 	arena_scratch_end(scratch);
@@ -193,8 +193,13 @@ UUID asset_store_find(AssetStore *store, AssetType type, String key) {
 			return asset_store_find_shader(store, key);
 
 		case ASSET_TYPE_undefined:
-		case ASSET_TYPE_MAX:
-			return 0;
+		case ASSET_TYPE_MAX: {
+			AssetEntry *entry = arena_trie_find(&store->trie, buffer_wrap_string(key), AssetEntry);
+			if (entry == NULL)
+				return 0;
+
+			return entry->id;
+		};
 	};
 
 	ASSERT(false);

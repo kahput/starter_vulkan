@@ -1,5 +1,6 @@
 #include "core/cmath.h"
 #include "core/identifiers.h"
+#include "core/r_types.h"
 
 typedef uint64_t Entity;
 
@@ -30,3 +31,14 @@ typedef struct {
 	Entity next_sibling;
 	Entity prev_sibling;
 } HierarchyComponent;
+
+typedef struct {
+	uint32_t item_index;
+	uint8_t quantity;
+} InventorySlot;
+
+#define MAX_INVENTORY_SLOTS 32
+typedef struct {
+	InventorySlot slots[MAX_INVENTORY_SLOTS];
+	uint32_t capacity;
+} InventoryComponent;

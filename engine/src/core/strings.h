@@ -14,7 +14,7 @@ typedef struct String {
 #define shash(s) string_hash64(S(s))
 
 ENGINE_API String string_wrap(const char *s);
-static inline String string_wrap_buffer(Buffer buffer) { return (String){ .chars = (char *)buffer.pointer, .length = buffer.size }; }
+static inline String string_wrap_buffer(Buffer buffer) { return (String){ .chars = (char *)buffer.memory, .length = buffer.size }; }
 
 ENGINE_API bool string_equals(String a, String b);
 ENGINE_API bool string_equals_ignore_case(String a, String b);
