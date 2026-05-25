@@ -21,7 +21,7 @@ typedef struct {
 } Glyph;
 
 typedef struct {
-	Texture2D atlas;
+	Image2D atlas;
 	ImageSource atlas_src;
 
 	uint32_t line_height;
@@ -80,7 +80,7 @@ typedef struct {
 typedef struct {
 	float32x2 position, uv;
 	uint32_t color;
-	uint32_t texture_id;
+	uint32_t image_id;
 } Vertex2;
 
 typedef struct scene_source {

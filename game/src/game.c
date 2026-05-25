@@ -29,18 +29,20 @@
 
 #include <stdint.h>
 
+#define STRING_STATIC(s) { .chars = (s), .length = sizeof(s) }
 static MaterialProperty default_properties[] = {
-	{ .name = { .chars = "u_base_color_texture", .length = 20 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
-	{ .name = { .chars = "u_metallic_roughness_texture", .length = 28 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
-	{ .name = { .chars = "u_normal_texture", .length = 16 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
-	{ .name = { .chars = "u_occlusion_texture", .length = 19 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
-	{ .name = { .chars = "u_emissive_texture", .length = 18 }, .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = STRING_STATIC("u_base_color_image"), .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = STRING_STATIC("u_metallic_roughness_image"), .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = STRING_STATIC("u_normal_image"), .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = STRING_STATIC("u_occlusion_image"), .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
+	{ .name = STRING_STATIC("u_emissive_image"), .type = PROPERTY_TYPE_IMAGE, .as.uint32x1 = 0 },
 
-	{ .name = { .chars = "base_color_factor", .length = 17 }, .type = PROPERTY_TYPE_FLOAT4, .as.float32x4 = { 0.8f, 0.8f, 0.8f, 1.0f } },
-	{ .name = { .chars = "metallic_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.0f },
-	{ .name = { .chars = "roughness_factor", .length = 16 }, .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.5f },
-	{ .name = { .chars = "emissive_factor", .length = 15 }, .type = PROPERTY_TYPE_FLOAT3, .as.float32x3 = { 1.0f, 1.0f, 1.0f } },
+	{ .name = STRING_STATIC("base_color_factor"), .type = PROPERTY_TYPE_FLOAT4, .as.float32x4 = { 0.8f, 0.8f, 0.8f, 1.0f } },
+	{ .name = STRING_STATIC("metallic_factor"), .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.0f },
+	{ .name = STRING_STATIC("roughness_factor"), .type = PROPERTY_TYPE_FLOAT1, .as.float32x1 = 0.5f },
+	{ .name = STRING_STATIC("emissive_factor"), .type = PROPERTY_TYPE_FLOAT3, .as.float32x3 = { 1.0f, 1.0f, 1.0f } },
 };
+#undef STRING_STATIC
 
 typedef enum {
 	GAME_STATE_PLAY,
@@ -92,8 +94,8 @@ typedef struct Editor {
 	float sensitivity, pan_speed, zoom_speed;
 	Camera3D camera;
 
-	RhiTexture picker_target;
-	RhiTexture main_color_target;
+	RhiImage picker_target;
+	RhiImage main_color_target;
 
 	Entity active_entity;
 	Entity selected_entities[64];
@@ -152,7 +154,7 @@ typedef struct {
 	String name;
 	String description;
 
-	Texture2D image;
+	Image2D image;
 	bool stackable;
 } Item;
 
@@ -166,7 +168,7 @@ typedef struct {
 	Window *display;
 
 	RhiSampler linear_sampler, nearest_sampler, shadow_sampler;
-	RhiTexture white;
+	RhiImage white;
 
 	RhiBuffer frame_uniform_buffer;
 	RhiBuffer frame_storage_buffer;
@@ -180,11 +182,13 @@ typedef struct {
 	float3 game_camera_start_offset;
 	Camera3D game_camera;
 
-	Texture2D sprites[SPRITE_IMAGE_MAX];
+	Image2D sprites[SPRITE_IMAGE_MAX];
 	struct {
+		/* Shader shaders[SHADER_MAX]; */
 		RhiShader shaders[SHADER_MAX];
 		Font font[FONT_SIZE_MAX];
-		RhiTexture *textures;
+
+		Image2D *images;
 		Material *materials;
 		Mesh *meshes;
 		uint32_t *mesh_to_material;
@@ -205,10 +209,10 @@ typedef struct {
 	UIContext ui;
 
 	// game targets
-	RhiTexture shadow_depth_target;
-	RhiTexture main_color_target;
-	RhiTexture imgui_color_target;
-	RhiTexture output_target;
+	RhiImage shadow_depth_target;
+	RhiImage main_color_target;
+	RhiImage imgui_color_target;
+	RhiImage output_target;
 
 	Rectangle viewport;
 
@@ -250,16 +254,16 @@ bool window_resize(EventCode code, void *event, void *receiver) {
 
 	vulkan_renderer_on_resize(pstate->context, resize_event->width, resize_event->height);
 
-	vulkan_texture_resize(pstate->context, pstate->main_color_target, resize_event->width, resize_event->height);
-	vulkan_texture_resize(pstate->context, pstate->output_target, resize_event->width, resize_event->height);
-	vulkan_texture_resize(pstate->context, pstate->imgui_color_target, resize_event->width, resize_event->height);
+	vulkan_image_resize(pstate->context, pstate->main_color_target, resize_event->width, resize_event->height);
+	vulkan_image_resize(pstate->context, pstate->output_target, resize_event->width, resize_event->height);
+	vulkan_image_resize(pstate->context, pstate->imgui_color_target, resize_event->width, resize_event->height);
 
 	pstate->viewport = (Rectangle){
 		0, 0, resize_event->width, resize_event->height
 	};
 
-	vulkan_texture_resize(pstate->context, pstate->editor.main_color_target, resize_event->width, resize_event->height);
-	vulkan_texture_resize(pstate->context, pstate->editor.picker_target, resize_event->width, resize_event->height);
+	vulkan_image_resize(pstate->context, pstate->editor.main_color_target, resize_event->width, resize_event->height);
+	vulkan_image_resize(pstate->context, pstate->editor.picker_target, resize_event->width, resize_event->height);
 
 	return false;
 }
@@ -332,6 +336,7 @@ void draw_shadow_pass(PermanentState *pstate) {
 		vulkan_drawlist_end(pstate->context);
 	}
 }
+
 void draw_main_pass(PermanentState *pstate) {
 	Camera3D *camera = pstate->active_camera;
 
@@ -388,8 +393,8 @@ void draw_main_pass(PermanentState *pstate) {
 	vulkan_uniformset_bind_buffer_range(pstate->context, pstate->game_current_frame_global, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
 	vulkan_uniformset_bind_buffer_range(pstate->context, pstate->game_current_frame_global, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
 
-	vulkan_texture_prepare_sample(pstate->context, pstate->shadow_depth_target);
-	vulkan_uniformset_bind_texture(pstate->context, pstate->game_current_frame_global, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
+	vulkan_image_prepare_sample(pstate->context, pstate->shadow_depth_target);
+	vulkan_uniformset_bind_image(pstate->context, pstate->game_current_frame_global, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
 
 	// :main_pass
 	DrawlistDesc main_pass = {
@@ -436,16 +441,15 @@ void draw_main_pass(PermanentState *pstate) {
 
 				// TODO: ASSERT on this in the reflection code
 				vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
-				for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
-					RhiTexture texture = material->textures[texture_index];
-					if (texture.id == 0)
-						texture = pstate->white;
-
-					vulkan_uniformset_bind_texture(
+				for (uint32_t image_index = 0; image_index < material->image_count; ++image_index) {
+					Image2D image = material->images[image_index];
+					if (image.handle.id == 0)
+						image = WHITE_IMAGE;
+					vulkan_uniformset_bind_image(
 						pstate->context,
 						group,
-						1 + texture_index,
-						texture,
+						1 + image_index,
+						image.handle,
 						pstate->nearest_sampler);
 				}
 
@@ -568,52 +572,52 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		pstate->nearest_sampler = vulkan_sampler_make(pstate->context, NEAREST_SAMPLER);
 		pstate->shadow_sampler = vulkan_sampler_make(pstate->context, SHADOW_SAMPLER);
 
-		pstate->white = vulkan_texture_make(pstate->context, 1, 1, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
+		pstate->white = vulkan_image_make(pstate->context, 1, 1, IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8, IMAGE_USAGE_SAMPLED, &(uint32_t){ 0xffffffff });
 
 		pstate->editor = editor_make(&pstate->persistent_arena);
 
 		uint32x2 window_size = window_size_pixel(pstate->display);
 		Rectangle viewport = pstate->viewport = (Rectangle){ 0, 0, window_size.x, window_size.y };
 
-		pstate->editor.picker_target = vulkan_texture_make(
+		pstate->editor.picker_target = vulkan_image_make(
 			pstate->context,
 			viewport.width, viewport.height,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_R32,
-			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_READBACK,
+			IMAGE_TYPE_2D, IMAGE_FORMAT_R32,
+			IMAGE_USAGE_SAMPLED | IMAGE_USAGE_RENDER_TARGET | IMAGE_USAGE_READBACK,
 			NULL);
-		pstate->editor.main_color_target = vulkan_texture_make(
+		pstate->editor.main_color_target = vulkan_image_make(
 			pstate->context,
 			viewport.width, viewport.height,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
-			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
-			NULL);
-
-		pstate->main_color_target = vulkan_texture_make(
-			pstate->context,
-			viewport.width, viewport.height,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
-			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB,
+			IMAGE_USAGE_SAMPLED | IMAGE_USAGE_RENDER_TARGET,
 			NULL);
 
-		pstate->shadow_depth_target = vulkan_texture_make(
+		pstate->main_color_target = vulkan_image_make(
+			pstate->context,
+			viewport.width, viewport.height,
+			IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB,
+			IMAGE_USAGE_SAMPLED | IMAGE_USAGE_RENDER_TARGET,
+			NULL);
+
+		pstate->shadow_depth_target = vulkan_image_make(
 			pstate->context,
 			1024, 1024,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_DEPTH,
-			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			IMAGE_TYPE_2D, IMAGE_FORMAT_DEPTH,
+			IMAGE_USAGE_SAMPLED | IMAGE_USAGE_RENDER_TARGET,
 			NULL);
 
-		pstate->imgui_color_target = vulkan_texture_make(
+		pstate->imgui_color_target = vulkan_image_make(
 			pstate->context,
 			viewport.width, viewport.height,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
-			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB,
+			IMAGE_USAGE_SAMPLED | IMAGE_USAGE_RENDER_TARGET,
 			NULL);
 
-		pstate->output_target = vulkan_texture_make(
+		pstate->output_target = vulkan_image_make(
 			pstate->context,
 			viewport.width, viewport.height,
-			TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
-			TEXTURE_USAGE_SAMPLED | TEXTURE_USAGE_RENDER_TARGET,
+			IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB,
+			IMAGE_USAGE_SAMPLED | IMAGE_USAGE_RENDER_TARGET,
 			NULL);
 		// :targets
 
@@ -1204,21 +1208,21 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			.color_attachment_count = 1,
 		};
 
-		vulkan_texture_prepare_sample(pstate->context, pstate->main_color_target);
-		vulkan_texture_prepare_sample(pstate->context, pstate->imgui_color_target);
+		vulkan_image_prepare_sample(pstate->context, pstate->main_color_target);
+		vulkan_image_prepare_sample(pstate->context, pstate->imgui_color_target);
 		if (vulkan_drawlist_begin(pstate->context, composite_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
 			vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_COMPOSITE), pipeline);
 
 			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_COMPOSITE), 0);
 
-			/* RhiTexture output = pstate->imgui_color_target; */
-			/* RhiTexture output = pstate->shadow_depth_target; */
+			/* RhiImage output = pstate->imgui_color_target; */
+			/* RhiImage output = pstate->shadow_depth_target; */
 
-			RhiTexture layer0 = pstate->main_color_target;
-			RhiTexture layer1 = pstate->imgui_color_target;
-			vulkan_uniformset_bind_texture(pstate->context, set0, 0, layer0, pstate->linear_sampler);
-			vulkan_uniformset_bind_texture(pstate->context, set0, 1, layer1, pstate->linear_sampler);
+			RhiImage layer0 = pstate->main_color_target;
+			RhiImage layer1 = pstate->imgui_color_target;
+			vulkan_uniformset_bind_image(pstate->context, set0, 0, layer0, pstate->linear_sampler);
+			vulkan_uniformset_bind_image(pstate->context, set0, 1, layer1, pstate->linear_sampler);
 			vulkan_uniformset_bind(pstate->context, set0);
 
 			vulkan_renderer_draw(pstate->context, 6);
@@ -1241,21 +1245,21 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 			.color_attachment_count = 1,
 		};
 
-		vulkan_texture_prepare_sample(pstate->context, pstate->output_target);
-		vulkan_texture_prepare_sample(pstate->context, pstate->editor.main_color_target);
+		vulkan_image_prepare_sample(pstate->context, pstate->output_target);
+		vulkan_image_prepare_sample(pstate->context, pstate->editor.main_color_target);
 		if (vulkan_drawlist_begin(pstate->context, present_pass)) {
 			PipelineDesc pipeline = DEFAULT_PIPELINE;
 			vulkan_shader_bind(pstate->context, get_shader(pstate, SHADER_BLIT), pipeline);
 
 			RhiUniformSet set0 = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_BLIT), 0);
 
-			/* RhiTexture output = pstate->imgui_color_target; */
-			/* RhiTexture output = pstate->shadow_depth_target; */
+			/* RhiImage output = pstate->imgui_color_target; */
+			/* RhiImage output = pstate->shadow_depth_target; */
 
-			RhiTexture output = pstate->output_target;
+			RhiImage output = pstate->output_target;
 			if (pstate->state == GAME_STATE_EDITOR)
 				output = pstate->editor.main_color_target;
-			vulkan_uniformset_bind_texture(pstate->context, set0, 0, output, pstate->linear_sampler);
+			vulkan_uniformset_bind_image(pstate->context, set0, 0, output, pstate->linear_sampler);
 			vulkan_uniformset_bind(pstate->context, set0);
 
 			vulkan_renderer_draw(pstate->context, 6);
@@ -1457,7 +1461,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 
 				if (inside_bounds_x && inside_bounds_y) {
 					uint32_t entity = 0;
-					vulkan_texture_read_pixel(pstate->context, pstate->editor.picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &entity);
+					vulkan_image_read_pixel(pstate->context, pstate->editor.picker_target, (uint32_t)mouse_position.x, (uint32_t)mouse_position.y, &entity);
 
 					editor_select_entity(editor, entity, input_key_down(KEY_CODE_LEFTSHIFT));
 					LOG_INFO("acitve = %d, count = %d", entity, editor->selected_entity_count);
@@ -1727,14 +1731,14 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	DrawlistBuffer *drawlist_ui = drawlist_make(scratch.arena, MiB(1), 0);
 	{
-		uint2 size = vulkan_texture_size(pstate->context, pstate->main_color_target);
-		Texture2D main_color_texture = {
+		uint2 size = vulkan_image_size(pstate->context, pstate->main_color_target);
+		Image2D main_color_image = {
 			.handle = pstate->main_color_target,
 			.width = size.x,
 			size.y,
-			TEXTURE_FORMAT_RGBA8_SRGB,
+			IMAGE_FORMAT_RGBA8_SRGB,
 		};
-		drawlist_push_texture_ex(drawlist_ui, main_color_texture, pstate->viewport, pstate->viewport, (float2){ 0 }, 0.0f, rgb(255, 255, 255));
+		drawlist_push_image_ex(drawlist_ui, main_color_image, pstate->viewport, pstate->viewport, (float2){ 0 }, 0.0f, rgb(255, 255, 255));
 	}
 
 	DrawlistDesc picker_pass = {
@@ -1783,7 +1787,7 @@ void editor_draw(PermanentState *pstate, Editor *editor) {
 		vulkan_drawlist_end(pstate->context);
 	}
 
-	vulkan_texture_prepare_sample(pstate->context, pstate->main_color_target);
+	vulkan_image_prepare_sample(pstate->context, pstate->main_color_target);
 	DrawlistDesc imgui_pass_desc = {
 		.name = S("EDITOR:imgui_pass"),
 		.color_attachments[0] = {
@@ -2046,6 +2050,7 @@ static inline RhiShader load_shader(VulkanContext *context, String name, String 
 	arena_scratch_end(scratch);
 	return result;
 }
+
 void load_assets(PermanentState *pstate) {
 	// :assets
 	ArenaTemp scratch = arena_scratch_begin(NULL);
@@ -2073,28 +2078,28 @@ void load_assets(PermanentState *pstate) {
 
 	pstate->assets.shaders[SHADER_POST_EFFECTS] = load_shader(pstate->context, S("postfx"), S("quad"), S("postfx"));
 	pstate->assets.shaders[SHADER_BLIT] = load_shader(pstate->context, S("blit"), S("quad"), S("blit"));
-	pstate->assets.shaders[SHADER_RECTANGLE] = load_shader(pstate->context, S("textured_quad"), S("batch"), S("textured"));
+	pstate->assets.shaders[SHADER_RECTANGLE] = load_shader(pstate->context, S("quad"), S("batch"), S("textured"));
 	pstate->assets.shaders[SHADER_COMPOSITE] = load_shader(pstate->context, S("composite"), S("quad"), S("composite"));
 	// :shader
 
 	ImageSource sprite_src = importer_load_image(scratch.arena, S("assets/sprites/kenney/tiny_town_tilemap_packed.png"));
-	pstate->sprites[SPRITE_ATLAS_TINY_TOWN] = (Texture2D){
-		.handle = vulkan_texture_make(pstate->context, sprite_src.width, sprite_src.height, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, sprite_src.pixels),
-		.format = TEXTURE_FORMAT_RGBA8_SRGB,
+	pstate->sprites[SPRITE_ATLAS_TINY_TOWN] = (Image2D){
+		.handle = vulkan_image_make(pstate->context, sprite_src.width, sprite_src.height, IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB, IMAGE_USAGE_SAMPLED, sprite_src.pixels),
+		.format = IMAGE_FORMAT_RGBA8_SRGB,
 		.width = sprite_src.width,
 		.height = sprite_src.height,
 	};
 	sprite_src = importer_load_image(scratch.arena, S("assets/sprites/kenney/tile_0114.png"));
-	pstate->sprites[SPRITE_IMAGE_GREEN_POTION] = (Texture2D){
-		.handle = vulkan_texture_make(pstate->context, sprite_src.width, sprite_src.height, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, sprite_src.pixels),
-		.format = TEXTURE_FORMAT_RGBA8_SRGB,
+	pstate->sprites[SPRITE_IMAGE_GREEN_POTION] = (Image2D){
+		.handle = vulkan_image_make(pstate->context, sprite_src.width, sprite_src.height, IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB, IMAGE_USAGE_SAMPLED, sprite_src.pixels),
+		.format = IMAGE_FORMAT_RGBA8_SRGB,
 		.width = sprite_src.width,
 		.height = sprite_src.height,
 	};
 	sprite_src = importer_load_image(scratch.arena, S("assets/sprites/kenney/pickaxe.png"));
-	pstate->sprites[SPRITE_IMAGE_PICKAXE] = (Texture2D){
-		.handle = vulkan_texture_make(pstate->context, sprite_src.width, sprite_src.height, TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB, TEXTURE_USAGE_SAMPLED, sprite_src.pixels),
-		.format = TEXTURE_FORMAT_RGBA8_SRGB,
+	pstate->sprites[SPRITE_IMAGE_PICKAXE] = (Image2D){
+		.handle = vulkan_image_make(pstate->context, sprite_src.width, sprite_src.height, IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB, IMAGE_USAGE_SAMPLED, sprite_src.pixels),
+		.format = IMAGE_FORMAT_RGBA8_SRGB,
 		.width = sprite_src.width,
 		.height = sprite_src.height,
 	};
@@ -2103,19 +2108,19 @@ void load_assets(PermanentState *pstate) {
 	for (uint32_t index = FONT_SIZE_16; index < FONT_SIZE_MAX; ++index) {
 		Font *font = &pstate->assets.font[index];
 		*font = importer_load_font(&pstate->persistent_arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), 1 << (index + 4));
-		font->atlas = (Texture2D){
-			.handle = vulkan_texture_make(
+		font->atlas = (Image2D){
+			.handle = vulkan_image_make(
 				pstate->context,
 				font->atlas_src.width, font->atlas_src.height,
-				TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8, TEXTURE_USAGE_SAMPLED,
+				IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8, IMAGE_USAGE_SAMPLED,
 				font->atlas_src.pixels),
 			.width = font->atlas_src.width,
 			.height = font->atlas_src.height,
-			.format = TEXTURE_FORMAT_RGBA8,
+			.format = IMAGE_FORMAT_RGBA8,
 		};
 	}
 
-	// TODO: Import the node transforms & cache shared textures
+	// TODO: Import the node transforms & cache shared images
 	SceneSource models[] = {
 		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/room-large.glb")),
 		importer_load_gltf_scene(scratch.arena, S("assets/models/kenney/modular_dungeon/room-small.glb")),
@@ -2129,7 +2134,7 @@ void load_assets(PermanentState *pstate) {
 	};
 
 	// Prep Upload
-	RhiTexture *textures = NULL;
+	Image2D *images = NULL;
 	Material *materials = NULL;
 
 	Mesh *meshes = NULL;
@@ -2138,10 +2143,10 @@ void load_assets(PermanentState *pstate) {
 	MeshGroup *mesh_groups = NULL;
 
 	// Defaults
-	arena_darray_push(scratch.arena, mesh_groups, uint32x2); // 0 == invalid
-	arena_darray_push(scratch.arena, mesh_group_bounds, Interval3); // 0 == invalid
-	arena_darray_push(scratch.arena, textures, RhiTexture); // 0 == default
-	Material *default_mat = arena_darray_push(scratch.arena, materials, Material); // 0 == default
+	arena_darray_push(scratch.arena, mesh_groups); // 0 == invalid
+	arena_darray_push(scratch.arena, mesh_group_bounds); // 0 == invalid
+	arena_darray_put(scratch.arena, images, Image2D, WHITE_IMAGE); // 0 == default
+	Material *default_mat = arena_darray_push(scratch.arena, materials); // 0 == default
 	default_mat->shader = get_shader(pstate, SHADER_PHONG);
 	MaterialParameters parameters = {
 		.base_color_factor = default_properties[5].as.float32x4,
@@ -2149,9 +2154,9 @@ void load_assets(PermanentState *pstate) {
 		.roughness_factor = default_properties[7].as.float32x1,
 		.emissive_factor = default_properties[8].as.float32x3
 	};
-	for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-		default_mat->textures[texture_index] = textures[0];
-		default_mat->texture_count++;
+	for (uint32_t image_index = 0; image_index < 5; ++image_index) {
+		default_mat->images[image_index] = images[0];
+		default_mat->image_count++;
 	}
 	size_t size = sizeof(MaterialParameters);
 	default_mat->uniform_buffer = pstate->scene_uniform_buffer;
@@ -2165,23 +2170,26 @@ void load_assets(PermanentState *pstate) {
 
 		uint32_t mesh_offset = arena_array_count(meshes);
 		uint32_t material_offset = arena_array_count(materials);
-		uint32_t texture_offset = arena_array_count(textures);
+		uint32_t image_offset = arena_array_count(images);
 
 		for (uint32_t image_index = 0; image_index < model->image_count; ++image_index) {
 			ImageSource *src = &model->images[image_index];
-			RhiTexture *dst = arena_darray_push(scratch.arena, textures, RhiTexture);
+			Image2D *dst = arena_darray_push(scratch.arena, images);
 
 			ASSERT(src->pixels);
-			*dst = vulkan_texture_make(
+
+			dst->handle = vulkan_image_make(
 				pstate->context,
 				src->width, src->height,
-				TEXTURE_TYPE_2D, TEXTURE_FORMAT_RGBA8_SRGB,
-				TEXTURE_USAGE_SAMPLED, src->pixels);
+				IMAGE_TYPE_2D, IMAGE_FORMAT_RGBA8_SRGB,
+				IMAGE_USAGE_SAMPLED, src->pixels);
+			dst->width = src->width;
+			dst->height = src->height;
 		}
 
 		for (uint32_t material_index = 0; material_index < model->material_count; ++material_index) {
 			MaterialSource *src = &model->materials[material_index];
-			Material *dst = arena_darray_push(scratch.arena, materials, Material);
+			Material *dst = arena_darray_push(scratch.arena, materials);
 			dst->shader = get_shader(pstate, SHADER_PHONG);
 			dst->uniform_buffer = pstate->scene_uniform_buffer;
 
@@ -2192,13 +2200,13 @@ void load_assets(PermanentState *pstate) {
 				.emissive_factor = src->properties[8].as.float32x3
 			};
 
-			for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-				MaterialProperty *property = &src->properties[texture_index];
-				dst->textures[texture_index] = textures[0];
+			for (uint32_t image_index = 0; image_index < 5; ++image_index) {
+				MaterialProperty *property = &src->properties[image_index];
+				dst->images[image_index] = images[0];
 				if (property->as.uint32x1)
-					dst->textures[texture_index] = textures[(property->as.uint32x1 - 1) + texture_offset];
+					dst->images[image_index] = images[(property->as.uint32x1 - 1) + image_offset];
 
-				dst->texture_count++;
+				dst->image_count++;
 			}
 
 			size_t size = sizeof(MaterialParameters);
@@ -2215,7 +2223,7 @@ void load_assets(PermanentState *pstate) {
 		};
 		for (uint32_t mesh_index = 0; mesh_index < model->mesh_count; ++mesh_index) {
 			MeshSource *src = &model->meshes[mesh_index];
-			Mesh *dst = arena_darray_push(scratch.arena, meshes, Mesh);
+			Mesh *dst = arena_darray_push(scratch.arena, meshes);
 
 			size_t vertices_size = src->vertex_size * src->vertex_count;
 			size_t indices_size = src->index_size * src->index_count;
@@ -2269,7 +2277,7 @@ void load_assets(PermanentState *pstate) {
 		};
 		arena_darray_put(scratch.arena, mesh_groups, MeshGroup, group);
 
-		Mesh *cube_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
+		Mesh *cube_mesh = arena_darray_push(scratch.arena, meshes);
 		cube_mesh->handle = pstate->scene_geometry_buffer;
 		cube_mesh->vertex_count = cube.vertex_count;
 		cube_mesh->vertex_offset = geometry_upload_arena->offset;
@@ -2292,7 +2300,7 @@ void load_assets(PermanentState *pstate) {
 		};
 		arena_darray_put(scratch.arena, mesh_groups, MeshGroup, group);
 
-		Mesh *quad_mesh = arena_darray_push(scratch.arena, meshes, Mesh);
+		Mesh *quad_mesh = arena_darray_push(scratch.arena, meshes);
 		quad_mesh->handle = pstate->scene_geometry_buffer;
 		quad_mesh->vertex_count = quad_src.vertex_count;
 		quad_mesh->vertex_offset = geometry_upload_arena->offset;
@@ -2303,7 +2311,7 @@ void load_assets(PermanentState *pstate) {
 	}
 	// :generated
 
-	pstate->assets.textures = arena_array_copy(&pstate->persistent_arena, textures, RhiTexture);
+	pstate->assets.images = arena_array_copy(&pstate->persistent_arena, images, Image2D);
 	pstate->assets.meshes = arena_array_copy(&pstate->persistent_arena, meshes, Mesh);
 	pstate->assets.materials = arena_array_copy(&pstate->persistent_arena, materials, Material);
 	pstate->assets.mesh_to_material = arena_array_copy(&pstate->persistent_arena, mesh_to_material, uint32_t);
@@ -2320,7 +2328,7 @@ void load_assets(PermanentState *pstate) {
 void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffer, DrawlistDesc desc) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 
-	vulkan_texture_prepare_sample(pstate->context, pstate->shadow_depth_target);
+	vulkan_image_prepare_sample(pstate->context, pstate->shadow_depth_target);
 	if (vulkan_drawlist_begin(pstate->context, desc)) {
 		for (size_t base_address = 0; base_address < buffer->offset;) {
 			DrawCommandBase *base = (DrawCommandBase *)(buffer->push_buffer + base_address);
@@ -2358,8 +2366,8 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 
 					RhiUniformSet set1 = vulkan_uniformset_push(pstate->context, shader, 1);
 
-					for (uint32_t index = 0; index < cmd->texture_count; ++index)
-						vulkan_uniformset_bind_texture_index(pstate->context, set1, 0, index, cmd->textures[index].handle, pstate->nearest_sampler);
+					for (uint32_t index = 0; index < cmd->image_count; ++index)
+						vulkan_uniformset_bind_image_index(pstate->context, set1, 0, index, cmd->images[index].handle, pstate->nearest_sampler);
 					vulkan_uniformset_bind(pstate->context, set1);
 
 					vulkan_renderer_draw(pstate->context, cmd->quad_count * 6);
@@ -2418,12 +2426,12 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 					RhiUniformSet global_set = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_PHONG), 0);
 					vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 0, global_offset, sizeof(GlobalData), pstate->frame_uniform_buffer);
 					vulkan_uniformset_bind_buffer_range(pstate->context, global_set, 1, light_offset, sizeof(LightData), pstate->frame_storage_buffer);
-					vulkan_uniformset_bind_texture(pstate->context, global_set, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
+					vulkan_uniformset_bind_image(pstate->context, global_set, 2, pstate->shadow_depth_target, pstate->shadow_sampler);
 
 					PipelineDesc pipeline = DEFAULT_PIPELINE;
 					pipeline.cull_mode = CULL_MODE_BACK;
 
-					while (base_address < buffer->capacity && base->type == DCT_DrawCommandMesh) {
+					while (base_address < buffer->offset && base->type == DCT_DrawCommandMesh) {
 						DrawCommandMesh *cmd = (DrawCommandMesh *)base;
 
 						// TODO: ASSERT on this in the reflection code
@@ -2436,16 +2444,16 @@ void pass_submit(PermanentState *pstate, Camera3D *camera, DrawlistBuffer *buffe
 						RhiUniformSet group = vulkan_uniformset_push(pstate->context, get_shader(pstate, SHADER_PHONG), 1);
 
 						vulkan_uniformset_bind_buffer_range(pstate->context, group, 0, material->offset, material->size, material->uniform_buffer);
-						for (uint32_t texture_index = 0; texture_index < material->texture_count; ++texture_index) {
-							RhiTexture texture = material->textures[texture_index];
-							if (texture.id == 0)
-								texture = pstate->white;
+						for (uint32_t image_index = 0; image_index < material->image_count; ++image_index) {
+							Image2D image = material->images[image_index];
+							if (image.handle.id == 0)
+								image = WHITE_IMAGE;
 
-							vulkan_uniformset_bind_texture(
+							vulkan_uniformset_bind_image(
 								pstate->context,
 								group,
-								1 + texture_index,
-								texture,
+								1 + image_index,
+								image.handle,
 								pstate->nearest_sampler);
 						}
 

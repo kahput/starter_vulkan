@@ -46,76 +46,24 @@ typedef struct {
 	uint32_t count;
 } ShaderAttributeFormat;
 
-typedef enum shader_stage {
-	SHADER_STAGE_VERTEX = 1 << 0,
-	SHADER_STAGE_FRAGMENT = 1 << 1,
-} ShaderStageFlags;
-
-typedef enum {
-	SHADER_UNIFORM_FREQUENCY_PER_FRAME,
-	SHADER_UNIFORM_FREQUENCY_PER_MATERIAL,
-	SHADER_UNIFORM_FREQUENCY_PER_OBJECT,
-
-	SHADER_UNIFORM_FREQUENCY_COUNT,
-} ShaderUniformFrequency;
-
-typedef enum {
-	SHADER_BINDING_UNDEFINED,
-	SHADER_BINDING_UNIFORM_BUFFER,
-	SHADER_BINDING_STORAGE_BUFFER,
-
-	SHADER_BINDING_TEXTURE_2D,
-	SHADER_BINDING_TEXTURE_CUBE,
-	SHADER_BINDING_SAMPLER,
-} ShaderBindingType;
-
 typedef enum TextureType {
-	TEXTURE_TYPE_1D,
-	TEXTURE_TYPE_2D,
-	TEXTURE_TYPE_3D,
-	TEXTURE_TYPE_CUBE,
-} TextureType;
+	IMAGE_TYPE_1D,
+	IMAGE_TYPE_2D,
+	IMAGE_TYPE_3D,
+	IMAGE_TYPE_CUBE,
+} ImageType;
 
 typedef enum {
-	TEXTURE_USAGE_SAMPLED = 1u << 0,
-	TEXTURE_USAGE_RENDER_TARGET = 1u << 1,
-	TEXTURE_USAGE_READBACK = 1u << 2
-} TextureUsageFlags;
+	IMAGE_USAGE_SAMPLED = 1u << 0,
+	IMAGE_USAGE_RENDER_TARGET = 1u << 1,
+	IMAGE_USAGE_READBACK = 1u << 2
+} ImageUsageFlags;
 
 typedef struct shader_attribute {
 	String name;
 	ShaderAttributeFormat format;
 	uint32_t binding;
 } ShaderAttribute;
-
-typedef struct shader_member {
-	String name;
-	size_t offset, size;
-} ShaderMember;
-
-typedef struct shader_buffer {
-	String name;
-	size_t size;
-
-	ShaderMember *members;
-	uint32_t member_count;
-} ShaderBuffer;
-
-typedef struct shader_binding {
-	String name;
-	ShaderBindingType type;
-	ShaderStageFlags stage;
-	uint32_t binding_number, count;
-
-	ShaderBuffer *buffer_layout;
-} ShaderBinding;
-
-typedef struct {
-	struct {
-		ShaderBinding *bindings;
-		uint32_t binding_count;
-	} sets[SHADER_UNIFORM_FREQUENCY_COUNT];
-} ShaderReflection;
 
 typedef enum cull_mode {
 	CULL_MODE_NONE = 0,
@@ -199,7 +147,7 @@ typedef struct sampler_desc {
 } SamplerDesc;
 
 typedef struct {
-	RhiTexture target;
+	RhiImage target;
 
 	enum { LOAD,
 		CLEAR } load;
@@ -220,7 +168,7 @@ typedef struct {
 	AttachmentDesc depth_attachment;
 	bool use_depth;
 
-    Rectangle viewport;
+	Rectangle viewport;
 	uint32_t msaa_level;
 } DrawlistDesc;
 

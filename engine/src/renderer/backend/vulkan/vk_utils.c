@@ -165,28 +165,28 @@ uint32_t vulkan_utils_format_to_stride(VkFormat format) {
 	}
 }
 
-VkFormat vulkan_utils_to_vkformat(VulkanContext *context, TextureFormat format) {
+VkFormat vulkan_utils_to_vkformat(VulkanContext *context, ImageFormat format) {
 	switch (format) {
-		case TEXTURE_FORMAT_RGBA8_SRGB:
+		case IMAGE_FORMAT_RGBA8_SRGB:
 			return VK_FORMAT_R8G8B8A8_SRGB;
-		case TEXTURE_FORMAT_RGB8_SRGB:
+		case IMAGE_FORMAT_RGB8_SRGB:
 			return VK_FORMAT_R8G8B8_SRGB;
-		case TEXTURE_FORMAT_R32:
+		case IMAGE_FORMAT_R32:
 			return VK_FORMAT_R32_UINT;
-		case TEXTURE_FORMAT_RGBA8:
+		case IMAGE_FORMAT_RGBA8:
 			return VK_FORMAT_R8G8B8A8_UNORM;
-		case TEXTURE_FORMAT_RGB8:
+		case IMAGE_FORMAT_RGB8:
 			return VK_FORMAT_R8_UNORM;
-		case TEXTURE_FORMAT_R8:
+		case IMAGE_FORMAT_R8:
 			return VK_FORMAT_R8_UNORM;
-		case TEXTURE_FORMAT_RGBA16F:
+		case IMAGE_FORMAT_RGBA16F:
 			return VK_FORMAT_R16G16B16A16_SFLOAT;
-		case TEXTURE_FORMAT_RGBA32F:
+		case IMAGE_FORMAT_RGBA32F:
 			return VK_FORMAT_R32G32B32A32_SFLOAT;
-		case TEXTURE_FORMAT_DEPTH:
+		case IMAGE_FORMAT_DEPTH:
 			return context->device.depth_format;
-		case TEXTURE_FORMAT_DEPTH_STENCIL:
-		case TEXTURE_FORMAT_MAX:
+		case IMAGE_FORMAT_DEPTH_STENCIL:
+		case IMAGE_FORMAT_MAX:
 			ASSERT_MESSAGE(false, "Unsupported/Unhandled texture format");
 			return VK_FORMAT_UNDEFINED;
 	}

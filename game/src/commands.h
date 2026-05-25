@@ -8,6 +8,9 @@
 #include "assets/asset_types.h"
 #include "renderer/r_internal.h"
 
+// TODO: TEMPORARY
+static Image2D WHITE_IMAGE = { { 1 }, 1, 1, IMAGE_FORMAT_RGBA8_SRGB };
+
 typedef enum {
 	// 2D
 	DCT_DrawCommandSpriteBatch = 1,
@@ -26,8 +29,8 @@ typedef struct {
 typedef struct {
 	DrawCommandBase base;
 
-	Texture2D textures[32];
-	uint32_t texture_count, quad_count;
+	Image2D images[32];
+	uint32_t image_count, quad_count;
 	Vertex2 quads[];
 } DrawCommandSpriteBatch;
 
@@ -65,7 +68,7 @@ DrawCommandBase *drawlist_push(DrawlistBuffer *list, size_t size, DrawCommandTyp
 // 2D
 void drawlist_push_rect(DrawlistBuffer *buffer, Rectangle rect, Color color);
 void drawlist_push_rectv(DrawlistBuffer *buffer, float2 position, float2 size, Color color);
-void drawlist_push_texture_ex(DrawlistBuffer *buffer, Texture2D texture, Rectangle src, Rectangle dst, float2 origin, float rotation, Color tint);
+void drawlist_push_image_ex(DrawlistBuffer *buffer, Image2D image, Rectangle src, Rectangle dst, float2 origin, float rotation, Color tint);
 void drawlist_push_text(DrawlistBuffer *buffer, Font *font, String text, float2 position, Color color);
 
 // 3D

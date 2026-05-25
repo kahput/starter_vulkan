@@ -10,7 +10,7 @@ MaterialSource material_source_make(Arena *arena, ShaderBinding *bindings, uint3
 	for (uint32_t index = 0; index < binding_count; ++index) {
 		if (bindings[index].type == SHADER_BINDING_UNIFORM_BUFFER)
 			mat.buffer_size += bindings[index].buffer_layout->size;
-		else if (bindings[index].type == SHADER_BINDING_TEXTURE_2D)
+		else if (bindings[index].type == SHADER_BINDING_IMAGE_2D)
 			mat.texture_count++;
 	}
 
@@ -27,13 +27,13 @@ MaterialSource material_source_make(Arena *arena, ShaderBinding *bindings, uint3
 			ShaderBuffer *layout = binding->buffer_layout;
 
 			for (uint32_t member_index = 0; member_index < layout->member_count; ++member_index) {
-				ShaderMember *member = &layout->members[member_index];
+				ShaderBufferMember *member = &layout->members[member_index];
 				ArenaTrieNode *node = arena_trienode_push(&mat.lookup, buffer_wrap_string(member->name));
 
 				node->payload = mat.buffer_data + current_buffer_offset + member->offset;
 			}
 			current_buffer_offset += layout->size;
-		} else if (binding->type == SHADER_BINDING_TEXTURE_2D) {
+		} else if (binding->type == SHADER_BINDING_IMAGE_2D) {
 			ArenaTrieNode *node = arena_trienode_push(&mat.lookup, buffer_wrap_string(binding->name));
 
 			node->payload = &mat.textures[current_texture_slot++];

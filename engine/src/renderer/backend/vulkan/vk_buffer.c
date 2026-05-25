@@ -328,7 +328,7 @@ bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, Vk
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size) {
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
-	vulkan_image_transition(
+	_vulkan_image_transition(
 		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT, layer_count,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -355,7 +355,7 @@ bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkB
 
 	vkCmdCopyBufferToImage(command_buffer, src, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layer_count, regions);
 
-	vulkan_image_transition(
+	_vulkan_image_transition(
 		context, command_buffer, dst, VK_IMAGE_ASPECT_COLOR_BIT, layer_count,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,

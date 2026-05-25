@@ -221,7 +221,7 @@ void imgui_background_color(Color color) {
 	widget->background_color = color;
 }
 
-void imgui_background_image(Texture2D image) {
+void imgui_background_image(Image2D image) {
 	UIWidget *widget = widget_peek();
 
 	widget->flags |= IMGUI_FLAG_IMAGE;
@@ -337,9 +337,9 @@ void imgui_widget_rect(uint64_t id, float width, float height, Color color) {
 	imgui_widget_end();
 }
 
-void imgui_widget_image(uint64_t id, Texture2D texture) {
-	imgui_widget_begin(id, FIXED(texture.width), FIXED(texture.height), IMGUI_FLAG_BACKGROUND);
-	imgui_background_image(texture);
+void imgui_widget_image(uint64_t id, Image2D image) {
+	imgui_widget_begin(id, FIXED(image.width), FIXED(image.height), IMGUI_FLAG_BACKGROUND);
+	imgui_background_image(image);
 	imgui_widget_end();
 }
 
@@ -742,7 +742,7 @@ void draw_widget(DrawlistBuffer *buffer, UIWidget *widget) {
 	if (FLAG_GET(widget->flags, IMGUI_FLAG_IMAGE)) {
 		ASSERT(widget->image.handle.id);
 		Rectangle src = { 0, 0, widget->image.width, widget->image.height };
-		drawlist_push_texture_ex(buffer, widget->image, src, inner, (float2){ 0 }, 0.0f, WHITE);
+		drawlist_push_image_ex(buffer, widget->image, src, inner, (float2){ 0 }, 0.0f, WHITE);
 	}
 
 	if (FLAG_GET(widget->flags, IMGUI_FLAG_TEXT)) {

@@ -126,14 +126,14 @@ bool vulkan_uniformset_bind_buffer_range(
 	return true;
 }
 
-bool vulkan_uniformset_bind_texture(
+bool vulkan_uniformset_bind_image(
 	VulkanContext *context, RhiUniformSet set_handle,
-	uint32_t binding, RhiTexture texture_handle, RhiSampler sampler_handle) {
+	uint32_t binding, RhiImage image_handle, RhiSampler sampler_handle) {
 	VulkanUniformSet *set = NULL;
 	VULKAN_GET_OR_RETURN(set, context->set_pool, set_handle, MAX_UNIFORM_SETS, true, false);
 
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	VulkanSampler *sampler = NULL;
 	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_handle, MAX_SAMPLERS, true, false);
@@ -158,12 +158,12 @@ bool vulkan_uniformset_bind_texture(
 	return true;
 }
 
-ENGINE_API bool vulkan_uniformset_bind_texture_index(VulkanContext *context, RhiUniformSet set_handle, uint32_t binding, uint32_t index, RhiTexture texture_handle, RhiSampler sampler_handle) {
+ENGINE_API bool vulkan_uniformset_bind_image_index(VulkanContext *context, RhiUniformSet set_handle, uint32_t binding, uint32_t index, RhiImage image_handle, RhiSampler sampler_handle) {
 	VulkanUniformSet *set = NULL;
 	VULKAN_GET_OR_RETURN(set, context->set_pool, set_handle, MAX_UNIFORM_SETS, true, false);
 
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, texture_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	VulkanSampler *sampler = NULL;
 	VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_handle, MAX_SAMPLERS, true, false);
@@ -188,16 +188,16 @@ ENGINE_API bool vulkan_uniformset_bind_texture_index(VulkanContext *context, Rhi
 	return true;
 }
 
-bool vulkan_uniformset_bind_texture_array(VulkanContext *context, RhiUniformSet set_handle, uint32_t binding, uint32_t texture_count, RhiTexture *textures, RhiSampler *samplers) {
+bool vulkan_uniformset_bind_image_array(VulkanContext *context, RhiUniformSet set_handle, uint32_t binding, uint32_t image_count, RhiImage *images, RhiSampler *samplers) {
 	VulkanUniformSet *set = NULL;
 	VULKAN_GET_OR_RETURN(set, context->set_pool, set_handle, MAX_UNIFORM_SETS, true, false);
 
-	for (uint32_t index = 0; index < texture_count; ++index) {
-		RhiTexture texture_handle = textures[index];
+	for (uint32_t index = 0; index < image_count; ++index) {
+		RhiImage image_handle = images[index];
 		RhiSampler sampler_handle = samplers[index];
 
 		VulkanImage *image = NULL;
-		VULKAN_GET_OR_RETURN(image, context->image_pool, texture_handle, MAX_TEXTURES, true, false);
+		VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 		VulkanSampler *sampler = NULL;
 		VULKAN_GET_OR_RETURN(sampler, context->sampler_pool, sampler_handle, MAX_SAMPLERS, true, false);
@@ -263,7 +263,7 @@ VkDescriptorType to_vulkan_descriptor_type(ShaderBindingType type) {
 		case SHADER_BINDING_STORAGE_BUFFER: {
 			return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 		} break;
-		case SHADER_BINDING_TEXTURE_2D: {
+		case SHADER_BINDING_IMAGE_2D: {
 			return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		} break;
 		case SHADER_BINDING_SAMPLER: {

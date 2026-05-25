@@ -5,16 +5,16 @@
 #include "core/logger.h"
 #include <vulkan/vulkan_core.h>
 
-bool vulkan_image_make_internal(
+bool _vulkan_image_make(
 	VulkanContext *context, VkSampleCountFlags sample_count,
 	uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-	VkImageUsageFlags usage, TextureType type, VkMemoryPropertyFlags properties,
+	VkImageUsageFlags usage, ImageType type, VkMemoryPropertyFlags properties,
 	VulkanImage *image) {
 	image->type = type;
 	image->width = width, image->height = height;
 	image->layout = image->info.initialLayout;
 
-	bool is_cubemap = type == TEXTURE_TYPE_CUBE ? true : false;
+	bool is_cubemap = type == IMAGE_TYPE_CUBE ? true : false;
 	image->info = (VkImageCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType = VK_IMAGE_TYPE_2D,
@@ -58,7 +58,7 @@ bool vulkan_image_make_internal(
 	return true;
 }
 
-void vulkan_image_destroy_internal(VulkanContext *context, VulkanImage *image) {
+void _vulkan_image_destroy(VulkanContext *context, VulkanImage *image) {
 	if (!image || image->handle == VK_NULL_HANDLE)
 		return;
 
@@ -68,7 +68,7 @@ void vulkan_image_destroy_internal(VulkanContext *context, VulkanImage *image) {
 	*image = (VulkanImage){ 0 };
 }
 
-bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst) {
+bool _vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst) {
 	VkDeviceSize layer_size = dst->width * dst->height * vulkan_utils_format_to_stride(dst->info.format);
 	VkDeviceSize total_size = layer_size * dst->info.arrayLayers;
 
@@ -78,7 +78,7 @@ bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst)
 	size_t copy_start = staging_buffer->frame_size * context->current_frame + staging_buffer->offset;
 	if (copy_end >= staging_buffer->frame_size) {
 		LOG_ERROR(
-			"Vulkan: max staging buffer size exceeded, aborting vulkan_renderer_texture_create");
+			"Vulkan: max staging buffer size exceeded, aborting %s", __func__);
 		ASSERT(false);
 		return false;
 	}
@@ -91,7 +91,7 @@ bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst)
 	return true;
 }
 
-bool vulkan_imageview_make(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image) {
+bool _vulkan_imageview_make(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image) {
 	VkImageViewCreateInfo iv_create_info = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		.image = image->handle,
@@ -120,7 +120,7 @@ bool vulkan_imageview_make(VulkanContext *context, VkImageViewType type, VkImage
 	return true;
 }
 
-void vulkan_image_transition_oneshot(VulkanContext *context, VkImage image, VkImageAspectFlags aspect, uint32_t layer_count, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
+void _vulkan_image_transition_oneshot(VulkanContext *context, VkImage image, VkImageAspectFlags aspect, uint32_t layer_count, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
 	VkCommandBuffer command_buffer;
 	vulkan_command_oneshot_begin(context, context->graphics_command_pool, &command_buffer);
 
@@ -153,7 +153,7 @@ void vulkan_image_transition_oneshot(VulkanContext *context, VkImage image, VkIm
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 }
 
-void vulkan_image_transition(VulkanContext *context, VkCommandBuffer command_buffer, VkImage image, VkImageAspectFlags aspect, uint32_t layer_count, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
+void _vulkan_image_transition(VulkanContext *context, VkCommandBuffer command_buffer, VkImage image, VkImageAspectFlags aspect, uint32_t layer_count, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access) {
 	VkImageMemoryBarrier image_barrier = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		.srcAccessMask = src_access,
@@ -181,7 +181,7 @@ void vulkan_image_transition(VulkanContext *context, VkCommandBuffer command_buf
 		1, &image_barrier);
 }
 
-void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout) {
+void _vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout) {
 	VkPipelineStageFlags src_stage = 0;
 	VkPipelineStageFlags dst_stage = 0;
 	VkAccessFlags src_access = 0;
@@ -272,7 +272,7 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 		  .baseMipLevel = 0,
 		  .levelCount = 1,
 		  .baseArrayLayer = 0,
-		  .layerCount = image->type == TEXTURE_TYPE_CUBE ? 6 : 1,
+		  .layerCount = image->type == IMAGE_TYPE_CUBE ? 6 : 1,
 		}
 	};
 
@@ -287,7 +287,7 @@ void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_bu
 	image->layout = new_layout;
 }
 
-bool vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buffer, VulkanImage *image, VulkanBuffer *buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+bool _vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buffer, VulkanImage *image, VulkanBuffer *buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 
 	ASSERT_MESSAGE(image->info.arrayLayers == 1, "Multiple layer's currently unsupported");
@@ -308,7 +308,7 @@ bool vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buff
 	return true;
 }
 
-bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *image, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect) {
+bool _vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *image, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect) {
 	bool recreate = false;
 
 	if (image->info.extent.width != extent.width)
@@ -323,7 +323,7 @@ bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *image, VkE
 	if (recreate == false)
 		return true;
 
-	vulkan_image_destroy_internal(context, image);
+	_vulkan_image_destroy(context, image);
 
 	VkImageUsageFlags usage =
 		(aspect == VK_IMAGE_ASPECT_COLOR_BIT)
@@ -334,7 +334,7 @@ bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *image, VkE
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-	if (vulkan_image_make_internal(
+	if (_vulkan_image_make(
 			context, sample_count,
 			extent.width, extent.height,
 			format, VK_IMAGE_TILING_OPTIMAL,
@@ -345,10 +345,10 @@ bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *image, VkE
 		return false;
 	}
 
-	if (!vulkan_imageview_make(context, VK_IMAGE_VIEW_TYPE_2D, aspect, image)) {
+	if (!_vulkan_imageview_make(context, VK_IMAGE_VIEW_TYPE_2D, aspect, image)) {
 		LOG_ERROR("Vulkan: failed to create MSAA color scratch image view, aborting %s", __func__);
 		return false;
 	}
-	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], layout);
+	_vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], layout);
 	return true;
 }

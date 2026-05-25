@@ -21,7 +21,7 @@ VulkanContext *vulkan_renderer_make(Arena *arena, struct window *display) {
 	LOG_INFO("Initializing vulkan context...");
 	LOG_INFO("Vulkan %d.%d.%d", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
-	context->image_pool = arena_push_pool(arena, MAX_TEXTURES, VulkanImage);
+	context->image_pool = arena_push_pool(arena, MAX_IMAGES, VulkanImage);
 	context->buffer_pool = arena_push_pool(arena, MAX_BUFFERS, VulkanBuffer);
 	context->sampler_pool = arena_push_pool(arena, MAX_SAMPLERS, VulkanSampler);
 	context->shader_pool = arena_push_pool(arena, MAX_SHADERS, VulkanShader);
@@ -85,9 +85,9 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 			vulkan_shader_destroy(context, (RhiShader){ index });
 	}
 
-	for (uint32_t index = 0; index < MAX_TEXTURES; ++index) {
+	for (uint32_t index = 0; index < MAX_IMAGES; ++index) {
 		if (context->image_pool[index].state == VULKAN_RESOURCE_STATE_INITIALIZED)
-			vulkan_texture_destroy(context, (RhiTexture){ index });
+			vulkan_image_destroy(context, (RhiImage){ index });
 	}
 
 	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
@@ -113,7 +113,7 @@ void vulkan_renderer_destroy(VulkanContext *context) {
 
 	vkDestroySwapchainKHR(context->device.logical, context->swapchain.handle, NULL);
 	for (uint32_t target_index = 0; target_index < countof(context->frame_targets); ++target_index)
-		vulkan_image_destroy_internal(context, &context->frame_targets[target_index]);
+		_vulkan_image_destroy(context, &context->frame_targets[target_index]);
 
 	for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index) {
 		vkDestroySemaphore(context->device.logical, context->image_available_semaphores[frame_index], NULL);
@@ -176,7 +176,7 @@ bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height)
 	}
 	context->command_buffer = context->command_buffers[context->current_frame];
 
-	vulkan_image_transition(
+	_vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
 		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT, 1,
 		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -189,7 +189,7 @@ bool vulkan_frame_begin(VulkanContext *context, uint32_t width, uint32_t height)
 bool vulkan_frame_end(VulkanContext *context) {
 	ASSERT(context->bound_pass.state == VULKAN_RESOURCE_STATE_UNINITIALIZED);
 
-	vulkan_image_transition(
+	_vulkan_image_transition(
 		context, context->command_buffers[context->current_frame],
 		context->swapchain.images.handles[context->image_index], VK_IMAGE_ASPECT_COLOR_BIT, 1,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,

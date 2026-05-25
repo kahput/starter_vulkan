@@ -148,8 +148,8 @@ typedef struct alignas(16) {
 
 ENGINE_API void *arena_array_ensure(Arena *arena, void *arr, size_t item_size, uint32_t count);
 
-#define arena_darray_push(arena, arr, T)                       \
-	((arr) = arena_array_ensure((arena), (arr), sizeof(T), 1), \
+#define arena_darray_push(arena, arr)                       \
+	((arr) = arena_array_ensure((arena), (arr), sizeof(*arr), 1), \
 		arena_array_push(arr))
 #define arena_darray_put(arena, arr, T, ...)                      \
 	do {                                                          \

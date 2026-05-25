@@ -94,7 +94,7 @@ typedef struct {
 	char output_string[256];
 	String text;
 	Color background_color, text_color;
-	Texture2D image;
+	Image2D image;
 	Axis2 orientation;
 	ImguiAnchor anchor;
 	uint16_t padding[2][2];
@@ -159,7 +159,7 @@ void imgui_widget_begin(uint64_t id, UIAxisSize width, UIAxisSize height, ImguiF
 void imgui_widget_end(void);
 
 void imgui_background_color(Color color);
-void imgui_background_image(Texture2D image);
+void imgui_background_image(Image2D image);
 void imgui_offset(float x, float y);
 void imgui_orientation(Axis2 axis);
 
@@ -182,7 +182,7 @@ Rectangle imgui_rect_last_frame(uint64_t id);
 float2 imgui_mouse_position(void);
 
 void imgui_widget_rect(uint64_t id, float width, float height, Color color);
-void imgui_widget_image(uint64_t id, Texture2D texture);
+void imgui_widget_image(uint64_t id, Image2D image);
 void imgui_widget_text(String text, Font *font, Color color, ImguiFlags flags);
 
 ImguiInteraction imgui_button(String label, Font *font);

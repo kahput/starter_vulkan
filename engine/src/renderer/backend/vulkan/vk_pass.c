@@ -50,7 +50,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 				dst->resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-				bool result = vulkan_image_scratch_ensure(context, target,
+				bool result = _vulkan_image_scratch_ensure(context, target,
 					context->swapchain.extent, context->swapchain.format.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT);
 				ASSERT(result);
 
@@ -61,8 +61,8 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 
 		} else {
 			VulkanImage *image = NULL;
-			VULKAN_GET_OR_RETURN(image, context->image_pool, src->target, MAX_TEXTURES, true, false);
-			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+			VULKAN_GET_OR_RETURN(image, context->image_pool, src->target, MAX_IMAGES, true, false);
+			_vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 			context->bound_pass.color_formats[color_index] = image->info.format;
 			dst->loadOp = (VkAttachmentLoadOp)src->load;
@@ -82,7 +82,7 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 				dst->resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 				dst->resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-				vulkan_image_scratch_ensure(
+				_vulkan_image_scratch_ensure(
 					context, target,
 					viewport_rect.extent, image->info.format, sample_count, VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -100,15 +100,15 @@ bool vulkan_drawlist_begin(VulkanContext *context, DrawlistDesc desc) {
 		if (desc.depth_attachment.target.id == 0) {
 			image = &context->frame_targets[context->frame_target_count++];
 			ASSERT(context->frame_target_count < countof(context->frame_targets));
-			vulkan_image_scratch_ensure(
+			_vulkan_image_scratch_ensure(
 				context, image,
 				viewport_rect.extent, context->device.depth_format, sample_count, VK_IMAGE_ASPECT_DEPTH_BIT);
 
 			depth_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			depth_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		} else {
-			VULKAN_GET_OR_RETURN(image, context->image_pool, desc.depth_attachment.target, MAX_TEXTURES, true, false);
-			vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+			VULKAN_GET_OR_RETURN(image, context->image_pool, desc.depth_attachment.target, MAX_IMAGES, true, false);
+			_vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
 			ASSERT(viewport_rect.extent.width == 0 ||
 				viewport_rect.offset.x + viewport_rect.extent.width > image->width);

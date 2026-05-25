@@ -85,7 +85,7 @@ typedef struct vulkan_image {
 
 	VkImageLayout layout;
 	VkImageAspectFlags aspect;
-	TextureType type;
+	ImageType type;
 	VkImageCreateInfo info;
 	uint32_t width, height;
 } VulkanImage;
@@ -166,21 +166,21 @@ void vulkan_buffer_unmap(VulkanContext *context, VulkanBuffer *buffer);
 bool vulkan_buffer_write_internal(VulkanContext *context, uint32_t frame, size_t offset, size_t size, void *data, VulkanBuffer *buffer);
 
 bool vulkan_buffer_upload(VulkanContext *context, VulkanBuffer *dst, size_t offset, size_t size, void *data);
-bool vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst);
+bool _vulkan_image_upload(VulkanContext *context, void *pixels, VulkanImage *dst);
 
 bool vulkan_buffer_to_buffer(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkDeviceSize dst_offset, VkBuffer dst, VkDeviceSize size);
 bool vulkan_buffer_to_image(VulkanContext *context, VkDeviceSize src_offset, VkBuffer src, VkImage dst, uint32_t width, uint32_t height, uint32_t layer_count, VkDeviceSize layer_size);
-bool vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buffer, VulkanImage *image, VulkanBuffer *buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+bool _vulkan_image_to_buffer(VulkanContext *context, VkCommandBuffer command_buffer, VulkanImage *image, VulkanBuffer *buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
-bool vulkan_image_make_internal(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, TextureType, VkMemoryPropertyFlags, VulkanImage *);
-void vulkan_image_destroy_internal(VulkanContext *context, VulkanImage *image);
+bool _vulkan_image_make(VulkanContext *context, VkSampleCountFlags, uint32_t, uint32_t, VkFormat, VkImageTiling, VkImageUsageFlags, ImageType, VkMemoryPropertyFlags, VulkanImage *);
+void _vulkan_image_destroy(VulkanContext *context, VulkanImage *image);
 
-bool vulkan_imageview_make(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image);
-void vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
-void vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
-void vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout);
+bool _vulkan_imageview_make(VulkanContext *context, VkImageViewType type, VkImageAspectFlags aspect_flags, VulkanImage *image);
+void _vulkan_image_transition_oneshot(VulkanContext *context, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void _vulkan_image_transition(VulkanContext *context, VkCommandBuffer, VkImage, VkImageAspectFlags, uint32_t, VkImageLayout, VkImageLayout, VkPipelineStageFlags, VkPipelineStageFlags, VkAccessFlags, VkAccessFlags);
+void _vulkan_image_transition_auto(VulkanImage *image, VkCommandBuffer command_buffer, VkImageLayout new_layout);
 
-bool vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect);
+bool _vulkan_image_scratch_ensure(VulkanContext *context, VulkanImage *msaa, VkExtent2D extent, VkFormat format, VkSampleCountFlags sample_count, VkImageAspectFlags aspect);
 
 bool vulkan_command_pool_create(VulkanContext *context);
 bool vulkan_command_buffer_create(VulkanContext *context);
@@ -201,7 +201,7 @@ void vulkan_utils_set_object_name(VulkanContext *context, uint64_t object_handle
 void vulkan_utils_begin_label(VulkanContext *context, const char *name);
 void vulkan_utils_end_label(VulkanContext *context);
 
-VkFormat vulkan_utils_to_vkformat(VulkanContext *context, TextureFormat format);
+VkFormat vulkan_utils_to_vkformat(VulkanContext *context, ImageFormat format);
 VkSampleCountFlags vulkan_utils_max_sample_count(VulkanContext *contxt);
 uint32_t vulkan_utils_format_to_stride(VkFormat format);
 

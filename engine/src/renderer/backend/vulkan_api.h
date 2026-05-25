@@ -9,7 +9,7 @@ struct window;
 typedef struct vulkan_context VulkanContext;
 
 #define MAX_BUFFERS 1024
-#define MAX_TEXTURES 512
+#define MAX_IMAGES 512
 #define MAX_SAMPLERS 32
 #define MAX_SHADERS 32
 #define MAX_UNIFORM_SETS 4096
@@ -36,16 +36,16 @@ bool vulkan_shader_destroy(VulkanContext *context, RhiShader shader);
 ENGINE_API bool vulkan_shader_bind(
 	VulkanContext *context, RhiShader rshader, PipelineDesc desc);
 
-ENGINE_API RhiTexture vulkan_texture_make(VulkanContext *context, uint32_t width, uint32_t height, TextureType type, TextureFormat format, TextureUsageFlags usage, void *pixels);
-ENGINE_API bool vulkan_texture_destroy(VulkanContext *context, RhiTexture texture);
+ENGINE_API RhiImage vulkan_image_make(VulkanContext *context, uint32_t width, uint32_t height, ImageType type, ImageFormat format, ImageUsageFlags usage, void *pixels);
+ENGINE_API bool vulkan_image_destroy(VulkanContext *context, RhiImage image);
 
-ENGINE_API bool vulkan_texture_read_pixel(VulkanContext *context, RhiTexture texture, uint32_t x, uint32_t y, void *pixel);
-ENGINE_API bool vulkan_texture_read_pixels(VulkanContext *context, RhiTexture texture, uint32_t x, uint32_t y, void *pixels);
+ENGINE_API bool vulkan_image_read_pixel(VulkanContext *context, RhiImage image, uint32_t x, uint32_t y, void *pixel);
+ENGINE_API bool vulkan_image_read_pixels(VulkanContext *context, RhiImage image, uint32_t x, uint32_t y, void *pixels);
 
-ENGINE_API bool vulkan_texture_prepare_attachment(VulkanContext *context, RhiTexture texture);
-ENGINE_API bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture texture);
-ENGINE_API bool vulkan_texture_resize(VulkanContext *context, RhiTexture texture, uint32_t width, uint32_t height);
-ENGINE_API uint32x2 vulkan_texture_size(VulkanContext *context, RhiTexture texture);
+ENGINE_API bool vulkan_image_prepare_attachment(VulkanContext *context, RhiImage image);
+ENGINE_API bool vulkan_image_prepare_sample(VulkanContext *context, RhiImage image);
+ENGINE_API bool vulkan_image_resize(VulkanContext *context, RhiImage image, uint32_t width, uint32_t height);
+ENGINE_API uint32x2 vulkan_image_size(VulkanContext *context, RhiImage image);
 
 ENGINE_API RhiBuffer vulkan_buffer_make(VulkanContext *context, BufferUsageFlags type, BufferMemory memory, size_t size, void *data);
 ENGINE_API bool vulkan_buffer_destroy(VulkanContext *context, RhiBuffer buffer);
@@ -69,9 +69,9 @@ ENGINE_API bool vulkan_sampler_destroy(VulkanContext *context, RhiSampler sample
 ENGINE_API RhiUniformSet vulkan_uniformset_push(VulkanContext *context, RhiShader shader, uint32_t set_number); // Transient
 ENGINE_API bool vulkan_uniformset_bind_buffer(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiBuffer buffer);
 ENGINE_API bool vulkan_uniformset_bind_buffer_range(VulkanContext *context, RhiUniformSet set, uint32_t binding, size_t offset, size_t size, RhiBuffer buffer);
-ENGINE_API bool vulkan_uniformset_bind_texture(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiTexture texture, RhiSampler sampler);
-ENGINE_API bool vulkan_uniformset_bind_texture_index(VulkanContext *context, RhiUniformSet set, uint32_t binding, uint32_t index, RhiTexture texture, RhiSampler sampler);
-ENGINE_API bool vulkan_uniformset_bind_texture_array(VulkanContext *context, RhiUniformSet set, uint32_t binding, uint32_t texture_count, RhiTexture *textures, RhiSampler *samplers);
+ENGINE_API bool vulkan_uniformset_bind_image(VulkanContext *context, RhiUniformSet set, uint32_t binding, RhiImage image, RhiSampler sampler);
+ENGINE_API bool vulkan_uniformset_bind_image_index(VulkanContext *context, RhiUniformSet set, uint32_t binding, uint32_t index, RhiImage image, RhiSampler sampler);
+ENGINE_API bool vulkan_uniformset_bind_image_array(VulkanContext *context, RhiUniformSet set, uint32_t binding, uint32_t image_count, RhiImage *images, RhiSampler *samplers);
 ENGINE_API bool vulkan_uniformset_bind(VulkanContext *context, RhiUniformSet uniform);
 
 ENGINE_API bool vulkan_push_constants(VulkanContext *context, size_t offset, size_t size, void *data);

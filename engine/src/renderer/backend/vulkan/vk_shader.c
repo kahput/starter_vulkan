@@ -327,7 +327,7 @@ static uint32_t count_shader_members(SpvReflectBlockVariable *var) {
 	return count;
 }
 
-static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, String prefix, ShaderMember **cursor) {
+static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, String prefix, ShaderBufferMember **cursor) {
 	char full_name[128];
 	if (prefix.length > 0) {
 		snprintf(full_name, sizeof(full_name), "%s.%s", prefix.chars, var->name);
@@ -336,7 +336,7 @@ static void fill_shader_members(Arena *arena, SpvReflectBlockVariable *var, Stri
 
 	if (var->member_count == 0) {
 		// This is a leaf node
-		ShaderMember *m = *cursor;
+		ShaderBufferMember *m = *cursor;
 		m->name = string_copy(arena, string_wrap(full_name));
 		m->offset = var->absolute_offset;
 		m->size = var->size;
@@ -356,9 +356,9 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 	buffer->size = block->size;
 
 	buffer->member_count = count_shader_members(block);
-	buffer->members = arena_push_count(arena, buffer->member_count, ShaderMember);
+	buffer->members = arena_push_count(arena, buffer->member_count, ShaderBufferMember);
 
-	ShaderMember *cursor = buffer->members;
+	ShaderBufferMember *cursor = buffer->members;
 	for (uint32_t i = 0; i < block->member_count; ++i) {
 		fill_shader_members(arena, &block->members[i], S(""), &cursor);
 	}
@@ -568,10 +568,10 @@ bool reflect_shader_interface(
 
 				dst->binding_number = spv->binding;
 				dst->count = spv->count;
-				if ((vk->stageFlags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT)
-					dst->stage |= SHADER_STAGE_VERTEX;
-				if ((vk->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT) == VK_SHADER_STAGE_FRAGMENT_BIT)
-					dst->stage |= SHADER_STAGE_FRAGMENT;
+				/* if ((vk->stageFlags & VK_SHADER_STAGE_VERTEX_BIT) == VK_SHADER_STAGE_VERTEX_BIT) */
+				/* 	dst->stage |= SHADER_STAGE_VERTEX; */
+				/* if ((vk->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT) == VK_SHADER_STAGE_FRAGMENT_BIT) */
+				/* 	dst->stage |= SHADER_STAGE_FRAGMENT; */
 
 				VkDescriptorType type = vk->descriptorType;
 				dst->buffer_layout = NULL;
@@ -583,7 +583,7 @@ bool reflect_shader_interface(
 					dst->type = SHADER_BINDING_STORAGE_BUFFER;
 					dst->buffer_layout = parse_buffer_layout(arena, &spv->block);
 				} else if (type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
-					dst->type = SHADER_BINDING_TEXTURE_2D;
+					dst->type = SHADER_BINDING_IMAGE_2D;
 				}
 			}
 		}

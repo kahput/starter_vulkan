@@ -11,22 +11,22 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-static VkImageAspectFlags to_aspect(TextureFormat format);
-static VkImageViewType to_view_type(TextureType type);
-static VkImageUsageFlags to_usage_flags(TextureFormat format, TextureUsageFlags usage,
+static VkImageAspectFlags to_aspect(ImageFormat format);
+static VkImageViewType to_view_type(ImageType type);
+static VkImageUsageFlags to_usage_flags(ImageFormat format, ImageUsageFlags usage,
 	bool has_pixels);
 
-RhiTexture vulkan_texture_make(
+RhiImage vulkan_image_make(
 	VulkanContext *context,
 	uint32_t width, uint32_t height,
-	TextureType type, TextureFormat format, TextureUsageFlags usage,
+	ImageType type, ImageFormat format, ImageUsageFlags usage,
 	void *data) {
 	uint8_t *pixels = data;
 	VulkanImage *image = pool_alloc_struct(context->image_pool, VulkanImage);
 
-	uint32_t layer_count = type == TEXTURE_TYPE_CUBE ? 6 : 1;
+	uint32_t layer_count = type == IMAGE_TYPE_CUBE ? 6 : 1;
 
-	ASSERT_MESSAGE(!(pixels == NULL && FLAG_GET(usage, TEXTURE_USAGE_RENDER_TARGET) == false && FLAG_GET(usage, TEXTURE_USAGE_SAMPLED)), "NOTE: This means transfer destination isn't set");
+	ASSERT_MESSAGE(!(pixels == NULL && FLAG_GET(usage, IMAGE_USAGE_RENDER_TARGET) == false && FLAG_GET(usage, IMAGE_USAGE_SAMPLED)), "NOTE: This means transfer destination isn't set");
 	VkImageUsageFlags vk_usage = to_usage_flags(format, usage, pixels != NULL);
 	VkFormat vk_format = vulkan_utils_to_vkformat(context, format);
 	VkImageAspectFlags aspect = to_aspect(format);
@@ -34,26 +34,26 @@ RhiTexture vulkan_texture_make(
 	VkDeviceSize layer_size = width * height * vulkan_utils_format_to_stride(vk_format);
 	VkDeviceSize total_size = layer_size * layer_count;
 
-	vulkan_image_make_internal(context, VK_SAMPLE_COUNT_1_BIT, width, height, vk_format,
+	_vulkan_image_make(context, VK_SAMPLE_COUNT_1_BIT, width, height, vk_format,
 		VK_IMAGE_TILING_OPTIMAL, vk_usage, type, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		image);
 
 	if (pixels)
-		vulkan_image_upload(context, pixels, image);
+		_vulkan_image_upload(context, pixels, image);
 
-	if (vulkan_imageview_make(context, to_view_type(type), aspect, image) == false) {
+	if (_vulkan_imageview_make(context, to_view_type(type), aspect, image) == false) {
 		LOG_ERROR("Failed to create VkImageView");
-		return INVALID_RHI(RhiTexture);
+		return INVALID_RHI(RhiImage);
 	}
 
-	LOG_INFO("texture[ID = %d] loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, texture_format_to_string[format]);
+	LOG_INFO("image[ID = %d] loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, image_format_to_string[format]);
 	image->state = VULKAN_RESOURCE_STATE_INITIALIZED;
-	return (RhiTexture){ indexof(context->image_pool, image) };
+	return (RhiImage){ indexof(context->image_pool, image) };
 }
 
-bool vulkan_texture_destroy(VulkanContext *context, RhiTexture image_handle) {
+bool vulkan_image_destroy(VulkanContext *context, RhiImage image_handle) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	vkDestroyImageView(context->device.logical, image->view, NULL);
 	vkDestroyImage(context->device.logical, image->handle, NULL);
@@ -66,9 +66,9 @@ bool vulkan_texture_destroy(VulkanContext *context, RhiTexture image_handle) {
 	return true;
 }
 
-bool vulkan_texture_read_pixel(VulkanContext *context, RhiTexture image_handle, uint32_t x, uint32_t y, void *pixel) {
+bool vulkan_image_read_pixel(VulkanContext *context, RhiImage image_handle, uint32_t x, uint32_t y, void *pixel) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	if (x > image->width || y > image->height)
 		return false;
@@ -82,11 +82,11 @@ bool vulkan_texture_read_pixel(VulkanContext *context, RhiTexture image_handle, 
 
 	VulkanBuffer *buffer = &context->staging_buffer;
 
-	vulkan_image_transition_auto(image, command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-	vulkan_image_to_buffer(context, command_buffer, image, buffer, x, y, 1, 1);
+	_vulkan_image_transition_auto(image, command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	_vulkan_image_to_buffer(context, command_buffer, image, buffer, x, y, 1, 1);
 
 	if (cached != VK_IMAGE_LAYOUT_UNDEFINED)
-		vulkan_image_transition_auto(image, command_buffer, cached);
+		_vulkan_image_transition_auto(image, command_buffer, cached);
 
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 
@@ -97,9 +97,9 @@ bool vulkan_texture_read_pixel(VulkanContext *context, RhiTexture image_handle, 
 		vulkan_utils_format_to_stride(image->info.format));
 	return true;
 }
-bool vulkan_texture_read_pixels(VulkanContext *context, RhiTexture image_handle, uint32_t x, uint32_t y, void *pixels) {
+bool vulkan_image_read_pixels(VulkanContext *context, RhiImage image_handle, uint32_t x, uint32_t y, void *pixels) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	if (x > image->width || y > image->height)
 		return false;
@@ -115,9 +115,9 @@ bool vulkan_texture_read_pixels(VulkanContext *context, RhiTexture image_handle,
 
 	ASSERT_MESSAGE(image->info.arrayLayers == 1, "Reading from image with multiple layers unsupported");
 
-	vulkan_image_transition_auto(image, command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-	vulkan_image_to_buffer(context, command_buffer, image, buffer, x, y, image->width, image->height);
-	vulkan_image_transition_auto(image, command_buffer, cached);
+	_vulkan_image_transition_auto(image, command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	_vulkan_image_to_buffer(context, command_buffer, image, buffer, x, y, image->width, image->height);
+	_vulkan_image_transition_auto(image, command_buffer, cached);
 
 	vulkan_command_oneshot_end(context, context->device.graphics_queue, context->graphics_command_pool, &command_buffer);
 
@@ -130,51 +130,51 @@ bool vulkan_texture_read_pixels(VulkanContext *context, RhiTexture image_handle,
 	return true;
 }
 
-bool vulkan_texture_prepare_attachment(VulkanContext *context, RhiTexture image_handle) {
+bool vulkan_image_prepare_attachment(VulkanContext *context, RhiImage image_handle) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
+	_vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
 
 	return true;
 }
-bool vulkan_texture_prepare_sample(VulkanContext *context, RhiTexture image_handle) {
+bool vulkan_image_prepare_sample(VulkanContext *context, RhiImage image_handle) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	VkImageLayout new_layout = image->aspect == VK_IMAGE_ASPECT_COLOR_BIT
 		? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		: VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-	vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
+	_vulkan_image_transition_auto(image, context->command_buffers[context->current_frame], new_layout);
 
 	return true;
 }
 
-bool vulkan_texture_resize(VulkanContext *context, RhiTexture image_handle, uint32_t width,
+bool vulkan_image_resize(VulkanContext *context, RhiImage image_handle, uint32_t width,
 	uint32_t height) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, false);
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, false);
 
 	vkDestroyImageView(context->device.logical, image->view, NULL);
 	vkDestroyImage(context->device.logical, image->handle, NULL);
 	vkFreeMemory(context->device.logical, image->memory, NULL);
 
-	vulkan_image_make_internal(context, image->info.samples, width, height, image->info.format,
+	_vulkan_image_make(context, image->info.samples, width, height, image->info.format,
 		VK_IMAGE_TILING_OPTIMAL, image->info.usage, image->type,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image);
-	vulkan_imageview_make(context, to_view_type(image->type), image->aspect, image);
+	_vulkan_imageview_make(context, to_view_type(image->type), image->aspect, image);
 
 	return true;
 }
 
-uint32x2 vulkan_texture_size(VulkanContext *context, RhiTexture image_handle) {
+uint32x2 vulkan_image_size(VulkanContext *context, RhiImage image_handle) {
 	VulkanImage *image = NULL;
-	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_TEXTURES, true, (uint32x2){ 0 });
+	VULKAN_GET_OR_RETURN(image, context->image_pool, image_handle, MAX_IMAGES, true, (uint32x2){ 0 });
 
 	uint32x2 result = {
 		.x = image->info.extent.width,
@@ -234,27 +234,27 @@ bool vulkan_sampler_destroy(VulkanContext *context, RhiSampler handle) {
 	return true;
 }
 
-uint32_t to_stride(TextureFormat format) {
+uint32_t to_stride(ImageFormat format) {
 	switch (format) {
-		case TEXTURE_FORMAT_RGB8:
-		case TEXTURE_FORMAT_RGB8_SRGB:
+		case IMAGE_FORMAT_RGB8:
+		case IMAGE_FORMAT_RGB8_SRGB:
 			return 3;
 
-		case TEXTURE_FORMAT_RGBA8:
-		case TEXTURE_FORMAT_RGBA8_SRGB:
+		case IMAGE_FORMAT_RGBA8:
+		case IMAGE_FORMAT_RGBA8_SRGB:
 			return 4;
-		case TEXTURE_FORMAT_RGBA16F:
+		case IMAGE_FORMAT_RGBA16F:
 			return 8;
-		case TEXTURE_FORMAT_RGBA32F:
+		case IMAGE_FORMAT_RGBA32F:
 			return 16;
-		case TEXTURE_FORMAT_R8:
+		case IMAGE_FORMAT_R8:
 			return 1;
-		case TEXTURE_FORMAT_R32:
+		case IMAGE_FORMAT_R32:
 			return 4;
-		case TEXTURE_FORMAT_DEPTH:
+		case IMAGE_FORMAT_DEPTH:
 			return 4;
-		case TEXTURE_FORMAT_DEPTH_STENCIL:
-		case TEXTURE_FORMAT_MAX:
+		case IMAGE_FORMAT_DEPTH_STENCIL:
+		case IMAGE_FORMAT_MAX:
 			ASSERT_MESSAGE(false, "Not yet implemented");
 			return 0;
 	}
@@ -262,26 +262,26 @@ uint32_t to_stride(TextureFormat format) {
 	return 0;
 }
 
-VkImageAspectFlags to_aspect(TextureFormat format) {
+VkImageAspectFlags to_aspect(ImageFormat format) {
 	switch (format) {
-		case TEXTURE_FORMAT_DEPTH:
+		case IMAGE_FORMAT_DEPTH:
 			return VK_IMAGE_ASPECT_DEPTH_BIT;
-		case TEXTURE_FORMAT_DEPTH_STENCIL:
+		case IMAGE_FORMAT_DEPTH_STENCIL:
 			return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 		default:
 			return VK_IMAGE_ASPECT_COLOR_BIT;
 	}
 }
 
-VkImageViewType to_view_type(TextureType type) {
+VkImageViewType to_view_type(ImageType type) {
 	switch (type) {
-		case TEXTURE_TYPE_1D:
+		case IMAGE_TYPE_1D:
 			return VK_IMAGE_VIEW_TYPE_1D;
-		case TEXTURE_TYPE_2D:
+		case IMAGE_TYPE_2D:
 			return VK_IMAGE_VIEW_TYPE_2D;
-		case TEXTURE_TYPE_3D:
+		case IMAGE_TYPE_3D:
 			return VK_IMAGE_VIEW_TYPE_3D;
-		case TEXTURE_TYPE_CUBE:
+		case IMAGE_TYPE_CUBE:
 			return VK_IMAGE_VIEW_TYPE_CUBE;
 		default:
 			ASSERT(false);
@@ -289,27 +289,27 @@ VkImageViewType to_view_type(TextureType type) {
 	}
 }
 
-VkImageUsageFlags to_usage_flags(TextureFormat format, TextureUsageFlags usage, bool has_pixels) {
+VkImageUsageFlags to_usage_flags(ImageFormat format, ImageUsageFlags usage, bool has_pixels) {
 	VkImageUsageFlags vk_usage = 0;
 
 	if (has_pixels)
 		vk_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-	if (FLAG_GET(usage, TEXTURE_USAGE_SAMPLED))
+	if (FLAG_GET(usage, IMAGE_USAGE_SAMPLED))
 		vk_usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
-	if (FLAG_GET(usage, TEXTURE_USAGE_RENDER_TARGET)) {
-		if (format == TEXTURE_FORMAT_DEPTH || format == TEXTURE_FORMAT_DEPTH_STENCIL)
+	if (FLAG_GET(usage, IMAGE_USAGE_RENDER_TARGET)) {
+		if (format == IMAGE_FORMAT_DEPTH || format == IMAGE_FORMAT_DEPTH_STENCIL)
 			vk_usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		else
 			vk_usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	}
 
-	if (FLAG_GET(usage, TEXTURE_USAGE_READBACK))
+	if (FLAG_GET(usage, IMAGE_USAGE_READBACK))
 		vk_usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
 	if (vk_usage == 0) {
-		LOG_ERROR("Vulkan: texture created with neither SAMPLED nor RENDER_TARGET usage");
+		LOG_ERROR("Vulkan: image created with neither SAMPLED nor RENDER_TARGET usage");
 		ASSERT(false);
 		return 0;
 	}
