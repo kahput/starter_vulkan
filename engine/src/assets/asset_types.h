@@ -21,7 +21,7 @@ typedef struct {
 } Glyph;
 
 typedef struct {
-	RhiTexture atlas;
+	Texture2D atlas;
 	ImageSource atlas_src;
 
 	uint32_t line_height;
@@ -76,6 +76,12 @@ typedef struct {
 	float32x2 uv0;
 	float32x4 tangent;
 } Vertex3;
+
+typedef struct {
+	float32x2 position, uv;
+	uint32_t color;
+	uint32_t texture_id;
+} Vertex2;
 
 typedef struct scene_source {
 	String path;

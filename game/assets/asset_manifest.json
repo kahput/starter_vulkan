@@ -252,6 +252,11 @@
             "type": "<invalid>"
         },
         {
+            "id": 15685359294213791882,
+            "path": "assets/scenes/world.scene",
+            "type": "<invalid>"
+        },
+        {
             "id": 11214397475342026662,
             "path": "assets/models/custom/room.glb",
             "type": "geometry"

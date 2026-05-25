@@ -213,7 +213,10 @@ RhiSampler vulkan_sampler_make(VulkanContext *context, SamplerDesc description) 
 		return INVALID_RHI(RhiSampler);
 	}
 
-	LOG_INFO("sampler[ID = %u] created", indexof(context->sampler_pool, sampler));
+	LOG_INFO("sampler[ID = %u] loaded successfully (%-7s | %s)",
+		indexof(context->sampler_pool, sampler),
+		description.min_filter == FILTER_NEAREST ? "NEAREST" : "LINEAR",
+		description.mag_filter == FILTER_NEAREST ? "NEAREST" : "LINEAR");
 	sampler->state = VULKAN_RESOURCE_STATE_INITIALIZED;
 
 	return (RhiSampler){ indexof(context->sampler_pool, sampler) };

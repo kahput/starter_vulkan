@@ -10,9 +10,7 @@
 
 typedef enum {
 	// 2D
-	DCT_DrawCommandRectangle = 1,
-	DCT_DrawCommandTexture,
-	DCT_DrawCommandText,
+	DCT_DrawCommandSpriteBatch = 1,
 
 	// 3D
 	DCT_DrawCommandMesh,
@@ -28,21 +26,10 @@ typedef struct {
 typedef struct {
 	DrawCommandBase base;
 
-	Rectangle rect;
-	float2 origin;
-	float rotation;
-	Color color;
-} DrawCommandRectangle;
-
-typedef struct {
-	DrawCommandBase base;
-
-	RhiTexture texture;
-	Rectangle src, dest;
-	float2 origin;
-	float rotation;
-	Color tint;
-} DrawCommandTexture;
+	Texture2D textures[32];
+	uint32_t texture_count, quad_count;
+	Vertex2 quads[];
+} DrawCommandSpriteBatch;
 
 typedef struct {
 	DrawCommandBase base;
@@ -52,9 +39,17 @@ typedef struct {
 	Material material;
 } DrawCommandMesh;
 
+typedef enum {
+	DRAWLIST_FLAG_NO_BATCHING = 0x1,
+} DrawlistFlags;
+
 typedef struct {
+	DrawlistFlags flags;
+
 	uint8_t *push_buffer;
 	size_t capacity, offset;
+
+	DrawCommandSpriteBatch *active_batch;
 } DrawlistBuffer;
 
 typedef struct {
@@ -62,20 +57,18 @@ typedef struct {
 	size_t size, offset;
 } ComputelistBuffer;
 
-DrawlistBuffer *drawlist_make(Arena *arena, size_t max_size);
+DrawlistBuffer *drawlist_make(Arena *arena, size_t max_size, DrawlistFlags flags);
 
 DrawCommandBase *drawlist_push(DrawlistBuffer *list, size_t size, DrawCommandType type);
 #define drawlist_push_command(list, T) (T *)drawlist_push((list), sizeof(T), DCT_##T)
 
 // 2D
-void drawlist_push_rect(DrawlistBuffer *list, Rectangle rect, Color color);
-void drawlist_push_rectv(DrawlistBuffer *list, float2 position, float2 size, Color color);
-
-void drawlist_push_texture_ex(DrawlistBuffer *list, RhiTexture texture, Rectangle src, Rectangle dst, float2 origin, float rotation, Color tint);
-
-void drawlist_push_text(DrawlistBuffer *list, Font *font, String text, float2 position, Color color);
+void drawlist_push_rect(DrawlistBuffer *buffer, Rectangle rect, Color color);
+void drawlist_push_rectv(DrawlistBuffer *buffer, float2 position, float2 size, Color color);
+void drawlist_push_texture_ex(DrawlistBuffer *buffer, Texture2D texture, Rectangle src, Rectangle dst, float2 origin, float rotation, Color tint);
+void drawlist_push_text(DrawlistBuffer *buffer, Font *font, String text, float2 position, Color color);
 
 // 3D
-void drawlist_push_mesh(DrawlistBuffer *list, float4x4 transform, Mesh mesh, Material material);
+void drawlist_push_mesh(DrawlistBuffer *buffer, float4x4 transform, Mesh mesh, Material material);
 
 #endif /* COMMANDS_H_ */

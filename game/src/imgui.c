@@ -380,8 +380,8 @@ void imgui_widget_text(String text, Font *font, Color color, ImguiFlags flags) {
 	widget->semantic_size[AXIS2_X] = GROW(.min = minimum_width, .max = preferred_width);
 	widget->semantic_size[AXIS2_Y] = FIXED(height);
 
-    // NOTE: This is needed because height isn't clamped to min before FIT sizing,
-    // but is increased at WRAP 
+	// NOTE: This is needed because height isn't clamped to min before FIT sizing,
+	// but is increased at WRAP
 	widget->size[AXIS2_Y] = height;
 
 	imgui_widget_end();
@@ -742,7 +742,7 @@ void draw_widget(DrawlistBuffer *buffer, UIWidget *widget) {
 	if (FLAG_GET(widget->flags, IMGUI_FLAG_IMAGE)) {
 		ASSERT(widget->image.handle.id);
 		Rectangle src = { 0, 0, widget->image.width, widget->image.height };
-		drawlist_push_texture_ex(buffer, widget->image.handle, src, inner, (float2){ 0 }, 0.0f, WHITE);
+		drawlist_push_texture_ex(buffer, widget->image, src, inner, (float2){ 0 }, 0.0f, WHITE);
 	}
 
 	if (FLAG_GET(widget->flags, IMGUI_FLAG_TEXT)) {
