@@ -119,6 +119,7 @@ typedef struct Editor {
 
 typedef enum {
 	FONT_SIZE_16,
+	FONT_SIZE_24,
 	FONT_SIZE_32,
 	FONT_SIZE_64,
 
@@ -673,7 +674,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 		case GAME_STATE_PLAY: {
 			// :game
 			if (pstate->game.is_initialized == false) {
-				float yaw = to_radians(90.0f); // to_radians(54.736f);
+				float yaw = to_radians(54.736f);
 				float pitch = to_radians(45.f);
 				float arm_length = 40.f;
 				pstate->game_camera = (Camera3D){
@@ -684,8 +685,8 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 					},
 					.up = { 0.0f, 1.0f, 0.0f },
 					.target = { 0.0f, 0.0f, 0.0f },
-					.ortho_size = 64.0f,
-					.fov = 45.f,
+					.ortho_size = 128.0f,
+					.fov = 60.f,
 
 					.projection = CAMERA_PROJECTION_ORTHOGRAPHIC
 				};
@@ -694,15 +695,6 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				pstate->game.player = ecs_deserialize_entity(pstate->world, S("assets/scenes/player.prefab"));
 				pstate->game.pickaxe_pivot = ecs_deserialize_entity(pstate->world, S("assets/scenes/pickaxe.prefab"));
 				ecs_hierarchy_parent(pstate->world, pstate->game.player, pstate->game.pickaxe_pivot);
-
-				// Player inventory
-				/* ecs_put(pstate->world, pickaxe, ItemComponent, */
-				/* { */
-				/* .name = S("Iron Pickaxe"), */
-				/* .description = S("An pickaxe fitting for a beginner"), */
-				/* .atlas = pstate->sprites[SPRITE_ATLAS_TINY_TOWN], */
-				/* .stackable = false, */
-				/* }); */
 
 				JsonNode *root = json_parse(
 					pstate->frame_arena,
@@ -722,7 +714,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 				InventoryComponent *player_inventory = ecs_push(pstate->world, pstate->game.player, InventoryComponent);
 
 				player_inventory->slots[0] = (InventorySlot){ .item_index = 0, .quantity = 1 };
-				player_inventory->slots[4] = (InventorySlot){ .item_index = 1, .quantity = 8 };
+				player_inventory->slots[4] = (InventorySlot){ .item_index = 1, .quantity = 15 };
 				player_inventory->slots[18] = (InventorySlot){ .item_index = 1, .quantity = 6 };
 				player_inventory->active_item = &player_inventory->slots[0];
 				player_inventory->capacity = 24;
@@ -2105,9 +2097,16 @@ void load_assets(PermanentState *pstate) {
 	};
 	// :sprites
 
-	for (uint32_t index = FONT_SIZE_16; index < FONT_SIZE_MAX; ++index) {
+	FontSize font_sizes[FONT_SIZE_MAX] = {
+		[FONT_SIZE_16] = 16,
+		[FONT_SIZE_24] = 24,
+		[FONT_SIZE_32] = 32,
+		[FONT_SIZE_64] = 64,
+
+	};
+	for (uint32_t index = 0; index < FONT_SIZE_MAX; ++index) {
 		Font *font = &pstate->assets.font[index];
-		*font = importer_load_font(&pstate->persistent_arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), 1 << (index + 4));
+		*font = importer_load_font(&pstate->persistent_arena, S("assets/pokemon/graphics/fonts/PixeloidSans.ttf"), font_sizes[index]);
 		font->atlas = (Image2D){
 			.handle = vulkan_image_make(
 				pstate->context,

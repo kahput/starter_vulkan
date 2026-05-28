@@ -48,8 +48,12 @@ typedef enum {
 	TOKEN_FALSE,
 	TOKEN_NULL,
 
+	TOKEN_TYPEDEF,
+	TOKEN_STRUCT,
+	TOKEN_UNION,
+
 	TOKEN_EOF,
-	TOKEN_TYPE_COUNT,
+	TOKEN_MAX,
 } TokenType;
 
 typedef struct {
@@ -69,9 +73,9 @@ typedef struct {
 	bool has_peeked;
 } Lexer;
 
-extern const char *token_type_names[TOKEN_TYPE_COUNT];
+extern const char *token_type_names[TOKEN_MAX];
 
-static inline Lexer lexer_make(String source) { return (Lexer){ .source = source, .at = source.chars }; }
+static inline Lexer lexer_make(String source) { return (Lexer){ .source = source, .at = source.chars, .line = 1 }; }
 
 Token lexer_next(Lexer *lexer);
 Token lexer_peek(Lexer *lexer);

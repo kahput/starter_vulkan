@@ -1,10 +1,11 @@
 #include "lexer.h"
+#include "common.h"
 #include "core/debug.h"
 #include "core/logger.h"
 #include <string.h>
 
 // clang-format off
-const char *token_type_names[TOKEN_TYPE_COUNT] = {
+const char *token_type_names[TOKEN_MAX] = {
     [TOKEN_UNKNOWN]       = "UNKNOWN",
     [TOKEN_LEFT_PAREN]    = "(",   [TOKEN_RIGHT_PAREN]   = ")",
     [TOKEN_LEFT_BRACE]    = "{",   [TOKEN_RIGHT_BRACE]   = "}",
@@ -27,6 +28,9 @@ const char *token_type_names[TOKEN_TYPE_COUNT] = {
     [TOKEN_TRUE]          = "true",
     [TOKEN_FALSE]         = "false",
     [TOKEN_NULL]          = "null",
+    [TOKEN_TYPEDEF]       = "typedef", 
+    [TOKEN_STRUCT]        = "struct", 
+    [TOKEN_UNION]         = "union",
     [TOKEN_EOF]           = "EOF",
 };
 // clang-format on
@@ -87,27 +91,41 @@ TokenType match_keyword(Token *token) {
 	switch (token->string.chars[0]) {
 		case 't':
 			if (token->string.length == 4)
-				if (memcmp(token->string.chars, token_type_names[TOKEN_TRUE], token->string.length) == 0)
+				if (memory_equals(token->string.chars, token_type_names[TOKEN_TRUE], token->string.length))
 					return TOKEN_TRUE;
+			if (token->string.length == 7)
+				if (memory_equals(token->string.chars, token_type_names[TOKEN_TYPEDEF], token->string.length))
+					return TOKEN_TYPEDEF;
+			break;
+
+		case 's':
+			if (token->string.length == 6)
+				if (memory_equals(token->string.chars, token_type_names[TOKEN_STRUCT], token->string.length))
+					return TOKEN_STRUCT;
 			break;
 
 		case 'f':
 			if (token->string.length == 5)
-				if (memcmp(token->string.chars, token_type_names[TOKEN_FALSE], token->string.length) == 0)
+				if (memory_equals(token->string.chars, token_type_names[TOKEN_FALSE], token->string.length))
 					return TOKEN_FALSE;
 			break;
 
 		case 'n':
 			if (token->string.length == 4)
-				if (memcmp(token->string.chars, token_type_names[TOKEN_NULL], token->string.length) == 0)
+				if (memory_equals(token->string.chars, token_type_names[TOKEN_NULL], token->string.length))
 					return TOKEN_NULL;
 			break;
+        case 'u':
+            if (token->string.length == 5)
+                if (memory_equals(token->string.chars, token_type_names[TOKEN_UNION], token->string.length))
+                    return TOKEN_UNION;
 	}
 
 	return TOKEN_IDENTIFIER;
 }
 
 Token scan_token(Lexer *lexer) {
+restart:
 	skip_whitespace_and_comments(lexer);
 
 	if (lexer->at == NULL || is_at_end(lexer->at[0]))
@@ -196,6 +214,12 @@ Token scan_token(Lexer *lexer) {
 				token.string.length = 2;
 			} else
 				token.type = TOKEN_PIPE;
+		} break;
+		case '#': {
+			// TODO: Handle macros
+			while (is_at_end(lexer->at[0]) == false && is_newline(lexer->at[0]) == false)
+				++lexer->at;
+			goto restart;
 		} break;
 
 		case '"': {
@@ -294,10 +318,11 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out) {
 Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_next(lexer);
 	if (t.type != type) {
+        ASSERT(false);
 		LOG_WARN("Lexer: expected '%s' got '%s' (%.*s) at %d:%d",
 			token_type_names[type], token_type_names[t.type],
 			t.string.length, t.string.chars, t.line, t.column);
-    }
+	}
 	return t;
 }
 

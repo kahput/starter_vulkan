@@ -17,7 +17,7 @@ build() {
 run() {
     echo "[INFO] running..."
     cd ${WORKING_DIRECOTRY}
-    "./program"
+    "./tools"
 }
 
 clean() {

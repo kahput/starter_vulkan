@@ -41,6 +41,7 @@ Thumbs.db           # Windows
 
 # Ignore compiled object files and libraries
 program
+/game/tools
 *.spv
 *.o
 *.a
