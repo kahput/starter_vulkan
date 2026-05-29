@@ -22,6 +22,9 @@ typedef enum {
 	TOKEN_SLASH, // /
 	TOKEN_STAR, // *
 	TOKEN_PERCENT, // %
+	TOKEN_TILDE, // ~
+	TOKEN_CARET, // ^
+	TOKEN_QUESTION_MARK, // ?
 
 	// One or two character tokens.
 	TOKEN_BANG, // !
@@ -51,6 +54,7 @@ typedef enum {
 	TOKEN_TYPEDEF,
 	TOKEN_STRUCT,
 	TOKEN_UNION,
+	TOKEN_CONST,
 
 	TOKEN_EOF,
 	TOKEN_MAX,

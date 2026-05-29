@@ -17,7 +17,7 @@ build() {
 run() {
     echo "[INFO] running..."
     cd ${WORKING_DIRECOTRY}
-    "./tools"
+    ./generator src/meta_generated.h src/meta_generated.c src/components.h
 }
 
 clean() {

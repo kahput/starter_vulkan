@@ -1,5 +1,5 @@
 file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "vendor/*/*.c" "vendor/*/*.h")
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME} ${SOURCES} ${META_OUT_C} ${META_OUT_H})
 
 find_package(Vulkan REQUIRED)
 

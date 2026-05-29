@@ -1,5 +1,7 @@
+#include "assets/asset_types.h"
 #include "common.h"
 #include "core/arena.h"
+#include "core/debug.h"
 #include "core/strings.h"
 #include <core/logger.h>
 #include <core/lexer.h>
@@ -8,26 +10,185 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void parse_structures(Lexer *lexer, bool type_defined) {
+#define INDENT(level) (level * 4), ""
+
+typedef enum {
+	TYPE_MEMBER_FLAG_CONST = 1 << 0,
+	TYPE_MEMBER_FLAG_POINTER = 1 << 1,
+	TYPE_MEMBER_FLAG_ARRAY = 1 << 2,
+} MetatypeMemberFlags;
+
+const char *flags_to_string(MetatypeMemberFlags flags) {
+	bool is_pointer = flags & TYPE_MEMBER_FLAG_POINTER;
+	bool is_const = flags & TYPE_MEMBER_FLAG_CONST;
+	bool is_array = flags & TYPE_MEMBER_FLAG_ARRAY;
+	ASSERT_MESSAGE(!(is_pointer && is_array), "Can't be both pointer and fixed size array");
+	return is_array && is_const	 ? "TYPE_MEMBER_FLAG_CONST | TYPE_MEMBER_FLAG_ARRAY"
+		: is_pointer && is_const ? "TYPE_MEMBER_FLAG_CONST | TYPE_MEMBER_FLAG_POINTER"
+		: is_const				 ? "TYPE_MEMBER_FLAG_CONST"
+		: is_array				 ? "TYPE_MEMBER_FLAG_ARRAY"
+		: is_pointer			 ? "TYPE_MEMBER_FLAG_POINTER"
+								 : "0";
+}
+
+String emit_member(Arena *arena, String stream, Lexer *lexer, Token struct_type_name, String prefix, uint32_t *member_index, uint32_t indent_level) {
+	Token type_name = { 0 }, field_name = { 0 };
+	String array_size = { 0 };
+	MetatypeMemberFlags flags = 0;
+	uint32_t indirection = 0;
+
+	String result = stream;
+	while (true) {
+		Token token = lexer_next(lexer);
+		if (token.type == TOKEN_EOF)
+			break;
+
+		if (token.type == TOKEN_IDENTIFIER && type_name.type == 0)
+			type_name = token;
+
+		if (token.type == TOKEN_CONST)
+			flags |= TYPE_MEMBER_FLAG_CONST;
+
+		if (token.type == TOKEN_STAR) {
+			flags |= TYPE_MEMBER_FLAG_POINTER;
+			while (token.type == TOKEN_STAR) {
+				indirection++;
+				token = lexer_next(lexer);
+			}
+		}
+
+		if (token.type == TOKEN_LEFT_BRACKET) { // array member
+			flags |= TYPE_MEMBER_FLAG_ARRAY;
+
+			token = lexer_next(lexer);
+			while (token.type != TOKEN_EOF && token.type != TOKEN_RIGHT_BRACKET) {
+				array_size = string_concat(arena, array_size, token.string);
+				token = lexer_next(lexer);
+			}
+			token = lexer_next(lexer); // skip right bracket
+		}
+
+		if (token.type == TOKEN_COMMA || token.type == TOKEN_SEMICOLON) {
+			if (prefix.length)
+				field_name.string = string_format(arena, "%.*s.%.*s", SARG(prefix), SARG(field_name.string));
+
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s[%u] = {\n", INDENT(indent_level), *member_index, SARG(type_name.string)));
+			*member_index += 1;
+
+			indent_level++;
+
+			// Type
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s.type = TYPE_%.*s,\n", INDENT(indent_level), SARG(type_name.string)));
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s.field_name = \"%.*s\",\n", INDENT(indent_level), SARG(field_name.string)));
+
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s.flags = %s,\n",
+					INDENT(indent_level),
+					flags_to_string(flags)));
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s.indirection = %u,\n",
+					INDENT(indent_level),
+					indirection));
+
+			// offset & size
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s.offset = offsetof(%.*s, %.*s),\n", INDENT(indent_level), SARG(struct_type_name.string), SARG(field_name.string)));
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s.size = sizeof(((%.*s*)0)->%.*s),\n", INDENT(indent_level), SARG(struct_type_name.string), SARG(field_name.string)));
+
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s.stride = sizeof(%.*s),\n", INDENT(indent_level), SARG(type_name.string)));
+			if (FLAG_GET(flags, TYPE_MEMBER_FLAG_ARRAY)) {
+				result = string_concat(
+					arena,
+					result,
+					string_format(arena, "%*s.count = %.*s,\n", INDENT(indent_level), SARG(array_size)));
+			} else {
+				result = string_concat(
+					arena,
+					result,
+					string_format(arena, "%*s.count = 1,\n", INDENT(indent_level)));
+			}
+
+			indent_level--;
+			result = string_concat(
+				arena,
+				result,
+				string_format(arena, "%*s},\n", INDENT(indent_level), SARG(type_name.string)));
+
+			flags = 0;
+			array_size = (String){ 0 };
+			indirection = 0;
+			field_name = (Token){ 0 };
+
+			if (token.type == TOKEN_SEMICOLON)
+				break;
+		}
+
+		field_name = token;
+	}
+
+	return result;
+}
+
+void skip_block(Lexer *lexer) {
+	while (lexer_match(lexer, TOKEN_RIGHT_BRACE, NULL))
+		lexer_next(lexer);
+}
+
+void skip_statement(Lexer *lexer) {
+	while (lexer_match(lexer, TOKEN_SEMICOLON, NULL))
+		lexer_next(lexer);
+}
+
+uint32_t parse_structure(FILE *out_file, Lexer *lexer, bool type_defined) {
 	Token identifier = { 0 };
 	if (lexer_peek(lexer).type == TOKEN_IDENTIFIER)
 		identifier = lexer_next(lexer);
 
+	while (lexer_match(lexer, TOKEN_LEFT_BRACE, 0) == false)
+		lexer_next(lexer);
+
 	Lexer snapshot = *lexer;
-	Token open_brace = lexer_expect(lexer, TOKEN_LEFT_BRACE);
 
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 
-	Token close_brace = { 0 };
 	uint32_t member_count = 0;
-	while (lexer_peek(lexer).type != TOKEN_EOF && lexer_match(lexer, TOKEN_RIGHT_BRACE, &close_brace) == false) {
+	while (lexer_peek(lexer).type != TOKEN_EOF && lexer_match(lexer, TOKEN_RIGHT_BRACE, NULL) == false) {
 		Token token = lexer_next(lexer);
 
 		// TODO: Anonymous struct
-		if (token.type == TOKEN_STRUCT || token.type == TOKEN_UNION) {
-			while (lexer_match(lexer, TOKEN_RIGHT_BRACE, 0) == false)
+		if (token.type == TOKEN_TYPEDEF || token.type == TOKEN_STRUCT || token.type == TOKEN_UNION) {
+			bool type_defined = false;
+			if (token.type == TOKEN_TYPEDEF) {
+				ASSERT_MESSAGE(
+					lexer_peek(lexer).type == TOKEN_UNION || lexer_peek(lexer).type == TOKEN_STRUCT,
+					"expected (struct | union) after typedef");
 				lexer_next(lexer);
+				type_defined = true;
+			}
 
+			member_count += parse_structure(out_file, lexer, type_defined);
+			skip_statement(lexer);
 			continue;
 		}
 
@@ -35,176 +196,135 @@ void parse_structures(Lexer *lexer, bool type_defined) {
 			member_count++;
 			while (true) {
 				Token token = lexer_next(lexer);
+
+				if (token.type == TOKEN_COMMA)
+					member_count++;
+
 				if (token.type == TOKEN_SEMICOLON || token.type == TOKEN_EOF)
 					break;
 			}
 		}
 		/* printf("%.*s (%s) - %u\n", SARG(token.string), token_type_names[token.type], token.line); */
 	}
-
-	char indent_buffer[32];
-
-	uint32_t indent = 2;
-	memory_set(indent_buffer, ' ', sizeof(indent_buffer));
-	indent_buffer[MIN(indent, 15) * 4] = '\0';
 
 	if (type_defined)
 		identifier = lexer_next(lexer);
-	String internals = string_format(scratch.arena,
-		"%s.type = METATYPE_%.*s,\n"
-		"%s.name = \"%.*s\",\n"
-		"%s.alignment = alignof(%.*s),\n"
-		"%s.size = sizeof(%.*s),\n"
-		"%s.member_count = %u,\n"
-		"%s.members = (TypeMember[]) {\n",
-		indent_buffer,
-		SARG(identifier.string),
-		indent_buffer,
-		SARG(identifier.string),
-		indent_buffer,
-		SARG(identifier.string),
-		indent_buffer,
-		SARG(identifier.string),
-		indent_buffer,
-		member_count,
-		indent_buffer);
+	if (identifier.type == 0)
+		return member_count;
 
-	indent++;
-	memory_set(indent_buffer, ' ', sizeof(indent_buffer));
-	indent_buffer[MIN(indent, 15) * 4] = '\0';
+	uint32_t indent_level = 2;
+	String internals = string_format(scratch.arena,
+		"%*s.type = TYPE_%.*s,\n"
+		"%*s.name = \"%.*s\",\n"
+		"%*s.alignment = alignof(%.*s),\n"
+		"%*s.size = sizeof(%.*s),\n"
+		"%*s.member_count = %u,\n"
+		"%*s.members = (TypeMember[]) {\n",
+		INDENT(indent_level),
+		SARG(identifier.string),
+		INDENT(indent_level),
+		SARG(identifier.string),
+		INDENT(indent_level),
+		SARG(identifier.string),
+		INDENT(indent_level),
+		SARG(identifier.string),
+		INDENT(indent_level),
+		member_count,
+		INDENT(indent_level));
 
 	*lexer = snapshot;
 	uint32_t index = 0;
-	while (lexer_peek(lexer).type != TOKEN_EOF && lexer_match(lexer, TOKEN_RIGHT_BRACE, &close_brace) == false) {
-		Token token = lexer_next(lexer);
+	while (lexer_peek(lexer).type != TOKEN_EOF && lexer_match(lexer, TOKEN_RIGHT_BRACE, NULL) == false) {
+		Token token = lexer_peek(lexer);
 
-		// TODO: Handle anonymous structs
+		// TODO: Handle anonymous structs properly
 		if (token.type == TOKEN_STRUCT || token.type == TOKEN_UNION) {
-			while (lexer_match(lexer, TOKEN_RIGHT_BRACE, 0) == false)
+			lexer_next(lexer);
+			Token embedded_struct_name = lexer_peek(lexer).type == TOKEN_IDENTIFIER ? lexer_next(lexer) : (Token){ 0 };
+
+			lexer_expect(lexer, TOKEN_LEFT_BRACE);
+
+			Lexer snapshot = *lexer;
+			while (lexer_match(lexer, TOKEN_RIGHT_BRACE, NULL) == false)
 				lexer_next(lexer);
 
-			continue;
-		}
-
-		if (token.type == TOKEN_IDENTIFIER) {
-			internals = string_concat(
-				scratch.arena,
-				internals,
-				string_format(scratch.arena, "%s[%u] = {\n", indent_buffer, index, SARG(token.string)));
-
-			indent++;
-			memory_set(indent_buffer, ' ', sizeof(indent_buffer));
-			indent_buffer[MIN(indent, 15) * 4] = '\0';
-
-			// Type
-			internals = string_concat(
-				scratch.arena,
-				internals,
-				string_format(scratch.arena, "%s.type = METATYPE_%.*s,\n", indent_buffer, SARG(token.string)));
-
-			Token name = { 0 };
-			Token array_size = { 0 };
-			while (true) {
-				Token token = lexer_next(lexer);
-				if (token.type == TOKEN_SEMICOLON || token.type == TOKEN_EOF)
-					break;
-
-				if (token.type == TOKEN_LEFT_BRACKET) { // array member
-					array_size = lexer_next(lexer);
-					lexer_expect(lexer, TOKEN_RIGHT_BRACKET);
-					break;
-				}
-				name = token;
+			Token field_name = lexer_expect(lexer, TOKEN_IDENTIFIER);
+			*lexer = snapshot;
+			while (lexer_match(lexer, TOKEN_RIGHT_BRACE, NULL) == false) {
+				indent_level++;
+				internals = emit_member(scratch.arena, internals, lexer, identifier, field_name.string, &index, indent_level);
+				indent_level--;
 			}
 
-			internals = string_concat(
-				scratch.arena,
-				internals,
-				string_format(scratch.arena, "%s.field_name = \"%.*s\",\n", indent_buffer, SARG(name.string)));
-			// offset & size
-			internals = string_concat(
-				scratch.arena,
-				internals,
-				string_format(scratch.arena, "%s.offset = offsetof(%.*s, %.*s),\n", indent_buffer, SARG(identifier.string), SARG(name.string)));
-			internals = string_concat(
-				scratch.arena,
-				internals,
-				string_format(scratch.arena, "%s.size = sizeof(((%.*s*)0)->%.*s),\n", indent_buffer, SARG(identifier.string), SARG(name.string)));
+			if (lexer_peek(lexer).type == TOKEN_IDENTIFIER) {
+				lexer_next(lexer); // skip the name
+				lexer_expect(lexer, TOKEN_SEMICOLON); // skip semicolo
+			}
+			continue;
+		} else if (token.type == TOKEN_CONST || token.type == TOKEN_IDENTIFIER) {
+			indent_level++;
+			internals = emit_member(scratch.arena, internals, lexer, identifier, S(""), &index, indent_level);
+			indent_level--;
+		} else
+			lexer_next(lexer);
 
-			internals = string_concat(
-				scratch.arena,
-				internals,
-				string_format(scratch.arena, "%s.stride = sizeof(%.*s),\n", indent_buffer, SARG(token.string)));
-			if (array_size.type) {
-				internals = string_concat(
-					scratch.arena,
-					internals,
-					string_format(scratch.arena, "%s.count = %.*s,\n", indent_buffer, SARG(array_size.string)));
-			} else {
-				internals = string_concat(
-					scratch.arena,
-					internals,
-					string_format(scratch.arena, "%s.count = 1,\n", indent_buffer));
-            }
-
-			indent--;
-			memory_set(indent_buffer, ' ', sizeof(indent_buffer));
-			indent_buffer[MIN(indent, 15) * 4] = '\0';
-
-			internals = string_concat(
-				scratch.arena,
-				internals,
-				string_format(scratch.arena, "%s},\n", indent_buffer, index, SARG(token.string)));
-
-			index++;
-		}
 		/* printf("%.*s (%s) - %u\n", SARG(token.string), token_type_names[token.type], token.line); */
 	}
-
-	indent--;
-	memory_set(indent_buffer, ' ', sizeof(indent_buffer));
-	indent_buffer[MIN(indent, 15) * 4] = '\0';
 
 	internals = string_concat(
 		scratch.arena,
 		internals,
-		string_format(scratch.arena, "%s},\n", indent_buffer));
+		string_format(scratch.arena, "%*s},\n", INDENT(indent_level)));
 
 	if (type_defined)
 		identifier = lexer_next(lexer);
 
 	if (identifier.type) {
+		indent_level--;
 
-		indent--;
-		memory_set(indent_buffer, ' ', sizeof(indent_buffer));
-		indent_buffer[MIN(indent, 15) * 4] = '\0';
+		fprintf(out_file, "%*s[TYPE_%.*s] = {\n", INDENT(indent_level), SARG(identifier.string));
+		fprintf(out_file, "%.*s", SARG(internals));
 
-		printf("%s[METATYPE_%.*s] = {\n", indent_buffer, SARG(identifier.string));
-		printf("%.*s", SARG(internals));
-
-
-		printf("%s},\n", indent_buffer);
+		fprintf(out_file, "%*s},\n", INDENT(indent_level));
 	}
 
 	arena_scratch_end(scratch);
+	return member_count;
 }
 
-void enummerate_structures(Lexer *lexer, bool type_defined) {
+typedef struct meta_type MetaType;
+struct meta_type {
+	char *name;
+	MetaType *next;
+};
+
+void enumerate_structure(ArenaTrie *trie, FILE *out_file, Lexer *lexer, bool type_defined) {
 	Token identifier = { 0 };
 	if (lexer_peek(lexer).type == TOKEN_IDENTIFIER)
 		identifier = lexer_next(lexer);
 
-	Token open_brace = lexer_expect(lexer, TOKEN_LEFT_BRACE);
+	while (lexer_match(lexer, TOKEN_LEFT_BRACE, 0) == false)
+		lexer_next(lexer);
 
 	Token close_brace = { 0 };
 	while (lexer_peek(lexer).type != TOKEN_EOF && lexer_match(lexer, TOKEN_RIGHT_BRACE, &close_brace) == false) {
 		Token token = lexer_next(lexer);
 
 		// another structure
-		if (token.type == TOKEN_STRUCT || token.type == TOKEN_UNION)
-			enummerate_structures(lexer, false);
+		if (token.type == TOKEN_STRUCT || token.type == TOKEN_UNION) {
+			// skip
+			while (token.type != TOKEN_RIGHT_BRACE)
+				token = lexer_next(lexer);
+			lexer_next(lexer); // skip name
+			lexer_next(lexer); // skip semicolon
+		}
 
 		if (token.type == TOKEN_IDENTIFIER) {
+			if (arena_trieset_find(trie, buffer_wrap_string(token.string)) == 0) {
+				fprintf(out_file, "    TYPE_%.*s,\n", SARG(token.string));
+				arena_trieset_push(trie, buffer_wrap_string(token.string));
+			}
+
 			while (true) {
 				Token token = lexer_next(lexer);
 				if (token.type == TOKEN_SEMICOLON || token.type == TOKEN_EOF)
@@ -217,156 +337,135 @@ void enummerate_structures(Lexer *lexer, bool type_defined) {
 	if (type_defined)
 		identifier = lexer_next(lexer);
 
-	if (identifier.type)
-		printf("    METATYPE_%.*s,\n", SARG(identifier.string));
+	if (identifier.type && arena_trieset_find(trie, buffer_wrap_string(identifier.string)) == 0) {
+		fprintf(out_file, "    TYPE_%.*s,\n", SARG(identifier.string));
+		arena_trieset_push(trie, buffer_wrap_string(identifier.string));
+	}
 }
 
-int main(int32_t carg, char *argv[]) {
+int main(int32_t argc, char *argv[]) {
+#if 0
+	if (argc < 4) {
+		fprintf(stderr, "Usage: %s <out.h> <out.c> [input_files...]\n", argv[0]);
+		return -1;
+	}
+
 	ArenaTemp scratch = arena_scratch_begin(NULL);
+	FILE *out_h = fopen(argv[1], "w");
+	FILE *out_c = fopen(argv[2], "w");
 
-	FILE *file = fopen("src/components.h", "r");
-	fseek(file, 0, SEEK_END);
-	uint64_t size = ftell(file);
+	if (out_h == 0 || out_c == 0) {
+		fprintf(stderr, "Failed to open output files.\n");
+		return -1;
+	}
 
-	char *buffer = malloc(size + 1);
+	fprintf(out_h, "#pragma once\n\n");
+	fprintf(out_h, "#include \"meta.h\"\n\n");
+	fprintf(out_h, "enum {\n");
 
-	rewind(file);
-	fread(buffer, sizeof(*buffer), size, file);
-	fclose(file);
+	fprintf(out_c, "#include \"meta_generated.h\"\n");
+	fprintf(out_c, "#include \"components.h\"\n\n");
+	fprintf(out_c, "Type type_introspection[TYPE_MAX] = {\n");
 
-	/* printf("%.*s\n", file_buffer.size, file_buffer.memory); */
-	Lexer lexer = lexer_make(string_wrap(buffer));
+	ArenaTrie trie = arena_trie_make(scratch.arena);
+	String *aliases = NULL;
 
-	bool parsing = true;
-	Token last = { 0 };
-	/* printf("typedef enum {\n"); */
+	for (int32_t index = 3; index < argc; ++index) {
+		const char *path = argv[index];
+#else
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	FILE *out_h = fopen("src/meta_generated.h", "w");
+	FILE *out_c = fopen("src/meta_generated.c", "w");
 
-	printf("#include \"meta.h\"\n\n");
+	if (out_h == 0 || out_c == 0) {
+		fprintf(stderr, "Failed to open output files.\n");
+		return -1;
+	}
 
-	printf("typedef enum {\n");
-	while (parsing) {
-		Token token = lexer_next(&lexer);
-		switch (token.type) {
-			case TOKEN_UNION:
-			case TOKEN_STRUCT: {
-				if (token.type == TOKEN_UNION) {
-					uint32_t y = 0;
-				}
-				enummerate_structures(&lexer, last.type == TOKEN_TYPEDEF);
-			} break;
-			case TOKEN_LEFT_PAREN:
-			case TOKEN_RIGHT_PAREN:
-			case TOKEN_LEFT_BRACE:
-			case TOKEN_RIGHT_BRACE:
-			case TOKEN_LEFT_BRACKET:
-			case TOKEN_RIGHT_BRACKET:
-			case TOKEN_COMMA:
-			case TOKEN_DOT:
-			case TOKEN_MINUS:
-			case TOKEN_PLUS:
-			case TOKEN_SEMICOLON:
-			case TOKEN_COLON:
-			case TOKEN_SLASH:
-			case TOKEN_STAR:
-			case TOKEN_PERCENT:
-			case TOKEN_BANG:
-			case TOKEN_BANG_EQUAL:
-			case TOKEN_EQUAL:
-			case TOKEN_EQUAL_EQUAL:
-			case TOKEN_GREATER:
-			case TOKEN_GREATER_EQUAL:
-			case TOKEN_LESS:
-			case TOKEN_LESS_EQUAL:
-			case TOKEN_AMP:
-			case TOKEN_AMP_AMP:
-			case TOKEN_PIPE:
-			case TOKEN_PIPE_PIPE:
-			case TOKEN_IDENTIFIER:
-			case TOKEN_STRING:
-			case TOKEN_FLOAT:
-			case TOKEN_INTEGER:
-			case TOKEN_TRUE:
-			case TOKEN_FALSE:
-			case TOKEN_NULL:
-			case TOKEN_TYPEDEF:
-				break;
+	fprintf(out_h, "#pragma once\n\n");
+	fprintf(out_h, "#include \"meta.h\"\n\n");
+	fprintf(out_h, "enum {\n");
 
-			case TOKEN_UNKNOWN:
-			case TOKEN_MAX: {
-				continue;
-			} break;
-			case TOKEN_EOF: {
-				parsing = false;
-			} break;
+	fprintf(out_c, "#include \"meta_generated.h\"\n");
+	fprintf(out_c, "#include \"components.h\"\n\n");
+	fprintf(out_c, "Type type_introspection[TYPE_MAX] = {\n");
+
+	ArenaTrie trie = arena_trie_make(scratch.arena);
+	String *aliases = NULL;
+
+	const char *paths[] = {
+		"../engine/src/common.h",
+		"../engine/src/core/cmath.h",
+		"src/components.h",
+	};
+
+	for (uint32_t index = 0; index < countof(paths); ++index) {
+		const char *path = paths[index];
+#endif
+		FILE *file = fopen(path, "rb");
+		if (file == NULL) {
+			fprintf(stderr, "failed to open %s, skipping\n", path);
+			continue;
 		}
 
-		last = token;
-	}
-    printf("\n    META_TYPE_MAX,\n");
-	printf("} TypeIdentifier;\n\n");
+		fseek(file, 0, SEEK_END);
+		uint64_t size = ftell(file);
+		fseek(file, 0, SEEK_SET);
 
-	lexer = lexer_make(string_wrap(buffer));
-	printf("static Type types[METATYPE_MAX] = {\n");
-	parsing = true;
-	while (parsing) {
-		Token token = lexer_next(&lexer);
-		switch (token.type) {
-			case TOKEN_UNION:
-			case TOKEN_STRUCT: {
-				if (token.type == TOKEN_UNION) {
-					uint32_t y = 0;
+		char *buffer = (char *)arena_push_size(scratch.arena, size + 1);
+		fread(buffer, sizeof(*buffer), size, file);
+		buffer[size] = '\0';
+		fclose(file);
+
+		Lexer lexer = lexer_make(string_wrap(buffer));
+
+		Token last = { 0 };
+		Token token = { 0 };
+		while ((token = lexer_next(&lexer)).type != TOKEN_EOF) {
+			if (token.type == TOKEN_TYPEDEF) {
+				if (lexer_peek(&lexer).type != TOKEN_STRUCT && lexer_peek(&lexer).type != TOKEN_UNION) {
+					Token base_type = lexer_next(&lexer);
+					Token alias_type = lexer_next(&lexer);
+
+					if (arena_trieset_find(&trie, buffer_wrap_string(base_type.string)) == 0) {
+						fprintf(out_h, "    TYPE_%.*s,\n", SARG(base_type.string));
+						arena_trieset_push(&trie, buffer_wrap_string(base_type.string));
+					}
+
+					arena_darray_put(scratch.arena, aliases, String,
+						string_format(scratch.arena, "#define TYPE_%.*s TYPE_%.*s\n", SARG(alias_type.string), SARG(base_type.string)));
+					arena_trieset_push(&trie, buffer_wrap_string(alias_type.string));
 				}
-				parse_structures(&lexer, last.type == TOKEN_TYPEDEF);
-			} break;
-			case TOKEN_LEFT_PAREN:
-			case TOKEN_RIGHT_PAREN:
-			case TOKEN_LEFT_BRACE:
-			case TOKEN_RIGHT_BRACE:
-			case TOKEN_LEFT_BRACKET:
-			case TOKEN_RIGHT_BRACKET:
-			case TOKEN_COMMA:
-			case TOKEN_DOT:
-			case TOKEN_MINUS:
-			case TOKEN_PLUS:
-			case TOKEN_SEMICOLON:
-			case TOKEN_COLON:
-			case TOKEN_SLASH:
-			case TOKEN_STAR:
-			case TOKEN_PERCENT:
-			case TOKEN_BANG:
-			case TOKEN_BANG_EQUAL:
-			case TOKEN_EQUAL:
-			case TOKEN_EQUAL_EQUAL:
-			case TOKEN_GREATER:
-			case TOKEN_GREATER_EQUAL:
-			case TOKEN_LESS:
-			case TOKEN_LESS_EQUAL:
-			case TOKEN_AMP:
-			case TOKEN_AMP_AMP:
-			case TOKEN_PIPE:
-			case TOKEN_PIPE_PIPE:
-			case TOKEN_IDENTIFIER:
-			case TOKEN_STRING:
-			case TOKEN_FLOAT:
-			case TOKEN_INTEGER:
-			case TOKEN_TRUE:
-			case TOKEN_FALSE:
-			case TOKEN_NULL:
-			case TOKEN_TYPEDEF:
-				break;
+			}
 
-			case TOKEN_UNKNOWN:
-			case TOKEN_MAX: {
-				continue;
-			} break;
-			case TOKEN_EOF: {
-				parsing = false;
-			} break;
+			if (token.type == TOKEN_STRUCT || token.type == TOKEN_UNION)
+				enumerate_structure(&trie, out_h, &lexer, last.type == TOKEN_TYPEDEF);
+			last = token;
 		}
 
-		last = token;
+		lexer = lexer_make(string_wrap(buffer));
+		last = (Token){ 0 };
+		token = (Token){ 0 };
+		while ((token = lexer_next(&lexer)).type != TOKEN_EOF) {
+			if (token.type == TOKEN_STRUCT || token.type == TOKEN_UNION)
+				parse_structure(out_c, &lexer, last.type == TOKEN_TYPEDEF);
+
+			last = token;
+		}
+
+		/* fclose(file); */
 	}
-	printf("};\n");
+	fprintf(out_h, "\n    TYPE_MAX,\n");
+	fprintf(out_h, "};\n\n");
+
+	for (uint32_t index = 0; index < arena_array_count(aliases); ++index)
+		fprintf(out_h, "%.*s", SARG(aliases[index]));
+	fprintf(out_h, "\n");
+
+	fprintf(out_h, "extern Type type_introspection[TYPE_MAX];\n\n");
+	fprintf(out_h, "#define type_info(T) type_introspection[TYPE_##T]");
+
+	fprintf(out_c, "};\n");
 
 	arena_scratch_end(scratch);
 

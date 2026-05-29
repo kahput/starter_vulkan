@@ -1,15 +1,17 @@
 file(GLOB_RECURSE SOURCES "src/*.c" "${CMAKE_SOURCE_DIR}/engine/src/core/*.c" "${CMAKE_SOURCE_DIR}/engine/src/platform/filesystem.c")
-add_executable(tools ${SOURCES})
 
-add_compile_options(json_parser PRIVATE -fsanitize=address)
-add_link_options(tools PRIVATE -fsanitize=address)
+set(GENERATOR generator)
 
-target_link_libraries(tools m)
-target_include_directories(tools
-                           PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
+add_executable(${GENERATOR} ${SOURCES})
+
+add_compile_options(${GENERATOR} PRIVATE -fsanitize=address)
+add_link_options(${GENERATOR} PRIVATE -fsanitize=address)
+
+target_link_libraries(${GENERATOR} m)
+target_include_directories(${GENERATOR} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
 
 target_compile_options(
-tools
+${GENERATOR}
 PRIVATE -fvisibility=hidden
         -Wall
         -O0
@@ -18,4 +20,3 @@ PRIVATE -fvisibility=hidden
         -Werror
         -Wno-unused-parameter
         -Wno-unused-variable)
-

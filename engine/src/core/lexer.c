@@ -14,7 +14,8 @@ const char *token_type_names[TOKEN_MAX] = {
     [TOKEN_MINUS]         = "-",   [TOKEN_PLUS]          = "+",
     [TOKEN_SEMICOLON]     = ";",   [TOKEN_COLON]         = ":",
     [TOKEN_SLASH]         = "/",   [TOKEN_STAR]          = "*",
-    [TOKEN_PERCENT]       = "%",
+    [TOKEN_PERCENT]       = "%",   [TOKEN_TILDE]         = "~",
+    [TOKEN_CARET]         = "^",   [TOKEN_QUESTION_MARK] = "?",
     [TOKEN_BANG]          = "!",   [TOKEN_BANG_EQUAL]    = "!=",
     [TOKEN_EQUAL]         = "=",   [TOKEN_EQUAL_EQUAL]   = "==",
     [TOKEN_GREATER]       = ">",   [TOKEN_GREATER_EQUAL] = ">=",
@@ -28,9 +29,13 @@ const char *token_type_names[TOKEN_MAX] = {
     [TOKEN_TRUE]          = "true",
     [TOKEN_FALSE]         = "false",
     [TOKEN_NULL]          = "null",
+
+    // C specific
     [TOKEN_TYPEDEF]       = "typedef", 
     [TOKEN_STRUCT]        = "struct", 
     [TOKEN_UNION]         = "union",
+    [TOKEN_CONST]         = "const",
+
     [TOKEN_EOF]           = "EOF",
 };
 // clang-format on
@@ -115,10 +120,17 @@ TokenType match_keyword(Token *token) {
 				if (memory_equals(token->string.chars, token_type_names[TOKEN_NULL], token->string.length))
 					return TOKEN_NULL;
 			break;
-        case 'u':
-            if (token->string.length == 5)
-                if (memory_equals(token->string.chars, token_type_names[TOKEN_UNION], token->string.length))
-                    return TOKEN_UNION;
+		case 'u':
+			if (token->string.length == 5)
+				if (memory_equals(token->string.chars, token_type_names[TOKEN_UNION], token->string.length))
+					return TOKEN_UNION;
+			break;
+
+		case 'c':
+			if (token->string.length == 5)
+				if (memory_equals(token->string.chars, token_type_names[TOKEN_CONST], token->string.length))
+					return TOKEN_CONST;
+			break;
 	}
 
 	return TOKEN_IDENTIFIER;
@@ -159,6 +171,9 @@ restart:
         case '/': token.type = TOKEN_SLASH;         break;
         case '*': token.type = TOKEN_STAR;          break;
         case '%': token.type = TOKEN_PERCENT;       break;
+        case '~': token.type = TOKEN_TILDE;         break;
+        case '^': token.type = TOKEN_CARET;         break;
+        case '?': token.type = TOKEN_QUESTION_MARK; break;
 			// clang-format on
 
 		case '!': {
@@ -217,8 +232,20 @@ restart:
 		} break;
 		case '#': {
 			// TODO: Handle macros
-			while (is_at_end(lexer->at[0]) == false && is_newline(lexer->at[0]) == false)
+			bool newline_break = false;
+			if (memory_equals(lexer->at, "define WRAPPER", sizeof("define WRAPPER") - 1)) {
+				uint32_t y = 0;
+			}
+			while (is_at_end(lexer->at[0]) == false) {
 				++lexer->at;
+				if (lexer->at[0] == '\\')
+					newline_break = true;
+
+				if (lexer->at[0] == '\n' && newline_break == false)
+					break;
+				if (lexer->at[0] == '\n' && newline_break)
+					newline_break = false;
+			}
 			goto restart;
 		} break;
 
@@ -318,7 +345,7 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out) {
 Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_next(lexer);
 	if (t.type != type) {
-        ASSERT(false);
+		ASSERT(false);
 		LOG_WARN("Lexer: expected '%s' got '%s' (%.*s) at %d:%d",
 			token_type_names[type], token_type_names[t.type],
 			t.string.length, t.string.chars, t.line, t.column);
