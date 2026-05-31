@@ -10,7 +10,7 @@ struct ECS {
 	Arena *arena;
 
 	ComponentBitset bitset[MAX_ENTITIES];
-	Buffer components[COMPONENT_TYPE_MAX];
+	Bytes components[COMPONENT_TYPE_MAX];
 
 	uint32_t entity_count, highest_valid;
 };
@@ -402,9 +402,7 @@ void ecs_serialize_entity(ECS *world, Entity root, String output_path) {
 Entity ecs_deserialize_entity(ECS *world, String path) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	JsonNode *root = json_parse(scratch.arena,
-		string_wrap_buffer(
-			filesystem_read(scratch.arena,
-				path)));
+		filesystem_read(scratch.arena, path));
 
 	Entity result = deserialize_entity(world, root);
 	arena_scratch_end(scratch);

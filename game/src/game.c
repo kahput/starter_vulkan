@@ -698,7 +698,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 
 				JsonNode *root = json_parse(
 					pstate->frame_arena,
-					string_wrap_buffer(filesystem_read(pstate->frame_arena, S("assets/items.json"))));
+					filesystem_read(pstate->frame_arena, S("assets/items.json")));
 				uint32_t index = 0;
 				for (JsonNode *node = json_list(root, S("items")); node; node = node->next, index++) {
 					pstate->game.items[index] = (Item){
@@ -977,7 +977,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 											imgui_background_color(BACKGROUND_COLOR_DARK);
 											imgui_padding_xy(8);
 											imgui_widget_text(
-												string_format(pstate->frame_arena, "%.*s", SARG(item.name)),
+												string_format(pstate->frame_arena, "%.*s", sarg(item.name)),
 												&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
 											imgui_widget_end();
 										}
@@ -988,7 +988,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 											imgui_padding_xy(8);
 
 											imgui_widget_text(
-												string_format(pstate->frame_arena, "%.*s", SARG(item.description)),
+												string_format(pstate->frame_arena, "%.*s", sarg(item.description)),
 												&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
 											imgui_widget_end();
 										}
@@ -1064,7 +1064,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 								imgui_background_color(BACKGROUND_COLOR_DARK);
 								imgui_padding_xy(8);
 								imgui_widget_text(
-									string_format(pstate->frame_arena, "%.*s", SARG(item.name)),
+									string_format(pstate->frame_arena, "%.*s", sarg(item.name)),
 									&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
 								imgui_widget_end();
 							}
@@ -1075,7 +1075,7 @@ FrameInfo update_and_draw(GameContext *context, float dt) {
 								imgui_padding_xy(8);
 
 								imgui_widget_text(
-									string_format(pstate->frame_arena, "%.*s", SARG(item.description)),
+									string_format(pstate->frame_arena, "%.*s", sarg(item.description)),
 									&pstate->assets.font[FONT_SIZE_16], WHITE, 0);
 								imgui_widget_end();
 							}
@@ -1421,7 +1421,7 @@ void editor_update(PermanentState *pstate, Editor *editor, float dt) {
 	/* 		filesystem_make_directory(stringpath_directory(path)); */
 
 	/* 		if (scene_serialize(path, pstate)) */
-	/* 			LOG_INFO("scene serialized to '%.*s'", SARG(path)); */
+	/* 			LOG_INFO("scene serialized to '%.*s'", sarg(path)); */
 	/* 	} */
 	/* } */
 
@@ -2028,8 +2028,8 @@ void mesh_system_update(ECS *world, PermanentState *pstate) {
 
 static inline RhiShader load_shader(VulkanContext *context, String name, String vertex, String fragment) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	String vertex_path = string_format(scratch.arena, "assets/shaders/vertex/bin/%.*s.vertex.spv", SARG(vertex));
-	String fragment_path = string_format(scratch.arena, "assets/shaders/fragment/bin/%.*s.fragment.spv", SARG(fragment));
+	String vertex_path = string_format(scratch.arena, "assets/shaders/vertex/bin/%.*s.vertex.spv", sarg(vertex));
+	String fragment_path = string_format(scratch.arena, "assets/shaders/fragment/bin/%.*s.fragment.spv", sarg(fragment));
 	ShaderSource source = importer_load_shader(scratch.arena, vertex_path, fragment_path);
 	RhiShader result =
 		vulkan_shader_make(

@@ -2,20 +2,22 @@
 #include "common.h"
 #include "core/debug.h"
 #include "core/logger.h"
+#include "core/strings.h"
 #include <string.h>
 
 // clang-format off
 const char *token_type_names[TOKEN_MAX] = {
     [TOKEN_UNKNOWN]       = "UNKNOWN",
-    [TOKEN_LEFT_PAREN]    = "(",   [TOKEN_RIGHT_PAREN]   = ")",
-    [TOKEN_LEFT_BRACE]    = "{",   [TOKEN_RIGHT_BRACE]   = "}",
-    [TOKEN_LEFT_BRACKET]  = "[",   [TOKEN_RIGHT_BRACKET] = "]",
+    [TOKEN_OPEN_PAREN]    = "(",   [TOKEN_CLOSE_PAREN]   = ")",
+    [TOKEN_OPEN_BRACE]    = "{",   [TOKEN_CLOSE_BRACE]   = "}",
+    [TOKEN_OPEN_BRACKET]  = "[",   [TOKEN_CLOSE_BRACKET] = "]",
     [TOKEN_COMMA]         = ",",   [TOKEN_DOT]           = ".",
-    [TOKEN_MINUS]         = "-",   [TOKEN_PLUS]          = "+",
     [TOKEN_SEMICOLON]     = ";",   [TOKEN_COLON]         = ":",
     [TOKEN_SLASH]         = "/",   [TOKEN_STAR]          = "*",
     [TOKEN_PERCENT]       = "%",   [TOKEN_TILDE]         = "~",
     [TOKEN_CARET]         = "^",   [TOKEN_QUESTION_MARK] = "?",
+    [TOKEN_MINUS]         = "-",   [TOKEN_MINUS_MINUS]   = "--",
+    [TOKEN_PLUS]          = "+",   [TOKEN_PLUS_PLUS]     = "++",
     [TOKEN_BANG]          = "!",   [TOKEN_BANG_EQUAL]    = "!=",
     [TOKEN_EQUAL]         = "=",   [TOKEN_EQUAL_EQUAL]   = "==",
     [TOKEN_GREATER]       = ">",   [TOKEN_GREATER_EQUAL] = ">=",
@@ -26,15 +28,6 @@ const char *token_type_names[TOKEN_MAX] = {
     [TOKEN_STRING]        = "STRING",
     [TOKEN_INTEGER]       = "INTEGER",
     [TOKEN_FLOAT]         = "FLOAT",
-    [TOKEN_TRUE]          = "true",
-    [TOKEN_FALSE]         = "false",
-    [TOKEN_NULL]          = "null",
-
-    // C specific
-    [TOKEN_TYPEDEF]       = "typedef", 
-    [TOKEN_STRUCT]        = "struct", 
-    [TOKEN_UNION]         = "union",
-    [TOKEN_CONST]         = "const",
 
     [TOKEN_EOF]           = "EOF",
 };
@@ -92,46 +85,50 @@ void skip_whitespace_and_comments(Lexer *lexer) {
 	}
 }
 
-TokenType match_keyword(Token *token) {
-	switch (token->string.chars[0]) {
-		case 't':
-			if (token->string.length == 4)
-				if (memory_equals(token->string.chars, token_type_names[TOKEN_TRUE], token->string.length))
-					return TOKEN_TRUE;
-			if (token->string.length == 7)
-				if (memory_equals(token->string.chars, token_type_names[TOKEN_TYPEDEF], token->string.length))
-					return TOKEN_TYPEDEF;
-			break;
+TokenType match_keyword(Lexer *lexer, Token *token) {
+	for (uint32_t index = 0; index < lexer->keyword_count; ++index)
+		if (string_equals(lexer->keywords[index], token->lexeme))
+			return TOKEN_KEYWORD_0 + index;
 
-		case 's':
-			if (token->string.length == 6)
-				if (memory_equals(token->string.chars, token_type_names[TOKEN_STRUCT], token->string.length))
-					return TOKEN_STRUCT;
-			break;
+	/* switch (token->string.chars[0]) { */
+	/* 	case 't': */
+	/* 		if (token->string.length == 4) */
+	/* 			if (memory_equals(token->string.chars, token_type_names[TOKEN_TRUE], token->string.length)) */
+	/* 				return TOKEN_TRUE; */
+	/* 		if (token->string.length == 7) */
+	/* 			if (memory_equals(token->string.chars, token_type_names[TOKEN_TYPEDEF], token->string.length)) */
+	/* 				return TOKEN_TYPEDEF; */
+	/* 		break; */
 
-		case 'f':
-			if (token->string.length == 5)
-				if (memory_equals(token->string.chars, token_type_names[TOKEN_FALSE], token->string.length))
-					return TOKEN_FALSE;
-			break;
+	/* 	case 's': */
+	/* 		if (token->string.length == 6) */
+	/* 			if (memory_equals(token->string.chars, token_type_names[TOKEN_STRUCT], token->string.length)) */
+	/* 				return TOKEN_STRUCT; */
+	/* 		break; */
 
-		case 'n':
-			if (token->string.length == 4)
-				if (memory_equals(token->string.chars, token_type_names[TOKEN_NULL], token->string.length))
-					return TOKEN_NULL;
-			break;
-		case 'u':
-			if (token->string.length == 5)
-				if (memory_equals(token->string.chars, token_type_names[TOKEN_UNION], token->string.length))
-					return TOKEN_UNION;
-			break;
+	/* 	case 'f': */
+	/* 		if (token->string.length == 5) */
+	/* 			if (memory_equals(token->string.chars, token_type_names[TOKEN_FALSE], token->string.length)) */
+	/* 				return TOKEN_FALSE; */
+	/* 		break; */
 
-		case 'c':
-			if (token->string.length == 5)
-				if (memory_equals(token->string.chars, token_type_names[TOKEN_CONST], token->string.length))
-					return TOKEN_CONST;
-			break;
-	}
+	/* 	case 'n': */
+	/* 		if (token->string.length == 4) */
+	/* 			if (memory_equals(token->string.chars, token_type_names[TOKEN_NULL], token->string.length)) */
+	/* 				return TOKEN_NULL; */
+	/* 		break; */
+	/* 	case 'u': */
+	/* 		if (token->string.length == 5) */
+	/* 			if (memory_equals(token->string.chars, token_type_names[TOKEN_UNION], token->string.length)) */
+	/* 				return TOKEN_UNION; */
+	/* 		break; */
+
+	/* 	case 'c': */
+	/* 		if (token->string.length == 5) */
+	/* 			if (memory_equals(token->string.chars, token_type_names[TOKEN_CONST], token->string.length)) */
+	/* 				return TOKEN_CONST; */
+	/* 		break; */
+	/* } */
 
 	return TOKEN_IDENTIFIER;
 }
@@ -145,7 +142,7 @@ restart:
 
 	Token token = {
 		.type = TOKEN_UNKNOWN,
-		.string = { .chars = lexer->at, .length = 1 },
+		.lexeme = { .chars = lexer->at, .length = 1 },
 		.line = lexer->line,
 		.column = lexer->column,
 	};
@@ -156,16 +153,14 @@ restart:
 
 	switch (c) {
 			// clang-format off
-		case '(': token.type = TOKEN_LEFT_PAREN; break;
-        case ')': token.type = TOKEN_RIGHT_PAREN;   break;
-        case '{': token.type = TOKEN_LEFT_BRACE;    break;
-        case '}': token.type = TOKEN_RIGHT_BRACE;   break;
-        case '[': token.type = TOKEN_LEFT_BRACKET;  break;
-        case ']': token.type = TOKEN_RIGHT_BRACKET; break;
+		case '(': token.type = TOKEN_OPEN_PAREN; break;
+        case ')': token.type = TOKEN_CLOSE_PAREN;   break;
+        case '{': token.type = TOKEN_OPEN_BRACE;    break;
+        case '}': token.type = TOKEN_CLOSE_BRACE;   break;
+        case '[': token.type = TOKEN_OPEN_BRACKET;  break;
+        case ']': token.type = TOKEN_CLOSE_BRACKET; break;
         case ',': token.type = TOKEN_COMMA;         break;
         case '.': token.type = TOKEN_DOT;           break;
-        case '-': token.type = TOKEN_MINUS;         break;
-        case '+': token.type = TOKEN_PLUS;          break;
         case ';': token.type = TOKEN_SEMICOLON;     break;
         case ':': token.type = TOKEN_COLON;         break;
         case '/': token.type = TOKEN_SLASH;         break;
@@ -176,12 +171,30 @@ restart:
         case '?': token.type = TOKEN_QUESTION_MARK; break;
 			// clang-format on
 
+		case '-': {
+			if (lexer->at[0] == '-') {
+				++lexer->at;
+				++lexer->column;
+				token.type = TOKEN_MINUS_MINUS;
+				token.lexeme.length = 2;
+			} else
+				token.type = TOKEN_MINUS;
+		} break;
+		case '+': {
+			if (lexer->at[0] == '+') {
+				++lexer->at;
+				++lexer->column;
+				token.type = TOKEN_PLUS_PLUS;
+				token.lexeme.length = 2;
+			} else
+				token.type = TOKEN_PLUS;
+		} break;
 		case '!': {
 			if (lexer->at[0] == '=') {
 				++lexer->at;
 				++lexer->column;
 				token.type = TOKEN_BANG_EQUAL;
-				token.string.length = 2;
+				token.lexeme.length = 2;
 			} else
 				token.type = TOKEN_BANG;
 		} break;
@@ -190,7 +203,7 @@ restart:
 				++lexer->at;
 				++lexer->column;
 				token.type = TOKEN_EQUAL_EQUAL;
-				token.string.length = 2;
+				token.lexeme.length = 2;
 			} else
 				token.type = TOKEN_EQUAL;
 		} break;
@@ -199,7 +212,7 @@ restart:
 				++lexer->at;
 				++lexer->column;
 				token.type = TOKEN_GREATER_EQUAL;
-				token.string.length = 2;
+				token.lexeme.length = 2;
 			} else
 				token.type = TOKEN_GREATER;
 		} break;
@@ -208,7 +221,7 @@ restart:
 				++lexer->at;
 				++lexer->column;
 				token.type = TOKEN_LESS_EQUAL;
-				token.string.length = 2;
+				token.lexeme.length = 2;
 			} else
 				token.type = TOKEN_LESS;
 		} break;
@@ -217,7 +230,7 @@ restart:
 				++lexer->at;
 				++lexer->column;
 				token.type = TOKEN_AMP_AMP;
-				token.string.length = 2;
+				token.lexeme.length = 2;
 			} else
 				token.type = TOKEN_AMP;
 		} break;
@@ -226,7 +239,7 @@ restart:
 				++lexer->at;
 				++lexer->column;
 				token.type = TOKEN_PIPE_PIPE;
-				token.string.length = 2;
+				token.lexeme.length = 2;
 			} else
 				token.type = TOKEN_PIPE;
 		} break;
@@ -251,7 +264,7 @@ restart:
 
 		case '"': {
 			token.type = TOKEN_STRING;
-			token.string.chars = lexer->at;
+			token.lexeme.chars = lexer->at;
 			while (!is_at_end(lexer->at[0]) && lexer->at[0] != '"') {
 				if (lexer->at[0] == '\\' && lexer->at[1] != '\0') {
 					++lexer->at;
@@ -261,7 +274,7 @@ restart:
 				++lexer->column;
 			}
 
-			token.string.length = (int)(lexer->at - token.string.chars);
+			token.lexeme.length = (int)(lexer->at - token.lexeme.chars);
 			if (lexer->at[0] == '"') {
 				++lexer->at;
 				++lexer->column;
@@ -300,14 +313,14 @@ restart:
 						++lexer->column;
 					}
 				}
-				token.string.length = (int)(lexer->at - token.string.chars);
+				token.lexeme.length = (int)(lexer->at - token.lexeme.chars);
 				token.type = is_float ? TOKEN_FLOAT : TOKEN_INTEGER;
 
 			} else if (is_aplha(c)) {
 				while (is_alnum(lexer->at[0]))
 					++lexer->at;
-				token.string.length = lexer->at - token.string.chars;
-				token.type = match_keyword(&token);
+				token.lexeme.length = lexer->at - token.lexeme.chars;
+				token.type = match_keyword(lexer, &token);
 			} else {
 				ASSERT(0);
 			}
@@ -348,7 +361,7 @@ Token lexer_expect(Lexer *lexer, TokenType type) {
 		ASSERT(false);
 		LOG_WARN("Lexer: expected '%s' got '%s' (%.*s) at %d:%d",
 			token_type_names[type], token_type_names[t.type],
-			t.string.length, t.string.chars, t.line, t.column);
+			t.lexeme.length, t.lexeme.chars, t.line, t.column);
 	}
 	return t;
 }

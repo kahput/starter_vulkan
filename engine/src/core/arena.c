@@ -89,12 +89,12 @@ ArenaTemp arena_scratch_begin(Arena *conflict) {
 	return arena_temp_begin(selected);
 }
 
-ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Buffer key, const char *debug_type_name) {
+ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Bytes key, const char *debug_type_name) {
 	ArenaTrieNode **node = root;
 
 	for (uint64_t hash_index = hash64(key.memory, key.size); *node; hash_index <<= 2) {
-		Buffer node_key = buffer_make((uint8_t *)(*node) + sizeof(ArenaTrieNode), (*node)->key_size);
-		if (buffer_equal(node_key, key)) {
+		Bytes node_key = bytes((uint8_t *)(*node) + sizeof(ArenaTrieNode), (*node)->key_size);
+		if (bytes_equal(node_key, key)) {
 			ASSERT_FORMAT(
 				debug_type_name && (*node)->debug_type_name
 					? strcmp((*node)->debug_type_name, debug_type_name) == 0
@@ -118,7 +118,7 @@ ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Buffer 
 	return (*node);
 }
 
-void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Buffer key, size_t map_size, size_t map_align) {
+void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Bytes key, size_t map_size, size_t map_align) {
 	ArenaTrieHeader **node = root;
 
 	for (uint64_t hash = hash64(key.memory, key.size); *node; hash <<= 2) {
@@ -141,7 +141,7 @@ void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_o
 	return (uint8_t *)(*node) + value_offset;
 }
 
-void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Buffer key, size_t size, size_t align, const char *debug_type_name) {
+void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Bytes key, size_t size, size_t align, const char *debug_type_name) {
 	ArenaTrieNode *node = arena_trienode_ensure(arena, root, key, debug_type_name);
 	if (arena && node && node->payload == NULL)
 		node->payload = arena_push(arena, size, align, true);

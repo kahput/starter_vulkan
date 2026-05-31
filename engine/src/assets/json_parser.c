@@ -20,11 +20,23 @@ const char *json_type_string[JSON_TYPE_COUNT] = {
 	[JSON_OBJECT] = "object",
 };
 
+typedef enum {
+	JSON_TOKEN_NULL = TOKEN_KEYWORD_0,
+	JSON_TOKEN_FALSE,
+	JSON_TOKEN_TRUE,
+
+	JSON_TOKEN_MAX,
+} JsonToken;
+
+String kewords[JSON_TOKEN_MAX - TOKEN_KEYWORD_0] = {
+	sc("null"), sc("false"), sc("true")
+};
+
 static JsonNode *parse_value(JsonParser *parser);
 static JsonNode *parse_error(JsonParser *parser, Token token, const char *message) {
 	if (!parser->failed) {
 		LOG_WARN("JSON error at %d:%d: %s (got '%.*s')",
-			token.line, token.column, message, token.string.length, token.string.chars);
+			token.line, token.column, message, token.lexeme.length, token.lexeme.chars);
 	}
 	parser->failed = true;
 	return NULL;
@@ -38,7 +50,7 @@ static JsonNode *parse_object(JsonParser *parser) {
 	*trie = arena_trie_make(parser->arena);
 	node->value = trie;
 
-	while (!lexer_match(&parser->lexer, TOKEN_RIGHT_BRACE, NULL)) {
+	while (!lexer_match(&parser->lexer, TOKEN_CLOSE_BRACE, NULL)) {
 		if (parser->failed || lexer_at_end(&parser->lexer))
 			break;
 
@@ -47,7 +59,7 @@ static JsonNode *parse_object(JsonParser *parser) {
 		JsonNode *value = parse_value(parser);
 
 		// Store a JsonNode* in the trie, keyed by the field name
-		arena_trie_put(trie, buffer_wrap_string(key.string), JsonNode *, value);
+		arena_trie_put(trie, buffer_wrap_string(key.lexeme), JsonNode *, value);
 
 		lexer_match(&parser->lexer, TOKEN_COMMA, NULL);
 	}
@@ -64,7 +76,7 @@ static JsonNode *parse_array(JsonParser *parser) {
 	} *list = arena_push(parser->arena, sizeof(struct json_list), alignof(struct json_list), true);
 	node->value = list;
 
-	while (!lexer_match(&parser->lexer, TOKEN_RIGHT_BRACKET, NULL)) {
+	while (!lexer_match(&parser->lexer, TOKEN_CLOSE_BRACKET, NULL)) {
 		if (parser->failed || lexer_at_end(&parser->lexer))
 			break;
 
@@ -93,16 +105,16 @@ static JsonNode *parse_value(JsonParser *p) {
 		return NULL;
 
 	switch (token.type) {
-		case TOKEN_LEFT_BRACE:
+		case TOKEN_OPEN_BRACE:
 			return parse_object(p);
-		case TOKEN_LEFT_BRACKET:
+		case TOKEN_OPEN_BRACKET:
 			return parse_array(p);
 		case TOKEN_STRING: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
 			node->type = JSON_String;
 
 			String *string = arena_push_struct(p->arena, String);
-			*string = token.string;
+			*string = token.lexeme;
 			node->value = string;
 			return node;
 		}
@@ -111,7 +123,7 @@ static JsonNode *parse_value(JsonParser *p) {
 			node->type = JSON_uint64_t;
 
 			uint64_t *integer = arena_push_struct(p->arena, uint64_t);
-			*integer = string_to_u64(token.string);
+			*integer = string_to_u64(token.lexeme);
 			node->value = integer;
 			return node;
 		}
@@ -120,11 +132,11 @@ static JsonNode *parse_value(JsonParser *p) {
 			node->type = JSON_float;
 
 			float *floating_point = arena_push_struct(p->arena, float);
-			*floating_point = string_to_f32(token.string);
+			*floating_point = string_to_f32(token.lexeme);
 			node->value = floating_point;
 			return node;
 		}
-		case TOKEN_FALSE: {
+		case JSON_TOKEN_FALSE: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
 			node->type = JSON_bool;
 
@@ -133,7 +145,7 @@ static JsonNode *parse_value(JsonParser *p) {
 			node->value = boolean;
 			return node;
 		}
-		case TOKEN_TRUE: {
+		case JSON_TOKEN_TRUE: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
 			node->type = JSON_bool;
 
@@ -142,7 +154,7 @@ static JsonNode *parse_value(JsonParser *p) {
 			node->value = boolean;
 			return node;
 		}
-		case TOKEN_NULL: {
+		case JSON_TOKEN_NULL: {
 			JsonNode *node = arena_push_struct(p->arena, JsonNode);
 			node->type = JSON_NULL;
 			return node;
@@ -156,7 +168,7 @@ static JsonNode *parse_value(JsonParser *p) {
 				node->type = JSON_int32_t;
 
 				int32_t *integer = arena_push_struct(p->arena, int32_t);
-				*integer = -string_to_i32(num.string);
+				*integer = -string_to_i32(num.lexeme);
 				node->value = integer;
 				return node;
 			}
@@ -164,7 +176,7 @@ static JsonNode *parse_value(JsonParser *p) {
 				node->type = JSON_float;
 
 				float *floating_point = arena_push_struct(p->arena, float);
-				*floating_point = -string_to_f64(num.string);
+				*floating_point = -string_to_f64(num.lexeme);
 				node->value = floating_point;
 				return node;
 			}
@@ -175,8 +187,8 @@ static JsonNode *parse_value(JsonParser *p) {
 	}
 }
 
-JsonNode *json_parse(Arena *arena, String source) {
-	JsonParser parser = { .lexer = lexer_make(source), .arena = arena };
+JsonNode *json_parse(Arena *arena, Bytes source) {
+	JsonParser parser = { .lexer = lexer_make(source, countof(kewords), kewords), .arena = arena };
 	JsonNode *root = parse_value(&parser);
 	return root;
 }
@@ -283,7 +295,7 @@ void json_map_begin(JsonExporter *exporter, String key) {
 	json_prepare_next_item(exporter);
 
 	if (key.length > 0)
-		string_format_non_terminated(exporter->arena, "\"" SFMT "\": {", SARG(key));
+		string_format_non_terminated(exporter->arena, "\"" SFMT "\": {", sarg(key));
 	else
 		string_format_non_terminated(exporter->arena, "{");
 
@@ -302,7 +314,7 @@ void json_array_begin(JsonExporter *exporter, String key) {
 	json_prepare_next_item(exporter);
 
 	if (key.length > 0)
-		string_format_non_terminated(exporter->arena, "\"" SFMT "\": [", SARG(key));
+		string_format_non_terminated(exporter->arena, "\"" SFMT "\": [", sarg(key));
 	else
 		string_format_non_terminated(exporter->arena, "[");
 
@@ -316,32 +328,32 @@ void json_array_end(JsonExporter *exporter) {
 	string_format_non_terminated(exporter->arena, "\n%*s]", depth * 4, "");
 }
 
-void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Buffer buffer) {
+void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Bytes buffer) {
 	json_prepare_next_item(exporter);
 	switch (type) {
 		case JSON_bool: {
 			String value = *buffer.memory ? S("true") : S("false");
-			string_format_non_terminated(exporter->arena, "\"" SFMT "\": " SFMT "", SARG(key), SARG(value));
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": " SFMT "", sarg(key), sarg(value));
 		} break;
 		case JSON_uint32_t: {
 			uint32_t value = *(uint32_t *)buffer.memory;
-			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %u", SARG(key), value);
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %u", sarg(key), value);
 		} break;
 		case JSON_uint64_t: {
 			uint64_t value = *(uint64_t *)buffer.memory;
-			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %llu", SARG(key), value);
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %llu", sarg(key), value);
 		} break;
 		case JSON_int32_t: {
 			int32_t value = *(int32_t *)buffer.memory;
-			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %d", SARG(key), value);
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %d", sarg(key), value);
 		} break;
 		case JSON_float: {
 			float value = *(float *)buffer.memory;
-			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %.3f", SARG(key), value);
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": %.3f", sarg(key), value);
 		} break;
 		case JSON_String: {
 			String value = *(String *)buffer.memory;
-			string_format_non_terminated(exporter->arena, "\"" SFMT "\": \"" SFMT "\"", SARG(key), SARG(value));
+			string_format_non_terminated(exporter->arena, "\"" SFMT "\": \"" SFMT "\"", sarg(key), sarg(value));
 		} break;
 		case JSON_ARRAY:
 		case JSON_OBJECT:
@@ -354,7 +366,7 @@ void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Buffer 
 
 /* void json_write_pair(JsonExporter *exporter, String key, String value) { */
 /* 	json_prepare_next_item(exporter); */
-/* 	string_format_non_terminated(exporter->arena, "\"" SFMT "\": \"" SFMT "\"", SARG(key), SARG(value)); */
+/* 	string_format_non_terminated(exporter->arena, "\"" SFMT "\": \"" SFMT "\"", sarg(key), sarg(value)); */
 /* } */
 
 void json_write_float(JsonExporter *exporter, float value) {

@@ -257,6 +257,36 @@
             "type": "<invalid>"
         },
         {
+            "id": 16354984490713990561,
+            "path": "assets/sound/music/output.raw",
+            "type": "<invalid>"
+        },
+        {
+            "id": 1474213672251643982,
+            "path": "assets/sound/music/boss_music.wav",
+            "type": "<invalid>"
+        },
+        {
+            "id": 8987130038417257889,
+            "path": "assets/sound/sfx/button_press.mp3",
+            "type": "<invalid>"
+        },
+        {
+            "id": 1798812313509160979,
+            "path": "assets/sound/sfx/output.raw",
+            "type": "<invalid>"
+        },
+        {
+            "id": 8531658438874277935,
+            "path": "assets/sound/sfx/button_hover.mp3",
+            "type": "<invalid>"
+        },
+        {
+            "id": 2049262175746815726,
+            "path": "assets/sound/sfx/button_press.aiff",
+            "type": "<invalid>"
+        },
+        {
             "id": 11214397475342026662,
             "path": "assets/models/custom/room.glb",
             "type": "geometry"

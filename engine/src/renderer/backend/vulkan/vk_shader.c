@@ -23,11 +23,11 @@ bool destroy_shader_variant(VulkanContext *context, VulkanShader *shader, Vulkan
 
 bool reflect_shader_interface(
 	Arena *arena, VulkanContext *context, VulkanShader *shader,
-	Buffer vertex, Buffer fragment, ShaderReflection *out_reflection);
+	Bytes vertex, Bytes fragment, ShaderReflection *out_reflection);
 
 RhiShader vulkan_shader_make(
 	Arena *arena, VulkanContext *context,
-	String name, Buffer vertex, Buffer fragment, ShaderReflection *out_reflection) {
+	String name, Bytes vertex, Bytes fragment, ShaderReflection *out_reflection) {
 	VulkanShader *shader = pool_alloc(context->shader_pool);
 
 	if (vertex.memory == NULL || vertex.size == 0 || fragment.memory == NULL || fragment.size == 0) {
@@ -368,7 +368,7 @@ static ShaderBuffer *parse_buffer_layout(Arena *arena, SpvReflectBlockVariable *
 
 bool reflect_shader_interface(
 	Arena *arena, VulkanContext *context, VulkanShader *shader,
-	Buffer vertex, Buffer fragment, ShaderReflection *out_reflection) {
+	Bytes vertex, Bytes fragment, ShaderReflection *out_reflection) {
 	SpvReflectShaderModule vertex_module, fragment_module;
 	SpvReflectResult result;
 

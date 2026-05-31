@@ -14,6 +14,7 @@ target_compile_options(
 ${GENERATOR}
 PRIVATE -fvisibility=hidden
         -Wall
+        -std=gnu11
         -O0
         -pedantic
         -Wextra

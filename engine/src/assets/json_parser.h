@@ -38,7 +38,7 @@ typedef struct {
 
 extern uint8_t json_zero_buffer[128];
 
-ENGINE_API JsonNode *json_parse(Arena *arena, String source);
+ENGINE_API JsonNode *json_parse(Arena *arena, Bytes source);
 ENGINE_API JsonNode *json_node(JsonNode *node, String key);
 ENGINE_API JsonNode *json_node_where(JsonNode *list, String key, String value);
 ENGINE_API void *json_value_safe(JsonNode *node, JsonType type);
@@ -69,7 +69,7 @@ ENGINE_API void json_map_end(JsonExporter *exporter);
 ENGINE_API void json_array_begin(JsonExporter *exporter, String key);
 ENGINE_API void json_array_end(JsonExporter *exporter);
 
-ENGINE_API void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Buffer buffer);
+ENGINE_API void json_write_pair_(JsonExporter *exporter, String key, JsonType type, Bytes buffer);
 ENGINE_API void json_write_float(JsonExporter *exporter, float value);
 ENGINE_API void json_write_float3(JsonExporter *exporter, float32x3 value);
 

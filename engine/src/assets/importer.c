@@ -28,9 +28,9 @@ Font importer_load_font_ex(Arena *arena, String path, float font_size, uint32_t 
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Font result = { 0 };
 
-	Buffer file = filesystem_read(arena, path);
+	Bytes file = filesystem_read(arena, path);
 	if (file.size == 0) {
-		LOG_WARN("%s - failed to load font: %.*s", __func__, SARG(path));
+		LOG_WARN("%s - failed to load font: %.*s", __func__, sarg(path));
 		arena_scratch_end(scratch);
 		return result;
 	}
@@ -119,8 +119,8 @@ Font importer_load_font(Arena *arena, String path, float font_size) {
 }
 
 ShaderSource importer_load_shader(Arena *arena, String vertex_path, String fragment_path) {
-	Buffer vfile = filesystem_read(arena, vertex_path);
-	Buffer ffile = filesystem_read(arena, fragment_path);
+	Bytes vfile = filesystem_read(arena, vertex_path);
+	Bytes ffile = filesystem_read(arena, fragment_path);
 
 	ShaderSource result = { vertex_path, fragment_path, vfile, ffile };
 	return result;
@@ -181,7 +181,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 		cgltf_result = cgltf_validate(data);
 
 	logger_set_prefix("GLTF: ");
-	LOG_INFO("Loading %.*s", SARG(path));
+	LOG_INFO("Loading %.*s", sarg(path));
 	logger_indent();
 
 	ArenaTemp scratch = arena_scratch_begin(arena);
@@ -392,7 +392,7 @@ SceneSource importer_load_gltf_scene(Arena *arena, String path) {
 		}
 
 	} else
-		LOG_ERROR("Failed to load '%.*s'", SARG(path));
+		LOG_ERROR("Failed to load '%.*s'", sarg(path));
 
 	cgltf_free(data);
 

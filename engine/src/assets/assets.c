@@ -152,7 +152,7 @@ UUID asset_store_register(AssetStore *store, AssetType type, String key) {
 
 bool asset_store_deserialize(AssetStore *store, String src) {
 	ArenaTemp scratch = arena_scratch_begin(store->arena);
-	JsonNode *root = json_parse(scratch.arena, string_wrap_buffer(filesystem_read(scratch.arena, src)));
+	JsonNode *root = json_parse(scratch.arena, filesystem_read(scratch.arena, src));
 
 	store->asset_directory = string_copy(store->arena, stringpath_directory(src));
 	for (JsonNode *node = json_list(root, S("assets")); node; node = node->next) {
@@ -215,13 +215,13 @@ UUID asset_store_find_shader(AssetStore *store, String key) {
 	AssetEntry *vs_entry = arena_trie_find(&store->trie, buffer_wrap_string(vertex_shader_key), AssetEntry);
 	AssetEntry *fs_entry = arena_trie_find(&store->trie, buffer_wrap_string(fragment_shader_key), AssetEntry);
 	if (vs_entry == NULL || fs_entry == NULL) {
-		LOG_WARN("Assets: Key '%.*s' is not tracked", SARG(key));
+		LOG_WARN("Assets: Key '%.*s' is not tracked", sarg(key));
 		arena_scratch_end(scratch);
 		return 0;
 	}
 
 	/* if (vs_entry->type != ASSET_TYPE_shader || fs_entry->type != ASSET_TYPE_shader) { */
-	/* 	LOG_ERROR("Assets: Key '%.*s' is not a shader", SARG(key)); */
+	/* 	LOG_ERROR("Assets: Key '%.*s' is not a shader", sarg(key)); */
 	/* 	arena_scratch_end(scratch); */
 	/* 	return 0; */
 	/* } */
@@ -237,7 +237,7 @@ UUID asset_store_find_model(AssetStore *store, String key) {
 		return 0;
 
 	/* if (entry->type != ASSET_TYPE_geometry) { */
-	/* 	LOG_ERROR("AssetStore: finded asset '%.*s' is type %d", SARG(key), entry->type); */
+	/* 	LOG_ERROR("AssetStore: finded asset '%.*s' is type %d", sarg(key), entry->type); */
 	/* 	return 0; */
 	/* } */
 
@@ -247,12 +247,12 @@ UUID asset_store_find_model(AssetStore *store, String key) {
 UUID asset_store_find_image(AssetStore *store, String key) {
 	AssetEntry *entry = arena_trie_find(&store->trie, buffer_wrap_string(key), AssetEntry);
 	if (entry == NULL) {
-		LOG_WARN("AssetStore: No image '%.*s'", SARG(key));
+		LOG_WARN("AssetStore: No image '%.*s'", sarg(key));
 		return 0;
 	}
 
 	/* if (entry->type != ASSET_TYPE_image) { */
-	/* 	LOG_ERROR("AssetStore: finded asset '%.*s' is type %d", SARG(key), entry->type); */
+	/* 	LOG_ERROR("AssetStore: finded asset '%.*s' is type %d", sarg(key), entry->type); */
 	/* 	return 0; */
 	/* } */
 

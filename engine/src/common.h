@@ -169,25 +169,25 @@ static inline uint32_t color_pack(Color c) {
 typedef struct {
 	size_t size;
 	uint8_t *memory;
-} Buffer;
+} Bytes;
 
-static inline Buffer buffer_make(void *ptr, size_t size) { return (Buffer){ .memory = ptr, .size = size }; }
+static inline Bytes bytes(void *ptr, size_t size) { return (Bytes){ .memory = ptr, .size = size }; }
 
-#define buffer_wrap_struct(obj) ((Buffer){ .memory = (uint8_t *)&(obj), .size = sizeof(obj) })
-#define buffer_wrap_array(arr) ((Buffer){ .memory = (uint8_t *)(arr), .size = sizeof(arr) })
-#define buffer_wrap_count(p, n) ((Buffer){ .memory = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
-#define buffer_wrap_literal(lit) ((Buffer){ .memory = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
-#define buffer_wrap_string(s) ((Buffer){ .memory = (uint8_t *)(s).chars, .size = (s).length })
+#define buffer_wrap_struct(obj) ((Bytes){ .memory = (uint8_t *)&(obj), .size = sizeof(obj) })
+#define buffer_wrap_array(arr) ((Bytes){ .memory = (uint8_t *)(arr), .size = sizeof(arr) })
+#define buffer_wrap_count(p, n) ((Bytes){ .memory = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
+#define buffer_wrap_literal(lit) ((Bytes){ .memory = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
+#define buffer_wrap_string(s) ((Bytes){ .memory = (uint8_t *)(s).chars, .size = (s).length })
 
-static inline Buffer buffer_subbuffer(Buffer s, size_t offset, size_t length) {
+static inline Bytes bytes_slice(Bytes s, size_t offset, size_t length) {
 	if (offset > s.size)
-		return buffer_make(NULL, 0);
+		return bytes(NULL, 0);
 	if (offset + length > s.size)
 		length = s.size - offset;
-	return buffer_make(s.memory + offset, length);
+	return bytes(s.memory + offset, length);
 }
-static inline bool buffer_empty(Buffer s) { return s.size == 0; }
-static inline bool buffer_equal(Buffer a, Buffer b) {
+static inline bool bytes_empty(Bytes s) { return s.size == 0; }
+static inline bool bytes_equal(Bytes a, Bytes b) {
 	if (a.size != b.size)
 		return false;
 	return memory_equals(a.memory, b.memory, a.size);

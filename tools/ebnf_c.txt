@@ -1,0 +1,31 @@
+struct_declaration        -> (type_specifier | type_qualifier)+ struct_declarator_list? ";" ;
+struct_declarator_list    -> struct_declarator ( "," struct_declarator )* ;
+struct_declarator         -> declarator | declarator? ":" constant_expression;
+
+type_specifier            -> "void" | "char" | "short" | "int" | "long"
+                           | "float" | "double" | "signed" | "unsigned"
+                           | "_Bool" | "_Complex"
+                           | struct_or_union_specifier | enum_specifier | IDENTIFIER
+type_qualifier            -> "const" | "volatile" | "restrict"
+
+struct_or_union           -> "struct" | "union" ;
+struct_or_union_specifier -> struct_or_union IDENTIFIER? "{" struct_declaration+ "}"
+                           | struct_or_union IDENTIFIER ;
+
+declaration_specifier     -> storage_class_specifier | type_specifier | type_qualifier ;
+storage_class_specifier   -> "static" | "extern" | "typedef" ;
+
+declarator                -> pointer? direct_declarator ;
+pointer                   -> "*" type_qualifier* pointer? ;
+
+direct_declarator         -> ( IDENTIFIER | "(" declarator ")" )
+                             ( "[" constant_expression? "]" | "(" parameter_type_list ")" )* ;
+
+// TODO:
+declaration               -> declaration_specifier+ declaration_list ";" ;
+declaration_list          -> (declarator ( "=" constant_expression )?) ( "," declarator ( "=" constant_expression )?)* ;
+
+enum_specifier            -> "enum" IDENTIFIER? "{" enumerator_list ","? "}" 
+                           | "enum" IDENTIFIER ;
+enumerator_list           -> enumerator ( "," enumerator )* ;
+enumerator                -> IDENTIFIER ( "=" constant_expression )? ;

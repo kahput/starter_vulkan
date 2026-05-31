@@ -12,7 +12,7 @@ typedef enum {
 } FileMode;
 
 ENGINE_API bool file_exists(String path);
-ENGINE_API Buffer filesystem_read(struct arena *arena, String path);
+ENGINE_API Bytes filesystem_read(struct arena *arena, String path);
 
 typedef struct {
 	void *handle;

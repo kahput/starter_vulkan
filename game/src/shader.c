@@ -43,7 +43,7 @@
 /* 				param, */
 /* 				result.defaults[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL].buffer, */
 /* 				result.defaults[SHADER_UNIFORM_FREQUENCY_PER_MATERIAL].textures) == false) { */
-/* 			ASSERT_FORMAT(false, "shader[%.*s] invalid uniform passed (%.*s)", SARG(name), SARG(param->name)); */
+/* 			ASSERT_FORMAT(false, "shader[%.*s] invalid uniform passed (%.*s)", sarg(name), sarg(param->name)); */
 /* 		} */
 /* 	} */
 
@@ -72,7 +72,7 @@
 /* 		ShaderParameter *param = &params[index++]; */
 
 /* 		if (_shader_parameter_set(&shader->metadata, param, result.parameters.buffer, result.parameters.textures) == false) { */
-/* 			ASSERT_FORMAT(false, "shader[%.*s] invalid uniform passed (%.*s)", SARG(shader->name), SARG(param->name)); */
+/* 			ASSERT_FORMAT(false, "shader[%.*s] invalid uniform passed (%.*s)", sarg(shader->name), sarg(param->name)); */
 /* 		} */
 /* 	} */
 

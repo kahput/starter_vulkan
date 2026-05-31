@@ -32,7 +32,7 @@ typedef struct {
 
 typedef struct {
 	String vertex_path, fragment_path;
-	Buffer vertex, fragment;
+	Bytes vertex, fragment;
 } ShaderSource;
 
 typedef enum {

@@ -26,7 +26,7 @@ File filesystem_open(String path, FileMode mode) {
 																			  : "wb";
 	FILE *file = fopen((const char *)path.chars, val);
 	if (file == NULL) {
-		LOG_WARN("Failed to open file at '%.*s'", SARG(path));
+		LOG_WARN("Failed to open file at '%.*s'", sarg(path));
 	}
 
 	return (File){ .handle = file };
@@ -57,11 +57,11 @@ ENGINE_API void filesystem_make_directory(String directory) {
 	arena_scratch_end(scratch);
 }
 
-Buffer filesystem_read(Arena *arena, String path) {
+Bytes filesystem_read(Arena *arena, String path) {
 	FILE *file = fopen((const char *)path.chars, "rb");
 	if (file == NULL) {
 		LOG_WARN("FILEIO: [%s] failed to read: %s", path.chars, strerror(errno));
-		return (Buffer){ 0 };
+		return (Bytes){ 0 };
 	}
 
 	fseek(file, 0L, SEEK_END);
@@ -76,7 +76,7 @@ Buffer filesystem_read(Arena *arena, String path) {
 
 	LOG_INFO("FILEIO: [%.*s] successfully read", path.length, path.chars);
 
-	return buffer_make(byte_content, size);
+	return bytes(byte_content, size);
 }
 
 bool filesystem_file_copy(String from, String to) {
