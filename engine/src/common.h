@@ -150,6 +150,14 @@ typedef struct { float32x3 min, max; } Interval3;
 
 typedef struct { uint8_t r, g, b, a; } Color;
 
+typedef struct {
+	float x, y, width, height;
+} Rectangle;
+
+static inline Rectangle rect_from_dimensions(float width, float height) { return (Rectangle){ 0, 0, width, height }; }
+static inline bool rect_contains(Rectangle rect, float x, float y) { return x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height; }
+static inline bool rect_contains_float2(Rectangle rect, float32x2 position) { return rect_contains(rect, position.x, position.y); }
+
 // clang-format on
 #define rgba(r, g, b, a) \
 	(Color) { r, g, b, a }

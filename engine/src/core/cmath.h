@@ -142,12 +142,4 @@ static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } 
 ENGINE_API Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
 ENGINE_API Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
 
-typedef struct {
-	float x, y, width, height;
-} Rectangle;
-
-static inline Rectangle rect_from_dimensions(float width, float height) { return (Rectangle){ 0, 0, width, height }; }
-static inline bool rect_contains(Rectangle rect, float x, float y) { return x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height; }
-static inline bool rect_contains_float2(Rectangle rect, float2 position) { return rect_contains(rect, position.x, position.y); }
-
 #endif /* CMATH_H_ */

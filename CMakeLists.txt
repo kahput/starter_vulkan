@@ -22,8 +22,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
 endif()
 
-add_subdirectory(tools)
-add_subdirectory(game)
+# add_subdirectory(tools)
+# add_subdirectory(game)
 add_subdirectory(engine)
 
 set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/game/assets")

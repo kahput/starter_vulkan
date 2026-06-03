@@ -4,19 +4,19 @@
 #include "arena.h"
 
 typedef struct String {
-	char *chars;
+	char *text;
 	size_t length;
 } String;
 
 #define SFMT "%.*s"
 #define sarg(s) (int)(s).length, (s).chars
-#define S(s) ((String){ (char *)(s), sizeof(s) - 1 })
+#define str_lit(s) ((String){ (char *)(s), sizeof(s) - 1 })
 #define sc(s) { (char *)(s), sizeof(s) - 1 }
 
 #define shash(s) string_hash64(S(s))
 
 ENGINE_API String string_wrap(const char *s);
-static inline String string_wrap_buffer(Bytes buffer) { return (String){ .chars = (char *)buffer.memory, .length = buffer.size }; }
+static inline String string_wrap_buffer(Bytes buffer) { return (String){ .text = (char *)buffer.memory, .length = buffer.size }; }
 
 ENGINE_API bool string_equals(String a, String b);
 ENGINE_API bool string_equals_ignore_case(String a, String b);

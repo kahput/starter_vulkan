@@ -142,7 +142,7 @@ restart:
 
 	Token token = {
 		.type = TOKEN_UNKNOWN,
-		.lexeme = { .chars = lexer->at, .length = 1 },
+		.lexeme = { .text = lexer->at, .length = 1 },
 		.line = lexer->line,
 		.column = lexer->column,
 	};
@@ -264,7 +264,7 @@ restart:
 
 		case '"': {
 			token.type = TOKEN_STRING;
-			token.lexeme.chars = lexer->at;
+			token.lexeme.text = lexer->at;
 			while (!is_at_end(lexer->at[0]) && lexer->at[0] != '"') {
 				if (lexer->at[0] == '\\' && lexer->at[1] != '\0') {
 					++lexer->at;
@@ -274,7 +274,7 @@ restart:
 				++lexer->column;
 			}
 
-			token.lexeme.length = (int)(lexer->at - token.lexeme.chars);
+			token.lexeme.length = (int)(lexer->at - token.lexeme.text);
 			if (lexer->at[0] == '"') {
 				++lexer->at;
 				++lexer->column;
@@ -313,13 +313,13 @@ restart:
 						++lexer->column;
 					}
 				}
-				token.lexeme.length = (int)(lexer->at - token.lexeme.chars);
+				token.lexeme.length = (int)(lexer->at - token.lexeme.text);
 				token.type = is_float ? TOKEN_FLOAT : TOKEN_INTEGER;
 
 			} else if (is_aplha(c)) {
 				while (is_alnum(lexer->at[0]))
 					++lexer->at;
-				token.lexeme.length = lexer->at - token.lexeme.chars;
+				token.lexeme.length = lexer->at - token.lexeme.text;
 				token.type = match_keyword(lexer, &token);
 			} else {
 				ASSERT(0);
@@ -361,7 +361,7 @@ Token lexer_expect(Lexer *lexer, TokenType type) {
 		ASSERT(false);
 		LOG_WARN("Lexer: expected '%s' got '%s' (%.*s) at %d:%d",
 			token_type_names[type], token_type_names[t.type],
-			t.lexeme.length, t.lexeme.chars, t.line, t.column);
+			t.lexeme.length, t.lexeme.text, t.line, t.column);
 	}
 	return t;
 }

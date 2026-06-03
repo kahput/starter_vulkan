@@ -78,3 +78,14 @@ coverage/
 conan.lock
 conanbuildinfo.cmake
 conanbuildinfo.txt
+
+# Ignore non-textual asset files
+*.glb
+*.png
+*.jpeg
+*.jpg
+*.mp3
+*.wav
+*.otf
+*.ttf
+*.raw
