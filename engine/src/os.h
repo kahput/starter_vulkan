@@ -1,7 +1,8 @@
 #include "common.h"
 #include "core/arena.h"
-#include "core/strings.h"
 #include "core/cmath.h"
+#include "core/strings.h"
+#include "core/input_types.h"
 
 struct Arena;
 
@@ -58,7 +59,20 @@ bool os_directory_exists(String path);
 bool os_directory_make(String path);
 bool os_directory_delete(String path);
 
-// OS_DirectoryList os_directory_walk(Arena *arena, String root, bool recurse);
+/* typedef enum { */
+/* 	OS_ENTRY_TYPE_FILE, */
+/* 	OS_ENTRY_TYPE_DIRECTORY, */
+/* 	OS_ENTRY_TYPE_SYMLINK, */
+/* } OS_EntryType; */
+
+/* typedef struct { */
+/* 	OS_EntryType type; */
+/* 	String name; */
+/* 	uint64_t last_modified; */
+/* 	uint64_t size; */
+/* } OS_DirectoryEntry; */
+
+/* OS_DirectoryEntry *os_directory_walk(Arena *arena, String path, bool recurse, uint32_t *count); */
 
 // ----------------------
 // - Dynamic libraries
@@ -69,3 +83,82 @@ static inline bool os_library_valid(OS_Library lib) { return lib != OS_LIBRARY_I
 OS_Library os_library_load(String path);
 void os_library_unload(OS_Library lib);
 void os_library_symbol(OS_Library lib, String symbol, void *out_symbol);
+
+// ----------------------
+// - Draw surfaces/windows
+
+typedef struct OS_Surface OS_Surface;
+bool os_surface_valid(OS_Surface *surface);
+
+bool os_display_startup(void);
+void os_display_shutdown(void);
+
+typedef enum {
+	OS_SURFACE_FLAG_RESIZEABLE = 0x1,
+} OS_SurfaceFlags;
+
+OS_Surface *os_surface_open(uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags);
+OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags);
+void os_surface_close(OS_Surface *surface);
+
+void os_surface_show(OS_Surface *surface);
+void os_surface_hide(OS_Surface *surface);
+
+void os_surface_set_min(OS_Surface *surface, uint32_t width, uint32_t height);
+void os_surface_set_max(OS_Surface *surface, uint32_t width, uint32_t height);
+Rectangle os_client_rect(OS_Surface *surface);
+
+typedef enum {
+	OS_EVENT_TYPE_NONE,
+	OS_EVENT_TYPE_SURFACE_CLOSE,
+	OS_EVENT_TYPE_SURFACE_RESIZE,
+	OS_EVENT_TYPE_SURFACE_FOCUS_GAINED,
+	OS_EVENT_TYPE_SURFACE_FOCUS_LOST,
+
+	OS_EVENT_TYPE_KEY_PRESS,
+	OS_EVENT_TYPE_KEY_RELEASE,
+
+	OS_EVENT_TYPE_MOUSE_MOVE,
+	OS_EVENT_TYPE_MOUSE_PRESS,
+	OS_EVENT_TYPE_MOUSE_RELEASE,
+	OS_EVENT_TYPE_MOUSE_SCROLL,
+} OS_EventType;
+
+typedef struct {
+	OS_EventType type;
+	OS_Surface *surface;
+	union {
+		struct {
+			uint32_t width;
+			uint32_t height;
+		} resize;
+
+		struct {
+			KeyboardKey key_code;
+			bool is_repeat;
+		} key;
+
+		struct {
+			int32_t x;
+			int32_t y;
+			int32_t delta_x;
+			int32_t delta_y;
+		} mouse_move;
+		struct {
+			MouseButton button;
+			int32_t x;
+			int32_t y;
+		} mouse_button;
+		struct {
+			float delta_x;
+			float delta_y;
+		} mouse_scroll;
+	} as;
+} OS_Event;
+bool os_event_poll(OS_Event *out_event);
+
+void *os_native_surface_handle(OS_Surface *surface);
+
+/* void os_cursor_show(bool show); */
+/* void os_cursor_capture(OS_Surface *surface, bool capture); */
+/* void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y); */

@@ -8,6 +8,8 @@ BUILD_TYPE="Debug"
 build() {
     echo "[INFO] Creating build files..."
     mkdir -p "$BUILD_DIR"
+    gcc -c -fPIC game/src/game.c
+    gcc -shared game.o -o game/game.so
     cd "$BUILD_DIR" || exit 1
     cmake -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_C_STANDARD=99 "$PROJECT_ROOT"
     cmake --build .

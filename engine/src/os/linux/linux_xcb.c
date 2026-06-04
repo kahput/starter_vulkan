@@ -1,71 +1,61 @@
-#include "core/arena.h"
-#include "core/cmath.h"
+#include "common.h"
 #include "core/debug.h"
 #include "core/logger.h"
-#include "core/strings.h"
-#include "core/input_types.h"
-
 #include "os.h"
 
 #include <stdlib.h>
-
 #include <xcb/xcb.h>
-#include <xcb/xkb.h>
-#include <xcb/xinput.h>
-
+/* #include <xcb/xcb_icccm.h> // sizing hints */
 #include <linux/input-event-codes.h>
+
+// EXTENSIONS
+#include <xcb/xkb.h> // disable virtual release
+#include <xcb/xproto.h>
+
+struct OS_Surface {
+	uint32_t handle;
+};
 
 typedef struct {
 	xcb_connection_t *conn;
-	xcb_window_t root;
+	OS_Surface root;
 
 	xcb_cursor_t hidden_cursor;
 
-	xcb_atom_t close_atom;
-
-	struct {
-		uint8_t opcode; //
-	} xinput;
+	xcb_atom_t wm_protocols_atom;
+	xcb_atom_t wm_delete_window_atom;
+	xcb_atom_t wm_transient_for_atom;
 
 	uint8_t keycodes[KEY_CODE_COUNT];
 	uint64_t start_time;
-} OS_State;
 
-static OS_State state[1] = { 0 };
+	OS_Surface surfaces[32];
+	uint32_t count;
 
-typedef struct {
-	uint32_t handle;
-} OS_Window;
-typedef struct {
-	bool keys[256];
-} InputState;
+} OS_DisplayState;
 
-void create_key_table(void);
+static OS_DisplayState state[1];
 
-xcb_intern_atom_reply_t *os_atom(String name) {
-	xcb_intern_atom_reply_t *result = xcb_intern_atom_reply(state->conn, xcb_intern_atom(state->conn, 1, name.length, name.text), 0);
-	return result;
-}
+static inline xcb_intern_atom_reply_t *os__atom(String name);
+static inline void create_key_table(void);
+static inline void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h, uint32_t max_w, uint32_t max_h);
 
-typedef void (*PFN_game_hookup)(void);
-
-int32_t main(int32_t argc, const char *argv[]) {
+bool os_display_startup(void) {
 	state->conn = xcb_connect(NULL, NULL);
 	if (xcb_connection_has_error(state->conn)) {
-		LOG_ERROR("failed to connect to X server");
-		return -1;
+		LOG_ERROR("os_display_startup - failed to connect to X server");
+		return false;
 	}
-	state->root = xcb_setup_roots_iterator(xcb_get_setup(state->conn)).data->root;
+	state->root.handle = xcb_setup_roots_iterator(xcb_get_setup(state->conn)).data->root;
 	xcb_xkb_use_extension(state->conn, XCB_XKB_MAJOR_VERSION, XCB_XKB_MINOR_VERSION);
 	xcb_xkb_per_client_flags(state->conn, XCB_XKB_ID_USE_CORE_KBD, XCB_XKB_PER_CLIENT_FLAG_DETECTABLE_AUTO_REPEAT, 1, 0, 0, 0);
-	InputState input_state = { 0 };
 
 	xcb_pixmap_t cursor_pixmap = xcb_generate_id(state->conn);
 	xcb_create_pixmap(
 		state->conn,
 		1, // Depth
 		cursor_pixmap,
-		state->root,
+		state->root.handle,
 		1, 1); // Width, height
 	state->hidden_cursor = xcb_generate_id(state->conn);
 	xcb_create_cursor(
@@ -84,54 +74,37 @@ int32_t main(int32_t argc, const char *argv[]) {
 
 	create_key_table();
 
-	xcb_intern_atom_reply_t *close_reply = os_atom(str_lit("WM_DELETE_WINDOW"));
+	xcb_intern_atom_reply_t *proto_reply = os__atom(str_lit("WM_PROTOCOLS"));
+	xcb_intern_atom_reply_t *close_reply = os__atom(str_lit("WM_DELETE_WINDOW"));
+	xcb_intern_atom_reply_t *transient_reply = os__atom(str_lit("WM_TRANSIENT_FOR"));
 
-	if (close_reply == NULL) {
+	if (proto_reply == NULL || close_reply == NULL) {
 		LOG_INFO("failed to aquire X server protocol.");
 		return -1;
 	}
-	state->close_atom = close_reply->atom;
+
+	state->wm_protocols_atom = proto_reply->atom;
+	state->wm_delete_window_atom = close_reply->atom;
+	state->wm_transient_for_atom = transient_reply->atom;
+
 	free(close_reply);
+	free(proto_reply);
+	free(transient_reply);
 
-	OS_File write_handle = os_file_open(str_lit("other.txt"), OS_FILE_MODE_READWRITE);
-	os_file_write(write_handle, (void *)"I think TRUNC does what I want (e.g., resize)", sizeof("I think TRUNC does what I want (e.g., resize)") - 1);
-	uint64_t size = os_file_size(write_handle);
-	os_file_write(write_handle, (void *)"\nThis should be appended", sizeof("\nThis should be appended") - 1);
-	os_file_close(write_handle);
+	return true;
+}
 
-	OS_File read_handle = os_file_open(str_lit("other.txt"), OS_FILE_MODE_READ);
-	char buffer[12];
-	os_file_read(read_handle, buffer, sizeof(buffer) - 1);
-	LOG_INFO("READ: %s", buffer);
-	os_file_close(read_handle);
+void os_display_shutdown(void) {
+	if (state->conn)
+		xcb_disconnect(state->conn);
+}
 
-	String code = str_lit(
-		"#include <stdio.h>\n\n"
-		"int game_hook(void) {\n"
-		"    printf(\"This was loaded dynamically!\\n\");\n"
-		"    return 0;\n"
-		"}");
-	os_file_write_entire(str_lit("src/game.c"), code.text, code.length);
+OS_Surface *os_surface_open(uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags) {
+	OS_Surface *result = os_surface_open_with_parent(&state->root, width, height, title, flags);
+	return result;
+}
 
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-	String file_content = os_file_read_entire(scratch.arena, str_lit("other.txt"));
-	LOG_INFO("FILE_CONTENT: %.*s", sarg(file_content));
-	arena_scratch_end(scratch);
-
-	os_directory_delete(str_lit("src"));
-	os_directory_delete(str_lit("src"));
-	LOG_INFO("src %s", os_directory_exists(str_lit("src")) ? "exists" : "does not exist");
-	os_directory_make(str_lit("src"));
-	os_directory_delete(str_lit("src"));
-	os_directory_make(str_lit("src"));
-	LOG_INFO("src %s", os_directory_exists(str_lit("src")) ? "exists" : "does not exist");
-	os_directory_make(str_lit("src"));
-	LOG_INFO("src %s", os_directory_exists(str_lit("src")) ? "exists" : "does not exist");
-	os_directory_delete(str_lit("src"));
-	LOG_INFO("src %s", os_directory_exists(str_lit("src")) ? "exists" : "does not exist");
-	os_directory_make(str_lit("src"));
-	LOG_INFO("src %s", os_directory_exists(str_lit("src")) ? "exists" : "does not exist");
-
+OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags) {
 	uint32_t event_mask =
 		XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE |
 		XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
@@ -145,36 +118,29 @@ int32_t main(int32_t argc, const char *argv[]) {
 		event_mask
 	};
 
-	OS_Window window = { 0 };
-	window.handle = xcb_generate_id(state->conn);
-
-	OS_Library game = os_library_load(str_lit("game.so"));
-	PFN_game_hookup hookup = NULL;
-	os_library_symbol(game, str_lit("game_hook"), &hookup);
-	if (hookup)
-		hookup();
-	os_library_unload(game);
+	OS_Surface *surface = &state->surfaces[state->count++];
+	surface->handle = xcb_generate_id(state->conn);
 
 	xcb_create_window(
 		state->conn,
 		XCB_COPY_FROM_PARENT, // Depth
-		window.handle,
-		state->root, // parent window
+		surface->handle,
+		state->root.handle, // parent window
 		0, 0, // x, y
-		800, 600, // width, height
+		width, height, // width, height
 		0, // border width
 		XCB_WINDOW_CLASS_INPUT_OUTPUT,
 		XCB_COPY_FROM_PARENT,
 		value_mask,
 		values);
-	xcb_map_window(state->conn, window.handle);
+	if (FLAG_GET(flags, OS_SURFACE_FLAG_RESIZEABLE) == false)
+		os__surface_set_min_max(surface, width, height, width, height);
 
 	// Change title
-	String title = str_lit("Window");
 	xcb_change_property(
 		state->conn,
 		XCB_PROP_MODE_REPLACE,
-		window.handle,
+		surface->handle,
 		XCB_ATOM_WM_NAME,
 		XCB_ATOM_STRING,
 		8,
@@ -184,47 +150,85 @@ int32_t main(int32_t argc, const char *argv[]) {
 	xcb_change_property(
 		state->conn,
 		XCB_PROP_MODE_REPLACE,
-		window.handle,
-		state->close_atom,
+		surface->handle,
+		state->wm_delete_window_atom,
 		XCB_ATOM_ATOM,
 		32,
 		1,
-		&state->close_atom);
+		&state->wm_delete_window_atom);
+
+	xcb_map_window(state->conn, surface->handle);
 	xcb_flush(state->conn);
+	return surface;
+}
 
-	bool is_open = true;
-	while (is_open) {
-		xcb_generic_event_t *event = NULL;
+void os_surface_close(OS_Surface *surface) {
+	xcb_destroy_window(state->conn, surface->handle);
+	xcb_flush(state->conn);
+}
+bool os_surface_valid(OS_Surface *surface);
 
-		while ((event = xcb_poll_for_event(state->conn))) {
-			switch (event->response_type & ~0x80) {
-				case XCB_CLIENT_MESSAGE: {
-					xcb_client_message_event_t *cm = (xcb_client_message_event_t *)event;
-					if (cm->data.data32[0] == state->close_atom)
-						is_open = false;
-				} break;
+void os_surface_show(OS_Surface *surface) {
+	xcb_map_window(state->conn, surface->handle);
+	xcb_flush(state->conn);
+}
+void os_surface_hide(OS_Surface *surface) {
+	xcb_unmap_window(state->conn, surface->handle);
+	xcb_flush(state->conn);
+}
 
-				case XCB_KEY_PRESS:
-				case XCB_KEY_RELEASE: {
-					xcb_key_press_event_t *kp = (xcb_key_press_event_t *)event;
+bool os_event_poll(OS_Event *out_event) {
+	xcb_generic_event_t *event = xcb_poll_for_event(state->conn);
+	if (event == NULL)
+		return false;
 
-					uint32_t scancode = kp->detail - 8;
-					if (scancode < 256) {
-						bool pressed = (event->response_type & ~0x80) == XCB_KEY_PRESS;
-						KeyboardKey key = state->keycodes[scancode];
-						bool repeat = pressed & input_state.keys[key];
+	memory_zero(out_event, sizeof(OS_Event));
+	switch (event->response_type & ~0x80) {
+		case XCB_CLIENT_MESSAGE: {
+			xcb_client_message_event_t *cm = (xcb_client_message_event_t *)event;
+			if (cm->data.data32[0] == state->wm_delete_window_atom) {
+				for (uint32_t index = 0; index < state->count; ++index) {
+					if (state->surfaces[index].handle == cm->window)
+						out_event->surface = &state->surfaces[index];
+				}
 
-						input_state.keys[key] = pressed;
-					}
-				} break;
+				if (out_event->surface == NULL)
+					ASSERT_MESSAGE(false, "The event doesn't belong to any window");
+				out_event->type = OS_EVENT_TYPE_SURFACE_CLOSE;
 			}
-		}
+		} break;
 
-		if (input_state.keys[KEY_CODE_ESCAPE])
-			is_open = false;
+		case XCB_KEY_PRESS:
+		case XCB_KEY_RELEASE: {
+			xcb_key_press_event_t *kp = (xcb_key_press_event_t *)event;
+
+			uint32_t scancode = kp->detail - 8;
+			if (scancode < 256) {
+				bool released = (event->response_type & ~0x80) == XCB_KEY_RELEASE;
+				KeyboardKey key = state->keycodes[scancode];
+
+				out_event->type = OS_EVENT_TYPE_KEY_RELEASE + released;
+				out_event->as.key.key_code = key;
+			}
+		} break;
 	}
 
-	return 0;
+	return true;
+}
+
+void os_surface_set_min(OS_Surface *surface, uint32_t width, uint32_t height);
+void os_surface_set_max(OS_Surface *surface, uint32_t width, uint32_t height);
+Rectangle os_client_rect(OS_Surface *surface);
+
+/* void os_cursor_show(bool show); */
+/* void os_cursor_capture(OS_Surface *surface, bool capture); */
+/* void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y); */
+
+void *os_native_surface_handle(OS_Surface *surface);
+
+static inline xcb_intern_atom_reply_t *os__atom(String name) {
+	xcb_intern_atom_reply_t *result = xcb_intern_atom_reply(state->conn, xcb_intern_atom(state->conn, 1, name.length, name.text), 0);
+	return result;
 }
 
 void create_key_table(void) {
@@ -346,4 +350,63 @@ void create_key_table(void) {
 	state->keycodes[KEY_KPEQUAL] = KEY_CODE_KPEQUAL;
 	state->keycodes[KEY_KPENTER] = KEY_CODE_KPENTER;
 	state->keycodes[KEY_102ND] = KEY_CODE_WORLD_1;
+}
+void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h, uint32_t max_w, uint32_t max_h) {
+	// source - https://stackoverflow.com/a/59762666
+	typedef struct {
+		/** User specified flags */
+		uint32_t flags;
+		/** User-specified position */
+		int32_t x, y;
+		/** User-specified size */
+		int32_t width, height;
+		/** Program-specified minimum size */
+		int32_t min_width, min_height;
+		/** Program-specified maximum size */
+		int32_t max_width, max_height;
+		/** Program-specified resize increments */
+		int32_t width_inc, height_inc;
+		/** Program-specified minimum aspect ratios */
+		int32_t min_aspect_num, min_aspect_den;
+		/** Program-specified maximum aspect ratios */
+		int32_t max_aspect_num, max_aspect_den;
+		/** Program-specified base size */
+		int32_t base_width, base_height;
+		/** Program-specified window gravity */
+		uint32_t win_gravity;
+	} WMSizeHints;
+
+	enum WMSizeHintsFlag {
+		WM_SIZE_HINT_US_POSITION = 1U << 0,
+		WM_SIZE_HINT_US_SIZE = 1U << 1,
+		WM_SIZE_HINT_P_POSITION = 1U << 2,
+		WM_SIZE_HINT_P_SIZE = 1U << 3,
+		WM_SIZE_HINT_P_MIN_SIZE = 1U << 4,
+		WM_SIZE_HINT_P_MAX_SIZE = 1U << 5,
+		WM_SIZE_HINT_P_RESIZE_INC = 1U << 6,
+		WM_SIZE_HINT_P_ASPECT = 1U << 7,
+		WM_SIZE_HINT_BASE_SIZE = 1U << 8,
+		WM_SIZE_HINT_P_WIN_GRAVITY = 1U << 9
+	};
+
+	WMSizeHints hints = {
+		.flags = WM_SIZE_HINT_P_MIN_SIZE | WM_SIZE_HINT_P_MAX_SIZE,
+		.min_width = min_w,
+		.min_height = min_w,
+		.max_width = max_w,
+		.max_height = max_w,
+	};
+
+	// CENTER
+	/* hints.flags |= WM_SIZE_HINT_P_WIN_GRAVITY; */
+	/* hints.win_gravity = XCB_GRAVITY_CENTER; */
+
+	// Position
+	/* hints.flags |= WM_SIZE_HINT_P_SIZE; */
+	/* hints.x = 0; */
+	/* hints.y = 0; */
+
+	xcb_change_property(state->conn, XCB_PROP_MODE_REPLACE, surface->handle,
+		XCB_ATOM_WM_NORMAL_HINTS, XCB_ATOM_WM_SIZE_HINTS,
+		32, sizeof(WMSizeHints) >> 2, &hints);
 }
