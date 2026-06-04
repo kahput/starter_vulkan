@@ -45,7 +45,7 @@ static inline void arena_scratch_end(ArenaTemp scratch) { arena_temp_end(scratch
 #define arena_push_count(arena, count, T) ((T *)arena_push((arena), sizeof(T) * (count), alignof(T), true))
 #define arena_push_struct(arena, T) ((T *)arena_push((arena), sizeof(T), alignof(T), true))
 #define arena_push_pool(arena, capacity, T) pool_create((arena), sizeof(T), alignof(T), capacity, true)
-#define arena_push_size(arena, size) (uint8_t*)arena_push((arena), size, 1, true)
+#define arena_push_size(arena, size) (uint8_t*)arena_push((arena), size, 8, true)
 
 typedef struct arena_trie_node {
 	struct arena_trie_node *children[4];

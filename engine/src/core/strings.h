@@ -9,7 +9,7 @@ typedef struct String {
 } String;
 
 #define SFMT "%.*s"
-#define sarg(s) (int)(s).length, (s).chars
+#define sarg(s) (int)(s).length, (s).text
 #define str_lit(s) ((String){ (char *)(s), sizeof(s) - 1 })
 #define sc(s) { (char *)(s), sizeof(s) - 1 }
 
