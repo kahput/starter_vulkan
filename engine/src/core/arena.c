@@ -81,8 +81,8 @@ void arena_temp_end(ArenaTemp temp) {
 ArenaTemp arena_scratch_begin(Arena *conflict) {
 	if (scratch_arenas[0].base == NULL) {
 		// TODO: Lower this back down
-		scratch_arenas[0] = arena_make(MiB(256));
-		scratch_arenas[1] = arena_make(MiB(256));
+		scratch_arenas[0] = arena_make(MiB(16));
+		scratch_arenas[1] = arena_make(MiB(16));
 	}
 
 	Arena *selected = conflict == &scratch_arenas[0] ? &scratch_arenas[1] : &scratch_arenas[0];

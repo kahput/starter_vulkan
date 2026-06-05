@@ -32,6 +32,7 @@ typedef struct {
 	OS_Surface surfaces[32];
 	uint32_t count;
 
+	bool initialized;
 } OS_DisplayState;
 
 static OS_DisplayState state[1];
@@ -69,9 +70,6 @@ bool os_display_startup(void) {
 	);
 	xcb_free_pixmap(state->conn, cursor_pixmap);
 
-	LOG_INFO("test.txt %s", os_file_exists(str_lit("test.txt")) ? "exists" : "does not exist");
-	LOG_INFO("libgame.so %s", os_file_exists(str_lit("libgame.so")) ? "exists" : "does not exist");
-
 	create_key_table();
 
 	xcb_intern_atom_reply_t *proto_reply = os__atom(str_lit("WM_PROTOCOLS"));
@@ -91,6 +89,7 @@ bool os_display_startup(void) {
 	free(proto_reply);
 	free(transient_reply);
 
+	state->initialized = true;
 	return true;
 }
 
@@ -105,6 +104,10 @@ OS_Surface *os_surface_open(uint32_t width, uint32_t height, String title, OS_Su
 }
 
 OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags) {
+	if (state->initialized == false) {
+		LOG_WARN("%s - display must be initialized before surface creation, call os_display_startup.", __func__);
+		return NULL;
+	}
 	uint32_t event_mask =
 		XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE |
 		XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
@@ -212,6 +215,8 @@ bool os_event_poll(OS_Event *out_event) {
 			}
 		} break;
 	}
+
+    free(event);
 
 	return true;
 }
@@ -392,14 +397,14 @@ void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h
 	WMSizeHints hints = {
 		.flags = WM_SIZE_HINT_P_MIN_SIZE | WM_SIZE_HINT_P_MAX_SIZE,
 		.min_width = min_w,
-		.min_height = min_w,
+		.min_height = min_h,
 		.max_width = max_w,
-		.max_height = max_w,
+		.max_height = max_h,
 	};
 
 	// CENTER
-	/* hints.flags |= WM_SIZE_HINT_P_WIN_GRAVITY; */
-	/* hints.win_gravity = XCB_GRAVITY_CENTER; */
+	hints.flags |= WM_SIZE_HINT_P_WIN_GRAVITY;
+	hints.win_gravity = XCB_GRAVITY_CENTER;
 
 	// Position
 	/* hints.flags |= WM_SIZE_HINT_P_SIZE; */

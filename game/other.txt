@@ -1,2 +1,0 @@
-I think TRUNC does what I want (e.g., resize)
-This should be appended

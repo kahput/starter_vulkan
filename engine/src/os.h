@@ -30,7 +30,7 @@ void os_memory_release(void *ptr, size_t size);
 // - File system
 
 typedef uint64_t OS_File;
-#define OS_FILE_INVALID ((OS_File)(-1))
+#define OS_FILE_INVALID ((OS_File)(0))
 static inline bool os_file_valid(OS_File handle) { return handle != OS_FILE_INVALID; }
 
 typedef enum {

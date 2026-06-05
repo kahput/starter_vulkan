@@ -117,7 +117,7 @@ String os_file_read_entire(Arena *arena, String path) {
 	if (os_file_valid(handle)) {
 		uint64_t size = os_file_size(handle);
 		uint8_t *buffer = arena_push_size(arena, size + 1);
-		os_file_read(handle, buffer, size + 1);
+		os_file_read(handle, buffer, size);
 		buffer[size] = '\0';
 
 		result.text = (char *)buffer;

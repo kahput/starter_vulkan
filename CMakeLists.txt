@@ -3,49 +3,120 @@ project(program)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-# set(CMAKE_C_EXTENSIONS OFF)
 
-set(CMAKE_CXX_FLAGS_DEBUG
-    "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-set(CMAKE_LINKER_FLAGS_DEBUG
-    "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-
-if(MSVC)
-  set(CONFIG $<CONFIG>)
-  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-else()
-  set(CONFIG ${CMAKE_BUILD_TYPE})
-  # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${CONFIG})
-  # set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${CONFIG})
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
+# ── Shaders ───────────────────────────────────────────────────────────────────
+file(GLOB_RECURSE SHADERS
+    "${CMAKE_SOURCE_DIR}/game/assets/*.vertex"
+    "${CMAKE_SOURCE_DIR}/game/assets/*.fragment")
+foreach(SHADER ${SHADERS})
+    get_filename_component(DIR  ${SHADER} DIRECTORY)
+    get_filename_component(NAME ${SHADER} NAME)
+    set(SPV "${DIR}/bin/${NAME}.spv")
+    add_custom_command(OUTPUT ${SPV} COMMAND glslc ${SHADER} -o ${SPV} DEPENDS ${SHADER} VERBATIM)
+    list(APPEND SHADER_OUTPUTS ${SPV})
+endforeach()
+if(SHADER_OUTPUTS)
+    add_custom_target(compile_shaders ALL DEPENDS ${SHADER_OUTPUTS})
 endif()
 
-# add_subdirectory(tools)
-# add_subdirectory(game)
-add_subdirectory(engine)
+# Scratches
+set(WEB_SCRATCHES web_scratch)
+set(NATIVE_SCRATCHES xcb_scratch)
 
-set(ASSETS_DIR "${CMAKE_SOURCE_DIR}/game/assets")
-if(EXISTS ${ASSETS_DIR})
-    file(GLOB_RECURSE SHADERS "${ASSETS_DIR}/*.vertex" "${ASSETS_DIR}/*.fragment")
-    foreach(SHADER ${SHADERS})
-        file(RELATIVE_PATH REL_PATH "${ASSETS_DIR}" "${SHADER}")
-        get_filename_component(ASSET_DIR "${SHADER}" DIRECTORY)
-        get_filename_component(DEST_NAME "${SHADER}" NAME)
-        set(SPV_FILE "${ASSET_DIR}/bin/${DEST_NAME}.spv")
+# Web build
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    file(GLOB_RECURSE 
+        PROJECT_SOURCES 
+        "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/os/web/*.c" 
+        "${CMAKE_SOURCE_DIR}/engine/src/*.h")
 
-        get_filename_component(REL_DIR "${REL_PATH}" DIRECTORY) 
+    foreach(NAME ${WEB_SCRATCHES})
+        set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")
+        add_executable(
+            ${NAME} 
+            ${SRC}
+            ${PROJECT_SOURCES}
+        )
+        target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
+        target_link_options(${NAME} PRIVATE
+            "-sALLOW_MEMORY_GROWTH"
+            "-sASYNCIFY"
+            "-sTOTAL_STACK=64mb"
+            # "-sASSERTIONS=2" 
+            #     "-sSAFE_HEAP=1"
+            #     "-sSTACK_OVERFLOW_CHECK=2"
+            #     "-g" # Generate source maps to see C code in browser console
+        )
+        set_target_properties(${NAME} PROPERTIES SUFFIX ".html")
 
-        add_custom_command(
-            OUTPUT "${SPV_FILE}"
-            COMMAND glslc "${SHADER}" -o "${SPV_FILE}"
-            DEPENDS "${SHADER}"
-            COMMENT "Compiling GLSL shader: ${REL_PATH} -> ${REL_DIR}/bin/${DEST_NAME}.spv"
-            VERBATIM)
-
-        list(APPEND SHADER_OUTPUTS "${SPV_FILE}")
+        target_link_options(${NAME} PRIVATE 
+            "--preload-file" "${CMAKE_SOURCE_DIR}/game/src@/src"
+        )
     endforeach()
+else()
+    file(GLOB_RECURSE 
+        PROJECT_SOURCES 
+        "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/*.c" 
+        "${CMAKE_SOURCE_DIR}/engine/src/*.h")
 
-  add_custom_target(compile_shaders ALL DEPENDS ${SHADER_OUTPUTS})
+    if(MSVC)
+        set(CONFIG $<CONFIG>)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    else()
+        set(CONFIG ${CMAKE_BUILD_TYPE})
+        # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${CONFIG})
+        # set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${CONFIG})
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
+    endif()
+
+    file(GLOB_RECURSE VENDOR_SOURCES  "engine/vendor/*/*.c" "engine/vendor/*/*.h")
+    add_executable(${PROJECT_NAME} "engine/src/main.c" ${PROJECT_SOURCES} ${VENDOR_SOURCES})
+
+    find_package(Vulkan REQUIRED)
+
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_compile_options(-fsanitize=address)
+        add_link_options(-fsanitize=address)
+    endif()
+
+    target_include_directories(${PROJECT_NAME}
+        PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
+    target_include_directories(
+        ${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} "${CMAKE_BINARY_DIR}/engine"
+        "${CMAKE_SOURCE_DIR}/engine/vendor")
+
+    # Platform-specific configurations
+    if(WIN32)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+        target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+        target_link_libraries(${PROJECT_NAME} Vulkan::Vulkan)
+    elseif(UNIX)
+        target_compile_options(
+            ${PROJECT_NAME}
+            PRIVATE -fvisibility=hidden
+            -Wall
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-pedantic>
+            $<$<CONFIG:Debug>:-Werror>
+            -Wextra
+            -Wno-unused-parameter
+            -Wno-unused-variable
+            -Wno-override-init)
+
+        target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-dynamic)
+        target_link_libraries(${PROJECT_NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
+    else()
+        message(FATAL_ERROR "Windows and Linux only supported platforms")
+    endif()
+
+    foreach(NAME ${NATIVE_SCRATCHES})
+        set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")
+        add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
+        target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
+        target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
+    endforeach()
 endif()
