@@ -13,11 +13,11 @@
 #include <dirent.h>
 
 int32_t os__mode_to_flags(OS_FileMode mode);
-String os__concat_cwd(Arena *arena, String path);
-uint64_t os__open_file_cwd(String path, int32_t flags, int32_t access);
-DIR *os__open_dir_cwd(String path);
+String8 os__concat_cwd(Arena *arena, String8 path);
+uint64_t os__open_file_cwd(String8 path, int32_t flags, int32_t access);
+DIR *os__open_dir_cwd(String8 path);
 
-OS_File os_file_open(String filepath, OS_FileMode mode) {
+OS_File os_file_open(String8 filepath, OS_FileMode mode) {
 	OS_File result = os__open_file_cwd(filepath, os__mode_to_flags(mode), 0666);
 	if (result == OS_FILE_INVALID)
 		LOG_WARN("%s", strerror(errno));
@@ -45,7 +45,7 @@ void os_file_close(OS_File file) {
 		LOG_WARN("%s", strerror(errno));
 }
 
-bool os_file_exists(String filepath) {
+bool os_file_exists(String8 filepath) {
 	bool result = false;
 	uint64_t fd = os__open_file_cwd(filepath, O_RDONLY, 0);
 
@@ -88,7 +88,7 @@ uint64_t os_file_write(OS_File file, const void *buffer, uint64_t size) {
 	return running_offset - (uint8_t *)buffer;
 }
 
-bool os_file_copy(String src, String dst) {
+bool os_file_copy(String8 src, String8 dst) {
 	OS_File input = os_file_open(src, OS_FILE_MODE_READ);
 	if (os_file_valid(input) == false)
 		return false;
@@ -110,17 +110,17 @@ bool os_file_copy(String src, String dst) {
 	return true;
 }
 
-String os_file_read_entire(Arena *arena, String path) {
-	String result = { 0 };
+String8 os_file_read_entire(Arena *arena, String8 path) {
+	String8 result = { 0 };
 
 	OS_File handle = os_file_open(path, OS_FILE_MODE_READ);
 	if (os_file_valid(handle)) {
 		uint64_t size = os_file_size(handle);
-		uint8_t *buffer = arena_push_size(arena, size + 1);
+		uint8_t *buffer = arena_push(arena, size + 1, 8, true);
 		os_file_read(handle, buffer, size);
 		buffer[size] = '\0';
 
-		result.text = (char *)buffer;
+		result.text = buffer;
 		result.length = size;
 
 		os_file_close(handle);
@@ -129,7 +129,7 @@ String os_file_read_entire(Arena *arena, String path) {
 	return result;
 }
 
-void os_file_write_entire(String path, const void *buffer, uint64_t size) {
+void os_file_write_entire(String8 path, const void *buffer, uint64_t size) {
 	OS_File handle = os_file_open(path, OS_FILE_MODE_WRITE);
 	if (os_file_valid(handle)) {
 		os_file_write(handle, buffer, size);
@@ -137,19 +137,19 @@ void os_file_write_entire(String path, const void *buffer, uint64_t size) {
 	}
 }
 
-uint64_t os_file_last_modified(String filefilepath) {
+uint64_t os_file_last_modified(String8 path) {
 	struct stat attrib;
-	if (stat(filefilepath.text, &attrib) == 0)
+	if (stat((char *)path.text, &attrib) == 0)
 		return (uint64_t)attrib.st_mtime;
 
 	return 0;
 }
 
-String os_current_directory(Arena *arena) {
+String8 os_current_directory(Arena *arena) {
 	return os__concat_cwd(arena, str_lit(""));
 }
 
-bool os_directory_exists(String path) {
+bool os_directory_exists(String8 path) {
 	bool result = false;
 	DIR *dir = os__open_dir_cwd(path);
 
@@ -163,11 +163,11 @@ bool os_directory_exists(String path) {
 	return result;
 }
 
-bool os_directory_make(String path) {
+bool os_directory_make(String8 path) {
 	bool result = false;
 	if (os_directory_exists(path) == false) {
 		ArenaTemp scratch = arena_scratch_begin(NULL);
-		int32_t result = mkdir(os__concat_cwd(scratch.arena, path).text, 0755);
+		int32_t result = mkdir((char *)os__concat_cwd(scratch.arena, path).text, 0755);
 		if (result == -1)
 			LOG_WARN("os_directory_make - %s", strerror(errno));
 		arena_scratch_end(scratch);
@@ -178,11 +178,11 @@ bool os_directory_make(String path) {
 	return result;
 }
 
-bool os_directory_delete(String path) {
+bool os_directory_delete(String8 path) {
 	bool result = false;
 	if (os_directory_exists(path) == true) {
 		ArenaTemp scratch = arena_scratch_begin(NULL);
-		int32_t result = rmdir(os__concat_cwd(scratch.arena, path).text);
+		int32_t result = rmdir((char *)os__concat_cwd(scratch.arena, path).text);
 		if (result == -1)
 			LOG_WARN("os_directory_make - %s", strerror(errno));
 		arena_scratch_end(scratch);
@@ -193,18 +193,18 @@ bool os_directory_delete(String path) {
 	return result;
 }
 
-String os__concat_cwd(Arena *arena, String path) {
+String8 os__concat_cwd(Arena *arena, String8 path) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
-	String result = { 0 };
+	String8 result = { 0 };
 
 	uint32_t initial_size = 256;
-	uint8_t *buffer = arena_push_size(scratch.arena, initial_size);
+	uint8_t *buffer = arena_push(scratch.arena, initial_size, 8, true);
 	while (getcwd((void *)buffer, initial_size) == NULL) {
 		initial_size += 256;
-		arena_push_size(scratch.arena, 256);
+		arena_push(scratch.arena, 256, 1, true);
 	}
 
-	result = stringpath_join(arena, string_wrap((char *)buffer), path);
+	result = str8_path_join(arena, str8_wrap((char *)buffer), path);
 	arena_scratch_end(scratch);
 
 	return result;
@@ -227,10 +227,10 @@ int32_t os__mode_to_flags(OS_FileMode mode) {
 	return result;
 }
 
-uint64_t os__open_file_cwd(String path, int32_t flags, int32_t access) {
+uint64_t os__open_file_cwd(String8 path, int32_t flags, int32_t access) {
 	uint64_t result = OS_FILE_INVALID;
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	int32_t open_result = open(os__concat_cwd(scratch.arena, path).text, flags, access);
+	int32_t open_result = open((char *)os__concat_cwd(scratch.arena, path).text, flags, access);
 	arena_scratch_end(scratch);
 
 	if (open_result != -1)
@@ -239,9 +239,9 @@ uint64_t os__open_file_cwd(String path, int32_t flags, int32_t access) {
 	return result;
 }
 
-DIR *os__open_dir_cwd(String path) {
+DIR *os__open_dir_cwd(String8 path) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	DIR *result = opendir(os__concat_cwd(scratch.arena, path).text);
+	DIR *result = opendir((char *)os__concat_cwd(scratch.arena, path).text);
 	arena_scratch_end(scratch);
 
 	return result;

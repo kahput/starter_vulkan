@@ -175,30 +175,6 @@ static inline uint32_t color_pack(Color c) {
 }
 
 typedef struct {
-	size_t size;
-	uint8_t *memory;
-} Bytes;
-
-static inline Bytes bytes(void *ptr, size_t size) { return (Bytes){ .memory = ptr, .size = size }; }
-
-#define buffer_wrap_struct(obj) ((Bytes){ .memory = (uint8_t *)&(obj), .size = sizeof(obj) })
-#define buffer_wrap_array(arr) ((Bytes){ .memory = (uint8_t *)(arr), .size = sizeof(arr) })
-#define buffer_wrap_count(p, n) ((Bytes){ .memory = (uint8_t *)(p), .size = sizeof(*(p)) * (n) })
-#define buffer_wrap_literal(lit) ((Bytes){ .memory = (uint8_t *)(lit), .size = sizeof(lit) - 1 })
-#define buffer_wrap_string(s) ((Bytes){ .memory = (uint8_t *)(s).chars, .size = (s).length })
-
-static inline Bytes bytes_slice(Bytes s, size_t offset, size_t length) {
-	if (offset > s.size)
-		return bytes(NULL, 0);
-	if (offset + length > s.size)
-		length = s.size - offset;
-	return bytes(s.memory + offset, length);
-}
-static inline bool bytes_empty(Bytes s) { return s.size == 0; }
-static inline bool bytes_equal(Bytes a, Bytes b) {
-	if (a.size != b.size)
-		return false;
-	return memory_equals(a.memory, b.memory, a.size);
-}
-
-typedef uint32_t Flag;
+	uint64_t size;
+	uint8_t *bytes;
+} ByteView;

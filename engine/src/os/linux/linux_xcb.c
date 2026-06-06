@@ -14,6 +14,7 @@
 
 struct OS_Surface {
 	uint32_t handle;
+	uint32_t width, height;
 };
 
 typedef struct {
@@ -37,9 +38,10 @@ typedef struct {
 
 static OS_DisplayState state[1];
 
-static inline xcb_intern_atom_reply_t *os__atom(String name);
+static inline xcb_intern_atom_reply_t *os__atom(String8 name);
 static inline void create_key_table(void);
 static inline void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h, uint32_t max_w, uint32_t max_h);
+static inline OS_Surface *os__surface_from_handle(xcb_window_t window);
 
 bool os_display_startup(void) {
 	state->conn = xcb_connect(NULL, NULL);
@@ -98,12 +100,12 @@ void os_display_shutdown(void) {
 		xcb_disconnect(state->conn);
 }
 
-OS_Surface *os_surface_open(uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags) {
+OS_Surface *os_surface_open(uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags) {
 	OS_Surface *result = os_surface_open_with_parent(&state->root, width, height, title, flags);
 	return result;
 }
 
-OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags) {
+OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags) {
 	if (state->initialized == false) {
 		LOG_WARN("%s - display must be initialized before surface creation, call os_display_startup.", __func__);
 		return NULL;
@@ -122,6 +124,9 @@ OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint
 	};
 
 	OS_Surface *surface = &state->surfaces[state->count++];
+	surface->width = width;
+	surface->height = height;
+
 	surface->handle = xcb_generate_id(state->conn);
 
 	xcb_create_window(
@@ -130,14 +135,14 @@ OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint
 		surface->handle,
 		state->root.handle, // parent window
 		0, 0, // x, y
-		width, height, // width, height
+		surface->width, surface->height, // width, height
 		0, // border width
 		XCB_WINDOW_CLASS_INPUT_OUTPUT,
 		XCB_COPY_FROM_PARENT,
 		value_mask,
 		values);
 	if (FLAG_GET(flags, OS_SURFACE_FLAG_RESIZEABLE) == false)
-		os__surface_set_min_max(surface, width, height, width, height);
+		os__surface_set_min_max(surface, surface->width, surface->height, width, height);
 
 	// Change title
 	xcb_change_property(
@@ -180,59 +185,86 @@ void os_surface_hide(OS_Surface *surface) {
 	xcb_flush(state->conn);
 }
 
-bool os_event_poll(OS_Event *out_event) {
-	xcb_generic_event_t *event = xcb_poll_for_event(state->conn);
-	if (event == NULL)
+bool os_event_poll(OS_Event *dst) {
+	xcb_generic_event_t *src = xcb_poll_for_event(state->conn);
+	if (src == NULL)
 		return false;
 
-	memory_zero(out_event, sizeof(OS_Event));
-	switch (event->response_type & ~0x80) {
+	memory_zero(dst, sizeof(OS_Event));
+	switch (src->response_type & ~0x80) {
 		case XCB_CLIENT_MESSAGE: {
-			xcb_client_message_event_t *cm = (xcb_client_message_event_t *)event;
+			xcb_client_message_event_t *cm = (xcb_client_message_event_t *)src;
 			if (cm->data.data32[0] == state->wm_delete_window_atom) {
-				for (uint32_t index = 0; index < state->count; ++index) {
-					if (state->surfaces[index].handle == cm->window)
-						out_event->surface = &state->surfaces[index];
-				}
-
-				if (out_event->surface == NULL)
+				dst->surface = os__surface_from_handle(cm->window);
+				if (dst->surface == NULL)
 					ASSERT_MESSAGE(false, "The event doesn't belong to any window");
-				out_event->type = OS_EVENT_TYPE_SURFACE_CLOSE;
+				dst->type = OS_EVENT_TYPE_SURFACE_CLOSE;
 			}
 		} break;
 
+		case XCB_CONFIGURE_NOTIFY: {
+			xcb_configure_notify_event_t *cfg = (xcb_configure_notify_event_t *)src;
+
+			OS_Surface *surface = os__surface_from_handle(cfg->window);
+			if (surface && (surface->width != cfg->width || surface->height != cfg->height)) {
+				dst->type = OS_EVENT_TYPE_SURFACE_RESIZE;
+				dst->surface = surface;
+
+				surface->width = cfg->width;
+				surface->height = cfg->height;
+
+				dst->as.resize.width = surface->width;
+				dst->as.resize.height = surface->height;
+			}
+		} break;
 		case XCB_KEY_PRESS:
 		case XCB_KEY_RELEASE: {
-			xcb_key_press_event_t *kp = (xcb_key_press_event_t *)event;
+			xcb_key_press_event_t *kp = (xcb_key_press_event_t *)src;
 
 			uint32_t scancode = kp->detail - 8;
 			if (scancode < 256) {
-				bool released = (event->response_type & ~0x80) == XCB_KEY_RELEASE;
+				bool released = (src->response_type & ~0x80) == XCB_KEY_RELEASE;
 				KeyboardKey key = state->keycodes[scancode];
 
-				out_event->type = OS_EVENT_TYPE_KEY_RELEASE + released;
-				out_event->as.key.key_code = key;
+				dst->type = OS_EVENT_TYPE_KEY_RELEASE + released;
+				dst->as.key.key_code = key;
 			}
 		} break;
 	}
-
-    free(event);
+	free(src);
 
 	return true;
 }
 
 void os_surface_set_min(OS_Surface *surface, uint32_t width, uint32_t height);
 void os_surface_set_max(OS_Surface *surface, uint32_t width, uint32_t height);
-Rectangle os_client_rect(OS_Surface *surface);
+
+Rectangle os_client_rect(OS_Surface *surface) {
+	return (Rectangle){ .width = surface->width, .height = surface->height };
+}
 
 /* void os_cursor_show(bool show); */
 /* void os_cursor_capture(OS_Surface *surface, bool capture); */
 /* void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y); */
 
-void *os_native_surface_handle(OS_Surface *surface);
+static const char *extensions[] = {
+	"VK_KHR_surface",
+	"VK_KHR_xcb_surface",
+};
+const char **os_surface_vulkan_extensions(uint32_t *count) {
+    *count = countof(extensions);
+    return extensions;
+}
 
-static inline xcb_intern_atom_reply_t *os__atom(String name) {
-	xcb_intern_atom_reply_t *result = xcb_intern_atom_reply(state->conn, xcb_intern_atom(state->conn, 1, name.length, name.text), 0);
+void *os_native_display_handle(void) {
+	return (void *)state->conn;
+}
+void *os_native_surface_handle(OS_Surface *surface) {
+	return (void *)(uint64_t)surface->handle;
+}
+
+static inline xcb_intern_atom_reply_t *os__atom(String8 name) {
+	xcb_intern_atom_reply_t *result = xcb_intern_atom_reply(state->conn, xcb_intern_atom(state->conn, 1, name.length, (char *)name.text), 0);
 	return result;
 }
 
@@ -414,4 +446,14 @@ void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h
 	xcb_change_property(state->conn, XCB_PROP_MODE_REPLACE, surface->handle,
 		XCB_ATOM_WM_NORMAL_HINTS, XCB_ATOM_WM_SIZE_HINTS,
 		32, sizeof(WMSizeHints) >> 2, &hints);
+}
+
+OS_Surface *os__surface_from_handle(xcb_window_t window) {
+	OS_Surface *result = NULL;
+	for (uint32_t index = 0; index < state->count; ++index) {
+		if (state->surfaces[index].handle == window)
+			result = &state->surfaces[index];
+	}
+
+	return result;
 }

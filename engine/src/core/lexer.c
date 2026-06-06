@@ -87,7 +87,7 @@ void skip_whitespace_and_comments(Lexer *lexer) {
 
 TokenType match_keyword(Lexer *lexer, Token *token) {
 	for (uint32_t index = 0; index < lexer->keyword_count; ++index)
-		if (string_equals(lexer->keywords[index], token->lexeme))
+		if (str8_equals(lexer->keywords[index], token->lexeme))
 			return TOKEN_KEYWORD_0 + index;
 
 	/* switch (token->string.chars[0]) { */

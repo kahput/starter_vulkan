@@ -120,23 +120,23 @@ typedef enum {
 
 typedef struct {
 	TokenType type;
-	String lexeme;
+	String8 lexeme;
 	int line;
 	int column;
 } Token;
 
 typedef struct {
-	String *keyword;
+	String8 *keyword;
 	uint32_t keyword_count;
 } LexerConfig;
 
 typedef struct {
-	Bytes source;
+	String8 source;
 
 	uint32_t keyword_count;
-	String *keywords;
+	String8 *keywords;
 
-	char *at;
+	uint8_t *at;
 	int line;
 	int column;
 
@@ -146,8 +146,8 @@ typedef struct {
 
 extern const char *token_type_names[TOKEN_MAX];
 
-static inline Lexer lexer_make(Bytes source, uint32_t keyword_count, String *keywords) {
-	return (Lexer){ .source = source, .at = (char *)source.memory, .line = 0, .keyword_count = keyword_count, .keywords = keywords };
+static inline Lexer lexer_make(String8 source, uint32_t keyword_count, String8 *keywords) {
+	return (Lexer){ .source = source, .at = source.text, .line = 0, .keyword_count = keyword_count, .keywords = keywords };
 }
 
 Token lexer_next(Lexer *lexer);

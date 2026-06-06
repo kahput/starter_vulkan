@@ -39,25 +39,25 @@ typedef enum {
 	OS_FILE_MODE_READWRITE,
 } OS_FileMode;
 
-OS_File os_file_open(String path, OS_FileMode);
+OS_File os_file_open(String8 path, OS_FileMode);
 uint64_t os_file_size(OS_File handle);
 void os_file_close(OS_File handle);
 
 uint64_t os_file_read(OS_File file, void *buffer, uint64_t size);
 uint64_t os_file_write(OS_File file, const void *buffer, uint64_t size);
-bool os_file_copy(String src, String dst);
+bool os_file_copy(String8 src, String8 dst);
 
-String os_file_read_entire(Arena *arena, String path);
-void os_file_write_entire(String filename, const void *buffer, uint64_t size);
+String8 os_file_read_entire(Arena *arena, String8 path);
+void os_file_write_entire(String8 filename, const void *buffer, uint64_t size);
 
-bool os_file_exists(String path);
-bool os_file_delete(String path);
-uint64_t os_file_last_modified(String filepath);
-String os_current_directory(Arena *arena);
+bool os_file_exists(String8 path);
+bool os_file_delete(String8 path);
+uint64_t os_file_last_modified(String8 filepath);
+String8 os_current_directory(Arena *arena);
 
-bool os_directory_exists(String path);
-bool os_directory_make(String path);
-bool os_directory_delete(String path);
+bool os_directory_exists(String8 path);
+bool os_directory_make(String8 path);
+bool os_directory_delete(String8 path);
 
 /* typedef enum { */
 /* 	OS_ENTRY_TYPE_FILE, */
@@ -67,12 +67,12 @@ bool os_directory_delete(String path);
 
 /* typedef struct { */
 /* 	OS_EntryType type; */
-/* 	String name; */
+/* 	String8 name; */
 /* 	uint64_t last_modified; */
 /* 	uint64_t size; */
 /* } OS_DirectoryEntry; */
 
-/* OS_DirectoryEntry *os_directory_walk(Arena *arena, String path, bool recurse, uint32_t *count); */
+/* OS_DirectoryEntry *os_directory_walk(Arena *arena, String8 path, bool recurse, uint32_t *count); */
 
 // ----------------------
 // - Dynamic libraries
@@ -80,9 +80,9 @@ typedef void *OS_Library;
 #define OS_LIBRARY_INVALID ((OS_Library)0)
 static inline bool os_library_valid(OS_Library lib) { return lib != OS_LIBRARY_INVALID; }
 
-OS_Library os_library_load(String path);
+OS_Library os_library_load(String8 path);
 void os_library_unload(OS_Library lib);
-void os_library_symbol(OS_Library lib, String symbol, void *out_symbol);
+void os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol);
 
 // ----------------------
 // - Draw surfaces/windows
@@ -97,8 +97,8 @@ typedef enum {
 	OS_SURFACE_FLAG_RESIZEABLE = 0x1,
 } OS_SurfaceFlags;
 
-OS_Surface *os_surface_open(uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags);
-OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String title, OS_SurfaceFlags flags);
+OS_Surface *os_surface_open(uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags);
+OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags);
 void os_surface_close(OS_Surface *surface);
 
 void os_surface_show(OS_Surface *surface);
@@ -157,6 +157,8 @@ typedef struct {
 } OS_Event;
 bool os_event_poll(OS_Event *out_event);
 
+const char **os_surface_vulkan_extensions(uint32_t *count);
+void *os_native_display_handle(void);
 void *os_native_surface_handle(OS_Surface *surface);
 
 /* void os_cursor_show(bool show); */

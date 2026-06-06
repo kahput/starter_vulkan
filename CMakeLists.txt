@@ -21,7 +21,7 @@ endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
-set(NATIVE_SCRATCHES xcb_scratch)
+set(NATIVE_SCRATCHES xcb_scratch vulkan_scratch)
 
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -78,10 +78,10 @@ else()
 
     find_package(Vulkan REQUIRED)
 
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        add_compile_options(-fsanitize=address)
-        add_link_options(-fsanitize=address)
-    endif()
+    # if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    #     add_compile_options(-fsanitize=address)
+    #     add_link_options(-fsanitize=address)
+    # endif()
 
     target_include_directories(${PROJECT_NAME}
         PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")

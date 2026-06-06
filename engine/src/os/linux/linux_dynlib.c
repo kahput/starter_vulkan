@@ -4,11 +4,11 @@
 #include "os.h"
 #include <dlfcn.h>
 
-OS_Library os_library_load(String path) {
+OS_Library os_library_load(String8 path) {
 	OS_Library result = NULL;
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	String cwd = os_current_directory(scratch.arena); // TODO: Internal header to get os__concat_cwd();
-	result = dlopen(stringpath_join(scratch.arena, cwd, path).text, RTLD_NOW);
+	String8 cwd = os_current_directory(scratch.arena); // TODO: Internal header to get os__concat_cwd();
+	result = dlopen((char *)str8_path_join(scratch.arena, cwd, path).text, RTLD_NOW);
 
 	if (result == NULL)
 		LOG_WARN("os_library_load - %s", dlerror());
@@ -25,7 +25,7 @@ void os_library_unload(OS_Library lib) {
 		LOG_WARN("os_library_unload - %s", dlerror());
 }
 
-void os_library_symbol(OS_Library lib, String symbol, void *out_symbol) {
+void os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
 	bool error = false;
 	if (out_symbol == NULL) {
 		LOG_WARN("os_library_symbol - invalid out parameter passed.");
@@ -37,7 +37,7 @@ void os_library_symbol(OS_Library lib, String symbol, void *out_symbol) {
 	}
 
 	if (error == false) {
-		void *result = dlsym(lib, symbol.text);
+		void *result = dlsym(lib, (char *)symbol.text);
 
 		if (result == NULL)
 			LOG_WARN("os_library_symbol - %s", dlerror());
