@@ -43,8 +43,8 @@ typedef struct {
 	VkImageViewCreateInfo view_infos[SWAPCHAIN_IMAGE_COUNT];
 	uint32_t image_count;
 
-	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
-	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT];
+	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
+	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
 
 	int32_t present_index;
 	VkQueue present_queue;
@@ -110,7 +110,7 @@ typedef enum {
 } BufferUsage;
 
 typedef enum {
-	BUFFER_MEMORY_LOCAl,
+	BUFFER_MEMORY_LOCAL,
 	BUFFER_MEMORY_SHARED,
 } BufferMemory;
 
@@ -118,11 +118,14 @@ GFX_Image vulkan_image_make(GFX_Context *context, uint32_t width, uint32_t heigh
 GFX_Buffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
 GFX_Surface vulkan_surface_make(GFX_Context *context, OS_Surface *surface);
 
+void vulkan_image_barrier(VkCommandBuffer command_buffer, VkImage image, VkImageSubresourceRange range, VkImageLayout src, VkImageLayout dst);
+
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	os_display_startup();
-	OS_Surface *window = os_surface_open(1280, 720, s("vulkan_scratch"), 0);
+	OS_Surface *main = os_surface_open(640, 360, s("vulkan_scratch"), 0);
+	OS_Surface *popup = os_surface_open(300, 300, s("popup window"), 0);
 
 	uint64_t start_time = os_time_ns();
 
@@ -130,7 +133,7 @@ int main(void) {
 
 	GFX_Context context[] = { 0 };
 	gfx_startup(context);
-	GFX_Surface swapchain[] = { vulkan_surface_make(context, window) };
+	GFX_Surface swapchains[] = { vulkan_surface_make(context, main), vulkan_surface_make(context, popup) };
 
 	GFX_Image image = vulkan_image_make(context, 256, 256, PIXEL_FORMAT_RGBA8_UNORM, IMAGE_USAGE_RENDER | IMAGE_USAGE_TRANSFER);
 	GFX_Buffer output_buffers[MAX_FRAMES_IN_FLIGHT];
@@ -157,12 +160,25 @@ int main(void) {
 		// Frame fence, command buffer & image index
 		VkFence *fence = &context->in_flight_fences[context->current_frame];
 		VkCommandBuffer command_buffer = context->command_buffers[context->current_frame];
-		uint32_t image_index = 0;
+		uint32_t image_indices[SWAPCHAIN_IMAGE_COUNT];
 
 		// Wait for resources & swapchain image availability
 		vkWaitForFences(context->logical_device, 1, fence, VK_TRUE, UINT64_MAX);
-		VkResult result = vkAcquireNextImageKHR(context->logical_device, swapchain->swapchain, UINT64_MAX, swapchain->image_available_semaphores[context->current_frame], VK_NULL_HANDLE, &image_index);
 
+		VkResult result = vkAcquireNextImageKHR(
+			context->logical_device,
+			swapchains[0].swapchain,
+			UINT64_MAX,
+			swapchains[0].image_available_semaphores[context->current_frame],
+			VK_NULL_HANDLE, &image_indices[0]);
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) // TODO: Handle out of date swapchain
+			break;
+		result = vkAcquireNextImageKHR(
+			context->logical_device,
+			swapchains[1].swapchain,
+			UINT64_MAX,
+			swapchains[1].image_available_semaphores[context->current_frame],
+			VK_NULL_HANDLE, &image_indices[1]);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) // TODO: Handle out of date swapchain
 			break;
 
@@ -181,60 +197,57 @@ int main(void) {
 		}
 
 		// Transition swapchain image for clearing
-		VkImageMemoryBarrier image_barrier = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.image = swapchain->images[image_index],
-			.subresourceRange = swapchain->view_infos[image_index].subresourceRange,
-		};
-
-		vkCmdPipelineBarrier(
-			command_buffer,
-			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			0,
-			0, 0,
-			0, 0,
-			1, &image_barrier);
+		for (uint32_t index = 0; index < countof(swapchains); ++index) {
+			GFX_Surface *swapchain = &swapchains[index];
+			vulkan_image_barrier(
+				command_buffer,
+				swapchain->images[image_indices[index]],
+				swapchain->view_infos[image_indices[index]].subresourceRange,
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		}
 
 		double time = (os_time_ns() - start_time) * 1e-9;
 		float flash = fabsf(sinf(time));
 		VkClearColorValue clear_color = {
 			.float32 = { flash, 0.0f, flash, 1.0f },
 		};
-		vkCmdClearColorImage(command_buffer, swapchain->images[image_index], VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &swapchain->view_infos[image_index].subresourceRange);
-
-		image_barrier = (VkImageMemoryBarrier){
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstAccessMask = 0,
-			.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.image = swapchain->images[image_index],
-			.subresourceRange = swapchain->view_infos[image_index].subresourceRange,
-		};
-		vkCmdPipelineBarrier(
+		vkCmdClearColorImage(
 			command_buffer,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-			0,
-			0, 0,
-			0, 0,
-			1, &image_barrier);
+			swapchains[0].images[image_indices[0]],
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			&clear_color,
+			1,
+			&swapchains[0].view_infos[image_indices[0]].subresourceRange);
+
+		clear_color.float32[0] = 0.0f;
+		clear_color.float32[1] = flash;
+		clear_color.float32[2] = 0.0f;
+		vkCmdClearColorImage(
+			command_buffer,
+			swapchains[1].images[image_indices[1]],
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			&clear_color,
+			1,
+			&swapchains[1].view_infos[image_indices[1]].subresourceRange);
+		for (uint32_t index = 0; index < countof(swapchains); ++index) {
+			GFX_Surface *swapchain = &swapchains[index];
+			vulkan_image_barrier(
+				command_buffer,
+				swapchain->images[image_indices[index]],
+				swapchain->view_infos[image_indices[index]].subresourceRange,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		}
 
 		if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
 			LOG_INFO("failed to record command buffer.");
 			break;
 		}
 
-		VkSemaphore wait_semaphores[] = { swapchain->image_available_semaphores[context->current_frame] };
-		VkSemaphore signal_semaphoers[] = { swapchain->render_done_semaphores[image_index] };
-		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+		VkSemaphore wait_semaphores[] = { swapchains[0].image_available_semaphores[context->current_frame], swapchains[1].image_available_semaphores[context->current_frame] };
+		VkSemaphore signal_semaphores[] = { swapchains[0].render_done_semaphores[image_indices[0]], swapchains[1].render_done_semaphores[image_indices[1]] };
+		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 		VkSubmitInfo submit_info = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -243,8 +256,8 @@ int main(void) {
 			.pWaitDstStageMask = wait_stages,
 			.commandBufferCount = 1,
 			.pCommandBuffers = &command_buffer,
-			.signalSemaphoreCount = 1,
-			.pSignalSemaphores = signal_semaphoers,
+			.signalSemaphoreCount = countof(signal_semaphores),
+			.pSignalSemaphores = signal_semaphores,
 		};
 
 		if (vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->in_flight_fences[context->current_frame]) != VK_SUCCESS) {
@@ -252,15 +265,21 @@ int main(void) {
 			break;
 		}
 
+		VkSwapchainKHR swapchain_handles[] = { swapchains[0].swapchain, swapchains[1].swapchain };
 		VkPresentInfoKHR present_info = {
 			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-			.waitSemaphoreCount = 1,
-			.pWaitSemaphores = signal_semaphoers,
-			.swapchainCount = 1,
-			.pSwapchains = &swapchain->swapchain,
-			.pImageIndices = &image_index,
+			.waitSemaphoreCount = countof(signal_semaphores),
+			.pWaitSemaphores = signal_semaphores,
+			.swapchainCount = countof(swapchains),
+			.pSwapchains = swapchain_handles,
+			.pImageIndices = image_indices,
 		};
-		result = vkQueuePresentKHR(swapchain->present_queue, &present_info);
+		result = vkQueuePresentKHR(swapchains[0].present_queue, &present_info);
+		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+			uint32_t x = 0;
+			(void)x;
+			break;
+		}
 
 		context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
@@ -284,27 +303,30 @@ int main(void) {
 		vkDestroyImage(context->logical_device, image.handle, 0);
 
 	// Destroy swapchain/surface
-	for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->image_available_semaphores); ++semaphore_index)
-		if (swapchain->image_available_semaphores[semaphore_index])
-			vkDestroySemaphore(context->logical_device, swapchain->image_available_semaphores[semaphore_index], NULL);
-	for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->render_done_semaphores); ++semaphore_index)
-		if (swapchain->render_done_semaphores[semaphore_index])
-			vkDestroySemaphore(context->logical_device, swapchain->render_done_semaphores[semaphore_index], NULL);
+	for (uint32_t index = 0; index < countof(swapchains); ++index) {
+		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchains[index].image_available_semaphores); ++semaphore_index)
+			if (swapchains[index].image_available_semaphores[semaphore_index])
+				vkDestroySemaphore(context->logical_device, swapchains[index].image_available_semaphores[semaphore_index], NULL);
+		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchains[index].render_done_semaphores); ++semaphore_index)
+			if (swapchains[index].render_done_semaphores[semaphore_index])
+				vkDestroySemaphore(context->logical_device, swapchains[index].render_done_semaphores[semaphore_index], NULL);
 
-	for (uint32_t image_index = 0; image_index < swapchain->image_count; ++image_index)
-		if (swapchain->views[image_index])
-			vkDestroyImageView(context->logical_device, swapchain->views[image_index], NULL);
+		for (uint32_t image_index = 0; image_index < swapchains[index].image_count; ++image_index)
+			if (swapchains[index].views[image_index])
+				vkDestroyImageView(context->logical_device, swapchains[index].views[image_index], NULL);
 
-	if (swapchain->swapchain)
-		vkDestroySwapchainKHR(context->logical_device, swapchain->swapchain, NULL);
-	if (swapchain->handle)
-		vkDestroySurfaceKHR(context->instance, swapchain->handle, NULL);
-	memory_zero(swapchain, sizeof(swapchain));
+		if (swapchains[index].swapchain)
+			vkDestroySwapchainKHR(context->logical_device, swapchains[index].swapchain, NULL);
+		if (swapchains[index].handle)
+			vkDestroySurfaceKHR(context->instance, swapchains[index].handle, NULL);
+		memory_zero(swapchains + index, sizeof(swapchains[index]));
+	}
 
 	gfx_shutdown(context);
 
 	arena_scratch_end(scratch);
-	os_surface_close(window);
+	os_surface_close(popup);
+	os_surface_close(main);
 	os_display_shutdown();
 	return 0;
 }
@@ -481,7 +503,7 @@ GFX_Buffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory 
 
 	bool ok = true;
 	VkBufferUsageFlags vk_usage = gfx__to_vk_buffer_usage(usage);
-	VkMemoryPropertyFlags memory_flags = memory == BUFFER_MEMORY_LOCAl
+	VkMemoryPropertyFlags memory_flags = memory == BUFFER_MEMORY_LOCAL
 		? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 		: VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
@@ -565,9 +587,10 @@ GFX_Surface vulkan_surface_make(GFX_Context *context, OS_Surface *surface) {
 		vkGetPhysicalDeviceSurfaceFormatsKHR(context->physical_device, result.handle, &surface_format_count, 0);
 		surface_formats = arena_push_count(scratch.arena, VkSurfaceFormatKHR, surface_format_count);
 		vkGetPhysicalDeviceSurfaceFormatsKHR(context->physical_device, result.handle, &surface_format_count, surface_formats);
+
 		vkGetPhysicalDeviceSurfacePresentModesKHR(context->physical_device, result.handle, &present_mode_count, 0);
 		present_modes = arena_push_count(scratch.arena, VkPresentModeKHR, present_mode_count);
-		vkGetPhysicalDeviceSurfacePresentModesKHR(context->physical_device, result.handle, &present_mode_count, 0);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(context->physical_device, result.handle, &present_mode_count, present_modes);
 
 		uint32_t queue_family_count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(context->physical_device, &queue_family_count, 0);
@@ -1222,4 +1245,102 @@ bool gfx__vk_descriptor_pool(GFX_Context *context) {
 	}
 
 	return ok;
+}
+
+void vulkan_image_barrier(VkCommandBuffer command_buffer, VkImage image, VkImageSubresourceRange range, VkImageLayout src, VkImageLayout dst) {
+	VkPipelineStageFlags src_stage = 0;
+	VkPipelineStageFlags dst_stage = 0;
+	VkAccessFlags src_access = 0;
+	VkAccessFlags dst_access = 0;
+
+	switch (src) {
+		case VK_IMAGE_LAYOUT_UNDEFINED:
+		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			src_access = 0;
+			break;
+
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+			src_access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+			src_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			src_access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+			src_stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+			src_access = VK_ACCESS_SHADER_READ_BIT;
+			break;
+
+		default:
+			LOG_WARN("Vuklan: unhandled old layout in %s, defaulting to ALL_COMMANDS", __func__);
+			src_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+			src_access = VK_ACCESS_MEMORY_WRITE_BIT;
+			break;
+	}
+
+	switch (dst) {
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+			dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+			dst_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			dst_access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+			dst_stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+			dst_access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+			break;
+
+		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+			dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+			dst_access = 0;
+			break;
+
+		default:
+			LOG_WARN("Vuklan: unhandled new layout in %s, defaulting to ALL_COMMANDS", __func__);
+			dst_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+			dst_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+			break;
+	}
+
+	VkImageMemoryBarrier image_barrier = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.srcAccessMask = src_access,
+		.dstAccessMask = dst_access,
+		.oldLayout = src,
+		.newLayout = dst,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image = image,
+		.subresourceRange = range,
+	};
+
+	vkCmdPipelineBarrier(
+		command_buffer,
+		src_stage, dst_stage,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &image_barrier);
 }
