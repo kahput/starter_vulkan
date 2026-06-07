@@ -41,9 +41,6 @@ compile_commands.json
 Thumbs.db           # Windows
 
 # Ignore compiled object files and libraries
-/game/*
-!src
-/game/tools
 *.spv
 *.o
 *.a

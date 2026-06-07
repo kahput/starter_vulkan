@@ -11,80 +11,6 @@
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
-typedef struct {
-	VkImage handle;
-	VkImageView view;
-	VkDeviceMemory memory;
-
-	uint32_t width, height;
-
-	VkImageCreateInfo image_info;
-	VkImageViewCreateInfo view_info;
-} GFX_Image;
-
-typedef struct {
-	VkBuffer handle;
-	VkDeviceMemory memory;
-
-	uint64_t size;
-
-	VkBufferCreateInfo info;
-} GFX_Buffer;
-
-#define SWAPCHAIN_IMAGE_COUNT 3
-typedef struct {
-	VkSurfaceKHR handle;
-	VkSwapchainKHR swapchain;
-
-	VkSwapchainCreateInfoKHR swapchain_info;
-
-	VkImage images[SWAPCHAIN_IMAGE_COUNT];
-	VkImageView views[SWAPCHAIN_IMAGE_COUNT];
-	VkImageViewCreateInfo view_infos[SWAPCHAIN_IMAGE_COUNT];
-	uint32_t image_count;
-
-	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
-	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
-
-	int32_t present_index;
-	VkQueue present_queue;
-} GFX_Surface;
-
-typedef struct {
-	VkInstance instance;
-
-	VkPhysicalDevice physical_device;
-	VkDevice logical_device;
-
-	// Queues
-	int32_t graphics_index, present_index;
-	int32_t transfer_index, compute_index;
-
-	VkQueue graphics_queue;
-
-	// Commands
-	VkCommandPool graphics_command_pool;
-	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
-
-	// Syncrhonization primitives
-	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
-
-	// transient frame descriptor pools
-	VkDescriptorPool frame_descriptor_pools[MAX_FRAMES_IN_FLIGHT];
-
-	// engine push constant range
-	VkPushConstantRange global_range;
-
-	// Running
-	uint32_t current_frame;
-
-#ifdef DEV_BUILD
-	VkDebugUtilsMessengerEXT debug_messenger;
-#endif
-} GFX_Context;
-bool gfx_startup(GFX_Context *context);
-void gfx_shutdown(GFX_Context *context);
-
 typedef enum {
 	PIXEL_FORMAT_RGBA8_UNORM,
 	PIXEL_FORMAT_RGBA8_SRGB,
@@ -114,9 +40,97 @@ typedef enum {
 	BUFFER_MEMORY_SHARED,
 } BufferMemory;
 
-GFX_Image vulkan_image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFormat format, ImageUsageFlags usage);
-GFX_Buffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
-GFX_Surface vulkan_surface_make(GFX_Context *context, OS_Surface *surface);
+typedef struct {
+	VkImage handle;
+	VkImageView view;
+	VkDeviceMemory memory;
+
+	uint32_t width, height;
+
+	VkImageCreateInfo image_info;
+	VkImageViewCreateInfo view_info;
+} VulkanImage;
+
+typedef struct {
+	Arena *arena;
+	VkBuffer handle;
+	VkDeviceMemory memory;
+
+	uint64_t size;
+
+	VkBufferCreateInfo info;
+
+} VulkanBuffer;
+
+#define MAX_DESCRIPTOR_SETS 4
+typedef struct {
+	VkPipeline handle;
+	VkPipelineLayout layout;
+
+	VkDescriptorSetLayout set_layouts[MAX_DESCRIPTOR_SETS];
+
+	VkShaderModule compute_shader;
+} VulkanPipeline;
+
+#define SWAPCHAIN_IMAGE_COUNT 3
+typedef struct {
+	VkSurfaceKHR handle;
+	VkSwapchainKHR swapchain;
+
+	VkSwapchainCreateInfoKHR swapchain_info;
+
+	VkImage images[SWAPCHAIN_IMAGE_COUNT];
+	VkImageView views[SWAPCHAIN_IMAGE_COUNT];
+	VkImageViewCreateInfo view_infos[SWAPCHAIN_IMAGE_COUNT];
+	uint32_t image_count;
+
+	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
+	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
+
+	int32_t present_index;
+	VkQueue present_queue;
+} VulkanSurface;
+
+typedef struct {
+	VkInstance instance;
+
+	VkPhysicalDevice physical_device;
+	VkDevice logical_device;
+
+	// Queues
+	int32_t graphics_index, present_index;
+	int32_t transfer_index, compute_index;
+
+	VkQueue graphics_queue;
+
+	// Commands
+	VkCommandPool graphics_command_pool;
+	VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
+
+	// Syncrhonization primitives
+	VkFence in_flight_fences[MAX_FRAMES_IN_FLIGHT];
+
+	// transient frame descriptor pools
+	VkDescriptorPool frame_descriptor_pools[MAX_FRAMES_IN_FLIGHT];
+
+	// engine push constant range
+	VkPushConstantRange global_range;
+
+	// Running
+	uint32_t current_frame;
+
+	bool initialized;
+#ifdef DEV_BUILD
+	VkDebugUtilsMessengerEXT debug_messenger;
+#endif
+} GFX_Context;
+bool gfx_startup(GFX_Context *context);
+void gfx_shutdown(GFX_Context *context);
+
+VulkanImage vulkan_image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFormat format, ImageUsageFlags usage);
+VulkanBuffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
+VulkanSurface vulkan_surface_make(GFX_Context *context, OS_Surface *surface);
+VulkanPipeline vulkan_compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size);
 
 void vulkan_image_barrier(VkCommandBuffer command_buffer, VkImage image, VkImageSubresourceRange range, VkImageLayout src, VkImageLayout dst);
 
@@ -133,12 +147,12 @@ int main(void) {
 
 	GFX_Context context[] = { 0 };
 	gfx_startup(context);
-	GFX_Surface swapchains[] = { vulkan_surface_make(context, main), vulkan_surface_make(context, popup) };
+	VulkanSurface swapchains[] = { vulkan_surface_make(context, main), vulkan_surface_make(context, popup) };
 
-	GFX_Image image = vulkan_image_make(context, 256, 256, PIXEL_FORMAT_RGBA8_UNORM, IMAGE_USAGE_RENDER | IMAGE_USAGE_TRANSFER);
-	GFX_Buffer output_buffers[MAX_FRAMES_IN_FLIGHT];
-	for (uint32_t index = 0; index < countof(output_buffers); ++index)
-		output_buffers[index] = vulkan_buffer_make(context, 256 * 256 * 4, BUFFER_MEMORY_SHARED, BUFFER_USAGE_TRANSFER);
+	VulkanImage image = vulkan_image_make(context, 640, 360, PIXEL_FORMAT_RGBA16_FLOAT, IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER);
+
+	String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
+	VulkanPipeline pipeline = vulkan_compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
 
 	bool is_open = true;
 	while (is_open) {
@@ -157,14 +171,16 @@ int main(void) {
 			}
 		}
 
-		// Frame fence, command buffer & image index
+		// Frame resources
 		VkFence *fence = &context->in_flight_fences[context->current_frame];
 		VkCommandBuffer command_buffer = context->command_buffers[context->current_frame];
-		uint32_t image_indices[SWAPCHAIN_IMAGE_COUNT];
+		VkDescriptorPool descriptor_pool = context->frame_descriptor_pools[context->current_frame];
 
-		// Wait for resources & swapchain image availability
+		// Wait for frame resource availability
 		vkWaitForFences(context->logical_device, 1, fence, VK_TRUE, UINT64_MAX);
 
+		// Swapchain image acquisition
+		uint32_t image_indices[SWAPCHAIN_IMAGE_COUNT];
 		VkResult result = vkAcquireNextImageKHR(
 			context->logical_device,
 			swapchains[0].swapchain,
@@ -183,9 +199,9 @@ int main(void) {
 			break;
 
 		// reset frame resources
-		vkResetDescriptorPool(context->logical_device, context->frame_descriptor_pools[context->current_frame], 0);
 		vkResetCommandBuffer(command_buffer, 0);
 		vkResetFences(context->logical_device, 1, fence);
+		vkResetDescriptorPool(context->logical_device, descriptor_pool, 0);
 
 		// Begin command recording
 		VkCommandBufferBeginInfo cb_begin_info = {
@@ -196,9 +212,9 @@ int main(void) {
 			break;
 		}
 
-		// Transition swapchain image for clearing
+		// Transition swapchain images
 		for (uint32_t index = 0; index < countof(swapchains); ++index) {
-			GFX_Surface *swapchain = &swapchains[index];
+			VulkanSurface *swapchain = &swapchains[index];
 			vulkan_image_barrier(
 				command_buffer,
 				swapchain->images[image_indices[index]],
@@ -206,6 +222,8 @@ int main(void) {
 				VK_IMAGE_LAYOUT_UNDEFINED,
 				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		}
+		// transition compute storage image
+		vulkan_image_barrier(command_buffer, image.handle, image.view_info.subresourceRange, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
 		double time = (os_time_ns() - start_time) * 1e-9;
 		float flash = fabsf(sinf(time));
@@ -230,8 +248,54 @@ int main(void) {
 			&clear_color,
 			1,
 			&swapchains[1].view_infos[image_indices[1]].subresourceRange);
+
+		VkDescriptorSetAllocateInfo alloc_info = {
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = descriptor_pool,
+			.descriptorSetCount = 1,
+			.pSetLayouts = pipeline.set_layouts + 0,
+		};
+
+		VkDescriptorSet set = 0;
+		vkAllocateDescriptorSets(context->logical_device, &alloc_info, &set);
+		VkDescriptorImageInfo image_info = {
+			.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+			.imageView = image.view,
+		};
+		VkWriteDescriptorSet write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = set,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			.pImageInfo = &image_info,
+		};
+		vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
+
+		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle);
+		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.layout, 0, 1, &set, 0, 0);
+
+		vkCmdDispatch(command_buffer, 40, 23, 1);
+
+		VkImageBlit blit_info = {
+			.srcOffsets[1] = {
+			  .x = 640,
+			  .y = 360,
+			  .z = 1,
+			},
+			.srcSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseArrayLayer = 0, .layerCount = 1, .mipLevel = 0 },
+			.dstOffsets[1] = {
+			  .x = 640,
+			  .y = 360,
+			  .z = 1,
+			},
+			.dstSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseArrayLayer = 0, .layerCount = 1, .mipLevel = 0 },
+		};
+		vkCmdBlitImage(command_buffer, image.handle, VK_IMAGE_LAYOUT_GENERAL, swapchains[0].images[image_indices[0]], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit_info, 0);
+
 		for (uint32_t index = 0; index < countof(swapchains); ++index) {
-			GFX_Surface *swapchain = &swapchains[index];
+			VulkanSurface *swapchain = &swapchains[index];
 			vulkan_image_barrier(
 				command_buffer,
 				swapchain->images[image_indices[index]],
@@ -247,7 +311,7 @@ int main(void) {
 
 		VkSemaphore wait_semaphores[] = { swapchains[0].image_available_semaphores[context->current_frame], swapchains[1].image_available_semaphores[context->current_frame] };
 		VkSemaphore signal_semaphores[] = { swapchains[0].render_done_semaphores[image_indices[0]], swapchains[1].render_done_semaphores[image_indices[1]] };
-		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT };
 
 		VkSubmitInfo submit_info = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -286,21 +350,33 @@ int main(void) {
 
 	vkDeviceWaitIdle(context->logical_device);
 
-	// destroy buffers
-	for (uint32_t index = 0; index < countof(output_buffers); ++index) {
-		if (output_buffers[index].memory)
-			vkFreeMemory(context->logical_device, output_buffers[index].memory, 0);
-		if (output_buffers[index].handle)
-			vkDestroyBuffer(context->logical_device, output_buffers[index].handle, 0);
+	// destroy images
+	{
+		if (image.memory)
+			vkFreeMemory(context->logical_device, image.memory, 0);
+		if (image.view)
+			vkDestroyImageView(context->logical_device, image.view, 0);
+		if (image.handle)
+			vkDestroyImage(context->logical_device, image.handle, 0);
+
+		memory_zero_struct(image);
 	}
 
-	// destroy images
-	if (image.memory)
-		vkFreeMemory(context->logical_device, image.memory, 0);
-	if (image.view)
-		vkDestroyImageView(context->logical_device, image.view, 0);
-	if (image.handle)
-		vkDestroyImage(context->logical_device, image.handle, 0);
+	// Destroy compute pipeline
+	{
+		if (pipeline.compute_shader)
+			vkDestroyShaderModule(context->logical_device, pipeline.compute_shader, NULL);
+		for (uint32_t set_index = 0; set_index < countof(pipeline.set_layouts); ++set_index)
+			if (pipeline.set_layouts[set_index])
+				vkDestroyDescriptorSetLayout(context->logical_device, pipeline.set_layouts[set_index], NULL);
+
+		if (pipeline.layout)
+			vkDestroyPipelineLayout(context->logical_device, pipeline.layout, NULL);
+		if (pipeline.handle)
+			vkDestroyPipeline(context->logical_device, pipeline.handle, NULL);
+
+		memory_zero_struct(pipeline);
+	}
 
 	// Destroy swapchain/surface
 	for (uint32_t index = 0; index < countof(swapchains); ++index) {
@@ -409,8 +485,8 @@ uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_f
 	return 0;
 }
 
-GFX_Image vulkan_image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFormat format, ImageUsageFlags usage) {
-	GFX_Image result = { 0 };
+VulkanImage vulkan_image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFormat format, ImageUsageFlags usage) {
+	VulkanImage result = { 0 };
 	LOG_DEBUG("creating vulkan image.");
 
 	bool ok = true;
@@ -490,15 +566,15 @@ GFX_Image vulkan_image_make(GFX_Context *context, uint32_t width, uint32_t heigh
 		if (result.handle)
 			vkDestroyImage(context->logical_device, result.handle, 0);
 
-		memory_zero(&result, sizeof(GFX_Image));
+		memory_zero(&result, sizeof(VulkanImage));
 	}
 
 	/* LOG_INFO("image loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, image_format_to_string[format]); */
 	return result;
 }
 
-GFX_Buffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage) {
-	GFX_Buffer result = { 0 };
+VulkanBuffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage) {
+	VulkanBuffer result = { 0 };
 	LOG_DEBUG("creating vulkan buffer.");
 
 	bool ok = true;
@@ -548,14 +624,108 @@ GFX_Buffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory 
 			vkFreeMemory(context->logical_device, result.memory, 0);
 		if (result.handle)
 			vkDestroyBuffer(context->logical_device, result.handle, 0);
-		memory_zero(&result, sizeof(GFX_Buffer));
+		memory_zero(&result, sizeof(VulkanBuffer));
 	}
 
 	return result;
 }
 
-GFX_Surface vulkan_surface_make(GFX_Context *context, OS_Surface *surface) {
-	GFX_Surface result = { 0 };
+VulkanPipeline vulkan_compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size) {
+	LOG_DEBUG("creating vulkan compute pipeline.");
+	VulkanPipeline result = { 0 };
+
+	bool ok = bytecode && bytecode_size > 0;
+	if (ok == false)
+		LOG_WARN("invalid shader bytecode passed.");
+
+	if (ok) { // create shader module
+		VkShaderModuleCreateInfo csm_create_info = {
+			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+			.pCode = (void *)bytecode,
+			.codeSize = bytecode_size,
+		};
+
+		ok = vkCreateShaderModule(context->logical_device, &csm_create_info, NULL, &result.compute_shader) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create compute pipeline shader module.");
+	}
+
+	if (ok) { // create descriptor set layouts
+		// TODO: Don't hard-code the layouts
+
+		VkDescriptorSetLayoutBinding bindings[] = {
+			[0] = {
+			  .binding = 0,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+		};
+
+		VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			.bindingCount = countof(bindings),
+			.pBindings = bindings,
+		};
+
+		ok = vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, result.set_layouts) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create compute pipeline descriptor set layout 0");
+	}
+
+	if (ok) { // create pipeline layout
+		VkPipelineLayoutCreateInfo pl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = 1,
+			.pSetLayouts = result.set_layouts,
+			.pushConstantRangeCount = 1,
+			.pPushConstantRanges = &context->global_range,
+		};
+
+		ok = vkCreatePipelineLayout(context->logical_device, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create compute pipeline layout.");
+	}
+
+	if (ok) { // create compute pipeline
+		VkPipelineShaderStageCreateInfo compute_stage = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
+			.module = result.compute_shader,
+			.pName = "main",
+		};
+
+		VkComputePipelineCreateInfo cp_create_info = {
+			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+			.stage = compute_stage,
+			.layout = result.layout,
+		};
+
+		ok = vkCreateComputePipelines(context->logical_device, 0, 1, &cp_create_info, NULL, &result.handle) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create compute pipeline.");
+	}
+
+	if (ok == false) { // remove half-made resources on error
+		if (result.compute_shader)
+			vkDestroyShaderModule(context->logical_device, result.compute_shader, NULL);
+		for (uint32_t set_index = 0; set_index < countof(result.set_layouts); ++set_index)
+			if (result.set_layouts[set_index])
+				vkDestroyDescriptorSetLayout(context->logical_device, result.set_layouts[set_index], NULL);
+
+		if (result.layout)
+			vkDestroyPipelineLayout(context->logical_device, result.layout, NULL);
+		if (result.handle)
+			vkDestroyPipeline(context->logical_device, result.handle, NULL);
+
+		memory_zero_struct(result);
+	}
+
+	return result;
+}
+
+VulkanSurface vulkan_surface_make(GFX_Context *context, OS_Surface *surface) {
+	VulkanSurface result = { 0 };
 	ArenaTemp scratch = arena_scratch_begin(0);
 	LOG_DEBUG("creating vulkan surface.");
 
@@ -722,7 +892,7 @@ GFX_Surface vulkan_surface_make(GFX_Context *context, OS_Surface *surface) {
 			vkDestroySwapchainKHR(context->logical_device, result.swapchain, NULL);
 		if (result.handle)
 			vkDestroySurfaceKHR(context->instance, result.handle, 0);
-		memory_zero(&result, sizeof(GFX_Surface));
+		memory_zero(&result, sizeof(VulkanSurface));
 		LOG_ERROR("failed to create vulkan swapchain.");
 	}
 
@@ -809,6 +979,11 @@ bool gfx_startup(GFX_Context *context) {
 			.offset = 0,
 			.size = 128
 		};
+
+	if (ok) {
+		context->initialized = true;
+	} else
+		LOG_WARN("failed to initialize vulkan context.");
 
 	return ok;
 }
@@ -1224,6 +1399,10 @@ bool gfx__vk_descriptor_pool(GFX_Context *context) {
 			  .descriptorCount = 1000,
 			},
 			{
+			  .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			  .descriptorCount = 1000,
+			},
+			{
 			  .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
 			  .descriptorCount = 1000,
 			},
@@ -1283,7 +1462,7 @@ void vulkan_image_barrier(VkCommandBuffer command_buffer, VkImage image, VkImage
 			break;
 
 		default:
-			LOG_WARN("Vuklan: unhandled old layout in %s, defaulting to ALL_COMMANDS", __func__);
+			/* LOG_WARN("unhandled source transition layout '%u', defaulting to ALL_COMMANDS", src); */
 			src_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 			src_access = VK_ACCESS_MEMORY_WRITE_BIT;
 			break;
@@ -1318,7 +1497,7 @@ void vulkan_image_barrier(VkCommandBuffer command_buffer, VkImage image, VkImage
 			break;
 
 		default:
-			LOG_WARN("Vuklan: unhandled new layout in %s, defaulting to ALL_COMMANDS", __func__);
+			/* LOG_WARN("unhandled target transition layout '%u', defaulting to ALL_COMMANDS", dst); */
 			dst_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 			dst_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
 			break;

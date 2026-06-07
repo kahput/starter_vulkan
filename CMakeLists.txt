@@ -7,7 +7,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # ── Shaders ───────────────────────────────────────────────────────────────────
 file(GLOB_RECURSE SHADERS
     "${CMAKE_SOURCE_DIR}/game/assets/*.vertex"
-    "${CMAKE_SOURCE_DIR}/game/assets/*.fragment")
+    "${CMAKE_SOURCE_DIR}/game/assets/*.fragment"
+    "${CMAKE_SOURCE_DIR}/game/assets/*.compute")
 foreach(SHADER ${SHADERS})
     get_filename_component(DIR  ${SHADER} DIRECTORY)
     get_filename_component(NAME ${SHADER} NAME)
@@ -73,8 +74,8 @@ else()
         set(CONFIG ${CMAKE_BUILD_TYPE})
         # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${CONFIG})
         # set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${CONFIG})
-        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
-        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game")
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
     endif()
 
     file(GLOB_RECURSE VENDOR_SOURCES  "engine/vendor/*/*.c" "engine/vendor/*/*.h")
