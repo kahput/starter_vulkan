@@ -106,6 +106,9 @@ void os_surface_hide(OS_Surface *surface);
 
 void os_surface_set_min(OS_Surface *surface, uint32_t width, uint32_t height);
 void os_surface_set_max(OS_Surface *surface, uint32_t width, uint32_t height);
+
+float os_surface_dpi(OS_Surface *surface);
+uint32x2 os_surface_size(OS_Surface *surface);
 Rectangle os_client_rect(OS_Surface *surface);
 
 typedef enum {

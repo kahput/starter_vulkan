@@ -26,6 +26,7 @@ typedef struct {
 	xcb_atom_t wm_protocols_atom;
 	xcb_atom_t wm_delete_window_atom;
 	xcb_atom_t wm_transient_for_atom;
+	xcb_atom_t wm_window_type;
 
 	uint8_t keycodes[KEY_CODE_COUNT];
 	uint64_t start_time;
@@ -43,8 +44,16 @@ static inline void create_key_table(void);
 static inline void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h, uint32_t max_w, uint32_t max_h);
 static inline OS_Surface *os__surface_from_handle(xcb_window_t window);
 
+typedef enum {
+	ATOM_PROTOCOL,
+	ATOM_CLOSE,
+	ATOM_TRANSIENT,
+	ATOM_WINDOW_STATE,
+	ATOM_WINDOW_TYPE,
+} Atom;
+
 bool os_display_startup(void) {
-	state->conn = xcb_connect(NULL, NULL);
+	state->conn = xcb_connect(0, 0);
 	if (xcb_connection_has_error(state->conn)) {
 		LOG_ERROR("os_display_startup - failed to connect to X server");
 		return false;
@@ -74,11 +83,24 @@ bool os_display_startup(void) {
 
 	create_key_table();
 
-	xcb_intern_atom_reply_t *proto_reply = os__atom(str_lit("WM_PROTOCOLS"));
-	xcb_intern_atom_reply_t *close_reply = os__atom(str_lit("WM_DELETE_WINDOW"));
-	xcb_intern_atom_reply_t *transient_reply = os__atom(str_lit("WM_TRANSIENT_FOR"));
+	const char *atom_strings[] = {
+		"WM_PROTOCOLS",
+		"WM_DELETE_WINDOW"
+		"WM_TRANSIENT_FOR"
+		"_NET_WM_WINDOW_TYPE"
+	};
 
-	if (proto_reply == NULL || close_reply == NULL) {
+	xcb_intern_atom_reply_t *proto_reply = os__atom(s("WM_PROTOCOLS"));
+	xcb_intern_atom_reply_t *close_reply = os__atom(s("WM_DELETE_WINDOW"));
+	xcb_intern_atom_reply_t *transient_reply = os__atom(s("WM_TRANSIENT_FOR"));
+	xcb_intern_atom_reply_t *type_reply = os__atom(s("_NET_WM_WINDOW_TYPE"));
+	xcb_intern_atom_reply_t *state_reply = os__atom(s("_NET_WM_STATE"));
+
+	if (proto_reply == 0 ||
+		close_reply == 0 ||
+		transient_reply == 0 ||
+		type_reply == 0 ||
+		state_reply == 0) {
 		LOG_INFO("failed to aquire X server protocol.");
 		return -1;
 	}
@@ -86,10 +108,12 @@ bool os_display_startup(void) {
 	state->wm_protocols_atom = proto_reply->atom;
 	state->wm_delete_window_atom = close_reply->atom;
 	state->wm_transient_for_atom = transient_reply->atom;
+	state->wm_window_type = type_reply->atom;
 
 	free(close_reply);
 	free(proto_reply);
 	free(transient_reply);
+	free(type_reply);
 
 	state->initialized = true;
 	return true;
@@ -108,7 +132,7 @@ OS_Surface *os_surface_open(uint32_t width, uint32_t height, String8 title, OS_S
 OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags) {
 	if (state->initialized == false) {
 		LOG_WARN("%s - display must be initialized before surface creation, call os_display_startup.", __func__);
-		return NULL;
+		return 0;
 	}
 	uint32_t event_mask =
 		XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE |
@@ -187,7 +211,7 @@ void os_surface_hide(OS_Surface *surface) {
 
 bool os_event_poll(OS_Event *dst) {
 	xcb_generic_event_t *src = xcb_poll_for_event(state->conn);
-	if (src == NULL)
+	if (src == 0)
 		return false;
 
 	memory_zero(dst, sizeof(OS_Event));
@@ -196,7 +220,7 @@ bool os_event_poll(OS_Event *dst) {
 			xcb_client_message_event_t *cm = (xcb_client_message_event_t *)src;
 			if (cm->data.data32[0] == state->wm_delete_window_atom) {
 				dst->surface = os__surface_from_handle(cm->window);
-				if (dst->surface == NULL)
+				if (dst->surface == 0)
 					ASSERT_MESSAGE(false, "The event doesn't belong to any window");
 				dst->type = OS_EVENT_TYPE_SURFACE_CLOSE;
 			}
@@ -239,6 +263,13 @@ bool os_event_poll(OS_Event *dst) {
 void os_surface_set_min(OS_Surface *surface, uint32_t width, uint32_t height);
 void os_surface_set_max(OS_Surface *surface, uint32_t width, uint32_t height);
 
+float os_surface_dpi(OS_Surface *surface) {
+	return 1.0f;
+}
+uint32x2 os_surface_size(OS_Surface *surface) {
+	return (uint32x2){ surface->width, surface->height };
+}
+
 Rectangle os_client_rect(OS_Surface *surface) {
 	return (Rectangle){ .width = surface->width, .height = surface->height };
 }
@@ -252,8 +283,8 @@ static const char *extensions[] = {
 	"VK_KHR_xcb_surface",
 };
 const char **os_surface_vulkan_extensions(uint32_t *count) {
-    *count = countof(extensions);
-    return extensions;
+	*count = countof(extensions);
+	return extensions;
 }
 
 void *os_native_display_handle(void) {
@@ -427,7 +458,8 @@ void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h
 	};
 
 	WMSizeHints hints = {
-		.flags = WM_SIZE_HINT_P_MIN_SIZE | WM_SIZE_HINT_P_MAX_SIZE,
+		.flags = WM_SIZE_HINT_P_MIN_SIZE | WM_SIZE_HINT_P_MAX_SIZE | WM_SIZE_HINT_P_WIN_GRAVITY,
+		.win_gravity = XCB_GRAVITY_STATIC,
 		.min_width = min_w,
 		.min_height = min_h,
 		.max_width = max_w,
@@ -446,10 +478,20 @@ void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h
 	xcb_change_property(state->conn, XCB_PROP_MODE_REPLACE, surface->handle,
 		XCB_ATOM_WM_NORMAL_HINTS, XCB_ATOM_WM_SIZE_HINTS,
 		32, sizeof(WMSizeHints) >> 2, &hints);
+
+	xcb_query_pointer_reply_t *ptr = xcb_query_pointer_reply(state->conn, xcb_query_pointer(state->conn, state->root.handle), 0);
+	int32_t target_x = ptr->root_x; // or align to monitor boundary
+	int32_t target_y = ptr->root_y;
+	free(ptr);
+
+	// Then use target_x/target_y in configure_window or WM_NORMAL_HINTS
+
+	xcb_configure_window(state->conn, surface->handle, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (uint32_t[]){ target_x, target_y });
+	xcb_flush(state->conn);
 }
 
 OS_Surface *os__surface_from_handle(xcb_window_t window) {
-	OS_Surface *result = NULL;
+	OS_Surface *result = 0;
 	for (uint32_t index = 0; index < state->count; ++index) {
 		if (state->surfaces[index].handle == window)
 			result = &state->surfaces[index];

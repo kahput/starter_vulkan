@@ -23,6 +23,10 @@ endif()
 set(WEB_SCRATCHES web_scratch)
 set(NATIVE_SCRATCHES xcb_scratch vulkan_scratch)
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(DEV_BUILD)
+endif()
+
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     file(GLOB_RECURSE 
@@ -78,11 +82,6 @@ else()
 
     find_package(Vulkan REQUIRED)
 
-    # if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    #     add_compile_options(-fsanitize=address)
-    #     add_link_options(-fsanitize=address)
-    # endif()
-
     target_include_directories(${PROJECT_NAME}
         PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
     target_include_directories(
@@ -118,5 +117,6 @@ else()
         add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
         target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
+        # target_compile_definitions(${NAME} PRIVATE -DVK_USE_PLATFORM_XCB_KHR)
     endforeach()
 endif()
