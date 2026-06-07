@@ -6,9 +6,9 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # ── Shaders ───────────────────────────────────────────────────────────────────
 file(GLOB_RECURSE SHADERS
-    "${CMAKE_SOURCE_DIR}/game/assets/*.vertex"
-    "${CMAKE_SOURCE_DIR}/game/assets/*.fragment"
-    "${CMAKE_SOURCE_DIR}/game/assets/*.compute")
+    "${CMAKE_SOURCE_DIR}/assets/*.vertex"
+    "${CMAKE_SOURCE_DIR}/assets/*.fragment"
+    "${CMAKE_SOURCE_DIR}/assets/*.compute")
 foreach(SHADER ${SHADERS})
     get_filename_component(DIR  ${SHADER} DIRECTORY)
     get_filename_component(NAME ${SHADER} NAME)

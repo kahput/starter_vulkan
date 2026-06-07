@@ -50,9 +50,10 @@ bool os_file_copy(String8 src, String8 dst);
 String8 os_file_read_entire(Arena *arena, String8 path);
 void os_file_write_entire(String8 filename, const void *buffer, uint64_t size);
 
+typedef uint64_t OS_Timestamp;
 bool os_file_exists(String8 path);
 bool os_file_delete(String8 path);
-uint64_t os_file_last_modified(String8 filepath);
+OS_Timestamp os_file_last_modified(String8 filepath);
 String8 os_current_directory(Arena *arena);
 
 bool os_directory_exists(String8 path);

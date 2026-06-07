@@ -151,8 +151,11 @@ int main(void) {
 
 	VulkanImage image = vulkan_image_make(context, 640, 360, PIXEL_FORMAT_RGBA16_FLOAT, IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER);
 
+	uint64_t offset = arena_mark(scratch.arena);
 	String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
+	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
 	VulkanPipeline pipeline = vulkan_compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
+	arena_rewind(scratch.arena, offset);
 
 	bool is_open = true;
 	while (is_open) {
@@ -343,6 +346,34 @@ int main(void) {
 			uint32_t x = 0;
 			(void)x;
 			break;
+		}
+
+		OS_Timestamp current_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
+		if (compute_ts != current_ts) {
+			LOG_INFO("hot-reloading...");
+			vkDeviceWaitIdle(context->logical_device); // TODO: Proper synchronization for hot-reload
+			// Destroy compute pipeline
+			{
+				if (pipeline.compute_shader)
+					vkDestroyShaderModule(context->logical_device, pipeline.compute_shader, NULL);
+				for (uint32_t set_index = 0; set_index < countof(pipeline.set_layouts); ++set_index)
+					if (pipeline.set_layouts[set_index])
+						vkDestroyDescriptorSetLayout(context->logical_device, pipeline.set_layouts[set_index], NULL);
+
+				if (pipeline.layout)
+					vkDestroyPipelineLayout(context->logical_device, pipeline.layout, NULL);
+				if (pipeline.handle)
+					vkDestroyPipeline(context->logical_device, pipeline.handle, NULL);
+
+				memory_zero_struct(pipeline);
+			}
+
+			uint64_t offset = arena_mark(scratch.arena);
+			compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
+			pipeline = vulkan_compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
+			arena_rewind(scratch.arena, offset);
+
+			compute_ts = current_ts;
 		}
 
 		context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -975,7 +1006,7 @@ bool gfx_startup(GFX_Context *context) {
 
 	if (ok)
 		context->global_range = (VkPushConstantRange){
-			.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS,
+			.stageFlags = VK_SHADER_STAGE_ALL,
 			.offset = 0,
 			.size = 128
 		};
