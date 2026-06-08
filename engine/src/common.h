@@ -3,7 +3,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <string.h>
-#include <stddef.h>
 #include <stdint.h>
 
 #if defined(__linux__) || defined(__APPLE__)
@@ -17,6 +16,8 @@
 #else
 	#define ENGINE_API
 #endif
+
+#define offsetof(T, m) ((uint64_t)&(((T*)0)->m))
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 	#define alignof(type) _Alignof(type)
@@ -150,6 +151,7 @@ typedef struct { float32x3 min, max; } Interval3;
 
 typedef struct { uint8_t r, g, b, a; } Color;
 
+#define rect(x, y, w, h) (Rectangle){ x, y, w, h }
 typedef struct {
 	float x, y, width, height;
 } Rectangle;

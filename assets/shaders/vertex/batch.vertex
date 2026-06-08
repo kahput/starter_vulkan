@@ -1,0 +1,22 @@
+#version 450
+#pragma shader_stage(vertex)
+
+struct VertexData {
+    vec2 position; 
+    vec2 uv;
+    vec4 color;
+};
+
+layout(set = 0, binding = 0) readonly buffer VertexBlock {
+    VertexData vertex_data[];
+} batch;
+
+out OutBlock {
+    layout(location = 0) vec4 color;
+} vs_output;
+
+void main() {
+    VertexData vertex = batch.vertex_data[gl_VertexIndex];
+    gl_Position = vec4(vertex.position, 0.0f, 1.0f);
+    vs_output.color = vertex.color;
+}

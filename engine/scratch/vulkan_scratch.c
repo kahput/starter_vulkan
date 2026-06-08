@@ -40,6 +40,14 @@ typedef enum {
 	BUFFER_MEMORY_SHARED,
 } BufferMemory;
 
+typedef enum {
+	SHADER_STAGE_VERTEX,
+	SHADER_STAGE_FRAGMENT,
+	SHADER_STAGE_COMPUTE,
+
+	SHADER_STAGE_COUNT,
+} ShaderStage;
+
 typedef struct {
 	VkImage handle;
 	VkImageView view;
@@ -56,6 +64,8 @@ typedef struct {
 	VkBuffer handle;
 	VkDeviceMemory memory;
 
+	uint8_t *mapped;
+
 	uint64_t size;
 
 	VkBufferCreateInfo info;
@@ -69,7 +79,7 @@ typedef struct {
 
 	VkDescriptorSetLayout set_layouts[MAX_DESCRIPTOR_SETS];
 
-	VkShaderModule compute_shader;
+	VkShaderModule shaders[SHADER_STAGE_COUNT];
 } VulkanPipeline;
 
 #define SWAPCHAIN_IMAGE_COUNT 3
@@ -127,10 +137,55 @@ typedef struct {
 bool gfx_startup(GFX_Context *context);
 void gfx_shutdown(GFX_Context *context);
 
+typedef struct {
+	float2 position, uv;
+	float4 color;
+} Vertex2;
+typedef struct {
+	uint8_t *memory;
+	uint32_t offset, capacity;
+} SpriteBatch;
+
+void push_rect(SpriteBatch *buffer, Rectangle rect, Color color) {
+	float4 f_color = {
+		.x = color.r / 255.f,
+		.y = color.g / 255.f,
+		.z = color.b / 255.f,
+		.w = color.a / 255.f,
+	};
+
+	float x0 = (rect.x - 150.f) / 150.f;
+	float y0 = (rect.y - 150.f) / 150.f;
+	float x1 = (rect.x + rect.width - 150.f) / 150.f;
+	float y1 = (rect.y + rect.height - 150.f) / 150.f;
+
+	/* float u0 = src.x / image.width; */
+	/* float v0 = src.y / image.height; */
+	/* float u1 = (src.x + src.width) / image.width; */
+	/* float v1 = (src.y + src.height) / image.height; */
+
+	// clang-format off
+    Vertex2 quad[] = {
+        // pos      // tex
+        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x0, y0}, .uv = {0.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}, 
+
+        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x1, y1}, .uv = {1.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}
+    };
+	// clang-format on
+
+	memory_copy(buffer->memory + buffer->offset, quad, sizeof(quad));
+	buffer->offset += sizeof(quad);
+}
+
 VulkanImage vulkan_image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFormat format, ImageUsageFlags usage);
 VulkanBuffer vulkan_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
 VulkanSurface vulkan_surface_make(GFX_Context *context, OS_Surface *surface);
 VulkanPipeline vulkan_compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size);
+VulkanPipeline vulkan_grahpics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint64_t vertexcode_size, uint8_t *fragmentcode, uint64_t fragmentcode_size);
 
 void vulkan_image_barrier(VkCommandBuffer command_buffer, VkImage image, VkImageSubresourceRange range, VkImageLayout src, VkImageLayout dst);
 
@@ -149,13 +204,32 @@ int main(void) {
 	gfx_startup(context);
 	VulkanSurface swapchains[] = { vulkan_surface_make(context, main), vulkan_surface_make(context, popup) };
 
-	VulkanImage image = vulkan_image_make(context, 640, 360, PIXEL_FORMAT_RGBA16_FLOAT, IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER);
+	VulkanImage compute_image = vulkan_image_make(context, 640, 360, PIXEL_FORMAT_RGBA16_FLOAT, IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER);
 
+	// create compute pipeline
 	uint64_t offset = arena_mark(scratch.arena);
 	String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
-	VulkanPipeline pipeline = vulkan_compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
+	VulkanPipeline c_pipeline = vulkan_compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
 	arena_rewind(scratch.arena, offset);
+
+	// create graphics pipeline
+	offset = arena_mark(scratch.arena);
+	String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch.vertex.spv"));
+	String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+	VulkanPipeline g_pipeline = vulkan_grahpics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
+	arena_rewind(scratch.arena, offset);
+
+	VulkanBuffer scratch_buffers[MAX_FRAMES_IN_FLIGHT];
+	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
+		scratch_buffers[index] = vulkan_buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE);
+		vkMapMemory(context->logical_device, scratch_buffers[index].memory, 0, scratch_buffers[index].size, 0, (void **)&scratch_buffers[index].mapped);
+	}
+
+	SpriteBatch batch = {
+		.memory = scratch_buffers[context->current_frame].mapped,
+		.capacity = MiB(1),
+	};
 
 	bool is_open = true;
 	while (is_open) {
@@ -173,6 +247,9 @@ int main(void) {
 					break;
 			}
 		}
+
+		push_rect(&batch, rect(0, 0, 50, 50), WHITE);
+		push_rect(&batch, rect(60, 0, 50, 100), GREEN);
 
 		// Frame resources
 		VkFence *fence = &context->in_flight_fences[context->current_frame];
@@ -214,60 +291,39 @@ int main(void) {
 			LOG_ERROR("failed to begin command buffer recording.");
 			break;
 		}
-
-		// Transition swapchain images
-		for (uint32_t index = 0; index < countof(swapchains); ++index) {
-			VulkanSurface *swapchain = &swapchains[index];
-			vulkan_image_barrier(
-				command_buffer,
-				swapchain->images[image_indices[index]],
-				swapchain->view_infos[image_indices[index]].subresourceRange,
-				VK_IMAGE_LAYOUT_UNDEFINED,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		}
-		// transition compute storage image
-		vulkan_image_barrier(command_buffer, image.handle, image.view_info.subresourceRange, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-
-		double time = (os_time_ns() - start_time) * 1e-9;
-		float flash = fabsf(sinf(time));
-		VkClearColorValue clear_color = {
-			.float32 = { flash, 0.0f, flash, 1.0f },
-		};
-		vkCmdClearColorImage(
+		// transitoin sawpchain images for drawing
+		vulkan_image_barrier(
 			command_buffer,
 			swapchains[0].images[image_indices[0]],
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			&clear_color,
-			1,
-			&swapchains[0].view_infos[image_indices[0]].subresourceRange);
-
-		clear_color.float32[0] = 0.0f;
-		clear_color.float32[1] = flash;
-		clear_color.float32[2] = 0.0f;
-		vkCmdClearColorImage(
-			command_buffer,
+			swapchains[0].view_infos[image_indices[0]].subresourceRange,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		vulkan_image_barrier(command_buffer,
 			swapchains[1].images[image_indices[1]],
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			&clear_color,
-			1,
-			&swapchains[1].view_infos[image_indices[1]].subresourceRange);
+			swapchains[1].view_infos[image_indices[1]].subresourceRange,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
+		// transition compute storage image
+		vulkan_image_barrier(command_buffer, compute_image.handle, compute_image.view_info.subresourceRange, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+		// Bind compute pipeline & compute descriptor set
 		VkDescriptorSetAllocateInfo alloc_info = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 			.descriptorPool = descriptor_pool,
 			.descriptorSetCount = 1,
-			.pSetLayouts = pipeline.set_layouts + 0,
+			.pSetLayouts = c_pipeline.set_layouts + 0,
 		};
 
-		VkDescriptorSet set = 0;
-		vkAllocateDescriptorSets(context->logical_device, &alloc_info, &set);
+		VkDescriptorSet compute_set = 0;
+		vkAllocateDescriptorSets(context->logical_device, &alloc_info, &compute_set);
 		VkDescriptorImageInfo image_info = {
 			.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.imageView = image.view,
+			.imageView = compute_image.view,
 		};
 		VkWriteDescriptorSet write = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = set,
+			.dstSet = compute_set,
 			.dstBinding = 0,
 			.dstArrayElement = 0,
 			.descriptorCount = 1,
@@ -276,10 +332,11 @@ int main(void) {
 		};
 		vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
 
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle);
-		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.layout, 0, 1, &set, 0, 0);
+		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle);
+		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0);
 
 		vkCmdDispatch(command_buffer, 40, 23, 1);
+		vulkan_image_barrier(command_buffer, compute_image.handle, compute_image.view_info.subresourceRange, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 		VkImageBlit blit_info = {
 			.srcOffsets[1] = {
@@ -295,17 +352,85 @@ int main(void) {
 			},
 			.dstSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseArrayLayer = 0, .layerCount = 1, .mipLevel = 0 },
 		};
-		vkCmdBlitImage(command_buffer, image.handle, VK_IMAGE_LAYOUT_GENERAL, swapchains[0].images[image_indices[0]], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit_info, 0);
+		vkCmdBlitImage(command_buffer, compute_image.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapchains[0].images[image_indices[0]], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit_info, 0);
 
 		for (uint32_t index = 0; index < countof(swapchains); ++index) {
 			VulkanSurface *swapchain = &swapchains[index];
-			vulkan_image_barrier(
-				command_buffer,
-				swapchain->images[image_indices[index]],
-				swapchain->view_infos[image_indices[index]].subresourceRange,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 		}
+
+		// Bind grahpics pipeline & grahpics descriptor set
+		alloc_info = (VkDescriptorSetAllocateInfo){
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = descriptor_pool,
+			.descriptorSetCount = 1,
+			.pSetLayouts = g_pipeline.set_layouts + 0,
+		};
+
+		VkDescriptorSet grahpics_set = 0;
+		vkAllocateDescriptorSets(context->logical_device, &alloc_info, &grahpics_set);
+		VkDescriptorBufferInfo buffer_info = {
+			.buffer = scratch_buffers[context->current_frame].handle,
+			.offset = 0,
+			.range = batch.offset,
+		};
+		write = (VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = grahpics_set,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			.pBufferInfo = &buffer_info,
+		};
+		vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
+
+		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline.handle);
+		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline.layout, 0, 1, &grahpics_set, 0, 0);
+
+		VkRenderingAttachmentInfo attachment_info = {
+			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+			.imageView = swapchains[1].views[image_indices[1]],
+			.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.clearValue.color = { 1.0f, 0.0f, 1.0f, 1.0f },
+			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+		};
+
+		VkRenderingInfo renderpass_info = {
+			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+			.renderArea = { .extent = { .width = 300, .height = 300 } },
+			.layerCount = 1,
+			.colorAttachmentCount = 1,
+			.pColorAttachments = &attachment_info,
+		};
+		vkCmdBeginRendering(command_buffer, &renderpass_info);
+
+		VkViewport viewport = {
+			.width = 300.f,
+			.height = 300.f,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
+		};
+		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+		vkCmdSetScissor(command_buffer, 0, 1, &(VkRect2D){ .extent = { 300, 300 } });
+
+		vkCmdDraw(command_buffer, batch.offset / sizeof(Vertex2), 1, 0, 0);
+
+		vkCmdEndRendering(command_buffer);
+
+		// transition swapchain images for presenting
+		vulkan_image_barrier(
+			command_buffer,
+			swapchains[0].images[image_indices[0]],
+			swapchains[0].view_infos[image_indices[0]].subresourceRange,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		vulkan_image_barrier(
+			command_buffer,
+			swapchains[1].images[image_indices[1]],
+			swapchains[1].view_infos[image_indices[1]].subresourceRange,
+			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 		if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
 			LOG_INFO("failed to record command buffer.");
@@ -354,59 +479,92 @@ int main(void) {
 			vkDeviceWaitIdle(context->logical_device); // TODO: Proper synchronization for hot-reload
 			// Destroy compute pipeline
 			{
-				if (pipeline.compute_shader)
-					vkDestroyShaderModule(context->logical_device, pipeline.compute_shader, NULL);
-				for (uint32_t set_index = 0; set_index < countof(pipeline.set_layouts); ++set_index)
-					if (pipeline.set_layouts[set_index])
-						vkDestroyDescriptorSetLayout(context->logical_device, pipeline.set_layouts[set_index], NULL);
+				for (uint32_t index = 0; index < countof(c_pipeline.shaders); ++index)
+					if (c_pipeline.shaders[index])
+						vkDestroyShaderModule(context->logical_device, c_pipeline.shaders[index], NULL);
 
-				if (pipeline.layout)
-					vkDestroyPipelineLayout(context->logical_device, pipeline.layout, NULL);
-				if (pipeline.handle)
-					vkDestroyPipeline(context->logical_device, pipeline.handle, NULL);
+				for (uint32_t set_index = 0; set_index < countof(c_pipeline.set_layouts); ++set_index)
+					if (c_pipeline.set_layouts[set_index])
+						vkDestroyDescriptorSetLayout(context->logical_device, c_pipeline.set_layouts[set_index], NULL);
 
-				memory_zero_struct(pipeline);
+				if (c_pipeline.layout)
+					vkDestroyPipelineLayout(context->logical_device, c_pipeline.layout, NULL);
+				if (c_pipeline.handle)
+					vkDestroyPipeline(context->logical_device, c_pipeline.handle, NULL);
+
+				memory_zero_struct(c_pipeline);
 			}
 
 			uint64_t offset = arena_mark(scratch.arena);
 			compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-			pipeline = vulkan_compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
+			c_pipeline = vulkan_compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
 			arena_rewind(scratch.arena, offset);
 
 			compute_ts = current_ts;
 		}
 
 		context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+		batch.offset = 0;
+		batch.memory = scratch_buffers[context->current_frame].mapped;
 	}
 
 	vkDeviceWaitIdle(context->logical_device);
 
+	// destroy scratch buffers
+	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
+		if (scratch_buffers[index].memory) {
+			vkUnmapMemory(context->logical_device, scratch_buffers[index].memory);
+			vkFreeMemory(context->logical_device, scratch_buffers[index].memory, NULL);
+		}
+		if (scratch_buffers[index].handle)
+			vkDestroyBuffer(context->logical_device, scratch_buffers[index].handle, NULL);
+	}
+
 	// destroy images
 	{
-		if (image.memory)
-			vkFreeMemory(context->logical_device, image.memory, 0);
-		if (image.view)
-			vkDestroyImageView(context->logical_device, image.view, 0);
-		if (image.handle)
-			vkDestroyImage(context->logical_device, image.handle, 0);
+		if (compute_image.memory)
+			vkFreeMemory(context->logical_device, compute_image.memory, 0);
+		if (compute_image.view)
+			vkDestroyImageView(context->logical_device, compute_image.view, 0);
+		if (compute_image.handle)
+			vkDestroyImage(context->logical_device, compute_image.handle, 0);
 
-		memory_zero_struct(image);
+		memory_zero_struct(compute_image);
 	}
 
 	// Destroy compute pipeline
 	{
-		if (pipeline.compute_shader)
-			vkDestroyShaderModule(context->logical_device, pipeline.compute_shader, NULL);
-		for (uint32_t set_index = 0; set_index < countof(pipeline.set_layouts); ++set_index)
-			if (pipeline.set_layouts[set_index])
-				vkDestroyDescriptorSetLayout(context->logical_device, pipeline.set_layouts[set_index], NULL);
+		for (uint32_t index = 0; index < countof(c_pipeline.shaders); ++index)
+			if (c_pipeline.shaders[index])
+				vkDestroyShaderModule(context->logical_device, c_pipeline.shaders[index], NULL);
+		for (uint32_t set_index = 0; set_index < countof(c_pipeline.set_layouts); ++set_index)
+			if (c_pipeline.set_layouts[set_index])
+				vkDestroyDescriptorSetLayout(context->logical_device, c_pipeline.set_layouts[set_index], NULL);
 
-		if (pipeline.layout)
-			vkDestroyPipelineLayout(context->logical_device, pipeline.layout, NULL);
-		if (pipeline.handle)
-			vkDestroyPipeline(context->logical_device, pipeline.handle, NULL);
+		if (c_pipeline.layout)
+			vkDestroyPipelineLayout(context->logical_device, c_pipeline.layout, NULL);
+		if (c_pipeline.handle)
+			vkDestroyPipeline(context->logical_device, c_pipeline.handle, NULL);
 
-		memory_zero_struct(pipeline);
+		memory_zero_struct(c_pipeline);
+	}
+
+	// destroy graphics pipeline
+	{
+		for (uint32_t index = 0; index < countof(g_pipeline.shaders); ++index)
+			if (g_pipeline.shaders[index])
+				vkDestroyShaderModule(context->logical_device, g_pipeline.shaders[index], NULL);
+		for (uint32_t set_index = 0; set_index < countof(g_pipeline.set_layouts); ++set_index)
+			if (g_pipeline.set_layouts[set_index])
+				vkDestroyDescriptorSetLayout(context->logical_device, g_pipeline.set_layouts[set_index], NULL);
+
+		if (g_pipeline.layout)
+			vkDestroyPipelineLayout(context->logical_device, g_pipeline.layout, NULL);
+		if (g_pipeline.handle)
+			vkDestroyPipeline(context->logical_device, g_pipeline.handle, NULL);
+
+		memory_zero_struct(g_pipeline);
 	}
 
 	// Destroy swapchain/surface
@@ -676,7 +834,7 @@ VulkanPipeline vulkan_compute_pipeline_make(GFX_Context *context, uint8_t *bytec
 			.codeSize = bytecode_size,
 		};
 
-		ok = vkCreateShaderModule(context->logical_device, &csm_create_info, NULL, &result.compute_shader) == VK_SUCCESS;
+		ok = vkCreateShaderModule(context->logical_device, &csm_create_info, NULL, &result.shaders[SHADER_STAGE_COMPUTE]) == VK_SUCCESS;
 		if (ok == false)
 			LOG_WARN("failed to create compute pipeline shader module.");
 	}
@@ -722,7 +880,7 @@ VulkanPipeline vulkan_compute_pipeline_make(GFX_Context *context, uint8_t *bytec
 		VkPipelineShaderStageCreateInfo compute_stage = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
-			.module = result.compute_shader,
+			.module = result.shaders[SHADER_STAGE_COMPUTE],
 			.pName = "main",
 		};
 
@@ -738,8 +896,217 @@ VulkanPipeline vulkan_compute_pipeline_make(GFX_Context *context, uint8_t *bytec
 	}
 
 	if (ok == false) { // remove half-made resources on error
-		if (result.compute_shader)
-			vkDestroyShaderModule(context->logical_device, result.compute_shader, NULL);
+		for (uint32_t index = 0; index < countof(result.shaders); ++index)
+			if (result.shaders[index])
+				vkDestroyShaderModule(context->logical_device, result.shaders[index], NULL);
+		for (uint32_t set_index = 0; set_index < countof(result.set_layouts); ++set_index)
+			if (result.set_layouts[set_index])
+				vkDestroyDescriptorSetLayout(context->logical_device, result.set_layouts[set_index], NULL);
+
+		if (result.layout)
+			vkDestroyPipelineLayout(context->logical_device, result.layout, NULL);
+		if (result.handle)
+			vkDestroyPipeline(context->logical_device, result.handle, NULL);
+
+		memory_zero_struct(result);
+	}
+
+	return result;
+}
+VulkanPipeline vulkan_grahpics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint64_t vertexcode_size, uint8_t *fragmentcode, uint64_t fragmentcode_size) {
+	LOG_DEBUG("creating vulkan grahpics pipeline.");
+	VulkanPipeline result = { 0 };
+
+	bool ok = true;
+
+	if (ok) { // check validitiy of shader code
+		ok &= vertexcode && vertexcode_size > 0;
+		ok &= fragmentcode && fragmentcode_size > 0;
+
+		if (ok == false)
+			LOG_WARN("invalid shader bytecode passed.");
+	}
+
+	if (ok) { // create shader module
+		VkShaderModuleCreateInfo vsm_create_info = {
+			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+			.pCode = (void *)vertexcode,
+			.codeSize = vertexcode_size,
+		};
+
+		VkShaderModuleCreateInfo fsm_create_info = {
+			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+			.pCode = (void *)fragmentcode,
+			.codeSize = fragmentcode_size,
+		};
+
+		ok &= vkCreateShaderModule(context->logical_device, &vsm_create_info, NULL, &result.shaders[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
+		ok &= vkCreateShaderModule(context->logical_device, &fsm_create_info, NULL, &result.shaders[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create vertex/fragment shader module.");
+	}
+
+	if (ok) { // create descriptor set layouts
+		// TODO: Don't hard-code the layouts
+
+		VkDescriptorSetLayoutBinding bindings[] = {
+			[0] = {
+			  .binding = 0,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+			},
+		};
+
+		VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			.bindingCount = countof(bindings),
+			.pBindings = bindings,
+		};
+
+		ok = vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, result.set_layouts) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create pipeline descriptor set layout 0");
+	}
+
+	if (ok) { // create pipeline layout
+		VkPipelineLayoutCreateInfo pl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = 1,
+			.pSetLayouts = result.set_layouts,
+			.pushConstantRangeCount = 1,
+			.pPushConstantRanges = &context->global_range,
+		};
+
+		ok = vkCreatePipelineLayout(context->logical_device, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create pipeline layout.");
+	}
+
+	if (ok) { // create graphics pipeline
+		VkPipelineShaderStageCreateInfo shader_stages[] = {
+			{
+			  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			  .stage = VK_SHADER_STAGE_VERTEX_BIT,
+			  .module = result.shaders[SHADER_STAGE_VERTEX],
+			  .pName = "main",
+			},
+			{
+			  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			  .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+			  .module = result.shaders[SHADER_STAGE_FRAGMENT],
+			  .pName = "main",
+			}
+		};
+
+		VkDynamicState dynamic_states[] = {
+			VK_DYNAMIC_STATE_VIEWPORT,
+			VK_DYNAMIC_STATE_SCISSOR
+		};
+		VkPipelineDynamicStateCreateInfo ds_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+			.dynamicStateCount = countof(dynamic_states),
+			.pDynamicStates = dynamic_states
+		};
+
+		VkPipelineVertexInputStateCreateInfo vis_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		};
+
+		VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+			.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+			.primitiveRestartEnable = VK_FALSE
+		};
+
+		VkPipelineViewportStateCreateInfo vps_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+			.viewportCount = 1,
+			.scissorCount = 1,
+		};
+
+		VkPipelineRasterizationStateCreateInfo rs_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+			.depthClampEnable = VK_FALSE,
+			.rasterizerDiscardEnable = VK_FALSE,
+			.polygonMode = VK_POLYGON_MODE_FILL,
+			.lineWidth = 1.0f,
+			.cullMode = VK_CULL_MODE_NONE,
+			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+			.depthBiasEnable = VK_FALSE,
+		};
+
+		VkPipelineMultisampleStateCreateInfo mss_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+			.sampleShadingEnable = VK_FALSE,
+			.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+			.minSampleShading = 1.0f,
+		};
+
+		VkPipelineColorBlendAttachmentState color_blend_attachments[] = {
+			{
+			  .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+			  .blendEnable = VK_TRUE,
+
+			  // Color: result = src.rgb * src.a + dst.rgb * (1 - src.a)
+			  .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+			  .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+			  .colorBlendOp = VK_BLEND_OP_ADD,
+
+			  // Alpha: result = src.a * 1 + dst.a * (1 - src.a)
+			  .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+			  .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+			  .alphaBlendOp = VK_BLEND_OP_ADD,
+			},
+		};
+
+		VkPipelineColorBlendStateCreateInfo cbs_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+			.logicOpEnable = VK_FALSE,
+			.attachmentCount = countof(color_blend_attachments),
+			.pAttachments = color_blend_attachments,
+		};
+
+		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+			.depthTestEnable = VK_FALSE,
+			.depthWriteEnable = VK_FALSE,
+			.depthBoundsTestEnable = VK_FALSE,
+			.minDepthBounds = 0.0f,
+			.maxDepthBounds = 1.0f
+		};
+
+		VkPipelineRenderingCreateInfo r_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+			.colorAttachmentCount = countof(color_blend_attachments),
+			.pColorAttachmentFormats = (VkFormat[]){ VK_FORMAT_B8G8R8A8_SRGB },
+		};
+
+		VkGraphicsPipelineCreateInfo gp_create_info = {
+			.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+			.pNext = &r_create_info,
+			.stageCount = countof(shader_stages),
+			.pStages = shader_stages,
+			.pVertexInputState = &vis_create_info,
+			.pInputAssemblyState = &ias_create_info,
+			.pViewportState = &vps_create_info,
+			.pRasterizationState = &rs_create_info,
+			.pMultisampleState = &mss_create_info,
+			.pDepthStencilState = &depth_stencil_create_info,
+			.pColorBlendState = &cbs_create_info,
+			.pDynamicState = &ds_create_info,
+			.layout = result.layout,
+		};
+
+		ok = vkCreateGraphicsPipelines(context->logical_device, 0, 1, &gp_create_info, NULL, &result.handle) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create compute pipeline.");
+	}
+
+	if (ok == false) { // remove half-made resources on error
+		for (uint32_t index = 0; index < countof(result.shaders); ++index)
+			if (result.shaders[index])
+				vkDestroyShaderModule(context->logical_device, result.shaders[index], NULL);
 		for (uint32_t set_index = 0; set_index < countof(result.set_layouts); ++set_index)
 			if (result.set_layouts[set_index])
 				vkDestroyDescriptorSetLayout(context->logical_device, result.set_layouts[set_index], NULL);
@@ -1397,13 +1764,12 @@ bool gfx__vk_synchronization_objects_make(GFX_Context *context) {
 	LOG_DEBUG("initializing vulkan synchronization objects.");
 
 	bool ok = true;
-	if (ok) { // make synchronization objects
+	if (ok) { // make synchronization fences
 		VkFenceCreateInfo f_create_info = {
 			.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
 			.flags = VK_FENCE_CREATE_SIGNALED_BIT
 		};
 
-		// create fences
 		for (uint32_t index = 0; index < countof(context->in_flight_fences); ++index)
 			ok &= vkCreateFence(context->logical_device, &f_create_info, 0, context->in_flight_fences + index) == VK_SUCCESS;
 	}

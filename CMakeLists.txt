@@ -48,6 +48,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             "-sALLOW_MEMORY_GROWTH"
             "-sASYNCIFY"
             "-sTOTAL_STACK=64mb"
+            "-sMIN_WEBGL_VERSION=2"
             # "-sASSERTIONS=2" 
             #     "-sSAFE_HEAP=1"
             #     "-sSTACK_OVERFLOW_CHECK=2"
@@ -119,5 +120,6 @@ else()
         target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
         # target_compile_definitions(${NAME} PRIVATE -DVK_USE_PLATFORM_XCB_KHR)
+        set_target_properties(${NAME} PROPERTIES SUFFIX ".exe")
     endforeach()
 endif()
