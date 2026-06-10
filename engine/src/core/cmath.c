@@ -373,7 +373,7 @@ float4x4 float4x4_perspective(float fovy_radians, float aspect, float near_z, fl
 	float f = 1.0f / tanf(fovy_radians * 0.5f);
 
 	result.elements[0] = f / aspect;
-	result.elements[5] = f;
+	result.elements[5] = -f;
 
 	// Vulkan NDC z: [0, 1]
 	result.elements[10] = far_z / (near_z - far_z);

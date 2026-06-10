@@ -12,8 +12,8 @@ build() {
     cmake -S ${PROJECT_ROOT} -B ${NATIVE_DIR} -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_C_STANDARD=99
     bear --append -- cmake --build ${NATIVE_DIR}
 
-    emcmake cmake -S ${PROJECT_ROOT} -B ${WEB_DIR} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_C_STANDARD=99
-    bear --append -- cmake --build ${WEB_DIR}
+    # emcmake cmake -S ${PROJECT_ROOT} -B ${WEB_DIR} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_C_STANDARD=99
+    # bear --append -- cmake --build ${WEB_DIR}
 }
 
 clean() {

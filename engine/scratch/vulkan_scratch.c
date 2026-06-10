@@ -1,5 +1,6 @@
 #include "common.h"
 #include "core/arena.h"
+#include "core/cmath.h"
 #include "core/input_types.h"
 #include "core/logger.h"
 #include "core/debug.h"
@@ -7,7 +8,8 @@
 #include <vulkan/vulkan_core.h>
 
 #define VK_USE_PLATFORM_XCB_KHR
-#include "vulkan/vulkan.h"
+#include <vulkan/vulkan.h>
+#include <cgltf/cgltf.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -110,6 +112,7 @@ typedef struct {
 	int32_t transfer_index, compute_index;
 
 	VkQueue graphics_queue;
+	VkQueue transfer_queue, compute_queue;
 
 	// Commands
 	VkCommandPool graphics_command_pool;
@@ -142,15 +145,24 @@ typedef struct {
 typedef struct {
 	uint8_t *memory;
 	uint32_t offset, capacity;
-} SpriteBatch;
+} Batch;
 
-void push_rect(SpriteBatch *buffer, Rectangle rect, Color color);
+typedef struct {
+	float3 position;
+	float _pad0;
+	float3 normal;
+	float _pad1;
+	float2 uv;
+	float4 tangent;
+} Vertex3;
+
+void push_rect(Batch *buffer, Rectangle rect, Color color);
 
 Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
 Image image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFormat format, ImageUsageFlags usage);
 Surface surface_make(GFX_Context *context, OS_Surface *surface);
 Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size);
-Pipeline grahpics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint64_t vertexcode_size, uint8_t *fragmentcode, uint64_t fragmentcode_size);
+Pipeline graphics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint64_t vertexcode_size, uint8_t *fragmentcode, uint64_t fragmentcode_size);
 
 void buffer_destroy(GFX_Context *context, Buffer *buffer);
 void image_destroy(GFX_Context *context, Image *image);
@@ -158,8 +170,25 @@ void surface_destroy(GFX_Context *context, Surface *surface);
 void pipeline_destroy(GFX_Context *context, Pipeline *pipeline);
 
 Image surface_backbuffer(GFX_Context *context, Surface *surface, uint32_t *out_image_index);
-
 void image_barrier(VkCommandBuffer command_buffer, Image *image, VkImageLayout src, VkImageLayout dst);
+
+typedef struct {
+	uint64_t vertex_offset, index_offset;
+	uint32_t vertex_count, index_count;
+} Mesh;
+
+typedef struct {
+	Mesh *meshes;
+	uint32_t mesh_count;
+
+	Vertex3 *vertices;
+	uint64_t total_vertex_count;
+
+	uint32_t *indices;
+	uint64_t total_index_count;
+} Model;
+
+Model load_gltf(Arena *arena, String8 path);
 
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
@@ -177,6 +206,7 @@ int main(void) {
 	Surface swapchains[] = { surface_make(context, popup_compute), surface_make(context, main_render) };
 
 	Image compute_image = image_make(context, 640, 360, PIXEL_FORMAT_RGBA16_FLOAT, IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER);
+	Image offscreen_render = image_make(context, 640, 360, PIXEL_FORMAT_RGBA8_UNORM, IMAGE_USAGE_RENDER);
 
 	// create compute pipeline
 	uint64_t offset = arena_mark(scratch.arena);
@@ -185,23 +215,98 @@ int main(void) {
 	Pipeline c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
 	arena_rewind(scratch.arena, offset);
 
-	// create graphics pipeline
+	// create 2d graphics pipeline
 	offset = arena_mark(scratch.arena);
-	String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch.vertex.spv"));
+	String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
 	String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-	Pipeline g_pipeline = grahpics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
+	Pipeline pipeline_2d = graphics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
+	arena_rewind(scratch.arena, offset);
+
+	// create 3d graphics pipeline
+	offset = arena_mark(scratch.arena);
+	vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
+	fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+	Pipeline pipeline_3d = graphics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
 	arena_rewind(scratch.arena, offset);
 
 	Buffer scratch_buffers[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
-		scratch_buffers[index] = buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE);
+		scratch_buffers[index] = buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER);
 		vkMapMemory(context->logical_device, scratch_buffers[index].memory, 0, scratch_buffers[index].size, 0, (void **)&scratch_buffers[index].mapped);
 	}
 
-	SpriteBatch batch = {
-		.memory = scratch_buffers[context->current_frame].mapped,
-		.capacity = MiB(1),
-	};
+	/* Batch batch = { */
+	/* 	.memory = scratch_buffers[context->current_frame].mapped, */
+	/* 	.capacity = MiB(1), */
+	/* }; */
+
+	Buffer geometry = buffer_make(context, MiB(8), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
+	// clang-format off
+    float w = 5.0f;
+    Vertex3 vertices[] = {
+        { .position = { -w,  w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0 } },
+        { .position = {  w, -w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0 } },
+        { .position = { -w, -w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0 } },
+
+        { .position = { -w,  w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0 } },
+        { .position = {  w,  w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0 } },
+        { .position = {  w, -w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0 } },
+    };
+	// clang-format on
+
+	Model model = load_gltf(scratch.arena, s("assets/models/gdbot.glb"));
+
+	uint64_t total_vertex_buffer_size = model.total_vertex_count * sizeof(Vertex3);
+	{ // upload geometry
+		uint64_t total_index_buffer_size = model.total_index_count * sizeof(uint32_t);
+		memory_copy(scratch_buffers[0].mapped, model.vertices, total_vertex_buffer_size);
+		memory_copy(scratch_buffers[0].mapped + total_vertex_buffer_size, model.indices, model.total_index_count * sizeof(uint32_t));
+
+		VkCommandBufferAllocateInfo alloc_info = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.commandPool = context->graphics_command_pool,
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = 1,
+		};
+		VkCommandBuffer cmd = 0;
+		vkAllocateCommandBuffers(context->logical_device, &alloc_info, &cmd);
+
+		VkCommandBufferBeginInfo begin_info = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+		};
+		if (vkBeginCommandBuffer(cmd, &begin_info) == VK_SUCCESS) {
+			VkBufferCopy region = {
+				.srcOffset = 0,
+				.dstOffset = 0,
+				.size = total_vertex_buffer_size + total_index_buffer_size,
+			};
+			vkCmdCopyBuffer(cmd, scratch_buffers[0].handle, geometry.handle, 1, &region);
+
+			VkBufferMemoryBarrier buffer_barrier = {
+				.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+				.buffer = geometry.handle,
+				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.offset = 0,
+				.size = total_vertex_buffer_size + total_index_buffer_size,
+			};
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, 0, 1, &buffer_barrier, 0, 0);
+
+			vkEndCommandBuffer(cmd);
+
+			VkSubmitInfo submit_info = {
+				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+				.pCommandBuffers = &cmd,
+				.commandBufferCount = 1,
+			};
+
+			vkQueueSubmit(context->graphics_queue, 1, &submit_info, NULL);
+			vkQueueWaitIdle(context->graphics_queue);
+		}
+	}
 
 	bool is_open = true;
 	while (is_open) {
@@ -220,8 +325,8 @@ int main(void) {
 			}
 		}
 
-		push_rect(&batch, rect(0, 0, 50, 50), WHITE);
-		push_rect(&batch, rect(60, 0, 50, 100), GREEN);
+		/* push_rect(&batch, rect(0, 0, 50, 50), WHITE); */
+		/* push_rect(&batch, rect(60, 0, 50, 100), GREEN); */
 
 		// Frame resources
 		VkFence *fence = &context->in_flight_fences[context->current_frame];
@@ -330,15 +435,15 @@ int main(void) {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 			.descriptorPool = descriptor_pool,
 			.descriptorSetCount = 1,
-			.pSetLayouts = g_pipeline.set_layouts + 0,
+			.pSetLayouts = pipeline_3d.set_layouts + 0,
 		};
 
 		VkDescriptorSet grahpics_set = 0;
 		vkAllocateDescriptorSets(context->logical_device, &alloc_info, &grahpics_set);
 		VkDescriptorBufferInfo buffer_info = {
-			.buffer = scratch_buffers[context->current_frame].handle,
+			.buffer = geometry.handle,
 			.offset = 0,
-			.range = batch.offset,
+			.range = geometry.size,
 		};
 		write = (VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -351,8 +456,14 @@ int main(void) {
 		};
 		vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
 
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline.handle);
-		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pipeline.layout, 0, 1, &grahpics_set, 0, 0);
+		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
+		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
+
+		uint2 dims = os_surface_size(main_render);
+		float4x4 view_projection = float4x4_multiply(
+			float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
+			float4x4_lookat((float3){ 0.0f, 0.0f, 5.f }, FLOAT3_ZERO, FLOAT3_Y));
+		vkCmdPushConstants(command_buffer, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(float4x4), &view_projection);
 
 		VkRenderingAttachmentInfo attachment_info = {
 			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -385,7 +496,8 @@ int main(void) {
 		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 		vkCmdSetScissor(command_buffer, 0, 1, &(VkRect2D){ .extent = extent });
 
-		vkCmdDraw(command_buffer, batch.offset / sizeof(Vertex2), 1, 0, 0);
+		vkCmdBindIndexBuffer(command_buffer, geometry.handle, total_vertex_buffer_size, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(command_buffer, model.meshes[0].index_count, 1, 0, 0, 0);
 
 		vkCmdEndRendering(command_buffer);
 
@@ -400,6 +512,8 @@ int main(void) {
 			&popup_target,
 			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+		// draw to offscreen render target
 
 		if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
 			LOG_INFO("failed to record command buffer.");
@@ -455,21 +569,24 @@ int main(void) {
 
 		context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 
-		batch.offset = 0;
-		batch.memory = scratch_buffers[context->current_frame].mapped;
+		/* batch.offset = 0; */
+		/* batch.memory = scratch_buffers[context->current_frame].mapped; */
 	}
 
 	vkDeviceWaitIdle(context->logical_device);
 
-	// destroy resources
+	// :destroy
 	{
 		for (uint32_t index = 0; index < countof(scratch_buffers); ++index)
 			buffer_destroy(context, &scratch_buffers[index]);
 
+		buffer_destroy(context, &geometry);
+		image_destroy(context, &offscreen_render);
 		image_destroy(context, &compute_image);
 
 		pipeline_destroy(context, &c_pipeline);
-		pipeline_destroy(context, &g_pipeline);
+		pipeline_destroy(context, &pipeline_2d);
+		pipeline_destroy(context, &pipeline_3d);
 
 		for (uint32_t index = 0; index < countof(swapchains); ++index)
 			surface_destroy(context, &swapchains[index]);
@@ -575,15 +692,12 @@ Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, Buf
 	if (ok) { // create buffer handle
 		result.size = size;
 
-		uint32_t family_indices[] = { context->graphics_index };
-
+		uint32_t family_indices[] = { context->graphics_index, context->transfer_index };
 		result.info = (VkBufferCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 			.size = result.size,
 			.usage = vk_usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = 1,
-			.pQueueFamilyIndices = family_indices
 		};
 
 		ok = vkCreateBuffer(context->logical_device, &result.info, 0, &result.handle) == VK_SUCCESS;
@@ -940,26 +1054,13 @@ Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t
 			LOG_WARN("failed to create compute pipeline.");
 	}
 
-	if (ok == false) { // remove half-made resources on error
-		for (uint32_t index = 0; index < countof(result.shaders); ++index)
-			if (result.shaders[index])
-				vkDestroyShaderModule(context->logical_device, result.shaders[index], NULL);
-		for (uint32_t set_index = 0; set_index < countof(result.set_layouts); ++set_index)
-			if (result.set_layouts[set_index])
-				vkDestroyDescriptorSetLayout(context->logical_device, result.set_layouts[set_index], NULL);
-
-		if (result.layout)
-			vkDestroyPipelineLayout(context->logical_device, result.layout, NULL);
-		if (result.handle)
-			vkDestroyPipeline(context->logical_device, result.handle, NULL);
-
-		memory_zero_struct(result);
-	}
+	if (ok == false) // remove half-made resources on error
+		pipeline_destroy(context, &result);
 
 	return result;
 }
 
-Pipeline grahpics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint64_t vertexcode_size, uint8_t *fragmentcode, uint64_t fragmentcode_size) {
+Pipeline graphics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint64_t vertexcode_size, uint8_t *fragmentcode, uint64_t fragmentcode_size) {
 	LOG_DEBUG("creating vulkan grahpics pipeline.");
 	Pipeline result = { 0 };
 
@@ -1149,9 +1250,8 @@ Pipeline grahpics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint6
 			LOG_WARN("failed to create compute pipeline.");
 	}
 
-	if (ok == false) { // remove half-made resources on error
+	if (ok == false) // remove half-made resources on error
 		pipeline_destroy(context, &result);
-	}
 
 	return result;
 }
@@ -1161,7 +1261,8 @@ void buffer_destroy(GFX_Context *context, Buffer *buffer) {
 
 	if (ok) {
 		if (buffer->memory) {
-			vkUnmapMemory(context->logical_device, buffer->memory);
+			if (buffer->mapped)
+				vkUnmapMemory(context->logical_device, buffer->memory);
 			vkFreeMemory(context->logical_device, buffer->memory, NULL);
 		}
 		if (buffer->handle)
@@ -1385,6 +1486,8 @@ void gfx_shutdown(GFX_Context *context) {
 
 	if (context->graphics_command_pool)
 		vkDestroyCommandPool(context->logical_device, context->graphics_command_pool, 0);
+	/* if (context->transfer_command_pool) */
+	/* 	vkDestroyCommandPool(context->logical_device, context->transfer_command_pool, 0); */
 	if (context->logical_device)
 		vkDestroyDevice(context->logical_device, 0);
 	if (context->instance)
@@ -1448,7 +1551,7 @@ bool gfx__vk_instance_make(GFX_Context *context) {
 	bool ok = true;
 	if (ok) { // validate if required extensions are present
 #ifdef DEV_BUILD
-		const char **debug_extensions = arena_push_count(scratch.arena, const char **, required_extension_count + 1);
+		const char **debug_extensions = arena_push_count(scratch.arena, const char *, required_extension_count + 1);
 		memory_copy(debug_extensions, required_extensions, sizeof(*required_extensions) * required_extension_count);
 		debug_extensions[required_extension_count++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 		required_extensions = debug_extensions;
@@ -1655,14 +1758,35 @@ bool gfx__vk_device_make(GFX_Context *context) {
 		}
 	}
 
+	if (ok) { // default to grahpics if compute/transfer queues aren't available
+		if (context->transfer_index == -1)
+			context->transfer_index = context->graphics_index;
+		if (context->compute_index == -1)
+			context->compute_index = context->graphics_index;
+	}
+
 	if (ok) { // create vulkan device
 		float queue_priortiy = 0.5f;
 
-		uint32_t queue_family_indices[] = { context->graphics_index }; // TODO: Multiple queues
 		VkDeviceQueueCreateInfo queue_infos[] = {
 			{
+			  // grahpics queue
 			  .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 			  .queueFamilyIndex = context->graphics_index,
+			  .queueCount = 1,
+			  .pQueuePriorities = &queue_priortiy,
+			},
+			{
+			  // transfer queue
+			  .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			  .queueFamilyIndex = context->transfer_index,
+			  .queueCount = 1,
+			  .pQueuePriorities = &queue_priortiy,
+			},
+			{
+			  // compute queue
+			  .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			  .queueFamilyIndex = context->compute_index,
 			  .queueCount = 1,
 			  .pQueuePriorities = &queue_priortiy,
 			}
@@ -1698,8 +1822,11 @@ bool gfx__vk_device_make(GFX_Context *context) {
 		ok = vkCreateDevice(context->physical_device, &device_info, 0, &context->logical_device) == VK_SUCCESS;
 	}
 
-	if (ok) // get the queue handles from indices
+	if (ok) { // get the queue handles from indices
 		vkGetDeviceQueue(context->logical_device, context->graphics_index, 0, &context->graphics_queue);
+		vkGetDeviceQueue(context->logical_device, context->transfer_index, 0, &context->transfer_queue);
+		vkGetDeviceQueue(context->logical_device, context->compute_index, 0, &context->compute_queue);
+	}
 
 	arena_scratch_end(scratch);
 	return ok;
@@ -1722,7 +1849,7 @@ bool gfx__vk_command_buffers_make(GFX_Context *context) {
 	/* 	VkCommandPoolCreateInfo cp_create_info = { */
 	/* 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, */
 	/* 		.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT, */
-	/* 		.queueFamilyIndex = context->graphics_index */
+	/* 		.queueFamilyIndex = context->transfer_index */
 	/* 	}; */
 
 	/* 	ok = vkCreateCommandPool(context->logical_device, &cp_create_info, 0, &context->transfer_command_pool) == VK_SUCCESS; */
@@ -1902,7 +2029,7 @@ void image_barrier(VkCommandBuffer command_buffer, Image *image, VkImageLayout s
 		1, &image_barrier);
 }
 
-void push_rect(SpriteBatch *buffer, Rectangle rect, Color color) {
+void push_rect(Batch *buffer, Rectangle rect, Color color) {
 	float4 f_color = {
 		.x = color.r / 255.f,
 		.y = color.g / 255.f,
@@ -1935,4 +2062,89 @@ void push_rect(SpriteBatch *buffer, Rectangle rect, Color color) {
 
 	memory_copy(buffer->memory + buffer->offset, quad, sizeof(quad));
 	buffer->offset += sizeof(quad);
+}
+
+Model load_gltf(Arena *arena, String8 path) {
+	LOG_INFO("loading [%s]", path.text);
+	Model result = { 0 };
+	cgltf_options options = { 0 };
+	cgltf_data *data = 0;
+
+	bool ok = cgltf_parse_file(&options, (char *)path.text, &data) == cgltf_result_success;
+	if (ok == false)
+		LOG_ERROR("%s - failed to open file", path.text);
+
+	if (ok) {
+		ok &= cgltf_load_buffers(&options, data, (char *)path.text) == cgltf_result_success;
+		ok &= cgltf_validate(data) == cgltf_result_success;
+	}
+
+	if (ok) {
+		for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
+			cgltf_mesh *mesh = &data->meshes[mesh_index];
+			for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
+				cgltf_primitive *primitive = &mesh->primitives[primitive_index];
+				ASSERT(primitive->attributes_count && "expect all primitives to contain vertex data.");
+
+				result.mesh_count++;
+				result.total_vertex_count += primitive->attributes[0].data->count;
+				result.total_index_count += primitive->indices->count;
+			}
+		}
+
+		result.meshes = arena_push_count(arena, Mesh, result.mesh_count);
+		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+
+		uint32_t mesh_offset = 0;
+		uint64_t vertex_offset = 0, index_offset = 0;
+		for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
+			cgltf_mesh *mesh = &data->meshes[mesh_index];
+			for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
+				cgltf_primitive *primitive = &mesh->primitives[primitive_index];
+				Mesh *mesh = &result.meshes[mesh_offset++];
+
+				mesh->vertex_count = primitive->attributes[0].data->count;
+				mesh->vertex_offset = vertex_offset;
+
+				mesh->index_count = primitive->indices->count;
+				mesh->index_offset = index_offset;
+				cgltf_accessor_unpack_indices(primitive->indices, result.indices + index_offset, 4, mesh->index_count);
+
+				for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
+					cgltf_attribute *attribute = &primitive->attributes[attribute_index];
+					cgltf_accessor *accessor = attribute->data;
+					ASSERT(accessor->count == mesh->vertex_count && "expect all attributes to have same number of vertices");
+
+					uint32_t offset = 0;
+					switch (attribute->type) {
+						case cgltf_attribute_type_position:
+							offset = offsetof(Vertex3, position);
+							break;
+						case cgltf_attribute_type_normal:
+							offset = offsetof(Vertex3, normal);
+							break;
+						case cgltf_attribute_type_tangent:
+							offset = offsetof(Vertex3, tangent);
+							break;
+						case cgltf_attribute_type_texcoord:
+							offset = offsetof(Vertex3, uv);
+							break;
+						default:
+							continue;
+					}
+
+					Vertex3 *mesh_vertices = result.vertices + vertex_offset;
+					for (uint32_t vertex_index = 0; vertex_index < mesh->vertex_count; ++vertex_index)
+						cgltf_accessor_read_float(accessor, vertex_index, (void *)((uint8_t *)(mesh_vertices + vertex_index) + offset), cgltf_num_components(accessor->type));
+				}
+
+				mesh_offset += sizeof(Vertex3) * mesh->vertex_count;
+				index_offset += sizeof(uint32_t) * mesh->index_count;
+			}
+		}
+	}
+
+	cgltf_free(data);
+	return result;
 }

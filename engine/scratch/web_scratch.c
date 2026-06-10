@@ -20,7 +20,7 @@ bool on_keydown(int type, const EmscriptenKeyboardEvent *event, void *data) {
 typedef struct {
 	uint8_t *memory;
 	uint64_t offset, capcity;
-} SpriteBatch;
+} Batch;
 
 typedef struct {
 	float2 position, uv;
@@ -29,7 +29,7 @@ typedef struct {
 	uint32_t image_id;
 } Vertex2;
 
-void push_rect(SpriteBatch *buffer, Rectangle rect, Color color) {
+void push_rect(Batch *buffer, Rectangle rect, Color color) {
 	float4 f_color = {
 		.x = color.r / 255.f,
 		.y = color.g / 255.f,
@@ -66,7 +66,7 @@ void push_rect(SpriteBatch *buffer, Rectangle rect, Color color) {
 	buffer->offset += sizeof(quad);
 }
 
-SpriteBatch batch;
+Batch batch;
 GLuint shaderProgram;
 GLuint vao;
 
@@ -108,7 +108,7 @@ int main(void) {
 	uint64_t context = emscripten_webgl_create_context("#canvas", &context_attribs);
 	emscripten_webgl_make_context_current(context);
 
-	batch = (SpriteBatch){
+	batch = (Batch){
 		.memory = arena_push(scratch.arena, MiB(1), 16, true),
 		.capcity = MiB(1),
 	};

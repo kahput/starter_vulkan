@@ -117,7 +117,12 @@ else()
     foreach(NAME ${NATIVE_SCRATCHES})
         set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")
         add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
-        target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
+        target_include_directories(
+            ${NAME}
+            PUBLIC 
+            "${CMAKE_SOURCE_DIR}/engine/src"
+            "${CMAKE_SOURCE_DIR}/engine/vendor"
+        )
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
         # target_compile_definitions(${NAME} PRIVATE -DVK_USE_PLATFORM_XCB_KHR)
         set_target_properties(${NAME} PROPERTIES SUFFIX ".exe")
