@@ -55,20 +55,20 @@ static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.
 static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
 static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y }; }
 
-ENGINE_API bool float2_equal(float2 a, float2 b);
-ENGINE_API float2 float2_negate(float2 v);
+bool float2_equal(float2 a, float2 b);
+float2 float2_negate(float2 v);
 
-ENGINE_API float float2_length(float2 v);
-ENGINE_API float2 float2_normalize(float2 v);
-ENGINE_API float2 float2_normalize_safe(float2 v, float epsilon);
+float float2_length(float2 v);
+float2 float2_normalize(float2 v);
+float2 float2_normalize_safe(float2 v, float epsilon);
 
-ENGINE_API float2 float2_add(float2 a, float2 b);
-ENGINE_API float2 float2_subtract(float2 a, float2 b);
-ENGINE_API float2 float2_divide(float2 a, float2 b);
-ENGINE_API float2 float2_scale(float2 v, float s);
+float2 float2_add(float2 a, float2 b);
+float2 float2_subtract(float2 a, float2 b);
+float2 float2_divide(float2 a, float2 b);
+float2 float2_scale(float2 v, float s);
 
-ENGINE_API float2 float2_lerp(float2 start, float2 end, float t);
-ENGINE_API float2 float2_clamp(float2 v, float2 min, float2 max);
+float2 float2_lerp(float2 start, float2 end, float t);
+float2 float2_clamp(float2 v, float2 min, float2 max);
 
 static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
 static inline float3 float3_fill(float value) { return (float3){ value, value, value }; }
@@ -76,59 +76,65 @@ static inline float3 float3_wrap(float v[3]) {
 	return (float3){ .x = v[0], .y = v[1], .z = v[2] };
 }
 
-ENGINE_API bool float3_equal(float3 a, float3 b);
-ENGINE_API float3 float3_negate(float3 v);
-ENGINE_API float float2_dot(float2 a, float2 b);
+bool float3_equal(float3 a, float3 b);
+float3 float3_negate(float3 v);
+float float2_dot(float2 a, float2 b);
 
-ENGINE_API float3 float3_add(float3 a, float3 b);
-ENGINE_API float3 float3_subtract(float3 a, float3 b);
-ENGINE_API float3 float3_scale(float3 v, float s);
+float3 float3_add(float3 a, float3 b);
+float3 float3_subtract(float3 a, float3 b);
+float3 float3_scale(float3 v, float s);
 
-ENGINE_API float float3_dot(float3 a, float3 b);
-ENGINE_API float3 float3_cross(float3 a, float3 b);
+float float3_dot(float3 a, float3 b);
+float3 float3_cross(float3 a, float3 b);
 
-ENGINE_API float float3_length(float3 v);
-ENGINE_API float float3_length_squared(float3 v);
-ENGINE_API float3 float3_normalize(float3 v);
-ENGINE_API float3 float3_normalize_safe(float3 v, float epsilon);
+float float3_length(float3 v);
+float float3_length_squared(float3 v);
+float3 float3_normalize(float3 v);
+float3 float3_normalize_safe(float3 v, float epsilon);
 
-ENGINE_API float3 float3_min(float3 a, float3 b);
-ENGINE_API float3 float3_max(float3 a, float3 b);
-ENGINE_API float3 float3_clamp(float3 v, float3 min, float3 max);
-ENGINE_API float3 float3_lerp(float3 start, float3 end, float t);
+float3 float3_min(float3 a, float3 b);
+float3 float3_max(float3 a, float3 b);
+float3 float3_clamp(float3 v, float3 min, float3 max);
+float3 float3_lerp(float3 start, float3 end, float t);
 
-ENGINE_API float float3_angle(float3 a, float3 b);
-ENGINE_API float3 float3_rotate(float3 v, float angle, float3 axis);
+float float3_angle(float3 a, float3 b);
+float3 float3_rotate(float3 v, float angle, float3 axis);
 
 static inline float4 float4_from_float3(float3 v) { return (float4){ v.x, v.y, v.z, 0.0f }; }
+static inline float4 float4_wrap(float v[4]) {
+	return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] };
+}
+
+float3 quat_to_euler(float4 quat);
 
 // float float4_dot_product(Vector4f v);
 
-ENGINE_API float4x4 float4x4_identity(void);
-ENGINE_API float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs);
+float4x4 float4x4_identity(void);
+float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs);
 
-ENGINE_API float4x4 float4x4_translate(float4x4 matrix, float3 translation);
-ENGINE_API float4x4 float4x4_rotate(float4x4 matrix, float angle_radians, float3 axis);
-ENGINE_API float4x4 float4x4_scale(float4x4 matrix, float3 scale);
+float4x4 float4x4_translate(float4x4 matrix, float3 translation);
+float4x4 float4x4_rotate(float4x4 matrix, float angle_radians, float3 axis);
+float4x4 float4x4_scale(float4x4 matrix, float3 scale);
 
-ENGINE_API float4x4 float4x4_translation(float3 translation);
-ENGINE_API float4x4 float4x4_rotation(float angle, float3 axis);
-ENGINE_API float4x4 float4x4_scaling(float3 scale);
+float4x4 float4x4_translation(float3 translation);
+float4x4 float4x4_rotation(float angle, float3 axis);
+float4x4 float4x4_scaling(float3 scale);
 
-ENGINE_API float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale);
-ENGINE_API float3 float4x4_transform(float4x4 m, float4 v);
+float4x4 float4x4_compose(float3 position, float3 rotation_rad, float3 scale);
+float4x4 float4x4_compose_quat(float3 position, float4 rotation, float3 scale); 
+float3 float4x4_transform(float4x4 m, float4 v);
 
-ENGINE_API float4x4 float4x4_perspective(float fovy_radians, float aspect,
+float4x4 float4x4_perspective(float fovy_radians, float aspect,
 	float near_z, float far_z);
-ENGINE_API float4x4 float4x4_orthographic(float left, float right, float top,
+float4x4 float4x4_orthographic(float left, float right, float top,
 	float bottom, float near, float far);
 
-ENGINE_API float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
+float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
 
-ENGINE_API void float4x4_print(float4x4 m);
-ENGINE_API void float2_print(float2 v);
-ENGINE_API void float3_print(float3 v);
-ENGINE_API void float4_print(float4 v);
+void float4x4_print(float4x4 m);
+void float2_print(float2 v);
+void float3_print(float3 v);
+void float4_print(float4 v);
 
 // NOTE: Maybe move to shapes/geometry
 typedef struct {
@@ -139,7 +145,7 @@ typedef struct {
 static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
 
 // Collision
-ENGINE_API Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
-ENGINE_API Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
+Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
+Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
 
 #endif /* CMATH_H_ */

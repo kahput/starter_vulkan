@@ -3,6 +3,7 @@ project(program)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+add_compile_definitions(DEV_BUILD)
 
 # ── Shaders ───────────────────────────────────────────────────────────────────
 file(GLOB_RECURSE SHADERS
@@ -24,9 +25,6 @@ endif()
 set(WEB_SCRATCHES web_scratch)
 set(NATIVE_SCRATCHES xcb_scratch vulkan_scratch)
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(DEV_BUILD)
-endif()
 
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")

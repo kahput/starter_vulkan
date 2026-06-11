@@ -3,8 +3,8 @@
 #pragma shader_stage(vertex)
 
 struct VertexData {
-    vec3 position; 
-    vec3 normal;
+    vec4 position; 
+    vec4 normal;
     vec2 uv;
     vec4 tangent;
 };
@@ -23,6 +23,6 @@ layout(push_constant) uniform ConstantBlock {
 
 void main() {
     VertexData vertex = batch.vertex_data[gl_VertexIndex];
-    gl_Position = view_projection * vec4(vertex.position, 1.0);
-    vs_output.color = vec4(vertex.position, 1.0);
+    gl_Position = view_projection * vec4(vertex.position.xyz, 1.0);
+    vs_output.color = vec4(vertex.position.xyz, 1.0);
 }

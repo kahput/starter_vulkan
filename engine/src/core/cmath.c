@@ -175,6 +175,28 @@ float3 float3_rotate(float3 v, float angle, float3 axis) {
 			float3_scale(k, float3_dot(k, v) * (1.0f - c))));
 }
 
+float3 quat_to_euler(float4 q) {
+	float3 result = { 0 };
+
+	// Roll (x-axis rotation)
+	float x0 = 2.0f * (q.w * q.x + q.y * q.z);
+	float x1 = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
+	result.x = atan2f(x0, x1);
+
+	// Pitch (y-axis rotation)
+	float y0 = 2.0f * (q.w * q.y - q.z * q.x);
+	y0 = y0 > 1.0f ? 1.0f : y0;
+	y0 = y0 < -1.0f ? -1.0f : y0;
+	result.y = asinf(y0);
+
+	// Yaw (z-axis rotation)
+	float z0 = 2.0f * (q.w * q.z + q.x * q.y);
+	float z1 = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
+	result.z = atan2f(z0, z1);
+
+	return result;
+}
+
 float4x4 float4x4_identity(void) {
 	float4x4 result = { { 1.0f, 0.0f, 0.0f, 0.0f,
 	  0.0f, 1.0f, 0.0f, 0.0f,
@@ -349,9 +371,9 @@ float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 
 	float4x4 T = float4x4_translation(position);
 	float4x4 S = float4x4_scaling(scale);
-	float4x4 rotation_x = float4x4_rotation(to_radians(rotation.x), FLOAT3_X);
-	float4x4 rotation_y = float4x4_rotation(to_radians(rotation.y), FLOAT3_Y);
-	float4x4 rotation_z = float4x4_rotation(to_radians(rotation.z), FLOAT3_Z);
+	float4x4 rotation_x = float4x4_rotation(rotation.x, FLOAT3_X);
+	float4x4 rotation_y = float4x4_rotation(rotation.y, FLOAT3_Y);
+	float4x4 rotation_z = float4x4_rotation(rotation.z, FLOAT3_Z);
 	float4x4 R = float4x4_multiply(rotation_z, float4x4_multiply(rotation_y, rotation_x));
 
 	result = float4x4_multiply(T, float4x4_multiply(R, S));
@@ -367,6 +389,7 @@ float3 float4x4_transform(float4x4 m, float4 v) {
 
 	return result;
 }
+
 float4x4 float4x4_perspective(float fovy_radians, float aspect, float near_z, float far_z) {
 	float4x4 result = { 0 };
 

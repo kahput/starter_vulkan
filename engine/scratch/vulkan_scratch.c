@@ -178,6 +178,11 @@ typedef struct {
 } Mesh;
 
 typedef struct {
+	char name[32];
+	uint32_t parent;
+} JointData;
+
+typedef struct {
 	Mesh *meshes;
 	uint32_t mesh_count;
 
@@ -186,6 +191,13 @@ typedef struct {
 
 	uint32_t *indices;
 	uint64_t total_index_count;
+
+	uint32x4 *joints;
+	float32x4 *weights;
+
+	uint32_t joint_count;
+	float4x4 *invere_rest_matrices;
+	JointData *joint_data;
 } Model;
 
 Model load_gltf(Arena *arena, String8 path);
@@ -241,21 +253,8 @@ int main(void) {
 	/* }; */
 
 	Buffer geometry = buffer_make(context, MiB(8), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
-	// clang-format off
-    float w = 5.0f;
-    Vertex3 vertices[] = {
-        { .position = { -w,  w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0 } },
-        { .position = {  w, -w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0 } },
-        { .position = { -w, -w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 0 } },
-
-        { .position = { -w,  w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 0 } },
-        { .position = {  w,  w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 0 } },
-        { .position = {  w, -w, 0.0f }, .normal = { 0.0f, 0.0f, 1.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 0 } },
-    };
-	// clang-format on
 
 	Model model = load_gltf(scratch.arena, s("assets/models/gdbot.glb"));
-
 	uint64_t total_vertex_buffer_size = model.total_vertex_count * sizeof(Vertex3);
 	{ // upload geometry
 		uint64_t total_index_buffer_size = model.total_index_count * sizeof(uint32_t);
@@ -2079,7 +2078,7 @@ Model load_gltf(Arena *arena, String8 path) {
 		ok &= cgltf_validate(data) == cgltf_result_success;
 	}
 
-	if (ok) {
+	if (ok) { // load geometry
 		for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
 			cgltf_mesh *mesh = &data->meshes[mesh_index];
 			for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
@@ -2096,25 +2095,28 @@ Model load_gltf(Arena *arena, String8 path) {
 		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
 
+		result.joints = arena_push_count(arena, uint32x4, result.total_vertex_count);
+		result.weights = arena_push_count(arena, float32x4, result.total_vertex_count);
+
 		uint32_t mesh_offset = 0;
 		uint64_t vertex_offset = 0, index_offset = 0;
 		for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
 			cgltf_mesh *mesh = &data->meshes[mesh_index];
 			for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
 				cgltf_primitive *primitive = &mesh->primitives[primitive_index];
-				Mesh *mesh = &result.meshes[mesh_offset++];
+				Mesh *out_mesh = &result.meshes[mesh_offset++];
 
-				mesh->vertex_count = primitive->attributes[0].data->count;
-				mesh->vertex_offset = vertex_offset;
+				out_mesh->vertex_count = primitive->attributes[0].data->count;
+				out_mesh->vertex_offset = vertex_offset;
 
-				mesh->index_count = primitive->indices->count;
-				mesh->index_offset = index_offset;
-				cgltf_accessor_unpack_indices(primitive->indices, result.indices + index_offset, 4, mesh->index_count);
+				out_mesh->index_count = primitive->indices->count;
+				out_mesh->index_offset = index_offset;
+				cgltf_accessor_unpack_indices(primitive->indices, result.indices + index_offset, 4, out_mesh->index_count);
 
 				for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
 					cgltf_attribute *attribute = &primitive->attributes[attribute_index];
 					cgltf_accessor *accessor = attribute->data;
-					ASSERT(accessor->count == mesh->vertex_count && "expect all attributes to have same number of vertices");
+					ASSERT(accessor->count == out_mesh->vertex_count && "expect all attributes to have same number of vertices");
 
 					uint32_t offset = 0;
 					switch (attribute->type) {
@@ -2130,17 +2132,143 @@ Model load_gltf(Arena *arena, String8 path) {
 						case cgltf_attribute_type_texcoord:
 							offset = offsetof(Vertex3, uv);
 							break;
+						case cgltf_attribute_type_weights:
+						case cgltf_attribute_type_joints:
+							break;
 						default:
 							continue;
 					}
 
 					Vertex3 *mesh_vertices = result.vertices + vertex_offset;
-					for (uint32_t vertex_index = 0; vertex_index < mesh->vertex_count; ++vertex_index)
-						cgltf_accessor_read_float(accessor, vertex_index, (void *)((uint8_t *)(mesh_vertices + vertex_index) + offset), cgltf_num_components(accessor->type));
+					float4 *mesh_weights = result.weights + vertex_offset;
+					uint4 *mesh_joints = result.joints + vertex_offset;
+
+					for (uint32_t vertex_index = 0; vertex_index < out_mesh->vertex_count; ++vertex_index) {
+						if (attribute->type == cgltf_attribute_type_weights)
+							cgltf_accessor_read_float(accessor, vertex_index, (void *)(mesh_weights + vertex_index), cgltf_num_components(accessor->type));
+						else if (attribute->type == cgltf_attribute_type_joints)
+							cgltf_accessor_read_uint(accessor, vertex_index, (void *)(mesh_joints + vertex_index), cgltf_num_components(accessor->type));
+						else
+							cgltf_accessor_read_float(accessor, vertex_index, (void *)((uint8_t *)(mesh_vertices + vertex_index) + offset), cgltf_num_components(accessor->type));
+					}
 				}
 
-				mesh_offset += sizeof(Vertex3) * mesh->vertex_count;
-				index_offset += sizeof(uint32_t) * mesh->index_count;
+				vertex_offset += out_mesh->vertex_count;
+				index_offset += out_mesh->index_count;
+			}
+		}
+	}
+
+	if (ok) { // load node data
+		for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
+			cgltf_node *node = &data->nodes[node_index];
+
+			if (node->skin) {
+				ASSERT(result.invere_rest_matrices == 0 && "expect single skinned mesh per file");
+
+				cgltf_skin *skin = node->skin;
+				cgltf_accessor *accessor = skin->inverse_bind_matrices;
+				ASSERT(skin->joints_count == accessor->count && "expect joint count to match matrix count");
+
+				result.joint_count = skin->joints_count;
+				result.joint_data = arena_push_count(arena, JointData, result.joint_count);
+				result.invere_rest_matrices = arena_push_count(arena, float4x4, result.joint_count);
+
+				cgltf_accessor_unpack_floats(accessor, (float *)result.invere_rest_matrices, accessor->count * cgltf_num_components(accessor->type));
+
+				LOG_INFO("%s - inverse_matrix_count: %d, joint_count: %d", skin->name, accessor->count, skin->joints_count);
+
+				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
+					cgltf_node *joint = skin->joints[joint_index];
+					memory_copy(
+						result.joint_data[joint_index].name,
+						joint->name,
+						MIN(str8_wrap(joint->name).length, sizeof_member(JointData, name)));
+
+					bool found = false;
+					for (uint32_t search_index = 0; search_index < skin->joints_count; ++search_index)
+						if (skin->joints[search_index] == joint->parent) {
+							result.joint_data[joint_index].parent = search_index;
+							found = true;
+						}
+
+					if (found == false)
+						result.joint_data[joint_index].parent = -1;
+				}
+
+				ArenaTemp scratch = arena_scratch_begin(arena);
+				// initialize pose from rest
+				typedef struct {
+					float3 translation;
+					float4 rotation;
+					float3 scale;
+				} JointPose;
+				JointPose *pose = arena_push_count(scratch.arena, JointPose, result.joint_count);
+				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
+					cgltf_node *joint = skin->joints[joint_index];
+					pose[joint_index].translation = float3_wrap(joint->translation);
+					pose[joint_index].rotation = float4_wrap(joint->rotation);
+					pose[joint_index].scale = float3_wrap(joint->scale);
+				}
+
+				// overwrite with first keyframe of animation 0
+				if (data->animations_count > 0) {
+					cgltf_animation *anim = &data->animations[0];
+					for (uint32_t channel_index = 0; channel_index < anim->channels_count; ++channel_index) {
+						cgltf_animation_channel *channel = &anim->channels[channel_index];
+						cgltf_animation_sampler *sampler = channel->sampler;
+
+						uint32_t joint_index = -1;
+						for (uint32_t i = 0; i < skin->joints_count; ++i)
+							if (skin->joints[i] == channel->target_node) {
+								joint_index = i;
+								break;
+							}
+						if (joint_index == (uint32_t)-1)
+							continue;
+
+						// just grab keyframe 0
+						if (channel->target_path == cgltf_animation_path_type_translation) {
+							cgltf_accessor_read_float(sampler->output, 0, (float *)&pose[joint_index].translation, 3);
+						} else if (channel->target_path == cgltf_animation_path_type_rotation) {
+							cgltf_accessor_read_float(sampler->output, 0, (float *)&pose[joint_index].rotation, 4);
+						} else if (channel->target_path == cgltf_animation_path_type_scale) {
+							cgltf_accessor_read_float(sampler->output, 0, (float *)&pose[joint_index].scale, 3);
+						}
+					}
+				}
+
+				// use pose instead of joint->translation/rotation/scale when building world matrices
+				float4x4 *world_matrices = arena_push_count(scratch.arena, float4x4, result.joint_count);
+				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
+					float4x4 local = float4x4_compose(pose[joint_index].translation, quat_to_euler(pose[joint_index].rotation), pose[joint_index].scale);
+					if (result.joint_data[joint_index].parent == -1)
+						world_matrices[joint_index] = local;
+					else
+						world_matrices[joint_index] = float4x4_multiply(world_matrices[result.joint_data[joint_index].parent], local);
+				}
+
+				float4x4 *skin_matrices = arena_push_count(scratch.arena, float4x4, result.joint_count);
+				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index)
+					/* skin_matrices[joint_index] = float4x4_identity(); */
+					skin_matrices[joint_index] = float4x4_multiply(world_matrices[joint_index], result.invere_rest_matrices[joint_index]);
+
+				for (uint32_t index = 0; index < result.meshes[0].vertex_count; ++index) {
+					float4 p = float4_from_float3(result.vertices[index].position);
+					p.w = 1.0f;
+
+					float3 skinned_pos = float3_add(
+						float3_add(
+							float3_add(
+								float3_scale(float4x4_transform(skin_matrices[result.joints[index].x], p), result.weights[index].x),
+								float3_scale(float4x4_transform(skin_matrices[result.joints[index].y], p), result.weights[index].y)),
+							float3_scale(float4x4_transform(skin_matrices[result.joints[index].z], p), result.weights[index].z)),
+						float3_scale(float4x4_transform(skin_matrices[result.joints[index].w], p), result.weights[index].w));
+
+					result.vertices[index].position = skinned_pos;
+				}
+
+				arena_scratch_end(scratch);
 			}
 		}
 	}
