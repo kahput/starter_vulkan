@@ -19,6 +19,7 @@ typedef struct {
 	float3 direction;
 } Ray3;
 typedef float32x4 float4;
+typedef float32x4 quat4;
 
 #define FLOAT_MAX 3.40282347e+38F
 #define FLOAT_MIN -FLOAT_MAX
@@ -105,7 +106,8 @@ static inline float4 float4_wrap(float v[4]) {
 	return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] };
 }
 
-float3 quat_to_euler(float4 quat);
+float3 quat4_to_euler(quat4 quat);
+float4 quat4_slerp(quat4 q, quat4 p, float t);
 
 // float float4_dot_product(Vector4f v);
 
@@ -121,7 +123,7 @@ float4x4 float4x4_rotation(float angle, float3 axis);
 float4x4 float4x4_scaling(float3 scale);
 
 float4x4 float4x4_compose(float3 position, float3 rotation_rad, float3 scale);
-float4x4 float4x4_compose_quat(float3 position, float4 rotation, float3 scale); 
+float4x4 float4x4_compose_quat(float3 position, float4 rotation, float3 scale);
 float3 float4x4_transform(float4x4 m, float4 v);
 
 float4x4 float4x4_perspective(float fovy_radians, float aspect,

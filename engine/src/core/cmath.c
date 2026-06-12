@@ -175,7 +175,7 @@ float3 float3_rotate(float3 v, float angle, float3 axis) {
 			float3_scale(k, float3_dot(k, v) * (1.0f - c))));
 }
 
-float3 quat_to_euler(float4 q) {
+float3 quat4_to_euler(quat4 q) {
 	float3 result = { 0 };
 
 	// Roll (x-axis rotation)
@@ -193,6 +193,44 @@ float3 quat_to_euler(float4 q) {
 	float z0 = 2.0f * (q.w * q.z + q.x * q.y);
 	float z1 = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
 	result.z = atan2f(z0, z1);
+
+	return result;
+}
+
+quat4 quat4_slerp(quat4 q, quat4 p, float t) {
+	quat4 result = { 0 };
+
+	float cosHalfTheta = q.x * p.x + q.y * p.y + q.z * p.z + q.w * p.w;
+
+	if (cosHalfTheta < 0) {
+		p.x = -p.x;
+		p.y = -p.y;
+		p.z = -p.z;
+		p.w = -p.w;
+		cosHalfTheta = -cosHalfTheta;
+	}
+
+	if (fabsf(cosHalfTheta) >= 1.0f)
+		result = q;
+	else {
+		float halfTheta = acosf(cosHalfTheta);
+		float sinHalfTheta = sqrtf(1.0f - cosHalfTheta * cosHalfTheta);
+
+		if (fabsf(sinHalfTheta) < EPSILON) {
+			result.x = (q.x * 0.5f + p.x * 0.5f);
+			result.y = (q.y * 0.5f + p.y * 0.5f);
+			result.z = (q.z * 0.5f + p.z * 0.5f);
+			result.w = (q.w * 0.5f + p.w * 0.5f);
+		} else {
+			float ratioA = sinf((1 - t) * halfTheta) / sinHalfTheta;
+			float ratioB = sinf(t * halfTheta) / sinHalfTheta;
+
+			result.x = (q.x * ratioA + p.x * ratioB);
+			result.y = (q.y * ratioA + p.y * ratioB);
+			result.z = (q.z * ratioA + p.z * ratioB);
+			result.w = (q.w * ratioA + p.w * ratioB);
+		}
+	}
 
 	return result;
 }

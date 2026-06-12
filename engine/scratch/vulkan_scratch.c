@@ -4,7 +4,10 @@
 #include "core/input_types.h"
 #include "core/logger.h"
 #include "core/debug.h"
+
 #include "os.h"
+#include "anim.h"
+
 #include <vulkan/vulkan_core.h>
 
 #define VK_USE_PLATFORM_XCB_KHR
@@ -178,11 +181,6 @@ typedef struct {
 } Mesh;
 
 typedef struct {
-	char name[32];
-	uint32_t parent;
-} JointData;
-
-typedef struct {
 	Mesh *meshes;
 	uint32_t mesh_count;
 
@@ -195,9 +193,8 @@ typedef struct {
 	uint32x4 *joints;
 	float32x4 *weights;
 
-	uint32_t joint_count;
-	float4x4 *invere_rest_matrices;
-	JointData *joint_data;
+	Skeleton skeleton;
+	AnimationClip animation;
 } Model;
 
 Model load_gltf(Arena *arena, String8 path);
@@ -2065,6 +2062,8 @@ void push_rect(Batch *buffer, Rectangle rect, Color color) {
 
 Model load_gltf(Arena *arena, String8 path) {
 	LOG_INFO("loading [%s]", path.text);
+	ArenaTemp scratch = arena_scratch_begin(arena);
+
 	Model result = { 0 };
 	cgltf_options options = { 0 };
 	cgltf_data *data = 0;
@@ -2164,94 +2163,110 @@ Model load_gltf(Arena *arena, String8 path) {
 			cgltf_node *node = &data->nodes[node_index];
 
 			if (node->skin) {
-				ASSERT(result.invere_rest_matrices == 0 && "expect single skinned mesh per file");
+				ASSERT(result.skeleton.inverse_rest_matrices == 0 && "expect single skinned mesh per file");
 
 				cgltf_skin *skin = node->skin;
 				cgltf_accessor *accessor = skin->inverse_bind_matrices;
 				ASSERT(skin->joints_count == accessor->count && "expect joint count to match matrix count");
 
-				result.joint_count = skin->joints_count;
-				result.joint_data = arena_push_count(arena, JointData, result.joint_count);
-				result.invere_rest_matrices = arena_push_count(arena, float4x4, result.joint_count);
+				result.skeleton.bone_count = skin->joints_count;
+				result.skeleton.bones = arena_push_count(arena, Bone, result.skeleton.bone_count);
+				result.skeleton.inverse_rest_matrices = arena_push_count(arena, float4x4, result.skeleton.bone_count);
 
-				cgltf_accessor_unpack_floats(accessor, (float *)result.invere_rest_matrices, accessor->count * cgltf_num_components(accessor->type));
+				cgltf_accessor_unpack_floats(accessor, (float *)result.skeleton.inverse_rest_matrices, accessor->count * cgltf_num_components(accessor->type));
 
 				LOG_INFO("%s - inverse_matrix_count: %d, joint_count: %d", skin->name, accessor->count, skin->joints_count);
 
 				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
 					cgltf_node *joint = skin->joints[joint_index];
 					memory_copy(
-						result.joint_data[joint_index].name,
+						result.skeleton.bones[joint_index].name,
 						joint->name,
-						MIN(str8_wrap(joint->name).length, sizeof_member(JointData, name)));
+						MIN(str8_wrap(joint->name).length, sizeof_member(Bone, name)));
 
 					bool found = false;
 					for (uint32_t search_index = 0; search_index < skin->joints_count; ++search_index)
 						if (skin->joints[search_index] == joint->parent) {
-							result.joint_data[joint_index].parent = search_index;
+							result.skeleton.bones[joint_index].parent = search_index;
 							found = true;
 						}
 
 					if (found == false)
-						result.joint_data[joint_index].parent = -1;
+						result.skeleton.bones[joint_index].parent = -1;
 				}
 
-				ArenaTemp scratch = arena_scratch_begin(arena);
-				// initialize pose from rest
-				typedef struct {
-					float3 translation;
-					float4 rotation;
-					float3 scale;
-				} JointPose;
-				JointPose *pose = arena_push_count(scratch.arena, JointPose, result.joint_count);
-				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
-					cgltf_node *joint = skin->joints[joint_index];
-					pose[joint_index].translation = float3_wrap(joint->translation);
-					pose[joint_index].rotation = float4_wrap(joint->rotation);
-					pose[joint_index].scale = float3_wrap(joint->scale);
+				Pose rest_pose[1] = { 0 };
+				rest_pose->bone_count = result.skeleton.bone_count;
+				rest_pose->transforms = arena_push_count(scratch.arena, Transform3, rest_pose->bone_count);
+
+				for (uint32_t bone_index = 0; bone_index < rest_pose->bone_count; ++bone_index) {
+					cgltf_node *joint = skin->joints[bone_index];
+					rest_pose->transforms[bone_index].translation = float3_wrap(joint->translation);
+					rest_pose->transforms[bone_index].rotation = float4_wrap(joint->rotation);
+					rest_pose->transforms[bone_index].scale = float3_wrap(joint->scale);
 				}
 
-				// overwrite with first keyframe of animation 0
 				if (data->animations_count > 0) {
-					cgltf_animation *anim = &data->animations[0];
+					cgltf_animation *anim = &data->animations[5];
+					LOG_INFO("anim - %s", anim->name);
+					for (uint32_t sampler_index = 0; sampler_index < anim->samplers_count; ++sampler_index) {
+						cgltf_animation_sampler *sampler = &anim->samplers[sampler_index];
+
+						result.animation.keyframe_count = MAX(sampler->input->count, result.animation.keyframe_count);
+						float t = 0.0f;
+						cgltf_accessor_read_float(sampler->input, sampler->input->count - 1, &t, cgltf_component_size(sampler->input->component_type));
+
+						result.animation.duration = MAX(result.animation.duration, t);
+					}
+					result.animation.keyframes = arena_push_count(scratch.arena, Transform3 *, result.animation.keyframe_count);
+					result.animation.timings = arena_push_count(scratch.arena, float, result.animation.keyframe_count);
+                    result.animation.bone_count = result.skeleton.bone_count;
+
+					for (uint32_t keyframe = 0; keyframe < result.animation.keyframe_count; ++keyframe) {
+						Transform3 *pose = result.animation.keyframes[keyframe];
+						result.animation.keyframes[keyframe] = arena_push_count(scratch.arena, Transform3, result.skeleton.bone_count);
+					}
+
 					for (uint32_t channel_index = 0; channel_index < anim->channels_count; ++channel_index) {
 						cgltf_animation_channel *channel = &anim->channels[channel_index];
 						cgltf_animation_sampler *sampler = channel->sampler;
+						ASSERT(sampler->interpolation == cgltf_interpolation_type_linear && "expect all animations to interpolate linearly");
 
-						uint32_t joint_index = -1;
-						for (uint32_t i = 0; i < skin->joints_count; ++i)
-							if (skin->joints[i] == channel->target_node) {
-								joint_index = i;
+						uint32_t bone_index = -1;
+						for (uint32_t index = 0; index < skin->joints_count; ++index) {
+							if (channel->target_node == skin->joints[index]) {
+								bone_index = index;
 								break;
 							}
-						if (joint_index == (uint32_t)-1)
+						}
+						if (bone_index == (uint32_t)-1)
 							continue;
 
-						// just grab keyframe 0
+						for (uint32_t keyframe = 0; keyframe < sampler->input->count; ++keyframe) {
+							cgltf_accessor_read_float(sampler->input, keyframe, &result.animation.timings[keyframe], 1);
+							Transform3 *transforms = result.animation.keyframes[keyframe];
+
+							if (channel->target_path == cgltf_animation_path_type_translation) {
+								cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].translation, 3);
+							} else if (channel->target_path == cgltf_animation_path_type_rotation) {
+								cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].rotation, 4);
+							} else if (channel->target_path == cgltf_animation_path_type_scale) {
+								cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].scale, 3);
+							}
+						}
+
 						if (channel->target_path == cgltf_animation_path_type_translation) {
-							cgltf_accessor_read_float(sampler->output, 0, (float *)&pose[joint_index].translation, 3);
+							cgltf_accessor_read_float(sampler->output, 0, (float *)&rest_pose->transforms[bone_index].translation, 3);
 						} else if (channel->target_path == cgltf_animation_path_type_rotation) {
-							cgltf_accessor_read_float(sampler->output, 0, (float *)&pose[joint_index].rotation, 4);
+							cgltf_accessor_read_float(sampler->output, 0, (float *)&rest_pose->transforms[bone_index].rotation, 4);
 						} else if (channel->target_path == cgltf_animation_path_type_scale) {
-							cgltf_accessor_read_float(sampler->output, 0, (float *)&pose[joint_index].scale, 3);
+							cgltf_accessor_read_float(sampler->output, 0, (float *)&rest_pose->transforms[bone_index].scale, 3);
 						}
 					}
 				}
 
-				// use pose instead of joint->translation/rotation/scale when building world matrices
-				float4x4 *world_matrices = arena_push_count(scratch.arena, float4x4, result.joint_count);
-				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
-					float4x4 local = float4x4_compose(pose[joint_index].translation, quat_to_euler(pose[joint_index].rotation), pose[joint_index].scale);
-					if (result.joint_data[joint_index].parent == -1)
-						world_matrices[joint_index] = local;
-					else
-						world_matrices[joint_index] = float4x4_multiply(world_matrices[result.joint_data[joint_index].parent], local);
-				}
-
-				float4x4 *skin_matrices = arena_push_count(scratch.arena, float4x4, result.joint_count);
-				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index)
-					/* skin_matrices[joint_index] = float4x4_identity(); */
-					skin_matrices[joint_index] = float4x4_multiply(world_matrices[joint_index], result.invere_rest_matrices[joint_index]);
+				Pose pose = anim_pose_sample(scratch.arena, &result.animation, 0.1f);
+				float4x4 *skin_matrices = anim_pose_skinning_matrices(scratch.arena, anim_pose_local_to_model(scratch.arena, &pose, &result.skeleton), &result.skeleton);
 
 				for (uint32_t index = 0; index < result.meshes[0].vertex_count; ++index) {
 					float4 p = float4_from_float3(result.vertices[index].position);
@@ -2267,12 +2282,12 @@ Model load_gltf(Arena *arena, String8 path) {
 
 					result.vertices[index].position = skinned_pos;
 				}
-
-				arena_scratch_end(scratch);
 			}
 		}
 	}
 
 	cgltf_free(data);
+	arena_scratch_end(scratch);
+
 	return result;
 }

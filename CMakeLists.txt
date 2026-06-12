@@ -113,7 +113,7 @@ else()
     endif()
 
     foreach(NAME ${NATIVE_SCRATCHES})
-        set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")
+        set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c" "${CMAKE_SOURCE_DIR}/engine/src/anim.c")
         add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
         target_include_directories(
             ${NAME}
