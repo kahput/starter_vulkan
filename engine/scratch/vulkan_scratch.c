@@ -198,10 +198,20 @@ typedef struct {
 	uint64_t total_index_count;
 
 	Skeleton skeleton;
-	AnimationClip animation;
 } Model;
 
 Model load_gltf(Arena *arena, String8 path);
+AnimationClip *load_animations(Arena *arena, String8 path, uint32_t *count);
+
+AnimationClip *find_animation(AnimationClip *clips, uint32_t count, String8 target) {
+	for (uint32_t anim_index = 0; anim_index < count; ++anim_index) {
+		if (str8_equals(str8_wrap(clips[anim_index].name), target)) {
+			return clips + anim_index;
+		}
+	}
+
+	return NULL;
+}
 
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
@@ -317,6 +327,9 @@ int main(void) {
 	Buffer geometry = buffer_make(context, MiB(8), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
 
 	Model model = load_gltf(scratch.arena, s("assets/models/gdbot.glb"));
+
+	uint32_t animation_count = 0;
+	AnimationClip *animations = load_animations(scratch.arena, s("assets/models/gdbot.glb"), &animation_count);
 	uint64_t total_vertex_buffer_size = alignup(model.total_vertex_count * sizeof(Vertex3), 256);
 	uint64_t total_skinning_buffer_size = alignup(model.total_vertex_count * sizeof(SkinningData), 256);
 	uint64_t total_index_buffer_size = alignup(model.total_index_count * sizeof(uint32_t), 256);
@@ -379,12 +392,14 @@ int main(void) {
 	float last_frame = 0.0f;
 
 	Arena frame_arena[] = { arena_make(MiB(1)) };
+	memory_zero(scratch_buffers[context->current_frame].mapped, scratch_buffers[context->current_frame].size);
 	while (is_open) {
 		double time = os_time_ns() * 1e-9;
 		dt = time - last_frame;
 		last_frame = time;
 
 		OS_Event event = { 0 };
+		bool space_pressed = 0;
 		while (os_event_poll(&event)) {
 			switch (event.type) {
 				case OS_EVENT_TYPE_SURFACE_CLOSE:
@@ -394,6 +409,8 @@ int main(void) {
 				case OS_EVENT_TYPE_KEY_RELEASE:
 					if (event.as.key.key_code == KEY_CODE_ESCAPE)
 						is_open = false;
+					if (event.as.key.key_code == KEY_CODE_SPACE)
+						space_pressed = true;
 				default:
 					break;
 			}
@@ -438,14 +455,17 @@ int main(void) {
 		uint64_t skinned_size = alignup(model.meshes[0].vertex_count * sizeof(Vertex3), 256);
 
 		static float t = 0.0f;
+		static uint32_t current_anim = 3;
 
-		Pose pose = anim_pose_sample(frame_arena, &model.animation, t);
+		Pose pose = anim_pose_sample(frame_arena, find_animation(animations, animation_count, s("run")), t);
 		float4x4 *skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &pose, &model.skeleton), &model.skeleton);
 		memory_copy(scratch_buffers[context->current_frame].mapped, skin_matrices, matrices_size);
 
 		t += dt;
-		if (t >= 1.0f)
+		if (t >= 1.0f) {
 			t = 0.0f;
+			/* current_anim = (current_anim + 1) % animation_count; */
+		}
 
 		// skin mesh
 		{
@@ -556,6 +576,36 @@ int main(void) {
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_GENERAL);
 
+		{ // Bind grahpics pipeline & descriptor set
+			VkDescriptorSetAllocateInfo alloc_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+				.descriptorPool = descriptor_pool,
+				.descriptorSetCount = 1,
+				.pSetLayouts = pipeline_3d.set_layouts + 0,
+			};
+
+			VkDescriptorSet grahpics_set = 0;
+			vkAllocateDescriptorSets(context->logical_device, &alloc_info, &grahpics_set);
+			VkDescriptorBufferInfo buffer_info = {
+				.buffer = scratch_buffers[context->current_frame].handle,
+				.offset = matrices_size,
+				.range = skinned_size,
+			};
+			VkWriteDescriptorSet write = {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = grahpics_set,
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				.pBufferInfo = &buffer_info,
+			};
+			vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
+
+			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
+			vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
+		}
+
 		{ // Bind compute pipeline & descriptor set
 			VkDescriptorSetAllocateInfo alloc_info = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -610,40 +660,10 @@ int main(void) {
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, &blit_info, 0);
 
-		{ // Bind grahpics pipeline & descriptor set
-			VkDescriptorSetAllocateInfo alloc_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-				.descriptorPool = descriptor_pool,
-				.descriptorSetCount = 1,
-				.pSetLayouts = pipeline_3d.set_layouts + 0,
-			};
-
-			VkDescriptorSet grahpics_set = 0;
-			vkAllocateDescriptorSets(context->logical_device, &alloc_info, &grahpics_set);
-			VkDescriptorBufferInfo buffer_info = {
-				.buffer = scratch_buffers[context->current_frame].handle,
-				.offset = matrices_size,
-				.range = skinned_size,
-			};
-			VkWriteDescriptorSet write = {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = grahpics_set,
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				.pBufferInfo = &buffer_info,
-			};
-			vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
-
-			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
-			vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
-		}
-
 		uint2 dims = os_surface_size(main_render);
 		float4x4 view_projection = float4x4_multiply(
 			float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
-			float4x4_lookat((float3){ 0.0f, 0.0f, 5.f }, FLOAT3_ZERO, FLOAT3_Y));
+			float4x4_lookat((float3){ 3.0f, 0.5f, 3.f }, (float3){ 0.0f, 0.5f, 0.0f }, FLOAT3_Y));
 		vkCmdPushConstants(command_buffer, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(float4x4), &view_projection);
 
 		VkRenderingAttachmentInfo attachment_info = {
@@ -2250,7 +2270,6 @@ void push_rect(Batch *buffer, Rectangle rect, Color color) {
 
 Model load_gltf(Arena *arena, String8 path) {
 	LOG_INFO("loading [%s]", path.text);
-	ArenaTemp scratch = arena_scratch_begin(arena);
 
 	Model result = { 0 };
 	cgltf_options options = { 0 };
@@ -2382,101 +2401,101 @@ Model load_gltf(Arena *arena, String8 path) {
 					if (found == false)
 						result.skeleton.bones[joint_index].parent = -1;
 				}
-
-				Pose rest_pose[1] = { 0 };
-				rest_pose->bone_count = result.skeleton.bone_count;
-				rest_pose->transforms = arena_push_count(scratch.arena, Transform3, rest_pose->bone_count);
-
-				for (uint32_t bone_index = 0; bone_index < rest_pose->bone_count; ++bone_index) {
-					cgltf_node *joint = skin->joints[bone_index];
-					rest_pose->transforms[bone_index].translation = float3_wrap(joint->translation);
-					rest_pose->transforms[bone_index].rotation = float4_wrap(joint->rotation);
-					rest_pose->transforms[bone_index].scale = float3_wrap(joint->scale);
-				}
-
-				if (data->animations_count > 0) {
-					cgltf_animation *anim = &data->animations[5];
-					LOG_INFO("anim - %s", anim->name);
-					for (uint32_t sampler_index = 0; sampler_index < anim->samplers_count; ++sampler_index) {
-						cgltf_animation_sampler *sampler = &anim->samplers[sampler_index];
-
-						result.animation.keyframe_count = MAX(sampler->input->count, result.animation.keyframe_count);
-						float t = 0.0f;
-						cgltf_accessor_read_float(sampler->input, sampler->input->count - 1, &t, cgltf_component_size(sampler->input->component_type));
-
-						result.animation.duration = MAX(result.animation.duration, t);
-					}
-					result.animation.keyframes = arena_push_count(scratch.arena, Transform3 *, result.animation.keyframe_count);
-					result.animation.timings = arena_push_count(scratch.arena, float, result.animation.keyframe_count);
-					result.animation.bone_count = result.skeleton.bone_count;
-					memory_copy(result.animation.name, anim->name, MIN(sizeof(result.animation.name) - 1, str8_wrap(anim->name).length));
-
-					for (uint32_t keyframe = 0; keyframe < result.animation.keyframe_count; ++keyframe) {
-						Transform3 *pose = result.animation.keyframes[keyframe];
-						result.animation.keyframes[keyframe] = arena_push_count(scratch.arena, Transform3, result.skeleton.bone_count);
-					}
-
-					for (uint32_t channel_index = 0; channel_index < anim->channels_count; ++channel_index) {
-						cgltf_animation_channel *channel = &anim->channels[channel_index];
-						cgltf_animation_sampler *sampler = channel->sampler;
-						ASSERT(sampler->interpolation == cgltf_interpolation_type_linear && "expect all animations to interpolate linearly");
-
-						uint32_t bone_index = -1;
-						for (uint32_t index = 0; index < skin->joints_count; ++index) {
-							if (channel->target_node == skin->joints[index]) {
-								bone_index = index;
-								break;
-							}
-						}
-						if (bone_index == (uint32_t)-1)
-							continue;
-
-						for (uint32_t keyframe = 0; keyframe < sampler->input->count; ++keyframe) {
-							cgltf_accessor_read_float(sampler->input, keyframe, &result.animation.timings[keyframe], 1);
-							Transform3 *transforms = result.animation.keyframes[keyframe];
-
-							if (channel->target_path == cgltf_animation_path_type_translation) {
-								cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].translation, 3);
-							} else if (channel->target_path == cgltf_animation_path_type_rotation) {
-								cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].rotation, 4);
-							} else if (channel->target_path == cgltf_animation_path_type_scale) {
-								cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].scale, 3);
-							}
-						}
-
-						if (channel->target_path == cgltf_animation_path_type_translation) {
-							cgltf_accessor_read_float(sampler->output, 0, (float *)&rest_pose->transforms[bone_index].translation, 3);
-						} else if (channel->target_path == cgltf_animation_path_type_rotation) {
-							cgltf_accessor_read_float(sampler->output, 0, (float *)&rest_pose->transforms[bone_index].rotation, 4);
-						} else if (channel->target_path == cgltf_animation_path_type_scale) {
-							cgltf_accessor_read_float(sampler->output, 0, (float *)&rest_pose->transforms[bone_index].scale, 3);
-						}
-					}
-				}
-
-				Pose pose = anim_pose_sample(scratch.arena, &result.animation, 0.1f);
-				float4x4 *skin_matrices = anim_pose_skinning_matrices(scratch.arena, anim_pose_local_to_model(scratch.arena, &pose, &result.skeleton), &result.skeleton);
-
-				/* for (uint32_t index = 0; index < result.meshes[0].vertex_count; ++index) { */
-				/* 	float4 p = float4_from_float3(result.vertices[index].position); */
-				/* 	p.w = 1.0f; */
-
-				/* 	float3 skinned_pos = float3_add( */
-				/* 		float3_add( */
-				/* 			float3_add( */
-				/* 				float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.x], p), result.skinning[index].weights.x), */
-				/* 				float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.y], p), result.skinning[index].weights.y)), */
-				/* 			float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.z], p), result.skinning[index].weights.z)), */
-				/* 		float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.w], p), result.skinning[index].weights.w)); */
-
-				/* 	result.vertices[index].position = skinned_pos; */
-				/* } */
 			}
 		}
 	}
 
 	cgltf_free(data);
-	arena_scratch_end(scratch);
+
+	return result;
+}
+
+AnimationClip *load_animations(Arena *arena, String8 path, uint32_t *count) {
+	LOG_INFO("loading [%s]", path.text);
+
+	AnimationClip *result = 0;
+	cgltf_options options = { 0 };
+	cgltf_data *data = 0;
+
+	bool ok = cgltf_parse_file(&options, (char *)path.text, &data) == cgltf_result_success;
+	if (ok == false)
+		LOG_ERROR("%s - failed to open file", path.text);
+
+	if (ok) {
+		ok &= cgltf_load_buffers(&options, data, (char *)path.text) == cgltf_result_success;
+		ok &= cgltf_validate(data) == cgltf_result_success;
+		ok &= data->animations_count > 0;
+	}
+
+	if (ok) { // load animations
+		result = arena_push_count(arena, AnimationClip, data->animations_count);
+		*count = data->animations_count;
+
+		cgltf_skin *skin = &data->skins[0];
+		for (uint32_t anim_index = 0; anim_index < data->animations_count; ++anim_index) {
+			cgltf_animation *anim = &data->animations[anim_index];
+			AnimationClip *out_anim = result + anim_index;
+
+			uint32_t max_keyframe_count = 0, min_keyframe_count = UINT32_MAX;
+			float min_timing = FLOAT_MAX, max_timing = FLOAT_MIN;
+			for (uint32_t sampler_index = 0; sampler_index < anim->samplers_count; ++sampler_index) {
+				cgltf_animation_sampler *sampler = &anim->samplers[sampler_index];
+
+				max_keyframe_count = MAX(sampler->input->count, max_keyframe_count);
+				min_keyframe_count = MIN(sampler->input->count, min_keyframe_count);
+				out_anim->keyframe_count = MAX(sampler->input->count, out_anim->keyframe_count);
+				float t = 0.0f;
+				cgltf_accessor_read_float(sampler->input, sampler->input->count - 1, &t, cgltf_component_size(sampler->input->component_type));
+
+				max_timing = maxf(sampler->input->max[0], max_timing);
+				min_timing = minf(sampler->input->min[0], min_timing);
+
+				out_anim->duration = MAX(out_anim->duration, t);
+			}
+			ASSERT(min_keyframe_count == max_keyframe_count && "expect all sampler timings to match");
+			LOG_INFO("anim - %s: min_sampler_count = %u, max_sample_count = %u, min_timing = %g, max_timing = %g, duration %f", anim->name, min_keyframe_count, max_keyframe_count, min_timing, max_timing, out_anim->duration);
+			out_anim->keyframes = arena_push_count(arena, Transform3 *, out_anim->keyframe_count);
+			out_anim->timings = arena_push_count(arena, float, out_anim->keyframe_count);
+			out_anim->bone_count = data->skins[0].joints_count;
+			memory_copy(out_anim->name, anim->name, MIN(sizeof(out_anim->name) - 1, str8_wrap(anim->name).length));
+
+			for (uint32_t keyframe = 0; keyframe < out_anim->keyframe_count; ++keyframe) {
+				Transform3 *pose = out_anim->keyframes[keyframe];
+				out_anim->keyframes[keyframe] = arena_push_count(arena, Transform3, out_anim->bone_count);
+			}
+
+			ASSERT(out_anim->bone_count == anim->channels_count / 3 && "expect all channels to be written");
+			for (uint32_t channel_index = 0; channel_index < anim->channels_count; ++channel_index) {
+				cgltf_animation_channel *channel = &anim->channels[channel_index];
+				cgltf_animation_sampler *sampler = channel->sampler;
+				ASSERT(sampler->interpolation == cgltf_interpolation_type_linear && "expect all animations to interpolate linearly");
+
+				uint32_t bone_index = -1;
+				for (uint32_t index = 0; index < out_anim->bone_count; ++index) {
+					if (channel->target_node == skin->joints[index]) {
+						bone_index = index;
+						break;
+					}
+				}
+				if (bone_index == (uint32_t)-1)
+					continue;
+
+				for (uint32_t keyframe = 0; keyframe < sampler->input->count; ++keyframe) {
+					cgltf_accessor_read_float(sampler->input, keyframe, &out_anim->timings[keyframe], 1);
+					Transform3 *transforms = out_anim->keyframes[keyframe];
+
+					if (channel->target_path == cgltf_animation_path_type_translation) {
+						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].translation, 3);
+					} else if (channel->target_path == cgltf_animation_path_type_rotation) {
+						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].rotation, 4);
+					} else if (channel->target_path == cgltf_animation_path_type_scale) {
+						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].scale, 3);
+					}
+				}
+			}
+		}
+	}
+	cgltf_free(data);
 
 	return result;
 }

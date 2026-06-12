@@ -10,6 +10,7 @@ Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t) {
 	bool ok = clip && clip->timings && clip->keyframes;
 
 	t = CLAMP(t, 0.0f, 1.0f);
+
 	int32_t target_frame = -1;
 	if (ok) {
 		float absolute_t = t * clip->duration;
@@ -27,13 +28,13 @@ Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t) {
 	}
 
 	if (ok) {
-		Pose start = { .transforms = clip->keyframes[target_frame - 1], .bone_count = clip->bone_count };
-		Pose end = { .transforms = clip->keyframes[target_frame], .bone_count = clip->bone_count };
+		Pose source = { .transforms = clip->keyframes[target_frame - 1], .bone_count = clip->bone_count };
+		Pose target = { .transforms = clip->keyframes[target_frame], .bone_count = clip->bone_count };
 
 		float t0 = clip->timings[target_frame - 1] / clip->duration;
 		float t1 = clip->timings[target_frame] / clip->duration;
 
-		result = anim_pose_blend_local(arena, &end, &start, (t - t0) / (t1 - t0), NULL);
+		result = anim_pose_blend_local(arena, &target, &source, (t - t0) / (t1 - t0), NULL);
 	}
 
 	return result;
@@ -58,6 +59,7 @@ Pose anim_pose_blend_local(Arena *arena, Pose *target, Pose *source, float blend
 
 	for (uint32_t bone_index = 0; bone_index < target->bone_count; ++bone_index) {
 		float bone_blend_weight = anim__bone_blend_weight(blend_weight, mask, bone_index);
+		ASSERT(bone_blend_weight >= 0.0f && bone_blend_weight <= 1.0f);
 		if (bone_blend_weight == 0.0f) {
 			result.transforms[bone_index] = source->transforms[bone_index];
 		} else {
@@ -88,9 +90,9 @@ float4x4 *anim_pose_local_to_model(Arena *arena, Pose *pose, Skeleton *skeleton)
 	float4x4 *result = arena_push_count(arena, float4x4, skeleton->bone_count);
 
 	for (uint32_t bone_index = 0; bone_index < skeleton->bone_count; ++bone_index) {
-		float4x4 local = float4x4_compose(
+		float4x4 local = float4x4_compose_quat(
 			pose->transforms[bone_index].translation,
-			quat4_to_euler(pose->transforms[bone_index].rotation),
+			pose->transforms[bone_index].rotation,
 			pose->transforms[bone_index].scale);
 
 		if (skeleton->bones[bone_index].parent == -1)

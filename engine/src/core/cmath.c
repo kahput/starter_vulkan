@@ -217,10 +217,10 @@ quat4 quat4_slerp(quat4 q, quat4 p, float t) {
 		float sinHalfTheta = sqrtf(1.0f - cosHalfTheta * cosHalfTheta);
 
 		if (fabsf(sinHalfTheta) < EPSILON) {
-			result.x = (q.x * 0.5f + p.x * 0.5f);
-			result.y = (q.y * 0.5f + p.y * 0.5f);
-			result.z = (q.z * 0.5f + p.z * 0.5f);
-			result.w = (q.w * 0.5f + p.w * 0.5f);
+			result.x = q.x * (1.0f - t) + p.x * t;
+			result.y = q.y * (1.0f - t) + p.y * t;
+			result.z = q.z * (1.0f - t) + p.z * t;
+			result.w = q.w * (1.0f - t) + p.w * t;
 		} else {
 			float ratioA = sinf((1 - t) * halfTheta) / sinHalfTheta;
 			float ratioB = sinf(t * halfTheta) / sinHalfTheta;
@@ -404,6 +404,23 @@ float4x4 float4x4_scaling(float3 scale) {
 	return result;
 }
 
+float4x4 float4x4_from_quat(quat4 q) {
+	float x = q.x, y = q.y, z = q.z, w = q.w;
+	float xx = x * x, yy = y * y, zz = z * z;
+	float xy = x * y, xz = x * z, yz = y * z;
+	float wx = w * x, wy = w * y, wz = w * z;
+
+	// clang-format off
+	float4x4 result = {{
+	  [0]  = 1.0f - 2.0f*(yy+zz), [4]  = 2.0f*(xy - wz),       [8]  = 2.0f*(xz + wy),       [12] = 0.0f,
+	  [1]  = 2.0f*(xy + wz),      [5]  = 1.0f - 2.0f*(xx+zz),  [9]  = 2.0f*(yz - wx),       [13] = 0.0f,
+	  [2]  = 2.0f*(xz - wy),      [6]  = 2.0f*(yz + wx),       [10] = 1.0f - 2.0f*(xx+yy),  [14] = 0.0f,
+	  [3]  = 0.0f,                [7]  = 0.0f,                  [11] = 0.0f,                  [15] = 1.0f
+	}};
+	// clang-format on
+	return result;
+}
+
 float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 	float4x4 result = { 0 };
 
@@ -414,6 +431,15 @@ float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 	float4x4 rotation_z = float4x4_rotation(rotation.z, FLOAT3_Z);
 	float4x4 R = float4x4_multiply(rotation_z, float4x4_multiply(rotation_y, rotation_x));
 
+	result = float4x4_multiply(T, float4x4_multiply(R, S));
+	return result;
+}
+
+float4x4 float4x4_compose_quat(float3 position, quat4 rotation, float3 scale) {
+	float4x4 result = { 0 };
+	float4x4 T = float4x4_translation(position);
+	float4x4 S = float4x4_scaling(scale);
+	float4x4 R = float4x4_from_quat(rotation);
 	result = float4x4_multiply(T, float4x4_multiply(R, S));
 	return result;
 }

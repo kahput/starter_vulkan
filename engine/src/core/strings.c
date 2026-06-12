@@ -14,7 +14,7 @@ bool str8_equals(String8 a, String8 b) {
 	if (a.length != b.length)
 		return false;
 
-	return memory_compare(a.text, b.text, a.length);
+	return memory_compare(a.text, b.text, a.length) == 0;
 }
 
 String8 str8_concat(Arena *arena, String8 a, String8 b) {

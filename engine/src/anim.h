@@ -16,7 +16,7 @@ typedef struct {
 } Transform3;
 
 typedef struct {
-    char name[64];
+	char name[64];
 	Transform3 **keyframes;
 	float *timings;
 	uint32_t keyframe_count, bone_count;

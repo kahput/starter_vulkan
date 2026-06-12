@@ -121,6 +121,7 @@ float4x4 float4x4_scale(float4x4 matrix, float3 scale);
 float4x4 float4x4_translation(float3 translation);
 float4x4 float4x4_rotation(float angle, float3 axis);
 float4x4 float4x4_scaling(float3 scale);
+float4x4 float4x4_from_quat(quat4 q);
 
 float4x4 float4x4_compose(float3 position, float3 rotation_rad, float3 scale);
 float4x4 float4x4_compose_quat(float3 position, float4 rotation, float3 scale);
