@@ -5,7 +5,7 @@
 #include "core/cmath.h"
 
 typedef struct {
-	char name[32];
+	char name[64];
 	int32_t parent;
 } Bone;
 
@@ -16,6 +16,7 @@ typedef struct {
 } Transform3;
 
 typedef struct {
+    char name[64];
 	Transform3 **keyframes;
 	float *timings;
 	uint32_t keyframe_count, bone_count;

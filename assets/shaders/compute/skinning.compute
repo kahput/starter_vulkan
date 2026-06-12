@@ -1,0 +1,53 @@
+#version 460
+#pragma shader_stage(compute)
+
+//size of a workgroup for compute
+layout (local_size_x = 64, local_size_y = 1) in;
+
+struct SkinningData {
+    ivec4 id;
+    vec4 weight;
+};
+
+struct VertexData {
+    vec4 position; 
+    vec4 normal;
+    vec2 uv;
+    vec4 tangent;
+};
+
+layout(set = 0, binding = 0) buffer VertexBlock {
+    VertexData vertex_data[];
+};
+
+layout(set = 0, binding = 1) readonly buffer SkinningBlock {
+    SkinningData skinning_data[];
+};
+
+layout(set = 0, binding = 2) readonly buffer MatrixBlock {
+    mat4 skinning_matrices[];
+};
+
+layout(set = 0, binding = 3) buffer SkinnedVertexBlock {
+    VertexData output_vertex_data[];
+};
+
+layout(push_constant) uniform ConstantBlock {
+    uint vertex_count;
+};
+
+void main() {
+    uint vertex_index = gl_GlobalInvocationID.x;
+    if (vertex_index >= vertex_count) return;
+
+    SkinningData sd = skinning_data[vertex_index]; 
+    vec4 pos = vec4(vertex_data[vertex_index].position.xyz, 1.0f);
+
+    vec4 skinned = 
+        sd.weight[0] * skinning_matrices[sd.id[0]] * pos + 
+        sd.weight[1] * skinning_matrices[sd.id[1]] * pos + 
+        sd.weight[2] * skinning_matrices[sd.id[2]] * pos + 
+        sd.weight[3] * skinning_matrices[sd.id[3]] * pos;
+
+    output_vertex_data[vertex_index].position = vec4(skinned.xyz, vertex_data[vertex_index].position.w);
+}

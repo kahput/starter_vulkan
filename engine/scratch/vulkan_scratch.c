@@ -5,6 +5,7 @@
 #include "core/logger.h"
 #include "core/debug.h"
 
+#include "core/strings.h"
 #include "os.h"
 #include "anim.h"
 
@@ -159,12 +160,17 @@ typedef struct {
 	float4 tangent;
 } Vertex3;
 
+typedef struct {
+	uint32x4 bone_ids;
+	float32x4 weights;
+} SkinningData;
+
 void push_rect(Batch *buffer, Rectangle rect, Color color);
 
 Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
 Image image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFormat format, ImageUsageFlags usage);
 Surface surface_make(GFX_Context *context, OS_Surface *surface);
-Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size);
+Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size, VkDescriptorSetLayout *layouts, uint32_t layout_count);
 Pipeline graphics_pipeline_make(GFX_Context *context, uint8_t *vertexcode, uint64_t vertexcode_size, uint8_t *fragmentcode, uint64_t fragmentcode_size);
 
 void buffer_destroy(GFX_Context *context, Buffer *buffer);
@@ -185,13 +191,11 @@ typedef struct {
 	uint32_t mesh_count;
 
 	Vertex3 *vertices;
+	SkinningData *skinning;
 	uint64_t total_vertex_count;
 
 	uint32_t *indices;
 	uint64_t total_index_count;
-
-	uint32x4 *joints;
-	float32x4 *weights;
 
 	Skeleton skeleton;
 	AnimationClip animation;
@@ -221,8 +225,69 @@ int main(void) {
 	uint64_t offset = arena_mark(scratch.arena);
 	String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
-	Pipeline c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
+
+	VkDescriptorSetLayout test_compute_descriptor_layout = 0;
+	VkDescriptorSetLayoutBinding bindings[] = {
+		[0] = {
+		  .binding = 0,
+		  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		  .descriptorCount = 1,
+		  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+		},
+	};
+
+	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = countof(bindings),
+		.pBindings = bindings,
+	};
+	vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, &test_compute_descriptor_layout);
+	Pipeline c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length, &test_compute_descriptor_layout, 1);
 	arena_rewind(scratch.arena, offset);
+
+	Pipeline pipeline_skining = { 0 };
+	{ // make skinning compute shader
+		uint64_t offset = arena_mark(scratch.arena);
+		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/skinning.compute.spv"));
+
+		VkDescriptorSetLayout descriptor_layout = 0;
+		VkDescriptorSetLayoutBinding bindings[] = {
+			[0] = {
+			  .binding = 0,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+			[1] = {
+			  .binding = 1,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+			[2] = {
+			  .binding = 2,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+			[3] = {
+			  .binding = 3,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+		};
+
+		VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			.bindingCount = countof(bindings),
+			.pBindings = bindings,
+		};
+		vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, &descriptor_layout);
+
+		pipeline_skining = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length, &descriptor_layout, 1);
+		arena_rewind(scratch.arena, offset);
+	}
 
 	// create 2d graphics pipeline
 	offset = arena_mark(scratch.arena);
@@ -252,11 +317,15 @@ int main(void) {
 	Buffer geometry = buffer_make(context, MiB(8), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
 
 	Model model = load_gltf(scratch.arena, s("assets/models/gdbot.glb"));
-	uint64_t total_vertex_buffer_size = model.total_vertex_count * sizeof(Vertex3);
+	uint64_t total_vertex_buffer_size = alignup(model.total_vertex_count * sizeof(Vertex3), 256);
+	uint64_t total_skinning_buffer_size = alignup(model.total_vertex_count * sizeof(SkinningData), 256);
+	uint64_t total_index_buffer_size = alignup(model.total_index_count * sizeof(uint32_t), 256);
+
 	{ // upload geometry
-		uint64_t total_index_buffer_size = model.total_index_count * sizeof(uint32_t);
 		memory_copy(scratch_buffers[0].mapped, model.vertices, total_vertex_buffer_size);
-		memory_copy(scratch_buffers[0].mapped + total_vertex_buffer_size, model.indices, model.total_index_count * sizeof(uint32_t));
+		memory_copy(scratch_buffers[0].mapped + total_vertex_buffer_size, model.indices, total_index_buffer_size);
+		uint64_t vertex_index_size = total_vertex_buffer_size + total_index_buffer_size;
+		memory_copy(scratch_buffers[0].mapped + vertex_index_size, model.skinning, total_skinning_buffer_size);
 
 		VkCommandBufferAllocateInfo alloc_info = {
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -275,7 +344,7 @@ int main(void) {
 			VkBufferCopy region = {
 				.srcOffset = 0,
 				.dstOffset = 0,
-				.size = total_vertex_buffer_size + total_index_buffer_size,
+				.size = total_vertex_buffer_size + total_index_buffer_size + total_skinning_buffer_size,
 			};
 			vkCmdCopyBuffer(cmd, scratch_buffers[0].handle, geometry.handle, 1, &region);
 
@@ -287,7 +356,7 @@ int main(void) {
 				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 				.offset = 0,
-				.size = total_vertex_buffer_size + total_index_buffer_size,
+				.size = total_vertex_buffer_size + total_index_buffer_size + total_skinning_buffer_size,
 			};
 			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, 0, 1, &buffer_barrier, 0, 0);
 
@@ -305,7 +374,16 @@ int main(void) {
 	}
 
 	bool is_open = true;
+
+	float dt = 0.0f;
+	float last_frame = 0.0f;
+
+	Arena frame_arena[] = { arena_make(MiB(1)) };
 	while (is_open) {
+		double time = os_time_ns() * 1e-9;
+		dt = time - last_frame;
+		last_frame = time;
+
 		OS_Event event = { 0 };
 		while (os_event_poll(&event)) {
 			switch (event.type) {
@@ -356,6 +434,111 @@ int main(void) {
 			break;
 		}
 
+		uint64_t matrices_size = alignup(model.skeleton.bone_count * sizeof(float4x4), 256);
+		uint64_t skinned_size = alignup(model.meshes[0].vertex_count * sizeof(Vertex3), 256);
+
+		static float t = 0.0f;
+
+		Pose pose = anim_pose_sample(frame_arena, &model.animation, t);
+		float4x4 *skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &pose, &model.skeleton), &model.skeleton);
+		memory_copy(scratch_buffers[context->current_frame].mapped, skin_matrices, matrices_size);
+
+		t += dt;
+		if (t >= 1.0f)
+			t = 0.0f;
+
+		// skin mesh
+		{
+			VkDescriptorSetAllocateInfo alloc_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+				.descriptorPool = descriptor_pool,
+				.descriptorSetCount = 1,
+				.pSetLayouts = pipeline_skining.set_layouts + 0,
+			};
+
+			VkDescriptorSet compute_set = 0;
+			vkAllocateDescriptorSets(context->logical_device, &alloc_info, &compute_set);
+
+			VkDescriptorBufferInfo vertex_block_info = {
+				.buffer = geometry.handle,
+				.offset = 0,
+				.range = model.meshes[0].vertex_count * sizeof(Vertex3),
+			};
+			VkDescriptorBufferInfo skinning_block_info = {
+				.buffer = geometry.handle,
+				.offset = total_vertex_buffer_size + total_index_buffer_size,
+				.range = model.meshes[0].vertex_count * sizeof(SkinningData),
+			};
+			VkDescriptorBufferInfo pose_transform_block = {
+				.buffer = scratch_buffers[context->current_frame].handle,
+				.offset = 0,
+				.range = model.skeleton.bone_count * sizeof(float4x4),
+			};
+			VkDescriptorBufferInfo skinned_vertex_block_info = {
+				.buffer = scratch_buffers[context->current_frame].handle,
+				.offset = matrices_size,
+				.range = skinned_size,
+			};
+
+			VkWriteDescriptorSet writes[] = {
+				{
+				  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				  .dstSet = compute_set,
+				  .dstBinding = 0,
+				  .dstArrayElement = 0,
+				  .descriptorCount = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .pBufferInfo = &vertex_block_info,
+				},
+				{
+				  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				  .dstSet = compute_set,
+				  .dstBinding = 1,
+				  .dstArrayElement = 0,
+				  .descriptorCount = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .pBufferInfo = &skinning_block_info,
+				},
+				{
+				  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				  .dstSet = compute_set,
+				  .dstBinding = 2,
+				  .dstArrayElement = 0,
+				  .descriptorCount = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .pBufferInfo = &pose_transform_block,
+				},
+				{
+				  .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				  .dstSet = compute_set,
+				  .dstBinding = 3,
+				  .dstArrayElement = 0,
+				  .descriptorCount = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .pBufferInfo = &skinned_vertex_block_info,
+				},
+			};
+			vkUpdateDescriptorSets(context->logical_device, countof(writes), writes, 0, 0);
+
+			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_skining.handle);
+			vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_skining.layout, 0, 1, &compute_set, 0, 0);
+			vkCmdPushConstants(command_buffer, pipeline_skining.layout, VK_SHADER_STAGE_ALL, 0, sizeof(uint32_t), &model.meshes[0].vertex_count);
+
+			vkCmdDispatch(command_buffer, (model.meshes[0].vertex_count + 63) / 64, 1, 1);
+
+			VkBufferMemoryBarrier buffer_barrier = {
+				.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+				.buffer = scratch_buffers[context->current_frame].handle,
+				.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+				.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.offset = matrices_size,
+				.size = skinned_size,
+			};
+			vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, 0, 1, &buffer_barrier, 0, 0);
+		}
+
 		// transition sawpchain images for drawing
 		image_barrier(
 			command_buffer,
@@ -373,33 +556,34 @@ int main(void) {
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_GENERAL);
 
-		// Bind compute pipeline & descriptor set
-		VkDescriptorSetAllocateInfo alloc_info = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-			.descriptorPool = descriptor_pool,
-			.descriptorSetCount = 1,
-			.pSetLayouts = c_pipeline.set_layouts + 0,
-		};
+		{ // Bind compute pipeline & descriptor set
+			VkDescriptorSetAllocateInfo alloc_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+				.descriptorPool = descriptor_pool,
+				.descriptorSetCount = 1,
+				.pSetLayouts = c_pipeline.set_layouts + 0,
+			};
 
-		VkDescriptorSet compute_set = 0;
-		vkAllocateDescriptorSets(context->logical_device, &alloc_info, &compute_set);
-		VkDescriptorImageInfo image_info = {
-			.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.imageView = compute_image.view,
-		};
-		VkWriteDescriptorSet write = {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = compute_set,
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			.pImageInfo = &image_info,
-		};
-		vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
+			VkDescriptorSet compute_set = 0;
+			vkAllocateDescriptorSets(context->logical_device, &alloc_info, &compute_set);
+			VkDescriptorImageInfo image_info = {
+				.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+				.imageView = compute_image.view,
+			};
+			VkWriteDescriptorSet write = {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = compute_set,
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				.pImageInfo = &image_info,
+			};
+			vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
 
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle);
-		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0);
+			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle);
+			vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0);
+		}
 
 		// Dispatch compute & Blit to main window surface
 		vkCmdDispatch(command_buffer, 40, 23, 1);
@@ -426,34 +610,35 @@ int main(void) {
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, &blit_info, 0);
 
-		// Bind grahpics pipeline & descriptor set
-		alloc_info = (VkDescriptorSetAllocateInfo){
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-			.descriptorPool = descriptor_pool,
-			.descriptorSetCount = 1,
-			.pSetLayouts = pipeline_3d.set_layouts + 0,
-		};
+		{ // Bind grahpics pipeline & descriptor set
+			VkDescriptorSetAllocateInfo alloc_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+				.descriptorPool = descriptor_pool,
+				.descriptorSetCount = 1,
+				.pSetLayouts = pipeline_3d.set_layouts + 0,
+			};
 
-		VkDescriptorSet grahpics_set = 0;
-		vkAllocateDescriptorSets(context->logical_device, &alloc_info, &grahpics_set);
-		VkDescriptorBufferInfo buffer_info = {
-			.buffer = geometry.handle,
-			.offset = 0,
-			.range = geometry.size,
-		};
-		write = (VkWriteDescriptorSet){
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = grahpics_set,
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.pBufferInfo = &buffer_info,
-		};
-		vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
+			VkDescriptorSet grahpics_set = 0;
+			vkAllocateDescriptorSets(context->logical_device, &alloc_info, &grahpics_set);
+			VkDescriptorBufferInfo buffer_info = {
+				.buffer = scratch_buffers[context->current_frame].handle,
+				.offset = matrices_size,
+				.range = skinned_size,
+			};
+			VkWriteDescriptorSet write = {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = grahpics_set,
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				.pBufferInfo = &buffer_info,
+			};
+			vkUpdateDescriptorSets(context->logical_device, 1, &write, 0, 0);
 
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
-		vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
+			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
+			vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
+		}
 
 		uint2 dims = os_surface_size(main_render);
 		float4x4 view_projection = float4x4_multiply(
@@ -557,13 +742,14 @@ int main(void) {
 
 			uint64_t offset = arena_mark(scratch.arena);
 			compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-			c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length);
+			c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length, &test_compute_descriptor_layout, 1);
 			arena_rewind(scratch.arena, offset);
 
 			compute_ts = current_ts;
 		}
 
 		context->current_frame = (context->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+		arena_reset(frame_arena);
 
 		/* batch.offset = 0; */
 		/* batch.memory = scratch_buffers[context->current_frame].mapped; */
@@ -581,6 +767,7 @@ int main(void) {
 		image_destroy(context, &compute_image);
 
 		pipeline_destroy(context, &c_pipeline);
+		pipeline_destroy(context, &pipeline_skining);
 		pipeline_destroy(context, &pipeline_2d);
 		pipeline_destroy(context, &pipeline_3d);
 
@@ -974,11 +1161,11 @@ Surface surface_make(GFX_Context *context, OS_Surface *surface) {
 	return result;
 }
 
-Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size) {
+Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t bytecode_size, VkDescriptorSetLayout *layouts, uint32_t layout_count) {
 	LOG_DEBUG("creating vulkan compute pipeline.");
 	Pipeline result = { 0 };
 
-	bool ok = bytecode && bytecode_size > 0;
+	bool ok = bytecode && bytecode_size > 0 && layouts && layout_count > 0;
 	if (ok == false)
 		LOG_WARN("invalid shader bytecode passed.");
 
@@ -997,22 +1184,23 @@ Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t
 	if (ok) { // create descriptor set layouts
 		// TODO: Don't hard-code the layouts
 
-		VkDescriptorSetLayoutBinding bindings[] = {
-			[0] = {
-			  .binding = 0,
-			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			  .descriptorCount = 1,
-			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-			},
-		};
+		/* VkDescriptorSetLayoutBinding bindings[] = { */
+		/* [0] = { */
+		/* .binding = 0, */
+		/* .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, */
+		/* .descriptorCount = 1, */
+		/* .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, */
+		/* }, */
+		/* }; */
 
-		VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-			.bindingCount = countof(bindings),
-			.pBindings = bindings,
-		};
+		/* VkDescriptorSetLayoutCreateInfo dsl_create_info = { */
+		/* .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, */
+		/* .bindingCount = countof(bindings), */
+		/* .pBindings = bindings, */
+		/* }; */
+		/* ok = vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, result.set_layouts) == VK_SUCCESS; */
 
-		ok = vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, result.set_layouts) == VK_SUCCESS;
+		memory_copy(result.set_layouts, layouts, MIN(countof(result.set_layouts), layout_count) * sizeof(VkDescriptorSetLayout));
 		if (ok == false)
 			LOG_WARN("failed to create compute pipeline descriptor set layout 0");
 	}
@@ -2093,9 +2281,7 @@ Model load_gltf(Arena *arena, String8 path) {
 		result.meshes = arena_push_count(arena, Mesh, result.mesh_count);
 		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
-
-		result.joints = arena_push_count(arena, uint32x4, result.total_vertex_count);
-		result.weights = arena_push_count(arena, float32x4, result.total_vertex_count);
+		result.skinning = arena_push_count(arena, SkinningData, result.total_vertex_count);
 
 		uint32_t mesh_offset = 0;
 		uint64_t vertex_offset = 0, index_offset = 0;
@@ -2132,21 +2318,23 @@ Model load_gltf(Arena *arena, String8 path) {
 							offset = offsetof(Vertex3, uv);
 							break;
 						case cgltf_attribute_type_weights:
+							offset = offsetof(SkinningData, weights);
+							break;
 						case cgltf_attribute_type_joints:
+							offset = offsetof(SkinningData, bone_ids);
 							break;
 						default:
 							continue;
 					}
 
 					Vertex3 *mesh_vertices = result.vertices + vertex_offset;
-					float4 *mesh_weights = result.weights + vertex_offset;
-					uint4 *mesh_joints = result.joints + vertex_offset;
+					SkinningData *mesh_skinning = result.skinning + vertex_offset;
 
 					for (uint32_t vertex_index = 0; vertex_index < out_mesh->vertex_count; ++vertex_index) {
 						if (attribute->type == cgltf_attribute_type_weights)
-							cgltf_accessor_read_float(accessor, vertex_index, (void *)(mesh_weights + vertex_index), cgltf_num_components(accessor->type));
+							cgltf_accessor_read_float(accessor, vertex_index, (void *)((uint8_t *)(mesh_skinning + vertex_index) + offset), cgltf_num_components(accessor->type));
 						else if (attribute->type == cgltf_attribute_type_joints)
-							cgltf_accessor_read_uint(accessor, vertex_index, (void *)(mesh_joints + vertex_index), cgltf_num_components(accessor->type));
+							cgltf_accessor_read_uint(accessor, vertex_index, (void *)((uint8_t *)(mesh_skinning + vertex_index) + offset), cgltf_num_components(accessor->type));
 						else
 							cgltf_accessor_read_float(accessor, vertex_index, (void *)((uint8_t *)(mesh_vertices + vertex_index) + offset), cgltf_num_components(accessor->type));
 					}
@@ -2220,7 +2408,8 @@ Model load_gltf(Arena *arena, String8 path) {
 					}
 					result.animation.keyframes = arena_push_count(scratch.arena, Transform3 *, result.animation.keyframe_count);
 					result.animation.timings = arena_push_count(scratch.arena, float, result.animation.keyframe_count);
-                    result.animation.bone_count = result.skeleton.bone_count;
+					result.animation.bone_count = result.skeleton.bone_count;
+					memory_copy(result.animation.name, anim->name, MIN(sizeof(result.animation.name) - 1, str8_wrap(anim->name).length));
 
 					for (uint32_t keyframe = 0; keyframe < result.animation.keyframe_count; ++keyframe) {
 						Transform3 *pose = result.animation.keyframes[keyframe];
@@ -2268,20 +2457,20 @@ Model load_gltf(Arena *arena, String8 path) {
 				Pose pose = anim_pose_sample(scratch.arena, &result.animation, 0.1f);
 				float4x4 *skin_matrices = anim_pose_skinning_matrices(scratch.arena, anim_pose_local_to_model(scratch.arena, &pose, &result.skeleton), &result.skeleton);
 
-				for (uint32_t index = 0; index < result.meshes[0].vertex_count; ++index) {
-					float4 p = float4_from_float3(result.vertices[index].position);
-					p.w = 1.0f;
+				/* for (uint32_t index = 0; index < result.meshes[0].vertex_count; ++index) { */
+				/* 	float4 p = float4_from_float3(result.vertices[index].position); */
+				/* 	p.w = 1.0f; */
 
-					float3 skinned_pos = float3_add(
-						float3_add(
-							float3_add(
-								float3_scale(float4x4_transform(skin_matrices[result.joints[index].x], p), result.weights[index].x),
-								float3_scale(float4x4_transform(skin_matrices[result.joints[index].y], p), result.weights[index].y)),
-							float3_scale(float4x4_transform(skin_matrices[result.joints[index].z], p), result.weights[index].z)),
-						float3_scale(float4x4_transform(skin_matrices[result.joints[index].w], p), result.weights[index].w));
+				/* 	float3 skinned_pos = float3_add( */
+				/* 		float3_add( */
+				/* 			float3_add( */
+				/* 				float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.x], p), result.skinning[index].weights.x), */
+				/* 				float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.y], p), result.skinning[index].weights.y)), */
+				/* 			float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.z], p), result.skinning[index].weights.z)), */
+				/* 		float3_scale(float4x4_transform(skin_matrices[result.skinning[index].bone_ids.w], p), result.skinning[index].weights.w)); */
 
-					result.vertices[index].position = skinned_pos;
-				}
+				/* 	result.vertices[index].position = skinned_pos; */
+				/* } */
 			}
 		}
 	}
