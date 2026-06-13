@@ -23,7 +23,7 @@ endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
-set(NATIVE_SCRATCHES xcb_scratch vulkan_scratch)
+set(NATIVE_SCRATCHES xcb_scratch skinning_scratch material_scratch)
 
 
 # Web build
@@ -113,7 +113,12 @@ else()
     endif()
 
     foreach(NAME ${NATIVE_SCRATCHES})
-        set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c" "${CMAKE_SOURCE_DIR}/engine/src/anim.c")
+        set(SRC 
+            "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/anim.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/scene.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/input.c"
+        )
         add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
         target_include_directories(
             ${NAME}

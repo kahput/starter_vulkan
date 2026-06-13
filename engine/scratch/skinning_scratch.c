@@ -6,8 +6,12 @@
 #include "core/debug.h"
 
 #include "core/strings.h"
+
+#include "input.h"
 #include "os.h"
 #include "anim.h"
+#include "gfx/gfx_types.h"
+#include "scene.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -16,43 +20,6 @@
 #include <cgltf/cgltf.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
-
-typedef enum {
-	PIXEL_FORMAT_RGBA8_UNORM,
-	PIXEL_FORMAT_RGBA8_SRGB,
-	PIXEL_FORMAT_RGBA16_FLOAT,
-	PIXEL_FORMAT_R32_FLOAT,
-	PIXEL_FORMAT_D32_FLOAT,
-	PIXEL_FORMAT_D24_UNORM_S8_UINT,
-} PixelFormat;
-
-typedef enum {
-	IMAGE_USAGE_SAMPLE = 0x1,
-	IMAGE_USAGE_RENDER = 0x2,
-	IMAGE_USAGE_STORAGE = 0x4,
-	IMAGE_USAGE_TRANSFER = 0x8
-} ImageUsageFlags;
-
-typedef enum {
-	BUFFER_USAGE_VERTEX = 0x1,
-	BUFFER_USAGE_INDEX = 0x2,
-	BUFFER_USAGE_UNIFORM = 0x4,
-	BUFFER_USAGE_STORAGE = 0x8,
-	BUFFER_USAGE_TRANSFER = 0x10
-} BufferUsage;
-
-typedef enum {
-	BUFFER_MEMORY_LOCAL,
-	BUFFER_MEMORY_SHARED,
-} BufferMemory;
-
-typedef enum {
-	SHADER_STAGE_VERTEX,
-	SHADER_STAGE_FRAGMENT,
-	SHADER_STAGE_COMPUTE,
-
-	SHADER_STAGE_COUNT,
-} ShaderStage;
 
 typedef struct {
 	VkImage handle;
@@ -66,16 +33,12 @@ typedef struct {
 } Image;
 
 typedef struct {
-	Arena *arena;
 	VkBuffer handle;
 	VkDeviceMemory memory;
-
 	uint8_t *mapped;
 
 	uint64_t size;
-
 	VkBufferCreateInfo info;
-
 } Buffer;
 
 #define MAX_DESCRIPTOR_SETS 4
@@ -139,6 +102,7 @@ typedef struct {
 	VkDebugUtilsMessengerEXT debug_messenger;
 #endif
 } GFX_Context;
+
 bool gfx_startup(GFX_Context *context);
 void gfx_shutdown(GFX_Context *context);
 
@@ -222,6 +186,16 @@ int main(void) {
 
 	uint64_t start_time = os_time_ns();
 
+	InputState input_state = { 0 };
+	input_set_context(&input_state);
+	Camera3 camera = {
+		.projection = CAMERA_PROJECTION_PERSPECTIVE,
+		.position = { 0.0f, 0.5f, 3.f },
+		.target = { 0.0f, 0.5f, 0.0f },
+		.up = FLOAT3_Y,
+		.fovy = 45.f,
+	};
+
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	GFX_Context context[] = { 0 };
@@ -231,29 +205,59 @@ int main(void) {
 	Image compute_image = image_make(context, 640, 360, PIXEL_FORMAT_RGBA16_FLOAT, IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER);
 	Image offscreen_render = image_make(context, 640, 360, PIXEL_FORMAT_RGBA8_UNORM, IMAGE_USAGE_RENDER);
 
+	/*
+	 * #define SHADER_STAGES(...) (ShaderStage[]){ __VA_ARGS__, {0} }
+	 *
+	 * // RhiShader is a handle, pipeline layout is reflected.
+	 *
+	 * RhiShader c_shader = RHI_INVLAID_SHADER, shader_skinning = RHI_INVALID_SHADER;
+	 * { // load compute shaders
+	 *     uint64_t offset = arena_mark(scratch.arena);
+	 *     String8 bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
+	 *     c_shader = rhi_shader_make(s("compute_test_shader"), SHADER_STAGES({bytecode, SHADER_STAGE_COMPUTE}));
+	 *     bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
+	 *     shader_skinning = rhi_shader_make(s("skinning"), SHADER_STAGES({bytecode, SHADER_STAGE_COMPUTE}));
+	 * }
+	 *
+	 * RhiShader shader_2d = RHI_INVALID_SHADER, shader_3d = RHI_INVALID_SHADER;
+	 * {
+	 *     uint64_t offset = arena_mark(scratch.arena);
+	 *     String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
+	 *	   String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+	 *     shader_2d = rhi_shader_make(s("batch2d"), SHADER_STAGES({vertex_bytecode, SHADER_STAGE_VERTEX}, {fragment_bytecode, SHADER_STAGE_FRAGMENT});
+	 *     String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
+	 *	   String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+	 *     shader_3d = rhi_shader_make(s("batch3d"), SHADER_STAGES({vertex_bytecode, SHADER_STAGE_VERTEX}, {fragment_bytecode, SHADER_STAGE_FRAGMENT});
+	 *     arena_rewind(scratch.arena, offset);
+	 * }
+	 */
+
 	// create compute pipeline
-	uint64_t offset = arena_mark(scratch.arena);
-	String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
-
 	VkDescriptorSetLayout test_compute_descriptor_layout = 0;
-	VkDescriptorSetLayoutBinding bindings[] = {
-		[0] = {
-		  .binding = 0,
-		  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-		  .descriptorCount = 1,
-		  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-		},
-	};
+	Pipeline c_pipeline = { 0 };
+	{
+		uint64_t offset = arena_mark(scratch.arena);
+		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
 
-	VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = countof(bindings),
-		.pBindings = bindings,
-	};
-	vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, &test_compute_descriptor_layout);
-	Pipeline c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length, &test_compute_descriptor_layout, 1);
-	arena_rewind(scratch.arena, offset);
+		VkDescriptorSetLayoutBinding bindings[] = {
+			[0] = {
+			  .binding = 0,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+		};
+
+		VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			.bindingCount = countof(bindings),
+			.pBindings = bindings,
+		};
+		vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, &test_compute_descriptor_layout);
+		c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length, &test_compute_descriptor_layout, 1);
+		arena_rewind(scratch.arena, offset);
+	}
 
 	Pipeline pipeline_skining = { 0 };
 	{ // make skinning compute shader
@@ -299,19 +303,22 @@ int main(void) {
 		arena_rewind(scratch.arena, offset);
 	}
 
-	// create 2d graphics pipeline
-	offset = arena_mark(scratch.arena);
-	String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
-	String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-	Pipeline pipeline_2d = graphics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
-	arena_rewind(scratch.arena, offset);
-
-	// create 3d graphics pipeline
-	offset = arena_mark(scratch.arena);
-	vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
-	fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-	Pipeline pipeline_3d = graphics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
-	arena_rewind(scratch.arena, offset);
+	Pipeline pipeline_2d = { 0 };
+	{ // create 2d graphics pipeline
+		uint32_t offset = arena_mark(scratch.arena);
+		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
+		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
+		arena_rewind(scratch.arena, offset);
+	}
+	Pipeline pipeline_3d = { 0 };
+	{ // create 3d graphics pipeline
+		uint32_t offset = arena_mark(scratch.arena);
+		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
+		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode.text, vertex_bytecode.length, fragment_bytecode.text, fragment_bytecode.length);
+		arena_rewind(scratch.arena, offset);
+	}
 
 	Buffer scratch_buffers[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
@@ -324,12 +331,12 @@ int main(void) {
 	/* 	.capacity = MiB(1), */
 	/* }; */
 
-	Buffer geometry = buffer_make(context, MiB(8), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
+	Buffer geometry = buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
 
-	Model model = load_gltf(scratch.arena, s("assets/models/gdbot.glb"));
+	Model model = load_gltf(scratch.arena, s("assets/models/hero_male.glb"));
 
 	uint32_t animation_count = 0;
-	AnimationClip *animations = load_animations(scratch.arena, s("assets/models/gdbot.glb"), &animation_count);
+	AnimationClip *animations = load_animations(scratch.arena, s("assets/models/hero_male.glb"), &animation_count);
 	uint64_t total_vertex_buffer_size = alignup(model.total_vertex_count * sizeof(Vertex3), 256);
 	uint64_t total_skinning_buffer_size = alignup(model.total_vertex_count * sizeof(SkinningData), 256);
 	uint64_t total_index_buffer_size = alignup(model.total_index_count * sizeof(uint32_t), 256);
@@ -394,23 +401,43 @@ int main(void) {
 	Arena frame_arena[] = { arena_make(MiB(1)) };
 	memory_zero(scratch_buffers[context->current_frame].mapped, scratch_buffers[context->current_frame].size);
 	while (is_open) {
+		uint2 dims = os_surface_size(main_render);
+
 		double time = os_time_ns() * 1e-9;
 		dt = time - last_frame;
 		last_frame = time;
 
+		static bool capture = false;
+		os_cursor_capture(main_render, capture);
+		if (input_key_pressed(KEY_CODE_TAB)) {
+			LOG_INFO("%s...", capture ? "releasing" : "capturing");
+			capture = !capture;
+		}
+
+		input_update();
 		OS_Event event = { 0 };
-		bool space_pressed = 0;
 		while (os_event_poll(&event)) {
 			switch (event.type) {
 				case OS_EVENT_TYPE_SURFACE_CLOSE:
 					is_open = false;
 					break;
 
+				case OS_EVENT_TYPE_KEY_PRESS:
 				case OS_EVENT_TYPE_KEY_RELEASE:
-					if (event.as.key.key_code == KEY_CODE_ESCAPE)
-						is_open = false;
-					if (event.as.key.key_code == KEY_CODE_SPACE)
-						space_pressed = true;
+					input_feed_key(event.as.key.key_code, event.type == OS_EVENT_TYPE_KEY_PRESS);
+					break;
+
+				case OS_EVENT_TYPE_MOUSE_PRESS:
+				case OS_EVENT_TYPE_MOUSE_RELEASE:
+					if (event.surface == main_render)
+						input_feed_mouse_button(event.as.mouse_button.button, event.type == OS_EVENT_TYPE_MOUSE_PRESS);
+					break;
+
+				case OS_EVENT_TYPE_MOUSE_MOVE:
+					if (event.surface == main_render)
+						input_feed_mouse_motion((double)event.as.mouse_move.x, (double)event.as.mouse_move.y);
+					LOG_INFO("%g, %g", input_mouse_x(), input_mouse_y());
+					break;
 				default:
 					break;
 			}
@@ -457,7 +484,14 @@ int main(void) {
 		static float t = 0.0f;
 		static uint32_t current_anim = 3;
 
-		Pose pose = anim_pose_sample(frame_arena, find_animation(animations, animation_count, s("run")), t);
+		if (input_key_released(KEY_CODE_SPACE))
+			current_anim = (current_anim + 1) % animation_count;
+		if (input_mouse_pressed(MOUSE_BUTTON_LEFT))
+			current_anim = (current_anim + 1) % animation_count;
+		if (input_mouse_pressed(MOUSE_BUTTON_RIGHT))
+			current_anim = (current_anim - 1) % animation_count;
+
+		Pose pose = anim_pose_sample(frame_arena, &animations[current_anim], t);
 		float4x4 *skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &pose, &model.skeleton), &model.skeleton);
 		memory_copy(scratch_buffers[context->current_frame].mapped, skin_matrices, matrices_size);
 
@@ -467,8 +501,7 @@ int main(void) {
 			/* current_anim = (current_anim + 1) % animation_count; */
 		}
 
-		// skin mesh
-		{
+		{ // skin mesh
 			VkDescriptorSetAllocateInfo alloc_info = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 				.descriptorPool = descriptor_pool,
@@ -479,6 +512,10 @@ int main(void) {
 			VkDescriptorSet compute_set = 0;
 			vkAllocateDescriptorSets(context->logical_device, &alloc_info, &compute_set);
 
+			// GFX_BindSet set0 = gfx_bindset_push(context, shader, 0, (ResourceBinding[]){ ... }, 4);
+			// or
+			// GFX_BindSet set0  = gfx_bindset_make(context, shader, 0);
+			// gfx_bindset_buffer(context, set, 0, 0, model.meshes[0].vertex_count * sizeof(Vertex3), geometry.buffer);
 			VkDescriptorBufferInfo vertex_block_info = {
 				.buffer = geometry.handle,
 				.offset = 0,
@@ -660,10 +697,14 @@ int main(void) {
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, &blit_info, 0);
 
-		uint2 dims = os_surface_size(main_render);
+		float2 mouse_delta = float2_from_double2(input_mouse_delta());
+		mouse_delta.x /= dims.x;
+		mouse_delta.y /= dims.y;
+
+		scene_camera_orbit(&camera, mouse_delta);
 		float4x4 view_projection = float4x4_multiply(
 			float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
-			float4x4_lookat((float3){ 3.0f, 0.5f, 3.f }, (float3){ 0.0f, 0.5f, 0.0f }, FLOAT3_Y));
+			float4x4_lookat(camera.position, camera.target, camera.up));
 		vkCmdPushConstants(command_buffer, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(float4x4), &view_projection);
 
 		VkRenderingAttachmentInfo attachment_info = {
@@ -761,7 +802,7 @@ int main(void) {
 			pipeline_destroy(context, &c_pipeline);
 
 			uint64_t offset = arena_mark(scratch.arena);
-			compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
+			String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
 			c_pipeline = compute_pipeline_make(context, compute_bytecode.text, compute_bytecode.length, &test_compute_descriptor_layout, 1);
 			arena_rewind(scratch.arena, offset);
 
@@ -1004,9 +1045,8 @@ Image image_make(GFX_Context *context, uint32_t width, uint32_t height, PixelFor
 		ok = vkCreateImageView(context->logical_device, &result.view_info, 0, &result.view) == VK_SUCCESS;
 	}
 
-	if (ok == false) { // remove half-made resources on error
+	if (ok == false) // remove half-made resources on error
 		image_destroy(context, &result);
-	}
 
 	/* LOG_INFO("image loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, image_format_to_string[format]); */
 	return result;
@@ -1201,29 +1241,8 @@ Pipeline compute_pipeline_make(GFX_Context *context, uint8_t *bytecode, uint64_t
 			LOG_WARN("failed to create compute pipeline shader module.");
 	}
 
-	if (ok) { // create descriptor set layouts
-		// TODO: Don't hard-code the layouts
-
-		/* VkDescriptorSetLayoutBinding bindings[] = { */
-		/* [0] = { */
-		/* .binding = 0, */
-		/* .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, */
-		/* .descriptorCount = 1, */
-		/* .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT, */
-		/* }, */
-		/* }; */
-
-		/* VkDescriptorSetLayoutCreateInfo dsl_create_info = { */
-		/* .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, */
-		/* .bindingCount = countof(bindings), */
-		/* .pBindings = bindings, */
-		/* }; */
-		/* ok = vkCreateDescriptorSetLayout(context->logical_device, &dsl_create_info, NULL, result.set_layouts) == VK_SUCCESS; */
-
+	if (ok) // create descriptor set layouts
 		memory_copy(result.set_layouts, layouts, MIN(countof(result.set_layouts), layout_count) * sizeof(VkDescriptorSetLayout));
-		if (ok == false)
-			LOG_WARN("failed to create compute pipeline descriptor set layout 0");
-	}
 
 	if (ok) { // create pipeline layout
 		VkPipelineLayoutCreateInfo pl_create_info = {
@@ -2365,42 +2384,35 @@ Model load_gltf(Arena *arena, String8 path) {
 		}
 	}
 
-	if (ok) { // load node data
-		for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
-			cgltf_node *node = &data->nodes[node_index];
+	if (ok) { // load skeleton
+		ASSERT(data->skins_count <= 1 && "expect single skinned mesh per file");
+		for (uint32_t skin_index = 0; skin_index < data->skins_count; ++skin_index) {
+			cgltf_skin *skin = &data->skins[0];
+			cgltf_accessor *accessor = skin->inverse_bind_matrices;
+			ASSERT(skin->joints_count == accessor->count && "expect joint count to match matrix count");
 
-			if (node->skin) {
-				ASSERT(result.skeleton.inverse_rest_matrices == 0 && "expect single skinned mesh per file");
+			result.skeleton.bone_count = skin->joints_count;
+			result.skeleton.bones = arena_push_count(arena, Bone, result.skeleton.bone_count);
+			result.skeleton.inverse_rest_matrices = arena_push_count(arena, float4x4, result.skeleton.bone_count);
 
-				cgltf_skin *skin = node->skin;
-				cgltf_accessor *accessor = skin->inverse_bind_matrices;
-				ASSERT(skin->joints_count == accessor->count && "expect joint count to match matrix count");
+			cgltf_accessor_unpack_floats(accessor, (float *)result.skeleton.inverse_rest_matrices, accessor->count * cgltf_num_components(accessor->type));
 
-				result.skeleton.bone_count = skin->joints_count;
-				result.skeleton.bones = arena_push_count(arena, Bone, result.skeleton.bone_count);
-				result.skeleton.inverse_rest_matrices = arena_push_count(arena, float4x4, result.skeleton.bone_count);
+			for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
+				cgltf_node *joint = skin->joints[joint_index];
+				memory_copy(
+					result.skeleton.bones[joint_index].name,
+					joint->name,
+					MIN(str8_wrap(joint->name).length, sizeof_member(Bone, name)));
 
-				cgltf_accessor_unpack_floats(accessor, (float *)result.skeleton.inverse_rest_matrices, accessor->count * cgltf_num_components(accessor->type));
+				bool found = false;
+				for (uint32_t search_index = 0; search_index < skin->joints_count; ++search_index)
+					if (skin->joints[search_index] == joint->parent) {
+						result.skeleton.bones[joint_index].parent = search_index;
+						found = true;
+					}
 
-				LOG_INFO("%s - inverse_matrix_count: %d, joint_count: %d", skin->name, accessor->count, skin->joints_count);
-
-				for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
-					cgltf_node *joint = skin->joints[joint_index];
-					memory_copy(
-						result.skeleton.bones[joint_index].name,
-						joint->name,
-						MIN(str8_wrap(joint->name).length, sizeof_member(Bone, name)));
-
-					bool found = false;
-					for (uint32_t search_index = 0; search_index < skin->joints_count; ++search_index)
-						if (skin->joints[search_index] == joint->parent) {
-							result.skeleton.bones[joint_index].parent = search_index;
-							found = true;
-						}
-
-					if (found == false)
-						result.skeleton.bones[joint_index].parent = -1;
-				}
+				if (found == false)
+					result.skeleton.bones[joint_index].parent = -1;
 			}
 		}
 	}
@@ -2453,7 +2465,6 @@ AnimationClip *load_animations(Arena *arena, String8 path, uint32_t *count) {
 				out_anim->duration = MAX(out_anim->duration, t);
 			}
 			ASSERT(min_keyframe_count == max_keyframe_count && "expect all sampler timings to match");
-			LOG_INFO("anim - %s: min_sampler_count = %u, max_sample_count = %u, min_timing = %g, max_timing = %g, duration %f", anim->name, min_keyframe_count, max_keyframe_count, min_timing, max_timing, out_anim->duration);
 			out_anim->keyframes = arena_push_count(arena, Transform3 *, out_anim->keyframe_count);
 			out_anim->timings = arena_push_count(arena, float, out_anim->keyframe_count);
 			out_anim->bone_count = data->skins[0].joints_count;

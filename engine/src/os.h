@@ -145,8 +145,6 @@ typedef struct {
 		struct {
 			int32_t x;
 			int32_t y;
-			int32_t delta_x;
-			int32_t delta_y;
 		} mouse_move;
 		struct {
 			MouseButton button;
@@ -165,6 +163,6 @@ const char **os_surface_vulkan_extensions(uint32_t *count);
 void *os_native_display_handle(void);
 void *os_native_surface_handle(OS_Surface *surface);
 
-/* void os_cursor_show(bool show); */
-/* void os_cursor_capture(OS_Surface *surface, bool capture); */
-/* void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y); */
+void os_cursor_show(OS_Surface *surface, bool show);
+void os_cursor_capture(OS_Surface *surface, bool capture);
+void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y);

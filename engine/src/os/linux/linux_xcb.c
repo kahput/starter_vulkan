@@ -1,5 +1,6 @@
 #include "common.h"
 #include "core/debug.h"
+#include "core/input_types.h"
 #include "core/logger.h"
 #include "os.h"
 
@@ -15,6 +16,9 @@
 struct OS_Surface {
 	uint32_t handle;
 	uint32_t width, height;
+
+	int32x2 virtual_cursor;
+	bool cursor_captured, warping;
 };
 
 typedef struct {
@@ -250,9 +254,60 @@ bool os_event_poll(OS_Event *dst) {
 				bool released = (src->response_type & ~0x80) == XCB_KEY_RELEASE;
 				KeyboardKey key = state->keycodes[scancode];
 
-				dst->type = OS_EVENT_TYPE_KEY_RELEASE + released;
+				dst->type = OS_EVENT_TYPE_KEY_PRESS + released;
 				dst->as.key.key_code = key;
 			}
+		} break;
+		case XCB_BUTTON_PRESS:
+		case XCB_BUTTON_RELEASE: {
+			xcb_button_press_event_t *bp = (xcb_button_press_event_t *)src;
+
+			if (bp->detail <= 3) {
+				bool released = (src->response_type & ~0x80) == XCB_BUTTON_RELEASE;
+				dst->surface = os__surface_from_handle(bp->event);
+				dst->type = OS_EVENT_TYPE_MOUSE_PRESS + released;
+				dst->as.mouse_button.x = bp->event_x;
+				dst->as.mouse_button.y = bp->event_y;
+				dst->as.mouse_button.button =
+					bp->detail == 1
+					? MOUSE_BUTTON_LEFT
+					: bp->detail == 2
+					? MOUSE_BUTTON_MIDDLE
+					: MOUSE_BUTTON_RIGHT;
+			}
+		} break;
+		case XCB_MOTION_NOTIFY: {
+			xcb_motion_notify_event_t *motion = (xcb_motion_notify_event_t *)src;
+			OS_Surface *surface = os__surface_from_handle(motion->event);
+
+			if (surface->cursor_captured) {
+				if (surface->warping) {
+					surface->warping = false;
+					break;
+				}
+
+				int32_t cx = surface->width / 2;
+				int32_t cy = surface->height / 2;
+				int32_t dx = (int32_t)motion->event_x - cx;
+				int32_t dy = (int32_t)motion->event_y - cy;
+				surface->virtual_cursor.x += dx;
+				surface->virtual_cursor.y += dy;
+
+				if (dx != 0 || dy != 0) {
+					surface->warping = true;
+					xcb_warp_pointer(state->conn, XCB_NONE, surface->handle,
+						0, 0, 0, 0, cx, cy);
+					xcb_flush(state->conn);
+				}
+
+				motion->event_x = surface->virtual_cursor.x;
+				motion->event_y = surface->virtual_cursor.y;
+			}
+
+			dst->type = OS_EVENT_TYPE_MOUSE_MOVE;
+			dst->surface = surface;
+			dst->as.mouse_move.x = motion->event_x;
+			dst->as.mouse_move.y = motion->event_y;
 		} break;
 	}
 	free(src);
@@ -292,6 +347,55 @@ void *os_native_display_handle(void) {
 }
 void *os_native_surface_handle(OS_Surface *surface) {
 	return (void *)(uint64_t)surface->handle;
+}
+
+void os_cursor_show(OS_Surface *surface, bool show) {
+	if (show) {
+		uint32_t value = XCB_NONE;
+		xcb_change_window_attributes(state->conn, surface->handle, XCB_CW_CURSOR, &value);
+	} else
+		xcb_change_window_attributes(state->conn, surface->handle, XCB_CW_CURSOR, &state->hidden_cursor);
+
+	xcb_flush(state->conn);
+}
+
+void os_cursor_capture(OS_Surface *surface, bool capture) {
+	if (capture == surface->cursor_captured)
+		return;
+	surface->cursor_captured = capture;
+
+	if (capture) {
+		xcb_grab_pointer_cookie_t cookie = xcb_grab_pointer(
+			state->conn,
+			0, // owner_events: don't redirect events to grab window
+			surface->handle,
+			XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE,
+			XCB_GRAB_MODE_ASYNC,
+			XCB_GRAB_MODE_ASYNC,
+			surface->handle, // confine to this window
+			state->hidden_cursor, // change cursor - XCB_NONE for normal
+			XCB_TIME_CURRENT_TIME);
+		xcb_grab_pointer_reply_t *reply = xcb_grab_pointer_reply(state->conn, cookie, NULL);
+
+		surface->virtual_cursor.x = surface->width / 2;
+		surface->virtual_cursor.y = surface->height / 2;
+
+		xcb_warp_pointer(state->conn, XCB_NONE, surface->handle,
+			0, 0, 0, 0, surface->virtual_cursor.x, surface->virtual_cursor.y);
+		surface->warping = true; // flag to swallow the warp event
+
+		if (reply->status != XCB_GRAB_STATUS_SUCCESS)
+			surface->cursor_captured = false;
+		free(reply);
+	} else
+		xcb_ungrab_pointer(state->conn, XCB_TIME_CURRENT_TIME);
+
+	xcb_flush(state->conn);
+}
+void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y) {
+	xcb_warp_pointer(state->conn, XCB_NONE, surface->handle, 0, 0, 0, 0, x, y);
+	surface->warping = true;
+	xcb_flush(state->conn);
 }
 
 static inline xcb_intern_atom_reply_t *os__atom(String8 name) {
