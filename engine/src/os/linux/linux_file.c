@@ -19,7 +19,7 @@ DIR *os__open_dir_cwd(String8 path);
 
 OS_File os_file_open(String8 filepath, OS_FileMode mode) {
 	OS_File result = os__open_file_cwd(filepath, os__mode_to_flags(mode), 0666);
-	if (result == OS_FILE_INVALID)
+	if (result == OS_INVALID_FILE)
 		LOG_WARN("failed to read '%.*s' - %s", filepath.length, filepath.text, strerror(errno));
 
 	return result;
@@ -228,7 +228,7 @@ int32_t os__mode_to_flags(OS_FileMode mode) {
 }
 
 uint64_t os__open_file_cwd(String8 path, int32_t flags, int32_t access) {
-	uint64_t result = OS_FILE_INVALID;
+	uint64_t result = OS_INVALID_FILE;
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	int32_t open_result = open((char *)os__concat_cwd(scratch.arena, path).text, flags, access);
 	arena_scratch_end(scratch);

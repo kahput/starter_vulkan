@@ -14,7 +14,7 @@ OS_File os_file_open(String8 path, OS_FileMode mode) {
 	OS_File result = (OS_File)file;
 
 	if (file == NULL) {
-		result = OS_FILE_INVALID;
+		result = OS_INVALID_FILE;
 		LOG_WARN("%s - %s", __func__, strerror(errno));
 	}
 	return result;
@@ -69,7 +69,7 @@ void os_file_write_entire(String8 path, const void *buffer, uint64_t size) {
 bool os_file_exists(String8 path) {
 	bool result = false;
 	OS_File handle = os_file_open(path, OS_FILE_MODE_READ);
-	if (handle != OS_FILE_INVALID) {
+	if (handle != OS_INVALID_FILE) {
 		result = true;
 		os_file_close(handle);
 	}
