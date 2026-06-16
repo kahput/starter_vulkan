@@ -19,10 +19,11 @@ out OutBlock {
 
 layout(push_constant) uniform ConstantBlock {
     mat4 view_projection;
+    mat4 model;
 };
 
 void main() {
     VertexData vertex = batch.vertex_data[gl_VertexIndex];
-    gl_Position = view_projection * vec4(vertex.position.xyz, 1.0);
+    gl_Position = view_projection * model * vec4(vertex.position.xyz, 1.0);
     vs_output.color = vec4( 1.0);
 }

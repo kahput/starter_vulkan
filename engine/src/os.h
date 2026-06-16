@@ -6,6 +6,22 @@
 
 struct Arena;
 
+typedef enum {
+	OS_BACKEND_WINDOWS,
+	OS_BACKEND_LINUX,
+	OS_BACKEND_WEB,
+
+#ifdef LINUX_BUILD
+	OS_BACKEND = OS_BACKEND_LINUX,
+#elif WINDOWS_BUILD
+	OS_BACKEND = OS_BACKEND_WINDOWS,
+#elif WEB_BUILD
+	OS_BACKEND = OS_BACKEND_WEB,
+#else
+	#error Unsupported backend
+#endif
+} OS_Backend;
+
 // ----------------------
 // - System Information & Time
 /* typedef struct { */

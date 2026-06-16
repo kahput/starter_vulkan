@@ -101,7 +101,7 @@ float3 float3_lerp(float3 start, float3 end, float t);
 float float3_angle(float3 a, float3 b);
 float3 float3_rotate(float3 v, float angle, float3 axis);
 
-static inline float4 float4_from_float3(float3 v) { return (float4){ v.x, v.y, v.z, 0.0f }; }
+static inline float4 float4_from_float3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w }; }
 static inline float4 float4_wrap(float v[4]) {
 	return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] };
 }

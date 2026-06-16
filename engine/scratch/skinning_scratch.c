@@ -15,17 +15,10 @@
 
 #include <vulkan/vulkan_core.h>
 
-#define VK_USE_PLATFORM_XCB_KHR
 #include <vulkan/vulkan.h>
 #include <cgltf/cgltf.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
-
-// clang-format off
-typedef struct { uint64_t index; } RID;
-#define RHI_INVALID_HANDLE ((RID){0})
-static inline bool rhi_handle_valid(RID handle) { return handle.index != RHI_INVALID_HANDLE.index; }
-// clang-format on
 
 typedef struct Buffer Buffer;
 struct Buffer {
@@ -179,11 +172,6 @@ typedef struct {
 } Vertex2;
 
 typedef struct {
-	uint8_t *memory;
-	uint32_t offset, capacity;
-} Batch;
-
-typedef struct {
 	float3 position;
 	float _pad0;
 	float3 normal;
@@ -197,17 +185,11 @@ typedef struct {
 	float32x4 weights;
 } SkinningData;
 
-void push_rect(Batch *buffer, Rectangle rect, Color color);
-
 Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
 Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
 Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface);
 Shader compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count);
 Shader graphics_pipeline_make(GFX_Context *context, String8 vertexcode, String8 fragmentcode);
-
-Buffer *rhi__buffer_from_handle(GFX_Context *context, RID handle);
-RID rhi_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
-bool rhi_buffer_destroy(GFX_Context *context, RID handle);
 
 bool buffer_destroy(GFX_Context *context, Buffer *buffer);
 void image_destroy(GFX_Context *context, Image *image);
@@ -215,9 +197,6 @@ void swapchain_destroy(GFX_Context *context, Swapchain *surface);
 void pipeline_destroy(GFX_Context *context, Shader *pipeline);
 
 Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_t *out_image_index);
-
-void *gfx_buffer_map(GFX_Context *context, RID handle);
-void gfx_buffer_unmap(GFX_Context *context, RID handle);
 
 void gfx_cmd_buffer_to_buffer(GFX_CommandBuffer *cmd, Buffer *dst, Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
 void gfx_cmd_buffer_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, Buffer *target);
@@ -228,29 +207,41 @@ VkDescriptorSet gfx_cmd_bindset_push(GFX_CommandBuffer *cmd);
 typedef struct {
 	uint64_t vertex_offset, index_offset;
 	uint32_t vertex_count, index_count;
-} Mesh;
+} MeshPart;
 
 typedef struct {
-	Mesh *meshes;
-	uint32_t mesh_count;
-
+	// CPU
 	Vertex3 *vertices;
 	SkinningData *skinning;
-	uint64_t total_vertex_count;
-
 	uint32_t *indices;
-	uint64_t total_index_count;
 
+	// GPU
+	Buffer *buffer;
+	uint64_t buffer_vertex_byte_offset;
+	uint64_t buffer_index_byte_offset;
+
+	uint64_t buffer_skinning_data_byte_offset;
+	uint64_t buffer_skinned_vertex_byte_offset;
+
+	// METADATA
+	MeshPart *parts;
+	uint32_t part_count;
 	Skeleton skeleton;
-} Model;
+
+	uint64_t total_vertex_count;
+	uint64_t total_index_count;
+} Mesh;
 
 typedef enum {
-	MODEL_HERO_MALE,
-	MODEL_GDBOT,
-	MODEL_COUNT,
-} ModelID;
+	MESH_HERO_MALE,
+	MESH_GDBOT,
+	MESH_MAGE,
+	MESH_BARREL,
+	MESH_ROOM,
+	MESH_COUNT,
+} MeshID;
 
-Model load_gltf(Arena *arena, String8 path);
+Mesh load_gltf(Arena *arena, String8 path);
 AnimationClip *load_animations(Arena *arena, String8 path, uint32_t *count);
 
 AnimationClip *find_animation(AnimationClip *clips, uint32_t count, String8 target) {
@@ -278,8 +269,8 @@ int main(void) {
 	input_set_context(&input_state);
 	Camera3 camera = {
 		.projection = CAMERA_PROJECTION_PERSPECTIVE,
-		.position = { 0.0f, 0.5f, 3.f },
-		.target = { 0.0f, 0.5f, 0.0f },
+		.position = { 0.0f, 1.5f, 3.f },
+		.target = { 0.0f, 1.5f, 0.0f },
 		.up = FLOAT3_Y,
 		.fovy = 45.f,
 	};
@@ -320,11 +311,11 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	Shader pipeline_skining = { 0 };
+	Shader pipeline_skinning = { 0 };
 	{ // :skinning
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/skinning.compute.spv"));
-		pipeline_skining = compute_pipeline_make(context, compute_bytecode, NULL, 0);
+		pipeline_skinning = compute_pipeline_make(context, compute_bytecode, NULL, 0);
 		arena_scratch_end(scratch);
 	}
 
@@ -346,40 +337,75 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	RID geometry = rhi_buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
+	Buffer geometry = buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
 
-	Model models[] = {
-		[MODEL_HERO_MALE] = load_gltf(arena, s("assets/models/hero_male.glb")),
-		[MODEL_GDBOT] = load_gltf(arena, s("assets/models/gdbot.glb")),
+	Mesh meshes[] = {
+		[MESH_HERO_MALE] = load_gltf(arena, s("assets/models/hero_male.glb")),
+		[MESH_GDBOT] = load_gltf(arena, s("assets/models/gdbot.glb")),
+		[MESH_MAGE] = load_gltf(arena, s("assets/models/mage.glb")),
+		[MESH_BARREL] = load_gltf(arena, s("assets/models/barrel.glb")),
+		[MESH_ROOM] = load_gltf(arena, s("assets/models/room.glb")),
 	};
-
-	Model model = load_gltf(arena, s("assets/models/hero_male.glb"));
-
-	uint32_t animation_count = 0;
-	AnimationClip *animations = load_animations(arena, s("assets/models/hero_male.glb"), &animation_count);
-	uint64_t total_vertex_buffer_size = alignup(model.total_vertex_count * sizeof(Vertex3), 256);
-	uint64_t total_index_buffer_size = alignup(model.total_index_count * sizeof(uint32_t), 256);
-	uint64_t total_skinning_buffer_size = alignup(model.total_vertex_count * sizeof(SkinningData), 256);
 
 	{ // upload geometry
 		GFX_CommandBuffer cmd = gfx_transfer_batch_begin(context);
 		if (cmd.handle) {
-			uint64_t initial_offset = arena_mark(cmd.staging_arena);
-			arena_push_copy(cmd.staging_arena, model.vertices, model.total_vertex_count * sizeof(Vertex3), 256);
-			arena_push_copy(cmd.staging_arena, model.indices, model.total_index_count * sizeof(uint32_t), 256);
-			arena_push_copy(cmd.staging_arena, model.skinning, model.total_vertex_count * sizeof(SkinningData), 256);
+			uint64_t upload_cursor = 0;
 
-			Buffer *geometry_buffer = rhi__buffer_from_handle(context, geometry);
-			uint64_t total_size = total_vertex_buffer_size + total_index_buffer_size + total_skinning_buffer_size;
-			gfx_cmd_buffer_to_buffer(&cmd, geometry_buffer, cmd.staging_buffer, 0, initial_offset, total_size);
+			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
+				Mesh *mesh = &meshes[mesh_index];
+				mesh->buffer = &geometry;
 
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, total_vertex_buffer_size, geometry_buffer); // vertex pulling
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, total_vertex_buffer_size, total_index_buffer_size, geometry_buffer);
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, total_vertex_buffer_size + total_index_buffer_size, total_skinning_buffer_size, geometry_buffer);
+				uint64_t initial_offset = arena_mark(cmd.staging_arena);
+				uint64_t mesh_start_cursor = upload_cursor;
+				uint64_t copied_size = 0;
+
+				uint64_t total_vertex_buffer_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
+				uint64_t total_index_buffer_size = alignup(mesh->total_index_count * sizeof(uint32_t), 256);
+				uint64_t total_skinning_buffer_size = alignup(mesh->total_vertex_count * sizeof(SkinningData), 256);
+
+				// Vertices
+				mesh->buffer_vertex_byte_offset = upload_cursor;
+				memory_copy(arena_push(cmd.staging_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3));
+				upload_cursor += total_vertex_buffer_size;
+				copied_size += total_vertex_buffer_size;
+
+				// Indices
+				mesh->buffer_index_byte_offset = upload_cursor;
+				memory_copy(arena_push(cmd.staging_arena, total_index_buffer_size, 1, false), mesh->indices, mesh->total_index_count * sizeof(uint32_t));
+				upload_cursor += total_index_buffer_size;
+				copied_size += total_index_buffer_size;
+
+				// Skinning
+				if (mesh->skeleton.bone_count) {
+					mesh->buffer_skinning_data_byte_offset = upload_cursor;
+					memory_copy(arena_push(cmd.staging_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(SkinningData));
+					upload_cursor += total_skinning_buffer_size;
+					copied_size += total_skinning_buffer_size;
+
+					mesh->buffer_skinned_vertex_byte_offset = upload_cursor;
+					upload_cursor += total_vertex_buffer_size; // Reserve space for compute output (no copy needed)
+				}
+
+				gfx_cmd_buffer_to_buffer(&cmd, mesh->buffer, cmd.staging_buffer, mesh_start_cursor, initial_offset, copied_size);
+
+				gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, mesh->buffer_vertex_byte_offset, total_vertex_buffer_size, mesh->buffer);
+				gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, mesh->buffer_index_byte_offset, total_index_buffer_size, mesh->buffer);
+
+				if (mesh->skeleton.bone_count) {
+					gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, mesh->buffer_skinning_data_byte_offset, total_vertex_buffer_size + total_skinning_buffer_size, mesh->buffer);
+				}
+			}
 
 			gfx_transfer_batch_submit(context, &cmd);
 		}
 	}
+
+	uint32_t animation_counts[MESH_COUNT];
+	AnimationClip *animations[MESH_COUNT] = {
+		[MESH_HERO_MALE] = load_animations(arena, s("assets/models/hero_male.glb"), &animation_counts[MESH_HERO_MALE]),
+		[MESH_GDBOT] = load_animations(arena, s("assets/models/gdbot.glb"), &animation_counts[MESH_GDBOT]),
+	};
 
 	Buffer scratch_buffers[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
@@ -437,16 +463,12 @@ int main(void) {
 
 		uint2 dims = os_surface_size(main_render);
 
-		/* push_rect(&batch, rect(0, 0, 50, 50), WHITE); */
-		/* push_rect(&batch, rect(60, 0, 50, 100), GREEN); */
-
 		// Frame resources
-		VkCommandBuffer command_buffer = context->cmd_buffers[context->current_frame].handle;
-		VkDescriptorPool descriptor_pool = context->cmd_buffers[context->current_frame].descriptor_pool;
-
 		GFX_CommandBuffer *cmd = gfx_frame_begin(context);
 		if (cmd == 0)
 			break;
+		VkCommandBuffer command_buffer = cmd->handle;
+		VkDescriptorPool descriptor_pool = cmd->descriptor_pool;
 
 		// Swapchain image acquisition
 		uint32_t image_indices[SWAPCHAIN_IMAGE_COUNT];
@@ -458,50 +480,73 @@ int main(void) {
 		if (popup_target.handle == 0) // TODO: Handle out of date swapchain
 			break;
 
-		uint64_t matrices_size = alignup(model.skeleton.bone_count * sizeof(float4x4), 256);
-		uint64_t skinned_size = alignup(model.meshes[0].vertex_count * sizeof(Vertex3), 256);
+		static float anim_t = 0.0f;
+		static uint32_t anim_index = 3;
 
-		static float t = 0.0f;
-		static uint32_t current_anim = 3;
+		anim_t += dt;
 
-		if (input_key_pressed(KEY_CODE_SPACE))
-			current_anim = (current_anim + 1) % animation_count;
-		if (input_mouse_pressed(MOUSE_BUTTON_LEFT))
-			current_anim = (current_anim + 1) % animation_count;
-		if (input_mouse_pressed(MOUSE_BUTTON_RIGHT))
-			current_anim = (current_anim - 1) % animation_count;
+		typedef struct {
+			MeshID id;
+			Transform3 transform;
+			uint64_t skinned_vertices_offset;
+		} MeshInstance;
 
-		Pose pose = anim_pose_sample(frame_arena, &animations[current_anim], t);
-		float4x4 *skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &pose, &model.skeleton), &model.skeleton);
-		memory_copy(scratch_buffers[context->current_frame].mapped, skin_matrices, matrices_size);
+		MeshInstance instances[] = {
+			{ MESH_HERO_MALE, { { 0 }, { 0 }, FLOAT3_ONE }, 0 },
+			{ MESH_HERO_MALE, { { 0.0f, 0.0f, -3.0f }, { 0 }, FLOAT3_ONE }, 0 },
+			{ MESH_GDBOT, { { 3.0f, 0.0f, 0.0f }, { 0 }, FLOAT3_ONE }, 0 },
+			{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, { 0 }, FLOAT3_ONE }, 0 },
+		};
 
-		t += dt;
-		if (t >= 1.0f) {
-			t = 0.0f;
-			/* current_anim = (current_anim + 1) % animation_count; */
-		}
+		uint64_t scratch_cursor = 0;
+		for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+			MeshInstance *instance = &instances[instance_index];
+			Mesh *mesh = &meshes[instance->id];
+			if (mesh->skeleton.bone_count == 0 || animation_counts[instance->id] == 0)
+				continue;
 
-		{ // :skinning
-			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_skining.handle);
-			struct {
-				uint32_t vertex_count;
-				uint32_t _pad0;
-				uint64_t skinning_matrices_address;
-				uint64_t input_address;
-				uint64_t skinning_address;
-				uint64_t output_address;
-			} pc = {
-				.vertex_count = model.meshes[0].vertex_count,
-				.skinning_matrices_address = scratch_buffers[context->current_frame].address,
-				.input_address = rhi__buffer_from_handle(context, geometry)->address,
-				.skinning_address = rhi__buffer_from_handle(context, geometry)->address + total_vertex_buffer_size + total_index_buffer_size,
-				.output_address = scratch_buffers[context->current_frame].address + matrices_size,
-			};
-			vkCmdPushConstants(command_buffer, pipeline_skining.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+			uint32_t instance_anim = (anim_index + instance_index) % animation_counts[instance->id];
 
-			vkCmdDispatch(command_buffer, (model.meshes[0].vertex_count + 255) / 256, 1, 1);
+			uint64_t matrices_offset = scratch_cursor;
+			uint64_t matrices_size = alignup(mesh->skeleton.bone_count * sizeof(float4x4), 256);
+			scratch_cursor += matrices_size;
 
-			gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_VERTEX_SHADER_READ, matrices_size, skinned_size, scratch_buffers + context->current_frame);
+			instance->skinned_vertices_offset = scratch_cursor;
+			uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
+			scratch_cursor += skinned_vertices_size;
+
+			Pose pose = anim_pose_sample(frame_arena, &animations[instance->id][instance_anim], fmodf(anim_t, animations[instance->id][instance_anim].duration));
+			float4x4 *skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &pose, &mesh->skeleton), &mesh->skeleton);
+
+			memory_copy(scratch_buffers[context->current_frame].mapped + matrices_offset, skin_matrices, matrices_size);
+
+			{ // :skinning
+				vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_skinning.handle);
+				struct {
+					uint32_t vertex_count;
+					uint32_t _pad0;
+					uint64_t skinning_matrices_address;
+					uint64_t input_address;
+					uint64_t skinning_address;
+					uint64_t output_address;
+				} pc = {
+					.vertex_count = mesh->total_vertex_count,
+					.skinning_matrices_address = scratch_buffers[context->current_frame].address + matrices_offset,
+					.input_address = mesh->buffer->address + mesh->buffer_vertex_byte_offset,
+					.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
+					.output_address = scratch_buffers[context->current_frame].address + instance->skinned_vertices_offset,
+				};
+				vkCmdPushConstants(command_buffer, pipeline_skinning.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+
+				vkCmdDispatch(command_buffer, (mesh->total_vertex_count + 255) / 256, 1, 1);
+
+				gfx_cmd_buffer_barrier(
+					cmd,
+					RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
+					RESOURCE_USAGE_VERTEX_SHADER_READ,
+					instance->skinned_vertices_offset,
+					skinned_vertices_size, &scratch_buffers[context->current_frame]);
+			}
 		}
 
 		// transition sawpchain images for drawing
@@ -526,35 +571,7 @@ int main(void) {
 			RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
 			&compute_image);
 
-		{ // Bind grahpics pipeline & descriptor set
-			VkDescriptorSetAllocateInfo alloc_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-				.descriptorPool = descriptor_pool,
-				.descriptorSetCount = 1,
-				.pSetLayouts = pipeline_3d.set_layouts + 0,
-			};
-
-			VkDescriptorSet grahpics_set = 0;
-			vkAllocateDescriptorSets(context->device.logical, &alloc_info, &grahpics_set);
-			VkDescriptorBufferInfo buffer_info = {
-				.buffer = scratch_buffers[context->current_frame].handle,
-				.offset = matrices_size,
-				.range = skinned_size,
-			};
-			VkWriteDescriptorSet write = {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = grahpics_set,
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				.pBufferInfo = &buffer_info,
-			};
-			vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-
-			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
-			vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
-		}
+#define PART_INDEX 4
 
 		{ // Bind compute pipeline & descriptor set
 			VkDescriptorSetAllocateInfo alloc_info = {
@@ -614,12 +631,6 @@ int main(void) {
 		mouse_delta.x /= dims.x;
 		mouse_delta.y /= dims.y;
 
-		scene_camera_orbit(&camera, mouse_delta);
-		float4x4 view_projection = float4x4_multiply(
-			float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
-			float4x4_lookat(camera.position, camera.target, camera.up));
-		vkCmdPushConstants(command_buffer, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(float4x4), &view_projection);
-
 		VkRenderingAttachmentInfo attachment_info = {
 			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 			.imageView = offscreen_render.view,
@@ -654,8 +665,64 @@ int main(void) {
 		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 		vkCmdSetScissor(command_buffer, 0, 1, &(VkRect2D){ .extent = extent });
 
-		vkCmdBindIndexBuffer(command_buffer, rhi__buffer_from_handle(context, geometry)->handle, total_vertex_buffer_size, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(command_buffer, model.meshes[0].index_count, 1, 0, 0, 0);
+		scene_camera_orbit(&camera, mouse_delta);
+		float4x4 view_projection = float4x4_multiply(
+			float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
+			float4x4_lookat(camera.position, camera.target, camera.up));
+		vkCmdPushConstants(command_buffer, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(float4x4), &view_projection);
+
+		uint32_t last_mesh_id = -1;
+		for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+			MeshInstance *instance = &instances[instance_index];
+			Mesh *mesh = &meshes[instance->id];
+
+			VkDescriptorSetAllocateInfo alloc_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+				.descriptorPool = descriptor_pool,
+				.descriptorSetCount = 1,
+				.pSetLayouts = pipeline_3d.set_layouts + 0,
+			};
+
+			VkDescriptorSet grahpics_set = 0;
+			vkAllocateDescriptorSets(context->device.logical, &alloc_info, &grahpics_set);
+
+			VkDescriptorBufferInfo buffer_info = {
+				.buffer = mesh->buffer->handle,
+				.offset = mesh->buffer_vertex_byte_offset,
+				.range = mesh->total_vertex_count * sizeof(Vertex3),
+			};
+			if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
+                buffer_info.buffer= scratch_buffers[context->current_frame].handle;
+                buffer_info.offset = instance->skinned_vertices_offset;
+            }
+			VkWriteDescriptorSet write = {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = grahpics_set,
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				.pBufferInfo = &buffer_info,
+			};
+			vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+
+			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
+			vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
+
+			vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+			for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
+				// clang-format off
+                float4x4 transform = float4x4_compose_quat(
+                        instance->transform.translation,
+                        instance->transform.rotation,
+                        instance->transform.scale
+                );
+				// clang-format on
+				//
+				vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, sizeof(float4x4), sizeof(float4x4), &transform);
+				vkCmdDrawIndexed(command_buffer, mesh->parts[part_index].index_count, 1, mesh->parts[part_index].index_offset, mesh->parts[part_index].vertex_offset, 0);
+			}
+		}
 
 		vkCmdEndRendering(command_buffer);
 
@@ -739,12 +806,12 @@ int main(void) {
 		for (uint32_t index = 0; index < countof(scratch_buffers); ++index)
 			buffer_destroy(context, &scratch_buffers[index]);
 
-		rhi_buffer_destroy(context, geometry);
+		buffer_destroy(context, &geometry);
 		image_destroy(context, &offscreen_render);
 		image_destroy(context, &compute_image);
 
 		pipeline_destroy(context, &c_pipeline);
-		pipeline_destroy(context, &pipeline_skining);
+		pipeline_destroy(context, &pipeline_skinning);
 		pipeline_destroy(context, &pipeline_2d);
 		pipeline_destroy(context, &pipeline_3d);
 
@@ -947,39 +1014,6 @@ Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, Buf
 		buffer_destroy(context, &result);
 
 	return result;
-}
-
-Buffer *rhi__buffer_from_handle(GFX_Context *context, RID handle) {
-	Buffer *result = 0;
-
-	bool ok = context && handle.index <= context->buffer_count;
-	if (ok)
-		result = &context->buffers[handle.index];
-
-	return result;
-}
-
-RID rhi_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage) {
-	uint64_t id = 0;
-	Buffer *result = 0;
-
-	bool ok = true;
-
-	if (ok) {
-		result = context->first_free_buffer;
-		if (result == 0) {
-			ASSERT(context->buffer_count + 1 < MAX_BUFFERS);
-			id = ++context->buffer_count;
-			result = &context->buffers[id];
-		}
-
-		ok = id;
-	}
-
-	if (ok)
-		*result = buffer_make(context, size, memory, usage);
-
-	return (RID){ id };
 }
 
 Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options) {
@@ -1504,16 +1538,6 @@ bool buffer_destroy(GFX_Context *context, Buffer *buffer) {
 
 		memory_zero(buffer, sizeof(*buffer));
 	}
-
-	return ok;
-}
-
-bool rhi_buffer_destroy(GFX_Context *context, RID handle) {
-	Buffer *buffer = rhi__buffer_from_handle(context, handle);
-
-	bool ok = context && buffer;
-	if (ok)
-		ok = buffer_destroy(context, buffer);
 
 	return ok;
 }
@@ -2268,76 +2292,6 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 	return ok;
 }
 
-bool gfx__vk_descriptor_pool(GFX_Context *context) {
-	LOG_DEBUG("initializing global vulkan descriptor pools.");
-
-	bool ok = true;
-	if (ok) { // create global descriptor pool per frame in flight
-		VkDescriptorPoolSize sizes[] = {
-			{
-			  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			  .descriptorCount = 1000,
-			},
-			{
-			  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-			  .descriptorCount = 1000,
-			},
-			{
-			  .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			  .descriptorCount = 1000,
-			},
-			{
-			  .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			  .descriptorCount = 1000,
-			},
-			{
-			  .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
-			  .descriptorCount = 1000,
-			},
-			{
-			  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			  .descriptorCount = 1000,
-			},
-		};
-
-		VkDescriptorPoolCreateInfo dp_create_info = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-			.poolSizeCount = countof(sizes),
-			.pPoolSizes = sizes,
-			.maxSets = 1000,
-		};
-
-		for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index)
-			ok &= vkCreateDescriptorPool(context->device.logical, &dp_create_info, 0, &context->cmd_buffers[frame_index].descriptor_pool) == VK_SUCCESS;
-	}
-
-	return ok;
-}
-
-void *gfx_buffer_map(GFX_Context *context, RID handle) {
-	void *result = 0;
-	Buffer *buffer = rhi__buffer_from_handle(context, handle);
-
-	bool ok = context && buffer;
-	if (ok) {
-		ok = vkMapMemory(context->device.logical, buffer->memory, 0, buffer->size, 0, (void **)&buffer->mapped) == VK_SUCCESS;
-		result = buffer->mapped;
-		if (ok == false)
-			LOG_WARN("failed to map buffer memory.");
-	}
-
-	return buffer->mapped;
-}
-
-void gfx_buffer_unmap(GFX_Context *context, RID handle) {
-	Buffer *buffer = rhi__buffer_from_handle(context, handle);
-
-	bool ok = context && buffer;
-	if (ok)
-		if (buffer->mapped)
-			vkUnmapMemory(context->device.logical, buffer->memory);
-}
-
 void gfx_cmd_buffer_to_buffer(GFX_CommandBuffer *cmd, Buffer *dst, Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
 	LOG_TRACE("Copying region of %llu from %p to %p", size, src, dst);
 	VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
@@ -2537,45 +2491,10 @@ void gfx_cmd_image_transition(GFX_CommandBuffer *cmd, ResourceUsage dst, Image *
 		1, &image_barrier);
 }
 
-void push_rect(Batch *buffer, Rectangle rect, Color color) {
-	float4 f_color = {
-		.x = color.r / 255.f,
-		.y = color.g / 255.f,
-		.z = color.b / 255.f,
-		.w = color.a / 255.f,
-	};
-
-	float x0 = (rect.x - 150.f) / 150.f;
-	float y0 = (rect.y - 150.f) / 150.f;
-	float x1 = (rect.x + rect.width - 150.f) / 150.f;
-	float y1 = (rect.y + rect.height - 150.f) / 150.f;
-
-	/* float u0 = src.x / image.width; */
-	/* float v0 = src.y / image.height; */
-	/* float u1 = (src.x + src.width) / image.width; */
-	/* float v1 = (src.y + src.height) / image.height; */
-
-	// clang-format off
-    Vertex2 quad[] = {
-        // pos      // tex
-        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x0, y0}, .uv = {0.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}, 
-
-        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x1, y1}, .uv = {1.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}
-    };
-	// clang-format on
-
-	memory_copy(buffer->memory + buffer->offset, quad, sizeof(quad));
-	buffer->offset += sizeof(quad);
-}
-
-Model load_gltf(Arena *arena, String8 path) {
+Mesh load_gltf(Arena *arena, String8 path) {
 	LOG_INFO("loading [%s]", path.text);
 
-	Model result = { 0 };
+	Mesh result = { 0 };
 	cgltf_options options = { 0 };
 	cgltf_data *data = 0;
 
@@ -2589,42 +2508,53 @@ Model load_gltf(Arena *arena, String8 path) {
 	}
 
 	if (ok) { // load geometry
-		for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
-			cgltf_mesh *mesh = &data->meshes[mesh_index];
-			for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
-				cgltf_primitive *primitive = &mesh->primitives[primitive_index];
-				ASSERT(primitive->attributes_count && "expect all primitives to contain vertex data.");
+		for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
+			cgltf_node *node = &data->nodes[node_index];
+			if (node->mesh == 0)
+				continue;
 
-				result.mesh_count++;
-				result.total_vertex_count += primitive->attributes[0].data->count;
-				result.total_index_count += primitive->indices->count;
+			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
+				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
+				if (primitive->type == cgltf_primitive_type_triangles) {
+					result.part_count++;
+					result.total_vertex_count += primitive->attributes[0].data->count;
+					result.total_index_count += primitive->indices->count;
+				}
 			}
 		}
 
-		result.meshes = arena_push_count(arena, Mesh, result.mesh_count);
+		result.parts = arena_push_count(arena, MeshPart, result.part_count);
 		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
-		result.skinning = arena_push_count(arena, SkinningData, result.total_vertex_count);
+		result.skinning = data->skins_count > 0 ? arena_push_count(arena, SkinningData, result.total_vertex_count) : 0;
 
-		uint32_t mesh_offset = 0;
+		uint32_t part_offset = 0;
 		uint64_t vertex_offset = 0, index_offset = 0;
-		for (uint32_t mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
-			cgltf_mesh *mesh = &data->meshes[mesh_index];
-			for (uint32_t primitive_index = 0; primitive_index < mesh->primitives_count; ++primitive_index) {
-				cgltf_primitive *primitive = &mesh->primitives[primitive_index];
-				Mesh *out_mesh = &result.meshes[mesh_offset++];
+		for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
+			cgltf_node *node = &data->nodes[node_index];
+			if (node->mesh == 0)
+				continue;
+			float4x4 transform = float4x4_identity();
 
-				out_mesh->vertex_count = primitive->attributes[0].data->count;
-				out_mesh->vertex_offset = vertex_offset;
+			if (node->skin == 0)
+				cgltf_node_transform_world(node, transform.elements);
 
-				out_mesh->index_count = primitive->indices->count;
-				out_mesh->index_offset = index_offset;
-				cgltf_accessor_unpack_indices(primitive->indices, result.indices + index_offset, 4, out_mesh->index_count);
+			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
+				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
+				MeshPart *part = &result.parts[part_offset++];
 
+				part->vertex_count = primitive->attributes[0].data->count;
+				part->vertex_offset = vertex_offset;
+
+				part->index_count = primitive->indices->count;
+				part->index_offset = index_offset;
+				cgltf_accessor_unpack_indices(primitive->indices, result.indices + index_offset, 4, part->index_count);
+
+				uint8_t skinned = 0;
 				for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
 					cgltf_attribute *attribute = &primitive->attributes[attribute_index];
 					cgltf_accessor *accessor = attribute->data;
-					ASSERT(accessor->count == out_mesh->vertex_count && "expect all attributes to have same number of vertices");
+					ASSERT(accessor->count == part->vertex_count && "expect all attributes to have same number of vertices");
 
 					uint32_t offset = 0;
 					switch (attribute->type) {
@@ -2642,9 +2572,11 @@ Model load_gltf(Arena *arena, String8 path) {
 							break;
 						case cgltf_attribute_type_weights:
 							offset = offsetof(SkinningData, weights);
+							skinned++;
 							break;
 						case cgltf_attribute_type_joints:
 							offset = offsetof(SkinningData, bone_ids);
+							skinned++;
 							break;
 						default:
 							continue;
@@ -2653,18 +2585,57 @@ Model load_gltf(Arena *arena, String8 path) {
 					Vertex3 *mesh_vertices = result.vertices + vertex_offset;
 					SkinningData *mesh_skinning = result.skinning + vertex_offset;
 
-					for (uint32_t vertex_index = 0; vertex_index < out_mesh->vertex_count; ++vertex_index) {
+					for (uint32_t vertex_index = 0; vertex_index < part->vertex_count; ++vertex_index) {
 						if (attribute->type == cgltf_attribute_type_weights)
 							cgltf_accessor_read_float(accessor, vertex_index, (void *)((uint8_t *)(mesh_skinning + vertex_index) + offset), cgltf_num_components(accessor->type));
 						else if (attribute->type == cgltf_attribute_type_joints)
 							cgltf_accessor_read_uint(accessor, vertex_index, (void *)((uint8_t *)(mesh_skinning + vertex_index) + offset), cgltf_num_components(accessor->type));
-						else
-							cgltf_accessor_read_float(accessor, vertex_index, (void *)((uint8_t *)(mesh_vertices + vertex_index) + offset), cgltf_num_components(accessor->type));
+						else {
+							void *dst = (void *)((uint8_t *)(mesh_vertices + vertex_index) + offset);
+							cgltf_accessor_read_float(accessor, vertex_index, dst, cgltf_num_components(accessor->type));
+
+							if (attribute->type == cgltf_attribute_type_position) {
+								float3 *pos = (float3 *)dst;
+								float3 new_pos = float4x4_transform(transform, float4_from_float3(*pos, 1.0f));
+								pos->x = new_pos.x;
+								pos->y = new_pos.y;
+								pos->z = new_pos.z;
+							} else if (attribute->type == cgltf_attribute_type_normal) {
+								float3 *norm = (float3 *)dst;
+								float3 new_norm = float4x4_transform(transform, float4_from_float3(*norm, 0.0f));
+								*norm = float3_normalize(new_norm);
+							} else if (attribute->type == cgltf_attribute_type_tangent) {
+								float4 *tan = (float4 *)dst;
+								float3 new_tan = float4x4_transform(transform, (float4){ tan->x, tan->y, tan->z, 0.0f });
+								float3 norm_tan = float3_normalize(new_tan);
+								tan->x = norm_tan.x;
+								tan->y = norm_tan.y;
+								tan->z = norm_tan.z;
+							}
+						}
 					}
 				}
 
-				vertex_offset += out_mesh->vertex_count;
-				index_offset += out_mesh->index_count;
+				if (data->skins_count > 0 && skinned == 0 && node->parent && node->parent->mesh == 0) { // add dummy skinned data
+					int32_t parent_bone = -1;
+					for (uint32_t joint = 0; joint < data->skins[0].joints_count; joint++) {
+						if (data->skins[0].joints[joint] == node->parent) {
+							parent_bone = joint;
+							break;
+						}
+					}
+
+					if (parent_bone >= 0) {
+						SkinningData *mesh_skinning = result.skinning + vertex_offset;
+						for (uint32_t vertex_index = 0; vertex_index < part->vertex_count; ++vertex_index) {
+							mesh_skinning[vertex_index].bone_ids = (uint32x4){ parent_bone, 0, 0, 0 };
+							mesh_skinning[vertex_index].weights = (float4){ 1.0f, 0.0f, 0.0f, 0.0f };
+						}
+					}
+				}
+
+				vertex_offset += part->vertex_count;
+				index_offset += part->index_count;
 			}
 		}
 	}
@@ -2703,7 +2674,6 @@ Model load_gltf(Arena *arena, String8 path) {
 	}
 
 	cgltf_free(data);
-
 	return result;
 }
 
@@ -2734,18 +2704,15 @@ AnimationClip *load_animations(Arena *arena, String8 path, uint32_t *count) {
 			AnimationClip *out_anim = result + anim_index;
 
 			uint32_t max_keyframe_count = 0, min_keyframe_count = UINT32_MAX;
-			float min_timing = FLOAT_MAX, max_timing = FLOAT_MIN;
 			for (uint32_t sampler_index = 0; sampler_index < anim->samplers_count; ++sampler_index) {
 				cgltf_animation_sampler *sampler = &anim->samplers[sampler_index];
 
 				max_keyframe_count = MAX(sampler->input->count, max_keyframe_count);
 				min_keyframe_count = MIN(sampler->input->count, min_keyframe_count);
 				out_anim->keyframe_count = MAX(sampler->input->count, out_anim->keyframe_count);
+
 				float t = 0.0f;
 				cgltf_accessor_read_float(sampler->input, sampler->input->count - 1, &t, cgltf_component_size(sampler->input->component_type));
-
-				max_timing = maxf(sampler->input->max[0], max_timing);
-				min_timing = minf(sampler->input->min[0], min_timing);
 
 				out_anim->duration = MAX(out_anim->duration, t);
 			}
@@ -2780,13 +2747,12 @@ AnimationClip *load_animations(Arena *arena, String8 path, uint32_t *count) {
 					cgltf_accessor_read_float(sampler->input, keyframe, &out_anim->timings[keyframe], 1);
 					Transform3 *transforms = out_anim->keyframes[keyframe];
 
-					if (channel->target_path == cgltf_animation_path_type_translation) {
+					if (channel->target_path == cgltf_animation_path_type_translation)
 						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].translation, 3);
-					} else if (channel->target_path == cgltf_animation_path_type_rotation) {
+					else if (channel->target_path == cgltf_animation_path_type_rotation)
 						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].rotation, 4);
-					} else if (channel->target_path == cgltf_animation_path_type_scale) {
+					else if (channel->target_path == cgltf_animation_path_type_scale)
 						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].scale, 3);
-					}
 				}
 			}
 		}

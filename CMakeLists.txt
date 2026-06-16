@@ -42,6 +42,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             ${PROJECT_SOURCES}
         )
         target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
+        target_compile_definitions(${NAME} PRIVATE WEB_BUILD)
         target_link_options(${NAME} PRIVATE
             "-sALLOW_MEMORY_GROWTH"
             "-sASYNCIFY"
@@ -90,7 +91,7 @@ else()
 
     # Platform-specific configurations
     if(WIN32)
-        target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE WINDOWS_BUILD VK_USE_PLATFORM_WIN32_KHR)
         target_compile_options(${PROJECT_NAME} PRIVATE /W4)
         target_link_libraries(${PROJECT_NAME} Vulkan::Vulkan)
     elseif(UNIX)
@@ -108,6 +109,7 @@ else()
 
         target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-dynamic)
         target_link_libraries(${PROJECT_NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE LINUX_BUILD)
     else()
         message(FATAL_ERROR "Windows and Linux only supported platforms")
     endif()
@@ -127,7 +129,7 @@ else()
             "${CMAKE_SOURCE_DIR}/engine/vendor"
         )
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
-        # target_compile_definitions(${NAME} PRIVATE -DVK_USE_PLATFORM_XCB_KHR)
+        target_compile_definitions(${NAME} PRIVATE LINUX_BUILD VK_USE_PLATFORM_XCB_KHR)
         set_target_properties(${NAME} PROPERTIES SUFFIX ".exe")
     endforeach()
 endif()

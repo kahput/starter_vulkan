@@ -9,16 +9,13 @@ Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t) {
 
 	bool ok = clip && clip->timings && clip->keyframes;
 
-	t = CLAMP(t, 0.0f, 1.0f);
-
 	int32_t target_frame = -1;
 	if (ok) {
-		float absolute_t = t * clip->duration;
-		result.transforms = absolute_t > clip->timings[clip->keyframe_count - 1] ? clip->keyframes[clip->keyframe_count - 1] : clip->keyframes[0];
+		result.transforms = t > clip->timings[clip->keyframe_count - 1] ? clip->keyframes[clip->keyframe_count - 1] : clip->keyframes[0];
 		result.bone_count = clip->bone_count;
 
 		for (uint32_t keyframe = 0; keyframe < clip->keyframe_count; ++keyframe) {
-			if (clip->timings[keyframe] / clip->duration > t) {
+			if (clip->timings[keyframe] > t) {
 				target_frame = keyframe;
 				break;
 			}
@@ -34,7 +31,7 @@ Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t) {
 		float t0 = clip->timings[target_frame - 1] / clip->duration;
 		float t1 = clip->timings[target_frame] / clip->duration;
 
-		result = anim_pose_blend_local(arena, &target, &source, (t - t0) / (t1 - t0), NULL);
+		result = anim_pose_blend_local(arena, &target, &source, (t / clip->duration - t0) / (t1 - t0), NULL);
 	}
 
 	return result;
