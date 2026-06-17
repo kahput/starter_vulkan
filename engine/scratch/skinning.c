@@ -17,6 +17,7 @@
 
 #include <vulkan/vulkan.h>
 #include <cgltf/cgltf.h>
+#include <stb/stb_image.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -46,9 +47,11 @@ struct GFX_Image {
 
 	uint32_t width, height;
 
+	PixelFormat format;
+	ResourceUsage usage;
+
 	VkImageCreateInfo image_info;
 	VkImageViewCreateInfo view_info;
-	VkImageLayout layout;
 };
 
 typedef struct GFX_Sampler GFX_Sampler;
@@ -215,7 +218,22 @@ void gfx_cmd_buffer_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceU
 void gfx_cmd_image_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, GFX_Image *target);
 void gfx_cmd_image_transition(GFX_CommandBuffer *cmd, ResourceUsage dst, GFX_Image *target);
 void gfx_cmd_image_blit(GFX_CommandBuffer *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target);
+void gfx_cmd_image_upload(GFX_CommandBuffer *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels);
 /* VkDescriptorSet gfx_cmd_bindset_push(GFX_CommandBuffer *cmd); */
+
+VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage);
+
+typedef struct {
+	// CPU
+	uint8_t *pixels;
+
+	// GPU
+	GFX_Image handle;
+
+	// METADATA
+	uint32_t width, height;
+	PixelFormat format;
+} Image2D;
 
 typedef struct {
 	uint32_t vertex_offset, index_offset;
@@ -250,6 +268,7 @@ typedef enum {
 	MESH_MAGE,
 	MESH_BARREL,
 	MESH_ROOM,
+	MESH_ROOM_LARGE,
 	MESH_COUNT,
 } MeshID;
 
@@ -259,6 +278,7 @@ String8 meshid_to_path[MESH_COUNT] = {
 	[MESH_MAGE] = str_comp("assets/models/mage.glb"),
 	[MESH_BARREL] = str_comp("assets/models/barrel.glb"),
 	[MESH_ROOM] = str_comp("assets/models/room.glb"),
+	[MESH_ROOM_LARGE] = str_comp("assets/models/room-large.glb"),
 };
 
 typedef struct {
@@ -268,6 +288,7 @@ typedef struct {
 	Mesh meshes[MESH_COUNT];
 } RES_Cache;
 
+Image2D load_image(Arena *arena, String8 path);
 Mesh load_gltf_geometry(Arena *arena, String8 path);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
@@ -310,6 +331,7 @@ int main(void) {
 
 	GFX_Image compute_image = image_make(context, 640, 360, (ImageOptions){ .format = PIXEL_FORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
 	GFX_Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ .format = PIXEL_FORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
+	GFX_Image depthbuffer = image_make(context, 948, 1044, (ImageOptions){ .format = PIXEL_FORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
 
 	GFX_Sampler linear_sampler = sampler_make(context);
 	GFX_Image white_texture = image_make(context, 1, 1, (ImageOptions){ .format = PIXEL_FORMAT_RGBA8_UNORM });
@@ -413,6 +435,9 @@ int main(void) {
 	Mesh meshes[MESH_COUNT] = { 0 };
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
+	Image2D kenney_modular_dungeon_texture = load_image(arena, s("assets/models/Textures/colormap.png"));
+	kenney_modular_dungeon_texture.handle = image_make(context, kenney_modular_dungeon_texture.width, kenney_modular_dungeon_texture.height, (ImageOptions){ .format = PIXEL_FORMAT_RGBA8_SRGB });
+	kenney_modular_dungeon_texture.format = PIXEL_FORMAT_RGBA8_SRGB;
 
 	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
 		meshes[meshid] = load_gltf_geometry(arena, meshid_to_path[meshid]);
@@ -422,14 +447,17 @@ int main(void) {
 		animations[meshid] = load_gltf_animations(arena, meshid_to_path[meshid], &animation_counts[meshid]);
 	}
 
-	{ // upload geometry
+	{ // :upload
 		GFX_CommandBuffer cmd = gfx_transfer_batch_begin(context);
 		if (cmd.handle) {
-			memory_copy(arena_push(cmd.transient_arena, alignup(sizeof(uint32_t), 256), 1, 0), &(uint32_t){ 0xFFFFFFFF }, sizeof(uint32_t));
-			gfx_cmd_buffer_to_image(&cmd, &white_texture, cmd.transient_buffer, 0, 1, 1);
+			gfx_cmd_image_upload(&cmd, &white_texture, 1, 1, &(uint32_t){ 0xffffffff });
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &white_texture);
 
-			uint64_t upload_offset = cmd.transient_arena->offset;
-			uint64_t upload_cursor = 0;
+			gfx_cmd_image_upload(&cmd, &kenney_modular_dungeon_texture.handle, kenney_modular_dungeon_texture.width, kenney_modular_dungeon_texture.height, kenney_modular_dungeon_texture.pixels);
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &kenney_modular_dungeon_texture.handle);
+
+			uint64_t transient_upload_start_offset = cmd.transient_arena->offset;
+			uint64_t geometry_upload_cursor = 0;
 
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
@@ -440,27 +468,27 @@ int main(void) {
 				uint64_t total_skinning_buffer_size = alignup(mesh->total_vertex_count * sizeof(SkinningData), 256);
 
 				// Vertices
-				mesh->buffer_vertex_byte_offset = upload_cursor;
+				mesh->buffer_vertex_byte_offset = geometry_upload_cursor;
 				memory_copy(arena_push(cmd.transient_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3));
-				upload_cursor += total_vertex_buffer_size;
+				geometry_upload_cursor += total_vertex_buffer_size;
 
 				// Indices
-				mesh->buffer_index_byte_offset = upload_cursor;
+				mesh->buffer_index_byte_offset = geometry_upload_cursor;
 				memory_copy(arena_push(cmd.transient_arena, total_index_buffer_size, 1, false), mesh->indices, mesh->total_index_count * sizeof(uint32_t));
-				upload_cursor += total_index_buffer_size;
+				geometry_upload_cursor += total_index_buffer_size;
 
 				// Skinning
 				if (mesh->skeleton.bone_count) {
-					mesh->buffer_skinning_data_byte_offset = upload_cursor;
+					mesh->buffer_skinning_data_byte_offset = geometry_upload_cursor;
 					memory_copy(arena_push(cmd.transient_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(SkinningData));
-					upload_cursor += total_skinning_buffer_size;
+					geometry_upload_cursor += total_skinning_buffer_size;
 				}
 			}
 
-			gfx_cmd_buffer_to_buffer(&cmd, &geometry, cmd.transient_buffer, 0, upload_offset, upload_cursor);
+			gfx_cmd_buffer_to_buffer(&cmd, &geometry, cmd.transient_buffer, 0, transient_upload_start_offset, geometry_upload_cursor);
 
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, upload_cursor, &geometry);
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, upload_cursor, &geometry);
+			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, geometry_upload_cursor, &geometry);
+			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, &geometry);
 
 			gfx_transfer_batch_submit(context, &cmd);
 		}
@@ -513,7 +541,6 @@ int main(void) {
 				case OS_EVENT_TYPE_MOUSE_MOVE:
 					if (event.surface == main_render)
 						input_feed_mouse_motion((double)event.as.mouse_move.x, (double)event.as.mouse_move.y);
-					LOG_INFO("%g, %g", input_mouse_x(), input_mouse_y());
 					break;
 				default:
 					break;
@@ -619,7 +646,7 @@ int main(void) {
 				{ MESH_GDBOT, { { 3.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 
-				{ MESH_BARREL, { { 0, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_ROOM_LARGE, { { -12.f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 			};
 
 			uint64_t scratch_cursor = 0;
@@ -677,16 +704,28 @@ int main(void) {
 			mouse_delta.x /= dims.x;
 			mouse_delta.y /= dims.y;
 
-			VkRenderingAttachmentInfo attachment_info = {
+			VkRenderingAttachmentInfo color_attachments[] = {
+				{
+				  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+				  .imageView = offscreen_render.view,
+				  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				  .resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+				  .resolveImageView = main_target.view,
+				  .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
+				  .clearValue.color = { { 0.03f, 0.03f, 0.03f, 1.0f } },
+				  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+				  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				}
+			};
+
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, &depthbuffer);
+			VkRenderingAttachmentInfo depth_attachment = {
 				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				.imageView = offscreen_render.view,
-				.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-				.resolveImageView = main_target.view,
-				.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
-				.clearValue.color = { { 0.03f, 0.03f, 0.03f, 1.0f } },
+				.imageView = depthbuffer.view,
+				.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+				.clearValue.depthStencil.depth = 1.0f,
 				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 			};
 
 			VkExtent2D extent = {
@@ -697,8 +736,9 @@ int main(void) {
 				.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 				.renderArea.extent = extent,
 				.layerCount = 1,
-				.colorAttachmentCount = 1,
-				.pColorAttachments = &attachment_info,
+				.colorAttachmentCount = countof(color_attachments),
+				.pColorAttachments = color_attachments,
+				.pDepthAttachment = &depth_attachment,
 			};
 			vkCmdBeginRendering(command_buffer, &renderpass_info);
 
@@ -730,7 +770,7 @@ int main(void) {
 						float time;
 					} frame_data = {
 						.view = float4x4_lookat(camera.position, camera.target, camera.up),
-						.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
+						.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 200.f),
 						.camera_position = float4_from_float3(camera.position, 0.0f),
 						.time = time,
 					};
@@ -826,6 +866,8 @@ int main(void) {
 						VkDescriptorImageInfo image_infos[5] = { 0 };
 						for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
 							GFX_Image *image = &white_texture;
+							if (instance->id == MESH_ROOM_LARGE && texture_index == 0)
+								image = &kenney_modular_dungeon_texture.handle;
 							image_infos[texture_index] = (VkDescriptorImageInfo){
 								.imageView = image->view,
 								.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -862,7 +904,7 @@ int main(void) {
 						float2 metallic_roughness;
 					} pc = {
 						.model = transform,
-						.base_color = { 1.0f, 0.5f, 0.2f, 1.0f },
+						.base_color = FLOAT4_ONE,
 						.emissive = FLOAT4_ONE,
 						.metallic_roughness = { 0.0f, 0.5f },
 					};
@@ -949,8 +991,10 @@ int main(void) {
 
 		buffer_destroy(context, &geometry);
 		image_destroy(context, &offscreen_render);
+		image_destroy(context, &depthbuffer);
 		image_destroy(context, &compute_image);
 		image_destroy(context, &white_texture);
+		image_destroy(context, &kenney_modular_dungeon_texture.handle);
 		sampler_destroy(context, &linear_sampler);
 
 		pipeline_destroy(context, &c_pipeline);
@@ -1045,6 +1089,32 @@ VkFormat gfx__pixel_format_to_vk_format(PixelFormat format) {
 }
 
 VkImageAspectFlags gfx__pixel_format_to_aspect(PixelFormat format) {
+	if (pixel_format_is_depth_stencil(format))
+		return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+	if (pixel_format_is_depth(format))
+		return VK_IMAGE_ASPECT_DEPTH_BIT;
+
+	return VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+uint32_t gfx__pixel_format_to_stride(PixelFormat format) {
+	switch (format) {
+		case PIXEL_FORMAT_RGBA8_UNORM:
+			return 4;
+		case PIXEL_FORMAT_RGBA8_SRGB:
+			return 4;
+		case PIXEL_FORMAT_RGBA16_FLOAT:
+			return 2 * 4;
+		case PIXEL_FORMAT_R32_FLOAT:
+			return 4;
+		case PIXEL_FORMAT_DEPTH:
+			return 4;
+		case PIXEL_FORMAT_DEPTH_STENCIL:
+			return 4;
+		case PIXEL_FORMAT_BACKBUFFER:
+			return 4;
+			break;
+	}
 	if (pixel_format_is_depth(format))
 		return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 
@@ -1181,8 +1251,9 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 	VkFormat vk_format = gfx__pixel_format_to_vk_format(options.format);
 	VkImageAspectFlags aspect = gfx__pixel_format_to_aspect(options.format);
 	VkSampleCountFlags vk_sample = gfx__usage_to_sample_count(context->device.limits, options);
-	result.layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	result.width = width, result.height = height;
+	result.format = options.format;
+	result.usage = RESOURCE_USAGE_UNDEFINED;
 
 	if (ok) { // make vulkan image handle
 		result.image_info = (VkImageCreateInfo){
@@ -1201,7 +1272,7 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = vk_usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.initialLayout = result.layout
+			.initialLayout = gfx__usage_to_image_layout(result.usage),
 		};
 
 		ok = vkCreateImage(context->device.logical, &result.image_info, 0, &result.handle) == VK_SUCCESS;
@@ -1649,8 +1720,9 @@ Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, Str
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-			.depthTestEnable = VK_FALSE,
-			.depthWriteEnable = VK_FALSE,
+			.depthTestEnable = VK_TRUE,
+			.depthWriteEnable = VK_TRUE,
+			.depthCompareOp = VK_COMPARE_OP_LESS,
 			.depthBoundsTestEnable = VK_FALSE,
 			.minDepthBounds = 0.0f,
 			.maxDepthBounds = 1.0f
@@ -1660,6 +1732,7 @@ Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, Str
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
 			.colorAttachmentCount = countof(color_blend_attachments),
 			.pColorAttachmentFormats = (VkFormat[]){ VK_FORMAT_B8G8R8A8_SRGB },
+			.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT
 		};
 
 		VkGraphicsPipelineCreateInfo gp_create_info = {
@@ -2475,6 +2548,7 @@ void gfx_cmd_buffer_to_buffer(GFX_CommandBuffer *cmd, GFX_Buffer *dst, GFX_Buffe
 }
 
 void gfx_cmd_buffer_to_image(GFX_CommandBuffer *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
+	ResourceUsage original = dst->usage;
 	gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
 	VkBufferImageCopy region = {
 		.bufferOffset = src_offset,
@@ -2490,7 +2564,7 @@ void gfx_cmd_buffer_to_image(GFX_CommandBuffer *cmd, GFX_Image *dst, GFX_Buffer 
 		.imageExtent = { .width = width, .height = height, .depth = 1 },
 	};
 	vkCmdCopyBufferToImage(cmd->handle, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-	gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, dst);
+	gfx_cmd_image_transition(cmd, original, dst);
 }
 
 VkPipelineStageFlags gfx__usage_to_pipeline_stage(ResourceUsage usage) {
@@ -2638,32 +2712,42 @@ void gfx_cmd_buffer_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceU
 }
 
 void gfx_cmd_image_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, GFX_Image *target) {
-	VkPipelineStageFlags src_stage = gfx__usage_to_pipeline_stage(src);
-	VkPipelineStageFlags dst_stage = gfx__usage_to_pipeline_stage(dst);
-	VkAccessFlags src_access = gfx__usage_to_access(src);
-	VkAccessFlags dst_access = gfx__usage_to_access(dst);
-	VkImageLayout src_layout = gfx__usage_to_image_layout(src);
-	VkImageLayout dst_layout = gfx__usage_to_image_layout(dst);
+	bool ok = cmd && target;
 
-	VkImageMemoryBarrier image_barrier = {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-		.srcAccessMask = src_access,
-		.dstAccessMask = dst_access,
-		.oldLayout = src_layout,
-		.newLayout = dst_layout,
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.image = target->handle,
-		.subresourceRange = target->view_info.subresourceRange,
-	};
+	if (ok) {
+		target->usage = dst;
 
-	vkCmdPipelineBarrier(
-		cmd->handle,
-		src_stage, dst_stage,
-		0,
-		0, NULL,
-		0, NULL,
-		1, &image_barrier);
+		ok = dst;
+	}
+
+	if (ok) {
+		VkPipelineStageFlags src_stage = gfx__usage_to_pipeline_stage(src);
+		VkPipelineStageFlags dst_stage = gfx__usage_to_pipeline_stage(dst);
+		VkAccessFlags src_access = gfx__usage_to_access(src);
+		VkAccessFlags dst_access = gfx__usage_to_access(dst);
+		VkImageLayout src_layout = gfx__usage_to_image_layout(src);
+		VkImageLayout dst_layout = gfx__usage_to_image_layout(dst);
+
+		VkImageMemoryBarrier image_barrier = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.srcAccessMask = src_access,
+			.dstAccessMask = dst_access,
+			.oldLayout = src_layout,
+			.newLayout = dst_layout,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = target->handle,
+			.subresourceRange = target->view_info.subresourceRange,
+		};
+
+		vkCmdPipelineBarrier(
+			cmd->handle,
+			src_stage, dst_stage,
+			0,
+			0, NULL,
+			0, NULL,
+			1, &image_barrier);
+	}
 }
 
 void gfx_cmd_image_transition(GFX_CommandBuffer *cmd, ResourceUsage dst, GFX_Image *target) {
@@ -2704,6 +2788,49 @@ void gfx_cmd_image_blit(GFX_CommandBuffer *cmd, Rectangle source_rect, GFX_Image
 		1, &blit_info, 0);
 }
 
+void gfx_cmd_image_upload(GFX_CommandBuffer *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
+	uint32_t stride = gfx__pixel_format_to_stride(image->format);
+	uint64_t size = width * height * stride;
+	uint64_t start_offset = cmd->transient_arena->offset;
+	memory_copy(arena_push(cmd->transient_arena, alignup(size, 256), 1, 0), pixels, size);
+	gfx_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
+}
+
+Image2D load_image(Arena *arena, String8 path) {
+	Image2D result = { .format = PIXEL_FORMAT_RGBA8_UNORM };
+
+	bool ok = true;
+
+	uint8_t *pixels = 0;
+	int32_t channels = 0;
+	if (ok) {
+		pixels = stbi_load((char *)path.text, (int32_t *)&result.width, (int32_t *)&result.height, &channels, 4);
+
+		ok = pixels != 0;
+		if (ok == false) {
+			LOG_WARN("[%s] failed to load", path.text);
+			static uint8_t magenta[] = { 255, 0, 255, 255 };
+			result.width = result.height = 1;
+			result.pixels = magenta;
+		}
+	}
+
+	if (ok) {
+		channels = 4;
+		uint32_t pixel_buffer_size = result.width * result.height * channels;
+		result.pixels = arena_push_count(arena, uint8_t, pixel_buffer_size);
+		memory_copy(result.pixels, pixels, pixel_buffer_size);
+		stbi_image_free(pixels);
+	}
+
+	if (ok) {
+		String8 filename = str8_filename(path);
+		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.text, result.width, result.height, channels == 4 ? "RGBA8" : "RGB8");
+	}
+
+	return result;
+}
+
 Mesh load_gltf_geometry(Arena *arena, String8 path) {
 	LOG_INFO("loading [%s]", path.text);
 
@@ -2718,6 +2845,19 @@ Mesh load_gltf_geometry(Arena *arena, String8 path) {
 	if (ok) {
 		ok &= cgltf_load_buffers(&options, data, (char *)path.text) == cgltf_result_success;
 		ok &= cgltf_validate(data) == cgltf_result_success;
+	}
+
+	if (ok) { // load materials
+		for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
+			cgltf_material *material = &data->materials[material_index];
+
+			if (material->has_pbr_metallic_roughness) {
+				cgltf_pbr_metallic_roughness *pbr = &material->pbr_metallic_roughness;
+
+				if (pbr->base_color_texture.texture)
+					LOG_INFO("index-%u", cgltf_texture_index(data, pbr->base_color_texture.texture));
+			}
+		}
 	}
 
 	if (ok) { // load geometry
@@ -2747,10 +2887,11 @@ Mesh load_gltf_geometry(Arena *arena, String8 path) {
 			cgltf_node *node = &data->nodes[node_index];
 			if (node->mesh == 0)
 				continue;
-			float4x4 transform = float4x4_identity();
 
+			float4x4 transform = float4x4_identity();
 			if (node->skin == 0)
 				cgltf_node_transform_world(node, transform.elements);
+			bool has_transform = float4x4_equal(float4x4_identity(), transform) == false;
 
 			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
 				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
@@ -2806,6 +2947,8 @@ Mesh load_gltf_geometry(Arena *arena, String8 path) {
 						else {
 							void *dst = (void *)((uint8_t *)(mesh_vertices + vertex_index) + offset);
 							cgltf_accessor_read_float(accessor, vertex_index, dst, cgltf_num_components(accessor->type));
+							if (has_transform == false)
+								continue;
 
 							if (attribute->type == cgltf_attribute_type_position) {
 								float3 *pos = (float3 *)dst;

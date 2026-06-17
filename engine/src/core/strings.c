@@ -34,7 +34,7 @@ String8 str8_concat(Arena *arena, String8 a, String8 b) {
 	return result;
 }
 
-String8 str8_path_join(Arena *arena, String8 head, String8 tail) {
+String8 str8_filepath_join(Arena *arena, String8 head, String8 tail) {
 	if (head.length == 0)
 		return tail;
 	if (tail.length == 0)
@@ -54,6 +54,22 @@ String8 str8_path_join(Arena *arena, String8 head, String8 tail) {
 		result.text[head.length] = '/';
 		memory_copy(result.text + head.length + 1, tail.text, tail.length);
 		result.text[result.length] = '\0';
+	}
+
+	return result;
+}
+
+String8 str8_filename(String8 path) {
+	if (path.length == 0)
+		return path;
+
+	String8 result = path;
+
+	for (uint32_t index = 0; index < path.length; ++index) {
+		if (str8__ispathdelim(path.text[index])) {
+			result.text = path.text + index + 1;
+			result.length = path.length - (index + 1);
+		}
 	}
 
 	return result;

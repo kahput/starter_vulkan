@@ -235,6 +235,25 @@ quat4 quat4_slerp(quat4 q, quat4 p, float t) {
 	return result;
 }
 
+bool float4x4_equal(float4x4 lhs, float4x4 rhs) {
+	return lhs.elements[0] == rhs.elements[0] &&
+		lhs.elements[1] == rhs.elements[1] &&
+		lhs.elements[2] == rhs.elements[2] &&
+		lhs.elements[3] == rhs.elements[3] &&
+		lhs.elements[4] == rhs.elements[4] &&
+		lhs.elements[5] == rhs.elements[5] &&
+		lhs.elements[6] == rhs.elements[6] &&
+		lhs.elements[7] == rhs.elements[7] &&
+		lhs.elements[8] == rhs.elements[8] &&
+		lhs.elements[9] == rhs.elements[9] &&
+		lhs.elements[10] == rhs.elements[10] &&
+		lhs.elements[11] == rhs.elements[11] &&
+		lhs.elements[12] == rhs.elements[12] &&
+		lhs.elements[13] == rhs.elements[13] &&
+		lhs.elements[14] == rhs.elements[14] &&
+		lhs.elements[15] == rhs.elements[15];
+}
+
 float4x4 float4x4_identity(void) {
 	float4x4 result = { { 1.0f, 0.0f, 0.0f, 0.0f,
 	  0.0f, 1.0f, 0.0f, 0.0f,

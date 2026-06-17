@@ -111,6 +111,7 @@ float4 quat4_slerp(quat4 q, quat4 p, float t);
 
 // float float4_dot_product(Vector4f v);
 
+bool float4x4_equal(float4x4 lhs, float4x4 rhs);
 float4x4 float4x4_identity(void);
 float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs);
 

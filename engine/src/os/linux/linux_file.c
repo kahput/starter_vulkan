@@ -204,7 +204,7 @@ String8 os__concat_cwd(Arena *arena, String8 path) {
 		arena_push(scratch.arena, 256, 1, true);
 	}
 
-	result = str8_path_join(arena, str8_wrap((char *)buffer), path);
+	result = str8_filepath_join(arena, str8_wrap((char *)buffer), path);
 	arena_scratch_end(scratch);
 
 	return result;

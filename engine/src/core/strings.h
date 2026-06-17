@@ -10,11 +10,12 @@ typedef struct {
 
 #define s(s) str_lit(s)
 #define str_lit(s) (String8){ .text = (uint8_t *)s, .length = sizeof(s) - 1 }
-#define str_comp(s) { .text = (uint8_t*)s, .length = sizeof(s) - 1 }
+#define str_comp(s) { .text = (uint8_t *)s, .length = sizeof(s) - 1 }
 
 String8 str8_wrap(const char *cstring);
 
 bool str8_equals(String8 a, String8 b);
 
 String8 str8_concat(Arena *arena, String8 a, String8 b);
-String8 str8_path_join(Arena *arena, String8 head, String8 tail);
+String8 str8_filepath_join(Arena *arena, String8 head, String8 tail);
+String8 str8_filename(String8 path);
