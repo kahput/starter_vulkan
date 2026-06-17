@@ -35,14 +35,10 @@ struct GFX_Buffer {
 	BufferMemory memory_type;
 	BufferUsage usage;
 };
-/* typedef struct { */
-/* 	GFX_Buffer *buffer; */
-/* 	uint64_t offset, length; */
-/* } GFX_BufferSlice; */
 
-typedef struct Image Image;
-struct Image {
-	Image *next;
+typedef struct GFX_Image GFX_Image;
+struct GFX_Image {
+	GFX_Image *next;
 
 	VkImage handle;
 	VkImageView view;
@@ -52,6 +48,15 @@ struct Image {
 
 	VkImageCreateInfo image_info;
 	VkImageViewCreateInfo view_info;
+	VkImageLayout layout;
+};
+
+typedef struct GFX_Sampler GFX_Sampler;
+struct GFX_Sampler {
+	GFX_Sampler *next;
+
+	VkSampler handle;
+	VkSamplerCreateInfo info;
 };
 
 #define MAX_DESCRIPTOR_SETS 4
@@ -140,7 +145,7 @@ typedef struct {
 	GFX_Buffer *buffers;
 	uint32_t buffer_count;
 
-	Image *images;
+	GFX_Image *images;
 	uint32_t image_count;
 
 	Shader *shaders;
@@ -150,7 +155,7 @@ typedef struct {
 	uint32_t swapchain_count;
 
 	GFX_Buffer *first_free_buffer;
-	Image *first_free_image;
+	GFX_Image *first_free_image;
 	Shader *first_free_shader;
 	Swapchain *first_free_swapchain;
 
@@ -190,34 +195,32 @@ typedef struct {
 } SkinningData;
 
 GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
-Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
+GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
+GFX_Sampler sampler_make(GFX_Context *context);
 Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface);
 Shader compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count);
-Shader graphics_pipeline_make(GFX_Context *context, String8 vertexcode, String8 fragmentcode);
+Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count);
 
 bool buffer_destroy(GFX_Context *context, GFX_Buffer *buffer);
-void image_destroy(GFX_Context *context, Image *image);
+void image_destroy(GFX_Context *context, GFX_Image *image);
+void sampler_destroy(GFX_Context *context, GFX_Sampler *sampler);
 void swapchain_destroy(GFX_Context *context, Swapchain *surface);
 void pipeline_destroy(GFX_Context *context, Shader *pipeline);
 
-Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_t *out_image_index);
+GFX_Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_t *out_image_index);
 
 void gfx_cmd_buffer_to_buffer(GFX_CommandBuffer *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
+void gfx_cmd_buffer_to_image(GFX_CommandBuffer *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height);
 void gfx_cmd_buffer_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target);
-void gfx_cmd_image_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, Image *target);
-void gfx_cmd_image_transition(GFX_CommandBuffer *cmd, ResourceUsage dst, Image *target);
-void gfx_cmd_image_blit(GFX_CommandBuffer *cmd, Rectangle source_rect, Image *source, Rectangle target_rect, Image *target);
+void gfx_cmd_image_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, GFX_Image *target);
+void gfx_cmd_image_transition(GFX_CommandBuffer *cmd, ResourceUsage dst, GFX_Image *target);
+void gfx_cmd_image_blit(GFX_CommandBuffer *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target);
 /* VkDescriptorSet gfx_cmd_bindset_push(GFX_CommandBuffer *cmd); */
 
 typedef struct {
-	float4 base_color;
-	float metallic_factor, roughness_factor;
-} MaterialProperties;
-
-typedef struct {
-	uint64_t vertex_offset, index_offset;
+	uint32_t vertex_offset, index_offset;
 	uint32_t vertex_count, index_count;
-	MaterialProperties properties;
+	uint32_t material_id;
 } MeshPart;
 
 typedef struct {
@@ -251,15 +254,21 @@ typedef enum {
 } MeshID;
 
 String8 meshid_to_path[MESH_COUNT] = {
-	[MESH_HERO_MALE] = s("assets/models/hero_male.glb"),
-	[MESH_GDBOT] = s("assets/models/gdbot.glb"),
-	[MESH_MAGE] = s("assets/models/mage.glb"),
-	[MESH_BARREL] = s("assets/models/barrel.glb"),
-	[MESH_ROOM] = s("assets/models/room.glb"),
+	[MESH_HERO_MALE] = str_comp("assets/models/hero_male.glb"),
+	[MESH_GDBOT] = str_comp("assets/models/gdbot.glb"),
+	[MESH_MAGE] = str_comp("assets/models/mage.glb"),
+	[MESH_BARREL] = str_comp("assets/models/barrel.glb"),
+	[MESH_ROOM] = str_comp("assets/models/room.glb"),
 };
 
+typedef struct {
+	GFX_Buffer vertex_buffer, index_buffer;
+	uint32_t vertex_cursor, index_cursor;
+
+	Mesh meshes[MESH_COUNT];
+} RES_Cache;
+
 Mesh load_gltf_geometry(Arena *arena, String8 path);
-/* Material load_gltf_material(Arena *arena, String8 path); */
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
 AnimationClip *find_animation(AnimationClip *clips, uint32_t count, String8 target) {
@@ -299,8 +308,11 @@ int main(void) {
 	gfx_startup(context);
 	Swapchain swapchains[] = { swapchain_make(context, popup_compute), swapchain_make(context, main_render) };
 
-	Image compute_image = image_make(context, 640, 360, (ImageOptions){ PIXEL_FORMAT_RGBA16_FLOAT, IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
-	Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ PIXEL_FORMAT_BACKBUFFER, IMAGE_USAGE_RENDER, SAMPLE_COUNT_8 });
+	GFX_Image compute_image = image_make(context, 640, 360, (ImageOptions){ .format = PIXEL_FORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
+	GFX_Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ .format = PIXEL_FORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
+
+	GFX_Sampler linear_sampler = sampler_make(context);
+	GFX_Image white_texture = image_make(context, 1, 1, (ImageOptions){ .format = PIXEL_FORMAT_RGBA8_UNORM });
 
 	// create compute pipeline
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
@@ -337,33 +349,86 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	Shader pipeline_2d = { 0 };
-	{ // create 2d graphics pipeline
-		ArenaTemp scratch = arena_scratch_begin(NULL);
-		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
-		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode);
-		arena_scratch_end(scratch);
-	}
-
 	Shader pipeline_3d = { 0 };
 	{ // create 3d graphics pipeline
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
-		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode);
+		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/phong.fragment.spv"));
+
+		VkDescriptorSetLayout layouts[2] = { 0 };
+		{ // set 0
+			VkDescriptorSetLayoutBinding bindings[] = {
+				[0] = {
+				  .binding = 0,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+				[1] = {
+				  .binding = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				}
+			};
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = countof(bindings),
+				.pBindings = bindings,
+			};
+			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[0]);
+		}
+
+		{ // set 1
+			VkDescriptorSetLayoutBinding bindings[] = {
+				[0] = {
+				  .binding = 0,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+				},
+				[1] = {
+				  .binding = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				  .descriptorCount = 5,
+				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+			};
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = countof(bindings),
+				.pBindings = bindings,
+			};
+			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
+		}
+
+		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts));
 		arena_scratch_end(scratch);
 	}
 
 	GFX_Buffer geometry = buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	for (uint32_t mesh_index = 0; mesh_index < MESH_COUNT; ++mesh_index)
-		meshes[mesh_index] = load_gltf_geometry(arena, meshid_to_path[mesh_index]);
+	uint32_t animation_counts[MESH_COUNT] = { 0 };
+	AnimationClip *animations[MESH_COUNT] = { 0 };
+
+	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
+		meshes[meshid] = load_gltf_geometry(arena, meshid_to_path[meshid]);
+
+		if (meshes[meshid].skeleton.bone_count == 0 || meshid == MESH_MAGE)
+			continue;
+		animations[meshid] = load_gltf_animations(arena, meshid_to_path[meshid], &animation_counts[meshid]);
+	}
 
 	{ // upload geometry
 		GFX_CommandBuffer cmd = gfx_transfer_batch_begin(context);
 		if (cmd.handle) {
+			memory_copy(arena_push(cmd.transient_arena, alignup(sizeof(uint32_t), 256), 1, 0), &(uint32_t){ 0xFFFFFFFF }, sizeof(uint32_t));
+			gfx_cmd_buffer_to_image(&cmd, &white_texture, cmd.transient_buffer, 0, 1, 1);
+
+			uint64_t upload_offset = cmd.transient_arena->offset;
 			uint64_t upload_cursor = 0;
 
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
@@ -392,7 +457,7 @@ int main(void) {
 				}
 			}
 
-			gfx_cmd_buffer_to_buffer(&cmd, &geometry, cmd.transient_buffer, 0, 0, upload_cursor);
+			gfx_cmd_buffer_to_buffer(&cmd, &geometry, cmd.transient_buffer, 0, upload_offset, upload_cursor);
 
 			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, upload_cursor, &geometry);
 			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, upload_cursor, &geometry);
@@ -401,18 +466,9 @@ int main(void) {
 		}
 	}
 
-	uint32_t animation_counts[MESH_COUNT] = { 0 };
-	AnimationClip *animations[MESH_COUNT] = { 0 };
-	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
-		if (meshes[meshid].skeleton.bone_count == 0 || meshid == MESH_MAGE)
-			continue;
-
-		animations[meshid] = load_gltf_animations(arena, meshid_to_path[meshid], &animation_counts[meshid]);
-	}
-
 	GFX_Buffer scratch_buffers[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
-		scratch_buffers[index] = buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER);
+		scratch_buffers[index] = buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER);
 		vkMapMemory(context->device.logical, scratch_buffers[index].memory, 0, scratch_buffers[index].size, 0, (void **)&scratch_buffers[index].mapped);
 	}
 
@@ -475,7 +531,7 @@ int main(void) {
 
 		// Swapchain image acquisition
 		uint32_t image_indices[SWAPCHAIN_IMAGE_COUNT];
-		Image compute_blit_target = swapchain_backbuffer(context, &swapchains[0], &image_indices[0]); // TODO: remove manual indices handling?
+		GFX_Image compute_blit_target = swapchain_backbuffer(context, &swapchains[0], &image_indices[0]); // TODO: remove manual indices handling?
 		if (compute_blit_target.handle) {
 			// transition swapchain target & blit src compute image
 			gfx_cmd_image_transition(
@@ -531,7 +587,7 @@ int main(void) {
 		} else //  TODO: resize swapchain
 			break;
 
-		Image main_target = swapchain_backbuffer(context, &swapchains[1], &image_indices[1]);
+		GFX_Image main_target = swapchain_backbuffer(context, &swapchains[1], &image_indices[1]);
 		if (main_target.handle) {
 			// transition swapchain & offscren targets for drawing
 			gfx_cmd_image_transition(
@@ -557,13 +613,13 @@ int main(void) {
 			} MeshInstance;
 
 			MeshInstance instances[] = {
-				{ MESH_HERO_MALE, { { 0 }, { 0 }, FLOAT3_ONE }, 0 },
-				{ MESH_HERO_MALE, { { 0.0f, 0.0f, -3.0f }, { 0 }, FLOAT3_ONE }, 0 },
-				{ MESH_GDBOT, { { 3.0f, 0.0f, 0.0f }, { 0 }, FLOAT3_ONE }, 0 },
-				{ MESH_GDBOT, { { 3.0f, 0.0f, -3.0f }, { 0 }, FLOAT3_ONE }, 0 },
-				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, { 0 }, FLOAT3_ONE }, 0 },
+				{ MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_HERO_MALE, { { 0.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_GDBOT, { { 3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_GDBOT, { { 3.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 
-				{ MESH_BARREL, { { 0, 0.0f, -3.0f }, { 0 }, FLOAT3_ONE }, 0 },
+				{ MESH_BARREL, { { 0, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 			};
 
 			uint64_t scratch_cursor = 0;
@@ -628,7 +684,7 @@ int main(void) {
 				.resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
 				.resolveImageView = main_target.view,
 				.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
-				.clearValue.color = { 0.03f, 0.03f, 0.03f, 1.0f },
+				.clearValue.color = { { 0.03f, 0.03f, 0.03f, 1.0f } },
 				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
 			};
@@ -656,60 +712,162 @@ int main(void) {
 			vkCmdSetScissor(command_buffer, 0, 1, &(VkRect2D){ .extent = extent });
 
 			scene_camera_orbit(&camera, mouse_delta);
-			float4x4 view_projection = float4x4_multiply(
-				float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
-				float4x4_lookat(camera.position, camera.target, camera.up));
-			vkCmdPushConstants(command_buffer, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(float4x4), &view_projection);
-
-			uint32_t last_mesh_id = -1;
-			for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
-				MeshInstance *instance = &instances[instance_index];
-				Mesh *mesh = &meshes[instance->id];
-
+			VkDescriptorSet frame_set = 0;
+			{ // allocate & write frame set
 				VkDescriptorSetAllocateInfo alloc_info = {
 					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 					.descriptorPool = descriptor_pool,
 					.descriptorSetCount = 1,
-					.pSetLayouts = pipeline_3d.set_layouts + 0,
+					.pSetLayouts = &pipeline_3d.set_layouts[0],
 				};
+				vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
 
-				VkDescriptorSet grahpics_set = 0;
-				vkAllocateDescriptorSets(context->device.logical, &alloc_info, &grahpics_set);
+				{ // frame data
+					struct {
+						float4x4 view;
+						float4x4 proj;
+						float4 camera_position;
+						float time;
+					} frame_data = {
+						.view = float4x4_lookat(camera.position, camera.target, camera.up),
+						.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.001f, 200.f),
+						.camera_position = float4_from_float3(camera.position, 0.0f),
+						.time = time,
+					};
+					memory_copy(scratch_buffers[context->current_frame].mapped + scratch_cursor, &frame_data, sizeof(frame_data));
 
-				VkDescriptorBufferInfo buffer_info = {
-					.buffer = mesh->buffer->handle,
-					.offset = mesh->buffer_vertex_byte_offset,
-					.range = mesh->total_vertex_count * sizeof(Vertex3),
-				};
-				if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
-					buffer_info.buffer = scratch_buffers[context->current_frame].handle;
-					buffer_info.offset = instance->skinned_vertices_offset;
+					VkDescriptorBufferInfo buffer_info = {
+						.buffer = scratch_buffers[context->current_frame].handle,
+						.offset = scratch_cursor,
+						.range = sizeof(frame_data),
+					};
+					scratch_cursor += sizeof(frame_data);
+					VkWriteDescriptorSet write = {
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.dstSet = frame_set,
+						.dstBinding = 0,
+						.dstArrayElement = 0,
+						.descriptorCount = 1,
+						.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+						.pBufferInfo = &buffer_info,
+					};
+					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
 				}
-				VkWriteDescriptorSet write = {
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = grahpics_set,
-					.dstBinding = 0,
-					.dstArrayElement = 0,
-					.descriptorCount = 1,
-					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-					.pBufferInfo = &buffer_info,
-				};
-				vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+				{ // light data
+					struct {
+						float4 position;
+						float4 color;
+					} lights[] = {
+						{ FLOAT4_ZERO, FLOAT4_ZERO },
+					};
 
-				vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
-				vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &grahpics_set, 0, 0);
+					memory_copy(scratch_buffers[context->current_frame].mapped + scratch_cursor, lights, sizeof(lights));
+
+					VkDescriptorBufferInfo buffer_info = {
+						.buffer = scratch_buffers[context->current_frame].handle,
+						.offset = scratch_cursor,
+						.range = sizeof(lights),
+					};
+					scratch_cursor += sizeof(lights);
+					VkWriteDescriptorSet write = {
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.dstSet = frame_set,
+						.dstBinding = 1,
+						.dstArrayElement = 0,
+						.descriptorCount = 1,
+						.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+						.pBufferInfo = &buffer_info,
+					};
+					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+				}
+			}
+
+			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
+			vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &frame_set, 0, 0);
+
+			// :draw
+			for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+				MeshInstance *instance = &instances[instance_index];
+				Mesh *mesh = &meshes[instance->id];
+
+				VkDescriptorSet draw_set = 0;
+				{ // allocate & write draw set
+					VkDescriptorSetAllocateInfo alloc_info = {
+						.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+						.descriptorPool = descriptor_pool,
+						.descriptorSetCount = 1,
+						.pSetLayouts = &pipeline_3d.set_layouts[1],
+					};
+					vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
+
+					{ // geometry descriptor binding
+						VkDescriptorBufferInfo buffer_info = {
+							.buffer = mesh->buffer->handle,
+							.offset = mesh->buffer_vertex_byte_offset,
+							.range = mesh->total_vertex_count * sizeof(Vertex3),
+						};
+						if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
+							buffer_info.buffer = scratch_buffers[context->current_frame].handle;
+							buffer_info.offset = instance->skinned_vertices_offset;
+						}
+						VkWriteDescriptorSet write = {
+							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+							.dstSet = draw_set,
+							.dstBinding = 0,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+							.pBufferInfo = &buffer_info,
+						};
+						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					}
+					{ // material textures descriptor binding
+						VkWriteDescriptorSet writes[5] = { 0 };
+						VkDescriptorImageInfo image_infos[5] = { 0 };
+						for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
+							GFX_Image *image = &white_texture;
+							image_infos[texture_index] = (VkDescriptorImageInfo){
+								.imageView = image->view,
+								.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+								.sampler = linear_sampler.handle,
+							};
+
+							writes[texture_index] = (VkWriteDescriptorSet){
+								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+								.dstSet = draw_set,
+								.dstBinding = 1,
+								.dstArrayElement = texture_index,
+								.descriptorCount = 1,
+								.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+								.pImageInfo = &image_infos[texture_index],
+							};
+						}
+						vkUpdateDescriptorSets(context->device.logical, countof(writes), writes, 0, 0);
+					}
+				}
 
 				vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+				vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 1, 1, &draw_set, 0, 0);
+
 				for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
-					// clang-format off
-                float4x4 transform = float4x4_compose_quat(
-                        instance->transform.translation,
-                        instance->transform.rotation,
-                        instance->transform.scale
-                );
-					// clang-format on
-					//
-					vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, sizeof(float4x4), sizeof(float4x4), &transform);
+					float4x4 transform = float4x4_compose_quat(
+						instance->transform.translation,
+						instance->transform.rotation,
+						instance->transform.scale //
+					);
+					struct {
+						float4x4 model;
+						float4 base_color;
+						float4 emissive;
+						float2 metallic_roughness;
+					} pc = {
+						.model = transform,
+						.base_color = { 1.0f, 0.5f, 0.2f, 1.0f },
+						.emissive = FLOAT4_ONE,
+						.metallic_roughness = { 0.0f, 0.5f },
+					};
+
+					vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 					vkCmdDrawIndexed(command_buffer, mesh->parts[part_index].index_count, 1, mesh->parts[part_index].index_offset, mesh->parts[part_index].vertex_offset, 0);
 				}
 			}
@@ -792,10 +950,11 @@ int main(void) {
 		buffer_destroy(context, &geometry);
 		image_destroy(context, &offscreen_render);
 		image_destroy(context, &compute_image);
+		image_destroy(context, &white_texture);
+		sampler_destroy(context, &linear_sampler);
 
 		pipeline_destroy(context, &c_pipeline);
 		pipeline_destroy(context, &pipeline_skinning);
-		pipeline_destroy(context, &pipeline_2d);
 		pipeline_destroy(context, &pipeline_3d);
 
 		for (uint32_t index = 0; index < countof(swapchains); ++index)
@@ -859,6 +1018,9 @@ VkMemoryPropertyFlags gfx__memory_type_to_vk_memory_property_flags(BufferMemory 
 		case BUFFER_MEMORY_SHARED:
 			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	}
+
+	ASSERT(false);
+	return 0;
 }
 
 VkFormat gfx__pixel_format_to_vk_format(PixelFormat format) {
@@ -914,6 +1076,17 @@ VkSampleCountFlags gfx__usage_to_sample_count(VkPhysicalDeviceLimits limits, Ima
 
 	if (result < options.sample)
 		LOG_WARN("requested sample size of [%u] is too large, clamping to [%u]", options.sample, result);
+
+	return result;
+}
+
+VkImageLayout gfx__opt_to_initial_layout(ImageOptions opt) {
+	VkImageLayout result = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	if (FLAG_GET(opt.usage, IMAGE_USAGE_SAMPLE))
+		result = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	if (FLAG_GET(opt.usage, IMAGE_USAGE_RENDER))
+		result = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	return result;
 }
@@ -999,8 +1172,8 @@ GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory,
 	return result;
 }
 
-Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options) {
-	Image result = { 0 };
+GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options) {
+	GFX_Image result = { 0 };
 	LOG_DEBUG("creating vulkan image.");
 
 	bool ok = true;
@@ -1008,6 +1181,7 @@ Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOpt
 	VkFormat vk_format = gfx__pixel_format_to_vk_format(options.format);
 	VkImageAspectFlags aspect = gfx__pixel_format_to_aspect(options.format);
 	VkSampleCountFlags vk_sample = gfx__usage_to_sample_count(context->device.limits, options);
+	result.layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	result.width = width, result.height = height;
 
 	if (ok) { // make vulkan image handle
@@ -1027,7 +1201,7 @@ Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOpt
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = vk_usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+			.initialLayout = result.layout
 		};
 
 		ok = vkCreateImage(context->device.logical, &result.image_info, 0, &result.handle) == VK_SUCCESS;
@@ -1077,6 +1251,34 @@ Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOpt
 		image_destroy(context, &result);
 
 	/* LOG_INFO("image loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, image_format_to_string[format]); */
+	return result;
+}
+
+GFX_Sampler sampler_make(GFX_Context *context) {
+	GFX_Sampler result = { 0 };
+	LOG_DEBUG("creating vulkan sampler.");
+
+	bool ok = true;
+
+	if (ok) {
+		result.info = (VkSamplerCreateInfo){
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = VK_FILTER_LINEAR,
+			.minFilter = VK_FILTER_LINEAR,
+			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+			.anisotropyEnable = VK_TRUE,
+			.maxAnisotropy = context->device.limits.maxSamplerAnisotropy,
+			.compareEnable = VK_FALSE,
+		};
+
+		ok = vkCreateSampler(context->device.logical, &result.info, NULL, &result.handle) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create vulkan sampler.");
+	}
+
 	return result;
 }
 
@@ -1311,7 +1513,7 @@ Shader compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkD
 	return result;
 }
 
-Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode) {
+Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count) {
 	LOG_DEBUG("creating vulkan grahpics pipeline.");
 	Shader result = { 0 };
 
@@ -1344,33 +1546,13 @@ Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, Str
 			LOG_WARN("failed to create vertex/fragment shader module.");
 	}
 
-	if (ok) { // create descriptor set layouts
-		// TODO: Don't hard-code the layouts
-
-		VkDescriptorSetLayoutBinding bindings[] = {
-			[0] = {
-			  .binding = 0,
-			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			  .descriptorCount = 1,
-			  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-			},
-		};
-
-		VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-			.bindingCount = countof(bindings),
-			.pBindings = bindings,
-		};
-
-		ok = vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, result.set_layouts) == VK_SUCCESS;
-		if (ok == false)
-			LOG_WARN("failed to create pipeline descriptor set layout 0");
-	}
+	if (ok) // create descriptor set layouts
+		memory_copy(result.set_layouts, layouts, MIN(layout_count, countof(result.set_layouts)) * sizeof(VkDescriptorSetLayout));
 
 	if (ok) { // create pipeline layout
 		VkPipelineLayoutCreateInfo pl_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = 1,
+			.setLayoutCount = MIN(layout_count, countof(result.set_layouts)),
 			.pSetLayouts = result.set_layouts,
 			.pushConstantRangeCount = 1,
 			.pPushConstantRanges = &context->global_range,
@@ -1525,7 +1707,7 @@ bool buffer_destroy(GFX_Context *context, GFX_Buffer *buffer) {
 	return ok;
 }
 
-void image_destroy(GFX_Context *context, Image *image) {
+void image_destroy(GFX_Context *context, GFX_Image *image) {
 	bool ok = context && image;
 
 	if (ok) {
@@ -1537,6 +1719,17 @@ void image_destroy(GFX_Context *context, Image *image) {
 			vkDestroyImage(context->device.logical, image->handle, 0);
 
 		memory_zero(image, sizeof(*image));
+	}
+}
+
+void sampler_destroy(GFX_Context *context, GFX_Sampler *sampler) {
+	bool ok = context && sampler;
+
+	if (ok) {
+		if (sampler->handle)
+			vkDestroySampler(context->device.logical, sampler->handle, NULL);
+
+		memory_zero(sampler, sizeof(*sampler));
 	}
 }
 
@@ -1584,8 +1777,8 @@ void pipeline_destroy(GFX_Context *context, Shader *pipeline) {
 	}
 }
 
-Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_t *out_image_index) {
-	Image result = { 0 };
+GFX_Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_t *out_image_index) {
+	GFX_Image result = { 0 };
 	bool ok = true;
 
 	if (ok) { // acquire swapchain image
@@ -1720,7 +1913,7 @@ bool gfx_startup(GFX_Context *context) {
 	if (ok) {
 		context->arena[0] = arena_make(MiB(32));
 		context->buffers = arena_push_count(context->arena, GFX_Buffer, MAX_BUFFERS);
-		context->images = arena_push_count(context->arena, Image, MAX_IMAGES);
+		context->images = arena_push_count(context->arena, GFX_Image, MAX_IMAGES);
 		context->shaders = arena_push_count(context->arena, Shader, MAX_SHADERS);
 		context->swapchains = arena_push_count(context->arena, Swapchain, MAX_SWAPCHAINS);
 	}
@@ -2281,6 +2474,25 @@ void gfx_cmd_buffer_to_buffer(GFX_CommandBuffer *cmd, GFX_Buffer *dst, GFX_Buffe
 	vkCmdCopyBuffer(cmd->handle, src->handle, dst->handle, 1, &copy_region);
 }
 
+void gfx_cmd_buffer_to_image(GFX_CommandBuffer *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
+	gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
+	VkBufferImageCopy region = {
+		.bufferOffset = src_offset,
+		.bufferRowLength = 0,
+		.bufferImageHeight = 0,
+		.imageSubresource = {
+		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		  .mipLevel = 0,
+		  .baseArrayLayer = 0,
+		  .layerCount = 1,
+		},
+		.imageOffset = { 0 },
+		.imageExtent = { .width = width, .height = height, .depth = 1 },
+	};
+	vkCmdCopyBufferToImage(cmd->handle, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+	gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, dst);
+}
+
 VkPipelineStageFlags gfx__usage_to_pipeline_stage(ResourceUsage usage) {
 	switch (usage) {
 		case RESOURCE_USAGE_UNDEFINED:
@@ -2425,7 +2637,7 @@ void gfx_cmd_buffer_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceU
 	vkCmdPipelineBarrier(cmd->handle, src_stage, dst_stage, 0, 0, 0, 1, &buffer_barrier, 0, 0);
 }
 
-void gfx_cmd_image_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, Image *target) {
+void gfx_cmd_image_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUsage dst, GFX_Image *target) {
 	VkPipelineStageFlags src_stage = gfx__usage_to_pipeline_stage(src);
 	VkPipelineStageFlags dst_stage = gfx__usage_to_pipeline_stage(dst);
 	VkAccessFlags src_access = gfx__usage_to_access(src);
@@ -2454,11 +2666,11 @@ void gfx_cmd_image_barrier(GFX_CommandBuffer *cmd, ResourceUsage src, ResourceUs
 		1, &image_barrier);
 }
 
-void gfx_cmd_image_transition(GFX_CommandBuffer *cmd, ResourceUsage dst, Image *target) {
+void gfx_cmd_image_transition(GFX_CommandBuffer *cmd, ResourceUsage dst, GFX_Image *target) {
 	gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_UNDEFINED, dst, target);
 }
 
-void gfx_cmd_image_blit(GFX_CommandBuffer *cmd, Rectangle source_rect, Image *source, Rectangle target_rect, Image *target) {
+void gfx_cmd_image_blit(GFX_CommandBuffer *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
 	// TODO: Store current image layout, transition if necessary
 	VkImageBlit blit_info = {
 		.srcOffsets[1] = {
@@ -2638,11 +2850,6 @@ Mesh load_gltf_geometry(Arena *arena, String8 path) {
 				if (primitive->material && primitive->material->has_pbr_metallic_roughness) {
 					cgltf_material *material = primitive->material;
 					cgltf_pbr_metallic_roughness *pbr = &material->pbr_metallic_roughness;
-					part->properties = (MaterialProperties){
-						.base_color = float4_wrap(pbr->base_color_factor),
-						.metallic_factor = pbr->metallic_factor,
-						.roughness_factor = pbr->roughness_factor,
-					};
 				}
 
 				vertex_offset += part->vertex_count;

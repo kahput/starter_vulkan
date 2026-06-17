@@ -1,0 +1,49 @@
+#version 450
+#pragma shader_stage(fragment)
+
+struct LightData {
+    vec4  color;
+    vec4  position;
+};
+
+struct MaterialData {
+    vec4 base_color;
+    vec4 emissive;
+	vec2 metallic_roughness;
+};
+
+layout(set = 0, binding = 0) uniform FrameData {
+    mat4 projection;
+    mat4 view;
+    vec4 camera_position;
+    float time;
+} frame;
+
+layout(set = 0, binding = 1) readonly buffer LightBlock {
+    LightData lights[];
+};
+
+#define TEXTURE_BASE_COLOR 0
+#define TEXTURE_METAL_ROUGHNESS 1
+#define TEXTURE_NORMAL 2
+#define TEXTURE_OCCLUSION 3
+#define TEXTURE_EMISSIVE 4
+#define TEXTURE_COUNT 5
+layout(set = 1, binding = 1) uniform sampler2D u_textures[TEXTURE_COUNT];
+
+layout(push_constant) uniform ConstantBlock {
+    mat4 model;
+    vec4 base_color;
+    vec4 emissive;
+    vec2 metallic_roughness;
+} pc;
+
+in ShaderInput {
+    layout (location = 0) vec2 uv;
+} f_input;
+layout(location = 0) out vec4 out_color;
+
+void main() {
+    vec4 albedo = texture(u_textures[TEXTURE_BASE_COLOR], f_input.uv) * pc.base_color;
+    out_color = albedo;
+}

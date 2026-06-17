@@ -10,6 +10,7 @@ typedef struct {
 
 #define s(s) str_lit(s)
 #define str_lit(s) (String8){ .text = (uint8_t *)s, .length = sizeof(s) - 1 }
+#define str_comp(s) { .text = (uint8_t*)s, .length = sizeof(s) - 1 }
 
 String8 str8_wrap(const char *cstring);
 

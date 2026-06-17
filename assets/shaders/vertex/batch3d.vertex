@@ -9,21 +9,27 @@ struct VertexData {
     vec4 tangent;
 };
 
-layout(set = 0, binding = 0) readonly buffer VertexBlock {
+layout(set = 0, binding = 0) uniform FrameData {
+    mat4 view;
+    mat4 projection;
+    vec4 camera_position;
+    float time;
+} frame;
+
+layout(set = 1, binding = 0) readonly buffer VertexBlock {
     VertexData vertex_data[];
 } batch;
 
-out OutBlock {
-    layout(location = 0) vec4 color;
-} vs_output;
-
 layout(push_constant) uniform ConstantBlock {
-    mat4 view_projection;
     mat4 model;
-};
+} pc;
+
+out ShaderOutput {
+    layout(location = 0) vec2 uv;
+} v_output;
 
 void main() {
     VertexData vertex = batch.vertex_data[gl_VertexIndex];
-    gl_Position = view_projection * model * vec4(vertex.position.xyz, 1.0);
-    vs_output.color = vec4( 1.0);
+    gl_Position = frame.projection * frame.view * pc.model * vec4(vertex.position.xyz, 1.0);
+    v_output.uv = vertex.uv;
 }

@@ -23,7 +23,7 @@ endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
-set(NATIVE_SCRATCHES xcb_scratch skinning_scratch material_scratch)
+set(NATIVE_SCRATCHES xcb_scratch skinning material_scratch)
 
 
 # Web build
@@ -131,5 +131,16 @@ else()
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
         target_compile_definitions(${NAME} PRIVATE LINUX_BUILD VK_USE_PLATFORM_XCB_KHR)
         set_target_properties(${NAME} PROPERTIES SUFFIX ".exe")
+        target_compile_options(
+            ${NAME}
+            PRIVATE -fvisibility=hidden
+            -Wall
+            $<$<CONFIG:Debug>:-O0>
+            $<$<CONFIG:Debug>:-pedantic>
+            $<$<CONFIG:Debug>:-Werror>
+            -Wextra
+            -Wno-unused-parameter
+            -Wno-unused-variable
+            -Wno-override-init)
     endforeach()
 endif()
