@@ -72,6 +72,7 @@ float2 float2_lerp(float2 start, float2 end, float t);
 float2 float2_clamp(float2 v, float2 min, float2 max);
 
 static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
+static inline float3 float3_from_float4(float4 v) { return (float3){ v.x, v.y, v.z }; }
 static inline float3 float3_fill(float value) { return (float3){ value, value, value }; }
 static inline float3 float3_wrap(float v[3]) {
 	return (float3){ .x = v[0], .y = v[1], .z = v[2] };

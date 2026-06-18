@@ -205,10 +205,15 @@ typedef struct {
 
 GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
 GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
-GFX_Sampler sampler_make(GFX_Context *context);
+GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt);
 Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface);
 Shader compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count);
-Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count);
+Shader graphics_pipeline_make(
+	GFX_Context *context,
+	String8 vertex_bytecode,
+	String8 fragment_bytecode,
+	VkDescriptorSetLayout *layouts,
+	uint32_t layout_count, PipelineOptions options);
 
 bool buffer_destroy(GFX_Context *context, GFX_Buffer *buffer);
 void image_destroy(GFX_Context *context, GFX_Image *image);
@@ -361,8 +366,12 @@ int main(void) {
 	GFX_Image compute_image = image_make(context, 640, 360, (ImageOptions){ .format = PIXEL_FORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
 	GFX_Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ .format = PIXEL_FORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
 	GFX_Image depthbuffer = image_make(context, 948, 1044, (ImageOptions){ .format = PIXEL_FORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
+	GFX_Image shadow_depthbuffer = image_make(context, 2048, 2048, (ImageOptions){ .format = PIXEL_FORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE });
 
-	GFX_Sampler linear_sampler = sampler_make(context);
+	GFX_Sampler linear_sampler = sampler_make(context, sampler_opt(SAMPLER_FILTER_LINEAR, SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+    SamplerOptions shadow_opt = sampler_opt(SAMPLER_FILTER_LINEAR, SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+    /* shadow_opt.compare_enable = true; */
+	GFX_Sampler shadow_sampler = sampler_make(context, shadow_opt);
 	GFX_Image white_texture = image_make(context, 1, 1, (ImageOptions){ .format = PIXEL_FORMAT_RGBA8_UNORM });
 
 	// create compute pipeline
@@ -400,6 +409,53 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
+	Shader pipeline_shadow = { 0 };
+	{
+		ArenaTemp scratch = arena_scratch_begin(NULL);
+		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/shadow.vertex.spv"));
+		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/blank.fragment.spv"));
+
+		VkDescriptorSetLayout layouts[2] = { 0 };
+		{ // set 0
+			VkDescriptorSetLayoutBinding bindings[] = {
+				[0] = {
+				  .binding = 0,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+			};
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = countof(bindings),
+				.pBindings = bindings,
+			};
+			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[0]);
+		}
+
+		{ // set 1
+			VkDescriptorSetLayoutBinding bindings[] = {
+				[0] = {
+				  .binding = 0,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+				},
+			};
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = countof(bindings),
+				.pBindings = bindings,
+			};
+			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
+		}
+
+		pipeline_shadow = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts), (PipelineOptions){ 0 });
+		arena_scratch_end(scratch);
+	}
+
 	Shader pipeline_3d = { 0 };
 	{ // create 3d graphics pipeline
 		ArenaTemp scratch = arena_scratch_begin(NULL);
@@ -420,7 +476,13 @@ int main(void) {
 				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 				  .descriptorCount = 1,
 				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-				}
+				},
+				[2] = {
+				  .binding = 2,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
 			};
 
 			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
@@ -455,7 +517,12 @@ int main(void) {
 			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
 		}
 
-		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts));
+		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
+			(PipelineOptions){
+			  .color_attachment_count = 1,
+			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .sample_count = SAMPLE_COUNT_8,
+			});
 		arena_scratch_end(scratch);
 	}
 
@@ -687,7 +754,7 @@ int main(void) {
 				{ MESH_GDBOT, { { 3.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 
-				{ MESH_ROOM_LARGE, { { -12.f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_ROOM_LARGE, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 			};
 
 			uint64_t scratch_cursor = 0;
@@ -744,66 +811,217 @@ int main(void) {
 			float2 mouse_delta = float2_from_double2(input_mouse_delta());
 			mouse_delta.x /= dims.x;
 			mouse_delta.y /= dims.y;
-
-			VkRenderingAttachmentInfo color_attachments[] = {
-				{
-				  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				  .imageView = offscreen_render.view,
-				  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				  .resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-				  .resolveImageView = main_target.view,
-				  .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
-				  .clearValue.color = { { 0.03f, 0.03f, 0.03f, 1.0f } },
-				  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				}
-			};
-
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, &depthbuffer);
-			VkRenderingAttachmentInfo depth_attachment = {
-				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				.imageView = depthbuffer.view,
-				.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-				.clearValue.depthStencil.depth = 1.0f,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			};
-
-			VkExtent2D extent = {
-				.width = main_target.width,
-				.height = main_target.height,
-			};
-			VkRenderingInfo renderpass_info = {
-				.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-				.renderArea.extent = extent,
-				.layerCount = 1,
-				.colorAttachmentCount = countof(color_attachments),
-				.pColorAttachments = color_attachments,
-				.pDepthAttachment = &depth_attachment,
-			};
-			vkCmdBeginRendering(command_buffer, &renderpass_info);
-
-			VkViewport viewport = {
-				.width = extent.width,
-				.height = extent.height,
-				.minDepth = 0.0f,
-				.maxDepth = 1.0f,
-			};
-			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-			vkCmdSetScissor(command_buffer, 0, 1, &(VkRect2D){ .extent = extent });
-
 			scene_camera_orbit(&camera, mouse_delta);
-			VkDescriptorSet frame_set = 0;
-			{ // allocate & write frame set
-				VkDescriptorSetAllocateInfo alloc_info = {
-					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-					.descriptorPool = descriptor_pool,
-					.descriptorSetCount = 1,
-					.pSetLayouts = &pipeline_3d.set_layouts[0],
-				};
-				vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
 
-				{ // frame data
+			typedef struct {
+				float4 position;
+				float4 color;
+				float4x4 matrix;
+			} Light;
+
+			Light lights[] = {
+				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
+			};
+            float ortho_size = 10.0f;
+			lights[0].matrix = float4x4_multiply(
+				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
+				float4x4_lookat(float3_from_float4(lights[0].position), FLOAT3_ZERO, FLOAT3_Y));
+
+			{ // :shadow
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, &shadow_depthbuffer);
+				VkRenderingAttachmentInfo depth_attachment = {
+					.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+					.imageView = shadow_depthbuffer.view,
+					.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+					.clearValue.depthStencil.depth = 1.0f,
+					.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+					.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				};
+
+				VkExtent2D extent = {
+					.width = shadow_depthbuffer.width,
+					.height = shadow_depthbuffer.height,
+				};
+				VkRenderingInfo shadowpass_info = {
+					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+					.renderArea.extent = extent,
+					.layerCount = 1,
+					.colorAttachmentCount = 0,
+					.pDepthAttachment = &depth_attachment,
+				};
+				vkCmdBeginRendering(command_buffer, &shadowpass_info);
+
+				VkViewport viewport = {
+					.width = extent.width,
+					.height = extent.height,
+					.minDepth = 0.0f,
+					.maxDepth = 1.0f,
+				};
+				vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+				vkCmdSetScissor(command_buffer, 0, 1, &(VkRect2D){ .extent = extent });
+
+				VkDescriptorSet frame_set = 0;
+				{ // allocate & write frame set
+					struct {
+						float4x4 view;
+						float4x4 proj;
+						float4 camera_position;
+						float time;
+					} frame_data = {
+						.view = lights[0].matrix,
+						.proj = float4x4_identity(),
+						.camera_position = lights[0].position,
+						.time = time,
+					};
+					frame_data.proj.elements[5] *= -1;
+
+					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, &frame_data, sizeof(frame_data));
+					uint64_t frame_data_offset = scratch_cursor;
+					scratch_cursor += alignup(sizeof(frame_data), 256);
+
+					VkDescriptorSetAllocateInfo alloc_info = {
+						.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+						.descriptorPool = descriptor_pool,
+						.descriptorSetCount = 1,
+						.pSetLayouts = &pipeline_shadow.set_layouts[0],
+					};
+					vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
+
+					{ // frame data
+						VkDescriptorBufferInfo buffer_info = {
+							.buffer = scratch_buffers[context->current_frame_index].handle,
+							.offset = frame_data_offset,
+							.range = sizeof(frame_data),
+						};
+						VkWriteDescriptorSet write = {
+							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+							.dstSet = frame_set,
+							.dstBinding = 0,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+							.pBufferInfo = &buffer_info,
+						};
+						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					}
+				}
+
+				vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.handle);
+				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.layout, 0, 1, &frame_set, 0, 0);
+
+				// :draw
+				for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+					MeshInstance *instance = &instances[instance_index];
+					Mesh *mesh = &meshes[instance->id];
+
+					vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
+						MeshPart *part = &mesh->parts[part_index];
+						Material *material = &mesh->materials[part->material_id];
+
+						float4x4 transform = float4x4_compose_quat(
+							instance->transform.translation,
+							instance->transform.rotation,
+							instance->transform.scale //
+						);
+						struct {
+							float4x4 model;
+						} pc = { .model = transform };
+
+						VkDescriptorSet draw_set = 0;
+						{ // allocate & write draw set
+							VkDescriptorSetAllocateInfo alloc_info = {
+								.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+								.descriptorPool = descriptor_pool,
+								.descriptorSetCount = 1,
+								.pSetLayouts = &pipeline_shadow.set_layouts[1],
+							};
+							vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
+
+							{ // geometry descriptor binding
+								VkDescriptorBufferInfo buffer_info = {
+									.buffer = mesh->buffer->handle,
+									.offset = mesh->buffer_vertex_byte_offset,
+									.range = mesh->total_vertex_count * sizeof(Vertex3),
+								};
+								if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
+									buffer_info.buffer = scratch_buffers[context->current_frame_index].handle;
+									buffer_info.offset = instance->skinned_vertices_offset;
+								}
+								VkWriteDescriptorSet write = {
+									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+									.dstSet = draw_set,
+									.dstBinding = 0,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+									.pBufferInfo = &buffer_info,
+								};
+								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+							}
+						}
+						vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.layout, 1, 1, &draw_set, 0, 0);
+
+						vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdDrawIndexed(command_buffer, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
+					}
+				}
+
+				vkCmdEndRendering(cmd->handle);
+			}
+
+			{ // :main
+				gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, RESOURCE_USAGE_SHADER_READ, &shadow_depthbuffer);
+
+				VkRenderingAttachmentInfo color_attachments[] = {
+					{
+					  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+					  .imageView = offscreen_render.view,
+					  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+					  .resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+					  .resolveImageView = main_target.view,
+					  .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
+					  .clearValue.color = { { 0.03f, 0.03f, 0.03f, 1.0f } },
+					  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+					  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+					}
+				};
+
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, &depthbuffer);
+				VkRenderingAttachmentInfo depth_attachment = {
+					.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+					.imageView = depthbuffer.view,
+					.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+					.clearValue.depthStencil.depth = 1.0f,
+					.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+					.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+				};
+
+				VkExtent2D extent = {
+					.width = main_target.width,
+					.height = main_target.height,
+				};
+				VkRenderingInfo renderpass_info = {
+					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+					.renderArea.extent = extent,
+					.layerCount = 1,
+					.colorAttachmentCount = countof(color_attachments),
+					.pColorAttachments = color_attachments,
+					.pDepthAttachment = &depth_attachment,
+				};
+				vkCmdBeginRendering(command_buffer, &renderpass_info);
+
+				VkViewport viewport = {
+					.width = extent.width,
+					.height = extent.height,
+					.minDepth = 0.0f,
+					.maxDepth = 1.0f,
+				};
+				vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+				vkCmdSetScissor(command_buffer, 0, 1, &(VkRect2D){ .extent = extent });
+
+				VkDescriptorSet frame_set = 0;
+				{ // allocate & write frame set
 					struct {
 						float4x4 view;
 						float4x4 proj;
@@ -816,147 +1034,170 @@ int main(void) {
 						.time = time,
 					};
 					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, &frame_data, sizeof(frame_data));
+					uint64_t frame_data_offset = scratch_cursor;
+					scratch_cursor += alignup(sizeof(frame_data), 256);
 
-					VkDescriptorBufferInfo buffer_info = {
-						.buffer = scratch_buffers[context->current_frame_index].handle,
-						.offset = scratch_cursor,
-						.range = sizeof(frame_data),
+					VkDescriptorSetAllocateInfo alloc_info = {
+						.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+						.descriptorPool = descriptor_pool,
+						.descriptorSetCount = 1,
+						.pSetLayouts = &pipeline_3d.set_layouts[0],
 					};
-					scratch_cursor += sizeof(frame_data);
-					VkWriteDescriptorSet write = {
-						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-						.dstSet = frame_set,
-						.dstBinding = 0,
-						.dstArrayElement = 0,
-						.descriptorCount = 1,
-						.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-						.pBufferInfo = &buffer_info,
-					};
-					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-				}
-				{ // light data
-					struct {
-						float4 position;
-						float4 color;
-						float4x4 matrix;
-					} lights[] = {
-						{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
-					};
+					vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
 
-					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, lights, sizeof(lights));
+					{ // frame data
 
-					VkDescriptorBufferInfo buffer_info = {
-						.buffer = scratch_buffers[context->current_frame_index].handle,
-						.offset = scratch_cursor,
-						.range = sizeof(lights),
-					};
-					scratch_cursor += sizeof(lights);
-					VkWriteDescriptorSet write = {
-						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-						.dstSet = frame_set,
-						.dstBinding = 1,
-						.dstArrayElement = 0,
-						.descriptorCount = 1,
-						.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-						.pBufferInfo = &buffer_info,
-					};
-					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-				}
-			}
-
-			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
-			vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &frame_set, 0, 0);
-
-			// :draw
-			for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
-				MeshInstance *instance = &instances[instance_index];
-				Mesh *mesh = &meshes[instance->id];
-
-				vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
-				for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
-					MeshPart *part = &mesh->parts[part_index];
-					Material *material = &mesh->materials[part->material_id];
-
-					float4x4 transform = float4x4_compose_quat(
-						instance->transform.translation,
-						instance->transform.rotation,
-						instance->transform.scale //
-					);
-					struct {
-						float4x4 model;
-						float4 base_color;
-						float4 emissive;
-						float2 metallic_roughness;
-					} pc = {
-						.model = transform,
-						.base_color = material->tint,
-						.emissive = FLOAT4_ONE,
-						.metallic_roughness = { 0.0f, 0.5f },
-					};
-
-					VkDescriptorSet draw_set = 0;
-					{ // allocate & write draw set
-						VkDescriptorSetAllocateInfo alloc_info = {
-							.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-							.descriptorPool = descriptor_pool,
-							.descriptorSetCount = 1,
-							.pSetLayouts = &pipeline_3d.set_layouts[1],
+						VkDescriptorBufferInfo buffer_info = {
+							.buffer = scratch_buffers[context->current_frame_index].handle,
+							.offset = frame_data_offset,
+							.range = sizeof(frame_data),
 						};
-						vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
+						VkWriteDescriptorSet write = {
+							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+							.dstSet = frame_set,
+							.dstBinding = 0,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+							.pBufferInfo = &buffer_info,
+						};
+						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					}
+					{ // light data
+						memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, lights, sizeof(lights));
+						uint64_t light_offset = scratch_cursor;
+						scratch_cursor += alignup(sizeof(lights), 256);
 
-						{ // geometry descriptor binding
-							VkDescriptorBufferInfo buffer_info = {
-								.buffer = mesh->buffer->handle,
-								.offset = mesh->buffer_vertex_byte_offset,
-								.range = mesh->total_vertex_count * sizeof(Vertex3),
+						VkDescriptorBufferInfo buffer_info = {
+							.buffer = scratch_buffers[context->current_frame_index].handle,
+							.offset = light_offset,
+							.range = sizeof(lights),
+						};
+						VkWriteDescriptorSet write = {
+							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+							.dstSet = frame_set,
+							.dstBinding = 1,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+							.pBufferInfo = &buffer_info,
+						};
+						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					}
+					{ // shadow sampler
+
+						VkDescriptorImageInfo image_info = {
+							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+							.imageView = shadow_depthbuffer.view,
+							.sampler = shadow_sampler.handle
+						};
+						VkWriteDescriptorSet write = {
+							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+							.dstSet = frame_set,
+							.dstBinding = 2,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+							.pImageInfo = &image_info
+						};
+						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					}
+				}
+
+				vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
+				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &frame_set, 0, 0);
+
+				// :draw
+				for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+					MeshInstance *instance = &instances[instance_index];
+					Mesh *mesh = &meshes[instance->id];
+
+					vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
+						MeshPart *part = &mesh->parts[part_index];
+						Material *material = &mesh->materials[part->material_id];
+
+						float4x4 transform = float4x4_compose_quat(
+							instance->transform.translation,
+							instance->transform.rotation,
+							instance->transform.scale //
+						);
+						struct {
+							float4x4 model;
+							float4 base_color;
+							float4 emissive;
+							float2 metallic_roughness;
+						} pc = {
+							.model = transform,
+							.base_color = material->tint,
+							.emissive = FLOAT4_ONE,
+							.metallic_roughness = { 0.0f, 0.5f },
+						};
+
+						VkDescriptorSet draw_set = 0;
+						{ // allocate & write draw set
+							VkDescriptorSetAllocateInfo alloc_info = {
+								.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+								.descriptorPool = descriptor_pool,
+								.descriptorSetCount = 1,
+								.pSetLayouts = &pipeline_3d.set_layouts[1],
 							};
-							if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
-								buffer_info.buffer = scratch_buffers[context->current_frame_index].handle;
-								buffer_info.offset = instance->skinned_vertices_offset;
-							}
-							VkWriteDescriptorSet write = {
-								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-								.dstSet = draw_set,
-								.dstBinding = 0,
-								.dstArrayElement = 0,
-								.descriptorCount = 1,
-								.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-								.pBufferInfo = &buffer_info,
-							};
-							vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-						}
-						{ // material textures descriptor binding
-							VkWriteDescriptorSet writes[5] = { 0 };
-							VkDescriptorImageInfo image_infos[5] = { 0 };
-							for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-								GFX_Image *image = &material->textures[texture_index].gpu_image;
-								image_infos[texture_index] = (VkDescriptorImageInfo){
-									.imageView = image->view,
-									.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-									.sampler = linear_sampler.handle,
+							vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
+
+							{ // geometry descriptor binding
+								VkDescriptorBufferInfo buffer_info = {
+									.buffer = mesh->buffer->handle,
+									.offset = mesh->buffer_vertex_byte_offset,
+									.range = mesh->total_vertex_count * sizeof(Vertex3),
 								};
-
-								writes[texture_index] = (VkWriteDescriptorSet){
+								if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
+									buffer_info.buffer = scratch_buffers[context->current_frame_index].handle;
+									buffer_info.offset = instance->skinned_vertices_offset;
+								}
+								VkWriteDescriptorSet write = {
 									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 									.dstSet = draw_set,
-									.dstBinding = 1,
-									.dstArrayElement = texture_index,
+									.dstBinding = 0,
+									.dstArrayElement = 0,
 									.descriptorCount = 1,
-									.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-									.pImageInfo = &image_infos[texture_index],
+									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+									.pBufferInfo = &buffer_info,
 								};
+								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
 							}
-							vkUpdateDescriptorSets(context->device.logical, countof(writes), writes, 0, 0);
+							{ // material textures descriptor binding
+								VkWriteDescriptorSet writes[5] = { 0 };
+								VkDescriptorImageInfo image_infos[5] = { 0 };
+								for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
+									GFX_Image *image = &material->textures[texture_index].gpu_image;
+									image_infos[texture_index] = (VkDescriptorImageInfo){
+										.imageView = image->view,
+										.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+										.sampler = linear_sampler.handle,
+									};
+
+									writes[texture_index] = (VkWriteDescriptorSet){
+										.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+										.dstSet = draw_set,
+										.dstBinding = 1,
+										.dstArrayElement = texture_index,
+										.descriptorCount = 1,
+										.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+										.pImageInfo = &image_infos[texture_index],
+									};
+								}
+								vkUpdateDescriptorSets(context->device.logical, countof(writes), writes, 0, 0);
+							}
 						}
+						vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 1, 1, &draw_set, 0, 0);
+
+						vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdDrawIndexed(command_buffer, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
-					vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 1, 1, &draw_set, 0, 0);
-
-					vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-					vkCmdDrawIndexed(command_buffer, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 				}
-			}
 
-			vkCmdEndRendering(command_buffer);
+				vkCmdEndRendering(command_buffer);
+			}
 			gfx_cmd_image_barrier(
 				cmd,
 				RESOURCE_USAGE_COLOR_ATTACHMENT,
@@ -1046,12 +1287,15 @@ int main(void) {
 		}
 		image_destroy(context, &offscreen_render);
 		image_destroy(context, &depthbuffer);
+		image_destroy(context, &shadow_depthbuffer);
 		image_destroy(context, &compute_image);
 		image_destroy(context, &white_texture);
 		sampler_destroy(context, &linear_sampler);
+		sampler_destroy(context, &shadow_sampler);
 
 		pipeline_destroy(context, &c_pipeline);
 		pipeline_destroy(context, &pipeline_skinning);
+		pipeline_destroy(context, &pipeline_shadow);
 		pipeline_destroy(context, &pipeline_3d);
 
 		for (uint32_t index = 0; index < countof(swapchains); ++index)
@@ -1378,7 +1622,7 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 	return result;
 }
 
-GFX_Sampler sampler_make(GFX_Context *context) {
+GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt) {
 	GFX_Sampler result = { 0 };
 	LOG_DEBUG("creating vulkan sampler.");
 
@@ -1387,15 +1631,16 @@ GFX_Sampler sampler_make(GFX_Context *context) {
 	if (ok) {
 		result.info = (VkSamplerCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-			.magFilter = VK_FILTER_LINEAR,
-			.minFilter = VK_FILTER_LINEAR,
-			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-			.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-			.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-			.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+			.magFilter = (VkFilter)opt.mag_filter,
+			.minFilter = (VkFilter)opt.min_filter,
+			.mipmapMode = (VkSamplerMipmapMode)opt.mipmap_filter,
+			.addressModeU = (VkSamplerAddressMode)opt.address_mode_u,
+			.addressModeV = (VkSamplerAddressMode)opt.address_mode_v,
+			.addressModeW = (VkSamplerAddressMode)opt.address_mode_w,
 			.anisotropyEnable = VK_TRUE,
 			.maxAnisotropy = context->device.limits.maxSamplerAnisotropy,
-			.compareEnable = VK_FALSE,
+			.compareEnable = opt.compare_enable,
+            .compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 		};
 
 		ok = vkCreateSampler(context->device.logical, &result.info, NULL, &result.handle) == VK_SUCCESS;
@@ -1637,7 +1882,12 @@ Shader compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkD
 	return result;
 }
 
-Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count) {
+Shader graphics_pipeline_make(
+	GFX_Context *context,
+	String8 vertex_bytecode, String8 fragment_bytecode,
+	VkDescriptorSetLayout *layouts, uint32_t layout_count,
+	PipelineOptions opt //
+) {
 	LOG_DEBUG("creating vulkan grahpics pipeline.");
 	Shader result = { 0 };
 
@@ -1743,32 +1993,8 @@ Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, Str
 		VkPipelineMultisampleStateCreateInfo mss_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 			.sampleShadingEnable = VK_FALSE,
-			.rasterizationSamples = VK_SAMPLE_COUNT_8_BIT,
+			.rasterizationSamples = opt.sample_count ? (VkSampleCountFlags)opt.sample_count : VK_SAMPLE_COUNT_1_BIT,
 			.minSampleShading = 1.0f,
-		};
-
-		VkPipelineColorBlendAttachmentState color_blend_attachments[] = {
-			{
-			  .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-			  .blendEnable = VK_TRUE,
-
-			  // Color: result = src.rgb * src.a + dst.rgb * (1 - src.a)
-			  .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-			  .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-			  .colorBlendOp = VK_BLEND_OP_ADD,
-
-			  // Alpha: result = src.a * 1 + dst.a * (1 - src.a)
-			  .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-			  .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-			  .alphaBlendOp = VK_BLEND_OP_ADD,
-			},
-		};
-
-		VkPipelineColorBlendStateCreateInfo cbs_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-			.logicOpEnable = VK_FALSE,
-			.attachmentCount = countof(color_blend_attachments),
-			.pAttachments = color_blend_attachments,
 		};
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
@@ -1781,12 +2007,47 @@ Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, Str
 			.maxDepthBounds = 1.0f
 		};
 
-		VkPipelineRenderingCreateInfo r_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-			.colorAttachmentCount = countof(color_blend_attachments),
-			.pColorAttachmentFormats = (VkFormat[]){ VK_FORMAT_B8G8R8A8_SRGB },
-			.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT
-		};
+		VkPipelineColorBlendAttachmentState color_attachment_blends[MAX_COLOR_ATTACHMENTS] = { 0 };
+		VkPipelineColorBlendStateCreateInfo cbs_create_info = { 0 };
+
+		VkFormat color_attachment_formats[MAX_COLOR_ATTACHMENTS] = { 0 };
+		VkPipelineRenderingCreateInfo r_create_info = { 0 };
+
+		{ // attachment state
+			VkPipelineColorBlendAttachmentState color_attachment_blend_default = {
+				.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+				.blendEnable = VK_TRUE,
+
+				// Color: result = src.rgb * src.a + dst.rgb * (1 - src.a)
+				.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+				.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+				.colorBlendOp = VK_BLEND_OP_ADD,
+
+				// Alpha: result = src.a * 1 + dst.a * (1 - src.a)
+				.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+				.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+				.alphaBlendOp = VK_BLEND_OP_ADD,
+			};
+			for (uint32_t index = 0; index < opt.color_attachment_count; ++index)
+				memory_copy(color_attachment_blends + index, &color_attachment_blend_default, sizeof(VkPipelineColorBlendAttachmentState));
+
+			cbs_create_info = (VkPipelineColorBlendStateCreateInfo){
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+				.logicOpEnable = VK_FALSE,
+				.attachmentCount = opt.color_attachment_count,
+				.pAttachments = color_attachment_blends,
+			};
+
+			for (uint32_t attachment_index = 0; attachment_index < opt.color_attachment_count; ++attachment_index)
+				color_attachment_formats[attachment_index] = gfx__pixel_format_to_vk_format(opt.color_attachments[attachment_index]);
+
+			r_create_info = (VkPipelineRenderingCreateInfo){
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+				.colorAttachmentCount = opt.color_attachment_count,
+				.pColorAttachmentFormats = color_attachment_formats,
+				.depthAttachmentFormat = pixel_format_is_depth_stencil(opt.depth_attachment) ? gfx__pixel_format_to_vk_format(opt.depth_attachment) : VK_FORMAT_D32_SFLOAT,
+			};
+		}
 
 		VkGraphicsPipelineCreateInfo gp_create_info = {
 			.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,

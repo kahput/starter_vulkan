@@ -55,14 +55,60 @@ typedef enum {
 	SHADER_STAGE_COUNT,
 } ShaderStage;
 
+typedef enum sampler_filter {
+	SAMPLER_FILTER_NEAREST = 0,
+	SAMPLER_FILTER_LINEAR = 1
+} SamplerFilter;
+
+typedef enum sampler_address_mode {
+	SAMPLER_ADDRESS_MODE_REPEAT = 0,
+	SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT = 1,
+	SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE = 2,
+	SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER = 3
+} SamplerAddressMode;
+
 typedef struct {
 	PixelFormat format;
 	ImageUsageFlags usage; // zero initialized equals IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER
 	ImageSampleCount sample; // zero initilized equals SAMPLE_COUNT_1
 } ImageOptions;
 
+typedef struct {
+	SamplerFilter min_filter;
+	SamplerFilter mag_filter;
+
+	SamplerFilter mipmap_filter;
+
+	SamplerAddressMode address_mode_u;
+	SamplerAddressMode address_mode_v;
+	SamplerAddressMode address_mode_w;
+
+    bool compare_enable;
+} SamplerOptions;
+
+#define sampler_opt(filter, mode)  \
+	(SamplerOptions) {             \
+		.min_filter = (filter),    \
+		.mag_filter = (filter),    \
+		.mipmap_filter = (filter), \
+		.address_mode_u = (mode),  \
+		.address_mode_v = (mode),  \
+		.address_mode_w = (mode),  \
+	}
+
+#define MAX_COLOR_ATTACHMENTS 8
+typedef struct {
+	ImageSampleCount sample_count;
+
+	PixelFormat color_attachments[MAX_COLOR_ATTACHMENTS];
+	uint32_t color_attachment_count;
+
+	PixelFormat depth_attachment;
+	bool use_depth;
+} PipelineOptions;
+
 typedef enum {
-    RESOURCE_USAGE_UNDEFINED,
+	RESOURCE_USAGE_UNDEFINED,
 
 	RESOURCE_USAGE_TRANSFER_SRC,
 	RESOURCE_USAGE_SHADER_READ,

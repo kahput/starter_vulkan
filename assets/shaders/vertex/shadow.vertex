@@ -1,0 +1,29 @@
+#version 450
+#pragma shader_stage(vertex)
+
+struct VertexBuffer {
+    vec4 position; 
+    vec4 normal;
+    vec2 uv;
+    vec4 tangent;
+};
+
+layout(set = 0, binding = 0) uniform FrameBlock {
+    mat4 view;
+    mat4 projection;
+    vec4 camera_position;
+    float time;
+} frame;
+
+layout(set = 1, binding = 0) readonly buffer VertexBlock {
+    VertexBuffer vertex_data[];
+} batch;
+
+layout(push_constant) uniform ConstantBlock {
+    mat4 model;
+} pc;
+
+void main() {
+    VertexBuffer vertex = batch.vertex_data[gl_VertexIndex];
+    gl_Position = frame.view * pc.model * vec4(vertex.position.xyz, 1.0);
+}

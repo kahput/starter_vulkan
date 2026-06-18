@@ -45,8 +45,8 @@ void main() {
     VertexBuffer vertex = batch.vertex_data[gl_VertexIndex];
     gl_Position = frame.projection * frame.view * pc.model * vec4(vertex.position.xyz, 1.0);
 
-    vs_output.worldspace = vec3(pc.model * vertex.position);
+    vs_output.worldspace = vec3(pc.model * vec4(vertex.position.xyz, 1.0));
+    vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
     vs_output.normal = mat3(transpose(inverse(pc.model))) * vertex.normal.xyz;
     vs_output.uv = vertex.uv;
-    vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
 }
