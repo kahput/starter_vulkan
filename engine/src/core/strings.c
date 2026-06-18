@@ -74,3 +74,18 @@ String8 str8_filename(String8 path) {
 
 	return result;
 }
+
+String8 str8_directory(String8 path) {
+	if (path.length == 0)
+		return path;
+
+	String8 result = path;
+	for (int32_t index = path.length - 1; index >= 0; --index) {
+		if (str8__ispathdelim(path.text[index])) {
+			result.length = index;
+			break;
+		}
+	}
+
+	return result;
+}

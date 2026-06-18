@@ -51,5 +51,6 @@ void main() {
         sd.weight[2] * transform.matrices[sd.id[2]] * pos + 
         sd.weight[3] * transform.matrices[sd.id[3]] * pos;
 
+    output_buffer.vertex_data[vertex_index] = input_buffer.vertex_data[vertex_index];
     output_buffer.vertex_data[vertex_index].position = vec4(skinned.xyz, input_buffer.vertex_data[vertex_index].position.w);
 }
