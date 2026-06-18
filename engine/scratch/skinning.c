@@ -234,6 +234,16 @@ void gfx_cmd_buffer_copy(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *s
 
 VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage);
 
+typedef enum {
+	TEXTURE_SLOT_ALEBDO,
+	TEXTURE_SLOT_METAL_ROUGHNESS,
+	TEXTURE_SLOT_NORMAL,
+	TEXTURE_SLOT_OCCLUSION,
+	TEXTURE_SLOT_EMISSIVE,
+
+	TEXTURE_SLOT_COUNT,
+} TextureSlot;
+
 typedef struct {
 	// CPU
 	uint8_t *pixels;
@@ -247,12 +257,9 @@ typedef struct {
 } Image2D;
 
 typedef struct {
-	Image2D base_color_texture;
-	Image2D metallic_roughness_texture;
-	Image2D normal_texture;
+	Image2D textures[TEXTURE_SLOT_COUNT];
 
-	float4 base_color;
-	float4 emissive;
+	float4 tint, emissive;
 	float2 metallic_roughness;
 } Material;
 
@@ -412,7 +419,7 @@ int main(void) {
 				  .binding = 1,
 				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 				}
 			};
 
@@ -457,9 +464,6 @@ int main(void) {
 	Mesh meshes[MESH_COUNT] = { 0 };
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
-	Image2D kenney_modular_dungeon_texture = load_image(arena, s("assets/models/Textures/colormap.png"));
-	kenney_modular_dungeon_texture.gpu_image = image_make(context, kenney_modular_dungeon_texture.width, kenney_modular_dungeon_texture.height, (ImageOptions){ .format = PIXEL_FORMAT_RGBA8_SRGB });
-	kenney_modular_dungeon_texture.format = PIXEL_FORMAT_RGBA8_SRGB;
 
 	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
 		meshes[meshid] = load_gltf(arena, meshid_to_path[meshid]);
@@ -475,22 +479,22 @@ int main(void) {
 			gfx_cmd_image_upload(&cmd, &white_texture, 1, 1, &(uint32_t){ 0xffffffff });
 			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &white_texture);
 
-			gfx_cmd_image_upload(&cmd, &kenney_modular_dungeon_texture.gpu_image, kenney_modular_dungeon_texture.width, kenney_modular_dungeon_texture.height, kenney_modular_dungeon_texture.pixels);
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &kenney_modular_dungeon_texture.gpu_image);
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
 				for (uint32_t material_index = 0; material_index < mesh->material_count; ++material_index) {
 					Material *material = &mesh->materials[material_index];
 
-					Image2D *base_color = &material->base_color_texture;
-					if (material->base_color_texture.pixels) {
-						base_color->gpu_image = image_make(context, base_color->width, base_color->height, (ImageOptions){ .format = base_color->format });
-						gfx_cmd_image_upload(&cmd, &base_color->gpu_image, base_color->width, base_color->height, base_color->pixels);
-						gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &base_color->gpu_image);
-					} else {
-						base_color->width = base_color->height = 1;
-						base_color->format = PIXEL_FORMAT_RGBA8_SRGB;
-						base_color->gpu_image = white_texture;
+					for (uint32_t texture_slot = 0; texture_slot < TEXTURE_SLOT_COUNT; ++texture_slot) {
+						Image2D *img = &material->textures[texture_slot];
+						if (img->pixels) {
+							img->gpu_image = image_make(context, img->width, img->height, (ImageOptions){ .format = img->format });
+							gfx_cmd_image_upload(&cmd, &img->gpu_image, img->width, img->height, img->pixels);
+							gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &img->gpu_image);
+						} else {
+							img->width = img->height = 1;
+							img->format = PIXEL_FORMAT_RGBA8_SRGB;
+							img->gpu_image = white_texture;
+						}
 					}
 				}
 			}
@@ -834,8 +838,9 @@ int main(void) {
 					struct {
 						float4 position;
 						float4 color;
+						float4x4 matrix;
 					} lights[] = {
-						{ FLOAT4_ZERO, FLOAT4_ZERO },
+						{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
 					};
 
 					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, lights, sizeof(lights));
@@ -884,7 +889,7 @@ int main(void) {
 						float2 metallic_roughness;
 					} pc = {
 						.model = transform,
-						.base_color = material->base_color,
+						.base_color = material->tint,
 						.emissive = FLOAT4_ONE,
 						.metallic_roughness = { 0.0f, 0.5f },
 					};
@@ -924,9 +929,7 @@ int main(void) {
 							VkWriteDescriptorSet writes[5] = { 0 };
 							VkDescriptorImageInfo image_infos[5] = { 0 };
 							for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-								GFX_Image *image = &white_texture;
-								if (texture_index == 0)
-									image = &mesh->materials[part->material_id].base_color_texture.gpu_image;
+								GFX_Image *image = &material->textures[texture_index].gpu_image;
 								image_infos[texture_index] = (VkDescriptorImageInfo){
 									.imageView = image->view,
 									.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -1034,17 +1037,17 @@ int main(void) {
 			for (uint32_t material_index = 0; material_index < mesh->material_count; ++material_index) {
 				Material *material = &mesh->materials[material_index];
 
-				if (material->base_color_texture.pixels)
-					image_destroy(context, &material->base_color_texture.gpu_image);
-				image_destroy(context, &material->metallic_roughness_texture.gpu_image);
-				image_destroy(context, &material->normal_texture.gpu_image);
+				for (uint32_t texture_slot = 0; texture_slot < TEXTURE_SLOT_COUNT; ++texture_slot) {
+					Image2D *img = &material->textures[texture_slot];
+					if (img->pixels)
+						image_destroy(context, &img->gpu_image);
+				}
 			}
 		}
 		image_destroy(context, &offscreen_render);
 		image_destroy(context, &depthbuffer);
 		image_destroy(context, &compute_image);
 		image_destroy(context, &white_texture);
-		image_destroy(context, &kenney_modular_dungeon_texture.gpu_image);
 		sampler_destroy(context, &linear_sampler);
 
 		pipeline_destroy(context, &c_pipeline);
@@ -1732,7 +1735,7 @@ Shader graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, Str
 			.rasterizerDiscardEnable = VK_FALSE,
 			.polygonMode = VK_POLYGON_MODE_FILL,
 			.lineWidth = 1.0f,
-			.cullMode = VK_CULL_MODE_NONE,
+			.cullMode = VK_CULL_MODE_BACK_BIT,
 			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 			.depthBiasEnable = VK_FALSE,
 		};
@@ -2928,12 +2931,12 @@ Mesh load_gltf(Arena *arena, String8 path) {
 		for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
 			cgltf_material *material = &data->materials[material_index];
 			Material *out = &result.materials[material_index];
-			out->base_color = (float4){ 1.0f, 1.0f, 1.0f, 1.0f };
+			out->tint = (float4){ 1.0f, 1.0f, 1.0f, 1.0f };
 
 			if (material->has_pbr_metallic_roughness) {
 				cgltf_pbr_metallic_roughness *pbr = &material->pbr_metallic_roughness;
 
-				out->base_color = float4_wrap(pbr->base_color_factor);
+				out->tint = float4_wrap(pbr->base_color_factor);
 				out->metallic_roughness = (float2){
 					.x = pbr->metallic_factor,
 					.y = pbr->roughness_factor,
@@ -2941,21 +2944,21 @@ Mesh load_gltf(Arena *arena, String8 path) {
 
 				if (pbr->base_color_texture.texture) {
 					cgltf_image *image = pbr->base_color_texture.texture->image;
-					out->base_color_texture = load_gltf_image(arena, directory, image);
-					out->base_color_texture.format = PIXEL_FORMAT_RGBA8_SRGB;
+					out->textures[TEXTURE_SLOT_ALEBDO] = load_gltf_image(arena, directory, image);
+					out->textures[TEXTURE_SLOT_ALEBDO].format = PIXEL_FORMAT_RGBA8_SRGB;
 				}
 
 				if (pbr->metallic_roughness_texture.texture) {
 					cgltf_image *image = pbr->metallic_roughness_texture.texture->image;
-					out->metallic_roughness_texture = load_gltf_image(arena, directory, image);
-					out->metallic_roughness_texture.format = PIXEL_FORMAT_RGBA8_UNORM;
+					out->textures[TEXTURE_SLOT_METAL_ROUGHNESS] = load_gltf_image(arena, directory, image);
+					out->textures[TEXTURE_SLOT_METAL_ROUGHNESS].format = PIXEL_FORMAT_RGBA8_UNORM;
 				}
 			}
 
 			if (material->normal_texture.texture) {
 				cgltf_image *image = material->normal_texture.texture->image;
-				out->normal_texture = load_gltf_image(arena, directory, image);
-				out->normal_texture.format = PIXEL_FORMAT_RGBA8_UNORM;
+				out->textures[TEXTURE_SLOT_NORMAL] = load_gltf_image(arena, directory, image);
+				out->textures[TEXTURE_SLOT_NORMAL].format = PIXEL_FORMAT_RGBA8_UNORM;
 			}
 		}
 	}
