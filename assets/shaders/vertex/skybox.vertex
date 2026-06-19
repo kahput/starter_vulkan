@@ -1,0 +1,39 @@
+#version 450
+#pragma shader_stage(vertex)
+
+layout(set = 0, binding = 0) uniform FrameData {
+    mat4 view;
+    mat4 projection;
+    vec4 camera_position;
+    float time;
+} frame;
+
+const vec3 positions[8] = vec3[8](
+    vec3(-1.0, -1.0,  1.0), // 0: Front-Bottom-Left
+    vec3( 1.0, -1.0,  1.0), // 1: Front-Bottom-Right
+    vec3( 1.0,  1.0,  1.0), // 2: Front-Top-Right
+    vec3(-1.0,  1.0,  1.0), // 3: Front-Top-Left
+    vec3(-1.0, -1.0, -1.0), // 4: Back-Bottom-Left
+    vec3( 1.0, -1.0, -1.0), // 5: Back-Bottom-Right
+    vec3( 1.0,  1.0, -1.0), // 6: Back-Top-Right
+    vec3(-1.0,  1.0, -1.0)  // 7: Back-Top-Left
+);
+
+const int indices[36] = int[36](
+    0, 1, 2, 2, 3, 0, // Front Face
+    1, 5, 6, 6, 2, 1, // Right Face 
+    5, 4, 7, 7, 6, 5, // Back Face 
+    4, 0, 3, 3, 7, 4, // Left Face 
+    3, 2, 6, 6, 7, 3, // Top Face 
+    4, 5, 1, 1, 0, 4  // Bottom Face
+);
+
+out ShaderOutput {
+    layout (location = 0) vec3 worldspace;
+} vs_output;
+
+void main() {
+    vec3 position = positions[indices[gl_VertexIndex]];
+    gl_Position = vec4(frame.projection * mat4(mat3(frame.view)) * vec4(position, 1.0)).xyww;
+    vs_output.worldspace = position;
+}

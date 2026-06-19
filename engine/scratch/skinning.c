@@ -203,7 +203,7 @@ typedef struct {
 	float32x4 weights;
 } SkinningData;
 
-GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage);
+GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name);
 GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
 GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt);
 Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface);
@@ -257,8 +257,9 @@ typedef struct {
 	GFX_Image gpu_image;
 
 	// METADATA
-	uint32_t width, height;
+	ImageType type;
 	PixelFormat format;
+	uint32_t width, height;
 } Image2D;
 
 typedef struct {
@@ -308,6 +309,12 @@ typedef enum {
 	MESH_COUNT,
 } MeshID;
 
+typedef struct {
+	MeshID id;
+	Transform3 transform;
+	uint64_t skinned_vertices_offset;
+} MeshInstance;
+
 String8 meshid_to_path[MESH_COUNT] = {
 	[MESH_HERO_MALE] = str_comp("assets/models/hero_male.glb"),
 	[MESH_GDBOT] = str_comp("assets/models/gdbot.glb"),
@@ -324,7 +331,19 @@ typedef struct {
 	Mesh meshes[MESH_COUNT];
 } RES_Cache;
 
+enum {
+	CUBE_FACE_RIGHT,
+	CUBE_FACE_LEFT,
+	CUBE_FACE_TOP,
+	CUBE_FACE_BOTTOM,
+	CUBE_FACE_FRONT,
+	CUBE_FACE_BACK,
+
+	CUBE_FACE_COUNT,
+} CubeFace;
+
 Image2D load_image(Arena *arena, String8 path);
+Image2D load_cubemap(Arena *arena, String8 paths[CUBE_FACE_COUNT]);
 Mesh load_gltf(Arena *arena, String8 path);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
@@ -363,16 +382,31 @@ int main(void) {
 	gfx_startup(context);
 	Swapchain swapchains[] = { swapchain_make(context, popup_compute), swapchain_make(context, main_render) };
 
-	GFX_Image compute_image = image_make(context, 640, 360, (ImageOptions){ .format = PIXEL_FORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
-	GFX_Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ .format = PIXEL_FORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
-	GFX_Image depthbuffer = image_make(context, 948, 1044, (ImageOptions){ .format = PIXEL_FORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
-	GFX_Image shadow_depthbuffer = image_make(context, 2048, 2048, (ImageOptions){ .format = PIXEL_FORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE });
+	GFX_Image compute_image = image_make(context, 640, 360, (ImageOptions){ .format = PIXELFORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
+	GFX_Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
+	GFX_Image depthbuffer = image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
+	GFX_Image shadow_depthbuffer = image_make(context, 2048, 2048, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE });
 
-	GFX_Sampler linear_sampler = sampler_make(context, sampler_opt(SAMPLER_FILTER_LINEAR, SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-    SamplerOptions shadow_opt = sampler_opt(SAMPLER_FILTER_LINEAR, SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-    /* shadow_opt.compare_enable = true; */
+#define array_arg(T, ...) \
+	(T[]) { __VA_ARGS__, (T){ 0 } }
+	Image2D skybox = load_cubemap(arena,
+		array_arg(
+			String8,
+			s("assets/skybox/right.jpg"),
+			s("assets/skybox/left.jpg"),
+			s("assets/skybox/top.jpg"),
+			s("assets/skybox/bottom.jpg"),
+			s("assets/skybox/front.jpg"),
+			s("assets/skybox/back.jpg") //
+			) //
+	);
+	skybox.gpu_image = image_make(context, 2048, 2048, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
+
+	GFX_Sampler linear_sampler = sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_CLAMP));
+	SamplerOptions shadow_opt = sampler_opt(FILTER_LINEAR, WRAP_CLAMP);
+	/* shadow_opt.compare_enable = true; */
 	GFX_Sampler shadow_sampler = sampler_make(context, shadow_opt);
-	GFX_Image white_texture = image_make(context, 1, 1, (ImageOptions){ .format = PIXEL_FORMAT_RGBA8_UNORM });
+	GFX_Image white_texture = image_make(context, 1, 1, (ImageOptions){ .format = PIXELFORMAT_RGBA8_UNORM });
 
 	// create compute pipeline
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
@@ -457,6 +491,7 @@ int main(void) {
 	}
 
 	Shader pipeline_3d = { 0 };
+	Shader pipeline_skybox = { 0 };
 	{ // create 3d graphics pipeline
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
@@ -479,6 +514,12 @@ int main(void) {
 				},
 				[2] = {
 				  .binding = 2,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+				[3] = {
+				  .binding = 3,
 				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				  .descriptorCount = 1,
 				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -520,13 +561,23 @@ int main(void) {
 		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
 			(PipelineOptions){
 			  .color_attachment_count = 1,
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
+			  .sample_count = SAMPLE_COUNT_8,
+			  .cull_mode = CULL_BACK,
+			});
+
+		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/skybox.vertex.spv"));
+		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/skybox.fragment.spv"));
+		pipeline_skybox = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, 1,
+			(PipelineOptions){
+			  .color_attachment_count = 1,
+			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
 			});
 		arena_scratch_end(scratch);
 	}
 
-	GFX_Buffer geometry = buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER);
+	GFX_Buffer geometry = buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER, "geometry");
 
 	Mesh meshes[MESH_COUNT] = { 0 };
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
@@ -546,6 +597,9 @@ int main(void) {
 			gfx_cmd_image_upload(&cmd, &white_texture, 1, 1, &(uint32_t){ 0xffffffff });
 			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &white_texture);
 
+			gfx_cmd_image_upload(&cmd, &skybox.gpu_image, skybox.width, skybox.height, skybox.pixels);
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &white_texture);
+
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
 				for (uint32_t material_index = 0; material_index < mesh->material_count; ++material_index) {
@@ -559,7 +613,7 @@ int main(void) {
 							gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &img->gpu_image);
 						} else {
 							img->width = img->height = 1;
-							img->format = PIXEL_FORMAT_RGBA8_SRGB;
+							img->format = PIXELFORMAT_RGBA8_SRGB;
 							img->gpu_image = white_texture;
 						}
 					}
@@ -606,7 +660,7 @@ int main(void) {
 
 	GFX_Buffer scratch_buffers[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
-		scratch_buffers[index] = buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER);
+		scratch_buffers[index] = buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER, "scratch_buffer");
 		vkMapMemory(context->device.logical, scratch_buffers[index].memory, 0, scratch_buffers[index].size, 0, (void **)&scratch_buffers[index].mapped);
 	}
 
@@ -617,6 +671,7 @@ int main(void) {
 
 	Arena frame_arena[] = { arena_make(MiB(1)) };
 	memory_zero(context->staging_buffer.mapped, context->staging_buffer_frame_size);
+
 	while (is_open) {
 		double time = os_time_ns() * 1e-9;
 		dt = time - last_frame;
@@ -741,12 +796,6 @@ int main(void) {
 				anim_index++;
 			anim_t += dt;
 
-			typedef struct {
-				MeshID id;
-				Transform3 transform;
-				uint64_t skinned_vertices_offset;
-			} MeshInstance;
-
 			MeshInstance instances[] = {
 				{ MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
 				{ MESH_HERO_MALE, { { 0.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
@@ -821,8 +870,9 @@ int main(void) {
 
 			Light lights[] = {
 				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
+				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
 			};
-            float ortho_size = 10.0f;
+			float ortho_size = 10.0f;
 			lights[0].matrix = float4x4_multiply(
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
 				float4x4_lookat(float3_from_float4(lights[0].position), FLOAT3_ZERO, FLOAT3_Y));
@@ -1102,6 +1152,23 @@ int main(void) {
 						};
 						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
 					}
+					{ // skybox sampler
+						VkDescriptorImageInfo image_info = {
+							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+							.imageView = skybox.gpu_image.view,
+							.sampler = linear_sampler.handle
+						};
+						VkWriteDescriptorSet write = {
+							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+							.dstSet = frame_set,
+							.dstBinding = 3,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+							.pImageInfo = &image_info
+						};
+						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					}
 				}
 
 				vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
@@ -1195,6 +1262,9 @@ int main(void) {
 						vkCmdDrawIndexed(command_buffer, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
 				}
+
+				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_skybox.handle);
+				vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 
 				vkCmdEndRendering(command_buffer);
 			}
@@ -1290,6 +1360,7 @@ int main(void) {
 		image_destroy(context, &shadow_depthbuffer);
 		image_destroy(context, &compute_image);
 		image_destroy(context, &white_texture);
+		image_destroy(context, &skybox.gpu_image);
 		sampler_destroy(context, &linear_sampler);
 		sampler_destroy(context, &shadow_sampler);
 
@@ -1297,6 +1368,8 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_skinning);
 		pipeline_destroy(context, &pipeline_shadow);
 		pipeline_destroy(context, &pipeline_3d);
+		memory_zero(pipeline_skybox.set_layouts, sizeof(pipeline_skybox.set_layouts)); // destroyed by pipeline_3d
+		pipeline_destroy(context, &pipeline_skybox);
 
 		for (uint32_t index = 0; index < countof(swapchains); ++index)
 			swapchain_destroy(context, &swapchains[index]);
@@ -1310,22 +1383,35 @@ int main(void) {
 	return 0;
 }
 
-VkImageUsageFlags gfx__to_vk_image_usage(PixelFormat format, ImageUsageFlags usage) {
+// EXTENSIONS
+static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkCreateDebugUtilsMessenger(VkInstance i, const VkDebugUtilsMessengerCreateInfoEXT *c, const VkAllocationCallbacks *a, VkDebugUtilsMessengerEXT *m) { return VK_ERROR_EXTENSION_NOT_PRESENT; }
+static VKAPI_ATTR void VKAPI_CALL STUB_vkDestroyDebugUtilsMessenger(VkInstance i, VkDebugUtilsMessengerEXT m, const VkAllocationCallbacks *a) {}
+static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkSetDebugUtilsObjectName(VkDevice d, const VkDebugUtilsObjectNameInfoEXT *n) { return VK_SUCCESS; }
+static VKAPI_ATTR void VKAPI_CALL STUB_vkCmdBeginDebugUtilsLabel(VkCommandBuffer c, const VkDebugUtilsLabelEXT *l) {}
+static VKAPI_ATTR void VKAPI_CALL STUB_vkCmdEndDebugUtilsLabel(VkCommandBuffer c) {}
+
+PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessenger = STUB_vkCreateDebugUtilsMessenger;
+PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessenger = STUB_vkDestroyDebugUtilsMessenger;
+PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = STUB_vkSetDebugUtilsObjectName;
+PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabel = STUB_vkCmdBeginDebugUtilsLabel;
+PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = STUB_vkCmdEndDebugUtilsLabel;
+
+VkImageUsageFlags gfx__image_opt_to_vk_usage(ImageOptions opt) {
 	VkImageUsageFlags result = 0;
-	if (FLAG_GET(usage, IMAGE_USAGE_RENDER)) {
-		if (pixel_format_is_depth(format))
+	if (FLAG_GET(opt.usage, IMAGE_USAGE_RENDER)) {
+		if (pixel_format_is_depth(opt.format))
 			result |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		else
 			result |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	}
 
-	if (FLAG_GET(usage, IMAGE_USAGE_SAMPLE))
+	if (FLAG_GET(opt.usage, IMAGE_USAGE_SAMPLE))
 		result |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
-	if (FLAG_GET(usage, IMAGE_USAGE_STORAGE))
+	if (FLAG_GET(opt.usage, IMAGE_USAGE_STORAGE))
 		result |= VK_IMAGE_USAGE_STORAGE_BIT;
 
-	if (FLAG_GET(usage, IMAGE_USAGE_TRANSFER))
+	if (FLAG_GET(opt.usage, IMAGE_USAGE_TRANSFER))
 		result |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
 	if (result == 0) { // default
@@ -1366,26 +1452,26 @@ VkMemoryPropertyFlags gfx__memory_type_to_vk_memory_property_flags(BufferMemory 
 
 VkFormat gfx__pixel_format_to_vk_format(PixelFormat format) {
 	switch (format) {
-		case PIXEL_FORMAT_RGBA8_UNORM:
+		case PIXELFORMAT_RGBA8_UNORM:
 			return VK_FORMAT_R8G8B8A8_UNORM;
-		case PIXEL_FORMAT_RGBA8_SRGB:
+		case PIXELFORMAT_RGBA8_SRGB:
 			return VK_FORMAT_R8G8B8A8_SRGB;
-		case PIXEL_FORMAT_RGBA16_FLOAT:
+		case PIXELFORMAT_RGBA16_FLOAT:
 			return VK_FORMAT_R16G16B16A16_SFLOAT;
-		case PIXEL_FORMAT_R32_FLOAT:
+		case PIXELFORMAT_R32_FLOAT:
 			return VK_FORMAT_R32_SFLOAT;
-		case PIXEL_FORMAT_DEPTH:
+		case PIXELFORMAT_DEPTH:
 			return VK_FORMAT_D32_SFLOAT;
-		case PIXEL_FORMAT_DEPTH_STENCIL:
+		case PIXELFORMAT_DEPTH_STENCIL:
 			return VK_FORMAT_D24_UNORM_S8_UINT;
-		case PIXEL_FORMAT_BACKBUFFER:
+		case PIXELFORMAT_BACKBUFFER:
 			return VK_FORMAT_B8G8R8A8_SRGB;
 	}
 
 	return VK_FORMAT_UNDEFINED;
 }
 
-VkImageAspectFlags gfx__pixel_format_to_aspect(PixelFormat format) {
+VkImageAspectFlags gfx__pixel_format_to_vk_aspect(PixelFormat format) {
 	if (pixel_format_is_depth_stencil(format))
 		return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 	if (pixel_format_is_depth(format))
@@ -1396,19 +1482,19 @@ VkImageAspectFlags gfx__pixel_format_to_aspect(PixelFormat format) {
 
 uint32_t gfx__pixel_format_to_stride(PixelFormat format) {
 	switch (format) {
-		case PIXEL_FORMAT_RGBA8_UNORM:
+		case PIXELFORMAT_RGBA8_UNORM:
 			return 4;
-		case PIXEL_FORMAT_RGBA8_SRGB:
+		case PIXELFORMAT_RGBA8_SRGB:
 			return 4;
-		case PIXEL_FORMAT_RGBA16_FLOAT:
+		case PIXELFORMAT_RGBA16_FLOAT:
 			return 2 * 4;
-		case PIXEL_FORMAT_R32_FLOAT:
+		case PIXELFORMAT_R32_FLOAT:
 			return 4;
-		case PIXEL_FORMAT_DEPTH:
+		case PIXELFORMAT_DEPTH:
 			return 4;
-		case PIXEL_FORMAT_DEPTH_STENCIL:
+		case PIXELFORMAT_DEPTH_STENCIL:
 			return 4;
-		case PIXEL_FORMAT_BACKBUFFER:
+		case PIXELFORMAT_BACKBUFFER:
 			return 4;
 			break;
 	}
@@ -1418,7 +1504,7 @@ uint32_t gfx__pixel_format_to_stride(PixelFormat format) {
 	return VK_IMAGE_ASPECT_COLOR_BIT;
 }
 
-VkSampleCountFlags gfx__usage_to_sample_count(VkPhysicalDeviceLimits limits, ImageOptions options) {
+VkSampleCountFlags gfx__usage_to_vk_sample(VkPhysicalDeviceLimits limits, ImageOptions options) {
 	VkSampleCountFlags result = MAX((VkSampleCountFlags)options.sample, VK_SAMPLE_COUNT_1_BIT);
 
 	if (FLAG_GET(options.usage, IMAGE_USAGE_SAMPLE)) {
@@ -1443,6 +1529,26 @@ VkSampleCountFlags gfx__usage_to_sample_count(VkPhysicalDeviceLimits limits, Ima
 
 	if (result < options.sample)
 		LOG_WARN("requested sample size of [%u] is too large, clamping to [%u]", options.sample, result);
+
+	return result;
+}
+
+VkImageCreateFlags gfx__opt_to_vk_image_flags(ImageOptions opt) {
+	VkImageCreateFlags result = 0;
+
+	if (opt.type == IMAGE_TYPE_CUBE)
+		result = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+	return result;
+}
+
+VkImageViewType gfx__opt_to_vk_view_type(ImageOptions opt) {
+	VkImageViewType result = VK_IMAGE_VIEW_TYPE_2D;
+
+	if (opt.type == IMAGE_TYPE_3D)
+		result = VK_IMAGE_VIEW_TYPE_3D;
+	if (opt.type == IMAGE_TYPE_CUBE)
+		result = VK_IMAGE_VIEW_TYPE_CUBE;
 
 	return result;
 }
@@ -1473,7 +1579,7 @@ uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_f
 	return 0;
 }
 
-GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage) {
+GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name) {
 	GFX_Buffer result = { 0 };
 	LOG_DEBUG("creating vulkan buffer.");
 
@@ -1487,7 +1593,6 @@ GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory,
 
 	if (ok) { // create buffer handle
 		result.size = size;
-
 		uint32_t family_indices[] = { context->graphics_index, context->transfer_index };
 		result.info = (VkBufferCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1533,6 +1638,19 @@ GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory,
 		}
 	}
 
+#if DEV_BUILD
+	if (ok) { // assign debug name
+		VkDebugUtilsObjectNameInfoEXT name_info = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+			.pObjectName = debug_name ? debug_name : "<unnamed>",
+			.objectType = VK_OBJECT_TYPE_BUFFER,
+			.objectHandle = (uint64_t)result.handle,
+
+		};
+		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+	}
+#endif
+
 	if (ok == false) // remove half-made resources on error
 		buffer_destroy(context, &result);
 
@@ -1544,10 +1662,18 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 	LOG_DEBUG("creating vulkan image.");
 
 	bool ok = true;
-	VkImageUsageFlags vk_usage = gfx__to_vk_image_usage(options.format, options.usage);
+	VkImageUsageFlags vk_usage = gfx__image_opt_to_vk_usage(options);
 	VkFormat vk_format = gfx__pixel_format_to_vk_format(options.format);
-	VkImageAspectFlags aspect = gfx__pixel_format_to_aspect(options.format);
-	VkSampleCountFlags vk_sample = gfx__usage_to_sample_count(context->device.limits, options);
+	VkImageAspectFlags vk_aspect = gfx__pixel_format_to_vk_aspect(options.format);
+	VkSampleCountFlags vk_sample = gfx__usage_to_vk_sample(context->device.limits, options);
+	VkImageCreateFlags vk_flags = gfx__opt_to_vk_image_flags(options);
+	VkImageViewType vk_type = gfx__opt_to_vk_view_type(options);
+	uint32_t layer_count =
+		options.slice_count
+		? options.slice_count
+		: options.type == IMAGE_TYPE_CUBE ? 6
+										  : 1;
+
 	result.width = width, result.height = height;
 	result.format = options.format;
 	result.usage = RESOURCE_USAGE_UNDEFINED;
@@ -1556,7 +1682,7 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 		result.image_info = (VkImageCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 			.imageType = VK_IMAGE_TYPE_2D,
-			.flags = 0,
+			.flags = vk_flags,
 			.format = vk_format,
 			.extent = {
 			  .width = width,
@@ -1564,7 +1690,7 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 			  .depth = 1,
 			},
 			.mipLevels = 1,
-			.arrayLayers = 1,
+			.arrayLayers = layer_count,
 			.samples = vk_sample,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = vk_usage,
@@ -1595,7 +1721,7 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 		result.view_info = (VkImageViewCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 			.image = result.handle,
-			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.viewType = vk_type,
 			.format = result.image_info.format,
 			.components = {
 			  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -1604,11 +1730,11 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 			  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
 			},
 			.subresourceRange = {
-			  .aspectMask = aspect,
+			  .aspectMask = vk_aspect,
 			  .baseMipLevel = 0,
 			  .levelCount = 1,
 			  .baseArrayLayer = 0,
-			  .layerCount = 1,
+			  .layerCount = layer_count,
 			}
 		};
 
@@ -1640,7 +1766,7 @@ GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt) {
 			.anisotropyEnable = VK_TRUE,
 			.maxAnisotropy = context->device.limits.maxSamplerAnisotropy,
 			.compareEnable = opt.compare_enable,
-            .compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+			.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 		};
 
 		ok = vkCreateSampler(context->device.logical, &result.info, NULL, &result.handle) == VK_SUCCESS;
@@ -1985,7 +2111,7 @@ Shader graphics_pipeline_make(
 			.rasterizerDiscardEnable = VK_FALSE,
 			.polygonMode = VK_POLYGON_MODE_FILL,
 			.lineWidth = 1.0f,
-			.cullMode = VK_CULL_MODE_BACK_BIT,
+			.cullMode = opt.cull_mode,
 			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 			.depthBiasEnable = VK_FALSE,
 		};
@@ -2001,7 +2127,7 @@ Shader graphics_pipeline_make(
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 			.depthTestEnable = VK_TRUE,
 			.depthWriteEnable = VK_TRUE,
-			.depthCompareOp = VK_COMPARE_OP_LESS,
+			.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 			.depthBoundsTestEnable = VK_FALSE,
 			.minDepthBounds = 0.0f,
 			.maxDepthBounds = 1.0f
@@ -2250,19 +2376,6 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 	.pUserData = 0
 };
 
-// EXTENSIONS
-static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkCreateDebugUtilsMessenger(VkInstance i, const VkDebugUtilsMessengerCreateInfoEXT *c, const VkAllocationCallbacks *a, VkDebugUtilsMessengerEXT *m) { return VK_ERROR_EXTENSION_NOT_PRESENT; }
-static VKAPI_ATTR void VKAPI_CALL STUB_vkDestroyDebugUtilsMessenger(VkInstance i, VkDebugUtilsMessengerEXT m, const VkAllocationCallbacks *a) {}
-static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkSetDebugUtilsObjectName(VkDevice d, const VkDebugUtilsObjectNameInfoEXT *n) { return VK_SUCCESS; }
-static VKAPI_ATTR void VKAPI_CALL STUB_vkCmdBeginDebugUtilsLabel(VkCommandBuffer c, const VkDebugUtilsLabelEXT *l) {}
-static VKAPI_ATTR void VKAPI_CALL STUB_vkCmdEndDebugUtilsLabel(VkCommandBuffer c) {}
-
-PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessenger = STUB_vkCreateDebugUtilsMessenger;
-PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessenger = STUB_vkDestroyDebugUtilsMessenger;
-PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = STUB_vkSetDebugUtilsObjectName;
-PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabel = STUB_vkCmdBeginDebugUtilsLabel;
-PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = STUB_vkCmdEndDebugUtilsLabel;
-
 bool gfx__vk_instance_make(GFX_Context *context);
 bool gfx__vk_device_make(GFX_Context *context);
 bool gfx__frame_resources_make(GFX_Context *context);
@@ -2293,7 +2406,7 @@ bool gfx_startup(GFX_Context *context) {
 				context,
 				context->staging_buffer_frame_size * MAX_FRAMES_IN_FLIGHT,
 				BUFFER_MEMORY_SHARED,
-				BUFFER_USAGE_TRANSFER);
+				BUFFER_USAGE_TRANSFER, "staging_buffer");
 		vkMapMemory(context->device.logical, context->staging_buffer.memory, 0, context->staging_buffer.size, 0, (void **)&context->staging_buffer.mapped);
 	}
 
@@ -2862,23 +2975,37 @@ void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buff
 }
 
 void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
-	ResourceUsage original = dst->usage;
-	gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
-	VkBufferImageCopy region = {
-		.bufferOffset = src_offset,
-		.bufferRowLength = 0,
-		.bufferImageHeight = 0,
-		.imageSubresource = {
-		  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-		  .mipLevel = 0,
-		  .baseArrayLayer = 0,
-		  .layerCount = 1,
-		},
-		.imageOffset = { 0 },
-		.imageExtent = { .width = width, .height = height, .depth = 1 },
-	};
-	vkCmdCopyBufferToImage(cmd->handle, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-	gfx_cmd_image_transition(cmd, original, dst);
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+	bool ok = cmd && cmd->handle && dst && dst->handle;
+	if (ok == false)
+		LOG_WARN("%s - invalid parameter '%s' passed", __func__, cmd == 0 || cmd->handle == 0 ? "GFX_CommandContext" : "GFX_Image");
+
+	if (ok) {
+		ResourceUsage original = dst->usage;
+		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
+
+		VkBufferImageCopy *regions = arena_push_count(scratch.arena, VkBufferImageCopy, dst->image_info.arrayLayers);
+
+		for (uint32_t layer_index = 0; layer_index < dst->image_info.arrayLayers; ++layer_index) {
+			regions[layer_index] = (VkBufferImageCopy){
+				.bufferOffset = src_offset + (layer_index * width * height * gfx__pixel_format_to_stride(dst->format)),
+				.bufferRowLength = 0,
+				.bufferImageHeight = 0,
+				.imageSubresource = {
+				  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				  .mipLevel = 0,
+				  .baseArrayLayer = layer_index,
+				  .layerCount = 1,
+				},
+				.imageOffset = { 0 },
+				.imageExtent = { .width = width, .height = height, .depth = 1 },
+			};
+		}
+		vkCmdCopyBufferToImage(cmd->handle, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dst->image_info.arrayLayers, regions);
+		gfx_cmd_image_transition(cmd, original, dst);
+	}
+
+	arena_scratch_end(scratch);
 }
 
 VkPipelineStageFlags gfx__usage_to_pipeline_stage(ResourceUsage usage) {
@@ -3104,14 +3231,14 @@ void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Imag
 
 void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
 	uint32_t stride = gfx__pixel_format_to_stride(image->format);
-	uint64_t size = width * height * stride;
+	uint64_t size = width * height * stride * image->image_info.arrayLayers;
 	uint64_t start_offset = cmd->transient_arena->offset;
 	memory_copy(arena_push(cmd->transient_arena, alignup(size, 256), 1, 0), pixels, size);
 	gfx_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
 }
 
 Image2D load_image(Arena *arena, String8 path) {
-	Image2D result = { .format = PIXEL_FORMAT_RGBA8_UNORM };
+	Image2D result = { .format = PIXELFORMAT_RGBA8_UNORM };
 
 	bool ok = true;
 
@@ -3145,6 +3272,23 @@ Image2D load_image(Arena *arena, String8 path) {
 	return result;
 }
 
+Image2D load_cubemap(Arena *arena, String8 paths[CUBE_FACE_COUNT]) {
+	Image2D result = { 0 };
+
+	Image2D images[CUBE_FACE_COUNT];
+	for (uint32_t face_index = 0; face_index < CUBE_FACE_COUNT; ++face_index) {
+		images[face_index] = load_image(arena, paths[face_index]);
+
+		if (face_index > 0) {
+			ASSERT(images[face_index - 1].width == images[face_index].width && images[face_index - 1].height == images[face_index].height && "all images in cubemap must be equally sized.");
+		}
+	}
+
+	result = images[0];
+	result.type = IMAGE_TYPE_CUBE;
+	return result;
+}
+
 Image2D load_gltf_image(Arena *arena, String8 directory, cgltf_image *image) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Image2D result = { 0 };
@@ -3159,7 +3303,7 @@ Image2D load_gltf_image(Arena *arena, String8 directory, cgltf_image *image) {
 			const uint8_t *buffer_data = cgltf_buffer_view_data(image->buffer_view);
 			uint32_t channels = 0;
 			result.pixels = stbi_load_from_memory(buffer_data, image->buffer_view->size, (int32_t *)&result.width, (int32_t *)&result.height, (int32_t *)&channels, 4);
-			result.format = PIXEL_FORMAT_RGBA8_SRGB;
+			result.format = PIXELFORMAT_RGBA8_SRGB;
 		}
 	}
 
@@ -3206,20 +3350,20 @@ Mesh load_gltf(Arena *arena, String8 path) {
 				if (pbr->base_color_texture.texture) {
 					cgltf_image *image = pbr->base_color_texture.texture->image;
 					out->textures[TEXTURE_SLOT_ALEBDO] = load_gltf_image(arena, directory, image);
-					out->textures[TEXTURE_SLOT_ALEBDO].format = PIXEL_FORMAT_RGBA8_SRGB;
+					out->textures[TEXTURE_SLOT_ALEBDO].format = PIXELFORMAT_RGBA8_SRGB;
 				}
 
 				if (pbr->metallic_roughness_texture.texture) {
 					cgltf_image *image = pbr->metallic_roughness_texture.texture->image;
 					out->textures[TEXTURE_SLOT_METAL_ROUGHNESS] = load_gltf_image(arena, directory, image);
-					out->textures[TEXTURE_SLOT_METAL_ROUGHNESS].format = PIXEL_FORMAT_RGBA8_UNORM;
+					out->textures[TEXTURE_SLOT_METAL_ROUGHNESS].format = PIXELFORMAT_RGBA8_UNORM;
 				}
 			}
 
 			if (material->normal_texture.texture) {
 				cgltf_image *image = material->normal_texture.texture->image;
 				out->textures[TEXTURE_SLOT_NORMAL] = load_gltf_image(arena, directory, image);
-				out->textures[TEXTURE_SLOT_NORMAL].format = PIXEL_FORMAT_RGBA8_UNORM;
+				out->textures[TEXTURE_SLOT_NORMAL].format = PIXELFORMAT_RGBA8_UNORM;
 			}
 		}
 	}

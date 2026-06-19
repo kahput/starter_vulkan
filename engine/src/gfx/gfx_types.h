@@ -3,18 +3,24 @@
 #include "common.h"
 
 typedef enum {
-	PIXEL_FORMAT_RGBA8_UNORM,
-	PIXEL_FORMAT_RGBA8_SRGB,
-	PIXEL_FORMAT_RGBA16_FLOAT,
-	PIXEL_FORMAT_R32_FLOAT,
+	PIXELFORMAT_RGBA8_UNORM,
+	PIXELFORMAT_RGBA8_SRGB,
+	PIXELFORMAT_RGBA16_FLOAT,
+	PIXELFORMAT_R32_FLOAT,
 
-	PIXEL_FORMAT_DEPTH,
-	PIXEL_FORMAT_DEPTH_STENCIL,
-	PIXEL_FORMAT_BACKBUFFER,
+	PIXELFORMAT_DEPTH,
+	PIXELFORMAT_DEPTH_STENCIL,
+	PIXELFORMAT_BACKBUFFER,
 } PixelFormat;
 
-static inline bool pixel_format_is_depth_stencil(PixelFormat format) { return format == PIXEL_FORMAT_DEPTH_STENCIL; }
-static inline bool pixel_format_is_depth(PixelFormat format) { return format == PIXEL_FORMAT_DEPTH || pixel_format_is_depth_stencil(format); }
+static inline bool pixel_format_is_depth_stencil(PixelFormat format) { return format == PIXELFORMAT_DEPTH_STENCIL; }
+static inline bool pixel_format_is_depth(PixelFormat format) { return format == PIXELFORMAT_DEPTH || pixel_format_is_depth_stencil(format); }
+
+typedef enum {
+	IMAGE_TYPE_2D,
+	IMAGE_TYPE_3D,
+	IMAGE_TYPE_CUBE,
+} ImageType;
 
 typedef enum {
 	IMAGE_USAGE_SAMPLE = BIT(0),
@@ -56,34 +62,43 @@ typedef enum {
 } ShaderStage;
 
 typedef enum sampler_filter {
-	SAMPLER_FILTER_NEAREST = 0,
-	SAMPLER_FILTER_LINEAR = 1
-} SamplerFilter;
+	FILTER_NEAREST = 0,
+	FILTER_LINEAR = 1
+} SamplerFilterMode;
 
 typedef enum sampler_address_mode {
-	SAMPLER_ADDRESS_MODE_REPEAT = 0,
-	SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT = 1,
-	SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE = 2,
-	SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER = 3
-} SamplerAddressMode;
+	WRAP_REPEAT = 0,
+	WRAP_REPEAT_MIRROR = 1,
+	WRAP_CLAMP = 2,
+	WRAP_CLAMP_BORDER = 3
+} SamplerWrapMode;
+
+typedef enum cull_mode {
+	CULL_NONE = 0,
+	CULL_FRONT = 1,
+	CULL_BACK = 2,
+	CULL_FRONT_AND_BACK = 3
+} PipelineCullMode;
 
 typedef struct {
+	ImageType type;
+	uint32_t slice_count;
 	PixelFormat format;
 	ImageUsageFlags usage; // zero initialized equals IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER
 	ImageSampleCount sample; // zero initilized equals SAMPLE_COUNT_1
 } ImageOptions;
 
 typedef struct {
-	SamplerFilter min_filter;
-	SamplerFilter mag_filter;
+	SamplerFilterMode min_filter;
+	SamplerFilterMode mag_filter;
 
-	SamplerFilter mipmap_filter;
+	SamplerFilterMode mipmap_filter;
 
-	SamplerAddressMode address_mode_u;
-	SamplerAddressMode address_mode_v;
-	SamplerAddressMode address_mode_w;
+	SamplerWrapMode address_mode_u;
+	SamplerWrapMode address_mode_v;
+	SamplerWrapMode address_mode_w;
 
-    bool compare_enable;
+	bool compare_enable;
 } SamplerOptions;
 
 #define sampler_opt(filter, mode)  \
@@ -99,6 +114,7 @@ typedef struct {
 #define MAX_COLOR_ATTACHMENTS 8
 typedef struct {
 	ImageSampleCount sample_count;
+    PipelineCullMode cull_mode;
 
 	PixelFormat color_attachments[MAX_COLOR_ATTACHMENTS];
 	uint32_t color_attachment_count;

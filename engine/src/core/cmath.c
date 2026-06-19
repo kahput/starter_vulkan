@@ -507,29 +507,15 @@ float4x4 float4x4_orthographic(float left, float right, float bottom, float top,
 float4x4 float4x4_lookat(float3 eye, float3 center, float3 up) {
 	float4x4 result = float4x4_identity();
 
-	// 1. Calculate Basis Vectors
-	// Forward (f): Points from eye to center (standard OpenGL/Vulkan convention is -Z forward,
-	// so we actually want the vectortor pointing OUT of the screen for the Z-axis basis).
-	// Let's stick to standard Right-Handed Rule derivation:
-	// f = normalized(center - eye) -> Direction usually labeled "Forward"
-	// z_axis = -f                 -> The actual Z column of the matrix
 	float3 f = float3_normalize_safe(float3_subtract(center, eye), EPSILON);
-
-	// Right (s)
-	float3 s = float3_normalize_safe(float3_cross(f, up), EPSILON);
-
-	// Up (u)
-	float3 u = float3_cross(s, f);
-
-	// 2. Fill Matrix
-	// The View Matrix Rotation is the Transpose of the Camera orientation.
-	// So the Basis Vectors (s, u, -f) become the ROWS of the matrix.
+	float3 r = float3_normalize_safe(float3_cross(f, up), EPSILON);
+	float3 u = float3_cross(r, f);
 
 	// Row 0: Right Vector (s)
-	result.elements[0] = s.x; // Col 0
-	result.elements[4] = s.y; // Col 1
-	result.elements[8] = s.z; // Col 2
-	result.elements[12] = -float3_dot(s, eye); // Translation X
+	result.elements[0] = r.x; // Col 0
+	result.elements[4] = r.y; // Col 1
+	result.elements[8] = r.z; // Col 2
+	result.elements[12] = -float3_dot(r, eye); // Translation X
 
 	// Row 1: Up Vector (u)
 	result.elements[1] = u.x; // Col 0
@@ -537,14 +523,11 @@ float4x4 float4x4_lookat(float3 eye, float3 center, float3 up) {
 	result.elements[9] = u.z; // Col 2
 	result.elements[13] = -float3_dot(u, eye); // Translation Y
 
-	// Row 2: Back Vector (-f)
-	// (Note: we use -f because the camera looks down -Z)
 	result.elements[2] = -f.x; // Col 0
 	result.elements[6] = -f.y; // Col 1
 	result.elements[10] = -f.z; // Col 2
 	result.elements[14] = float3_dot(f, eye); // Translation Z (-dot(-f, eye))
 
-	// Row 3: Identity
 	result.elements[3] = 0.0f;
 	result.elements[7] = 0.0f;
 	result.elements[11] = 0.0f;
@@ -554,7 +537,6 @@ float4x4 float4x4_lookat(float3 eye, float3 center, float3 up) {
 }
 
 void float4x4_print(float4x4 m) {
-	// Print row by row
 	LOG_DEBUG(
 		"float4x4 {\n"
 		" %.2f, %.2f, %.2f, %.2f,\n" // Row 0

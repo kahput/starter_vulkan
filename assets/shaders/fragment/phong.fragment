@@ -18,7 +18,8 @@ layout(set = 0, binding = 1) readonly buffer LightBlock {
     LightBuffer lights[];
 };
 
-layout (set = 0, binding = 2) uniform sampler2DShadow u_shadow;
+layout(set = 0, binding = 2) uniform sampler2DShadow u_shadow;
+layout(set = 0, binding = 3) uniform samplerCube u_skybox;
 
 #define TEXTURE_ALBEDO 0
 #define TEXTURE_METAL_ROUGHNESS 1
@@ -78,7 +79,7 @@ void main() {
     vec3 fragment_to_camera = normalize(frame.camera_position.xyz - f_input.worldspace);
 
     float ambient_strength = 0.2f;
-    float specular_strength = 0.5f;
+    float specular_strength = pc.metallic_roughness.x;
 
     vec3 light_color = lights[0].color.rgb;
     vec3 ambient = vec3(ambient_strength) * light_color;
@@ -92,7 +93,7 @@ void main() {
     float bias = max(0.001 * (1.0 - dot(normal, fragment_to_light)), 0.0005);
     float visibility = shadow_calculation(f_input.lightspace, bias); 
 
-    vec3 lighting = (ambient + visibility * (diffuse + specular)) * albedo.rgb;    
+    vec3 lighting = (ambient + visibility * (diffuse + specular));    
 
-    out_color = vec4(lighting, 1.0f);
+    out_color = vec4(lighting * albedo.rgb, 1.0f);
 }

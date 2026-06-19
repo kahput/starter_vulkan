@@ -17,7 +17,7 @@
 	#define ENGINE_API
 #endif
 
-#define offsetof(T, m) ((uint64_t)&(((T*)0)->m))
+#define offsetof(T, m) ((uint64_t)&(((T *)0)->m))
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 	#define alignof(type) _Alignof(type)
@@ -62,7 +62,7 @@
 
 #define CLAMP(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
 
-#define BIT(b) 1 << b 
+#define BIT(b) 1 << b
 
 #define FLAG_GET(flags, flag) ((flags & flag) == flag)
 #define HEADER(ptr, T) ((T *)ptr - 1)
@@ -179,6 +179,6 @@ static inline uint32_t color_pack(Color c) {
 }
 
 typedef struct {
-	uint64_t size;
-	uint8_t *bytes;
-} ByteView;
+	uint8_t *memory;
+	uint64_t length;
+} Slice;

@@ -136,6 +136,8 @@ float4x4 float4x4_orthographic(float left, float right, float top,
 
 float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
 
+float3 frustum_center(float4x4 perspective, float4x4 view);
+
 void float4x4_print(float4x4 m);
 void float2_print(float2 v);
 void float3_print(float3 v);
