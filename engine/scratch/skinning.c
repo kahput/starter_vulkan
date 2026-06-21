@@ -13,11 +13,12 @@
 #include "gfx/gfx_types.h"
 #include "scene.h"
 
-#include <vulkan/vulkan_core.h>
+#include <math.h>
 
 #include <vulkan/vulkan.h>
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
+#include <vulkan/vulkan_core.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -94,6 +95,16 @@ struct Swapchain {
 	int32_t present_index;
 	VkQueue present_queue;
 };
+
+typedef struct {
+	struct {
+		uint64_t offset, size;
+		uint32_t buffer_id;
+	} buffers[8];
+	struct {
+		uint32_t image_id, sampler_id;
+	} textures[8];
+} GFX_Bindings;
 
 #define MAX_BUFFERS 1024
 #define MAX_IMAGES 512
@@ -305,7 +316,11 @@ typedef enum {
 	MESH_MAGE,
 	MESH_BARREL,
 	MESH_ROOM,
+
 	MESH_ROOM_LARGE,
+	MESH_TERRAIN,
+	MESH_GRASS_BILLBOARD,
+
 	MESH_COUNT,
 } MeshID;
 
@@ -313,6 +328,7 @@ typedef struct {
 	MeshID id;
 	Transform3 transform;
 	uint64_t skinned_vertices_offset;
+	bool cast_shadow;
 } MeshInstance;
 
 String8 meshid_to_path[MESH_COUNT] = {
@@ -322,6 +338,7 @@ String8 meshid_to_path[MESH_COUNT] = {
 	[MESH_BARREL] = str_comp("assets/models/barrel.glb"),
 	[MESH_ROOM] = str_comp("assets/models/room.glb"),
 	[MESH_ROOM_LARGE] = str_comp("assets/models/room-large.glb"),
+	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
 };
 
 typedef struct {
@@ -331,20 +348,22 @@ typedef struct {
 	Mesh meshes[MESH_COUNT];
 } RES_Cache;
 
-enum {
-	CUBE_FACE_RIGHT,
-	CUBE_FACE_LEFT,
-	CUBE_FACE_TOP,
-	CUBE_FACE_BOTTOM,
-	CUBE_FACE_FRONT,
-	CUBE_FACE_BACK,
+typedef enum {
+	FACE_RIGHT,
+	FACE_LEFT,
+	FACE_UP,
+	FACE_DOWN,
+	FACE_FORWARD,
+	FACE_BACKWARD,
 
-	CUBE_FACE_COUNT,
-} CubeFace;
+	FACE_COUNT,
+} Face;
 
 Image2D load_image(Arena *arena, String8 path);
-Image2D load_cubemap(Arena *arena, String8 paths[CUBE_FACE_COUNT]);
+Image2D load_cubemap(Arena *arena, String8 paths[FACE_COUNT]);
 Mesh load_gltf(Arena *arena, String8 path);
+
+Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
 AnimationClip *find_animation(AnimationClip *clips, uint32_t count, String8 target) {
@@ -382,6 +401,7 @@ int main(void) {
 	gfx_startup(context);
 	Swapchain swapchains[] = { swapchain_make(context, popup_compute), swapchain_make(context, main_render) };
 
+	// :targets
 	GFX_Image compute_image = image_make(context, 640, 360, (ImageOptions){ .format = PIXELFORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
 	GFX_Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
 	GFX_Image depthbuffer = image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
@@ -392,18 +412,22 @@ int main(void) {
 	Image2D skybox = load_cubemap(arena,
 		array_arg(
 			String8,
-			s("assets/skybox/right.jpg"),
-			s("assets/skybox/left.jpg"),
-			s("assets/skybox/top.jpg"),
-			s("assets/skybox/bottom.jpg"),
-			s("assets/skybox/front.jpg"),
-			s("assets/skybox/back.jpg") //
+			s("assets/textures/skybox_mc/dayRight.png"),
+			s("assets/textures/skybox_mc/dayLeft.png"),
+			s("assets/textures/skybox_mc/dayTop.png"),
+			s("assets/textures/skybox_mc/dayBottom.png"),
+			s("assets/textures/skybox_mc/dayFront.png"),
+			s("assets/textures/skybox_mc/dayBack.png") //
 			) //
 	);
-	skybox.gpu_image = image_make(context, 2048, 2048, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
+	skybox.gpu_image = image_make(context, skybox.width, skybox.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
 
-	GFX_Sampler linear_sampler = sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_CLAMP));
-	SamplerOptions shadow_opt = sampler_opt(FILTER_LINEAR, WRAP_CLAMP);
+	Image2D terrain_texture = load_image(arena, s("assets/textures/base_grass.png"));
+	/* Image2D grass_billboard_texture = load_image(arena, s("assets/textures/grass.png")); */
+
+	GFX_Sampler linear_sampler = sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_MODE_REPEAT));
+	SamplerOptions shadow_opt = sampler_opt(FILTER_LINEAR, WRAP_MODE_CLAMP_BORDER);
+	shadow_opt.debug_name = "shadow_sampler";
 	/* shadow_opt.compare_enable = true; */
 	GFX_Sampler shadow_sampler = sampler_make(context, shadow_opt);
 	GFX_Image white_texture = image_make(context, 1, 1, (ImageOptions){ .format = PIXELFORMAT_RGBA8_UNORM });
@@ -492,6 +516,7 @@ int main(void) {
 
 	Shader pipeline_3d = { 0 };
 	Shader pipeline_skybox = { 0 };
+	Shader pipeline_grass = { 0 };
 	{ // create 3d graphics pipeline
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
@@ -563,7 +588,47 @@ int main(void) {
 			  .color_attachment_count = 1,
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
-			  .cull_mode = CULL_BACK,
+			  .cull_mode = CULL_NONE,
+			});
+
+		{ // set 1
+			VkDescriptorSetLayoutBinding bindings[] = {
+				[0] = {
+				  .binding = 0,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+				},
+				[1] = {
+				  .binding = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				  .descriptorCount = 5,
+				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+				[2] = {
+				  .binding = 2,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+				},
+			};
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = countof(bindings),
+				.pBindings = bindings,
+			};
+
+			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
+		}
+
+		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/grass.vertex.spv"));
+		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/grass.fragment.spv"));
+		pipeline_grass = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
+			(PipelineOptions){
+			  .color_attachment_count = 1,
+			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
+			  .sample_count = SAMPLE_COUNT_8,
 			});
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/skybox.vertex.spv"));
@@ -574,18 +639,27 @@ int main(void) {
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
 			});
+
 		arena_scratch_end(scratch);
 	}
 
 	GFX_Buffer geometry = buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER, "geometry");
+	GFX_Buffer grass_instancing_buffer = buffer_make(context, MiB(128), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER, "grass_instancing");
+
+	const uint32_t map_width = 256;
+	const uint32_t map_depth = 256;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
+	meshes[MESH_TERRAIN] = generate_plane(arena, FACE_UP, map_width, map_depth, 4, 4);
+	meshes[MESH_TERRAIN].materials[0].textures[TEXTURE_SLOT_ALEBDO] = terrain_texture;
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
 
 	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
-		meshes[meshid] = load_gltf(arena, meshid_to_path[meshid]);
+		if (meshid_to_path[meshid].length == 0)
+			continue;
 
+		meshes[meshid] = load_gltf(arena, meshid_to_path[meshid]);
 		if (meshes[meshid].skeleton.bone_count == 0 || meshid == MESH_MAGE)
 			continue;
 		animations[meshid] = load_gltf_animations(arena, meshid_to_path[meshid], &animation_counts[meshid]);
@@ -598,7 +672,7 @@ int main(void) {
 			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &white_texture);
 
 			gfx_cmd_image_upload(&cmd, &skybox.gpu_image, skybox.width, skybox.height, skybox.pixels);
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &white_texture);
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &skybox.gpu_image);
 
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
@@ -619,6 +693,20 @@ int main(void) {
 					}
 				}
 			}
+
+			uint64_t grass_upload_offset = arena_mark(cmd.transient_arena);
+			for (uint32_t z = 0; z < map_depth; ++z) {
+				for (uint32_t x = 0; x < map_width; ++x) {
+					float3 pos = {
+						.x = x - (map_width * 0.5f),
+						.y = 0.0f,
+						.z = z - (map_depth * 0.5f),
+					};
+					*arena_push_count(cmd.transient_arena, float3, 1) = pos;
+				}
+			}
+			gfx_cmd_buffer_to_buffer(&cmd, &grass_instancing_buffer, cmd.transient_buffer, 0, grass_upload_offset, sizeof(float3) * map_width * map_depth);
+			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float3) * map_width * map_depth, &grass_instancing_buffer);
 
 			uint64_t transient_upload_start_offset = cmd.transient_arena->offset;
 			uint64_t geometry_upload_cursor = 0;
@@ -673,7 +761,7 @@ int main(void) {
 	memory_zero(context->staging_buffer.mapped, context->staging_buffer_frame_size);
 
 	while (is_open) {
-		double time = os_time_ns() * 1e-9;
+		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
 		dt = time - last_frame;
 		last_frame = time;
 
@@ -790,20 +878,23 @@ int main(void) {
 				&offscreen_render);
 
 			static float anim_t = 0.0f;
+			static float blink_timer = 0.0f;
 			static uint32_t anim_index = 3;
 
 			if (input_key_pressed(KEY_CODE_SPACE))
 				anim_index++;
 			anim_t += dt;
+			blink_timer += dt;
 
 			MeshInstance instances[] = {
-				{ MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
-				{ MESH_HERO_MALE, { { 0.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
-				{ MESH_GDBOT, { { 3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
-				{ MESH_GDBOT, { { 3.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
-				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+				{ MESH_HERO_MALE, { { 0.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+				{ MESH_GDBOT, { { 3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+				{ MESH_GDBOT, { { 3.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
 
-				{ MESH_ROOM_LARGE, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0 },
+				{ MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+				{ MESH_GRASS_BILLBOARD, { { 10.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, false },
 			};
 
 			uint64_t scratch_cursor = 0;
@@ -916,11 +1007,15 @@ int main(void) {
 						float4x4 view;
 						float4x4 proj;
 						float4 camera_position;
+						float fog_density;
+						float fog_gradient;
 						float time;
 					} frame_data = {
 						.view = lights[0].matrix,
 						.proj = float4x4_identity(),
 						.camera_position = lights[0].position,
+						.fog_density = 0.007f,
+						.fog_gradient = 1.5f,
 						.time = time,
 					};
 					frame_data.proj.elements[5] *= -1;
@@ -962,6 +1057,9 @@ int main(void) {
 				// :draw
 				for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
 					MeshInstance *instance = &instances[instance_index];
+					if (instance->cast_shadow == false)
+						continue;
+
 					Mesh *mesh = &meshes[instance->id];
 
 					vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
@@ -1076,11 +1174,15 @@ int main(void) {
 						float4x4 view;
 						float4x4 proj;
 						float4 camera_position;
+						float fog_density;
+						float fog_gradient;
 						float time;
 					} frame_data = {
 						.view = float4x4_lookat(camera.position, camera.target, camera.up),
 						.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 200.f),
 						.camera_position = float4_from_float3(camera.position, 0.0f),
+						.fog_density = 0.007f,
+						.fog_gradient = 1.5f,
 						.time = time,
 					};
 					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, &frame_data, sizeof(frame_data));
@@ -1194,12 +1296,31 @@ int main(void) {
 							float4 base_color;
 							float4 emissive;
 							float2 metallic_roughness;
+							float2 uv_offset;
+							float2 uv_scale;
 						} pc = {
 							.model = transform,
 							.base_color = material->tint,
 							.emissive = FLOAT4_ONE,
 							.metallic_roughness = { 0.0f, 0.5f },
+							.uv_offset = { 0.0f, 0.0f },
+							.uv_scale = { 1.0f, 1.0f },
 						};
+
+						if (instance->id == MESH_TERRAIN) {
+							pc.uv_scale.x *= 4.f;
+							pc.uv_scale.y *= 4.f;
+						}
+
+						if (instance->id == MESH_HERO_MALE && part_index == 3) { // hero head
+							if (blink_timer > 1.9f && blink_timer < 2.1f)
+								pc.uv_offset.x = 1.0f / 3.0f;
+							else if (blink_timer > 2.1f && blink_timer < 2.3f) {
+								pc.uv_offset.x = 2.0f / 3.0f;
+							} else if (blink_timer >= 2.3f) {
+								blink_timer = 0.0f;
+							}
+						}
 
 						VkDescriptorSet draw_set = 0;
 						{ // allocate & write draw set
@@ -1260,6 +1381,109 @@ int main(void) {
 
 						vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(command_buffer, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
+					}
+				}
+				blink_timer += dt;
+
+				// :grass
+				{
+					Mesh *mesh = &meshes[MESH_GRASS_BILLBOARD];
+
+					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_grass.handle);
+					vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+
+					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
+						MeshPart *part = &mesh->parts[part_index];
+						Material *material = &mesh->materials[part->material_id];
+
+						struct {
+							float4x4 model;
+							float4 base_color;
+							float4 emissive;
+							float2 metallic_roughness;
+							float2 uv_offset;
+							float2 uv_scale;
+						} pc = {
+							.model = float4x4_identity(),
+							.base_color = material->tint,
+							.emissive = FLOAT4_ONE,
+							.metallic_roughness = { 0.0f, 0.5f },
+							.uv_offset = { 0.0f, 0.0f },
+							.uv_scale = { 1.0f, 1.0f },
+						};
+
+						VkDescriptorSet draw_set = 0;
+						{ // allocate & write draw set
+							VkDescriptorSetAllocateInfo alloc_info = {
+								.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+								.descriptorPool = descriptor_pool,
+								.descriptorSetCount = 1,
+								.pSetLayouts = &pipeline_grass.set_layouts[1],
+							};
+							vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
+
+							{ // geometry descriptor binding
+								VkDescriptorBufferInfo buffer_info = {
+									.buffer = mesh->buffer->handle,
+									.offset = mesh->buffer_vertex_byte_offset,
+									.range = mesh->total_vertex_count * sizeof(Vertex3),
+								};
+								VkWriteDescriptorSet write = {
+									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+									.dstSet = draw_set,
+									.dstBinding = 0,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+									.pBufferInfo = &buffer_info,
+								};
+								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+							}
+							{ // material textures descriptor binding
+								VkWriteDescriptorSet writes[5] = { 0 };
+								VkDescriptorImageInfo image_infos[5] = { 0 };
+								for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
+									GFX_Image *image = &material->textures[texture_index].gpu_image;
+									image_infos[texture_index] = (VkDescriptorImageInfo){
+										.imageView = image->view,
+										.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+										.sampler = linear_sampler.handle,
+									};
+
+									writes[texture_index] = (VkWriteDescriptorSet){
+										.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+										.dstSet = draw_set,
+										.dstBinding = 1,
+										.dstArrayElement = texture_index,
+										.descriptorCount = 1,
+										.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+										.pImageInfo = &image_infos[texture_index],
+									};
+								}
+								vkUpdateDescriptorSets(context->device.logical, countof(writes), writes, 0, 0);
+							}
+							{ // instance descriptor binding
+								VkDescriptorBufferInfo buffer_info = {
+									.buffer = grass_instancing_buffer.handle,
+									.offset = 0,
+									.range = grass_instancing_buffer.size,
+								};
+								VkWriteDescriptorSet write = {
+									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+									.dstSet = draw_set,
+									.dstBinding = 2,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+									.pBufferInfo = &buffer_info,
+								};
+								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+							}
+						}
+						vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_grass.layout, 1, 1, &draw_set, 0, 0);
+
+						vkCmdPushConstants(cmd->handle, pipeline_grass.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdDrawIndexed(command_buffer, part->index_count, map_width * map_depth, part->index_offset, part->vertex_offset, 0);
 					}
 				}
 
@@ -1341,8 +1565,9 @@ int main(void) {
 	{
 		for (uint32_t index = 0; index < countof(scratch_buffers); ++index)
 			buffer_destroy(context, &scratch_buffers[index]);
-
 		buffer_destroy(context, &geometry);
+		buffer_destroy(context, &grass_instancing_buffer);
+
 		for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 			Mesh *mesh = &meshes[mesh_index];
 			for (uint32_t material_index = 0; material_index < mesh->material_count; ++material_index) {
@@ -1368,8 +1593,12 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_skinning);
 		pipeline_destroy(context, &pipeline_shadow);
 		pipeline_destroy(context, &pipeline_3d);
+
 		memory_zero(pipeline_skybox.set_layouts, sizeof(pipeline_skybox.set_layouts)); // destroyed by pipeline_3d
 		pipeline_destroy(context, &pipeline_skybox);
+
+		memory_zero(&pipeline_grass.set_layouts[0], sizeof(pipeline_grass.set_layouts[0]));
+		pipeline_destroy(context, &pipeline_grass);
 
 		for (uint32_t index = 0; index < countof(swapchains); ++index)
 			swapchain_destroy(context, &swapchains[index]);
@@ -1763,6 +1992,7 @@ GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt) {
 			.addressModeU = (VkSamplerAddressMode)opt.address_mode_u,
 			.addressModeV = (VkSamplerAddressMode)opt.address_mode_v,
 			.addressModeW = (VkSamplerAddressMode)opt.address_mode_w,
+			.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
 			.anisotropyEnable = VK_TRUE,
 			.maxAnisotropy = context->device.limits.maxSamplerAnisotropy,
 			.compareEnable = opt.compare_enable,
@@ -1773,6 +2003,19 @@ GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt) {
 		if (ok == false)
 			LOG_WARN("failed to create vulkan sampler.");
 	}
+
+#if DEV_BUILD
+	if (ok) { // assign debug name
+		VkDebugUtilsObjectNameInfoEXT name_info = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+			.pObjectName = opt.debug_name ? opt.debug_name : "<unnamed>",
+			.objectType = VK_OBJECT_TYPE_SAMPLER,
+			.objectHandle = (uint64_t)result.handle,
+
+		};
+		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+	}
+#endif
 
 	return result;
 }
@@ -3272,11 +3515,11 @@ Image2D load_image(Arena *arena, String8 path) {
 	return result;
 }
 
-Image2D load_cubemap(Arena *arena, String8 paths[CUBE_FACE_COUNT]) {
+Image2D load_cubemap(Arena *arena, String8 paths[FACE_COUNT]) {
 	Image2D result = { 0 };
 
-	Image2D images[CUBE_FACE_COUNT];
-	for (uint32_t face_index = 0; face_index < CUBE_FACE_COUNT; ++face_index) {
+	Image2D images[FACE_COUNT];
+	for (uint32_t face_index = 0; face_index < FACE_COUNT; ++face_index) {
 		images[face_index] = load_image(arena, paths[face_index]);
 
 		if (face_index > 0) {
@@ -3558,6 +3801,100 @@ Mesh load_gltf(Arena *arena, String8 path) {
 	}
 
 	cgltf_free(data);
+	return result;
+}
+
+static inline float3 face_orient(float3 v, Face face) {
+	float3 result = { 0 };
+	switch (face) {
+		case FACE_UP:
+			result = (float3){ v.x, v.y, v.z };
+			break;
+		case FACE_DOWN:
+			result = (float3){ v.x, -v.y, -v.z };
+			break;
+		case FACE_RIGHT:
+			result = (float3){ v.y, v.z, v.x };
+			break;
+		case FACE_LEFT:
+			result = (float3){ -v.y, v.z, -v.x };
+			break;
+		case FACE_FORWARD:
+			result = (float3){ v.x, v.z, -v.y };
+			break;
+		case FACE_BACKWARD:
+			result = (float3){ -v.x, v.z, v.y };
+			break;
+		default:
+			ASSERT(!"invalid orientation passed.");
+			break;
+	}
+
+	return result;
+}
+
+Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+	Mesh result = { 0 };
+
+	bool ok = arena;
+
+	if (arena) {
+		subdivision_x += 2;
+		subdivision_z += 2;
+		result.total_vertex_count = subdivision_x * subdivision_z;
+
+		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		for (uint32_t z = 0; z < subdivision_z; ++z) {
+			for (uint32_t x = 0; x < subdivision_x; ++x) {
+				uint32_t index = x + z * subdivision_x;
+
+				float3 local = {
+					.x = (((float)x / (subdivision_x - 1)) - 0.5f) * width,
+					.y = 0.0f,
+					.z = (((float)z / (subdivision_z - 1)) - 0.5f) * height,
+				};
+				result.vertices[index] = (Vertex3){
+					.position = face_orient(local, orientation),
+					.normal = { 0.0f, 1.0f, 0.0f },
+					.uv = { (float)x / (subdivision_x - 1), (float)z / (subdivision_z - 1) },
+				};
+			}
+		}
+
+		uint32_t face_count = (subdivision_x - 1) * (subdivision_z - 1);
+
+		result.total_index_count = face_count * 6;
+		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+
+		uint32_t cursor = 0;
+		for (uint32_t face = 0; face < face_count; ++face) {
+			uint32_t index = face + face / (subdivision_x - 1);
+
+			result.indices[cursor++] = index;
+			result.indices[cursor++] = index + subdivision_x;
+			result.indices[cursor++] = index + 1;
+
+			result.indices[cursor++] = index + 1;
+			result.indices[cursor++] = index + subdivision_x;
+			result.indices[cursor++] = index + subdivision_x + 1;
+		}
+
+		result.part_count = 1;
+		result.parts = arena_push_count(arena, MeshPart, result.part_count);
+
+		result.parts[0].vertex_count = result.total_vertex_count;
+		result.parts[0].index_count = result.total_index_count;
+
+		result.material_count = 1;
+		result.materials = arena_push_count(arena, Material, result.material_count);
+
+		result.materials[0] = (Material){
+			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
+			.emissive = FLOAT4_ONE,
+			.metallic_roughness = { 0.0f, 0.5f },
+		};
+	}
+
 	return result;
 }
 

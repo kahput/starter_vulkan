@@ -1,4 +1,3 @@
-
 #version 450
 #pragma shader_stage(vertex)
 
@@ -23,7 +22,6 @@ layout(set = 0, binding = 0) uniform FrameData {
     float fog_gradient;
     float time;
 } frame;
-
 layout(set = 0, binding = 1) readonly buffer LightBlock {
     LightBuffer lights[];
 };
@@ -31,6 +29,9 @@ layout(set = 0, binding = 1) readonly buffer LightBlock {
 layout(set = 1, binding = 0) readonly buffer VertexBlock {
     VertexBuffer vertex_data[];
 } batch;
+layout(set = 1, binding = 2) readonly buffer TransformBlock {
+    vec3 transforms[];
+};
 
 layout(push_constant) uniform ConstantBlock {
     mat4 model;
@@ -51,11 +52,12 @@ out ShaderOutput {
 
 void main() {
     VertexBuffer vertex = batch.vertex_data[gl_VertexIndex];
-    gl_Position = frame.projection * frame.view * pc.model * vec4(vertex.position.xyz, 1.0);
+    vec3 transform = transforms[gl_InstanceIndex];
+
+    gl_Position = frame.projection * frame.view * pc.model * vec4(transform + vertex.position.xyz, 1.0);
 
     vs_output.worldspace = vec3(pc.model * vec4(vertex.position.xyz, 1.0));
-    vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
-    vs_output.normal = mat3(transpose(inverse(pc.model))) * vertex.normal.xyz;
+    vs_output.normal = vec3(0.0, 1.0, 0.0);
     vs_output.uv = vertex.uv * pc.uv_scale;
 
     float dist = length(vec3(frame.view * pc.model * vec4(vertex.position.xyz, 1.0)));

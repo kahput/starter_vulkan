@@ -67,10 +67,10 @@ typedef enum sampler_filter {
 } SamplerFilterMode;
 
 typedef enum sampler_address_mode {
-	WRAP_REPEAT = 0,
-	WRAP_REPEAT_MIRROR = 1,
-	WRAP_CLAMP = 2,
-	WRAP_CLAMP_BORDER = 3
+	WRAP_MODE_REPEAT = 0,
+	WRAP_MODE_REPEAT_MIRROR = 1,
+	WRAP_MODE_CLAMP = 2,
+	WRAP_MODE_CLAMP_BORDER = 3
 } SamplerWrapMode;
 
 typedef enum cull_mode {
@@ -89,6 +89,8 @@ typedef struct {
 } ImageOptions;
 
 typedef struct {
+	const char *debug_name;
+
 	SamplerFilterMode min_filter;
 	SamplerFilterMode mag_filter;
 
@@ -114,7 +116,7 @@ typedef struct {
 #define MAX_COLOR_ATTACHMENTS 8
 typedef struct {
 	ImageSampleCount sample_count;
-    PipelineCullMode cull_mode;
+	PipelineCullMode cull_mode;
 
 	PixelFormat color_attachments[MAX_COLOR_ATTACHMENTS];
 	uint32_t color_attachment_count;
