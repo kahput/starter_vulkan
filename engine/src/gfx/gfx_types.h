@@ -3,6 +3,13 @@
 #include "common.h"
 
 typedef enum {
+	RESOURCE_TYPE_BUFFER,
+	RESOURCE_TYPE_IMAGE,
+	RESOURCE_TYPE_SAMPLER,
+	RESOURCE_TYPE_PIPELINE,
+} ResourceType;
+
+typedef enum {
 	PIXELFORMAT_RGBA8_UNORM,
 	PIXELFORMAT_RGBA8_SRGB,
 	PIXELFORMAT_RGBA16_FLOAT,
@@ -70,18 +77,20 @@ typedef enum sampler_address_mode {
 	WRAP_MODE_REPEAT = 0,
 	WRAP_MODE_REPEAT_MIRROR = 1,
 	WRAP_MODE_CLAMP = 2,
-	WRAP_MODE_CLAMP_BORDER = 3
+	WRAP_MODE_CLAMP_BORDER = 3,
+
+	WRAP_MODE_COUNT,
 } SamplerWrapMode;
 
 typedef enum cull_mode {
-	CULL_NONE = 0,
-	CULL_FRONT = 1,
-	CULL_BACK = 2,
-	CULL_FRONT_AND_BACK = 3
+	CULL_MODE_NONE = 0,
+	CULL_MODE_FRONT = 1,
+	CULL_MODE_BACK = 2,
+	CULL_MODE_FRONT_AND_BACK = 3
 } PipelineCullMode;
 
 typedef struct {
-    const char *debug_name;
+	const char *debug_name;
 
 	ImageType type;
 	uint32_t slice_count;
