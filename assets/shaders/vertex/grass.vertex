@@ -30,7 +30,7 @@ layout(set = 1, binding = 0) readonly buffer VertexBlock {
     VertexBuffer vertex_data[];
 } batch;
 layout(set = 1, binding = 2) readonly buffer TransformBlock {
-    vec3 transforms[];
+    vec4 transforms[];
 };
 
 layout(push_constant) uniform ConstantBlock {
@@ -52,9 +52,9 @@ out ShaderOutput {
 
 void main() {
     VertexBuffer vertex = batch.vertex_data[gl_VertexIndex];
-    vec3 transform = transforms[gl_InstanceIndex];
+    vec4 transform = transforms[gl_InstanceIndex];
 
-    gl_Position = frame.projection * frame.view * pc.model * vec4(transform + vertex.position.xyz, 1.0);
+    gl_Position = frame.projection * frame.view * pc.model * vec4(transform.xyz + vertex.position.xyz, 1.0);
 
     vs_output.worldspace = vec3(pc.model * vec4(vertex.position.xyz, 1.0));
     vs_output.normal = vec3(0.0, 1.0, 0.0);

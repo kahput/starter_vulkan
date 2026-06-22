@@ -702,11 +702,11 @@ int main(void) {
 						.y = 0.0f,
 						.z = z - (map_depth * 0.5f),
 					};
-					*arena_push_count(cmd.transient_arena, float3, 1) = pos;
+					*arena_push_count(cmd.transient_arena, float4, 1) = float4_from_float3(pos, 1.0f);
 				}
 			}
-			gfx_cmd_buffer_to_buffer(&cmd, &grass_instancing_buffer, cmd.transient_buffer, 0, grass_upload_offset, sizeof(float3) * map_width * map_depth);
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float3) * map_width * map_depth, &grass_instancing_buffer);
+			gfx_cmd_buffer_to_buffer(&cmd, &grass_instancing_buffer, cmd.transient_buffer, 0, grass_upload_offset, sizeof(float4) * map_width * map_depth);
+			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float4) * map_width * map_depth, &grass_instancing_buffer);
 
 			uint64_t transient_upload_start_offset = cmd.transient_arena->offset;
 			uint64_t geometry_upload_cursor = 0;

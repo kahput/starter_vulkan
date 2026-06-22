@@ -52,7 +52,7 @@ layout(location = 0) out vec4 out_color;
 
 void main() {
     vec4 albedo = texture(u_textures[TEXTURE_ALBEDO], fs_input.uv + pc.uv_offset) * pc.tint;
-    if (albedo.a < 0.9) discard;
+    if (albedo.a < 1.0) discard;
 
     vec3 normal = normalize(fs_input.normal);
     vec3 fragment_to_light = normalize(lights[0].position.xyz - fs_input.worldspace);

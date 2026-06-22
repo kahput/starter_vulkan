@@ -178,6 +178,16 @@ static inline uint32_t color_pack(Color c) {
 	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);
 }
 
+static inline Color color_from_float(float r, float g, float b, float a) {
+	return (Color){ CLAMP(r, 0.0f, 1.0f) * 255.f, CLAMP(g, 0.0f, 1.0f) * 255.f, CLAMP(b, 0.0f, 1.0f) * 255.f, CLAMP(a, 0.0f, 1.0f) * 255.f };
+}
+static inline float32x4 color_to_float(Color color) {
+	return (float32x4){ color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f };
+}
+static inline Color color_lerp(Color start, Color end, float t) {
+	return (Color){ start.r + (end.r - start.r) * t, start.g + (end.g - start.g) * t, start.b + (end.b - start.b) * t, start.a + (end.a - start.a) * t };
+}
+
 typedef struct {
 	uint8_t *memory;
 	uint64_t length;
