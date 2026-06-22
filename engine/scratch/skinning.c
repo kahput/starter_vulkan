@@ -75,9 +75,9 @@ struct Shader {
 };
 
 #define SWAPCHAIN_IMAGE_COUNT 3
-typedef struct Swapchain Swapchain;
+typedef struct Swapchain GFX_Swapchain;
 struct Swapchain {
-	Swapchain *next;
+	GFX_Swapchain *next;
 
 	VkSwapchainKHR handle;
 	VkSurfaceKHR surface;
@@ -91,9 +91,6 @@ struct Swapchain {
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
 	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
-
-	int32_t present_index;
-	VkQueue present_queue;
 };
 
 typedef struct {
@@ -108,6 +105,7 @@ typedef struct {
 
 #define MAX_BUFFERS 1024
 #define MAX_IMAGES 512
+#define MAX_SAMPLERS 32
 #define MAX_SHADERS 32
 #define MAX_SWAPCHAINS 8
 /* #define MAX_SAMPLERS 32 */
@@ -126,10 +124,14 @@ typedef struct {
 	VkFence in_flight_fence;
 	VkDescriptorPool descriptor_pool;
 
-	uint8_t swapchain_image_indices[MAX_SWAPCHAINS];
+	GFX_Swapchain *swapchains[MAX_SWAPCHAINS];
+	uint32_t swapchain_image_indices[MAX_SWAPCHAINS];
+	uint32_t swapchain_count;
 
 	GFX_Buffer *transient_buffer;
 	Arena transient_arena[1];
+
+	uint32_t frame_index;
 } GFX_CommandContext;
 
 typedef struct {
@@ -142,10 +144,10 @@ typedef struct {
 	VkCommandPool graphics_command_pool;
 	VkPushConstantRange global_range;
 
-	GFX_Buffer staging_buffer;
+	GFX_Buffer *staging_buffer;
 	uint64_t staging_buffer_frame_size;
 
-	VkQueue graphics_queue;
+	VkQueue graphics_queue, present_queue;
 	VkQueue transfer_queue, compute_queue;
 
 	int32_t graphics_index, present_index;
@@ -168,16 +170,20 @@ typedef struct {
 	GFX_Image *images;
 	uint32_t image_count;
 
+	GFX_Sampler *samplers;
+	uint32_t sampler_count;
+
 	Shader *shaders;
 	uint32_t shader_count;
 
-	Swapchain *swapchains;
+	GFX_Swapchain *swapchains;
 	uint32_t swapchain_count;
 
 	GFX_Buffer *first_free_buffer;
 	GFX_Image *first_free_image;
+	GFX_Sampler *first_free_sampler;
 	Shader *first_free_shader;
-	Swapchain *first_free_swapchain;
+	GFX_Swapchain *first_free_swapchain;
 
 	bool initialized;
 
@@ -190,7 +196,7 @@ bool gfx_startup(GFX_Context *context);
 void gfx_shutdown(GFX_Context *context);
 
 GFX_CommandContext *gfx_frame_begin(GFX_Context *context);
-bool gfx_frame_end(GFX_Context *context);
+bool gfx_frame_end(GFX_Context *context, GFX_CommandContext *cmd);
 
 GFX_CommandContext gfx_transfer_batch_begin(GFX_Context *context);
 bool gfx_transfer_batch_submit(GFX_Context *context, GFX_CommandContext *batch);
@@ -214,10 +220,11 @@ typedef struct {
 	float32x4 weights;
 } SkinningData;
 
-GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name);
-GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
-GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt);
-Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface);
+GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name);
+GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
+GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt);
+GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, const char *debug_name);
+
 Shader compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count);
 Shader graphics_pipeline_make(
 	GFX_Context *context,
@@ -226,13 +233,13 @@ Shader graphics_pipeline_make(
 	VkDescriptorSetLayout *layouts,
 	uint32_t layout_count, PipelineOptions options);
 
-bool buffer_destroy(GFX_Context *context, GFX_Buffer *buffer);
-void image_destroy(GFX_Context *context, GFX_Image *image);
-void sampler_destroy(GFX_Context *context, GFX_Sampler *sampler);
-void swapchain_destroy(GFX_Context *context, Swapchain *surface);
+bool gfx_buffer_destroy(GFX_Context *context, GFX_Buffer *buffer);
+bool gfx_image_destroy(GFX_Context *context, GFX_Image *image);
+bool gfx_sampler_destroy(GFX_Context *context, GFX_Sampler *sampler);
+bool swapchain_destroy(GFX_Context *context, GFX_Swapchain *surface);
 void pipeline_destroy(GFX_Context *context, Shader *pipeline);
 
-GFX_Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_t *out_image_index);
+GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *surface);
 
 // TODO: double buffered transfers
 /* void gfx_upload_buffer(GFX_Context *context, GFX_Buffer *dst, uint64_t size, void *data, ResourceUsage final_usage); */
@@ -265,7 +272,7 @@ typedef struct {
 	uint8_t *pixels;
 
 	// GPU
-	GFX_Image gpu_image;
+	GFX_Image *gpu_image;
 
 	// METADATA
 	ImageType type;
@@ -399,13 +406,13 @@ int main(void) {
 
 	GFX_Context context[] = { 0 };
 	gfx_startup(context);
-	Swapchain swapchains[] = { swapchain_make(context, popup_compute), swapchain_make(context, main_render) };
+	GFX_Swapchain *swapchains[] = { gfx_swapchain_make(context, popup_compute, "popup"), gfx_swapchain_make(context, main_render, "main") };
 
 	// :targets
-	GFX_Image compute_image = image_make(context, 640, 360, (ImageOptions){ .format = PIXELFORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
-	GFX_Image offscreen_render = image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
-	GFX_Image depthbuffer = image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
-	GFX_Image shadow_depthbuffer = image_make(context, 2048, 2048, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE });
+	GFX_Image *compute_image = gfx_image_make(context, 640, 360, (ImageOptions){ .format = PIXELFORMAT_RGBA16_FLOAT, .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER });
+	GFX_Image *offscreen_render = gfx_image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_BACKBUFFER, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
+	GFX_Image *depthbuffer = gfx_image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
+	GFX_Image *shadow_depthbuffer = gfx_image_make(context, 2048, 2048, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE });
 
 #define array_arg(T, ...) \
 	(T[]) { __VA_ARGS__, (T){ 0 } }
@@ -420,17 +427,17 @@ int main(void) {
 			s("assets/textures/skybox_mc/dayBack.png") //
 			) //
 	);
-	skybox.gpu_image = image_make(context, skybox.width, skybox.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
+	skybox.gpu_image = gfx_image_make(context, skybox.width, skybox.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
 
 	Image2D terrain_texture = load_image(arena, s("assets/textures/base_grass.png"));
 	/* Image2D grass_billboard_texture = load_image(arena, s("assets/textures/grass.png")); */
 
-	GFX_Sampler linear_sampler = sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_MODE_REPEAT));
+	GFX_Sampler *linear_sampler = gfx_sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_MODE_REPEAT));
 	SamplerOptions shadow_opt = sampler_opt(FILTER_LINEAR, WRAP_MODE_CLAMP_BORDER);
 	shadow_opt.debug_name = "shadow_sampler";
 	/* shadow_opt.compare_enable = true; */
-	GFX_Sampler shadow_sampler = sampler_make(context, shadow_opt);
-	GFX_Image white_texture = image_make(context, 1, 1, (ImageOptions){ .format = PIXELFORMAT_RGBA8_UNORM });
+	GFX_Sampler *shadow_sampler = gfx_sampler_make(context, shadow_opt);
+	GFX_Image *white_texture = gfx_image_make(context, 1, 1, (ImageOptions){ .format = PIXELFORMAT_RGBA8_UNORM });
 
 	// create compute pipeline
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
@@ -643,8 +650,8 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	GFX_Buffer geometry = buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER, "geometry");
-	GFX_Buffer grass_instancing_buffer = buffer_make(context, MiB(128), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER, "grass_instancing");
+	GFX_Buffer *geometry = gfx_buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER, "geometry");
+	GFX_Buffer *grass_instancing_buffer = gfx_buffer_make(context, MiB(128), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER, "grass_instancing");
 
 	const uint32_t map_width = 256;
 	const uint32_t map_depth = 256;
@@ -668,11 +675,11 @@ int main(void) {
 	{ // :upload
 		GFX_CommandContext cmd = gfx_transfer_batch_begin(context);
 		if (cmd.handle) {
-			gfx_cmd_image_upload(&cmd, &white_texture, 1, 1, &(uint32_t){ 0xffffffff });
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &white_texture);
+			gfx_cmd_image_upload(&cmd, white_texture, 1, 1, &(uint32_t){ 0xffffffff });
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, white_texture);
 
-			gfx_cmd_image_upload(&cmd, &skybox.gpu_image, skybox.width, skybox.height, skybox.pixels);
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &skybox.gpu_image);
+			gfx_cmd_image_upload(&cmd, skybox.gpu_image, skybox.width, skybox.height, skybox.pixels);
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, skybox.gpu_image);
 
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
@@ -682,9 +689,9 @@ int main(void) {
 					for (uint32_t texture_slot = 0; texture_slot < TEXTURE_SLOT_COUNT; ++texture_slot) {
 						Image2D *img = &material->textures[texture_slot];
 						if (img->pixels) {
-							img->gpu_image = image_make(context, img->width, img->height, (ImageOptions){ .format = img->format });
-							gfx_cmd_image_upload(&cmd, &img->gpu_image, img->width, img->height, img->pixels);
-							gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, &img->gpu_image);
+							img->gpu_image = gfx_image_make(context, img->width, img->height, (ImageOptions){ .format = img->format });
+							gfx_cmd_image_upload(&cmd, img->gpu_image, img->width, img->height, img->pixels);
+							gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, img->gpu_image);
 						} else {
 							img->width = img->height = 1;
 							img->format = PIXELFORMAT_RGBA8_SRGB;
@@ -707,15 +714,15 @@ int main(void) {
 					*arena_push_count(cmd.transient_arena, float4, 1) = float4_from_float3(pos, 1.0f);
 				}
 			}
-			gfx_cmd_buffer_to_buffer(&cmd, &grass_instancing_buffer, cmd.transient_buffer, 0, grass_upload_offset, sizeof(float4) * map_width * map_depth);
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float4) * map_width * map_depth, &grass_instancing_buffer);
+			gfx_cmd_buffer_to_buffer(&cmd, grass_instancing_buffer, cmd.transient_buffer, 0, grass_upload_offset, sizeof(float4) * map_width * map_depth);
+			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float4) * map_width * map_depth, grass_instancing_buffer);
 
 			uint64_t transient_upload_start_offset = cmd.transient_arena->offset;
 			uint64_t geometry_upload_cursor = 0;
 
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
-				mesh->buffer = &geometry;
+				mesh->buffer = geometry;
 
 				uint64_t total_vertex_buffer_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
 				uint64_t total_index_buffer_size = alignup(mesh->total_index_count * sizeof(uint32_t), 256);
@@ -739,19 +746,19 @@ int main(void) {
 				}
 			}
 
-			gfx_cmd_buffer_to_buffer(&cmd, &geometry, cmd.transient_buffer, 0, transient_upload_start_offset, geometry_upload_cursor);
+			gfx_cmd_buffer_to_buffer(&cmd, geometry, cmd.transient_buffer, 0, transient_upload_start_offset, geometry_upload_cursor);
 
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, geometry_upload_cursor, &geometry);
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, &geometry);
+			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, geometry_upload_cursor, geometry);
+			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, geometry);
 
 			gfx_transfer_batch_submit(context, &cmd);
 		}
 	}
 
-	GFX_Buffer scratch_buffers[MAX_FRAMES_IN_FLIGHT];
+	GFX_Buffer *scratch_buffers[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
-		scratch_buffers[index] = buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER, "scratch_buffer");
-		vkMapMemory(context->device.logical, scratch_buffers[index].memory, 0, scratch_buffers[index].size, 0, (void **)&scratch_buffers[index].mapped);
+		scratch_buffers[index] = gfx_buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER, "scratch_buffer");
+		vkMapMemory(context->device.logical, scratch_buffers[index]->memory, 0, scratch_buffers[index]->size, 0, (void **)&scratch_buffers[index]->mapped);
 	}
 
 	bool is_open = true;
@@ -760,7 +767,7 @@ int main(void) {
 	float last_frame = 0.0f;
 
 	Arena frame_arena[] = { arena_make(MiB(1)) };
-	memory_zero(context->staging_buffer.mapped, context->staging_buffer_frame_size);
+	memory_zero(context->staging_buffer->mapped, context->staging_buffer_frame_size);
 
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
@@ -810,8 +817,7 @@ int main(void) {
 		VkDescriptorPool descriptor_pool = cmd->descriptor_pool;
 
 		// Swapchain image acquisition
-		uint32_t image_indices[SWAPCHAIN_IMAGE_COUNT];
-		GFX_Image compute_blit_target = swapchain_backbuffer(context, &swapchains[0], &image_indices[0]); // TODO: remove manual indices handling?
+		GFX_Image compute_blit_target = gfx_swapchain_backbuffer(context, cmd, swapchains[0]);
 		if (compute_blit_target.handle) {
 			// transition swapchain target & blit src compute image
 			gfx_cmd_image_transition(
@@ -821,7 +827,7 @@ int main(void) {
 			gfx_cmd_image_transition(
 				cmd,
 				RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
-				&compute_image);
+				compute_image);
 
 			{ // Bind compute pipeline & descriptor set
 				VkDescriptorSetAllocateInfo alloc_info = {
@@ -835,7 +841,7 @@ int main(void) {
 				vkAllocateDescriptorSets(context->device.logical, &alloc_info, &compute_set);
 				VkDescriptorImageInfo image_info = {
 					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.imageView = compute_image.view,
+					.imageView = compute_image->view,
 				};
 				VkWriteDescriptorSet write = {
 					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -854,8 +860,8 @@ int main(void) {
 
 			// Dispatch compute & Blit to main window surface
 			vkCmdDispatch(command_buffer, 40, 23, 1);
-			gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_TRANSFER_SRC, &compute_image);
-			gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, &compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target);
+			gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
+			gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target);
 
 			// transition swapchain images for presenting
 			gfx_cmd_image_barrier(
@@ -867,7 +873,7 @@ int main(void) {
 		} else //  TODO: resize swapchain
 			break;
 
-		GFX_Image main_target = swapchain_backbuffer(context, &swapchains[1], &image_indices[1]);
+		GFX_Image main_target = gfx_swapchain_backbuffer(context, cmd, swapchains[1]);
 		if (main_target.handle) {
 			// transition swapchain & offscren targets for drawing
 			gfx_cmd_image_transition(
@@ -877,7 +883,7 @@ int main(void) {
 			gfx_cmd_image_transition(
 				cmd,
 				RESOURCE_USAGE_COLOR_ATTACHMENT,
-				&offscreen_render);
+				offscreen_render);
 
 			static float anim_t = 0.0f;
 			static float blink_timer = 0.0f;
@@ -918,7 +924,7 @@ int main(void) {
 				Pose pose = anim_pose_sample(frame_arena, &animations[instance->id][instance_anim], fmodf(anim_t, animations[instance->id][instance_anim].duration));
 				float4x4 *skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &pose, &mesh->skeleton), &mesh->skeleton);
 
-				memory_copy(scratch_buffers[context->current_frame_index].mapped + matrices_offset, skin_matrices, matrices_size);
+				memory_copy(scratch_buffers[context->current_frame_index]->mapped + matrices_offset, skin_matrices, matrices_size);
 
 				{ // :skinning
 					vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_skinning.handle);
@@ -931,10 +937,10 @@ int main(void) {
 						uint64_t output_address;
 					} pc = {
 						.vertex_count = mesh->total_vertex_count,
-						.skinning_matrices_address = scratch_buffers[context->current_frame_index].address + matrices_offset,
+						.skinning_matrices_address = scratch_buffers[context->current_frame_index]->address + matrices_offset,
 						.input_address = mesh->buffer->address + mesh->buffer_vertex_byte_offset,
 						.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
-						.output_address = scratch_buffers[context->current_frame_index].address + instance->skinned_vertices_offset,
+						.output_address = scratch_buffers[context->current_frame_index]->address + instance->skinned_vertices_offset,
 					};
 					vkCmdPushConstants(command_buffer, pipeline_skinning.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 
@@ -945,7 +951,7 @@ int main(void) {
 						RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
 						RESOURCE_USAGE_VERTEX_SHADER_READ,
 						instance->skinned_vertices_offset,
-						skinned_vertices_size, &scratch_buffers[context->current_frame_index]);
+						skinned_vertices_size, scratch_buffers[context->current_frame_index]);
 				}
 			}
 
@@ -953,6 +959,15 @@ int main(void) {
 			mouse_delta.x /= dims.x;
 			mouse_delta.y /= dims.y;
 			scene_camera_orbit(&camera, mouse_delta);
+
+			typedef struct {
+				float4x4 view;
+				float4x4 proj;
+				float4 camera_position;
+				float fog_density;
+				float fog_gradient;
+				float time;
+			} FrameData;
 
 			typedef struct {
 				float4 position;
@@ -969,11 +984,17 @@ int main(void) {
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
 				float4x4_lookat(float3_from_float4(lights[0].position), FLOAT3_ZERO, FLOAT3_Y));
 
+			FrameData frame_data = {
+				.fog_density = 0.02f,
+				.fog_gradient = 5.0f,
+				.time = time,
+			};
+
 			{ // :shadow
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, &shadow_depthbuffer);
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, shadow_depthbuffer);
 				VkRenderingAttachmentInfo depth_attachment = {
 					.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-					.imageView = shadow_depthbuffer.view,
+					.imageView = shadow_depthbuffer->view,
 					.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
 					.clearValue.depthStencil.depth = 1.0f,
 					.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -981,8 +1002,8 @@ int main(void) {
 				};
 
 				VkExtent2D extent = {
-					.width = shadow_depthbuffer.width,
-					.height = shadow_depthbuffer.height,
+					.width = shadow_depthbuffer->width,
+					.height = shadow_depthbuffer->height,
 				};
 				VkRenderingInfo shadowpass_info = {
 					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -1004,24 +1025,12 @@ int main(void) {
 
 				VkDescriptorSet frame_set = 0;
 				{ // allocate & write frame set
-					struct {
-						float4x4 view;
-						float4x4 proj;
-						float4 camera_position;
-						float fog_density;
-						float fog_gradient;
-						float time;
-					} frame_data = {
-						.view = lights[0].matrix,
-						.proj = float4x4_identity(),
-						.camera_position = lights[0].position,
-						.fog_density = 0.0035f,
-						.fog_gradient = 5.0f,
-						.time = time,
-					};
+					frame_data.view = lights[0].matrix;
+					frame_data.proj = float4x4_identity();
+					frame_data.camera_position = lights[0].position;
 					frame_data.proj.elements[5] *= -1;
 
-					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, &frame_data, sizeof(frame_data));
+					memory_copy(scratch_buffers[context->current_frame_index]->mapped + scratch_cursor, &frame_data, sizeof(frame_data));
 					uint64_t frame_data_offset = scratch_cursor;
 					scratch_cursor += alignup(sizeof(frame_data), 256);
 
@@ -1035,7 +1044,7 @@ int main(void) {
 
 					{ // frame data
 						VkDescriptorBufferInfo buffer_info = {
-							.buffer = scratch_buffers[context->current_frame_index].handle,
+							.buffer = scratch_buffers[context->current_frame_index]->handle,
 							.offset = frame_data_offset,
 							.range = sizeof(frame_data),
 						};
@@ -1063,7 +1072,7 @@ int main(void) {
 
 					Mesh *mesh = &meshes[instance->id];
 
-					vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+					vkCmdBindIndexBuffer(command_buffer, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
@@ -1094,7 +1103,7 @@ int main(void) {
 									.range = mesh->total_vertex_count * sizeof(Vertex3),
 								};
 								if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
-									buffer_info.buffer = scratch_buffers[context->current_frame_index].handle;
+									buffer_info.buffer = scratch_buffers[context->current_frame_index]->handle;
 									buffer_info.offset = instance->skinned_vertices_offset;
 								}
 								VkWriteDescriptorSet write = {
@@ -1120,12 +1129,12 @@ int main(void) {
 			}
 
 			{ // :main
-				gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, RESOURCE_USAGE_SHADER_READ, &shadow_depthbuffer);
+				gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, RESOURCE_USAGE_SHADER_READ, shadow_depthbuffer);
 
 				VkRenderingAttachmentInfo color_attachments[] = {
 					{
 					  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-					  .imageView = offscreen_render.view,
+					  .imageView = offscreen_render->view,
 					  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					  .resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
 					  .resolveImageView = main_target.view,
@@ -1136,10 +1145,10 @@ int main(void) {
 					}
 				};
 
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, &depthbuffer);
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, depthbuffer);
 				VkRenderingAttachmentInfo depth_attachment = {
 					.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-					.imageView = depthbuffer.view,
+					.imageView = depthbuffer->view,
 					.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
 					.clearValue.depthStencil.depth = 1.0f,
 					.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -1171,22 +1180,11 @@ int main(void) {
 
 				VkDescriptorSet frame_set = 0;
 				{ // allocate & write frame set
-					struct {
-						float4x4 view;
-						float4x4 proj;
-						float4 camera_position;
-						float fog_density;
-						float fog_gradient;
-						float time;
-					} frame_data = {
-						.view = float4x4_lookat(camera.position, camera.target, camera.up),
-						.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f),
-						.camera_position = float4_from_float3(camera.position, 0.0f),
-						.fog_density = 0.02f,
-						.fog_gradient = 5.0f,
-						.time = time,
-					};
-					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, &frame_data, sizeof(frame_data));
+					frame_data.view = float4x4_lookat(camera.position, camera.target, camera.up);
+					frame_data.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+					frame_data.camera_position = float4_from_float3(camera.position, 0.0f);
+
+					memory_copy(scratch_buffers[context->current_frame_index]->mapped + scratch_cursor, &frame_data, sizeof(frame_data));
 					uint64_t frame_data_offset = scratch_cursor;
 					scratch_cursor += alignup(sizeof(frame_data), 256);
 
@@ -1201,7 +1199,7 @@ int main(void) {
 					{ // frame data
 
 						VkDescriptorBufferInfo buffer_info = {
-							.buffer = scratch_buffers[context->current_frame_index].handle,
+							.buffer = scratch_buffers[context->current_frame_index]->handle,
 							.offset = frame_data_offset,
 							.range = sizeof(frame_data),
 						};
@@ -1217,12 +1215,12 @@ int main(void) {
 						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
 					}
 					{ // light data
-						memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, lights, sizeof(lights));
+						memory_copy(scratch_buffers[context->current_frame_index]->mapped + scratch_cursor, lights, sizeof(lights));
 						uint64_t light_offset = scratch_cursor;
 						scratch_cursor += alignup(sizeof(lights), 256);
 
 						VkDescriptorBufferInfo buffer_info = {
-							.buffer = scratch_buffers[context->current_frame_index].handle,
+							.buffer = scratch_buffers[context->current_frame_index]->handle,
 							.offset = light_offset,
 							.range = sizeof(lights),
 						};
@@ -1241,8 +1239,8 @@ int main(void) {
 
 						VkDescriptorImageInfo image_info = {
 							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-							.imageView = shadow_depthbuffer.view,
-							.sampler = shadow_sampler.handle
+							.imageView = shadow_depthbuffer->view,
+							.sampler = shadow_sampler->handle
 						};
 						VkWriteDescriptorSet write = {
 							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1258,8 +1256,8 @@ int main(void) {
 					{ // skybox sampler
 						VkDescriptorImageInfo image_info = {
 							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-							.imageView = skybox.gpu_image.view,
-							.sampler = linear_sampler.handle
+							.imageView = skybox.gpu_image->view,
+							.sampler = linear_sampler->handle
 						};
 						VkWriteDescriptorSet write = {
 							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1282,7 +1280,7 @@ int main(void) {
 					MeshInstance *instance = &instances[instance_index];
 					Mesh *mesh = &meshes[instance->id];
 
-					vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+					vkCmdBindIndexBuffer(command_buffer, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
@@ -1314,7 +1312,7 @@ int main(void) {
 						}
 
 						if (instance->id == MESH_HERO_MALE && part_index == 3) { // hero head
-							if (blink_timer > 1.9f && blink_timer < 2.1f)
+							if (blink_timer > 2.0f && blink_timer < 2.1f)
 								pc.uv_offset.x = 1.0f / 3.0f;
 							else if (blink_timer > 2.1f && blink_timer < 2.3f) {
 								pc.uv_offset.x = 2.0f / 3.0f;
@@ -1340,7 +1338,7 @@ int main(void) {
 									.range = mesh->total_vertex_count * sizeof(Vertex3),
 								};
 								if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
-									buffer_info.buffer = scratch_buffers[context->current_frame_index].handle;
+									buffer_info.buffer = scratch_buffers[context->current_frame_index]->handle;
 									buffer_info.offset = instance->skinned_vertices_offset;
 								}
 								VkWriteDescriptorSet write = {
@@ -1358,11 +1356,11 @@ int main(void) {
 								VkWriteDescriptorSet writes[5] = { 0 };
 								VkDescriptorImageInfo image_infos[5] = { 0 };
 								for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-									GFX_Image *image = &material->textures[texture_index].gpu_image;
+									GFX_Image *image = material->textures[texture_index].gpu_image;
 									image_infos[texture_index] = (VkDescriptorImageInfo){
 										.imageView = image->view,
 										.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-										.sampler = linear_sampler.handle,
+										.sampler = linear_sampler->handle,
 									};
 
 									writes[texture_index] = (VkWriteDescriptorSet){
@@ -1384,14 +1382,13 @@ int main(void) {
 						vkCmdDrawIndexed(command_buffer, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
 				}
-				blink_timer += dt;
 
 				// :grass
 				{
 					Mesh *mesh = &meshes[MESH_GRASS_BILLBOARD];
 
 					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_grass.handle);
-					vkCmdBindIndexBuffer(command_buffer, geometry.handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+					vkCmdBindIndexBuffer(command_buffer, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
@@ -1444,11 +1441,11 @@ int main(void) {
 								VkWriteDescriptorSet writes[5] = { 0 };
 								VkDescriptorImageInfo image_infos[5] = { 0 };
 								for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-									GFX_Image *image = &material->textures[texture_index].gpu_image;
+									GFX_Image *image = material->textures[texture_index].gpu_image;
 									image_infos[texture_index] = (VkDescriptorImageInfo){
 										.imageView = image->view,
 										.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-										.sampler = linear_sampler.handle,
+										.sampler = linear_sampler->handle,
 									};
 
 									writes[texture_index] = (VkWriteDescriptorSet){
@@ -1465,9 +1462,9 @@ int main(void) {
 							}
 							{ // instance descriptor binding
 								VkDescriptorBufferInfo buffer_info = {
-									.buffer = grass_instancing_buffer.handle,
+									.buffer = grass_instancing_buffer->handle,
 									.offset = 0,
-									.range = grass_instancing_buffer.size,
+									.range = grass_instancing_buffer->size,
 								};
 								VkWriteDescriptorSet write = {
 									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1507,18 +1504,28 @@ int main(void) {
 			break;
 		}
 
-		VkSemaphore wait_semaphores[] = { swapchains[0].image_available_semaphores[context->current_frame_index], swapchains[1].image_available_semaphores[context->current_frame_index] };
-		VkSemaphore signal_semaphores[] = { swapchains[0].render_done_semaphores[image_indices[0]], swapchains[1].render_done_semaphores[image_indices[1]] };
-		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+		VkSwapchainKHR swapchain_handles[MAX_SWAPCHAINS] = { 0 };
+		VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 };
+		VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 };
+		VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = {
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		};
+
+		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
+			swapchain_handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle;
+			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index];
+			signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]];
+		}
 
 		VkSubmitInfo submit_info = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-			.waitSemaphoreCount = countof(wait_semaphores),
+			.waitSemaphoreCount = cmd->swapchain_count,
 			.pWaitSemaphores = wait_semaphores,
 			.pWaitDstStageMask = wait_stages,
 			.commandBufferCount = 1,
 			.pCommandBuffers = &command_buffer,
-			.signalSemaphoreCount = countof(signal_semaphores),
+			.signalSemaphoreCount = cmd->swapchain_count,
 			.pSignalSemaphores = signal_semaphores,
 		};
 
@@ -1527,16 +1534,15 @@ int main(void) {
 			break;
 		}
 
-		VkSwapchainKHR swapchain_handles[] = { swapchains[0].handle, swapchains[1].handle };
 		VkPresentInfoKHR present_info = {
 			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-			.waitSemaphoreCount = countof(signal_semaphores),
+			.waitSemaphoreCount = cmd->swapchain_count,
 			.pWaitSemaphores = signal_semaphores,
-			.swapchainCount = countof(swapchains),
+			.swapchainCount = cmd->swapchain_count,
 			.pSwapchains = swapchain_handles,
-			.pImageIndices = image_indices,
+			.pImageIndices = cmd->swapchain_image_indices,
 		};
-		VkResult result = vkQueuePresentKHR(swapchains[0].present_queue, &present_info);
+		VkResult result = vkQueuePresentKHR(context->present_queue, &present_info);
 		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 			break;
 
@@ -1564,32 +1570,6 @@ int main(void) {
 	// :destroy
 	vkDeviceWaitIdle(context->device.logical);
 	{
-		for (uint32_t index = 0; index < countof(scratch_buffers); ++index)
-			buffer_destroy(context, &scratch_buffers[index]);
-		buffer_destroy(context, &geometry);
-		buffer_destroy(context, &grass_instancing_buffer);
-
-		for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
-			Mesh *mesh = &meshes[mesh_index];
-			for (uint32_t material_index = 0; material_index < mesh->material_count; ++material_index) {
-				Material *material = &mesh->materials[material_index];
-
-				for (uint32_t texture_slot = 0; texture_slot < TEXTURE_SLOT_COUNT; ++texture_slot) {
-					Image2D *img = &material->textures[texture_slot];
-					if (img->pixels)
-						image_destroy(context, &img->gpu_image);
-				}
-			}
-		}
-		image_destroy(context, &offscreen_render);
-		image_destroy(context, &depthbuffer);
-		image_destroy(context, &shadow_depthbuffer);
-		image_destroy(context, &compute_image);
-		image_destroy(context, &white_texture);
-		image_destroy(context, &skybox.gpu_image);
-		sampler_destroy(context, &linear_sampler);
-		sampler_destroy(context, &shadow_sampler);
-
 		pipeline_destroy(context, &c_pipeline);
 		pipeline_destroy(context, &pipeline_skinning);
 		pipeline_destroy(context, &pipeline_shadow);
@@ -1600,9 +1580,6 @@ int main(void) {
 
 		memory_zero(&pipeline_grass.set_layouts[0], sizeof(pipeline_grass.set_layouts[0]));
 		pipeline_destroy(context, &pipeline_grass);
-
-		for (uint32_t index = 0; index < countof(swapchains); ++index)
-			swapchain_destroy(context, &swapchains[index]);
 	}
 
 	gfx_shutdown(context);
@@ -1809,34 +1786,55 @@ uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_f
 	return 0;
 }
 
-GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name) {
-	GFX_Buffer result = { 0 };
+GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name) {
+	GFX_Buffer *result = 0;
 	LOG_DEBUG("creating vulkan buffer.");
 
-	bool ok = true;
+	bool ok = context && (context->buffer_count < MAX_BUFFERS || context->first_free_buffer);
+	const char *name = debug_name ? debug_name : "<unnamed_buffer>";
 
-	result.memory_type = memory;
-	result.usage = usage;
+	if (ok) { // acquire new buffer
+		if (context->first_free_buffer) {
+			result = context->first_free_buffer;
+			context->first_free_buffer = result->next;
 
-	VkBufferUsageFlags vk_usage = gfx__to_vk_buffer_usage(usage);
-	VkMemoryPropertyFlags memory_flags = gfx__memory_type_to_vk_memory_property_flags(memory);
+			memory_zero(result, sizeof(*result));
+		} else
+			result = &context->buffers[context->buffer_count];
+
+		context->buffer_count++;
+	}
+
+	VkBufferUsageFlags vk_usage = 0;
+	VkMemoryPropertyFlags memory_flags = 0;
+	if (ok) {
+		result->memory_type = memory;
+		result->usage = usage;
+
+		vk_usage = gfx__to_vk_buffer_usage(usage);
+		memory_flags = gfx__memory_type_to_vk_memory_property_flags(memory);
+
+		ok = vk_usage && memory_flags;
+		if (ok == false)
+			LOG_WARN("invalid properties passed, aborting creation of %s", name);
+	}
 
 	if (ok) { // create buffer handle
-		result.size = size;
+		result->size = size;
 		uint32_t family_indices[] = { context->graphics_index, context->transfer_index };
-		result.info = (VkBufferCreateInfo){
+		result->info = (VkBufferCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.size = result.size,
+			.size = result->size,
 			.usage = vk_usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		};
 
-		ok = vkCreateBuffer(context->device.logical, &result.info, 0, &result.handle) == VK_SUCCESS;
+		ok = vkCreateBuffer(context->device.logical, &result->info, 0, &result->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // allocate buffer memory
 		VkMemoryRequirements memory_requirements;
-		vkGetBufferMemoryRequirements(context->device.logical, result.handle, &memory_requirements);
+		vkGetBufferMemoryRequirements(context->device.logical, result->handle, &memory_requirements);
 
 		uint32_t memory_type_index = gfx__find_memory_type(context->device.physical, memory_requirements.memoryTypeBits, memory_flags);
 		size_t allocation_size = memory_requirements.size;
@@ -1853,18 +1851,18 @@ GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory,
 			.memoryTypeIndex = memory_type_index,
 		};
 
-		ok = vkAllocateMemory(context->device.logical, &allocate_info, 0, &result.memory) == VK_SUCCESS;
+		ok = vkAllocateMemory(context->device.logical, &allocate_info, 0, &result->memory) == VK_SUCCESS;
 	}
 
 	if (ok) { // bind memory & get buffer device address
-		ok = vkBindBufferMemory(context->device.logical, result.handle, result.memory, 0) == VK_SUCCESS;
+		ok = vkBindBufferMemory(context->device.logical, result->handle, result->memory, 0) == VK_SUCCESS;
 
 		if (vk_usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 			VkBufferDeviceAddressInfo bda_info = {
 				.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-				.buffer = result.handle,
+				.buffer = result->handle,
 			};
-			result.address = vkGetBufferDeviceAddress(context->device.logical, &bda_info);
+			result->address = vkGetBufferDeviceAddress(context->device.logical, &bda_info);
 		}
 	}
 
@@ -1872,9 +1870,9 @@ GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory,
 	if (ok) { // assign debug name
 		VkDebugUtilsObjectNameInfoEXT name_info = {
 			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
-			.pObjectName = debug_name ? debug_name : "<unnamed>",
+			.pObjectName = name,
 			.objectType = VK_OBJECT_TYPE_BUFFER,
-			.objectHandle = (uint64_t)result.handle,
+			.objectHandle = (uint64_t)result->handle,
 
 		};
 		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
@@ -1882,34 +1880,50 @@ GFX_Buffer buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory,
 #endif
 
 	if (ok == false) // remove half-made resources on error
-		buffer_destroy(context, &result);
+		gfx_buffer_destroy(context, result);
 
 	return result;
 }
 
-GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options) {
-	GFX_Image result = { 0 };
+GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions opt) {
+	GFX_Image *result = 0;
 	LOG_DEBUG("creating vulkan image.");
 
-	bool ok = true;
-	VkImageUsageFlags vk_usage = gfx__image_opt_to_vk_usage(options);
-	VkFormat vk_format = gfx__pixel_format_to_vk_format(options.format);
-	VkImageAspectFlags vk_aspect = gfx__pixel_format_to_vk_aspect(options.format);
-	VkSampleCountFlags vk_sample = gfx__usage_to_vk_sample(context->device.limits, options);
-	VkImageCreateFlags vk_flags = gfx__opt_to_vk_image_flags(options);
-	VkImageViewType vk_type = gfx__opt_to_vk_view_type(options);
-	uint32_t layer_count =
-		options.slice_count
-		? options.slice_count
-		: options.type == IMAGE_TYPE_CUBE ? 6
-										  : 1;
+	bool ok = context && (context->buffer_count < MAX_BUFFERS || context->first_free_buffer);
+	const char *name = opt.debug_name ? opt.debug_name : "<unnamed_image>";
 
-	result.width = width, result.height = height;
-	result.format = options.format;
-	result.usage = RESOURCE_USAGE_UNDEFINED;
+	if (ok) { // acquire new image
+		if (context->first_free_image) {
+			result = context->first_free_image;
+			context->first_free_image = result->next;
+		} else
+			result = &context->images[context->image_count];
+
+		context->image_count++;
+	}
+
+	uint32_t layer_count = opt.slice_count
+		? opt.slice_count
+		: opt.type == IMAGE_TYPE_CUBE ? 6
+									  : 1;
 
 	if (ok) { // make vulkan image handle
-		result.image_info = (VkImageCreateInfo){
+
+		VkImageUsageFlags vk_usage = 0;
+		VkFormat vk_format = 0;
+		VkSampleCountFlags vk_sample = 0;
+		VkImageCreateFlags vk_flags = 0;
+
+		vk_usage = gfx__image_opt_to_vk_usage(opt);
+		vk_format = gfx__pixel_format_to_vk_format(opt.format);
+		vk_sample = gfx__usage_to_vk_sample(context->device.limits, opt);
+		vk_flags = gfx__opt_to_vk_image_flags(opt);
+
+		result->width = width, result->height = height;
+		result->format = opt.format;
+		result->usage = RESOURCE_USAGE_UNDEFINED;
+
+		result->image_info = (VkImageCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 			.imageType = VK_IMAGE_TYPE_2D,
 			.flags = vk_flags,
@@ -1925,15 +1939,15 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = vk_usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.initialLayout = gfx__usage_to_image_layout(result.usage),
+			.initialLayout = gfx__usage_to_image_layout(result->usage),
 		};
 
-		ok = vkCreateImage(context->device.logical, &result.image_info, 0, &result.handle) == VK_SUCCESS;
+		ok = vkCreateImage(context->device.logical, &result->image_info, 0, &result->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // allocate memory
 		VkMemoryRequirements memory_requirements;
-		vkGetImageMemoryRequirements(context->device.logical, result.handle, &memory_requirements);
+		vkGetImageMemoryRequirements(context->device.logical, result->handle, &memory_requirements);
 
 		VkMemoryAllocateInfo allocate_info = {
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -1941,18 +1955,21 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 			.memoryTypeIndex = gfx__find_memory_type(context->device.physical, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
 		};
 
-		ok = vkAllocateMemory(context->device.logical, &allocate_info, 0, &result.memory) == VK_SUCCESS;
+		ok = vkAllocateMemory(context->device.logical, &allocate_info, 0, &result->memory) == VK_SUCCESS;
 	}
 
 	if (ok) // bind memory to handle
-		vkBindImageMemory(context->device.logical, result.handle, result.memory, 0);
+		vkBindImageMemory(context->device.logical, result->handle, result->memory, 0);
 
 	if (ok) { // create image view
-		result.view_info = (VkImageViewCreateInfo){
+		VkImageViewType vk_type = gfx__opt_to_vk_view_type(opt);
+		VkImageAspectFlags vk_aspect = gfx__pixel_format_to_vk_aspect(opt.format);
+
+		result->view_info = (VkImageViewCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.image = result.handle,
+			.image = result->handle,
 			.viewType = vk_type,
-			.format = result.image_info.format,
+			.format = result->image_info.format,
 			.components = {
 			  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
 			  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -1968,24 +1985,50 @@ GFX_Image image_make(GFX_Context *context, uint32_t width, uint32_t height, Imag
 			}
 		};
 
-		ok = vkCreateImageView(context->device.logical, &result.view_info, 0, &result.view) == VK_SUCCESS;
+		ok = vkCreateImageView(context->device.logical, &result->view_info, 0, &result->view) == VK_SUCCESS;
 	}
 
+#if DEV_BUILD
+	if (ok) { // assign debug name
+		VkDebugUtilsObjectNameInfoEXT name_info = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+			.pObjectName = name,
+			.objectType = VK_OBJECT_TYPE_IMAGE,
+			.objectHandle = (uint64_t)result->handle,
+
+		};
+		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+	}
+#endif
+
 	if (ok == false) // remove half-made resources on error
-		image_destroy(context, &result);
+		gfx_image_destroy(context, result);
 
 	/* LOG_INFO("image loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, image_format_to_string[format]); */
 	return result;
 }
 
-GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt) {
-	GFX_Sampler result = { 0 };
+GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt) {
+	GFX_Sampler *result = 0;
 	LOG_DEBUG("creating vulkan sampler.");
 
-	bool ok = true;
+	bool ok = context && (context->buffer_count < MAX_BUFFERS || context->first_free_buffer);
+	const char *name = opt.debug_name ? opt.debug_name : "<unnamed_sampler>";
+
+	if (ok) { // acquire new sampler
+		if (context->first_free_sampler) {
+			result = context->first_free_sampler;
+			context->first_free_sampler = result->next;
+
+			memory_zero(result, sizeof(*result));
+		} else
+			result = &context->samplers[context->sampler_count];
+
+		context->sampler_count++;
+	}
 
 	if (ok) {
-		result.info = (VkSamplerCreateInfo){
+		result->info = (VkSamplerCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 			.magFilter = (VkFilter)opt.mag_filter,
 			.minFilter = (VkFilter)opt.min_filter,
@@ -2000,7 +2043,7 @@ GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt) {
 			.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 		};
 
-		ok = vkCreateSampler(context->device.logical, &result.info, NULL, &result.handle) == VK_SUCCESS;
+		ok = vkCreateSampler(context->device.logical, &result->info, NULL, &result->handle) == VK_SUCCESS;
 		if (ok == false)
 			LOG_WARN("failed to create vulkan sampler.");
 	}
@@ -2009,24 +2052,40 @@ GFX_Sampler sampler_make(GFX_Context *context, SamplerOptions opt) {
 	if (ok) { // assign debug name
 		VkDebugUtilsObjectNameInfoEXT name_info = {
 			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
-			.pObjectName = opt.debug_name ? opt.debug_name : "<unnamed>",
+			.pObjectName = name,
 			.objectType = VK_OBJECT_TYPE_SAMPLER,
-			.objectHandle = (uint64_t)result.handle,
+			.objectHandle = (uint64_t)result->handle,
 
 		};
 		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
 	}
 #endif
 
+	if (ok == false) // remove half-made resources on error
+		gfx_sampler_destroy(context, result);
+
 	return result;
 }
 
-Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
-	Swapchain result = { 0 };
+GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, const char *debug_name) {
+	GFX_Swapchain *result = 0;
 	ArenaTemp scratch = arena_scratch_begin(0);
 	LOG_DEBUG("creating vulkan surface.");
 
-	bool ok = true;
+	bool ok = context && (context->swapchain_count < MAX_BUFFERS || context->first_free_swapchain);
+	const char *name = debug_name ? debug_name : "<unnamed_swapchain";
+
+	if (ok) { // acquire new swapchain
+		if (context->first_free_swapchain) {
+			result = context->first_free_swapchain;
+			context->first_free_swapchain = result->next;
+
+			memory_zero(result, sizeof(*result));
+		} else
+			result = &context->swapchains[context->swapchain_count];
+
+		context->swapchain_count++;
+	}
 
 	if (ok) { // create surface
 		VkXcbSurfaceCreateInfoKHR surface_create_info = {
@@ -2035,7 +2094,7 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 			.window = (uint32_t)(uint64_t)os_native_surface_handle(surface),
 		}; // TODO: Have os decide this
 
-		ok = vkCreateXcbSurfaceKHR(context->instance, &surface_create_info, 0, &result.surface) == VK_SUCCESS;
+		ok = vkCreateXcbSurfaceKHR(context->instance, &surface_create_info, 0, &result->surface) == VK_SUCCESS;
 		if (ok == false)
 			LOG_WARN("failed to create vulkan surface.");
 	}
@@ -2049,40 +2108,40 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 	VkPresentModeKHR *present_modes;
 
 	if (ok) { // query surface suitability
-		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context->device.physical, result.surface, &capabilities);
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context->device.physical, result->surface, &capabilities);
 
-		vkGetPhysicalDeviceSurfaceFormatsKHR(context->device.physical, result.surface, &surface_format_count, 0);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(context->device.physical, result->surface, &surface_format_count, 0);
 		surface_formats = arena_push_count(scratch.arena, VkSurfaceFormatKHR, surface_format_count);
-		vkGetPhysicalDeviceSurfaceFormatsKHR(context->device.physical, result.surface, &surface_format_count, surface_formats);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(context->device.physical, result->surface, &surface_format_count, surface_formats);
 
-		vkGetPhysicalDeviceSurfacePresentModesKHR(context->device.physical, result.surface, &present_mode_count, 0);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(context->device.physical, result->surface, &present_mode_count, 0);
 		present_modes = arena_push_count(scratch.arena, VkPresentModeKHR, present_mode_count);
-		vkGetPhysicalDeviceSurfacePresentModesKHR(context->device.physical, result.surface, &present_mode_count, present_modes);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(context->device.physical, result->surface, &present_mode_count, present_modes);
 
 		uint32_t queue_family_count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(context->device.physical, &queue_family_count, 0);
 		VkQueueFamilyProperties *queue_family_properties = arena_push_count(scratch.arena, VkQueueFamilyProperties, queue_family_count);
 		vkGetPhysicalDeviceQueueFamilyProperties(context->device.physical, &queue_family_count, queue_family_properties);
 
-		result.present_index = -1;
-		for (uint32_t index = 0; index < queue_family_count; ++index) {
-			VkQueueFlags flags = queue_family_properties[index].queueFlags;
+		if (context->present_index == -1)
+			for (uint32_t index = 0; index < queue_family_count; ++index) {
+				VkQueueFlags flags = queue_family_properties[index].queueFlags;
 
-			VkBool32 present_support = false;
-			vkGetPhysicalDeviceSurfaceSupportKHR(context->device.physical, index, result.surface, &present_support);
-			if (present_support && result.present_index == -1) {
-				result.present_index = index;
-				break;
+				VkBool32 present_support = false;
+				vkGetPhysicalDeviceSurfaceSupportKHR(context->device.physical, index, result->surface, &present_support);
+				if (present_support && context->present_index == -1) {
+					context->present_index = index;
+					break;
+				}
 			}
-		}
 
 		ok &= surface_format_count > 0; // valid surface formats available
 		ok &= present_mode_count > 0; // valid present mode available
-		ok &= result.present_index != -1; // supports present queue
+		ok &= context->present_index != -1; // supports present queue
 	}
 
 	if (ok) { // create swapchain
-		vkGetDeviceQueue(context->device.logical, result.present_index, 0, &result.present_queue);
+		vkGetDeviceQueue(context->device.logical, context->present_index, 0, &context->present_queue);
 
 		VkSurfaceFormatKHR selected_format = surface_formats[0];
 		for (uint32_t format_index = 0; format_index < surface_format_count; ++format_index) {
@@ -2116,7 +2175,7 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 			? capabilities.currentExtent
 			: (VkExtent2D){ .width = (uint32_t)(surface_size.x * dpi), .height = (uint32_t)((float)surface_size.y * dpi) };
 
-		uint32_t queue_family_indices[] = { (uint32_t)context->graphics_index, (uint32_t)result.present_index };
+		uint32_t queue_family_indices[] = { (uint32_t)context->graphics_index, (uint32_t)context->present_index };
 
 		uint32_t image_count = capabilities.minImageCount + 1;
 		if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount)
@@ -2124,9 +2183,9 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 
 		image_count = MIN(image_count, SWAPCHAIN_IMAGE_COUNT);
 
-		result.info = (VkSwapchainCreateInfoKHR){
+		result->info = (VkSwapchainCreateInfoKHR){
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			.surface = result.surface,
+			.surface = result->surface,
 			.minImageCount = image_count,
 			.imageFormat = selected_format.format,
 			.imageColorSpace = selected_format.colorSpace,
@@ -2140,25 +2199,25 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 		};
 
 		if (queue_family_indices[0] != queue_family_indices[1]) {
-			result.info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-			result.info.queueFamilyIndexCount = 2;
-			result.info.pQueueFamilyIndices = queue_family_indices;
+			result->info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+			result->info.queueFamilyIndexCount = 2;
+			result->info.pQueueFamilyIndices = queue_family_indices;
 		} else
-			result.info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			result->info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-		ok = vkCreateSwapchainKHR(context->device.logical, &result.info, NULL, &result.handle) == VK_SUCCESS;
+		ok = vkCreateSwapchainKHR(context->device.logical, &result->info, NULL, &result->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // get the swapchain images & create image views
-		vkGetSwapchainImagesKHR(context->device.logical, result.handle, &result.image_count, NULL);
-		vkGetSwapchainImagesKHR(context->device.logical, result.handle, &result.image_count, result.images);
+		vkGetSwapchainImagesKHR(context->device.logical, result->handle, &result->image_count, NULL);
+		vkGetSwapchainImagesKHR(context->device.logical, result->handle, &result->image_count, result->images);
 
-		for (uint32_t image_index = 0; image_index < result.image_count; ++image_index) {
-			result.view_infos[image_index] = (VkImageViewCreateInfo){
+		for (uint32_t image_index = 0; image_index < result->image_count; ++image_index) {
+			result->view_infos[image_index] = (VkImageViewCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.image = result.images[image_index],
+				.image = result->images[image_index],
 				.viewType = VK_IMAGE_VIEW_TYPE_2D,
-				.format = result.info.imageFormat,
+				.format = result->info.imageFormat,
 				.components = {
 				  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
 				  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -2174,7 +2233,7 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 				}
 			};
 
-			ok &= vkCreateImageView(context->device.logical, result.view_infos + image_index, NULL, &result.views[image_index]) == VK_SUCCESS;
+			ok &= vkCreateImageView(context->device.logical, result->view_infos + image_index, NULL, &result->views[image_index]) == VK_SUCCESS;
 		}
 	}
 
@@ -2183,15 +2242,28 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 		};
 
-		for (uint32_t index = 0; index < countof(result.image_available_semaphores); ++index)
-			ok &= vkCreateSemaphore(context->device.logical, &s_create_info, 0, result.image_available_semaphores + index) == VK_SUCCESS;
-		for (uint32_t index = 0; index < countof(result.render_done_semaphores); ++index)
-			ok &= vkCreateSemaphore(context->device.logical, &s_create_info, 0, result.render_done_semaphores + index) == VK_SUCCESS;
+		for (uint32_t index = 0; index < countof(result->image_available_semaphores); ++index)
+			ok &= vkCreateSemaphore(context->device.logical, &s_create_info, 0, result->image_available_semaphores + index) == VK_SUCCESS;
+		for (uint32_t index = 0; index < countof(result->render_done_semaphores); ++index)
+			ok &= vkCreateSemaphore(context->device.logical, &s_create_info, 0, result->render_done_semaphores + index) == VK_SUCCESS;
 	}
 
+#if DEV_BUILD
+	if (ok) { // assign debug name
+		VkDebugUtilsObjectNameInfoEXT name_info = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+			.pObjectName = name,
+			.objectType = VK_OBJECT_TYPE_SWAPCHAIN_KHR,
+			.objectHandle = (uint64_t)result->handle,
+
+		};
+		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+	}
+#endif
+
 	if (ok == false) { // remove half-made resources on error
-		swapchain_destroy(context, &result);
-		LOG_ERROR("failed to create vulkan swapchain.");
+		swapchain_destroy(context, result);
+		LOG_ERROR("failed to create graphics surface.");
 	}
 
 	arena_scratch_end(scratch);
@@ -2454,17 +2526,25 @@ Shader graphics_pipeline_make(
 	return result;
 }
 
-bool buffer_destroy(GFX_Context *context, GFX_Buffer *buffer) {
+bool gfx_buffer_destroy(GFX_Context *context, GFX_Buffer *buffer) {
 	bool ok = context && buffer;
+	ok &= buffer >= context->buffers && buffer < context->buffers + MAX_BUFFERS; // valid pool member
 
 	if (ok) {
 		if (buffer->memory) {
 			if (buffer->mapped)
 				vkUnmapMemory(context->device.logical, buffer->memory);
-			vkFreeMemory(context->device.logical, buffer->memory, NULL);
+			vkFreeMemory(context->device.logical, buffer->memory, 0);
 		}
 		if (buffer->handle)
-			vkDestroyBuffer(context->device.logical, buffer->handle, NULL);
+			vkDestroyBuffer(context->device.logical, buffer->handle, 0);
+	}
+
+	ok &= buffer->next == 0 && context->first_free_buffer != buffer; // not free currently
+	if (ok) {
+		context->buffer_count--;
+		buffer->next = context->first_free_buffer;
+		context->first_free_buffer = buffer;
 
 		memory_zero(buffer, sizeof(*buffer));
 	}
@@ -2472,8 +2552,9 @@ bool buffer_destroy(GFX_Context *context, GFX_Buffer *buffer) {
 	return ok;
 }
 
-void image_destroy(GFX_Context *context, GFX_Image *image) {
+bool gfx_image_destroy(GFX_Context *context, GFX_Image *image) {
 	bool ok = context && image;
+	ok &= image >= context->images && image < context->images + MAX_IMAGES; // valid pool member
 
 	if (ok) {
 		if (image->view)
@@ -2482,44 +2563,73 @@ void image_destroy(GFX_Context *context, GFX_Image *image) {
 			vkFreeMemory(context->device.logical, image->memory, 0);
 		if (image->handle)
 			vkDestroyImage(context->device.logical, image->handle, 0);
+	}
+
+	ok &= image->next == 0 && context->first_free_image != image; // not free currently
+	if (ok) {
+		context->image_count--;
+		image->next = context->first_free_image;
+		context->first_free_image = image;
 
 		memory_zero(image, sizeof(*image));
 	}
+
+	return ok;
 }
 
-void sampler_destroy(GFX_Context *context, GFX_Sampler *sampler) {
+bool gfx_sampler_destroy(GFX_Context *context, GFX_Sampler *sampler) {
 	bool ok = context && sampler;
+	ok &= sampler >= context->samplers && sampler < context->samplers + MAX_SAMPLERS; // valid pool member
 
 	if (ok) {
 		if (sampler->handle)
 			vkDestroySampler(context->device.logical, sampler->handle, NULL);
+	}
+
+	ok &= sampler->next == 0 && context->first_free_sampler != sampler; // not free currently
+	if (ok) {
+		context->sampler_count--;
+		sampler->next = context->first_free_sampler;
+		context->first_free_sampler = sampler;
 
 		memory_zero(sampler, sizeof(*sampler));
 	}
+
+	return ok;
 }
 
-void swapchain_destroy(GFX_Context *context, Swapchain *surface) {
-	bool ok = context && surface;
+bool swapchain_destroy(GFX_Context *context, GFX_Swapchain *swapchain) {
+	bool ok = context && swapchain;
+	ok &= swapchain >= context->swapchains && swapchain < context->swapchains + MAX_SWAPCHAINS; // valid pool member
 
 	if (ok) {
-		for (uint32_t semaphore_index = 0; semaphore_index < countof(surface->image_available_semaphores); ++semaphore_index)
-			if (surface->image_available_semaphores[semaphore_index])
-				vkDestroySemaphore(context->device.logical, surface->image_available_semaphores[semaphore_index], NULL);
-		for (uint32_t semaphore_index = 0; semaphore_index < countof(surface->render_done_semaphores); ++semaphore_index)
-			if (surface->render_done_semaphores[semaphore_index])
-				vkDestroySemaphore(context->device.logical, surface->render_done_semaphores[semaphore_index], NULL);
+		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->image_available_semaphores); ++semaphore_index)
+			if (swapchain->image_available_semaphores[semaphore_index])
+				vkDestroySemaphore(context->device.logical, swapchain->image_available_semaphores[semaphore_index], NULL);
+		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->render_done_semaphores); ++semaphore_index)
+			if (swapchain->render_done_semaphores[semaphore_index])
+				vkDestroySemaphore(context->device.logical, swapchain->render_done_semaphores[semaphore_index], NULL);
 
-		for (uint32_t image_index = 0; image_index < surface->image_count; ++image_index)
-			if (surface->views[image_index])
-				vkDestroyImageView(context->device.logical, surface->views[image_index], NULL);
+		for (uint32_t image_index = 0; image_index < swapchain->image_count; ++image_index)
+			if (swapchain->views[image_index])
+				vkDestroyImageView(context->device.logical, swapchain->views[image_index], NULL);
 
-		if (surface->handle)
-			vkDestroySwapchainKHR(context->device.logical, surface->handle, NULL);
-		if (surface->surface)
-			vkDestroySurfaceKHR(context->instance, surface->surface, NULL);
-
-		memory_zero(surface, sizeof(*surface));
+		if (swapchain->handle)
+			vkDestroySwapchainKHR(context->device.logical, swapchain->handle, NULL);
+		if (swapchain->surface)
+			vkDestroySurfaceKHR(context->instance, swapchain->surface, NULL);
 	}
+
+	ok &= swapchain->next == 0 && context->first_free_swapchain != swapchain; // not free currently
+	if (ok) {
+		context->swapchain_count--;
+		swapchain->next = context->first_free_swapchain;
+		context->first_free_swapchain = swapchain;
+
+		memory_zero(swapchain, sizeof(*swapchain));
+	}
+
+	return ok;
 }
 
 void pipeline_destroy(GFX_Context *context, Shader *pipeline) {
@@ -2542,24 +2652,31 @@ void pipeline_destroy(GFX_Context *context, Shader *pipeline) {
 	}
 }
 
-GFX_Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_t *out_image_index) {
+GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *surface) {
 	GFX_Image result = { 0 };
 	bool ok = true;
 
+	uint32_t swapchain_index = cmd->swapchain_count;
+	uint32_t image_index = -1;
 	if (ok) { // acquire swapchain image
 		VkResult result = vkAcquireNextImageKHR(
 			context->device.logical,
 			surface->handle,
 			UINT64_MAX,
 			surface->image_available_semaphores[context->current_frame_index],
-			VK_NULL_HANDLE, out_image_index);
+			VK_NULL_HANDLE, &cmd->swapchain_image_indices[swapchain_index]);
 
-		ok = result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR;
+		image_index = cmd->swapchain_image_indices[swapchain_index];
+
+		ok = (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) && image_index != (uint32_t)-1;
 	}
 
 	if (ok) { // wrap swapchain
-		result.handle = surface->images[*out_image_index];
-		result.view = surface->views[*out_image_index];
+		cmd->swapchain_count++;
+		cmd->swapchains[swapchain_index] = surface;
+
+		result.handle = surface->images[image_index];
+		result.view = surface->views[image_index];
 		result.memory = 0; // not managed
 		result.image_info = (VkImageCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -2579,15 +2696,13 @@ GFX_Image swapchain_backbuffer(GFX_Context *context, Swapchain *surface, uint32_
 
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		};
-		result.view_info = surface->view_infos[*out_image_index];
+		result.view_info = surface->view_infos[image_index];
 		result.width = result.image_info.extent.width;
 		result.height = result.image_info.extent.height;
 	}
 
-	if (ok == false) {
+	if (ok == false)
 		memory_zero(&result, sizeof(result));
-		*out_image_index = -1;
-	}
 
 	return result;
 }
@@ -2652,23 +2767,29 @@ bool gfx_startup(GFX_Context *context) {
 		};
 
 	if (ok) {
+		context->arena[0] = arena_make(MiB(32));
+		context->buffers = arena_push_count(context->arena, GFX_Buffer, MAX_BUFFERS);
+		context->images = arena_push_count(context->arena, GFX_Image, MAX_IMAGES);
+		context->samplers = arena_push_count(context->arena, GFX_Sampler, MAX_SAMPLERS);
+		context->shaders = arena_push_count(context->arena, Shader, MAX_SHADERS);
+		context->swapchains = arena_push_count(context->arena, GFX_Swapchain, MAX_SWAPCHAINS);
+	}
+
+	if (ok) {
 		context->staging_buffer_frame_size = MiB(256);
 		context->staging_buffer =
-			buffer_make(
+			gfx_buffer_make(
 				context,
 				context->staging_buffer_frame_size * MAX_FRAMES_IN_FLIGHT,
 				BUFFER_MEMORY_SHARED,
 				BUFFER_USAGE_TRANSFER, "staging_buffer");
-		vkMapMemory(context->device.logical, context->staging_buffer.memory, 0, context->staging_buffer.size, 0, (void **)&context->staging_buffer.mapped);
+		ok = context->staging_buffer;
+		if (ok == false) {
+			LOG_ERROR("failed to create context staging buffer.");
+		}
 	}
-
-	if (ok) {
-		context->arena[0] = arena_make(MiB(32));
-		context->buffers = arena_push_count(context->arena, GFX_Buffer, MAX_BUFFERS);
-		context->images = arena_push_count(context->arena, GFX_Image, MAX_IMAGES);
-		context->shaders = arena_push_count(context->arena, Shader, MAX_SHADERS);
-		context->swapchains = arena_push_count(context->arena, Swapchain, MAX_SWAPCHAINS);
-	}
+	if (ok)
+		vkMapMemory(context->device.logical, context->staging_buffer->memory, 0, context->staging_buffer->size, 0, (void **)&context->staging_buffer->mapped);
 
 	if (ok) {
 		context->initialized = true;
@@ -2679,10 +2800,37 @@ bool gfx_startup(GFX_Context *context) {
 }
 
 void gfx_shutdown(GFX_Context *context) {
-#ifdef DEV_BUILD
-	if (context->debug_messenger)
-		vkDestroyDebugUtilsMessenger(context->instance, context->debug_messenger, 0);
-#endif
+	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
+		GFX_Buffer *buffer = &context->buffers[index];
+		gfx_buffer_destroy(context, buffer);
+
+		if (context->buffer_count == 0)
+			break;
+	}
+
+	for (uint32_t index = 0; index < MAX_IMAGES; ++index) {
+		GFX_Image *image = &context->images[index];
+		gfx_image_destroy(context, image);
+
+		if (context->image_count == 0)
+			break;
+	}
+
+	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
+		GFX_Sampler *sampler = &context->samplers[index];
+		gfx_sampler_destroy(context, sampler);
+
+		if (context->sampler_count == 0)
+			break;
+	}
+
+	for (uint32_t index = 0; index < MAX_SWAPCHAINS; ++index) {
+		GFX_Swapchain *swapchain = &context->swapchains[index];
+		swapchain_destroy(context, swapchain);
+
+		if (context->swapchain_count == 0)
+			break;
+	}
 
 	for (uint32_t index = 0; index < countof(context->cmd_buffers); ++index) {
 		GFX_CommandContext *cmd_buffer = &context->cmd_buffers[index];
@@ -2696,15 +2844,144 @@ void gfx_shutdown(GFX_Context *context) {
 	if (context->graphics_command_pool)
 		vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, 0);
 
-	buffer_destroy(context, &context->staging_buffer);
 	/* if (context->transfer_command_pool) */
 	/* 	vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, 0); */
+
+#ifdef DEV_BUILD
+	if (context->debug_messenger)
+		vkDestroyDebugUtilsMessenger(context->instance, context->debug_messenger, 0);
+#endif
 	if (context->device.logical)
 		vkDestroyDevice(context->device.logical, 0);
 	if (context->instance)
 		vkDestroyInstance(context->instance, 0);
 
 	memory_zero(context, sizeof(GFX_Context));
+}
+
+VkPipelineStageFlags gfx__usage_to_pipeline_stage(ResourceUsage usage) {
+	switch (usage) {
+		case RESOURCE_USAGE_UNDEFINED:
+			return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+		case RESOURCE_USAGE_TRANSFER_SRC:
+		case RESOURCE_USAGE_TRANSFER_DST:
+			return VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+		case RESOURCE_USAGE_SHADER_READ:
+		case RESOURCE_USAGE_SHADER_WRITE:
+			return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+
+		case RESOURCE_USAGE_VERTEX_BUFFER:
+		case RESOURCE_USAGE_INDEX_BUFFER:
+			return VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+
+		case RESOURCE_USAGE_VERTEX_SHADER_READ:
+		case RESOURCE_USAGE_VERTEX_SHADER_WRITE:
+			return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+
+		case RESOURCE_USAGE_FRAGMENT_SHADER_READ:
+		case RESOURCE_USAGE_FRAGMENT_SHADER_WRITE:
+			return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+		case RESOURCE_USAGE_COMPUTE_SHADER_READ:
+		case RESOURCE_USAGE_COMPUTE_SHADER_WRITE:
+			return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+
+		case RESOURCE_USAGE_COLOR_ATTACHMENT:
+			return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+		case RESOURCE_USAGE_DEPTH_ATTACHMENT:
+			return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+
+		case RESOURCE_USAGE_PRESENT:
+			return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	}
+
+	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
+	return 0;
+}
+
+VkAccessFlags gfx__usage_to_access(ResourceUsage usage) {
+	switch (usage) {
+		case RESOURCE_USAGE_UNDEFINED:
+			return 0;
+
+		case RESOURCE_USAGE_TRANSFER_SRC:
+			return VK_ACCESS_TRANSFER_READ_BIT;
+		case RESOURCE_USAGE_TRANSFER_DST:
+			return VK_ACCESS_TRANSFER_WRITE_BIT;
+
+		case RESOURCE_USAGE_SHADER_READ:
+		case RESOURCE_USAGE_VERTEX_SHADER_READ:
+		case RESOURCE_USAGE_FRAGMENT_SHADER_READ:
+		case RESOURCE_USAGE_COMPUTE_SHADER_READ:
+			return VK_ACCESS_SHADER_READ_BIT;
+
+		case RESOURCE_USAGE_SHADER_WRITE:
+		case RESOURCE_USAGE_VERTEX_SHADER_WRITE:
+		case RESOURCE_USAGE_FRAGMENT_SHADER_WRITE:
+		case RESOURCE_USAGE_COMPUTE_SHADER_WRITE:
+			return VK_ACCESS_SHADER_WRITE_BIT;
+
+		case RESOURCE_USAGE_VERTEX_BUFFER:
+			return VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+		case RESOURCE_USAGE_INDEX_BUFFER:
+			return VK_ACCESS_INDEX_READ_BIT;
+
+		case RESOURCE_USAGE_COLOR_ATTACHMENT:
+			return VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+			return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+		case RESOURCE_USAGE_DEPTH_ATTACHMENT:
+			return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		case RESOURCE_USAGE_PRESENT:
+			return 0;
+	}
+
+	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
+	return 0;
+}
+
+VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage) {
+	switch (usage) {
+		case RESOURCE_USAGE_UNDEFINED:
+			return VK_IMAGE_LAYOUT_UNDEFINED;
+
+		case RESOURCE_USAGE_TRANSFER_SRC:
+			return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		case RESOURCE_USAGE_TRANSFER_DST:
+			return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+		case RESOURCE_USAGE_SHADER_READ:
+		case RESOURCE_USAGE_VERTEX_SHADER_READ:
+		case RESOURCE_USAGE_FRAGMENT_SHADER_READ:
+		case RESOURCE_USAGE_COMPUTE_SHADER_READ:
+			return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		case RESOURCE_USAGE_SHADER_WRITE:
+		case RESOURCE_USAGE_VERTEX_SHADER_WRITE:
+		case RESOURCE_USAGE_FRAGMENT_SHADER_WRITE:
+		case RESOURCE_USAGE_COMPUTE_SHADER_WRITE:
+			return VK_IMAGE_LAYOUT_GENERAL;
+
+		case RESOURCE_USAGE_COLOR_ATTACHMENT:
+			return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		case RESOURCE_USAGE_DEPTH_ATTACHMENT:
+			return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		case RESOURCE_USAGE_PRESENT:
+			return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		case RESOURCE_USAGE_VERTEX_BUFFER:
+		case RESOURCE_USAGE_INDEX_BUFFER:
+			break;
+	}
+
+	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
+	return 0;
 }
 
 GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
@@ -2714,6 +2991,10 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 
 	if (ok) {
 		result = &context->cmd_buffers[context->current_frame_index];
+		result->frame_index = context->current_frame_index;
+		memory_zero_array(result->swapchains);
+		memory_zero_array(result->swapchain_image_indices);
+		result->swapchain_count = 0;
 
 		// Wait for frame resource availability
 		vkWaitForFences(context->device.logical, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX);
@@ -2723,9 +3004,9 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 		vkResetFences(context->device.logical, 1, &result->in_flight_fence);
 		vkResetDescriptorPool(context->device.logical, result->descriptor_pool, 0);
 
-		result->transient_buffer = &context->staging_buffer;
+		result->transient_buffer = context->staging_buffer;
 		result->transient_arena[0] = arena_wrap(
-			context->staging_buffer.mapped + context->current_frame_index * context->staging_buffer_frame_size,
+			context->staging_buffer->mapped + context->current_frame_index * context->staging_buffer_frame_size,
 			context->staging_buffer_frame_size);
 
 		// Begin command recording
@@ -2744,6 +3025,58 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 
 	return result;
 }
+
+/* bool gfx_frame_end(GFX_Context *context, GFX_CommandContext *cmd) { */
+/* 	VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 }; */
+/* 	VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 }; */
+/* 	VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = { 0 }; */
+/* 	VkSwapchainKHR swapchain_handles[MAX_SWAPCHAINS] = { 0 }; */
+
+/* 	bool ok = context && cmd; */
+
+/* 	if (ok) { */
+/* 		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) { */
+/* 			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index]; */
+/* 			signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]]; */
+/* 			swapchain_handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle; */
+/* 			wait_stages[swapchain_index] = VK_PIPELINE_STAGE_TRANSFER_BIT; */
+
+/* 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &cmd->swapchain_images[swapchain_index]); */
+/* 		} */
+
+/* 		VkSubmitInfo submit_info = { */
+/* 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, */
+/* 			.waitSemaphoreCount = countof(wait_semaphores), */
+/* 			.pWaitSemaphores = wait_semaphores, */
+/* 			.pWaitDstStageMask = wait_stages, */
+/* 			.commandBufferCount = 1, */
+/* 			.pCommandBuffers = &cmd->handle, */
+/* 			.signalSemaphoreCount = countof(signal_semaphores), */
+/* 			.pSignalSemaphores = signal_semaphores, */
+/* 		}; */
+
+/* 		ok = vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->cmd_buffers[cmd->frame_index].in_flight_fence) == VK_SUCCESS; */
+/* 		if (ok == false) */
+/* 			LOG_ERROR("failed to submit command buffer to queue."); */
+/* 	} */
+
+/* 	if (ok) { */
+/* 		VkPresentInfoKHR present_info = { */
+/* 			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, */
+/* 			.waitSemaphoreCount = countof(signal_semaphores), */
+/* 			.pWaitSemaphores = signal_semaphores, */
+/* 			.swapchainCount = cmd->swapchain_count, */
+/* 			.pSwapchains = swapchain_handles, */
+/* 			.pImageIndices = cmd->swapchain_image_indices, */
+/* 		}; */
+/* 		VkResult result = vkQueuePresentKHR(context->present_queue, &present_info); */
+/* 		ok = vkQueuePresentKHR(context->present_queue, &present_info) == VK_SUCCESS; */
+/* 		if (ok == false) */
+/* 			LOG_ERROR("failed to present swapchains."); */
+/* 	} */
+
+/* 	return ok; */
+/* } */
 
 GFX_CommandContext gfx_transfer_batch_begin(GFX_Context *context) {
 	GFX_CommandContext result = { 0 };
@@ -2769,9 +3102,9 @@ GFX_CommandContext gfx_transfer_batch_begin(GFX_Context *context) {
 	if (ok) {
 		result.handle = cmd;
 		result.transient_arena[0] = arena_wrap(
-			context->staging_buffer.mapped + context->current_frame_index * context->staging_buffer_frame_size,
+			context->staging_buffer->mapped + context->current_frame_index * context->staging_buffer_frame_size,
 			context->staging_buffer_frame_size); // TODO: staging buffer pool
-		result.transient_buffer = &context->staging_buffer;
+		result.transient_buffer = context->staging_buffer;
 	}
 
 	return result;
@@ -3046,7 +3379,6 @@ bool gfx__vk_device_make(GFX_Context *context) {
 
 			if ((flags & VK_QUEUE_GRAPHICS_BIT) && context->graphics_index == -1) {
 				context->graphics_index = index;
-				context->present_index = index;
 				/* ASSERT(present_support && "grahpics index does not support presenting"); */
 			}
 
@@ -3060,8 +3392,8 @@ bool gfx__vk_device_make(GFX_Context *context) {
 				context->compute_index = index;
 		}
 
-		if (context->graphics_index == -1 || context->present_index == -1) {
-			LOG_ERROR("failed to find graphics queues");
+		if (context->graphics_index == -1) {
+			LOG_ERROR("failed to find graphics queue.");
 			ok = false;
 		}
 	}
@@ -3258,131 +3590,6 @@ void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer
 	}
 
 	arena_scratch_end(scratch);
-}
-
-VkPipelineStageFlags gfx__usage_to_pipeline_stage(ResourceUsage usage) {
-	switch (usage) {
-		case RESOURCE_USAGE_UNDEFINED:
-			return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-
-		case RESOURCE_USAGE_TRANSFER_SRC:
-		case RESOURCE_USAGE_TRANSFER_DST:
-			return VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-		case RESOURCE_USAGE_SHADER_READ:
-		case RESOURCE_USAGE_SHADER_WRITE:
-			return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-
-		case RESOURCE_USAGE_VERTEX_BUFFER:
-		case RESOURCE_USAGE_INDEX_BUFFER:
-			return VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-
-		case RESOURCE_USAGE_VERTEX_SHADER_READ:
-		case RESOURCE_USAGE_VERTEX_SHADER_WRITE:
-			return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-
-		case RESOURCE_USAGE_FRAGMENT_SHADER_READ:
-		case RESOURCE_USAGE_FRAGMENT_SHADER_WRITE:
-			return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
-		case RESOURCE_USAGE_COMPUTE_SHADER_READ:
-		case RESOURCE_USAGE_COMPUTE_SHADER_WRITE:
-			return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-
-		case RESOURCE_USAGE_COLOR_ATTACHMENT:
-			return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-		case RESOURCE_USAGE_DEPTH_ATTACHMENT:
-			return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-
-		case RESOURCE_USAGE_PRESENT:
-			return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	}
-
-	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
-	return 0;
-}
-
-VkAccessFlags gfx__usage_to_access(ResourceUsage usage) {
-	switch (usage) {
-		case RESOURCE_USAGE_UNDEFINED:
-			return 0;
-
-		case RESOURCE_USAGE_TRANSFER_SRC:
-			return VK_ACCESS_TRANSFER_READ_BIT;
-		case RESOURCE_USAGE_TRANSFER_DST:
-			return VK_ACCESS_TRANSFER_WRITE_BIT;
-
-		case RESOURCE_USAGE_SHADER_READ:
-		case RESOURCE_USAGE_VERTEX_SHADER_READ:
-		case RESOURCE_USAGE_FRAGMENT_SHADER_READ:
-		case RESOURCE_USAGE_COMPUTE_SHADER_READ:
-			return VK_ACCESS_SHADER_READ_BIT;
-
-		case RESOURCE_USAGE_SHADER_WRITE:
-		case RESOURCE_USAGE_VERTEX_SHADER_WRITE:
-		case RESOURCE_USAGE_FRAGMENT_SHADER_WRITE:
-		case RESOURCE_USAGE_COMPUTE_SHADER_WRITE:
-			return VK_ACCESS_SHADER_WRITE_BIT;
-
-		case RESOURCE_USAGE_VERTEX_BUFFER:
-			return VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-		case RESOURCE_USAGE_INDEX_BUFFER:
-			return VK_ACCESS_INDEX_READ_BIT;
-
-		case RESOURCE_USAGE_COLOR_ATTACHMENT:
-			return VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-			return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-		case RESOURCE_USAGE_DEPTH_ATTACHMENT:
-			return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-		case RESOURCE_USAGE_PRESENT:
-			return 0;
-	}
-
-	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
-	return 0;
-}
-
-VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage) {
-	switch (usage) {
-		case RESOURCE_USAGE_UNDEFINED:
-			return VK_IMAGE_LAYOUT_UNDEFINED;
-
-		case RESOURCE_USAGE_TRANSFER_SRC:
-			return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		case RESOURCE_USAGE_TRANSFER_DST:
-			return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-
-		case RESOURCE_USAGE_SHADER_READ:
-		case RESOURCE_USAGE_VERTEX_SHADER_READ:
-		case RESOURCE_USAGE_FRAGMENT_SHADER_READ:
-		case RESOURCE_USAGE_COMPUTE_SHADER_READ:
-			return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-		case RESOURCE_USAGE_SHADER_WRITE:
-		case RESOURCE_USAGE_VERTEX_SHADER_WRITE:
-		case RESOURCE_USAGE_FRAGMENT_SHADER_WRITE:
-		case RESOURCE_USAGE_COMPUTE_SHADER_WRITE:
-			return VK_IMAGE_LAYOUT_GENERAL;
-
-		case RESOURCE_USAGE_COLOR_ATTACHMENT:
-			return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		case RESOURCE_USAGE_DEPTH_ATTACHMENT:
-			return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		case RESOURCE_USAGE_PRESENT:
-			return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-		case RESOURCE_USAGE_VERTEX_BUFFER:
-		case RESOURCE_USAGE_INDEX_BUFFER:
-			break;
-	}
-
-	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
-	return 0;
 }
 
 void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target) {

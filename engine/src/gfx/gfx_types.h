@@ -81,6 +81,8 @@ typedef enum cull_mode {
 } PipelineCullMode;
 
 typedef struct {
+    const char *debug_name;
+
 	ImageType type;
 	uint32_t slice_count;
 	PixelFormat format;
