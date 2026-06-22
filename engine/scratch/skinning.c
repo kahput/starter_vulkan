@@ -695,13 +695,15 @@ int main(void) {
 			}
 
 			uint64_t grass_upload_offset = arena_mark(cmd.transient_arena);
+			// vertex_count = 512 * 512 * 3 * 6 = 4.718.592
 			for (uint32_t z = 0; z < map_depth; ++z) {
 				for (uint32_t x = 0; x < map_width; ++x) {
 					float3 pos = {
-						.x = x - (map_width * 0.5f),
+						.x = x - (map_width * 0.5f) + ((float)(rand() % 10) / 20),
 						.y = 0.0f,
-						.z = z - (map_depth * 0.5f),
+						.z = z - (map_depth * 0.5f) + ((float)(rand() % 10) / 20),
 					};
+					pos = float3_scale(pos, 1.f / 2.f);
 					*arena_push_count(cmd.transient_arena, float4, 1) = float4_from_float3(pos, 1.0f);
 				}
 			}
@@ -894,7 +896,6 @@ int main(void) {
 				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
 
 				{ MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-				{ MESH_GRASS_BILLBOARD, { { 10.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, false },
 			};
 
 			uint64_t scratch_cursor = 0;
@@ -1014,8 +1015,8 @@ int main(void) {
 						.view = lights[0].matrix,
 						.proj = float4x4_identity(),
 						.camera_position = lights[0].position,
-						.fog_density = 0.007f,
-						.fog_gradient = 1.5f,
+						.fog_density = 0.0035f,
+						.fog_gradient = 5.0f,
 						.time = time,
 					};
 					frame_data.proj.elements[5] *= -1;
@@ -1179,10 +1180,10 @@ int main(void) {
 						float time;
 					} frame_data = {
 						.view = float4x4_lookat(camera.position, camera.target, camera.up),
-						.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 200.f),
+						.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f),
 						.camera_position = float4_from_float3(camera.position, 0.0f),
-						.fog_density = 0.007f,
-						.fog_gradient = 1.5f,
+						.fog_density = 0.02f,
+						.fog_gradient = 5.0f,
 						.time = time,
 					};
 					memory_copy(scratch_buffers[context->current_frame_index].mapped + scratch_cursor, &frame_data, sizeof(frame_data));
@@ -2081,7 +2082,6 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 	}
 
 	if (ok) { // create swapchain
-		// get queue handle
 		vkGetDeviceQueue(context->device.logical, result.present_index, 0, &result.present_queue);
 
 		VkSurfaceFormatKHR selected_format = surface_formats[0];
@@ -2095,6 +2095,15 @@ Swapchain swapchain_make(GFX_Context *context, OS_Surface *surface) {
 
 		VkPresentModeKHR selected_present_mode = present_modes[0];
 		for (uint32_t mode_index = 0; mode_index < present_mode_count; mode_index++) {
+			// NOTE: Caps framerate to monitor framerate
+			/* selected_present_mode = VK_PRESENT_MODE_FIFO_KHR; */
+			/* break; */
+
+			// NOTE: Uncap framerate on XWayland
+			/* if (present_modes[mode_index] == VK_PRESENT_MODE_IMMEDIATE_KHR) { */
+			/* 	selected_present_mode = present_modes[mode_index]; */
+			/* 	break; */
+			/* } */
 			if (present_modes[mode_index] == VK_PRESENT_MODE_MAILBOX_KHR) // ideal presentation mode
 				selected_present_mode = present_modes[mode_index];
 		}
