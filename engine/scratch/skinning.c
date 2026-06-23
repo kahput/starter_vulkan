@@ -101,16 +101,6 @@ struct Swapchain {
 	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
 };
 
-typedef struct {
-	struct {
-		uint64_t offset, size;
-		uint32_t buffer_id;
-	} buffers[8];
-	struct {
-		uint32_t image_id, sampler_id;
-	} textures[8];
-} GFX_Bindings;
-
 #define MAX_BUFFERS 1024
 #define MAX_IMAGES 512
 #define MAX_SAMPLERS 32
@@ -392,6 +382,30 @@ Mesh load_gltf(Arena *arena, String8 path);
 Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
+void push_rect(Arena *arena, Rectangle rect, Color color);
+
+typedef struct {
+	Arena *draw_arena;
+
+	float2 mouse_position;
+	bool mouse_pressed, mouse_released;
+
+	uint64_t hovered_id, active_id;
+} ImguiState;
+static ImguiState imgui_state = { 0 };
+
+void imgui_frame_begin(Arena *arena);
+void imgui_frame_end(void);
+
+typedef struct {
+	bool pressed, clicked;
+
+	bool held, hovering;
+} ImguiInteraction;
+
+ImguiInteraction imgui_interact(uint64_t id, Rectangle rect);
+ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h);
+
 AnimationClip *find_animation(AnimationClip *clips, uint32_t count, String8 target) {
 	for (uint32_t anim_index = 0; anim_index < count; ++anim_index)
 		if (str8_equals(str8_wrap(clips[anim_index].name), target))
@@ -399,6 +413,8 @@ AnimationClip *find_animation(AnimationClip *clips, uint32_t count, String8 targ
 
 	return NULL;
 }
+
+void player_update(float3 *player_position, quat4 *rotation, float2 mouse_delta, float dt, Camera3 *camera);
 
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
@@ -411,13 +427,6 @@ int main(void) {
 
 	InputState input_state = { 0 };
 	input_set_context(&input_state);
-	Camera3 camera = {
-		.projection = CAMERA_PROJECTION_PERSPECTIVE,
-		.position = { 0.0f, 1.5f, 20.f },
-		.target = { 0.0f, 1.5f, 0.0f },
-		.up = FLOAT3_Y,
-		.fovy = 45.f,
-	};
 
 	Arena arena[1] = { arena_make(MiB(256)) };
 
@@ -612,8 +621,8 @@ int main(void) {
 
 		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
 			(PipelineOptions){
-			  .color_attachment_count = 1,
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
+			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
 			  .cull_mode = CULL_MODE_BACK,
 			});
@@ -665,6 +674,68 @@ int main(void) {
 			  .color_attachment_count = 1,
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
+			});
+
+		arena_scratch_end(scratch);
+	}
+
+	GFX_Pipeline pipeline_2d = { 0 };
+	{
+		ArenaTemp scratch = arena_scratch_begin(0);
+
+		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
+		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/textured.fragment.spv"));
+
+		VkDescriptorSetLayout layouts[2] = { 0 };
+		{ // set 0
+			VkDescriptorSetLayoutBinding bindings[] = {
+				[0] = {
+				  .binding = 0,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+				[1] = {
+				  .binding = 1,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				  .descriptorCount = 1,
+				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+			};
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = countof(bindings),
+				.pBindings = bindings,
+			};
+			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[0]);
+		}
+		{ // set 1
+			VkDescriptorSetLayoutBinding bindings[] = {
+				[0] = {
+				  .binding = 0,
+				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				  .descriptorCount = 32,
+				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+			};
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = countof(bindings),
+				.pBindings = bindings,
+			};
+			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
+		}
+
+		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
+			(PipelineOptions){
+			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
+			  .color_attachment_count = 1,
+			  .sample_count = SAMPLE_COUNT_8,
+			  .cull_mode = CULL_MODE_BACK,
+			  .disable_depth_test = true,
+			  .disable_depth_write = true,
 			});
 
 		arena_scratch_end(scratch);
@@ -789,6 +860,38 @@ int main(void) {
 	Arena frame_arena[] = { arena_make(MiB(1)) };
 	memory_zero(context->staging_buffer->mapped, context->staging_buffer_frame_size);
 
+	typedef enum {
+		VIEWPORT_STATE_EDITOR,
+		VIEWPORT_STATE_GAME,
+
+		VIEWPORT_STATE_COUNT,
+	} ViewportState;
+
+	ViewportState state = VIEWPORT_STATE_EDITOR;
+
+	Camera3 cameras[VIEWPORT_STATE_COUNT] = {
+		[VIEWPORT_STATE_EDITOR] = {
+		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
+		  .position = { 0.0f, 1.5f, 20.f },
+		  .target = { 0.0f, 1.5f, 0.0f },
+		  .up = FLOAT3_Y,
+		  .fovy = 45.f,
+		},
+		[VIEWPORT_STATE_GAME] = {
+		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
+		  .position = { 0.0f, 1.5f, 20.f },
+		  .target = { 0.0f, 1.5f, 0.0f },
+		  .up = FLOAT3_Y,
+		  .fovy = 45.f,
+		},
+	};
+
+	MeshInstance instances[256] = {
+		[0] = { MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+		[1] = { MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+	};
+	uint32_t instance_count = 2;
+
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
 		dt = time - last_frame;
@@ -834,74 +937,108 @@ int main(void) {
 			}
 		}
 
-		if (input_mouse_down(MOUSE_BUTTON_MIDDLE))
-			os_cursor_capture(main_render, true);
-		else
-			os_cursor_capture(main_render, false);
+		// :update
+
+		Arena batch_2d[1] = { {
+		  .base = arena_push_count(frame_arena, Vertex2, 6 * 1024),
+		  .capacity = sizeof(Vertex2) * 6 * 1024,
+		} };
+
+		imgui_frame_begin(batch_2d);
+		{
+			if (imgui_button(__LINE__, 10, 10, 100, 100).clicked) {
+				LOG_INFO("button clicked.");
+			}
+		}
+
+		imgui_frame_end();
 
 		uint2 dims = os_surface_size(main_render);
+		float2 mouse_delta = float2_from_double2(input_mouse_delta());
+		mouse_delta.x /= dims.x;
+		mouse_delta.y /= dims.y;
+
+		if (input_key_pressed(KEY_CODE_TAB))
+			state = (state + 1) % VIEWPORT_STATE_COUNT;
+
+		Camera3 *camera = &cameras[state];
+		switch (state) {
+			case VIEWPORT_STATE_EDITOR: {
+				if (input_mouse_down(MOUSE_BUTTON_MIDDLE))
+					os_cursor_capture(main_render, true);
+				else
+					os_cursor_capture(main_render, false);
+
+				scene_camera_orbit(camera, mouse_delta);
+			} break;
+			case VIEWPORT_STATE_GAME: {
+				os_cursor_capture(main_render, true);
+				Transform3 *tranform = &instances[0].transform;
+				player_update(&tranform->translation, &tranform->rotation, mouse_delta, dt, camera);
+			} break;
+			default:
+				break;
+		}
 
 		// Frame resources
 		GFX_CommandContext *cmd = gfx_frame_begin(context);
 		if (cmd == 0)
-			break;
+			continue;
 
 		// Swapchain image acquisition
-		GFX_Image compute_blit_target = gfx_swapchain_backbuffer(context, cmd, swapchains[0]);
-		if (compute_blit_target.handle) {
-			// transition swapchain target & blit src compute image
-			gfx_cmd_image_transition(
-				cmd,
-				RESOURCE_USAGE_TRANSFER_DST,
-				&compute_blit_target);
-			gfx_cmd_image_transition(
-				cmd,
-				RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
-				compute_image);
+		/* GFX_Image compute_blit_target = gfx_swapchain_backbuffer(context, cmd, swapchains[0]); */
+		/* if (compute_blit_target.handle) { */
+		/* 	// transition swapchain target & blit src compute image */
+		/* 	gfx_cmd_image_transition( */
+		/* 		cmd, */
+		/* 		RESOURCE_USAGE_TRANSFER_DST, */
+		/* 		&compute_blit_target); */
+		/* 	gfx_cmd_image_transition( */
+		/* 		cmd, */
+		/* 		RESOURCE_USAGE_COMPUTE_SHADER_WRITE, */
+		/* 		compute_image); */
 
-			{ // Bind compute pipeline & descriptor set
-				VkDescriptorSetAllocateInfo alloc_info = {
-					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-					.descriptorPool = cmd->descriptor_pool,
-					.descriptorSetCount = 1,
-					.pSetLayouts = c_pipeline.set_layouts + 0,
-				};
+		/* 	{ // Bind compute pipeline & descriptor set */
+		/* 		VkDescriptorSetAllocateInfo alloc_info = { */
+		/* 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, */
+		/* 			.descriptorPool = cmd->descriptor_pool, */
+		/* 			.descriptorSetCount = 1, */
+		/* 			.pSetLayouts = c_pipeline.set_layouts + 0, */
+		/* 		}; */
 
-				VkDescriptorSet compute_set = 0;
-				vkAllocateDescriptorSets(context->device.logical, &alloc_info, &compute_set);
-				VkDescriptorImageInfo image_info = {
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.imageView = compute_image->view,
-				};
-				VkWriteDescriptorSet write = {
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = compute_set,
-					.dstBinding = 0,
-					.dstArrayElement = 0,
-					.descriptorCount = 1,
-					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-					.pImageInfo = &image_info,
-				};
-				vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+		/* 		VkDescriptorSet compute_set = 0; */
+		/* 		vkAllocateDescriptorSets(context->device.logical, &alloc_info, &compute_set); */
+		/* 		VkDescriptorImageInfo image_info = { */
+		/* 			.imageLayout = VK_IMAGE_LAYOUT_GENERAL, */
+		/* 			.imageView = compute_image->view, */
+		/* 		}; */
+		/* 		VkWriteDescriptorSet write = { */
+		/* 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, */
+		/* 			.dstSet = compute_set, */
+		/* 			.dstBinding = 0, */
+		/* 			.dstArrayElement = 0, */
+		/* 			.descriptorCount = 1, */
+		/* 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, */
+		/* 			.pImageInfo = &image_info, */
+		/* 		}; */
+		/* 		vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0); */
 
-				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle);
-				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0);
-			}
+		/* 		vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle); */
+		/* 		vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0); */
+		/* 	} */
 
-			// Dispatch compute & Blit to main window surface
-			vkCmdDispatch(cmd->handle, 40, 23, 1);
-			gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
-			gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target);
+		/* 	// Dispatch compute & Blit to main window surface */
+		/* 	vkCmdDispatch(cmd->handle, 40, 23, 1); */
+		/* 	gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_TRANSFER_SRC, compute_image); */
+		/* 	gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target); */
 
-			// transition swapchain images for presenting
-			gfx_cmd_image_barrier(
-				cmd,
-				RESOURCE_USAGE_TRANSFER_DST,
-				RESOURCE_USAGE_PRESENT,
-				&compute_blit_target);
-
-		} else //  TODO: resize swapchain
-			gfx_swapchain_resize(context, swapchains[0], dims.x, dims.y);
+		/* 	// transition swapchain images for presenting */
+		/* 	gfx_cmd_image_barrier( */
+		/* 		cmd, */
+		/* 		RESOURCE_USAGE_TRANSFER_DST, */
+		/* 		RESOURCE_USAGE_PRESENT, */
+		/* 		&compute_blit_target); */
+		/* } */
 
 		GFX_Image main_target = gfx_swapchain_backbuffer(context, cmd, swapchains[1]);
 		if (main_target.handle) {
@@ -924,18 +1061,8 @@ int main(void) {
 			anim_t += dt;
 			blink_timer += dt;
 
-			MeshInstance instances[] = {
-				{ MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-				{ MESH_HERO_MALE, { { 0.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-				{ MESH_GDBOT, { { 3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-				{ MESH_GDBOT, { { 3.0f, 0.0f, -3.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-				{ MESH_MAGE, { { -3.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-
-				{ MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-			};
-
 			uint64_t scratch_cursor = 0;
-			for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+			for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
 				MeshInstance *instance = &instances[instance_index];
 				Mesh *mesh = &meshes[instance->id];
 				if (mesh->skeleton.bone_count == 0 || animation_counts[instance->id] == 0)
@@ -985,19 +1112,16 @@ int main(void) {
 				}
 			}
 
-			float2 mouse_delta = float2_from_double2(input_mouse_delta());
-			mouse_delta.x /= dims.x;
-			mouse_delta.y /= dims.y;
-			scene_camera_orbit(&camera, mouse_delta);
-
+			// TODO:
 			typedef struct {
 				float4x4 view;
 				float4x4 proj;
 				float4 camera_position;
+				float2 viewport;
 				float fog_density;
 				float fog_gradient;
 				float time;
-			} FrameData;
+			} Frame3D;
 
 			typedef struct {
 				float4 position;
@@ -1014,7 +1138,7 @@ int main(void) {
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
 				float4x4_lookat(float3_from_float4(lights[0].position), FLOAT3_ZERO, FLOAT3_Y));
 
-			FrameData frame_data = {
+			Frame3D frame_data = {
 				.fog_density = 0.02f,
 				.fog_gradient = 5.0f,
 				.time = time,
@@ -1095,7 +1219,7 @@ int main(void) {
 				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.layout, 0, 1, &frame_set, 0, 0);
 
 				// :draw
-				for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+				for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
 					MeshInstance *instance = &instances[instance_index];
 					if (instance->cast_shadow == false)
 						continue;
@@ -1211,9 +1335,9 @@ int main(void) {
 
 				VkDescriptorSet frame_set = 0;
 				{ // allocate & write frame set
-					frame_data.view = float4x4_lookat(camera.position, camera.target, camera.up);
+					frame_data.view = float4x4_lookat(camera->position, camera->target, camera->up);
 					frame_data.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
-					frame_data.camera_position = float4_from_float3(camera.position, 0.0f);
+					frame_data.camera_position = float4_from_float3(camera->position, 0.0f);
 
 					memory_copy(scratch_buffers[context->current_frame_index]->mapped + scratch_cursor, &frame_data, sizeof(frame_data));
 					uint64_t frame_data_offset = scratch_cursor;
@@ -1307,7 +1431,7 @@ int main(void) {
 				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &frame_set, 0, 0);
 
 				// :draw
-				for (uint32_t instance_index = 0; instance_index < countof(instances); ++instance_index) {
+				for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
 					MeshInstance *instance = &instances[instance_index];
 					Mesh *mesh = &meshes[instance->id];
 
@@ -1516,8 +1640,119 @@ int main(void) {
 					}
 				}
 
-				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_skybox.handle);
-				vkCmdDraw(cmd->handle, 36, 1, 0, 0);
+				{ // :canvas
+					typedef struct {
+						float4x4 view;
+						float4x4 projection;
+						float2 camera_position;
+						float2 viewport;
+						float time;
+					} Frame2D;
+
+					Frame2D frame_2d = {
+						.view = float4x4_identity(),
+						.projection = float4x4_orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
+						.viewport = float2_from_uint2(dims),
+						.time = time,
+					};
+
+					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_skybox.handle);
+					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
+
+					VkDescriptorSet frame_set = 0;
+					{ // allocate & write frame set
+						memory_copy(scratch_buffers[cmd->frame_index]->mapped + scratch_cursor, &frame_2d, sizeof(frame_2d));
+						uint64_t frame_2d_offset = scratch_cursor;
+						scratch_cursor += alignup(sizeof(frame_2d), 256);
+
+						memory_copy(scratch_buffers[cmd->frame_index]->mapped + scratch_cursor, batch_2d->base, batch_2d->offset);
+						uint64_t batch_offset = scratch_cursor;
+						scratch_cursor += alignup(batch_2d->offset, 256);
+
+						VkDescriptorSetAllocateInfo alloc_info = {
+							.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+							.descriptorPool = cmd->descriptor_pool,
+							.descriptorSetCount = 1,
+							.pSetLayouts = &pipeline_2d.set_layouts[0],
+						};
+						vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
+
+						{ // frame data
+							VkDescriptorBufferInfo buffer_info = {
+								.buffer = scratch_buffers[context->current_frame_index]->handle,
+								.offset = frame_2d_offset,
+								.range = sizeof(frame_2d),
+							};
+							VkWriteDescriptorSet write = {
+								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+								.dstSet = frame_set,
+								.dstBinding = 0,
+								.dstArrayElement = 0,
+								.descriptorCount = 1,
+								.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+								.pBufferInfo = &buffer_info,
+							};
+							vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+						}
+						{ // geometry data
+							VkDescriptorBufferInfo buffer_info = {
+								.buffer = scratch_buffers[context->current_frame_index]->handle,
+								.offset = batch_offset,
+								.range = batch_2d->offset,
+							};
+							VkWriteDescriptorSet write = {
+								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+								.dstSet = frame_set,
+								.dstBinding = 1,
+								.dstArrayElement = 0,
+								.descriptorCount = 1,
+								.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+								.pBufferInfo = &buffer_info,
+							};
+							vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+						}
+					}
+
+					VkDescriptorSet batch_set = 0;
+					{ // allocate & write batch set
+						VkDescriptorSetAllocateInfo alloc_info = {
+							.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+							.descriptorPool = cmd->descriptor_pool,
+							.descriptorSetCount = 1,
+							.pSetLayouts = &pipeline_2d.set_layouts[1],
+						};
+						vkAllocateDescriptorSets(context->device.logical, &alloc_info, &batch_set);
+
+						{ // batch textures
+
+							VkDescriptorImageInfo image_info = {
+								.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+								.imageView = white_texture->view,
+								.sampler = linear_sampler[WRAP_MODE_CLAMP]->handle,
+							};
+							VkDescriptorImageInfo image_infos[32] = { 0 };
+							for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
+								image_infos[texture_id] = image_info;
+
+							VkWriteDescriptorSet write = {
+								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+								.dstSet = batch_set,
+								.dstBinding = 0,
+								.dstArrayElement = 0,
+								.descriptorCount = 32,
+								.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+								.pImageInfo = image_infos,
+							};
+							vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+						}
+					}
+
+					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_2d.handle);
+					vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_2d.layout, 0, 1, &frame_set, 0, 0);
+					vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_2d.layout, 1, 1, &batch_set, 0, 0);
+
+					vkCmdDraw(cmd->handle, batch_2d->offset / sizeof(Vertex2), 1, 0, 0);
+				}
 
 				vkCmdEndRendering(cmd->handle);
 			}
@@ -1540,47 +1775,50 @@ int main(void) {
 			break;
 		}
 
-		VkSwapchainKHR swapchain_handles[MAX_SWAPCHAINS] = { 0 };
-		VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 };
-		VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 };
-		VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = {
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		};
-
-		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
-			swapchain_handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle;
-			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index];
-			signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]];
-		}
-
-		VkSubmitInfo submit_info = {
-			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-			.waitSemaphoreCount = cmd->swapchain_count,
-			.pWaitSemaphores = wait_semaphores,
-			.pWaitDstStageMask = wait_stages,
-			.commandBufferCount = 1,
-			.pCommandBuffers = &cmd->handle,
-			.signalSemaphoreCount = cmd->swapchain_count,
-			.pSignalSemaphores = signal_semaphores,
-		};
-
-		if (vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->cmd_buffers[context->current_frame_index].in_flight_fence) != VK_SUCCESS) {
-			LOG_ERROR("failed to submit command buffer to queue.");
-			break;
-		}
-
-		if (main_target.handle || compute_blit_target.handle) {
-			VkPresentInfoKHR present_info = {
-				.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-				.waitSemaphoreCount = cmd->swapchain_count,
-				.pWaitSemaphores = signal_semaphores,
-				.swapchainCount = cmd->swapchain_count,
-				.pSwapchains = swapchain_handles,
-				.pImageIndices = cmd->swapchain_image_indices,
+		{ // :submit
+			VkSwapchainKHR handles[MAX_SWAPCHAINS] = { 0 };
+			VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 };
+			VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 };
+			VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = {
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			};
-			vkQueuePresentKHR(context->present_queue, &present_info);
+
+			for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
+				handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle;
+				wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index];
+				signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]];
+			}
+
+			VkSubmitInfo submit_info = {
+				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+				.waitSemaphoreCount = cmd->swapchain_count,
+				.pWaitSemaphores = wait_semaphores,
+				.pWaitDstStageMask = wait_stages,
+				.commandBufferCount = 1,
+				.pCommandBuffers = &cmd->handle,
+				.signalSemaphoreCount = cmd->swapchain_count,
+				.pSignalSemaphores = signal_semaphores,
+			};
+
+			if (vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->cmd_buffers[context->current_frame_index].in_flight_fence) != VK_SUCCESS) {
+				LOG_ERROR("failed to submit command buffer to queue.");
+				break;
+			}
+
+			if (cmd->swapchain_count) {
+				VkPresentInfoKHR present_info = {
+					.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+					.waitSemaphoreCount = cmd->swapchain_count,
+					.pWaitSemaphores = signal_semaphores,
+					.swapchainCount = cmd->swapchain_count,
+					.pSwapchains = handles,
+					.pImageIndices = cmd->swapchain_image_indices,
+				};
+				vkQueuePresentKHR(context->present_queue, &present_info);
+			}
 		}
+
 		OS_Timestamp current_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
 		if (compute_ts != current_ts) {
 			LOG_INFO("hot-reloading...");
@@ -1609,6 +1847,7 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_skinning);
 		pipeline_destroy(context, &pipeline_shadow);
 		pipeline_destroy(context, &pipeline_3d);
+		pipeline_destroy(context, &pipeline_2d);
 
 		memory_zero(pipeline_skybox.set_layouts, sizeof(pipeline_skybox.set_layouts)); // destroyed by pipeline_3d
 		pipeline_destroy(context, &pipeline_skybox);
@@ -2488,8 +2727,8 @@ GFX_Pipeline graphics_pipeline_make(
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-			.depthTestEnable = VK_TRUE,
-			.depthWriteEnable = VK_TRUE,
+			.depthTestEnable = opt.disable_depth_test == false,
+			.depthWriteEnable = opt.disable_depth_write == false,
 			.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 			.depthBoundsTestEnable = VK_FALSE,
 			.minDepthBounds = 0.0f,
@@ -3056,8 +3295,10 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 		result->swapchain_count = 0;
 
 		// Wait for frame resource availability
-		vkWaitForFences(context->device.logical, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX);
+		ok = vkWaitForFences(context->device.logical, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+	}
 
+	if (ok) {
 		// reset frame resources
 		vkResetCommandBuffer(result->handle, 0);
 		vkResetFences(context->device.logical, 1, &result->in_flight_fence);
@@ -3084,58 +3325,6 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 
 	return result;
 }
-
-/* bool gfx_frame_end(GFX_Context *context, GFX_CommandContext *cmd) { */
-/* 	VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 }; */
-/* 	VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 }; */
-/* 	VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = { 0 }; */
-/* 	VkSwapchainKHR swapchain_handles[MAX_SWAPCHAINS] = { 0 }; */
-
-/* 	bool ok = context && cmd; */
-
-/* 	if (ok) { */
-/* 		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) { */
-/* 			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index]; */
-/* 			signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]]; */
-/* 			swapchain_handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle; */
-/* 			wait_stages[swapchain_index] = VK_PIPELINE_STAGE_TRANSFER_BIT; */
-
-/* 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &cmd->swapchain_images[swapchain_index]); */
-/* 		} */
-
-/* 		VkSubmitInfo submit_info = { */
-/* 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, */
-/* 			.waitSemaphoreCount = countof(wait_semaphores), */
-/* 			.pWaitSemaphores = wait_semaphores, */
-/* 			.pWaitDstStageMask = wait_stages, */
-/* 			.commandBufferCount = 1, */
-/* 			.pCommandBuffers = &cmd->handle, */
-/* 			.signalSemaphoreCount = countof(signal_semaphores), */
-/* 			.pSignalSemaphores = signal_semaphores, */
-/* 		}; */
-
-/* 		ok = vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->cmd_buffers[cmd->frame_index].in_flight_fence) == VK_SUCCESS; */
-/* 		if (ok == false) */
-/* 			LOG_ERROR("failed to submit command buffer to queue."); */
-/* 	} */
-
-/* 	if (ok) { */
-/* 		VkPresentInfoKHR present_info = { */
-/* 			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, */
-/* 			.waitSemaphoreCount = countof(signal_semaphores), */
-/* 			.pWaitSemaphores = signal_semaphores, */
-/* 			.swapchainCount = cmd->swapchain_count, */
-/* 			.pSwapchains = swapchain_handles, */
-/* 			.pImageIndices = cmd->swapchain_image_indices, */
-/* 		}; */
-/* 		VkResult result = vkQueuePresentKHR(context->present_queue, &present_info); */
-/* 		ok = vkQueuePresentKHR(context->present_queue, &present_info) == VK_SUCCESS; */
-/* 		if (ok == false) */
-/* 			LOG_ERROR("failed to present swapchains."); */
-/* 	} */
-
-/* 	return ok; */
-/* } */
 
 GFX_CommandContext gfx_transfer_batch_begin(GFX_Context *context) {
 	GFX_CommandContext result = { 0 };
@@ -4261,6 +4450,168 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 		}
 	}
 	cgltf_free(data);
+
+	return result;
+}
+
+void player_update(float3 *player_position, quat4 *rotation, float2 mouse_delta, float dt, Camera3 *camera) {
+	static float azimuth = C_PIf * 3 / 2.f;
+	static float theta = C_PIf / 3.f;
+
+	const float sensitivity = 1.0f;
+	const float spring_arm_length = 10.f;
+	const float move_speed = 3.0f;
+
+	float yaw_delta = mouse_delta.x * sensitivity;
+	float pitch_delta = mouse_delta.y * sensitivity;
+
+	azimuth = fmodf(azimuth + yaw_delta, C_PIf * 2.f);
+	if (azimuth < 0)
+		azimuth += C_PIf * 2.f;
+
+	theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
+
+	float3 offset = float3_subtract(camera->position, *player_position);
+
+	float r = float3_length(offset);
+	if (r < EPSILON)
+		r = EPSILON;
+
+	float current_theta = acosf(offset.y / r);
+	float current_azimuth = atan2f(offset.z, offset.x); // [-pi, pi]
+
+	if (current_azimuth < 0)
+		current_azimuth += C_PIf * 2.f;
+
+	float da = azimuth - current_azimuth;
+	if (da > C_PI)
+		da -= C_PI * 2.f;
+	if (da < -C_PI)
+		da += C_PI * 2.f;
+
+	float lerp = 10.0f * dt;
+
+	current_azimuth += lerp * da;
+	current_theta += lerp * (theta - current_theta);
+
+	camera->position = (float3){
+		(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + player_position->x,
+		spring_arm_length * cosf(current_theta),
+		(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + player_position->z,
+	};
+
+	float3 camera_position = camera->position;
+	camera_position.y = 0.0f;
+	float3 camera_target = camera->target;
+	camera_target.y = 0.0f;
+
+	float3 forward, right;
+
+	forward = float3_normalize(float3_subtract(camera_target, camera_position));
+
+	right = float3_cross(forward, camera->up);
+	right = float3_normalize(right);
+
+	float3 direction = { 0, 0, 0 };
+
+	// Logic: direction += forward * scalar
+	float forward_input = (float)(input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S));
+	direction = float3_add(direction, float3_scale(forward, forward_input));
+
+	float right_input = (float)(input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A));
+	direction = float3_add(direction, float3_scale(right, right_input));
+
+	if (float3_length(direction) > 1e-6f)
+		direction = float3_normalize(direction);
+
+	// Apply movement to player_position (passed by pointer)
+	*player_position = float3_add(*player_position, float3_scale(direction, move_speed * dt));
+	*rotation = quat4_from_axis_angle(FLOAT3_Y, -current_azimuth - (C_PIf * 0.5f));
+
+	camera->target.x = player_position->x;
+	camera->target.z = player_position->z;
+}
+
+void push_rect(Arena *arena, Rectangle rect, Color color) {
+	float4 f_color = {
+		.x = color.r / 255.f,
+		.y = color.g / 255.f,
+		.z = color.b / 255.f,
+		.w = color.a / 255.f,
+	};
+
+	float x0 = rect.x;
+	float y0 = rect.y;
+	float x1 = rect.x + rect.width;
+	float y1 = rect.y + rect.height;
+
+	/* float u0 = src.x / image.width; */
+	/* float v0 = src.y / image.height; */
+	/* float u1 = (src.x + src.width) / image.width; */
+	/* float v1 = (src.y + src.height) / image.height; */
+
+	// clang-format off
+    Vertex2 quad[] = {
+        // pos      // tex
+        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x0, y0}, .uv = {0.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}, 
+
+        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x1, y1}, .uv = {1.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}
+    };
+	// clang-format on
+
+	memory_copy(arena_push_count(arena, Vertex2, 6), quad, sizeof(quad));
+}
+
+void imgui_frame_begin(Arena *arena) {
+	imgui_state.draw_arena = arena;
+	imgui_state.mouse_position = float2_from_double2(input_mouse_position());
+	imgui_state.mouse_pressed = input_mouse_pressed(MOUSE_BUTTON_LEFT);
+	imgui_state.mouse_released = input_mouse_released(MOUSE_BUTTON_LEFT);
+}
+
+void imgui_frame_end(void) {
+	if (imgui_state.mouse_pressed && imgui_state.active_id == 0)
+		imgui_state.active_id = -1;
+	if (imgui_state.mouse_released)
+		imgui_state.active_id = 0;
+
+	imgui_state.draw_arena = 0;
+	imgui_state.hovered_id = 0;
+	imgui_state.mouse_position = (float2){ 0 };
+	imgui_state.mouse_pressed = 0;
+	imgui_state.mouse_released = 0;
+}
+
+ImguiInteraction imgui_interact(uint64_t id, Rectangle rect) {
+	ImguiInteraction result = { 0 };
+
+	float2 mouse = imgui_state.mouse_position;
+	result.hovering = rect_contains(rect, mouse.x, mouse.y);
+
+	if (result.hovering) {
+		imgui_state.hovered_id = id;
+
+		if (imgui_state.active_id == 0 && imgui_state.mouse_pressed)
+			imgui_state.active_id = id;
+	}
+
+	result.held = imgui_state.active_id == id;
+	result.clicked = result.hovering && result.held && imgui_state.mouse_released;
+
+	return result;
+}
+
+ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
+	Rectangle rect = rect(x, y, w, h);
+	ImguiInteraction result = imgui_interact(id, rect);
+
+	bool ok = imgui_state.draw_arena;
+	if (ok)
+		push_rect(imgui_state.draw_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
 
 	return result;
 }

@@ -1,22 +1,22 @@
 #version 450
 #pragma shader_stage(vertex)
 
-struct VertexData {
-    vec2 position; 
-    vec2 uv;
-    vec4 color;
+#include "canvas.glsl"
+
+layout(set = 0, binding = 1) readonly buffer VertexBlock {
+    Vertex2 vertex_buffer[];
 };
 
-layout(set = 0, binding = 0) readonly buffer VertexBlock {
-    VertexData vertex_data[];
-} batch;
-
 out OutBlock {
-    layout(location = 0) vec4 color;
+    layout(location = 0) vec2 tex_coords;
+    layout(location = 1) vec4 color;
+    layout(location = 2) flat uint texture_id;
 } vs_output;
 
 void main() {
-    VertexData vertex = batch.vertex_data[gl_VertexIndex];
-    gl_Position = vec4(vertex.position, 0.0f, 1.0f);
+    Vertex2 vertex = vertex_buffer[gl_VertexIndex];
+    gl_Position = frame.projection * frame.view * vec4(vertex.position, 0.0f, 1.0f);
     vs_output.color = vertex.color;
+    vs_output.tex_coords = vertex.uv;
+    vs_output.texture_id = 0;
 }

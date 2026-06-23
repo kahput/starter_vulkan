@@ -151,6 +151,8 @@ typedef struct { float min, max; } Interval;
 typedef struct { float32x2 min, max; } Interval2;
 typedef struct { float32x3 min, max; } Interval3;
 
+#define rgba(r, g, b, a) (Color){ r, g, b, a }
+#define rgb(r, g, b) (Color){ r, g, b, 255 }
 typedef struct { uint8_t r, g, b, a; } Color;
 
 #define rect(x, y, w, h) (Rectangle){ x, y, w, h }
@@ -163,16 +165,13 @@ static inline bool rect_contains(Rectangle rect, float x, float y) { return x > 
 static inline bool rect_contains_float2(Rectangle rect, float32x2 position) { return rect_contains(rect, position.x, position.y); }
 
 // clang-format on
-#define rgba(r, g, b, a) \
-	(Color) { r, g, b, a }
-#define rgb(r, g, b) (Color){ r, g, b, 255 }
 
 #define RED rgb(255, 0, 0)
 #define GREEN rgb(0, 255, 0)
 #define BLUE rgb(0, 0, 255)
 
 #define WHITE rgb(255, 255, 255)
-#define BACLK rgb(0, 0, 0)
+#define BLACK rgb(0, 0, 0)
 
 static inline uint32_t color_pack(Color c) {
 	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);

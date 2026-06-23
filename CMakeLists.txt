@@ -9,12 +9,20 @@ add_compile_definitions(DEV_BUILD)
 file(GLOB_RECURSE SHADERS
     "${CMAKE_SOURCE_DIR}/assets/*.vertex"
     "${CMAKE_SOURCE_DIR}/assets/*.fragment"
-    "${CMAKE_SOURCE_DIR}/assets/*.compute")
+    "${CMAKE_SOURCE_DIR}/assets/*.compute"
+)
 foreach(SHADER ${SHADERS})
     get_filename_component(DIR  ${SHADER} DIRECTORY)
     get_filename_component(NAME ${SHADER} NAME)
+
     set(SPV "${DIR}/bin/${NAME}.spv")
-    add_custom_command(OUTPUT ${SPV} COMMAND glslc ${SHADER} -o ${SPV} DEPENDS ${SHADER} VERBATIM)
+    add_custom_command(
+        OUTPUT ${SPV}
+        COMMAND glslc -MD -I "${CMAKE_SOURCE_DIR}/assets/shaders" ${SHADER} -o ${SPV}
+        DEPFILE "${SPV}.d"
+        DEPENDS ${SHADER} VERBATIM
+    )
+
     list(APPEND SHADER_OUTPUTS ${SPV})
 endforeach()
 if(SHADER_OUTPUTS)

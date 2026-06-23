@@ -133,7 +133,7 @@ typedef struct {
 	uint32_t color_attachment_count;
 
 	PixelFormat depth_attachment;
-	bool use_depth;
+	bool disable_depth_test, disable_depth_write;
 } PipelineOptions;
 
 typedef enum {

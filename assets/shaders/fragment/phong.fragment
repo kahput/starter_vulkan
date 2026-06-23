@@ -1,25 +1,7 @@
 #version 450
 #pragma shader_stage(fragment)
 
-struct LightBuffer {
-    vec4 position;
-    vec4 color;
-    mat4 matrix;
-};
-
-layout(set = 0, binding = 0) uniform FrameData {
-    mat4 projection;
-    mat4 view;
-    vec4 camera_position;
-    float time;
-} frame;
-
-layout(set = 0, binding = 1) readonly buffer LightBlock {
-    LightBuffer lights[];
-};
-
-layout(set = 0, binding = 2) uniform sampler2DShadow u_shadow;
-layout(set = 0, binding = 3) uniform samplerCube u_skybox;
+#include "spatial.glsl"
 
 #define TEXTURE_ALBEDO 0
 #define TEXTURE_METAL_ROUGHNESS 1

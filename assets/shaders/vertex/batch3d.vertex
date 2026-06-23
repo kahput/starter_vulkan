@@ -2,35 +2,11 @@
 #version 450
 #pragma shader_stage(vertex)
 
-struct VertexBuffer {
-    vec4 position; 
-    vec4 normal;
-    vec2 uv;
-    vec4 tangent;
-};
-
-struct LightBuffer {
-    vec4 color;
-    vec4 position;
-    mat4 matrix;
-};
-
-layout(set = 0, binding = 0) uniform FrameData {
-    mat4 view;
-    mat4 projection;
-    vec4 camera_position;
-    float fog_density;
-    float fog_gradient;
-    float time;
-} frame;
-
-layout(set = 0, binding = 1) readonly buffer LightBlock {
-    LightBuffer lights[];
-};
+#include "spatial.glsl"
 
 layout(set = 1, binding = 0) readonly buffer VertexBlock {
-    VertexBuffer vertex_data[];
-} batch;
+    Vertex3 vertex_buffer[];
+};
 
 layout(push_constant) uniform ConstantBlock {
     mat4 model;
@@ -50,7 +26,7 @@ out ShaderOutput {
 } vs_output;
 
 void main() {
-    VertexBuffer vertex = batch.vertex_data[gl_VertexIndex];
+    Vertex3 vertex = vertex_buffer[gl_VertexIndex];
     vs_output.worldspace = vec3(pc.model * vec4(vertex.position.xyz, 1.0));
     gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0);
 

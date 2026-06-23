@@ -89,8 +89,9 @@ float3 float3_scale(float3 v, float s);
 float float3_dot(float3 a, float3 b);
 float3 float3_cross(float3 a, float3 b);
 
-float float3_length(float3 v);
 float float3_length_squared(float3 v);
+float float3_length(float3 v);
+
 float3 float3_normalize(float3 v);
 float3 float3_normalize_safe(float3 v, float epsilon);
 
@@ -107,7 +108,12 @@ static inline float4 float4_wrap(float v[4]) {
 	return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] };
 }
 
+float4 float4_scale(float4 v, float s);
+float float4_length_squared(float4 v);
+float float4_length(float4 v);
+
 float3 quat4_to_euler(quat4 quat);
+quat4 quat4_from_axis_angle(float3 axis, float angle);
 float4 quat4_slerp(quat4 q, quat4 p, float t);
 
 // float float4_dot_product(Vector4f v);

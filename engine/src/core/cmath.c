@@ -9,11 +9,14 @@ bool float2_equal(float2 a, float2 b) {
 
 float2 float2_negate(float2 v) {
 	float2 result = { -v.x, -v.y };
+
 	return result;
 }
 
 float float2_length(float2 v) {
-	return sqrt(v.x * v.x + v.y * v.y);
+	float result = sqrt(v.x * v.x + v.y * v.y);
+
+	return result;
 }
 float2 float2_normalize(float2 v) {
 	float length = float2_length(v);
@@ -34,25 +37,30 @@ float2 float2_normalize_safe(float2 v, float epsilon) {
 
 float2 float2_add(float2 a, float2 b) {
 	float2 result = { a.x + b.x, a.y + b.y };
+
 	return result;
 }
 float2 float2_subtract(float2 a, float2 b) {
 	float2 result = { a.x - b.x, a.y - b.y };
+
 	return result;
 }
 
 float2 float2_divide(float2 a, float2 b) {
 	float2 result = { a.x / b.x, a.y / b.y };
+
 	return result;
 }
 
 float2 float2_scale(float2 v, float s) {
 	float2 result = { v.x * s, v.y * s };
+
 	return result;
 }
 
 float float2_dot(float2 a, float2 b) {
 	float result = a.x * b.x + a.y * b.y;
+
 	return result;
 }
 
@@ -95,14 +103,14 @@ float3 float3_cross(float3 a, float3 b) {
 	return result;
 }
 
-float float3_length(float3 v) {
-	float result = sqrtf(float3_dot(v, v));
+float float3_length_squared(float3 v) {
+	float result = float3_dot(v, v);
 
 	return result;
 }
 
-float float3_length_squared(float3 v) {
-	float result = float3_dot(v, v);
+float float3_length(float3 v) {
+	float result = sqrtf(float3_length_squared(v));
 
 	return result;
 }
@@ -175,6 +183,24 @@ float3 float3_rotate(float3 v, float angle, float3 axis) {
 			float3_scale(k, float3_dot(k, v) * (1.0f - c))));
 }
 
+float4 float4_scale(float4 v, float s) {
+	float4 result = { v.x * s, v.y * s, v.z * s, v.w * s };
+
+	return result;
+}
+
+float float4_length_squared(float4 v) {
+	float result = v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;
+
+	return result;
+}
+
+float float4_length(float4 v) {
+	float result = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+
+	return result;
+}
+
 float3 quat4_to_euler(quat4 q) {
 	float3 result = { 0 };
 
@@ -193,6 +219,29 @@ float3 quat4_to_euler(quat4 q) {
 	float z0 = 2.0f * (q.w * q.z + q.x * q.y);
 	float z1 = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
 	result.z = atan2f(z0, z1);
+
+	return result;
+}
+
+quat4 quat4_from_axis_angle(float3 axis, float angle) {
+	quat4 result = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+	float length = float3_length(axis);
+	if (length > EPSILON) {
+		angle *= 0.5f;
+		axis = float3_scale(axis, 1.0f / length);
+
+		float s = sinf(angle);
+		float c = cosf(angle);
+
+		result.x = axis.x * s;
+		result.y = axis.y * s;
+		result.z = axis.z * s;
+		result.w = c;
+
+        // NOTE: Maybe normalize?
+		/* result = float4_scale(result, 1 / float4_length(result)); */
+	}
 
 	return result;
 }
