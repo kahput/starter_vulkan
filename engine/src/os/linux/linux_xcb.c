@@ -247,7 +247,6 @@ bool os_event_poll(OS_Event *dst) {
 			}
 		} break;
 
-
 		case XCB_KEY_PRESS:
 		case XCB_KEY_RELEASE: {
 			xcb_key_press_event_t *kp = (xcb_key_press_event_t *)src;
@@ -395,6 +394,10 @@ void os_cursor_capture(OS_Surface *surface, bool capture) {
 
 	xcb_flush(state->conn);
 }
+bool os_cursor_captured(OS_Surface *surface) {
+	return surface->cursor_captured;
+}
+
 void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y) {
 	xcb_warp_pointer(state->conn, XCB_NONE, surface->handle, 0, 0, 0, 0, x, y);
 	surface->warping = true;

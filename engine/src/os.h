@@ -181,4 +181,5 @@ void *os_native_surface_handle(OS_Surface *surface);
 
 void os_cursor_show(OS_Surface *surface, bool show);
 void os_cursor_capture(OS_Surface *surface, bool capture);
+bool os_cursor_captured(OS_Surface *surface);
 void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y);

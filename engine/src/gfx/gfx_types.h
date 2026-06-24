@@ -126,6 +126,8 @@ typedef struct {
 
 #define MAX_COLOR_ATTACHMENTS 8
 typedef struct {
+	const char *debug_name;
+
 	ImageSampleCount sample_count;
 	PipelineCullMode cull_mode;
 

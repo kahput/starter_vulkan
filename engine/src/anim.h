@@ -24,6 +24,15 @@ typedef struct {
 } AnimationClip;
 
 typedef struct {
+	AnimationClip *clips;
+	uint32_t clip_count;
+
+	uint32_t animation_index;
+	float animation_t;
+	bool loop;
+} AnimationPlayer;
+
+typedef struct {
 	Transform3 *transforms;
 	uint32_t bone_count;
 } Pose;

@@ -31,7 +31,7 @@ endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
-set(NATIVE_SCRATCHES xcb_scratch skinning material_scratch)
+set(NATIVE_SCRATCHES xcb_scratch skinning material_scratch spriv)
 
 
 # Web build

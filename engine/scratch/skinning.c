@@ -12,6 +12,7 @@
 #include "anim.h"
 #include "gfx/gfx_types.h"
 #include "scene.h"
+#include "spirv_reflect/spirv_reflect.h"
 
 #include <math.h>
 
@@ -160,7 +161,7 @@ typedef struct {
 	int32_t transfer_index, compute_index;
 
 	// Transfer
-	/* GFX_CommandBuffer *transfer_buffers[2]; */
+	/* GFX_CommandContext transfer_buffers[2]; */
 	/* uint32_t current_transfer_index; */
 	uint64_t transfer_pending_generation; // generation currently accumulating, not yet submitted
 	uint64_t transfer_submitted_generation; // highest generation actually handed to the queue
@@ -232,13 +233,8 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt);
 GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, const char *debug_name);
 
-GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count);
-GFX_Pipeline graphics_pipeline_make(
-	GFX_Context *context,
-	String8 vertex_bytecode,
-	String8 fragment_bytecode,
-	VkDescriptorSetLayout *layouts,
-	uint32_t layout_count, PipelineOptions options);
+GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecode);
+GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, PipelineOptions options);
 
 bool gfx_buffer_destroy(GFX_Context *context, GFX_Buffer *buffer);
 bool gfx_image_destroy(GFX_Context *context, GFX_Image *image);
@@ -263,6 +259,9 @@ void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Imag
 void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels);
 void gfx_cmd_buffer_copy(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
 /* VkDescriptorSet gfx_cmd_bindset_push(GFX_CommandBuffer *cmd); */
+
+void gfx_image_write(GFX_Context *context, GFX_Image *image, Rectangle region, void *pixels);
+void gfx_buffer_write(GFX_Context *context, GFX_Buffer *target, uint64_t offset, uint64_t size, void *data);
 
 VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage);
 
@@ -471,28 +470,11 @@ int main(void) {
 
 	// create compute pipeline
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
-	VkDescriptorSetLayout test_compute_descriptor_layout = 0;
 	GFX_Pipeline c_pipeline = { 0 };
 	{
 		ArenaTemp scratch = arena_scratch_begin(NULL);
-
 		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-		VkDescriptorSetLayoutBinding bindings[] = {
-			[0] = {
-			  .binding = 0,
-			  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			  .descriptorCount = 1,
-			  .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-			},
-		};
-
-		VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-			.bindingCount = countof(bindings),
-			.pBindings = bindings,
-		};
-		vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &test_compute_descriptor_layout);
-		c_pipeline = compute_pipeline_make(context, compute_bytecode, &test_compute_descriptor_layout, 1);
+		c_pipeline = compute_pipeline_make(context, compute_bytecode);
 		arena_scratch_end(scratch);
 	}
 
@@ -500,7 +482,7 @@ int main(void) {
 	{ // :skinning
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/skinning.compute.spv"));
-		pipeline_skinning = compute_pipeline_make(context, compute_bytecode, NULL, 0);
+		pipeline_skinning = compute_pipeline_make(context, compute_bytecode);
 		arena_scratch_end(scratch);
 	}
 
@@ -510,44 +492,7 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/shadow.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/blank.fragment.spv"));
 
-		VkDescriptorSetLayout layouts[2] = { 0 };
-		{ // set 0
-			VkDescriptorSetLayoutBinding bindings[] = {
-				[0] = {
-				  .binding = 0,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-			};
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = countof(bindings),
-				.pBindings = bindings,
-			};
-			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[0]);
-		}
-
-		{ // set 1
-			VkDescriptorSetLayoutBinding bindings[] = {
-				[0] = {
-				  .binding = 0,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-				},
-			};
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = countof(bindings),
-				.pBindings = bindings,
-			};
-			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
-		}
-
-		pipeline_shadow = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts), (PipelineOptions){ 0 });
+		pipeline_shadow = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, (PipelineOptions){ .debug_name = "pipeline_shadow" });
 		arena_scratch_end(scratch);
 	}
 
@@ -559,110 +504,20 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/phong.fragment.spv"));
 
-		VkDescriptorSetLayout layouts[2] = { 0 };
-		{ // set 0
-			VkDescriptorSetLayoutBinding bindings[] = {
-				[0] = {
-				  .binding = 0,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-				[1] = {
-				  .binding = 1,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-				[2] = {
-				  .binding = 2,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-				[3] = {
-				  .binding = 3,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-			};
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = countof(bindings),
-				.pBindings = bindings,
-			};
-			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[0]);
-		}
-
-		{ // set 1
-			VkDescriptorSetLayoutBinding bindings[] = {
-				[0] = {
-				  .binding = 0,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-				},
-				[1] = {
-				  .binding = 1,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				  .descriptorCount = 5,
-				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-			};
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = countof(bindings),
-				.pBindings = bindings,
-			};
-			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
-		}
-
-		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
+		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
+			  .debug_name = "pipeline_3d",
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
 			  .cull_mode = CULL_MODE_BACK,
 			});
 
-		{ // set 1
-			VkDescriptorSetLayoutBinding bindings[] = {
-				[0] = {
-				  .binding = 0,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-				},
-				[1] = {
-				  .binding = 1,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				  .descriptorCount = 5,
-				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-				[2] = {
-				  .binding = 2,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-				},
-			};
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = countof(bindings),
-				.pBindings = bindings,
-			};
-
-			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
-		}
-
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/grass.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/grass.fragment.spv"));
-		pipeline_grass = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
+		pipeline_grass = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
+			  .debug_name = "pipeline_grass",
 			  .color_attachment_count = 1,
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
@@ -670,8 +525,9 @@ int main(void) {
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/skybox.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/skybox.fragment.spv"));
-		pipeline_skybox = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, 1,
+		pipeline_skybox = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
+			  .debug_name = "pipeline_skybox",
 			  .color_attachment_count = 1,
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
@@ -687,50 +543,9 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/textured.fragment.spv"));
 
-		VkDescriptorSetLayout layouts[2] = { 0 };
-		{ // set 0
-			VkDescriptorSetLayoutBinding bindings[] = {
-				[0] = {
-				  .binding = 0,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-				[1] = {
-				  .binding = 1,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				  .descriptorCount = 1,
-				  .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-			};
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = countof(bindings),
-				.pBindings = bindings,
-			};
-			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[0]);
-		}
-		{ // set 1
-			VkDescriptorSetLayoutBinding bindings[] = {
-				[0] = {
-				  .binding = 0,
-				  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				  .descriptorCount = 32,
-				  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-				},
-			};
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = countof(bindings),
-				.pBindings = bindings,
-			};
-			vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, NULL, &layouts[1]);
-		}
-
-		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, layouts, countof(layouts),
+		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
+			  .debug_name = "pipeline_2d",
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
@@ -973,7 +788,7 @@ int main(void) {
 				scene_camera_orbit(camera, mouse_delta);
 			} break;
 			case VIEWPORT_STATE_GAME: {
-				os_cursor_capture(main_render, true);
+				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
 				MeshInstance *instance = &instances[0];
 
 				Transform3 *tranform = &instance->transform;
@@ -1057,13 +872,15 @@ int main(void) {
 
 				float speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
 				tranform->translation = float3_add(tranform->translation, float3_scale(direction, speed * dt));
-				tranform->rotation = quat4_from_axis_angle(FLOAT3_Y, -current_azimuth - (C_PIf * 0.5f));
 
 				camera->target.x = tranform->translation.x;
 				camera->target.z = tranform->translation.z;
 
 				uint32_t target_anim = current_anim;
 				if (float2_length_squared(input_vector)) {
+					float target_angle = -current_azimuth - C_PIf + atan2f(input_vector.x, input_vector.y);
+					tranform->rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
+
 					if (input_key_down(KEY_CODE_LEFTSHIFT))
 						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/run-loop"));
 					else
@@ -1929,7 +1746,7 @@ int main(void) {
 
 			ArenaTemp scratch = arena_scratch_begin(NULL);
 			String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-			c_pipeline = compute_pipeline_make(context, compute_bytecode, &test_compute_descriptor_layout, 1);
+			c_pipeline = compute_pipeline_make(context, compute_bytecode);
 			arena_scratch_end(scratch);
 
 			compute_ts = current_ts;
@@ -1950,11 +1767,7 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_shadow);
 		pipeline_destroy(context, &pipeline_3d);
 		pipeline_destroy(context, &pipeline_2d);
-
-		memory_zero(pipeline_skybox.set_layouts, sizeof(pipeline_skybox.set_layouts)); // destroyed by pipeline_3d
 		pipeline_destroy(context, &pipeline_skybox);
-
-		memory_zero(&pipeline_grass.set_layouts[0], sizeof(pipeline_grass.set_layouts[0]));
 		pipeline_destroy(context, &pipeline_grass);
 	}
 
@@ -2650,7 +2463,69 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 	return result;
 }
 
-GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecode, VkDescriptorSetLayout *layouts, uint32_t layout_count) {
+typedef struct {
+	VkDescriptorSetLayoutBinding bindings[32];
+	uint32_t binding_count;
+} DescriptorSet;
+
+static inline bool gfx__spv_reflect_shader(String8 bytecode, DescriptorSet sets[3]) {
+	bool ok = sets;
+
+	ArenaTemp scratch = arena_scratch_begin(0);
+
+	SpvReflectShaderModule module = { 0 };
+	if (ok) { // reflect shader module
+		ok = spvReflectCreateShaderModule(bytecode.length, bytecode.text, &module) == SPV_REFLECT_RESULT_SUCCESS;
+
+		if (ok == false)
+			LOG_ERROR("failed to reflect shader bytecode.");
+	}
+
+	uint32_t set_count = 0;
+	SpvReflectDescriptorSet *reflect_sets = 0;
+	if (ok) { // enumerate descriptor sets
+		ok = spvReflectEnumerateDescriptorSets(&module, &set_count, NULL) == SPV_REFLECT_RESULT_SUCCESS;
+
+		if (ok) {
+			reflect_sets = arena_push_count(scratch.arena, SpvReflectDescriptorSet, set_count);
+			ok = spvReflectEnumerateDescriptorSets(&module, &set_count, &reflect_sets) == SPV_REFLECT_RESULT_SUCCESS;
+		}
+	}
+
+	if (ok) { // populate descriptor set layout description
+		ASSERT(set_count <= 3); // Handle more than 3 descriptor sets
+
+		for (uint32_t set_index = 0; set_index < MIN(set_count, 3); ++set_index) {
+			SpvReflectDescriptorSet *spv_set = &reflect_sets[set_index];
+			DescriptorSet *set = &sets[spv_set->set];
+
+			for (uint32_t binding_index = 0; binding_index < spv_set->binding_count; ++binding_index) {
+				SpvReflectDescriptorBinding *spv_binding = spv_set->bindings[binding_index];
+
+				int32_t existing_index = -1;
+				for (uint32_t search_index = 0; search_index < set->binding_count; ++search_index) {
+					if (set->bindings[search_index].binding == spv_binding->binding) {
+						existing_index = search_index;
+						break;
+					}
+				}
+
+				VkDescriptorSetLayoutBinding *binding = &set->bindings[existing_index != -1 ? (uint32_t)existing_index : set->binding_count++];
+				binding->binding = spv_binding->binding;
+				binding->descriptorCount = spv_binding->count;
+				binding->descriptorType = (VkDescriptorType)spv_binding->descriptor_type;
+				binding->stageFlags |= module.shader_stage;
+			}
+		}
+	}
+
+	arena_scratch_end(scratch);
+	spvReflectDestroyShaderModule(&module);
+
+	return ok;
+}
+
+GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecode) {
 	LOG_DEBUG("creating vulkan compute pipeline.");
 	GFX_Pipeline result = { 0 };
 
@@ -2670,13 +2545,31 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 			LOG_WARN("failed to create compute pipeline shader module.");
 	}
 
-	if (ok) // create descriptor set layouts
-		memory_copy(result.set_layouts, layouts, MIN(countof(result.set_layouts), layout_count) * sizeof(VkDescriptorSetLayout));
+	uint32_t set_count = 0;
+	if (ok) { // create descriptor set layouts
+		DescriptorSet sets[3] = { 0 };
+		gfx__spv_reflect_shader(compute_bytecode, sets);
+
+		for (uint32_t set_index = 0; set_index < countof(sets); ++set_index) {
+			DescriptorSet *set = &sets[set_count];
+			if (set->binding_count == 0)
+				continue;
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = set->binding_count,
+				.pBindings = set->bindings,
+			};
+			ok &= vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
+
+			set_count = ok ? set_count + 1 : set_count;
+		}
+	}
 
 	if (ok) { // create pipeline layout
 		VkPipelineLayoutCreateInfo pl_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = layout_count,
+			.setLayoutCount = set_count,
 			.pSetLayouts = result.set_layouts,
 			.pushConstantRangeCount = 1,
 			.pPushConstantRanges = &context->global_range,
@@ -2712,12 +2605,7 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 	return result;
 }
 
-GFX_Pipeline graphics_pipeline_make(
-	GFX_Context *context,
-	String8 vertex_bytecode, String8 fragment_bytecode,
-	VkDescriptorSetLayout *layouts, uint32_t layout_count,
-	PipelineOptions opt //
-) {
+GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, PipelineOptions options) {
 	LOG_DEBUG("creating vulkan grahpics pipeline.");
 	GFX_Pipeline result = { 0 };
 
@@ -2750,13 +2638,33 @@ GFX_Pipeline graphics_pipeline_make(
 			LOG_WARN("failed to create vertex/fragment shader module.");
 	}
 
-	if (ok) // create descriptor set layouts
-		memory_copy(result.set_layouts, layouts, MIN(layout_count, countof(result.set_layouts)) * sizeof(VkDescriptorSetLayout));
+	uint32_t set_count = 0;
+	if (ok) { // create descriptor set layouts
+		DescriptorSet sets[3] = { 0 };
+
+		gfx__spv_reflect_shader(fragment_bytecode, sets);
+		gfx__spv_reflect_shader(vertex_bytecode, sets);
+
+		for (uint32_t set_index = 0; set_index < countof(sets); ++set_index) {
+			DescriptorSet *set = &sets[set_count];
+			if (set->binding_count == 0)
+				continue;
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = set->binding_count,
+				.pBindings = set->bindings,
+			};
+			ok &= vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
+
+			set_count = ok ? set_count + 1 : set_count;
+		}
+	}
 
 	if (ok) { // create pipeline layout
 		VkPipelineLayoutCreateInfo pl_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = MIN(layout_count, countof(result.set_layouts)),
+			.setLayoutCount = set_count,
 			.pSetLayouts = result.set_layouts,
 			.pushConstantRangeCount = 1,
 			.pPushConstantRanges = &context->global_range,
@@ -2815,7 +2723,7 @@ GFX_Pipeline graphics_pipeline_make(
 			.rasterizerDiscardEnable = VK_FALSE,
 			.polygonMode = VK_POLYGON_MODE_FILL,
 			.lineWidth = 1.0f,
-			.cullMode = opt.cull_mode,
+			.cullMode = options.cull_mode,
 			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 			.depthBiasEnable = VK_FALSE,
 		};
@@ -2823,14 +2731,14 @@ GFX_Pipeline graphics_pipeline_make(
 		VkPipelineMultisampleStateCreateInfo mss_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 			.sampleShadingEnable = VK_FALSE,
-			.rasterizationSamples = opt.sample_count ? (VkSampleCountFlags)opt.sample_count : VK_SAMPLE_COUNT_1_BIT,
+			.rasterizationSamples = options.sample_count ? (VkSampleCountFlags)options.sample_count : VK_SAMPLE_COUNT_1_BIT,
 			.minSampleShading = 1.0f,
 		};
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-			.depthTestEnable = opt.disable_depth_test == false,
-			.depthWriteEnable = opt.disable_depth_write == false,
+			.depthTestEnable = options.disable_depth_test == false,
+			.depthWriteEnable = options.disable_depth_write == false,
 			.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 			.depthBoundsTestEnable = VK_FALSE,
 			.minDepthBounds = 0.0f,
@@ -2858,24 +2766,24 @@ GFX_Pipeline graphics_pipeline_make(
 				.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
 				.alphaBlendOp = VK_BLEND_OP_ADD,
 			};
-			for (uint32_t index = 0; index < opt.color_attachment_count; ++index)
+			for (uint32_t index = 0; index < options.color_attachment_count; ++index)
 				memory_copy(color_attachment_blends + index, &color_attachment_blend_default, sizeof(VkPipelineColorBlendAttachmentState));
 
 			cbs_create_info = (VkPipelineColorBlendStateCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
 				.logicOpEnable = VK_FALSE,
-				.attachmentCount = opt.color_attachment_count,
+				.attachmentCount = options.color_attachment_count,
 				.pAttachments = color_attachment_blends,
 			};
 
-			for (uint32_t attachment_index = 0; attachment_index < opt.color_attachment_count; ++attachment_index)
-				color_attachment_formats[attachment_index] = gfx__pixel_format_to_vk_format(opt.color_attachments[attachment_index]);
+			for (uint32_t attachment_index = 0; attachment_index < options.color_attachment_count; ++attachment_index)
+				color_attachment_formats[attachment_index] = gfx__pixel_format_to_vk_format(options.color_attachments[attachment_index]);
 
 			r_create_info = (VkPipelineRenderingCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-				.colorAttachmentCount = opt.color_attachment_count,
+				.colorAttachmentCount = options.color_attachment_count,
 				.pColorAttachmentFormats = color_attachment_formats,
-				.depthAttachmentFormat = pixel_format_is_depth_stencil(opt.depth_attachment) ? gfx__pixel_format_to_vk_format(opt.depth_attachment) : VK_FORMAT_D32_SFLOAT,
+				.depthAttachmentFormat = pixel_format_is_depth_stencil(options.depth_attachment) ? gfx__pixel_format_to_vk_format(options.depth_attachment) : VK_FORMAT_D32_SFLOAT,
 			};
 		}
 
@@ -3516,7 +3424,6 @@ void gfx__load_debug_extensions(GFX_Context *device) {
 		LOG_ERROR("Failed to load extension: " #name "EXT");              \
 		name = STUB_##name;                                               \
 	}
-
 	LOAD_EXTENSION(device->instance, vkCreateDebugUtilsMessenger);
 	LOAD_EXTENSION(device->instance, vkDestroyDebugUtilsMessenger);
 	LOAD_EXTENSION(device->instance, vkSetDebugUtilsObjectName);
