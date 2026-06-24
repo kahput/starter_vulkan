@@ -343,8 +343,11 @@ typedef enum {
 typedef struct {
 	MeshID id;
 	Transform3 transform;
-	uint64_t skinned_vertices_offset;
 	bool cast_shadow;
+
+	// anim
+	uint64_t skinned_vertices_offset;
+	float4x4 *skin_matrices;
 } MeshInstance;
 
 String8 meshid_to_path[MESH_COUNT] = {
@@ -406,15 +409,13 @@ typedef struct {
 ImguiInteraction imgui_interact(uint64_t id, Rectangle rect);
 ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h);
 
-AnimationClip *find_animation(AnimationClip *clips, uint32_t count, String8 target) {
+uint32_t find_animation(AnimationClip *clips, uint32_t count, String8 target) {
 	for (uint32_t anim_index = 0; anim_index < count; ++anim_index)
 		if (str8_equals(str8_wrap(clips[anim_index].name), target))
-			return clips + anim_index;
+			return anim_index;
 
-	return NULL;
+	return 0;
 }
-
-void player_update(float3 *player_position, quat4 *rotation, float2 mouse_delta, float dt, Camera3 *camera);
 
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
@@ -887,8 +888,8 @@ int main(void) {
 	};
 
 	MeshInstance instances[256] = {
-		[0] = { MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
-		[1] = { MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true },
+		[0] = { MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0, true, 0 },
+		[1] = { MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true, 0 },
 	};
 	uint32_t instance_count = 2;
 
@@ -973,8 +974,118 @@ int main(void) {
 			} break;
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, true);
-				Transform3 *tranform = &instances[0].transform;
-				player_update(&tranform->translation, &tranform->rotation, mouse_delta, dt, camera);
+				MeshInstance *instance = &instances[0];
+
+				Transform3 *tranform = &instance->transform;
+				Mesh *mesh = &meshes[instance->id];
+
+				static uint32_t current_anim = 0;
+
+				static float azimuth = C_PIf * 3 / 2.f;
+				static float theta = C_PIf / 3.f;
+				static float anim_t = 0.0f;
+				static float blend_t = 0.0f;
+				anim_t += dt;
+
+				static const float sensitivity = 1.0f;
+				static const float spring_arm_length = 10.f;
+				static const float walk_speed = 3.0f, run_speed = 6.0f;
+
+				float yaw_delta = mouse_delta.x * sensitivity;
+				float pitch_delta = mouse_delta.y * sensitivity;
+
+				azimuth = fmodf(azimuth + yaw_delta, C_PIf * 2.f);
+				if (azimuth < 0)
+					azimuth += C_PIf * 2.f;
+
+				theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
+
+				float3 camera_offset = float3_subtract(camera->position, tranform->translation);
+
+				float r = float3_length(camera_offset);
+				if (r < EPSILON)
+					r = EPSILON;
+
+				float current_theta = acosf(camera_offset.y / r);
+				float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+
+				if (current_azimuth < 0)
+					current_azimuth += C_PIf * 2.f;
+
+				float da = azimuth - current_azimuth;
+				if (da > C_PI)
+					da -= C_PI * 2.f;
+				if (da < -C_PI)
+					da += C_PI * 2.f;
+
+				float lerp = 10.0f * dt;
+
+				current_azimuth += lerp * da;
+				current_theta += lerp * (theta - current_theta);
+
+				camera->position = (float3){
+					(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + tranform->translation.x,
+					spring_arm_length * cosf(current_theta),
+					(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + tranform->translation.z,
+				};
+
+				float3 camera_position = camera->position;
+				float3 camera_target = camera->target;
+
+				camera_position.y = 0.0f;
+				camera_target.y = 0.0f;
+
+				float3 forward, right;
+
+				forward = float3_normalize(float3_subtract(camera_target, camera_position));
+
+				right = float3_cross(forward, camera->up);
+				right = float3_normalize(right);
+
+				float3 direction = { 0, 0, 0 };
+				float2 input_vector = {
+					.x = input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
+					.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
+				};
+
+				direction = float3_add(direction, float3_scale(forward, input_vector.x));
+				direction = float3_add(direction, float3_scale(right, input_vector.y));
+
+				float length = float3_length(direction);
+				if (length > EPSILON)
+					direction = float3_scale(direction, 1 / length);
+
+				float speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
+				tranform->translation = float3_add(tranform->translation, float3_scale(direction, speed * dt));
+				tranform->rotation = quat4_from_axis_angle(FLOAT3_Y, -current_azimuth - (C_PIf * 0.5f));
+
+				camera->target.x = tranform->translation.x;
+				camera->target.z = tranform->translation.z;
+
+				uint32_t target_anim = current_anim;
+				if (float2_length_squared(input_vector)) {
+					if (input_key_down(KEY_CODE_LEFTSHIFT))
+						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/run-loop"));
+					else
+						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/walk-loop"));
+				} else
+					target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/idle-loop"));
+
+				Pose final = anim_pose_sample(frame_arena, &animations[instance->id][current_anim], fmodf(anim_t, animations[instance->id][current_anim].duration));
+				if (current_anim != target_anim) {
+					Pose start = final;
+					Pose end = anim_pose_sample(frame_arena, &animations[instance->id][target_anim], fmodf(anim_t, animations[instance->id][target_anim].duration));
+
+					final = anim_pose_blend_local(frame_arena, &end, &start, blend_t, 0);
+
+					blend_t += dt * 5;
+					if (blend_t >= 1.0f) {
+						current_anim = target_anim;
+						blend_t = 0.0f;
+					}
+				}
+
+				instance->skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &final, &mesh->skeleton), &mesh->skeleton);
 			} break;
 			default:
 				break;
@@ -986,59 +1097,59 @@ int main(void) {
 			continue;
 
 		// Swapchain image acquisition
-		/* GFX_Image compute_blit_target = gfx_swapchain_backbuffer(context, cmd, swapchains[0]); */
-		/* if (compute_blit_target.handle) { */
-		/* 	// transition swapchain target & blit src compute image */
-		/* 	gfx_cmd_image_transition( */
-		/* 		cmd, */
-		/* 		RESOURCE_USAGE_TRANSFER_DST, */
-		/* 		&compute_blit_target); */
-		/* 	gfx_cmd_image_transition( */
-		/* 		cmd, */
-		/* 		RESOURCE_USAGE_COMPUTE_SHADER_WRITE, */
-		/* 		compute_image); */
+		GFX_Image compute_blit_target = gfx_swapchain_backbuffer(context, cmd, swapchains[0]);
+		if (compute_blit_target.handle) {
+			// transition swapchain target & blit src compute image
+			gfx_cmd_image_transition(
+				cmd,
+				RESOURCE_USAGE_TRANSFER_DST,
+				&compute_blit_target);
+			gfx_cmd_image_transition(
+				cmd,
+				RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
+				compute_image);
 
-		/* 	{ // Bind compute pipeline & descriptor set */
-		/* 		VkDescriptorSetAllocateInfo alloc_info = { */
-		/* 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, */
-		/* 			.descriptorPool = cmd->descriptor_pool, */
-		/* 			.descriptorSetCount = 1, */
-		/* 			.pSetLayouts = c_pipeline.set_layouts + 0, */
-		/* 		}; */
+			{ // Bind compute pipeline & descriptor set
+				VkDescriptorSetAllocateInfo alloc_info = {
+					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+					.descriptorPool = cmd->descriptor_pool,
+					.descriptorSetCount = 1,
+					.pSetLayouts = c_pipeline.set_layouts + 0,
+				};
 
-		/* 		VkDescriptorSet compute_set = 0; */
-		/* 		vkAllocateDescriptorSets(context->device.logical, &alloc_info, &compute_set); */
-		/* 		VkDescriptorImageInfo image_info = { */
-		/* 			.imageLayout = VK_IMAGE_LAYOUT_GENERAL, */
-		/* 			.imageView = compute_image->view, */
-		/* 		}; */
-		/* 		VkWriteDescriptorSet write = { */
-		/* 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, */
-		/* 			.dstSet = compute_set, */
-		/* 			.dstBinding = 0, */
-		/* 			.dstArrayElement = 0, */
-		/* 			.descriptorCount = 1, */
-		/* 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, */
-		/* 			.pImageInfo = &image_info, */
-		/* 		}; */
-		/* 		vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0); */
+				VkDescriptorSet compute_set = 0;
+				vkAllocateDescriptorSets(context->device.logical, &alloc_info, &compute_set);
+				VkDescriptorImageInfo image_info = {
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.imageView = compute_image->view,
+				};
+				VkWriteDescriptorSet write = {
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = compute_set,
+					.dstBinding = 0,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+					.pImageInfo = &image_info,
+				};
+				vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
 
-		/* 		vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle); */
-		/* 		vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0); */
-		/* 	} */
+				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle);
+				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0);
+			}
 
-		/* 	// Dispatch compute & Blit to main window surface */
-		/* 	vkCmdDispatch(cmd->handle, 40, 23, 1); */
-		/* 	gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_TRANSFER_SRC, compute_image); */
-		/* 	gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target); */
+			// Dispatch compute & Blit to main window surface
+			vkCmdDispatch(cmd->handle, 40, 23, 1);
+			gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
+			gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target);
 
-		/* 	// transition swapchain images for presenting */
-		/* 	gfx_cmd_image_barrier( */
-		/* 		cmd, */
-		/* 		RESOURCE_USAGE_TRANSFER_DST, */
-		/* 		RESOURCE_USAGE_PRESENT, */
-		/* 		&compute_blit_target); */
-		/* } */
+			// transition swapchain images for presenting
+			gfx_cmd_image_barrier(
+				cmd,
+				RESOURCE_USAGE_TRANSFER_DST,
+				RESOURCE_USAGE_PRESENT,
+				&compute_blit_target);
+		}
 
 		GFX_Image main_target = gfx_swapchain_backbuffer(context, cmd, swapchains[1]);
 		if (main_target.handle) {
@@ -1052,23 +1163,17 @@ int main(void) {
 				RESOURCE_USAGE_COLOR_ATTACHMENT,
 				offscreen_render);
 
-			static float anim_t = 0.0f;
 			static float blink_timer = 0.0f;
-			static uint32_t anim_index = 3;
 
-			if (input_key_pressed(KEY_CODE_SPACE))
-				anim_index++;
-			anim_t += dt;
 			blink_timer += dt;
 
 			uint64_t scratch_cursor = 0;
 			for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
 				MeshInstance *instance = &instances[instance_index];
-				Mesh *mesh = &meshes[instance->id];
-				if (mesh->skeleton.bone_count == 0 || animation_counts[instance->id] == 0)
+				if (animation_counts[instance->id] == 0 || instance->skin_matrices == 0)
 					continue;
 
-				uint32_t instance_anim = (anim_index + instance_index) % animation_counts[instance->id];
+				Mesh *mesh = &meshes[instance->id];
 
 				uint64_t matrices_offset = scratch_cursor;
 				uint64_t matrices_size = alignup(mesh->skeleton.bone_count * sizeof(float4x4), 256);
@@ -1078,10 +1183,7 @@ int main(void) {
 				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
 				scratch_cursor += skinned_vertices_size;
 
-				Pose pose = anim_pose_sample(frame_arena, &animations[instance->id][instance_anim], fmodf(anim_t, animations[instance->id][instance_anim].duration));
-				float4x4 *skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &pose, &mesh->skeleton), &mesh->skeleton);
-
-				memory_copy(scratch_buffers[context->current_frame_index]->mapped + matrices_offset, skin_matrices, matrices_size);
+				memory_copy(scratch_buffers[context->current_frame_index]->mapped + matrices_offset, instance->skin_matrices, matrices_size);
 
 				{ // :skinning
 					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_skinning.handle);
@@ -1256,7 +1358,7 @@ int main(void) {
 									.offset = mesh->buffer_vertex_byte_offset,
 									.range = mesh->total_vertex_count * sizeof(Vertex3),
 								};
-								if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
+								if (animation_counts[instance->id] && instance->skin_matrices) {
 									buffer_info.buffer = scratch_buffers[context->current_frame_index]->handle;
 									buffer_info.offset = instance->skinned_vertices_offset;
 								}
@@ -1274,7 +1376,7 @@ int main(void) {
 						}
 						vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.layout, 1, 1, &draw_set, 0, 0);
 
-						vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdPushConstants(cmd->handle, pipeline_shadow.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
 				}
@@ -1492,7 +1594,7 @@ int main(void) {
 									.offset = mesh->buffer_vertex_byte_offset,
 									.range = mesh->total_vertex_count * sizeof(Vertex3),
 								};
-								if (mesh->skeleton.bone_count && animation_counts[instance->id]) {
+								if (animation_counts[instance->id] && instance->skin_matrices) {
 									buffer_info.buffer = scratch_buffers[context->current_frame_index]->handle;
 									buffer_info.offset = instance->skinned_vertices_offset;
 								}
@@ -4452,84 +4554,6 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 	cgltf_free(data);
 
 	return result;
-}
-
-void player_update(float3 *player_position, quat4 *rotation, float2 mouse_delta, float dt, Camera3 *camera) {
-	static float azimuth = C_PIf * 3 / 2.f;
-	static float theta = C_PIf / 3.f;
-
-	const float sensitivity = 1.0f;
-	const float spring_arm_length = 10.f;
-	const float move_speed = 3.0f;
-
-	float yaw_delta = mouse_delta.x * sensitivity;
-	float pitch_delta = mouse_delta.y * sensitivity;
-
-	azimuth = fmodf(azimuth + yaw_delta, C_PIf * 2.f);
-	if (azimuth < 0)
-		azimuth += C_PIf * 2.f;
-
-	theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
-
-	float3 offset = float3_subtract(camera->position, *player_position);
-
-	float r = float3_length(offset);
-	if (r < EPSILON)
-		r = EPSILON;
-
-	float current_theta = acosf(offset.y / r);
-	float current_azimuth = atan2f(offset.z, offset.x); // [-pi, pi]
-
-	if (current_azimuth < 0)
-		current_azimuth += C_PIf * 2.f;
-
-	float da = azimuth - current_azimuth;
-	if (da > C_PI)
-		da -= C_PI * 2.f;
-	if (da < -C_PI)
-		da += C_PI * 2.f;
-
-	float lerp = 10.0f * dt;
-
-	current_azimuth += lerp * da;
-	current_theta += lerp * (theta - current_theta);
-
-	camera->position = (float3){
-		(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + player_position->x,
-		spring_arm_length * cosf(current_theta),
-		(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + player_position->z,
-	};
-
-	float3 camera_position = camera->position;
-	camera_position.y = 0.0f;
-	float3 camera_target = camera->target;
-	camera_target.y = 0.0f;
-
-	float3 forward, right;
-
-	forward = float3_normalize(float3_subtract(camera_target, camera_position));
-
-	right = float3_cross(forward, camera->up);
-	right = float3_normalize(right);
-
-	float3 direction = { 0, 0, 0 };
-
-	// Logic: direction += forward * scalar
-	float forward_input = (float)(input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S));
-	direction = float3_add(direction, float3_scale(forward, forward_input));
-
-	float right_input = (float)(input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A));
-	direction = float3_add(direction, float3_scale(right, right_input));
-
-	if (float3_length(direction) > 1e-6f)
-		direction = float3_normalize(direction);
-
-	// Apply movement to player_position (passed by pointer)
-	*player_position = float3_add(*player_position, float3_scale(direction, move_speed * dt));
-	*rotation = quat4_from_axis_angle(FLOAT3_Y, -current_azimuth - (C_PIf * 0.5f));
-
-	camera->target.x = player_position->x;
-	camera->target.z = player_position->z;
 }
 
 void push_rect(Arena *arena, Rectangle rect, Color color) {

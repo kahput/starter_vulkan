@@ -115,6 +115,10 @@ typedef struct { float x, y; } float32x2;
 typedef struct { float x, y, z; } float32x3;
 typedef struct alignas(16) { float x, y, z, w; } float32x4;
 
+typedef float32x2 float2;
+typedef float32x3 float3;
+typedef float32x4 float4;
+
 typedef double float64;
 typedef struct { float64 x, y; } float64x2;
 typedef struct { float64 x, y, z; } float64x3;

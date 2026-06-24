@@ -9,18 +9,6 @@
 #define C_PIf ((float)C_PI)
 #define EPSILON 1e-6f
 
-typedef struct {
-	float elements[4 * 4];
-} float4x4;
-typedef float32x2 float2;
-typedef float32x3 float3;
-typedef struct {
-	float3 origin;
-	float3 direction;
-} Ray3;
-typedef float32x4 float4;
-typedef float32x4 quat4;
-
 #define FLOAT_MAX 3.40282347e+38F
 #define FLOAT_MIN -FLOAT_MAX
 
@@ -37,20 +25,29 @@ typedef float32x4 quat4;
 #define FLOAT4_ZERO (float4){ 0.0f, 0.0f, 0.0f, 0.0f }
 #define FLOAT4_ONE (float4){ 1.0f, 1.0f, 1.0f, 1.0f }
 
-static inline float to_radians(float degree) { return degree * (C_PIf / 180.f); }
-static inline float to_degrees(float radians) {
-	return radians * (180.0f / C_PIf);
-}
+typedef struct {
+	float elements[4 * 4];
+} float4x4;
+typedef float4 quat4;
 
-static inline float clampf(float value, float min, float max) {
-	return value < min ? min : (value > max ? max : value);
-}
+typedef struct {
+	bool hit;
+	float t;
+	float3 normal, point;
+} Raycast3Result;
+static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
+
+// --- scalar ---
+static inline float to_radians(float degree) { return degree * (C_PIf / 180.f); }
+static inline float to_degrees(float radians) { return radians * (180.0f / C_PIf); }
+
+static inline float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
 static inline float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
 static inline float lerpf(float start, float end, float t) { return start + (end - start) * t; }
-/* static inline float mapf(float value, float old_min, float old_max, float new_min, float new_max) {} */
 static inline float minf(float a, float b) { return a < b ? a : b; }
 static inline float maxf(float a, float b) { return a > b ? a : b; }
 
+// --- float2 ---
 static inline float2 float2_make(float x, float y) { return (float2){ x, y }; }
 static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.x, (float)d.y }; }
 static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
@@ -59,6 +56,7 @@ static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y };
 bool float2_equal(float2 a, float2 b);
 float2 float2_negate(float2 v);
 
+float float2_length_squared(float2 v);
 float float2_length(float2 v);
 float2 float2_normalize(float2 v);
 float2 float2_normalize_safe(float2 v, float epsilon);
@@ -71,12 +69,14 @@ float2 float2_scale(float2 v, float s);
 float2 float2_lerp(float2 start, float2 end, float t);
 float2 float2_clamp(float2 v, float2 min, float2 max);
 
+void float2_print(float2 v);
+
+// --- float3 ---
+
 static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
 static inline float3 float3_from_float4(float4 v) { return (float3){ v.x, v.y, v.z }; }
 static inline float3 float3_fill(float value) { return (float3){ value, value, value }; }
-static inline float3 float3_wrap(float v[3]) {
-	return (float3){ .x = v[0], .y = v[1], .z = v[2] };
-}
+static inline float3 float3_wrap(float v[3]) { return (float3){ .x = v[0], .y = v[1], .z = v[2] }; }
 
 bool float3_equal(float3 a, float3 b);
 float3 float3_negate(float3 v);
@@ -103,10 +103,12 @@ float3 float3_lerp(float3 start, float3 end, float t);
 float float3_angle(float3 a, float3 b);
 float3 float3_rotate(float3 v, float angle, float3 axis);
 
+void float3_print(float3 v);
+
+// --- float4 & quaternions ---
+
 static inline float4 float4_from_float3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w }; }
-static inline float4 float4_wrap(float v[4]) {
-	return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] };
-}
+static inline float4 float4_wrap(float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
 
 float4 float4_scale(float4 v, float s);
 float float4_length_squared(float4 v);
@@ -116,7 +118,9 @@ float3 quat4_to_euler(quat4 quat);
 quat4 quat4_from_axis_angle(float3 axis, float angle);
 float4 quat4_slerp(quat4 q, quat4 p, float t);
 
-// float float4_dot_product(Vector4f v);
+void float4_print(float4 v);
+
+// --- float4x4 ---
 
 bool float4x4_equal(float4x4 lhs, float4x4 rhs);
 float4x4 float4x4_identity(void);
@@ -143,21 +147,10 @@ float4x4 float4x4_orthographic(float left, float right, float top,
 float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
 
 float3 frustum_center(float4x4 perspective, float4x4 view);
-
 void float4x4_print(float4x4 m);
-void float2_print(float2 v);
-void float3_print(float3 v);
-void float4_print(float4 v);
 
-// NOTE: Maybe move to shapes/geometry
-typedef struct {
-	bool hit;
-	float t;
-	float3 normal, point;
-} Raycast3Result;
-static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
+// --- Raycasting ---
 
-// Collision
 Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
 Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
 

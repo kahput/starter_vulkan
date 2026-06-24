@@ -13,6 +13,12 @@ float2 float2_negate(float2 v) {
 	return result;
 }
 
+float float2_length_squared(float2 v) {
+	float result = v.x * v.x + v.y * v.y;
+
+	return result;
+}
+
 float float2_length(float2 v) {
 	float result = sqrt(v.x * v.x + v.y * v.y);
 
@@ -239,7 +245,7 @@ quat4 quat4_from_axis_angle(float3 axis, float angle) {
 		result.z = axis.z * s;
 		result.w = c;
 
-        // NOTE: Maybe normalize?
+		// NOTE: Maybe normalize?
 		/* result = float4_scale(result, 1 / float4_length(result)); */
 	}
 
