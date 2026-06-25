@@ -75,6 +75,9 @@ void logger_log(LogLevel level, const char *fmt, ...) {
 			indent_buffer,
 			g_level_strings[level], // Log level string
 			g_logger.prefix ? g_logger.prefix : "");
+	else
+		fmt += 1;
+
 	if (level >= LOG_LEVEL_ERROR)
 		printf("%s", g_log_level_colors[level]);
 	vprintf(fmt, arg_ptr);

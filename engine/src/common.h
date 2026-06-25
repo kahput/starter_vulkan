@@ -39,6 +39,7 @@
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
 #define container_of(ptr, T, member) ((T *)((uint8_t *)ptr - offsetof(T, member)))
+#define array_arg(T, ...) (T[]){ __VA_ARGS__ }, sizeof(T[]){ __VA_ARGS__ } / sizeof(T)
 
 #define memory_copy(dst, src, size) memcpy((dst), (src), (size))
 #define memory_set(dst, byte, size) memset((dst), (byte), (size))

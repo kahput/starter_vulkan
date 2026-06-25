@@ -33,7 +33,6 @@ endif()
 set(WEB_SCRATCHES web_scratch)
 set(NATIVE_SCRATCHES xcb_scratch skinning material_scratch spriv)
 
-
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     file(GLOB_RECURSE 

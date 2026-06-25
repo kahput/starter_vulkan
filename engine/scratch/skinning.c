@@ -102,6 +102,24 @@ struct Swapchain {
 	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
 };
 
+typedef struct {
+	UniformType type;
+	uint32_t binding, count;
+
+	union {
+		struct {
+			GFX_Buffer *handle; // transient if 0
+			uint64_t offset, size;
+			void *data;
+		} buffer;
+
+		struct {
+			GFX_Image **images;
+			GFX_Sampler *sampler;
+		} sampler_with_textures;
+	} as;
+} Uniform;
+
 #define MAX_BUFFERS 1024
 #define MAX_IMAGES 512
 #define MAX_SAMPLERS 32
@@ -132,14 +150,6 @@ typedef struct {
 
 	uint32_t frame_index;
 } GFX_CommandContext;
-
-typedef struct GFX_ResourceList GFX_ResourceList;
-struct GFX_ResourceList {
-	GFX_ResourceList *next;
-
-	ResourceType type;
-	void *resource;
-};
 
 typedef struct {
 	Arena arena[1];
@@ -192,8 +202,6 @@ typedef struct {
 	GFX_Pipeline *first_free_shader;
 	GFX_Swapchain *first_free_swapchain;
 
-	GFX_ResourceList deletion_queues[MAX_FRAMES_IN_FLIGHT];
-
 	bool initialized;
 #ifdef DEV_BUILD
 	VkDebugUtilsMessengerEXT debug_messenger;
@@ -233,8 +241,8 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt);
 GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, const char *debug_name);
 
-GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecode);
-GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, PipelineOptions options);
+GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 bytecode);
+GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vs_bytecode, String8 fs_bytecode, PipelineOptions options);
 
 bool gfx_buffer_destroy(GFX_Context *context, GFX_Buffer *buffer);
 bool gfx_image_destroy(GFX_Context *context, GFX_Image *image);
@@ -247,8 +255,50 @@ bool gfx_swapchain_resize(GFX_Context *context, GFX_Swapchain *swapchain, uint32
 bool gfx_image_resize(GFX_Context *context, GFX_Image *image, uint32_t new_width, uint32_t new_height);
 
 // TODO: double buffered transfers
-/* void gfx_upload_buffer(GFX_Context *context, GFX_Buffer *dst, uint64_t size, void *data, ResourceUsage final_usage); */
-/* void gfx_upload_image(GFX_Context *context, GFX_Image *image, uint32_t width, uint32_t height, void *pixels, ResourceUsage final_usage); */
+/* void gfx_upload_buffer(GFX_Context *context, GFX_Buffer *dst, uint64_t size, void *data, ResourceUsage usage); */
+/* void gfx_upload_image(GFX_Context *context, GFX_Image *image, uint32_t width, uint32_t height, void *pixels, ResourceUsage usage); */
+
+bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set, Uniform *uniforms, uint32_t uniform_count);
+
+static inline Uniform uniform_data(uint32_t binding, void *data, uint64_t size) {
+	return (Uniform){ .type = UNIFORM_TYPE_UNIFORM_BUFFER, .binding = binding, .count = 1, .as.buffer = { .data = data, .size = size } };
+}
+
+static inline Uniform storage_data(uint32_t binding, void *data, uint64_t size) {
+	return (Uniform){ .type = UNIFORM_TYPE_STORAGE_BUFFER, .binding = binding, .count = 1, .as.buffer = { .data = data, .size = size } };
+}
+
+/* static inline Uniform uniform_buffer(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) { */
+/* 	return (Uniform){ .type = UNIFORM_TYPE_UNIFORM_BUFFER, .binding = binding, .count = 1, .as.buffer = { .handle = buffer, .offset = offset, .size = size } }; */
+/* } */
+
+static inline Uniform storage_buffer(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) {
+	return (Uniform){ .type = UNIFORM_TYPE_STORAGE_BUFFER, .binding = binding, .count = 1, .as.buffer = { .handle = buffer, .offset = offset, .size = size } };
+}
+
+static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images, uint32_t image_count, GFX_Sampler *sampler) {
+	return (Uniform){ .type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE, .binding = binding, .count = image_count, .as.sampler_with_textures = { .images = images, .sampler = sampler } };
+}
+
+#define GFX_SAMPLED_IMAGE(b, img, samp)                                      \
+	{                                                                        \
+		.type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE, .binding = (b), .count = 1, \
+		.as.sampler_with_textures = {                                        \
+			.images = (GFX_Image *[]){ (img) },                              \
+			.image_count = 1,                                                \
+			.sampler = (samp),                                               \
+		}                                                                    \
+	}
+
+#define GFX_SAMPLED_IMAGE_ARRAY(b, imgs_array, n, samp)                        \
+	{                                                                          \
+		.type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE, .binding = (b), .count = (n), \
+		.as.sampler_with_textures = {                                          \
+			.images = (imgs_array),                                            \
+			.image_count = (n),                                                \
+			.sampler = (samp),                                                 \
+		}                                                                      \
+	}
 
 void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
 void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height);
@@ -378,7 +428,7 @@ typedef enum {
 } Face;
 
 Image2D load_image(Arena *arena, String8 path);
-Image2D load_cubemap(Arena *arena, String8 paths[FACE_COUNT]);
+Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
 Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
@@ -440,8 +490,6 @@ int main(void) {
 	GFX_Image *depthbuffer = gfx_image_make(context, 948, 1044, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER, .sample = SAMPLE_COUNT_8 });
 	GFX_Image *shadow_depthbuffer = gfx_image_make(context, 2048, 2048, (ImageOptions){ .format = PIXELFORMAT_DEPTH, .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE });
 
-#define array_arg(T, ...) \
-	(T[]) { __VA_ARGS__, (T){ 0 } }
 	Image2D skybox = load_cubemap(arena,
 		array_arg(
 			String8,
@@ -664,7 +712,7 @@ int main(void) {
 
 	GFX_Buffer *scratch_buffers[MAX_FRAMES_IN_FLIGHT];
 	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
-		scratch_buffers[index] = gfx_buffer_make(context, MiB(1), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER, "scratch_buffer");
+		scratch_buffers[index] = gfx_buffer_make(context, MiB(4), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER, "scratch_buffer");
 		vkMapMemory(context->device.logical, scratch_buffers[index]->memory, 0, scratch_buffers[index]->size, 0, (void **)&scratch_buffers[index]->mapped);
 	}
 
@@ -703,7 +751,7 @@ int main(void) {
 	};
 
 	MeshInstance instances[256] = {
-		[0] = { MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, 0, true, 0 },
+		[0] = { MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, true, 0, 0 },
 		[1] = { MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true, 0 },
 	};
 	uint32_t instance_count = 2;
@@ -878,8 +926,13 @@ int main(void) {
 
 				uint32_t target_anim = current_anim;
 				if (float2_length_squared(input_vector)) {
+					input_vector = float2_normalize(input_vector);
+
 					float target_angle = -current_azimuth - C_PIf + atan2f(input_vector.x, input_vector.y);
-					tranform->rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
+					quat4 target_rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
+
+					float t = 1.0f - expf(-15.0f * dt);
+					tranform->rotation = quat4_slerp(tranform->rotation, target_rotation, t);
 
 					if (input_key_down(KEY_CODE_LEFTSHIFT))
 						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/run-loop"));
@@ -1096,46 +1149,15 @@ int main(void) {
 				vkCmdSetViewport(cmd->handle, 0, 1, &viewport);
 				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
 
-				VkDescriptorSet frame_set = 0;
-				{ // allocate & write frame set
-					frame_data.view = lights[0].matrix;
-					frame_data.proj = float4x4_identity();
-					frame_data.camera_position = lights[0].position;
-					frame_data.proj.elements[5] *= -1;
-
-					memory_copy(scratch_buffers[context->current_frame_index]->mapped + scratch_cursor, &frame_data, sizeof(frame_data));
-					uint64_t frame_data_offset = scratch_cursor;
-					scratch_cursor += alignup(sizeof(frame_data), 256);
-
-					VkDescriptorSetAllocateInfo alloc_info = {
-						.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-						.descriptorPool = cmd->descriptor_pool,
-						.descriptorSetCount = 1,
-						.pSetLayouts = &pipeline_shadow.set_layouts[0],
-					};
-					vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
-
-					{ // frame data
-						VkDescriptorBufferInfo buffer_info = {
-							.buffer = scratch_buffers[context->current_frame_index]->handle,
-							.offset = frame_data_offset,
-							.range = sizeof(frame_data),
-						};
-						VkWriteDescriptorSet write = {
-							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-							.dstSet = frame_set,
-							.dstBinding = 0,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-							.pBufferInfo = &buffer_info,
-						};
-						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-					}
-				}
+				frame_data.view = lights[0].matrix;
+				frame_data.proj = float4x4_identity();
+				frame_data.camera_position = lights[0].position;
+				frame_data.proj.elements[5] *= -1;
 
 				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.handle);
-				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.layout, 0, 1, &frame_set, 0, 0);
+				gfx_bind(context, &pipeline_shadow, 0,
+					array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))) //
+				);
 
 				// :draw
 				for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
@@ -1159,39 +1181,17 @@ int main(void) {
 							float4x4 model;
 						} pc = { .model = transform };
 
-						VkDescriptorSet draw_set = 0;
-						{ // allocate & write draw set
-							VkDescriptorSetAllocateInfo alloc_info = {
-								.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-								.descriptorPool = cmd->descriptor_pool,
-								.descriptorSetCount = 1,
-								.pSetLayouts = &pipeline_shadow.set_layouts[1],
-							};
-							vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
-
-							{ // geometry descriptor binding
-								VkDescriptorBufferInfo buffer_info = {
-									.buffer = mesh->buffer->handle,
-									.offset = mesh->buffer_vertex_byte_offset,
-									.range = mesh->total_vertex_count * sizeof(Vertex3),
-								};
-								if (animation_counts[instance->id] && instance->skin_matrices) {
-									buffer_info.buffer = scratch_buffers[context->current_frame_index]->handle;
-									buffer_info.offset = instance->skinned_vertices_offset;
-								}
-								VkWriteDescriptorSet write = {
-									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-									.dstSet = draw_set,
-									.dstBinding = 0,
-									.dstArrayElement = 0,
-									.descriptorCount = 1,
-									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-									.pBufferInfo = &buffer_info,
-								};
-								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-							}
+						GFX_Buffer *buffer = mesh->buffer;
+						uint64_t offset = mesh->buffer_vertex_byte_offset;
+						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						if (animation_counts[instance->id] && instance->skin_matrices) {
+							buffer = scratch_buffers[context->current_frame_index];
+							offset = instance->skinned_vertices_offset;
 						}
-						vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.layout, 1, 1, &draw_set, 0, 0);
+
+						gfx_bind(context, &pipeline_shadow, 1,
+							array_arg(Uniform, storage_buffer(0, buffer, offset, size)) //
+						);
 
 						vkCmdPushConstants(cmd->handle, pipeline_shadow.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
@@ -1252,102 +1252,19 @@ int main(void) {
 				vkCmdSetViewport(cmd->handle, 0, 1, &viewport);
 				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
 
-				VkDescriptorSet frame_set = 0;
-				{ // allocate & write frame set
-					frame_data.view = float4x4_lookat(camera->position, camera->target, camera->up);
-					frame_data.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
-					frame_data.camera_position = float4_from_float3(camera->position, 0.0f);
-
-					memory_copy(scratch_buffers[context->current_frame_index]->mapped + scratch_cursor, &frame_data, sizeof(frame_data));
-					uint64_t frame_data_offset = scratch_cursor;
-					scratch_cursor += alignup(sizeof(frame_data), 256);
-
-					VkDescriptorSetAllocateInfo alloc_info = {
-						.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-						.descriptorPool = cmd->descriptor_pool,
-						.descriptorSetCount = 1,
-						.pSetLayouts = &pipeline_3d.set_layouts[0],
-					};
-					vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
-
-					{ // frame data
-
-						VkDescriptorBufferInfo buffer_info = {
-							.buffer = scratch_buffers[context->current_frame_index]->handle,
-							.offset = frame_data_offset,
-							.range = sizeof(frame_data),
-						};
-						VkWriteDescriptorSet write = {
-							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-							.dstSet = frame_set,
-							.dstBinding = 0,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-							.pBufferInfo = &buffer_info,
-						};
-						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-					}
-					{ // light data
-						memory_copy(scratch_buffers[context->current_frame_index]->mapped + scratch_cursor, lights, sizeof(lights));
-						uint64_t light_offset = scratch_cursor;
-						scratch_cursor += alignup(sizeof(lights), 256);
-
-						VkDescriptorBufferInfo buffer_info = {
-							.buffer = scratch_buffers[context->current_frame_index]->handle,
-							.offset = light_offset,
-							.range = sizeof(lights),
-						};
-						VkWriteDescriptorSet write = {
-							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-							.dstSet = frame_set,
-							.dstBinding = 1,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-							.pBufferInfo = &buffer_info,
-						};
-						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-					}
-					{ // shadow sampler
-
-						VkDescriptorImageInfo image_info = {
-							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-							.imageView = shadow_depthbuffer->view,
-							.sampler = shadow_sampler->handle
-						};
-						VkWriteDescriptorSet write = {
-							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-							.dstSet = frame_set,
-							.dstBinding = 2,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-							.pImageInfo = &image_info
-						};
-						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-					}
-					{ // skybox sampler
-						VkDescriptorImageInfo image_info = {
-							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-							.imageView = skybox.gpu_image->view,
-							.sampler = linear_sampler[WRAP_MODE_CLAMP]->handle
-						};
-						VkWriteDescriptorSet write = {
-							.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-							.dstSet = frame_set,
-							.dstBinding = 3,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-							.pImageInfo = &image_info
-						};
-						vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-					}
-				}
+				frame_data.view = float4x4_lookat(camera->position, camera->target, camera->up);
+				frame_data.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+				frame_data.camera_position = float4_from_float3(camera->position, 0.0f);
 
 				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
-				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 0, 1, &frame_set, 0, 0);
+
+				gfx_bind(context, &pipeline_3d, 0, // bind set 0
+					array_arg(Uniform,
+						uniform_data(0, &frame_data, sizeof(frame_data)),
+						storage_data(1, lights, sizeof(lights)),
+						sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
+						sampler_with_textures(3, (GFX_Image *[]){ skybox.gpu_image }, 1, linear_sampler[WRAP_MODE_CLAMP]) //
+						));
 
 				// :draw
 				for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
@@ -1395,62 +1312,27 @@ int main(void) {
 							}
 						}
 
-						VkDescriptorSet draw_set = 0;
-						{ // allocate & write draw set
-							VkDescriptorSetAllocateInfo alloc_info = {
-								.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-								.descriptorPool = cmd->descriptor_pool,
-								.descriptorSetCount = 1,
-								.pSetLayouts = &pipeline_3d.set_layouts[1],
-							};
-							vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
-
-							{ // geometry descriptor binding
-								VkDescriptorBufferInfo buffer_info = {
-									.buffer = mesh->buffer->handle,
-									.offset = mesh->buffer_vertex_byte_offset,
-									.range = mesh->total_vertex_count * sizeof(Vertex3),
-								};
-								if (animation_counts[instance->id] && instance->skin_matrices) {
-									buffer_info.buffer = scratch_buffers[context->current_frame_index]->handle;
-									buffer_info.offset = instance->skinned_vertices_offset;
-								}
-								VkWriteDescriptorSet write = {
-									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-									.dstSet = draw_set,
-									.dstBinding = 0,
-									.dstArrayElement = 0,
-									.descriptorCount = 1,
-									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-									.pBufferInfo = &buffer_info,
-								};
-								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-							}
-							{ // material textures descriptor binding
-								VkWriteDescriptorSet writes[5] = { 0 };
-								VkDescriptorImageInfo image_infos[5] = { 0 };
-								for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-									GFX_Image *image = material->textures[texture_index].gpu_image;
-									image_infos[texture_index] = (VkDescriptorImageInfo){
-										.imageView = image->view,
-										.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-										.sampler = linear_sampler[WRAP_MODE_REPEAT]->handle,
-									};
-
-									writes[texture_index] = (VkWriteDescriptorSet){
-										.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-										.dstSet = draw_set,
-										.dstBinding = 1,
-										.dstArrayElement = texture_index,
-										.descriptorCount = 1,
-										.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-										.pImageInfo = &image_infos[texture_index],
-									};
-								}
-								vkUpdateDescriptorSets(context->device.logical, countof(writes), writes, 0, 0);
-							}
+						GFX_Buffer *buffer = mesh->buffer;
+						uint64_t offset = mesh->buffer_vertex_byte_offset;
+						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						if (animation_counts[instance->id] && instance->skin_matrices) {
+							buffer = scratch_buffers[context->current_frame_index];
+							offset = instance->skinned_vertices_offset;
 						}
-						vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.layout, 1, 1, &draw_set, 0, 0);
+
+						GFX_Image *images[] = {
+							[TEXTURE_SLOT_ALEBDO] = material->textures[TEXTURE_SLOT_ALEBDO].gpu_image,
+							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu_image,
+							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu_image,
+							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu_image,
+							[TEXTURE_SLOT_EMISSIVE] = material->textures[TEXTURE_SLOT_EMISSIVE].gpu_image,
+						};
+
+						Uniform uniforms[] = {
+							storage_buffer(0, buffer, offset, size),
+							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
+						};
+						gfx_bind(context, &pipeline_3d, 1, uniforms, countof(uniforms));
 
 						vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
@@ -1484,79 +1366,32 @@ int main(void) {
 							.uv_scale = { 1.0f, 1.0f },
 						};
 
-						VkDescriptorSet draw_set = 0;
-						{ // allocate & write draw set
-							VkDescriptorSetAllocateInfo alloc_info = {
-								.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-								.descriptorPool = cmd->descriptor_pool,
-								.descriptorSetCount = 1,
-								.pSetLayouts = &pipeline_grass.set_layouts[1],
-							};
-							vkAllocateDescriptorSets(context->device.logical, &alloc_info, &draw_set);
+						GFX_Buffer *buffer = mesh->buffer;
+						uint64_t offset = mesh->buffer_vertex_byte_offset;
+						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						GFX_Image *images[] = {
+							[TEXTURE_SLOT_ALEBDO] = material->textures[TEXTURE_SLOT_ALEBDO].gpu_image,
+							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu_image,
+							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu_image,
+							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu_image,
+							[TEXTURE_SLOT_EMISSIVE] = material->textures[TEXTURE_SLOT_EMISSIVE].gpu_image,
+						};
 
-							{ // geometry descriptor binding
-								VkDescriptorBufferInfo buffer_info = {
-									.buffer = mesh->buffer->handle,
-									.offset = mesh->buffer_vertex_byte_offset,
-									.range = mesh->total_vertex_count * sizeof(Vertex3),
-								};
-								VkWriteDescriptorSet write = {
-									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-									.dstSet = draw_set,
-									.dstBinding = 0,
-									.dstArrayElement = 0,
-									.descriptorCount = 1,
-									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-									.pBufferInfo = &buffer_info,
-								};
-								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-							}
-							{ // material textures descriptor binding
-								VkWriteDescriptorSet writes[5] = { 0 };
-								VkDescriptorImageInfo image_infos[5] = { 0 };
-								for (uint32_t texture_index = 0; texture_index < 5; ++texture_index) {
-									GFX_Image *image = material->textures[texture_index].gpu_image;
-									image_infos[texture_index] = (VkDescriptorImageInfo){
-										.imageView = image->view,
-										.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-										.sampler = linear_sampler[WRAP_MODE_CLAMP]->handle,
-									};
-
-									writes[texture_index] = (VkWriteDescriptorSet){
-										.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-										.dstSet = draw_set,
-										.dstBinding = 1,
-										.dstArrayElement = texture_index,
-										.descriptorCount = 1,
-										.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-										.pImageInfo = &image_infos[texture_index],
-									};
-								}
-								vkUpdateDescriptorSets(context->device.logical, countof(writes), writes, 0, 0);
-							}
-							{ // instance descriptor binding
-								VkDescriptorBufferInfo buffer_info = {
-									.buffer = grass_instancing_buffer->handle,
-									.offset = 0,
-									.range = grass_instancing_buffer->size,
-								};
-								VkWriteDescriptorSet write = {
-									.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-									.dstSet = draw_set,
-									.dstBinding = 2,
-									.dstArrayElement = 0,
-									.descriptorCount = 1,
-									.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-									.pBufferInfo = &buffer_info,
-								};
-								vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-							}
-						}
-						vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_grass.layout, 1, 1, &draw_set, 0, 0);
+						Uniform uniforms[] = {
+							storage_buffer(0, buffer, offset, size),
+							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT]),
+							storage_buffer(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
+						};
+						gfx_bind(context, &pipeline_grass, 1, uniforms, countof(uniforms));
 
 						vkCmdPushConstants(cmd->handle, pipeline_grass.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, map_width * map_depth, part->index_offset, part->vertex_offset, 0);
 					}
+				}
+
+				{ // :skybox
+					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_skybox.handle);
+					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 				}
 
 				{ // :canvas
@@ -1575,100 +1410,20 @@ int main(void) {
 						.time = time,
 					};
 
-					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_skybox.handle);
-					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
-
-					VkDescriptorSet frame_set = 0;
-					{ // allocate & write frame set
-						memory_copy(scratch_buffers[cmd->frame_index]->mapped + scratch_cursor, &frame_2d, sizeof(frame_2d));
-						uint64_t frame_2d_offset = scratch_cursor;
-						scratch_cursor += alignup(sizeof(frame_2d), 256);
-
-						memory_copy(scratch_buffers[cmd->frame_index]->mapped + scratch_cursor, batch_2d->base, batch_2d->offset);
-						uint64_t batch_offset = scratch_cursor;
-						scratch_cursor += alignup(batch_2d->offset, 256);
-
-						VkDescriptorSetAllocateInfo alloc_info = {
-							.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-							.descriptorPool = cmd->descriptor_pool,
-							.descriptorSetCount = 1,
-							.pSetLayouts = &pipeline_2d.set_layouts[0],
-						};
-						vkAllocateDescriptorSets(context->device.logical, &alloc_info, &frame_set);
-
-						{ // frame data
-							VkDescriptorBufferInfo buffer_info = {
-								.buffer = scratch_buffers[context->current_frame_index]->handle,
-								.offset = frame_2d_offset,
-								.range = sizeof(frame_2d),
-							};
-							VkWriteDescriptorSet write = {
-								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-								.dstSet = frame_set,
-								.dstBinding = 0,
-								.dstArrayElement = 0,
-								.descriptorCount = 1,
-								.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-								.pBufferInfo = &buffer_info,
-							};
-							vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-						}
-						{ // geometry data
-							VkDescriptorBufferInfo buffer_info = {
-								.buffer = scratch_buffers[context->current_frame_index]->handle,
-								.offset = batch_offset,
-								.range = batch_2d->offset,
-							};
-							VkWriteDescriptorSet write = {
-								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-								.dstSet = frame_set,
-								.dstBinding = 1,
-								.dstArrayElement = 0,
-								.descriptorCount = 1,
-								.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-								.pBufferInfo = &buffer_info,
-							};
-							vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-						}
-					}
-
-					VkDescriptorSet batch_set = 0;
-					{ // allocate & write batch set
-						VkDescriptorSetAllocateInfo alloc_info = {
-							.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-							.descriptorPool = cmd->descriptor_pool,
-							.descriptorSetCount = 1,
-							.pSetLayouts = &pipeline_2d.set_layouts[1],
-						};
-						vkAllocateDescriptorSets(context->device.logical, &alloc_info, &batch_set);
-
-						{ // batch textures
-
-							VkDescriptorImageInfo image_info = {
-								.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-								.imageView = white_texture->view,
-								.sampler = linear_sampler[WRAP_MODE_CLAMP]->handle,
-							};
-							VkDescriptorImageInfo image_infos[32] = { 0 };
-							for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
-								image_infos[texture_id] = image_info;
-
-							VkWriteDescriptorSet write = {
-								.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-								.dstSet = batch_set,
-								.dstBinding = 0,
-								.dstArrayElement = 0,
-								.descriptorCount = 32,
-								.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-								.pImageInfo = image_infos,
-							};
-							vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-						}
-					}
-
 					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_2d.handle);
-					vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_2d.layout, 0, 1, &frame_set, 0, 0);
-					vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_2d.layout, 1, 1, &batch_set, 0, 0);
+
+					GFX_Image *images[32] = { 0 };
+					for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
+						images[texture_id] = white_texture;
+
+					Uniform set0[] = {
+						uniform_data(0, &frame_2d, sizeof(frame_2d)),
+						storage_data(1, batch_2d->base, batch_2d->offset),
+					};
+					Uniform set1[] = { sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]) };
+
+					gfx_bind(context, &pipeline_2d, 0, set0, countof(set0));
+					gfx_bind(context, &pipeline_2d, 1, set1, countof(set1));
 
 					vkCmdDraw(cmd->handle, batch_2d->offset / sizeof(Vertex2), 1, 0, 0);
 				}
@@ -1680,7 +1435,6 @@ int main(void) {
 				RESOURCE_USAGE_COLOR_ATTACHMENT,
 				RESOURCE_USAGE_PRESENT,
 				&main_target);
-
 		} else { //  TODO: resize swapchain
 			gfx_swapchain_resize(context, swapchains[1], dims.x, dims.y);
 			if (depthbuffer->width != dims.x || depthbuffer->height != dims.y)
@@ -3090,7 +2844,7 @@ bool gfx_startup(GFX_Context *context) {
 				context,
 				context->staging_buffer_frame_size * MAX_FRAMES_IN_FLIGHT,
 				BUFFER_MEMORY_SHARED,
-				BUFFER_USAGE_TRANSFER, "staging_buffer");
+				BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE, "staging_buffer");
 		ok = context->staging_buffer;
 		if (ok == false) {
 			LOG_ERROR("failed to create context staging buffer.");
@@ -3315,9 +3069,8 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 		vkResetDescriptorPool(context->device.logical, result->descriptor_pool, 0);
 
 		result->transient_buffer = context->staging_buffer;
-		result->transient_arena[0] = arena_wrap(
-			context->staging_buffer->mapped + context->current_frame_index * context->staging_buffer_frame_size,
-			context->staging_buffer_frame_size);
+		result->transient_arena[0] = arena_wrap(context->staging_buffer->mapped, context->staging_buffer->size);
+		result->transient_arena->offset = context->current_frame_index * context->staging_buffer_frame_size;
 
 		// Begin command recording
 		VkCommandBufferBeginInfo cb_begin_info = {
@@ -3809,6 +3562,128 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 	return ok;
 }
 
+static VkDescriptorType uniform_type_to_descriptor_type[UNIFORM_TYPE_COUNT] = {
+	[UNIFORM_TYPE_IMAGE] = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+	[UNIFORM_TYPE_STORAGE_IMAGE] = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	[UNIFORM_TYPE_SAMPLER] = VK_DESCRIPTOR_TYPE_SAMPLER,
+	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+	[UNIFORM_TYPE_UNIFORM_BUFFER] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	[UNIFORM_TYPE_STORAGE_BUFFER] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+};
+
+bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
+	bool ok = context && pipeline && uniforms && uniform_count > 0;
+
+	GFX_CommandContext *cmd = 0;
+	VkDescriptorSet set = 0;
+
+	// TODO: cache descriptor sets instead?
+	if (ok) { // allocate descriptor set
+		cmd = &context->cmd_buffers[context->current_frame_index];
+
+		VkDescriptorSetAllocateInfo alloc_info = {
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = cmd->descriptor_pool,
+			.descriptorSetCount = 1,
+			.pSetLayouts = &pipeline->set_layouts[set_index],
+		};
+		ok = vkAllocateDescriptorSets(context->device.logical, &alloc_info, &set) == VK_SUCCESS;
+	}
+
+	if (ok) { // write uniforms
+		ArenaTemp scratch = arena_scratch_begin(0);
+		for (uint32_t uniform_index = 0; uniform_index < uniform_count; ++uniform_index) {
+			Uniform *uniform = &uniforms[uniform_index];
+
+			switch (uniform->type) {
+				case UNIFORM_TYPE_STORAGE_IMAGE:
+				case UNIFORM_TYPE_SAMPLER:
+				case UNIFORM_TYPE_IMAGE:
+				case UNIFORM_TYPE_SAMPLER_WITH_IMAGE: {
+					VkDescriptorImageInfo *image_infos = arena_push_count(scratch.arena, VkDescriptorImageInfo, uniform->count);
+
+					VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					if (uniform->type == UNIFORM_TYPE_STORAGE_IMAGE)
+						layout = VK_IMAGE_LAYOUT_GENERAL;
+
+					GFX_Sampler *sampler = uniform->as.sampler_with_textures.sampler;
+					for (uint32_t image_index = 0; image_index < uniform->count; ++image_index) {
+						GFX_Image *image = uniform->as.sampler_with_textures.images[image_index];
+
+						image_infos[image_index] = (VkDescriptorImageInfo){
+							.imageLayout = image ? layout : 0,
+							.imageView = image ? image->view : 0,
+							.sampler = sampler ? sampler->handle : 0,
+						};
+					}
+					VkWriteDescriptorSet write = {
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.dstSet = set,
+						.dstBinding = uniform->binding,
+						.dstArrayElement = 0,
+						.descriptorCount = uniform->count,
+						.descriptorType = uniform_type_to_descriptor_type[uniform->type],
+						.pImageInfo = image_infos,
+					};
+					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+				} break;
+
+				case UNIFORM_TYPE_STORAGE_BUFFER:
+				case UNIFORM_TYPE_UNIFORM_BUFFER: {
+					GFX_Buffer *buffer = 0;
+					uint64_t offset = 0;
+					uint64_t size = 0;
+					if (uniform->as.buffer.handle) {
+						buffer = uniform->as.buffer.handle;
+						offset = uniform->as.buffer.offset;
+						size = uniform->as.buffer.size;
+					} else if (uniform->as.buffer.data) {
+						buffer = cmd->transient_buffer;
+						offset = alignup(cmd->transient_arena->offset, 256);
+						size = uniform->as.buffer.size;
+						memory_copy(
+							arena_push(cmd->transient_arena, alignup(size, 256), 256, 0),
+							uniform->as.buffer.data,
+							size);
+					} else
+						ASSERT(false); // TODO: Handle fallback
+
+					VkDescriptorBufferInfo buffer_info = {
+						.buffer = buffer->handle,
+						.offset = offset,
+						.range = size,
+					};
+					VkWriteDescriptorSet write = {
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.dstSet = set,
+						.dstBinding = uniform->binding,
+						.dstArrayElement = 0,
+						.descriptorCount = uniform->count,
+						.descriptorType = uniform_type_to_descriptor_type[uniform->type],
+						.pBufferInfo = &buffer_info,
+					};
+					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+				} break;
+
+				default:
+					ASSERT(false);
+					break;
+			}
+		}
+
+		arena_scratch_end(scratch);
+	}
+
+	if (ok) {
+		VkPipelineBindPoint bind = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+		vkCmdBindDescriptorSets(cmd->handle, bind, pipeline->layout, set_index, 1, &set, 0, 0);
+	}
+
+	return ok;
+}
+
 void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
 	LOG_TRACE("Copying region of %llu from %p to %p", size, src, dst);
 	VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
@@ -3995,7 +3870,7 @@ Image2D load_image(Arena *arena, String8 path) {
 	return result;
 }
 
-Image2D load_cubemap(Arena *arena, String8 paths[FACE_COUNT]) {
+Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count) {
 	Image2D result = { 0 };
 
 	Image2D images[FACE_COUNT];

@@ -7,6 +7,8 @@
 
 #define C_PI 3.14159265358979323846264338327950288
 #define C_PIf ((float)C_PI)
+#define TAU C_PI * 2
+#define TAUf C_PIf * 2
 #define EPSILON 1e-6f
 
 #define FLOAT_MAX 3.40282347e+38F
@@ -44,6 +46,11 @@ static inline float to_degrees(float radians) { return radians * (180.0f / C_PIf
 static inline float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
 static inline float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
 static inline float lerpf(float start, float end, float t) { return start + (end - start) * t; }
+/* static inline float lerp_anglef(float start, float end, float t) { */
+/* 	float difference = fmod(end - start, TAU); */
+/* 	float distance = fmod(2.0 * difference, TAU) - difference; */
+/* 	return start + distance * t; */
+/* } */
 static inline float minf(float a, float b) { return a < b ? a : b; }
 static inline float maxf(float a, float b) { return a > b ? a : b; }
 
