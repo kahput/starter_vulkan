@@ -176,6 +176,8 @@ static inline bool rect_contains_float2(Rectangle rect, float32x2 position) { re
 #define BLUE rgb(0, 0, 255)
 
 #define WHITE rgb(255, 255, 255)
+#define GRAY rgb(128, 128, 128)
+#define DARK_GRAY rgb(64, 64, 64)
 #define BLACK rgb(0, 0, 0)
 
 static inline uint32_t color_pack(Color c) {

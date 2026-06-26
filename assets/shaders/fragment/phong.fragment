@@ -11,9 +11,6 @@
 #define TEXTURE_COUNT 5
 layout(set = 1, binding = 1) uniform sampler2D u_textures[TEXTURE_COUNT];
 
-
-float shadow_calculation(vec4 lightspace, float bias); 
-
 layout(push_constant) uniform ConstantBlock {
     mat4 model;
     vec4 tint;
@@ -31,10 +28,10 @@ in ShaderInput {
 } fs_input;
 
 layout(location = 0) out vec4 out_color;
+float shadow_calculation(vec4 lightspace, float bias); 
 
 void main() {
     vec4 albedo = texture(u_textures[TEXTURE_ALBEDO], fs_input.uv + pc.uv_offset) * pc.tint;
-    if (albedo.a < 1.0) discard;
 
     vec3 normal = normalize(fs_input.normal);
     vec3 fragment_to_light = normalize(lights[0].position.xyz - fs_input.worldspace);

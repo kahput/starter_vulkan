@@ -26,14 +26,16 @@ out ShaderOutput {
 
 void main() {
     Vertex3 vertex = vertex_buffer[gl_VertexIndex];
-    vs_output.worldspace = vec3(pc.model * vec4(vertex.position.xyz, 1.0));
-    gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0);
 
+    vs_output.worldspace = vec3(pc.model * vec4(vertex.position.xyz, 1.0));
     vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
+
     vs_output.normal = mat3(transpose(inverse(pc.model))) * vertex.normal.xyz;
     vs_output.uv = vertex.uv * pc.uv_scale;
 
     float dist = length(vec3(frame.view * vec4(vs_output.worldspace, 1.0)));
     vs_output.fog_strength = exp(-pow(dist * frame.fog_density, frame.fog_gradient));
     vs_output.fog_strength = clamp(vs_output.fog_strength, 0.0, 1.0);
+
+    gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0);
 }

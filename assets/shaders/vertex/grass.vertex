@@ -34,12 +34,12 @@ void main() {
     vs_output.worldspace = vec3(pc.model * vec4(transform.xyz + vertex.position.xyz, 1.0));
     vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
 
-    gl_Position = frame.projection * frame.view * pc.model * vec4(vs_output.worldspace, 1.0);
-
     vs_output.normal = vec3(0.0, 1.0, 0.0);
     vs_output.uv = vertex.uv * pc.uv_scale;
 
     float dist = length(vec3(frame.view * vec4(vs_output.worldspace, 1.0)));
     vs_output.fog_strength = exp(-pow(dist * frame.fog_density, frame.fog_gradient));
     vs_output.fog_strength = clamp(vs_output.fog_strength, 0.0, 1.0);
+
+    gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0);
 }

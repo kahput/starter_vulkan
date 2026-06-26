@@ -1,3 +1,4 @@
+
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
@@ -59,7 +60,7 @@ struct GFX_Image {
 	uint32_t width, height;
 
 	ImageOptions options;
-	ResourceUsage usage;
+	ResourceUsage res_usage;
 };
 
 typedef struct GFX_Sampler GFX_Sampler;
@@ -70,15 +71,42 @@ struct GFX_Sampler {
 	VkSamplerCreateInfo info;
 };
 
-#define MAX_DESCRIPTOR_SETS 4
+typedef struct {
+	char name[128];
+
+	UniformType type;
+	uint32_t binding, count;
+
+	union {
+		struct {
+			GFX_Buffer *handle; // transient if 0
+			uint64_t offset, size;
+			void *data;
+		} buffer;
+
+		struct {
+			GFX_Image **images;
+			GFX_Sampler *sampler;
+		} sampler_with_textures;
+	} resource;
+} Uniform;
+
+typedef struct {
+	Uniform uniforms[32];
+	uint32_t uniform_count;
+} UniformSet;
+
+#define MAX_UNIFORM_SETS 4
 typedef struct Shader GFX_Pipeline;
 struct Shader {
 	GFX_Pipeline *next;
 
 	VkPipeline handle;
 	VkPipelineLayout layout;
-	VkDescriptorSetLayout set_layouts[MAX_DESCRIPTOR_SETS];
 	VkShaderModule shaders[SHADER_STAGE_COUNT];
+
+	VkDescriptorSetLayout set_layouts[MAX_UNIFORM_SETS];
+	UniformSet set_infos[MAX_UNIFORM_SETS];
 };
 
 #define SWAPCHAIN_IMAGE_COUNT 3
@@ -101,24 +129,6 @@ struct Swapchain {
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
 	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
 };
-
-typedef struct {
-	UniformType type;
-	uint32_t binding, count;
-
-	union {
-		struct {
-			GFX_Buffer *handle; // transient if 0
-			uint64_t offset, size;
-			void *data;
-		} buffer;
-
-		struct {
-			GFX_Image **images;
-			GFX_Sampler *sampler;
-		} sampler_with_textures;
-	} as;
-} Uniform;
 
 #define MAX_BUFFERS 1024
 #define MAX_IMAGES 512
@@ -261,44 +271,78 @@ bool gfx_image_resize(GFX_Context *context, GFX_Image *image, uint32_t new_width
 bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set, Uniform *uniforms, uint32_t uniform_count);
 
 static inline Uniform uniform_data(uint32_t binding, void *data, uint64_t size) {
-	return (Uniform){ .type = UNIFORM_TYPE_UNIFORM_BUFFER, .binding = binding, .count = 1, .as.buffer = { .data = data, .size = size } };
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_UNIFORM_BUFFER,
+		.binding = binding,
+		.count = 1,
+		.resource.buffer = { .data = data, .size = size },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, s(result.name).length)); */
+
+	return result;
 }
 
 static inline Uniform storage_data(uint32_t binding, void *data, uint64_t size) {
-	return (Uniform){ .type = UNIFORM_TYPE_STORAGE_BUFFER, .binding = binding, .count = 1, .as.buffer = { .data = data, .size = size } };
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_STORAGE_BUFFER,
+		.binding = binding,
+		.count = 1,
+		.resource.buffer = { .data = data, .size = size },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
+}
+
+static inline Uniform storage_images(uint32_t binding, GFX_Image **images, uint32_t image_count) {
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_STORAGE_IMAGE,
+		.binding = binding,
+		.count = image_count,
+		.resource.sampler_with_textures.images = images,
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
 }
 
 /* static inline Uniform uniform_buffer(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) { */
 /* 	return (Uniform){ .type = UNIFORM_TYPE_UNIFORM_BUFFER, .binding = binding, .count = 1, .as.buffer = { .handle = buffer, .offset = offset, .size = size } }; */
 /* } */
 
-static inline Uniform storage_buffer(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) {
-	return (Uniform){ .type = UNIFORM_TYPE_STORAGE_BUFFER, .binding = binding, .count = 1, .as.buffer = { .handle = buffer, .offset = offset, .size = size } };
+static inline Uniform storage_buffers(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) {
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_STORAGE_BUFFER,
+		.binding = binding,
+		.count = 1,
+		.resource.buffer = { .handle = buffer, .offset = offset, .size = size },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
 }
 
 static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images, uint32_t image_count, GFX_Sampler *sampler) {
-	return (Uniform){ .type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE, .binding = binding, .count = image_count, .as.sampler_with_textures = { .images = images, .sampler = sampler } };
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE,
+		.binding = binding,
+		.count = image_count,
+		.resource.sampler_with_textures = { .images = images, .sampler = sampler },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
 }
 
-#define GFX_SAMPLED_IMAGE(b, img, samp)                                      \
-	{                                                                        \
-		.type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE, .binding = (b), .count = 1, \
-		.as.sampler_with_textures = {                                        \
-			.images = (GFX_Image *[]){ (img) },                              \
-			.image_count = 1,                                                \
-			.sampler = (samp),                                               \
-		}                                                                    \
-	}
+void *gfx_cmd_push(GFX_CommandContext *cmd, uint64_t size);
+uint64_t gfx_cmd_put(GFX_CommandContext *cmd, uint64_t size, void *src);
 
-#define GFX_SAMPLED_IMAGE_ARRAY(b, imgs_array, n, samp)                        \
-	{                                                                          \
-		.type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE, .binding = (b), .count = (n), \
-		.as.sampler_with_textures = {                                          \
-			.images = (imgs_array),                                            \
-			.image_count = (n),                                                \
-			.sampler = (samp),                                                 \
-		}                                                                      \
-	}
+/* uint64_t gfx_cmd_write(GFX_CommandContext *cmd, uint64_t offset, uint64_t size, void *src); */
 
 void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
 void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height);
@@ -308,7 +352,9 @@ void gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Im
 void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target);
 void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels);
 void gfx_cmd_buffer_copy(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
-/* VkDescriptorSet gfx_cmd_bindset_push(GFX_CommandBuffer *cmd); */
+
+void gfx_cmd_pipeline_bind(GFX_CommandContext *cmd, GFX_Pipeline *pipeline);
+void gfx_cmd_dispatch(GFX_CommandContext *context, uint32_t x, uint32_t y, uint32_t z);
 
 void gfx_image_write(GFX_Context *context, GFX_Image *image, Rectangle region, void *pixels);
 void gfx_buffer_write(GFX_Context *context, GFX_Buffer *target, uint64_t offset, uint64_t size, void *data);
@@ -316,7 +362,7 @@ void gfx_buffer_write(GFX_Context *context, GFX_Buffer *target, uint64_t offset,
 VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage);
 
 typedef enum {
-	TEXTURE_SLOT_ALEBDO,
+	TEXTURE_SLOT_ALBEDO,
 	TEXTURE_SLOT_METAL_ROUGHNESS,
 	TEXTURE_SLOT_NORMAL,
 	TEXTURE_SLOT_OCCLUSION,
@@ -409,13 +455,6 @@ String8 meshid_to_path[MESH_COUNT] = {
 	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
 };
 
-typedef struct {
-	GFX_Buffer vertex_buffer, index_buffer;
-	uint32_t vertex_cursor, index_cursor;
-
-	Mesh meshes[MESH_COUNT];
-} RES_Cache;
-
 typedef enum {
 	FACE_RIGHT,
 	FACE_LEFT,
@@ -427,6 +466,14 @@ typedef enum {
 	FACE_COUNT,
 } Face;
 
+typedef enum {
+	AXIS_X,
+	AXIS_Y,
+	AXIS_Z,
+	AXIS_XY = AXIS_Z,
+	AXIS_XYZ,
+} Axis;
+
 Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
@@ -437,7 +484,7 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 void push_rect(Arena *arena, Rectangle rect, Color color);
 
 typedef struct {
-	Arena *draw_arena;
+	Arena *batch_arena;
 
 	float2 mouse_position;
 	bool mouse_pressed, mouse_released;
@@ -457,6 +504,8 @@ typedef struct {
 
 ImguiInteraction imgui_interact(uint64_t id, Rectangle rect);
 ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h);
+float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float t);
+float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float t);
 
 uint32_t find_animation(AnimationClip *clips, uint32_t count, String8 target) {
 	for (uint32_t anim_index = 0; anim_index < count; ++anim_index)
@@ -504,6 +553,7 @@ int main(void) {
 	skybox.gpu_image = gfx_image_make(context, skybox.width, skybox.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
 
 	Image2D terrain_texture = load_image(arena, s("assets/textures/base_grass.png"));
+	Image2D grid_texture = load_image(arena, s("assets/textures/prototype/texture_09.png"));
 	/* Image2D grass_billboard_texture = load_image(arena, s("assets/textures/grass.png")); */
 
 	GFX_Sampler *linear_sampler[WRAP_MODE_COUNT] = {
@@ -547,7 +597,7 @@ int main(void) {
 	GFX_Pipeline pipeline_3d = { 0 };
 	GFX_Pipeline pipeline_skybox = { 0 };
 	GFX_Pipeline pipeline_grass = { 0 };
-	{ // create 3d graphics pipeline
+	{ // create 3d graphics pipelines
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/phong.fragment.spv"));
@@ -563,6 +613,7 @@ int main(void) {
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/grass.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/grass.fragment.spv"));
+
 		pipeline_grass = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "pipeline_grass",
@@ -612,16 +663,16 @@ int main(void) {
 	const uint32_t map_depth = 256;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	meshes[MESH_TERRAIN] = generate_plane(arena, FACE_UP, map_width, map_depth, 4, 4);
-	meshes[MESH_TERRAIN].materials[0].textures[TEXTURE_SLOT_ALEBDO] = terrain_texture;
+	meshes[MESH_TERRAIN] = generate_plane(arena, FACE_UP, map_width, map_depth, 256, 256);
+	meshes[MESH_TERRAIN].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
 
 	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
 		if (meshid_to_path[meshid].length == 0)
 			continue;
-
 		meshes[meshid] = load_gltf(arena, meshid_to_path[meshid]);
+
 		if (meshes[meshid].skeleton.bone_count == 0 || meshid == MESH_MAGE)
 			continue;
 		animations[meshid] = load_gltf_animations(arena, meshid_to_path[meshid], &animation_counts[meshid]);
@@ -710,20 +761,15 @@ int main(void) {
 		}
 	}
 
-	GFX_Buffer *scratch_buffers[MAX_FRAMES_IN_FLIGHT];
-	for (uint32_t index = 0; index < countof(scratch_buffers); ++index) {
-		scratch_buffers[index] = gfx_buffer_make(context, MiB(4), BUFFER_MEMORY_SHARED, BUFFER_USAGE_STORAGE | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_TRANSFER, "scratch_buffer");
-		vkMapMemory(context->device.logical, scratch_buffers[index]->memory, 0, scratch_buffers[index]->size, 0, (void **)&scratch_buffers[index]->mapped);
-	}
-
 	bool is_open = true;
 
 	float dt = 0.0f;
 	float last_frame = 0.0f;
 
-	Arena frame_arena[] = { arena_make(MiB(1)) };
+	Arena frame_arena[] = { arena_make(MiB(4)) };
 	memory_zero(context->staging_buffer->mapped, context->staging_buffer_frame_size);
 
+	// :init
 	typedef enum {
 		VIEWPORT_STATE_EDITOR,
 		VIEWPORT_STATE_GAME,
@@ -802,20 +848,28 @@ int main(void) {
 		}
 
 		// :update
-
 		Arena batch_2d[1] = { {
 		  .base = arena_push_count(frame_arena, Vertex2, 6 * 1024),
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
 		} };
 
+		static float fog_density = 0.02f, fog_gradient = 5.0f;
+
+		// :imgui
 		imgui_frame_begin(batch_2d);
 		{
-			if (imgui_button(__LINE__, 10, 10, 100, 100).clicked) {
-				LOG_INFO("button clicked.");
-			}
-		}
+			static float slider_t = 0.0f;
+			float min = 0.0f, max = 10.0f;
 
-		imgui_frame_end();
+			/* slider_t = imgui_slidervf(__LINE__, rect(100, 100, 50, 300), min, max, slider_t); */
+			float y_offset = 10.0f, pad = 8.0f;
+			push_rect(batch_2d, rect(10 - pad, y_offset - pad, 200 + pad * 2, (15 + pad) * 2 + pad), rgb(25, 25, 25));
+			fog_density = imgui_sliderhf(__LINE__, rect(10, y_offset, 200, 15), 0.01f, 0.03f, fog_density);
+			y_offset += 15 + pad;
+			fog_gradient = imgui_sliderhf(__LINE__, rect(10, y_offset, 200, 15), min, max, fog_gradient);
+
+			imgui_frame_end();
+		}
 
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = float2_from_double2(input_mouse_delta());
@@ -843,115 +897,123 @@ int main(void) {
 				Mesh *mesh = &meshes[instance->id];
 
 				static uint32_t current_anim = 0;
-
-				static float azimuth = C_PIf * 3 / 2.f;
-				static float theta = C_PIf / 3.f;
 				static float anim_t = 0.0f;
 				static float blend_t = 0.0f;
-				anim_t += dt;
 
-				static const float sensitivity = 1.0f;
-				static const float spring_arm_length = 10.f;
-				static const float walk_speed = 3.0f, run_speed = 6.0f;
+				float current_theta = 0;
+				float current_azimuth = 0; // [-pi, pi]
 
-				float yaw_delta = mouse_delta.x * sensitivity;
-				float pitch_delta = mouse_delta.y * sensitivity;
-
-				azimuth = fmodf(azimuth + yaw_delta, C_PIf * 2.f);
-				if (azimuth < 0)
-					azimuth += C_PIf * 2.f;
-
-				theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
-
-				float3 camera_offset = float3_subtract(camera->position, tranform->translation);
-
-				float r = float3_length(camera_offset);
-				if (r < EPSILON)
-					r = EPSILON;
-
-				float current_theta = acosf(camera_offset.y / r);
-				float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
-
-				if (current_azimuth < 0)
-					current_azimuth += C_PIf * 2.f;
-
-				float da = azimuth - current_azimuth;
-				if (da > C_PI)
-					da -= C_PI * 2.f;
-				if (da < -C_PI)
-					da += C_PI * 2.f;
-
-				float lerp = 10.0f * dt;
-
-				current_azimuth += lerp * da;
-				current_theta += lerp * (theta - current_theta);
-
-				camera->position = (float3){
-					(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + tranform->translation.x,
-					spring_arm_length * cosf(current_theta),
-					(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + tranform->translation.z,
-				};
-
-				float3 camera_position = camera->position;
-				float3 camera_target = camera->target;
-
-				camera_position.y = 0.0f;
-				camera_target.y = 0.0f;
-
-				float3 forward, right;
-
-				forward = float3_normalize(float3_subtract(camera_target, camera_position));
-
-				right = float3_cross(forward, camera->up);
-				right = float3_normalize(right);
-
-				float3 direction = { 0, 0, 0 };
 				float2 input_vector = {
 					.x = input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
 					.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
 				};
 
-				direction = float3_add(direction, float3_scale(forward, input_vector.x));
-				direction = float3_add(direction, float3_scale(right, input_vector.y));
+				{ // handle camera & player movement
+					static float azimuth = C_PIf * 3 / 2.f;
+					static float theta = C_PIf / 3.f;
+					anim_t += dt;
 
-				float length = float3_length(direction);
-				if (length > EPSILON)
-					direction = float3_scale(direction, 1 / length);
+					static const float sensitivity = 1.0f;
+					static const float spring_arm_length = 10.f;
+					static const float walk_speed = 3.0f, run_speed = 6.0f;
 
-				float speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
-				tranform->translation = float3_add(tranform->translation, float3_scale(direction, speed * dt));
+					float yaw_delta = mouse_delta.x * sensitivity;
+					float pitch_delta = mouse_delta.y * sensitivity;
 
-				camera->target.x = tranform->translation.x;
-				camera->target.z = tranform->translation.z;
+					azimuth = fmodf(azimuth + yaw_delta, C_PIf * 2.f);
+					if (azimuth < 0)
+						azimuth += C_PIf * 2.f;
 
-				uint32_t target_anim = current_anim;
-				if (float2_length_squared(input_vector)) {
-					input_vector = float2_normalize(input_vector);
+					theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
 
-					float target_angle = -current_azimuth - C_PIf + atan2f(input_vector.x, input_vector.y);
-					quat4 target_rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
+					float3 camera_offset = float3_subtract(camera->position, tranform->translation);
 
-					float t = 1.0f - expf(-15.0f * dt);
-					tranform->rotation = quat4_slerp(tranform->rotation, target_rotation, t);
+					float r = float3_length(camera_offset);
+					if (r < EPSILON)
+						r = EPSILON;
 
-					if (input_key_down(KEY_CODE_LEFTSHIFT))
-						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/run-loop"));
-					else
-						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/walk-loop"));
-				} else
-					target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/idle-loop"));
+					current_theta = acosf(camera_offset.y / r);
+					current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+
+					if (current_azimuth < 0)
+						current_azimuth += C_PIf * 2.f;
+
+					float da = azimuth - current_azimuth;
+					if (da > C_PI)
+						da -= C_PI * 2.f;
+					if (da < -C_PI)
+						da += C_PI * 2.f;
+
+					float t = 1.0f - expf(-10.0f * dt);
+
+					current_azimuth += t * da;
+					current_theta += t * (theta - current_theta);
+
+					camera->position = (float3){
+						(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + tranform->translation.x,
+						spring_arm_length * cosf(current_theta),
+						(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + tranform->translation.z,
+					};
+
+					float3 camera_position = camera->position;
+					float3 camera_target = camera->target;
+
+					camera_position.y = 0.0f;
+					camera_target.y = 0.0f;
+
+					float3 forward, right;
+
+					forward = float3_normalize(float3_subtract(camera_target, camera_position));
+
+					right = float3_cross(forward, camera->up);
+					right = float3_normalize(right);
+
+					float3 direction = { 0, 0, 0 };
+
+					direction = float3_add(direction, float3_scale(forward, input_vector.x));
+					direction = float3_add(direction, float3_scale(right, input_vector.y));
+
+					float length = float3_length(direction);
+					if (length > EPSILON)
+						direction = float3_scale(direction, 1 / length);
+
+					float speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
+					tranform->translation = float3_add(tranform->translation, float3_scale(direction, speed * dt));
+
+					camera->target.x = tranform->translation.x;
+					camera->target.z = tranform->translation.z;
+				}
 
 				Pose final = anim_pose_sample(frame_arena, &animations[instance->id][current_anim], fmodf(anim_t, animations[instance->id][current_anim].duration));
-				if (current_anim != target_anim) {
-					Pose start = final;
-					Pose end = anim_pose_sample(frame_arena, &animations[instance->id][target_anim], fmodf(anim_t, animations[instance->id][target_anim].duration));
+				{ // handle current animation
+					uint32_t target_anim = current_anim;
+					if (float2_length_squared(input_vector)) {
+						input_vector = float2_normalize(input_vector);
 
-					final = anim_pose_blend_local(frame_arena, &end, &start, blend_t, 0);
+						float target_angle = -current_azimuth - C_PIf + atan2f(input_vector.x, input_vector.y);
+						quat4 target_rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
 
-					blend_t += dt * 5;
-					if (blend_t >= 1.0f) {
-						current_anim = target_anim;
-						blend_t = 0.0f;
+						float t = 1.0f - expf(-15.0f * dt);
+						tranform->rotation = quat4_slerp(tranform->rotation, target_rotation, t);
+
+						if (input_key_down(KEY_CODE_LEFTSHIFT))
+							target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/run-loop"));
+						else
+							target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/walk-loop"));
+					} else
+						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/idle-loop"));
+
+					if (current_anim != target_anim) {
+						Pose start = final;
+						Pose end = anim_pose_sample(frame_arena, &animations[instance->id][target_anim], fmodf(anim_t, animations[instance->id][target_anim].duration));
+
+						final = anim_pose_blend_local(frame_arena, &end, &start, blend_t, 0);
+
+						blend_t += dt * 5;
+						if (blend_t >= 1.0f) {
+							current_anim = target_anim;
+							blend_t = 0.0f;
+						}
 					}
 				}
 
@@ -970,55 +1032,19 @@ int main(void) {
 		GFX_Image compute_blit_target = gfx_swapchain_backbuffer(context, cmd, swapchains[0]);
 		if (compute_blit_target.handle) {
 			// transition swapchain target & blit src compute image
-			gfx_cmd_image_transition(
-				cmd,
-				RESOURCE_USAGE_TRANSFER_DST,
-				&compute_blit_target);
-			gfx_cmd_image_transition(
-				cmd,
-				RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
-				compute_image);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, &compute_blit_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
-			{ // Bind compute pipeline & descriptor set
-				VkDescriptorSetAllocateInfo alloc_info = {
-					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-					.descriptorPool = cmd->descriptor_pool,
-					.descriptorSetCount = 1,
-					.pSetLayouts = c_pipeline.set_layouts + 0,
-				};
-
-				VkDescriptorSet compute_set = 0;
-				vkAllocateDescriptorSets(context->device.logical, &alloc_info, &compute_set);
-				VkDescriptorImageInfo image_info = {
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.imageView = compute_image->view,
-				};
-				VkWriteDescriptorSet write = {
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = compute_set,
-					.dstBinding = 0,
-					.dstArrayElement = 0,
-					.descriptorCount = 1,
-					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-					.pImageInfo = &image_info,
-				};
-				vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
-
-				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.handle);
-				vkCmdBindDescriptorSets(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, c_pipeline.layout, 0, 1, &compute_set, 0, 0);
-			}
+			gfx_cmd_pipeline_bind(cmd, &c_pipeline);
+			gfx_bind(context, &c_pipeline, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
-			vkCmdDispatch(cmd->handle, 40, 23, 1);
-			gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
+			gfx_cmd_dispatch(cmd, 40, 23, 1);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
 			gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target);
 
 			// transition swapchain images for presenting
-			gfx_cmd_image_barrier(
-				cmd,
-				RESOURCE_USAGE_TRANSFER_DST,
-				RESOURCE_USAGE_PRESENT,
-				&compute_blit_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &compute_blit_target);
 		}
 
 		GFX_Image main_target = gfx_swapchain_backbuffer(context, cmd, swapchains[1]);
@@ -1037,7 +1063,6 @@ int main(void) {
 
 			blink_timer += dt;
 
-			uint64_t scratch_cursor = 0;
 			for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
 				MeshInstance *instance = &instances[instance_index];
 				if (animation_counts[instance->id] == 0 || instance->skin_matrices == 0)
@@ -1045,18 +1070,15 @@ int main(void) {
 
 				Mesh *mesh = &meshes[instance->id];
 
-				uint64_t matrices_offset = scratch_cursor;
-				uint64_t matrices_size = alignup(mesh->skeleton.bone_count * sizeof(float4x4), 256);
-				scratch_cursor += matrices_size;
+				uint64_t matrices_size = mesh->skeleton.bone_count * sizeof(float4x4);
+				uint64_t matrices_offset = gfx_cmd_put(cmd, matrices_size, instance->skin_matrices);
 
-				instance->skinned_vertices_offset = scratch_cursor;
 				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
-				scratch_cursor += skinned_vertices_size;
-
-				memory_copy(scratch_buffers[context->current_frame_index]->mapped + matrices_offset, instance->skin_matrices, matrices_size);
+				instance->skinned_vertices_offset = gfx_cmd_put(cmd, skinned_vertices_size, 0);
 
 				{ // :skinning
-					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_skinning.handle);
+
+					gfx_cmd_pipeline_bind(cmd, &pipeline_skinning);
 					struct {
 						uint32_t vertex_count;
 						uint32_t _pad0;
@@ -1066,21 +1088,20 @@ int main(void) {
 						uint64_t output_address;
 					} pc = {
 						.vertex_count = mesh->total_vertex_count,
-						.skinning_matrices_address = scratch_buffers[context->current_frame_index]->address + matrices_offset,
+						.skinning_matrices_address = cmd->transient_buffer->address + matrices_offset,
 						.input_address = mesh->buffer->address + mesh->buffer_vertex_byte_offset,
 						.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
-						.output_address = scratch_buffers[context->current_frame_index]->address + instance->skinned_vertices_offset,
+						.output_address = cmd->transient_buffer->address + instance->skinned_vertices_offset,
 					};
 					vkCmdPushConstants(cmd->handle, pipeline_skinning.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 
-					vkCmdDispatch(cmd->handle, (mesh->total_vertex_count + 255) / 256, 1, 1);
-
+					gfx_cmd_dispatch(cmd, (mesh->total_vertex_count + 255) / 256, 1, 1);
 					gfx_cmd_buffer_barrier(
 						cmd,
 						RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
 						RESOURCE_USAGE_VERTEX_SHADER_READ,
 						instance->skinned_vertices_offset,
-						skinned_vertices_size, scratch_buffers[context->current_frame_index]);
+						skinned_vertices_size, cmd->transient_buffer);
 				}
 			}
 
@@ -1103,7 +1124,8 @@ int main(void) {
 
 			Light lights[] = {
 				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
-				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
+				/* { .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 0.5f, 0.2f, 1.0f }, float4x4_identity() }, // sunset */
+				/* { .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.1f, 0.25f, 0.8f, 1.0f }, float4x4_identity() }, // night */
 			};
 			float ortho_size = 10.0f;
 			lights[0].matrix = float4x4_multiply(
@@ -1111,8 +1133,8 @@ int main(void) {
 				float4x4_lookat(float3_from_float4(lights[0].position), FLOAT3_ZERO, FLOAT3_Y));
 
 			Frame3D frame_data = {
-				.fog_density = 0.02f,
-				.fog_gradient = 5.0f,
+				.fog_density = fog_density,
+				.fog_gradient = fog_gradient,
 				.time = time,
 			};
 
@@ -1154,7 +1176,7 @@ int main(void) {
 				frame_data.camera_position = lights[0].position;
 				frame_data.proj.elements[5] *= -1;
 
-				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_shadow.handle);
+				gfx_cmd_pipeline_bind(cmd, &pipeline_shadow);
 				gfx_bind(context, &pipeline_shadow, 0,
 					array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))) //
 				);
@@ -1185,12 +1207,12 @@ int main(void) {
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
 						if (animation_counts[instance->id] && instance->skin_matrices) {
-							buffer = scratch_buffers[context->current_frame_index];
+							buffer = cmd->transient_buffer;
 							offset = instance->skinned_vertices_offset;
 						}
 
 						gfx_bind(context, &pipeline_shadow, 1,
-							array_arg(Uniform, storage_buffer(0, buffer, offset, size)) //
+							array_arg(Uniform, storage_buffers(0, buffer, offset, size)) //
 						);
 
 						vkCmdPushConstants(cmd->handle, pipeline_shadow.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
@@ -1202,7 +1224,7 @@ int main(void) {
 			}
 
 			{ // :main
-				gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, RESOURCE_USAGE_SHADER_READ, shadow_depthbuffer);
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, shadow_depthbuffer);
 
 				VkRenderingAttachmentInfo color_attachments[] = {
 					{
@@ -1256,15 +1278,15 @@ int main(void) {
 				frame_data.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
 				frame_data.camera_position = float4_from_float3(camera->position, 0.0f);
 
-				vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_3d.handle);
+				gfx_cmd_pipeline_bind(cmd, &pipeline_3d);
 
-				gfx_bind(context, &pipeline_3d, 0, // bind set 0
-					array_arg(Uniform,
-						uniform_data(0, &frame_data, sizeof(frame_data)),
-						storage_data(1, lights, sizeof(lights)),
-						sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
-						sampler_with_textures(3, (GFX_Image *[]){ skybox.gpu_image }, 1, linear_sampler[WRAP_MODE_CLAMP]) //
-						));
+				Uniform uniforms[] = {
+					uniform_data(0, &frame_data, sizeof(frame_data)),
+					storage_data(1, lights, sizeof(lights)),
+					sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
+					sampler_with_textures(3, (GFX_Image *[]){ skybox.gpu_image }, 1, linear_sampler[WRAP_MODE_CLAMP]),
+				};
+				gfx_bind(context, &pipeline_3d, 0, uniforms, countof(uniforms));
 
 				// :draw
 				for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
@@ -1298,8 +1320,8 @@ int main(void) {
 						};
 
 						if (instance->id == MESH_TERRAIN) {
-							pc.uv_scale.x *= 4.f;
-							pc.uv_scale.y *= 4.f;
+							pc.uv_scale.x *= 8.f;
+							pc.uv_scale.y *= 8.f;
 						}
 
 						if (instance->id == MESH_HERO_MALE && part_index == 3) { // hero head
@@ -1316,12 +1338,12 @@ int main(void) {
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
 						if (animation_counts[instance->id] && instance->skin_matrices) {
-							buffer = scratch_buffers[context->current_frame_index];
+							buffer = cmd->transient_buffer;
 							offset = instance->skinned_vertices_offset;
 						}
 
 						GFX_Image *images[] = {
-							[TEXTURE_SLOT_ALEBDO] = material->textures[TEXTURE_SLOT_ALEBDO].gpu_image,
+							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].gpu_image,
 							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu_image,
 							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu_image,
 							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu_image,
@@ -1329,7 +1351,7 @@ int main(void) {
 						};
 
 						Uniform uniforms[] = {
-							storage_buffer(0, buffer, offset, size),
+							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
 						gfx_bind(context, &pipeline_3d, 1, uniforms, countof(uniforms));
@@ -1343,7 +1365,7 @@ int main(void) {
 				{
 					Mesh *mesh = &meshes[MESH_GRASS_BILLBOARD];
 
-					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_grass.handle);
+					gfx_cmd_pipeline_bind(cmd, &pipeline_grass);
 					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -1370,7 +1392,7 @@ int main(void) {
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
 						GFX_Image *images[] = {
-							[TEXTURE_SLOT_ALEBDO] = material->textures[TEXTURE_SLOT_ALEBDO].gpu_image,
+							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].gpu_image,
 							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu_image,
 							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu_image,
 							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu_image,
@@ -1378,9 +1400,9 @@ int main(void) {
 						};
 
 						Uniform uniforms[] = {
-							storage_buffer(0, buffer, offset, size),
-							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT]),
-							storage_buffer(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
+							storage_buffers(0, buffer, offset, size),
+							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
+							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
 						};
 						gfx_bind(context, &pipeline_grass, 1, uniforms, countof(uniforms));
 
@@ -1390,7 +1412,7 @@ int main(void) {
 				}
 
 				{ // :skybox
-					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_skybox.handle);
+					gfx_cmd_pipeline_bind(cmd, &pipeline_skybox);
 					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 				}
 
@@ -1410,31 +1432,28 @@ int main(void) {
 						.time = time,
 					};
 
-					vkCmdBindPipeline(cmd->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_2d.handle);
+					gfx_cmd_pipeline_bind(cmd, &pipeline_2d);
 
 					GFX_Image *images[32] = { 0 };
 					for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
 						images[texture_id] = white_texture;
 
-					Uniform set0[] = {
+					Uniform uniforms0[] = {
 						uniform_data(0, &frame_2d, sizeof(frame_2d)),
 						storage_data(1, batch_2d->base, batch_2d->offset),
 					};
-					Uniform set1[] = { sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]) };
+					Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]) };
 
-					gfx_bind(context, &pipeline_2d, 0, set0, countof(set0));
-					gfx_bind(context, &pipeline_2d, 1, set1, countof(set1));
+					gfx_bind(context, &pipeline_2d, 0, uniforms0, countof(uniforms0));
+					gfx_bind(context, &pipeline_2d, 1, uniforms1, countof(uniforms1));
 
 					vkCmdDraw(cmd->handle, batch_2d->offset / sizeof(Vertex2), 1, 0, 0);
 				}
 
 				vkCmdEndRendering(cmd->handle);
 			}
-			gfx_cmd_image_barrier(
-				cmd,
-				RESOURCE_USAGE_COLOR_ATTACHMENT,
-				RESOURCE_USAGE_PRESENT,
-				&main_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &main_target);
+
 		} else { //  TODO: resize swapchain
 			gfx_swapchain_resize(context, swapchains[1], dims.x, dims.y);
 			if (depthbuffer->width != dims.x || depthbuffer->height != dims.y)
@@ -1865,7 +1884,7 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 
 		result->width = width, result->height = height;
 		result->options = options;
-		result->usage = RESOURCE_USAGE_UNDEFINED;
+		result->res_usage = RESOURCE_USAGE_UNDEFINED;
 
 		VkImageCreateInfo image_info = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1883,7 +1902,7 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = vk_usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.initialLayout = gfx__usage_to_image_layout(result->usage),
+			.initialLayout = gfx__usage_to_image_layout(result->res_usage),
 		};
 
 		ok = vkCreateImage(context->device.logical, &image_info, 0, &result->handle) == VK_SUCCESS;
@@ -2217,12 +2236,61 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 	return result;
 }
 
-typedef struct {
-	VkDescriptorSetLayoutBinding bindings[32];
-	uint32_t binding_count;
-} DescriptorSet;
+static UniformType descriptor_type_to_uniform_type[VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT] = {
+	[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = UNIFORM_TYPE_IMAGE,
+	[VK_DESCRIPTOR_TYPE_STORAGE_IMAGE] = UNIFORM_TYPE_STORAGE_IMAGE,
+	[VK_DESCRIPTOR_TYPE_SAMPLER] = UNIFORM_TYPE_SAMPLER,
+	[VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER] = UNIFORM_TYPE_SAMPLER_WITH_IMAGE,
 
-static inline bool gfx__spv_reflect_shader(String8 bytecode, DescriptorSet sets[3]) {
+	[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = UNIFORM_TYPE_UNIFORM_BUFFER,
+	[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = UNIFORM_TYPE_STORAGE_BUFFER,
+
+	[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC] = UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC,
+	[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC] = UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC,
+};
+
+static VkDescriptorType uniform_type_to_descriptor_type[UNIFORM_TYPE_COUNT] = {
+	[UNIFORM_TYPE_IMAGE] = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+	[UNIFORM_TYPE_STORAGE_IMAGE] = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	[UNIFORM_TYPE_SAMPLER] = VK_DESCRIPTOR_TYPE_SAMPLER,
+	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+	[UNIFORM_TYPE_UNIFORM_BUFFER] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	[UNIFORM_TYPE_STORAGE_BUFFER] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+};
+
+static const char *uniform_type_to_string[UNIFORM_TYPE_COUNT] = {
+	[UNIFORM_TYPE_IMAGE] = "UNIFORM_TYPE_IMAGE",
+	[UNIFORM_TYPE_STORAGE_IMAGE] = "UNIFORM_TYPE_STORAGE_IMAGE",
+	[UNIFORM_TYPE_SAMPLER] = "UNIFORM_TYPE_SAMPLER",
+	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = "UNIFORM_TYPE_SAMPLER_WITH_IMAGE",
+	[UNIFORM_TYPE_UNIFORM_BUFFER] = "UNIFORM_TYPE_UNIFORM_BUFFER",
+	[UNIFORM_TYPE_STORAGE_BUFFER] = "UNIFORM_TYPE_STORAGE_BUFFER",
+	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = "UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC",
+	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = "UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC"
+};
+
+bool gfx__uniforms_to_descriptor_bindings(Uniform *uniforms, uint32_t uniform_count, VkDescriptorSetLayoutBinding bindings[32], VkShaderStageFlagBits stages) {
+	bool ok = uniforms && uniform_count > 0 && bindings;
+
+	if (ok) {
+		for (uint32_t index = 0; index < uniform_count; ++index) {
+			Uniform *uniform = &uniforms[index];
+
+			bindings[index] = (VkDescriptorSetLayoutBinding){
+				.binding = uniform->binding,
+				.descriptorCount = uniform->count,
+				.descriptorType = uniform_type_to_descriptor_type[uniform->type],
+				.stageFlags = stages
+			};
+		}
+	}
+
+	return ok;
+}
+
+static inline bool gfx__reflect_shader_uniforms(String8 bytecode, UniformSet sets[MAX_UNIFORM_SETS]) {
 	bool ok = sets;
 
 	ArenaTemp scratch = arena_scratch_begin(0);
@@ -2246,29 +2314,40 @@ static inline bool gfx__spv_reflect_shader(String8 bytecode, DescriptorSet sets[
 		}
 	}
 
-	if (ok) { // populate descriptor set layout description
-		ASSERT(set_count <= 3); // Handle more than 3 descriptor sets
+	if (ok) { // populate uniform metadata
+		ASSERT(set_count <= MAX_UNIFORM_SETS);
 
 		for (uint32_t set_index = 0; set_index < MIN(set_count, 3); ++set_index) {
 			SpvReflectDescriptorSet *spv_set = &reflect_sets[set_index];
-			DescriptorSet *set = &sets[spv_set->set];
+			UniformSet *set = &sets[spv_set->set];
 
 			for (uint32_t binding_index = 0; binding_index < spv_set->binding_count; ++binding_index) {
 				SpvReflectDescriptorBinding *spv_binding = spv_set->bindings[binding_index];
 
 				int32_t existing_index = -1;
-				for (uint32_t search_index = 0; search_index < set->binding_count; ++search_index) {
-					if (set->bindings[search_index].binding == spv_binding->binding) {
+				for (uint32_t search_index = 0; search_index < set->uniform_count; ++search_index) {
+					if (set->uniforms[search_index].binding == spv_binding->binding) {
 						existing_index = search_index;
 						break;
 					}
 				}
 
-				VkDescriptorSetLayoutBinding *binding = &set->bindings[existing_index != -1 ? (uint32_t)existing_index : set->binding_count++];
-				binding->binding = spv_binding->binding;
-				binding->descriptorCount = spv_binding->count;
-				binding->descriptorType = (VkDescriptorType)spv_binding->descriptor_type;
-				binding->stageFlags |= module.shader_stage;
+				Uniform *uniform = &set->uniforms[existing_index != -1 ? (uint32_t)existing_index : set->uniform_count++];
+
+				memory_copy(uniform->name, spv_binding->name, MIN(sizeof(uniform->name), str8_wrap(spv_binding->name).length));
+				if (spv_binding->descriptor_type >= SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
+					spv_binding->descriptor_type <= SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC &&
+					spv_binding->name[0] == 0) {
+					String8 name = str8_wrap(spv_binding->block.member_count == 1 ? spv_binding->block.members[0].name : spv_binding->block.name);
+					memory_copy(uniform->name, name.text, MIN(sizeof(uniform->name) - 1, name.length));
+				}
+				ASSERT(uniform->name[0] != 0);
+
+				uniform->binding = spv_binding->binding;
+				uniform->count = spv_binding->count;
+
+				ASSERT(spv_binding->descriptor_type < countof(descriptor_type_to_uniform_type));
+				uniform->type = descriptor_type_to_uniform_type[(VkDescriptorType)spv_binding->descriptor_type];
 			}
 		}
 	}
@@ -2301,18 +2380,19 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 
 	uint32_t set_count = 0;
 	if (ok) { // create descriptor set layouts
-		DescriptorSet sets[3] = { 0 };
-		gfx__spv_reflect_shader(compute_bytecode, sets);
+		gfx__reflect_shader_uniforms(compute_bytecode, result.set_infos);
 
-		for (uint32_t set_index = 0; set_index < countof(sets); ++set_index) {
-			DescriptorSet *set = &sets[set_count];
-			if (set->binding_count == 0)
+		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
+		for (uint32_t set_index = 0; set_index < MAX_UNIFORM_SETS; ++set_index) {
+			UniformSet *set = &result.set_infos[set_count];
+			if (set->uniform_count == 0)
 				continue;
+			gfx__uniforms_to_descriptor_bindings(set->uniforms, set->uniform_count, bindings, VK_SHADER_STAGE_COMPUTE_BIT);
 
 			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = set->binding_count,
-				.pBindings = set->bindings,
+				.bindingCount = set->uniform_count,
+				.pBindings = bindings,
 			};
 			ok &= vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
 
@@ -2394,20 +2474,21 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 
 	uint32_t set_count = 0;
 	if (ok) { // create descriptor set layouts
-		DescriptorSet sets[3] = { 0 };
 
-		gfx__spv_reflect_shader(fragment_bytecode, sets);
-		gfx__spv_reflect_shader(vertex_bytecode, sets);
+		gfx__reflect_shader_uniforms(fragment_bytecode, result.set_infos);
+		gfx__reflect_shader_uniforms(vertex_bytecode, result.set_infos);
 
-		for (uint32_t set_index = 0; set_index < countof(sets); ++set_index) {
-			DescriptorSet *set = &sets[set_count];
-			if (set->binding_count == 0)
+		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
+		for (uint32_t set_index = 0; set_index < MAX_UNIFORM_SETS; ++set_index) {
+			UniformSet *set = &result.set_infos[set_count];
+			if (set->uniform_count == 0)
 				continue;
+			gfx__uniforms_to_descriptor_bindings(set->uniforms, set->uniform_count, bindings, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT);
 
 			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = set->binding_count,
-				.pBindings = set->bindings,
+				.bindingCount = set->uniform_count,
+				.pBindings = bindings,
 			};
 			ok &= vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
 
@@ -3562,17 +3643,6 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 	return ok;
 }
 
-static VkDescriptorType uniform_type_to_descriptor_type[UNIFORM_TYPE_COUNT] = {
-	[UNIFORM_TYPE_IMAGE] = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-	[UNIFORM_TYPE_STORAGE_IMAGE] = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-	[UNIFORM_TYPE_SAMPLER] = VK_DESCRIPTOR_TYPE_SAMPLER,
-	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-	[UNIFORM_TYPE_UNIFORM_BUFFER] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-	[UNIFORM_TYPE_STORAGE_BUFFER] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
-};
-
 bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
 	bool ok = context && pipeline && uniforms && uniform_count > 0;
 
@@ -3597,6 +3667,24 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 		for (uint32_t uniform_index = 0; uniform_index < uniform_count; ++uniform_index) {
 			Uniform *uniform = &uniforms[uniform_index];
 
+			UniformSet *pipeline_set = &pipeline->set_infos[set_index];
+
+			int32_t found_index = -1;
+			for (uint32_t search_index = 0; search_index < pipeline_set->uniform_count; ++search_index) {
+				if (pipeline_set->uniforms[search_index].binding == uniform->binding) {
+					found_index = search_index;
+					break;
+				}
+			}
+
+			if (found_index == -1) {
+				LOG_ERROR("uniform binding [%u] is not a part of shader inputs.", uniform->binding);
+				ASSERT(false);
+			}
+			ASSERT_FORMAT(uniform->type == pipeline->set_infos[set_index].uniforms[found_index].type,
+				"uniform binding '%s' passed as %s, expected %s.",
+				pipeline_set->uniforms[found_index].name, uniform_type_to_string[uniform->type], uniform_type_to_string[pipeline_set->uniforms[found_index].type]);
+
 			switch (uniform->type) {
 				case UNIFORM_TYPE_STORAGE_IMAGE:
 				case UNIFORM_TYPE_SAMPLER:
@@ -3608,9 +3696,9 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 					if (uniform->type == UNIFORM_TYPE_STORAGE_IMAGE)
 						layout = VK_IMAGE_LAYOUT_GENERAL;
 
-					GFX_Sampler *sampler = uniform->as.sampler_with_textures.sampler;
+					GFX_Sampler *sampler = uniform->resource.sampler_with_textures.sampler;
 					for (uint32_t image_index = 0; image_index < uniform->count; ++image_index) {
-						GFX_Image *image = uniform->as.sampler_with_textures.images[image_index];
+						GFX_Image *image = uniform->resource.sampler_with_textures.images[image_index];
 
 						image_infos[image_index] = (VkDescriptorImageInfo){
 							.imageLayout = image ? layout : 0,
@@ -3635,17 +3723,17 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 					GFX_Buffer *buffer = 0;
 					uint64_t offset = 0;
 					uint64_t size = 0;
-					if (uniform->as.buffer.handle) {
-						buffer = uniform->as.buffer.handle;
-						offset = uniform->as.buffer.offset;
-						size = uniform->as.buffer.size;
-					} else if (uniform->as.buffer.data) {
+					if (uniform->resource.buffer.handle) {
+						buffer = uniform->resource.buffer.handle;
+						offset = uniform->resource.buffer.offset;
+						size = uniform->resource.buffer.size;
+					} else if (uniform->resource.buffer.data) {
 						buffer = cmd->transient_buffer;
 						offset = alignup(cmd->transient_arena->offset, 256);
-						size = uniform->as.buffer.size;
+						size = uniform->resource.buffer.size;
 						memory_copy(
 							arena_push(cmd->transient_arena, alignup(size, 256), 256, 0),
-							uniform->as.buffer.data,
+							uniform->resource.buffer.data,
 							size);
 					} else
 						ASSERT(false); // TODO: Handle fallback
@@ -3677,11 +3765,20 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 	}
 
 	if (ok) {
-		VkPipelineBindPoint bind = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
-		vkCmdBindDescriptorSets(cmd->handle, bind, pipeline->layout, set_index, 1, &set, 0, 0);
+		VkPipelineBindPoint bind_point = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+		vkCmdBindDescriptorSets(cmd->handle, bind_point, pipeline->layout, set_index, 1, &set, 0, 0);
 	}
 
 	return ok;
+}
+
+uint64_t gfx_cmd_put(GFX_CommandContext *cmd, uint64_t size, void *src) {
+	uint64_t result = alignup(cmd->transient_arena->offset, 256);
+	void *dst = arena_push(cmd->transient_arena, alignup(size, 256), 256, 0);
+	if (src)
+		memory_copy(dst, src, size);
+
+	return result;
 }
 
 void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
@@ -3697,7 +3794,7 @@ void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer
 		LOG_WARN("%s - invalid parameter '%s' passed", __func__, cmd == 0 || cmd->handle == 0 ? "GFX_CommandContext" : "GFX_Image");
 
 	if (ok) {
-		ResourceUsage original = dst->usage;
+		ResourceUsage original = dst->res_usage;
 		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
 
 		uint32_t layer_count = gfx__image_options_to_layer_count(dst->options);
@@ -3726,29 +3823,33 @@ void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer
 }
 
 void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target) {
-	VkPipelineStageFlags src_stage = gfx__usage_to_pipeline_stage(src);
-	VkPipelineStageFlags dst_stage = gfx__usage_to_pipeline_stage(dst);
-	VkAccessFlags src_access = gfx__usage_to_access(src);
-	VkAccessFlags dst_access = gfx__usage_to_access(dst);
+	bool ok = cmd && target;
 
-	VkBufferMemoryBarrier buffer_barrier = {
-		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-		.buffer = target->handle,
-		.srcAccessMask = src_access,
-		.dstAccessMask = dst_access,
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.offset = offset,
-		.size = size,
-	};
-	vkCmdPipelineBarrier(cmd->handle, src_stage, dst_stage, 0, 0, 0, 1, &buffer_barrier, 0, 0);
+	if (ok) {
+		VkPipelineStageFlags src_stage = gfx__usage_to_pipeline_stage(src);
+		VkPipelineStageFlags dst_stage = gfx__usage_to_pipeline_stage(dst);
+		VkAccessFlags src_access = gfx__usage_to_access(src);
+		VkAccessFlags dst_access = gfx__usage_to_access(dst);
+
+		VkBufferMemoryBarrier buffer_barrier = {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+			.buffer = target->handle,
+			.srcAccessMask = src_access,
+			.dstAccessMask = dst_access,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.offset = offset,
+			.size = size,
+		};
+		vkCmdPipelineBarrier(cmd->handle, src_stage, dst_stage, 0, 0, 0, 1, &buffer_barrier, 0, 0);
+	}
 }
 
 void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, GFX_Image *target) {
 	bool ok = cmd && target;
 
 	if (ok) {
-		target->usage = dst;
+		target->res_usage = dst;
 
 		ok = dst;
 	}
@@ -3790,7 +3891,7 @@ void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceU
 }
 
 void gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target) {
-	gfx_cmd_image_barrier(cmd, target->usage, dst, target);
+	gfx_cmd_image_barrier(cmd, target->res_usage, dst, target);
 }
 
 void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
@@ -3833,6 +3934,15 @@ void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t wi
 	uint64_t start_offset = cmd->transient_arena->offset;
 	memory_copy(arena_push(cmd->transient_arena, alignup(size, 256), 1, 0), pixels, size);
 	gfx_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
+}
+
+void gfx_cmd_pipeline_bind(GFX_CommandContext *cmd, GFX_Pipeline *pipeline) {
+	VkPipelineBindPoint bind_point = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+	vkCmdBindPipeline(cmd->handle, bind_point, pipeline->handle);
+}
+
+void gfx_cmd_dispatch(GFX_CommandContext *cmd, uint32_t x, uint32_t y, uint32_t z) {
+	vkCmdDispatch(cmd->handle, x, y, z);
 }
 
 Image2D load_image(Arena *arena, String8 path) {
@@ -3947,8 +4057,8 @@ Mesh load_gltf(Arena *arena, String8 path) {
 
 				if (pbr->base_color_texture.texture) {
 					cgltf_image *image = pbr->base_color_texture.texture->image;
-					out->textures[TEXTURE_SLOT_ALEBDO] = load_gltf_image(arena, directory, image);
-					out->textures[TEXTURE_SLOT_ALEBDO].format = PIXELFORMAT_RGBA8_SRGB;
+					out->textures[TEXTURE_SLOT_ALBEDO] = load_gltf_image(arena, directory, image);
+					out->textures[TEXTURE_SLOT_ALBEDO].format = PIXELFORMAT_RGBA8_SRGB;
 				}
 
 				if (pbr->metallic_roughness_texture.texture) {
@@ -4373,7 +4483,7 @@ void push_rect(Arena *arena, Rectangle rect, Color color) {
 }
 
 void imgui_frame_begin(Arena *arena) {
-	imgui_state.draw_arena = arena;
+	imgui_state.batch_arena = arena;
 	imgui_state.mouse_position = float2_from_double2(input_mouse_position());
 	imgui_state.mouse_pressed = input_mouse_pressed(MOUSE_BUTTON_LEFT);
 	imgui_state.mouse_released = input_mouse_released(MOUSE_BUTTON_LEFT);
@@ -4385,7 +4495,7 @@ void imgui_frame_end(void) {
 	if (imgui_state.mouse_released)
 		imgui_state.active_id = 0;
 
-	imgui_state.draw_arena = 0;
+	imgui_state.batch_arena = 0;
 	imgui_state.hovered_id = 0;
 	imgui_state.mouse_position = (float2){ 0 };
 	imgui_state.mouse_pressed = 0;
@@ -4415,9 +4525,71 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 	Rectangle rect = rect(x, y, w, h);
 	ImguiInteraction result = imgui_interact(id, rect);
 
-	bool ok = imgui_state.draw_arena;
+	bool ok = imgui_state.batch_arena;
 	if (ok)
-		push_rect(imgui_state.draw_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
+		push_rect(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
 
 	return result;
+}
+
+float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float t) {
+	const float pad = bounds.width * 0.8f;
+	push_rect(imgui_state.batch_arena, bounds, WHITE);
+
+	t = clampf(t, min, max);
+
+	float thumb_w = bounds.width - pad * 2.0f;
+	float thumb_h = thumb_w;
+
+	float start = bounds.y + pad;
+	float travel = bounds.height - (pad * 2 + thumb_h);
+
+	float t_norm = max - min != 0.0f ? (t - min) / (max - min) : 0.0f;
+	Rectangle thumb = rect(bounds.x + pad, start + t_norm * travel, thumb_w, thumb_h);
+
+	ImguiInteraction interct = imgui_interact(id, bounds);
+	if (interct.held) {
+		float2 mouse = imgui_state.mouse_position;
+		mouse.y -= start + thumb.height * 0.5f;
+		mouse.y = clampf(mouse.y, 0.0f, travel);
+
+		float mouse_ratio = (travel != 0.0f) ? (mouse.y / travel) : 0.0f;
+		t = min + (mouse_ratio * (max - min));
+	}
+
+	push_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+																					 : DARK_GRAY);
+
+	return t;
+}
+
+float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float t) {
+	const float pad = bounds.height * 0.8f;
+	push_rect(imgui_state.batch_arena, bounds, WHITE);
+
+	t = clampf(t, min, max);
+
+	float thumb_h = bounds.height - pad * 2.0f;
+	float thumb_w = thumb_h;
+
+	float start = bounds.x + pad;
+	float travel = bounds.width - (pad * 2 + thumb_w);
+
+	float t_norm = max - min != 0.0f ? (t - min) / (max - min) : 0.0f;
+	Rectangle thumb = rect(start + t_norm * travel, bounds.y + pad, thumb_w, thumb_h);
+
+	ImguiInteraction interct = imgui_interact(id, bounds);
+	if (interct.held) {
+		float2 mouse = imgui_state.mouse_position;
+		mouse.x -= start + thumb.width * 0.5f;
+		mouse.x = clampf(mouse.x, 0.0f, travel);
+
+		float mouse_ratio = (travel != 0.0f) ? (mouse.x / travel) : 0.0f;
+		t = min + (mouse_ratio * (max - min));
+	}
+
+	push_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+																					 : DARK_GRAY);
+
+	return t;
 }

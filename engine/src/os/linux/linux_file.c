@@ -25,6 +25,14 @@ OS_File os_file_open(String8 filepath, OS_FileMode mode) {
 	return result;
 }
 
+OS_File os_file_open_async(String8 path, OS_FileMode mode) {
+	OS_File result = os__open_file_cwd(path, os__mode_to_flags(mode), 0666);
+	if (os_file_valid(result) == false)
+		LOG_WARN("failed to read '%.*s' - %s", str_spread(path), strerror(errno));
+
+    return result;
+}
+
 uint64_t os_file_size(OS_File handle) {
 	uint64_t result = 0;
 	if (os_file_valid(handle)) {
