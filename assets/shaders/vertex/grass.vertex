@@ -9,6 +9,7 @@ layout(set = 1, binding = 0) readonly buffer VertexBlock {
 layout(set = 1, binding = 2) readonly buffer TransformBlock {
     vec4 transforms[];
 };
+layout(set = 1, binding = 3) uniform sampler2D u_heightmap;
 
 layout(push_constant) uniform ConstantBlock {
     mat4 model;
@@ -17,6 +18,7 @@ layout(push_constant) uniform ConstantBlock {
     vec2 metallic_roughness;
     vec2 uv_offset;
     vec2 uv_scale;
+    uint use_heightmap;
 } pc;
 
 out ShaderOutput {
@@ -31,7 +33,9 @@ void main() {
     Vertex3 vertex = vertex_buffer[gl_VertexIndex];
     vec4 transform = transforms[gl_InstanceIndex];
 
-    vs_output.worldspace = vec3(pc.model * vec4(transform.xyz + vertex.position.xyz, 1.0));
+    vs_output.worldspace = vec3(vec4(transform.xyz + vertex.position.xyz, 1.0));
+    if (pc.use_heightmap == 1)
+        vs_output.worldspace.y += (texture(u_heightmap, (vs_output.worldspace.xz / 256.0) + 0.5).r - 0.5) * 40;
     vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
 
     vs_output.normal = vec3(0.0, 1.0, 0.0);

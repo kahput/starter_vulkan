@@ -39,11 +39,10 @@ void main() {
 
     vec3 fragment_to_camera = normalize(frame.camera_position.xyz - fs_input.worldspace);
 
-    float ambient_strength = 0.2f;
     float specular_strength = pc.metallic_roughness.x;
 
     vec3 light_color = lights[0].color.rgb;
-    vec3 ambient = vec3(ambient_strength) * light_color;
+    vec3 ambient = vec3(frame.ambient) * light_color;
 
     float diffuse_factor = max(dot(normal, fragment_to_light), 0.0) ;
     vec3 diffuse = vec3(diffuse_factor) * light_color;

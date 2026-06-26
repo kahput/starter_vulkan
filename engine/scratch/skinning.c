@@ -376,7 +376,7 @@ typedef struct {
 	uint8_t *pixels;
 
 	// GPU
-	GFX_Image *gpu_image;
+	GFX_Image *gpu;
 
 	// METADATA
 	ImageType type;
@@ -429,7 +429,8 @@ typedef enum {
 	MESH_ROOM,
 
 	MESH_ROOM_LARGE,
-	MESH_TERRAIN,
+	MESH_TERRAIN_FLAT,
+	MESH_TERRAIN_HEIGHTMAP,
 	MESH_GRASS_BILLBOARD,
 
 	MESH_COUNT,
@@ -479,6 +480,7 @@ Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
 Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
+Mesh generate_plane_from_heightmap(Arena *arena, Face orientation, float w, float h, Image2D heightmap);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
 void push_rect(Arena *arena, Rectangle rect, Color color);
@@ -550,11 +552,13 @@ int main(void) {
 			s("assets/textures/skybox_mc/dayBack.png") //
 			) //
 	);
-	skybox.gpu_image = gfx_image_make(context, skybox.width, skybox.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
+	skybox.gpu = gfx_image_make(context, skybox.width, skybox.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
 
 	Image2D terrain_texture = load_image(arena, s("assets/textures/base_grass.png"));
 	Image2D grid_texture = load_image(arena, s("assets/textures/prototype/texture_09.png"));
-	/* Image2D grass_billboard_texture = load_image(arena, s("assets/textures/grass.png")); */
+
+	Image2D heightmap = load_image(arena, s("assets/textures/heightmap.png"));
+	heightmap.gpu = gfx_image_make(context, heightmap.width, heightmap.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_UNORM });
 
 	GFX_Sampler *linear_sampler[WRAP_MODE_COUNT] = {
 		[WRAP_MODE_REPEAT] = gfx_sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_MODE_REPEAT)),
@@ -663,8 +667,12 @@ int main(void) {
 	const uint32_t map_depth = 256;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	meshes[MESH_TERRAIN] = generate_plane(arena, FACE_UP, map_width, map_depth, 256, 256);
-	meshes[MESH_TERRAIN].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
+	meshes[MESH_TERRAIN_FLAT] = generate_plane(arena, FACE_UP, map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
+
+	meshes[MESH_TERRAIN_HEIGHTMAP] = generate_plane_from_heightmap(arena, FACE_UP, 256.f, 256.f, heightmap);
+	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
+
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
 
@@ -684,8 +692,11 @@ int main(void) {
 			gfx_cmd_image_upload(&cmd, white_texture, 1, 1, &(uint32_t){ 0xffffffff });
 			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, white_texture);
 
-			gfx_cmd_image_upload(&cmd, skybox.gpu_image, skybox.width, skybox.height, skybox.pixels);
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, skybox.gpu_image);
+			gfx_cmd_image_upload(&cmd, skybox.gpu, skybox.width, skybox.height, skybox.pixels);
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, skybox.gpu);
+
+			gfx_cmd_image_upload(&cmd, heightmap.gpu, heightmap.width, heightmap.height, heightmap.pixels);
+			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, heightmap.gpu);
 
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
@@ -695,13 +706,13 @@ int main(void) {
 					for (uint32_t texture_slot = 0; texture_slot < TEXTURE_SLOT_COUNT; ++texture_slot) {
 						Image2D *img = &material->textures[texture_slot];
 						if (img->pixels) {
-							img->gpu_image = gfx_image_make(context, img->width, img->height, (ImageOptions){ .format = img->format });
-							gfx_cmd_image_upload(&cmd, img->gpu_image, img->width, img->height, img->pixels);
-							gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, img->gpu_image);
+							img->gpu = gfx_image_make(context, img->width, img->height, (ImageOptions){ .format = img->format });
+							gfx_cmd_image_upload(&cmd, img->gpu, img->width, img->height, img->pixels);
+							gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, img->gpu);
 						} else {
 							img->width = img->height = 1;
 							img->format = PIXELFORMAT_RGBA8_SRGB;
-							img->gpu_image = white_texture;
+							img->gpu = white_texture;
 						}
 					}
 				}
@@ -798,7 +809,7 @@ int main(void) {
 
 	MeshInstance instances[256] = {
 		[0] = { MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, true, 0, 0 },
-		[1] = { MESH_TERRAIN, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true, 0 },
+		[1] = { MESH_TERRAIN_FLAT, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true, 0 },
 	};
 	uint32_t instance_count = 2;
 
@@ -853,23 +864,9 @@ int main(void) {
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
 		} };
 
+		static float ambient_strength = 0.2f;
 		static float fog_density = 0.02f, fog_gradient = 5.0f;
-
-		// :imgui
-		imgui_frame_begin(batch_2d);
-		{
-			static float slider_t = 0.0f;
-			float min = 0.0f, max = 10.0f;
-
-			/* slider_t = imgui_slidervf(__LINE__, rect(100, 100, 50, 300), min, max, slider_t); */
-			float y_offset = 10.0f, pad = 8.0f;
-			push_rect(batch_2d, rect(10 - pad, y_offset - pad, 200 + pad * 2, (15 + pad) * 2 + pad), rgb(25, 25, 25));
-			fog_density = imgui_sliderhf(__LINE__, rect(10, y_offset, 200, 15), 0.01f, 0.03f, fog_density);
-			y_offset += 15 + pad;
-			fog_gradient = imgui_sliderhf(__LINE__, rect(10, y_offset, 200, 15), min, max, fog_gradient);
-
-			imgui_frame_end();
-		}
+		static bool use_heightmap = 0;
 
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = float2_from_double2(input_mouse_delta());
@@ -888,6 +885,43 @@ int main(void) {
 					os_cursor_capture(main_render, false);
 
 				scene_camera_orbit(camera, mouse_delta);
+
+				// :editor
+				imgui_frame_begin(batch_2d);
+				{
+					static float slider_t = 0.0f;
+
+					float pad = 8.0f;
+					float panel_x = 10.f, panel_y = 10.0f;
+
+					float element_h = 15.f;
+					uint32_t element_count = 4;
+					float panel_w = 200.f;
+
+					/* slider_t = imgui_slidervf(__LINE__, rect(100, 100, 50, 300), min, max, slider_t); */
+
+					float fence_h = (element_count - 1) * pad;
+					float total_element_h = element_count * element_h;
+
+					Rectangle panel = rect(panel_x, panel_y, panel_w, fence_h + total_element_h + pad * 2);
+
+					push_rect(batch_2d, panel, rgb(25, 25, 25));
+					fog_density = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.001f, 0.05f, fog_density);
+					panel_y += element_h + pad;
+					fog_gradient = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 15.0f, fog_gradient);
+					panel_y += element_h + pad;
+					ambient_strength = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 1.0f, ambient_strength);
+					panel_y += element_h + pad;
+
+					float button_w = (panel_w - 2 * pad) / 4.f;
+					if (imgui_button(__LINE__, panel_x + pad, panel_y + pad, button_w, element_h).clicked) {
+						use_heightmap = !use_heightmap;
+						instances[1].id = use_heightmap ? MESH_TERRAIN_HEIGHTMAP : MESH_TERRAIN_FLAT;
+					}
+
+					imgui_frame_end();
+				}
+
 			} break;
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
@@ -908,7 +942,7 @@ int main(void) {
 					.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
 				};
 
-				{ // handle camera & player movement
+				{ // :player
 					static float azimuth = C_PIf * 3 / 2.f;
 					static float theta = C_PIf / 3.f;
 					anim_t += dt;
@@ -982,6 +1016,34 @@ int main(void) {
 
 					camera->target.x = tranform->translation.x;
 					camera->target.z = tranform->translation.z;
+
+					if (use_heightmap) {
+						float px = clampf(tranform->translation.x + map_width * 0.5f, 0.0f, map_width);
+						float pz = clampf(tranform->translation.z + map_depth * 0.5f, 0.0f, map_depth);
+
+						int32_t x0 = (int32_t)px;
+						int32_t z0 = (int32_t)pz;
+
+						int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
+						int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
+
+						float hs[4] = {
+							[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+							[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+							[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+							[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+						};
+						float u = px - (float)x0;
+						float v = pz - (float)z0;
+
+						float top_edge = hs[0] + u * (hs[1] - hs[0]);
+						float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
+
+						float height = top_edge + v * (bottom_edge - top_edge);
+						tranform->translation.y = height * 40.f;
+						camera->position.y += tranform->translation.y;
+						camera->target.y = tranform->translation.y + 1.5f;
+					}
 				}
 
 				Pose final = anim_pose_sample(frame_arena, &animations[instance->id][current_anim], fmodf(anim_t, animations[instance->id][current_anim].duration));
@@ -1112,6 +1174,7 @@ int main(void) {
 				float4 camera_position;
 				float2 viewport;
 				float fog_density;
+				float ambient_strength;
 				float fog_gradient;
 				float time;
 			} Frame3D;
@@ -1123,9 +1186,9 @@ int main(void) {
 			} Light;
 
 			Light lights[] = {
-				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
+				/* { .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() }, */
 				/* { .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 0.5f, 0.2f, 1.0f }, float4x4_identity() }, // sunset */
-				/* { .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.1f, 0.25f, 0.8f, 1.0f }, float4x4_identity() }, // night */
+				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.05f, 0.15f, 0.6f, 1.0f }, float4x4_identity() }, // night
 			};
 			float ortho_size = 10.0f;
 			lights[0].matrix = float4x4_multiply(
@@ -1133,6 +1196,7 @@ int main(void) {
 				float4x4_lookat(float3_from_float4(lights[0].position), FLOAT3_ZERO, FLOAT3_Y));
 
 			Frame3D frame_data = {
+				.ambient_strength = ambient_strength,
 				.fog_density = fog_density,
 				.fog_gradient = fog_gradient,
 				.time = time,
@@ -1284,7 +1348,7 @@ int main(void) {
 					uniform_data(0, &frame_data, sizeof(frame_data)),
 					storage_data(1, lights, sizeof(lights)),
 					sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
-					sampler_with_textures(3, (GFX_Image *[]){ skybox.gpu_image }, 1, linear_sampler[WRAP_MODE_CLAMP]),
+					sampler_with_textures(3, (GFX_Image *[]){ skybox.gpu }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 				};
 				gfx_bind(context, &pipeline_3d, 0, uniforms, countof(uniforms));
 
@@ -1319,7 +1383,7 @@ int main(void) {
 							.uv_scale = { 1.0f, 1.0f },
 						};
 
-						if (instance->id == MESH_TERRAIN) {
+						if (instance->id == MESH_TERRAIN_FLAT) {
 							pc.uv_scale.x *= 8.f;
 							pc.uv_scale.y *= 8.f;
 						}
@@ -1343,11 +1407,11 @@ int main(void) {
 						}
 
 						GFX_Image *images[] = {
-							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].gpu_image,
-							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu_image,
-							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu_image,
-							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu_image,
-							[TEXTURE_SLOT_EMISSIVE] = material->textures[TEXTURE_SLOT_EMISSIVE].gpu_image,
+							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].gpu,
+							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu,
+							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu,
+							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu,
+							[TEXTURE_SLOT_EMISSIVE] = material->textures[TEXTURE_SLOT_EMISSIVE].gpu,
 						};
 
 						Uniform uniforms[] = {
@@ -1379,6 +1443,7 @@ int main(void) {
 							float2 metallic_roughness;
 							float2 uv_offset;
 							float2 uv_scale;
+							uint32_t use_heightmap;
 						} pc = {
 							.model = float4x4_identity(),
 							.base_color = material->tint,
@@ -1386,23 +1451,25 @@ int main(void) {
 							.metallic_roughness = { 0.0f, 0.5f },
 							.uv_offset = { 0.0f, 0.0f },
 							.uv_scale = { 1.0f, 1.0f },
+							.use_heightmap = use_heightmap,
 						};
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
 						GFX_Image *images[] = {
-							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].gpu_image,
-							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu_image,
-							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu_image,
-							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu_image,
-							[TEXTURE_SLOT_EMISSIVE] = material->textures[TEXTURE_SLOT_EMISSIVE].gpu_image,
+							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].gpu,
+							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].gpu,
+							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].gpu,
+							[TEXTURE_SLOT_OCCLUSION] = material->textures[TEXTURE_SLOT_OCCLUSION].gpu,
+							[TEXTURE_SLOT_EMISSIVE] = material->textures[TEXTURE_SLOT_EMISSIVE].gpu,
 						};
 
 						Uniform uniforms[] = {
 							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
+							sampler_with_textures(3, (GFX_Image *[]){ heightmap.gpu }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
 						gfx_bind(context, &pipeline_grass, 1, uniforms, countof(uniforms));
 
@@ -1416,7 +1483,7 @@ int main(void) {
 					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 				}
 
-				{ // :canvas
+				if (batch_2d->offset) { // :canvas
 					typedef struct {
 						float4x4 view;
 						float4x4 projection;
@@ -3965,7 +4032,6 @@ Image2D load_image(Arena *arena, String8 path) {
 	}
 
 	if (ok) {
-		channels = 4;
 		uint32_t pixel_buffer_size = result.width * result.height * channels;
 		result.pixels = arena_push_count(arena, uint8_t, pixel_buffer_size);
 		memory_copy(result.pixels, pixels, pixel_buffer_size);
@@ -4298,12 +4364,75 @@ static inline float3 face_orient(float3 v, Face face) {
 	return result;
 }
 
+Mesh generate_plane_from_heightmap(Arena *arena, Face orientation, float w, float h, Image2D heightmap) {
+	Mesh result = { 0 };
+
+	bool ok = arena;
+
+	if (ok) {
+		result.total_vertex_count = heightmap.width * heightmap.height;
+
+		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		for (uint32_t z = 0; z < heightmap.height; ++z) {
+			for (uint32_t x = 0; x < heightmap.width; ++x) {
+				uint32_t index = x + z * heightmap.width;
+
+				float3 local = {
+					.x = (((float)x / (heightmap.width - 1)) - 0.5f) * w,
+					.y = ((heightmap.pixels[index * 4] / 255.f) - 0.5f) * 40.f,
+					.z = (((float)z / (heightmap.height - 1)) - 0.5f) * h,
+				};
+				result.vertices[index] = (Vertex3){
+					.position = face_orient(local, orientation),
+					.normal = { 0.0f, 1.0f, 0.0f },
+					.uv = { (float)x / (heightmap.width - 1), (float)z / (heightmap.height - 1) },
+				};
+			}
+		}
+
+		uint32_t face_count = (heightmap.width - 1) * (heightmap.height - 1);
+
+		result.total_index_count = face_count * 6;
+		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+
+		uint32_t cursor = 0;
+		for (uint32_t face = 0; face < face_count; ++face) {
+			uint32_t index = face + face / (heightmap.width - 1);
+
+			result.indices[cursor++] = index;
+			result.indices[cursor++] = index + heightmap.width;
+			result.indices[cursor++] = index + 1;
+
+			result.indices[cursor++] = index + 1;
+			result.indices[cursor++] = index + heightmap.width;
+			result.indices[cursor++] = index + heightmap.width + 1;
+		}
+
+		result.part_count = 1;
+		result.parts = arena_push_count(arena, MeshPart, result.part_count);
+
+		result.parts[0].vertex_count = result.total_vertex_count;
+		result.parts[0].index_count = result.total_index_count;
+
+		result.material_count = 1;
+		result.materials = arena_push_count(arena, Material, result.material_count);
+
+		result.materials[0] = (Material){
+			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
+			.emissive = FLOAT4_ONE,
+			.metallic_roughness = { 0.0f, 0.5f },
+		};
+	}
+
+	return result;
+}
+
 Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
 
 	bool ok = arena;
 
-	if (arena) {
+	if (ok) {
 		subdivision_x += 2;
 		subdivision_z += 2;
 		result.total_vertex_count = subdivision_x * subdivision_z;
