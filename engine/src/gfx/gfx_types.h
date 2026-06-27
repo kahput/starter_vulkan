@@ -32,6 +32,8 @@ typedef enum {
 	PIXELFORMAT_DEPTH,
 	PIXELFORMAT_DEPTH_STENCIL,
 	PIXELFORMAT_BACKBUFFER,
+
+    PIXELFORMAT_COUNT,
 } PixelFormat;
 
 static inline bool pixel_format_is_depth_stencil(PixelFormat format) { return format == PIXELFORMAT_DEPTH_STENCIL; }
@@ -72,6 +74,8 @@ typedef enum {
 typedef enum {
 	BUFFER_MEMORY_LOCAL,
 	BUFFER_MEMORY_SHARED,
+
+    BUFFER_MEMORY_COUNT,
 } BufferMemory;
 
 typedef enum {
@@ -106,11 +110,22 @@ typedef enum cull_mode {
 typedef struct {
 	const char *debug_name;
 
+	BufferUsage usage;
+	BufferMemory memory;
+
+	void *data;
+} BufferOptions;
+
+typedef struct {
+	const char *debug_name;
+
 	ImageType type;
-	uint32_t slice_count;
+	uint32_t slice_count, max_mip_level;
 	PixelFormat format;
 	ImageUsageFlags usage; // zero initialized equals IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER
 	ImageSampleCount sample; // zero initilized equals SAMPLE_COUNT_1
+
+	void *pixels;
 } ImageOptions;
 
 typedef struct {
@@ -171,4 +186,6 @@ typedef enum {
 	RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
 	RESOURCE_USAGE_COLOR_ATTACHMENT,
 	RESOURCE_USAGE_DEPTH_ATTACHMENT,
+
+    RESOURCE_USAGE_COUNT,
 } ResourceUsage;

@@ -23,6 +23,7 @@
 #include <vulkan/vulkan_core.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
+#define MAX_TRANSFERS_IN_FLIGHT 2
 
 // clang-format off
 typedef struct { uint16_t index, gen; } BufferID;
@@ -45,8 +46,7 @@ struct GFX_Buffer {
 	uint64_t size;
 	VkBufferCreateInfo info;
 
-	BufferMemory memory_type;
-	BufferUsage usage;
+	BufferOptions options;
 };
 
 typedef struct GFX_Image GFX_Image;
@@ -57,7 +57,7 @@ struct GFX_Image {
 	VkImageView view;
 	VkDeviceMemory memory;
 
-	uint32_t width, height;
+	uint32_t width, height, miplevels;
 
 	ImageOptions options;
 	ResourceUsage res_usage;
@@ -158,7 +158,7 @@ typedef struct {
 	GFX_Buffer *transient_buffer;
 	Arena transient_arena[1];
 
-	uint32_t frame_index;
+	uint32_t frame_index, recording;
 } GFX_CommandContext;
 
 typedef struct {
@@ -171,8 +171,11 @@ typedef struct {
 	VkCommandPool graphics_command_pool;
 	VkPushConstantRange global_range;
 
-	GFX_Buffer *staging_buffer;
-	uint64_t staging_buffer_frame_size;
+	GFX_Buffer *frame_staging_buffer;
+	uint64_t frame_staging_buffer_slice_size;
+
+	GFX_Buffer *transfer_staging_buffer;
+	uint64_t transfer_staging_buffer_slice_size;
 
 	VkQueue graphics_queue, present_queue;
 	VkQueue transfer_queue, compute_queue;
@@ -181,13 +184,11 @@ typedef struct {
 	int32_t transfer_index, compute_index;
 
 	// Transfer
-	/* GFX_CommandContext transfer_buffers[2]; */
-	/* uint32_t current_transfer_index; */
-	uint64_t transfer_pending_generation; // generation currently accumulating, not yet submitted
-	uint64_t transfer_submitted_generation; // highest generation actually handed to the queue
+	GFX_CommandContext transfer_commands[2];
+	uint32_t current_transfer_index;
 
-	// Frame resources
-	GFX_CommandContext cmd_buffers[MAX_FRAMES_IN_FLIGHT];
+	// Frame
+	GFX_CommandContext frame_commands[MAX_FRAMES_IN_FLIGHT];
 	uint32_t current_frame_index;
 
 	// Resources
@@ -224,8 +225,8 @@ void gfx_shutdown(GFX_Context *context);
 GFX_CommandContext *gfx_frame_begin(GFX_Context *context);
 bool gfx_frame_end(GFX_Context *context, GFX_CommandContext *cmd);
 
-GFX_CommandContext gfx_transfer_batch_begin(GFX_Context *context);
-bool gfx_transfer_batch_submit(GFX_Context *context, GFX_CommandContext *batch);
+GFX_CommandContext *gfx_transfer_cmd(GFX_Context *context);
+bool gfx_transfer_flush(GFX_Context *context);
 
 typedef struct {
 	float2 position, uv;
@@ -246,7 +247,7 @@ typedef struct {
 	float32x4 weights;
 } SkinningData;
 
-GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name);
+GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions options);
 GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options);
 GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt);
 GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, const char *debug_name);
@@ -263,10 +264,6 @@ void pipeline_destroy(GFX_Context *context, GFX_Pipeline *pipeline);
 GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *surface);
 bool gfx_swapchain_resize(GFX_Context *context, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height);
 bool gfx_image_resize(GFX_Context *context, GFX_Image *image, uint32_t new_width, uint32_t new_height);
-
-// TODO: double buffered transfers
-/* void gfx_upload_buffer(GFX_Context *context, GFX_Buffer *dst, uint64_t size, void *data, ResourceUsage usage); */
-/* void gfx_upload_image(GFX_Context *context, GFX_Image *image, uint32_t width, uint32_t height, void *pixels, ResourceUsage usage); */
 
 bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set, Uniform *uniforms, uint32_t uniform_count);
 
@@ -339,27 +336,19 @@ static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images
 	return result;
 }
 
-void *gfx_cmd_push(GFX_CommandContext *cmd, uint64_t size);
+// pushes data to command context staging ring buffer, aligned to 256
 uint64_t gfx_cmd_put(GFX_CommandContext *cmd, uint64_t size, void *src);
-
-/* uint64_t gfx_cmd_write(GFX_CommandContext *cmd, uint64_t offset, uint64_t size, void *src); */
-
 void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
 void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height);
 void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target);
-void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, GFX_Image *target);
+void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target);
 void gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target);
 void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target);
 void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels);
-void gfx_cmd_buffer_copy(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
+void gfx_cmd_buffer_upload(GFX_CommandContext *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data);
 
 void gfx_cmd_pipeline_bind(GFX_CommandContext *cmd, GFX_Pipeline *pipeline);
 void gfx_cmd_dispatch(GFX_CommandContext *context, uint32_t x, uint32_t y, uint32_t z);
-
-void gfx_image_write(GFX_Context *context, GFX_Image *image, Rectangle region, void *pixels);
-void gfx_buffer_write(GFX_Context *context, GFX_Buffer *target, uint64_t offset, uint64_t size, void *data);
-
-VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage);
 
 typedef enum {
 	TEXTURE_SLOT_ALBEDO,
@@ -552,23 +541,37 @@ int main(void) {
 			s("assets/textures/skybox_mc/dayBack.png") //
 			) //
 	);
-	skybox.gpu = gfx_image_make(context, skybox.width, skybox.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_SRGB, .type = IMAGE_TYPE_CUBE });
+	skybox.gpu = gfx_image_make(context, skybox.width, skybox.height,
+		(ImageOptions){
+		  .format = PIXELFORMAT_RGBA8_SRGB,
+		  .type = IMAGE_TYPE_CUBE,
+		  .pixels = skybox.pixels,
+		});
 
 	Image2D terrain_texture = load_image(arena, s("assets/textures/base_grass.png"));
 	Image2D grid_texture = load_image(arena, s("assets/textures/prototype/texture_09.png"));
 
 	Image2D heightmap = load_image(arena, s("assets/textures/heightmap.png"));
-	heightmap.gpu = gfx_image_make(context, heightmap.width, heightmap.height, (ImageOptions){ .format = PIXELFORMAT_RGBA8_UNORM });
+	heightmap.gpu = gfx_image_make(context, heightmap.width, heightmap.height,
+		(ImageOptions){
+		  .format = PIXELFORMAT_RGBA8_UNORM,
+		  .pixels = heightmap.pixels,
+		});
 
 	GFX_Sampler *linear_sampler[WRAP_MODE_COUNT] = {
 		[WRAP_MODE_REPEAT] = gfx_sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_MODE_REPEAT)),
 		[WRAP_MODE_CLAMP] = gfx_sampler_make(context, sampler_opt(FILTER_LINEAR, WRAP_MODE_CLAMP))
 	};
+	GFX_Sampler *nearest_sampler = gfx_sampler_make(context, sampler_opt(FILTER_NEAREST, WRAP_MODE_CLAMP));
 	SamplerOptions shadow_opt = sampler_opt(FILTER_LINEAR, WRAP_MODE_CLAMP_BORDER);
 	shadow_opt.debug_name = "shadow_sampler";
 	/* shadow_opt.compare_enable = true; */
 	GFX_Sampler *shadow_sampler = gfx_sampler_make(context, shadow_opt);
-	GFX_Image *white_texture = gfx_image_make(context, 1, 1, (ImageOptions){ .format = PIXELFORMAT_RGBA8_UNORM });
+	GFX_Image *white_texture = gfx_image_make(context, 1, 1,
+		(ImageOptions){
+		  .format = PIXELFORMAT_RGBA8_SRGB,
+		  .pixels = &(uint32_t){ 0xFFFFFFFF },
+		});
 
 	// create compute pipeline
 	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
@@ -660,8 +663,18 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	GFX_Buffer *geometry = gfx_buffer_make(context, MiB(256), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER, "geometry");
-	GFX_Buffer *grass_instancing_buffer = gfx_buffer_make(context, MiB(128), BUFFER_MEMORY_LOCAL, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER, "grass_instancing");
+	GFX_Buffer *geometry = gfx_buffer_make(context, MiB(256),
+		(BufferOptions){
+		  .debug_name = "geometry",
+		  .memory = BUFFER_MEMORY_LOCAL,
+		  .usage = BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER,
+		});
+	GFX_Buffer *grass_instancing_buffer = gfx_buffer_make(context, MiB(128),
+		(BufferOptions){
+		  .debug_name = "grass_instancing",
+		  .memory = BUFFER_MEMORY_LOCAL,
+		  .usage = BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER,
+		});
 
 	const uint32_t map_width = 256;
 	const uint32_t map_depth = 256;
@@ -687,28 +700,24 @@ int main(void) {
 	}
 
 	{ // :upload
-		GFX_CommandContext cmd = gfx_transfer_batch_begin(context);
-		if (cmd.handle) {
-			gfx_cmd_image_upload(&cmd, white_texture, 1, 1, &(uint32_t){ 0xffffffff });
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, white_texture);
+		GFX_CommandContext *cmd = gfx_transfer_cmd(context);
 
-			gfx_cmd_image_upload(&cmd, skybox.gpu, skybox.width, skybox.height, skybox.pixels);
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, skybox.gpu);
+		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, geometry->size, geometry);
+		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, grass_instancing_buffer->size, grass_instancing_buffer);
 
-			gfx_cmd_image_upload(&cmd, heightmap.gpu, heightmap.width, heightmap.height, heightmap.pixels);
-			gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, heightmap.gpu);
-
+		if (cmd->handle) {
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 				Mesh *mesh = &meshes[mesh_index];
+
 				for (uint32_t material_index = 0; material_index < mesh->material_count; ++material_index) {
 					Material *material = &mesh->materials[material_index];
 
 					for (uint32_t texture_slot = 0; texture_slot < TEXTURE_SLOT_COUNT; ++texture_slot) {
 						Image2D *img = &material->textures[texture_slot];
+						uint32_t mip_level = 0;
+
 						if (img->pixels) {
-							img->gpu = gfx_image_make(context, img->width, img->height, (ImageOptions){ .format = img->format });
-							gfx_cmd_image_upload(&cmd, img->gpu, img->width, img->height, img->pixels);
-							gfx_cmd_image_transition(&cmd, RESOURCE_USAGE_SHADER_READ, img->gpu);
+							img->gpu = gfx_image_make(context, img->width, img->height, (ImageOptions){ .pixels = img->pixels, .format = img->format, .max_mip_level = mip_level });
 						} else {
 							img->width = img->height = 1;
 							img->format = PIXELFORMAT_RGBA8_SRGB;
@@ -718,7 +727,7 @@ int main(void) {
 				}
 			}
 
-			uint64_t grass_upload_offset = arena_mark(cmd.transient_arena);
+			uint64_t grass_upload_offset = arena_mark(cmd->transient_arena);
 			// vertex_count = 256 * 256 * 3 * 6 = 1.179.648 = 1
 			for (uint32_t z = 0; z < map_depth; ++z) {
 				for (uint32_t x = 0; x < map_width; ++x) {
@@ -728,13 +737,13 @@ int main(void) {
 						.z = z - (map_depth * 0.5f) + ((float)(rand() % 10) / 10),
 					};
 					pos = float3_scale(pos, 1.f / 2.f);
-					*arena_push_count(cmd.transient_arena, float4, 1) = float4_from_float3(pos, 1.0f);
+					*arena_push_count(cmd->transient_arena, float4, 1) = float4_from_float3(pos, 1.0f);
 				}
 			}
-			gfx_cmd_buffer_to_buffer(&cmd, grass_instancing_buffer, cmd.transient_buffer, 0, grass_upload_offset, sizeof(float4) * map_width * map_depth);
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float4) * map_width * map_depth, grass_instancing_buffer);
+			gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4) * map_width * map_depth);
+			gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float4) * map_width * map_depth, grass_instancing_buffer);
 
-			uint64_t transient_upload_start_offset = cmd.transient_arena->offset;
+			uint64_t transient_upload_start_offset = cmd->transient_arena->offset;
 			uint64_t geometry_upload_cursor = 0;
 
 			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
@@ -747,28 +756,26 @@ int main(void) {
 
 				// Vertices
 				mesh->buffer_vertex_byte_offset = geometry_upload_cursor;
-				memory_copy(arena_push(cmd.transient_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3));
+				memory_copy(arena_push(cmd->transient_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3));
 				geometry_upload_cursor += total_vertex_buffer_size;
 
 				// Indices
 				mesh->buffer_index_byte_offset = geometry_upload_cursor;
-				memory_copy(arena_push(cmd.transient_arena, total_index_buffer_size, 1, false), mesh->indices, mesh->total_index_count * sizeof(uint32_t));
+				memory_copy(arena_push(cmd->transient_arena, total_index_buffer_size, 1, false), mesh->indices, mesh->total_index_count * sizeof(uint32_t));
 				geometry_upload_cursor += total_index_buffer_size;
 
 				// Skinning
 				if (mesh->skeleton.bone_count) {
 					mesh->buffer_skinning_data_byte_offset = geometry_upload_cursor;
-					memory_copy(arena_push(cmd.transient_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(SkinningData));
+					memory_copy(arena_push(cmd->transient_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(SkinningData));
 					geometry_upload_cursor += total_skinning_buffer_size;
 				}
 			}
 
-			gfx_cmd_buffer_to_buffer(&cmd, geometry, cmd.transient_buffer, 0, transient_upload_start_offset, geometry_upload_cursor);
+			gfx_cmd_buffer_to_buffer(cmd, geometry, cmd->transient_buffer, 0, transient_upload_start_offset, geometry_upload_cursor);
 
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, geometry_upload_cursor, geometry);
-			gfx_cmd_buffer_barrier(&cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, geometry);
-
-			gfx_transfer_batch_submit(context, &cmd);
+			gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, geometry_upload_cursor, geometry);
+			gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, geometry);
 		}
 	}
 
@@ -778,7 +785,6 @@ int main(void) {
 	float last_frame = 0.0f;
 
 	Arena frame_arena[] = { arena_make(MiB(4)) };
-	memory_zero(context->staging_buffer->mapped, context->staging_buffer_frame_size);
 
 	// :init
 	typedef enum {
@@ -866,7 +872,20 @@ int main(void) {
 
 		static float ambient_strength = 0.2f;
 		static float fog_density = 0.02f, fog_gradient = 5.0f;
-		static bool use_heightmap = 0;
+		static bool use_heightmap = 0, draw_grass = true;
+		static uint32_t light_index = 0;
+
+		typedef struct {
+			float4 position;
+			float4 color;
+			float4x4 matrix;
+		} Light;
+
+		Light lights[] = {
+			{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
+			{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 0.5f, 0.2f, 1.0f }, float4x4_identity() }, // sunset
+			{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.05f, 0.15f, 0.6f, 1.0f }, float4x4_identity() }, // night
+		};
 
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = float2_from_double2(input_mouse_delta());
@@ -895,7 +914,7 @@ int main(void) {
 					float panel_x = 10.f, panel_y = 10.0f;
 
 					float element_h = 15.f;
-					uint32_t element_count = 4;
+					uint32_t element_count = 5;
 					float panel_w = 200.f;
 
 					/* slider_t = imgui_slidervf(__LINE__, rect(100, 100, 50, 300), min, max, slider_t); */
@@ -913,10 +932,21 @@ int main(void) {
 					ambient_strength = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 1.0f, ambient_strength);
 					panel_y += element_h + pad;
 
-					float button_w = (panel_w - 2 * pad) / 4.f;
-					if (imgui_button(__LINE__, panel_x + pad, panel_y + pad, button_w, element_h).clicked) {
+					float button_w = (panel_w - (2 * pad + pad * 3)) / 4.f;
+					float button_x = panel_x + pad;
+					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
 						use_heightmap = !use_heightmap;
 						instances[1].id = use_heightmap ? MESH_TERRAIN_HEIGHTMAP : MESH_TERRAIN_FLAT;
+					}
+					button_x += button_w + pad;
+					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
+						draw_grass = !draw_grass;
+					button_x += button_w + pad;
+					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
+                        light_index  = (light_index + 1) % countof(lights);
+					}
+					button_x += button_w + pad;
+					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
 					}
 
 					imgui_frame_end();
@@ -1043,6 +1073,9 @@ int main(void) {
 						tranform->translation.y = height * 40.f;
 						camera->position.y += tranform->translation.y;
 						camera->target.y = tranform->translation.y + 1.5f;
+					} else {
+						tranform->translation.y = 0.0f;
+						camera->target.y = tranform->translation.y + 1.5f;
 					}
 				}
 
@@ -1167,7 +1200,6 @@ int main(void) {
 				}
 			}
 
-			// TODO:
 			typedef struct {
 				float4x4 view;
 				float4x4 proj;
@@ -1179,21 +1211,10 @@ int main(void) {
 				float time;
 			} Frame3D;
 
-			typedef struct {
-				float4 position;
-				float4 color;
-				float4x4 matrix;
-			} Light;
-
-			Light lights[] = {
-				/* { .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() }, */
-				/* { .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 0.5f, 0.2f, 1.0f }, float4x4_identity() }, // sunset */
-				{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.05f, 0.15f, 0.6f, 1.0f }, float4x4_identity() }, // night
-			};
 			float ortho_size = 10.0f;
-			lights[0].matrix = float4x4_multiply(
+			lights[light_index].matrix = float4x4_multiply(
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				float4x4_lookat(float3_from_float4(lights[0].position), FLOAT3_ZERO, FLOAT3_Y));
+				float4x4_lookat(float3_from_float4(lights[light_index].position), FLOAT3_ZERO, FLOAT3_Y));
 
 			Frame3D frame_data = {
 				.ambient_strength = ambient_strength,
@@ -1235,9 +1256,9 @@ int main(void) {
 				vkCmdSetViewport(cmd->handle, 0, 1, &viewport);
 				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
 
-				frame_data.view = lights[0].matrix;
+				frame_data.view = lights[light_index].matrix;
 				frame_data.proj = float4x4_identity();
-				frame_data.camera_position = lights[0].position;
+				frame_data.camera_position = lights[light_index].position;
 				frame_data.proj.elements[5] *= -1;
 
 				gfx_cmd_pipeline_bind(cmd, &pipeline_shadow);
@@ -1346,7 +1367,7 @@ int main(void) {
 
 				Uniform uniforms[] = {
 					uniform_data(0, &frame_data, sizeof(frame_data)),
-					storage_data(1, lights, sizeof(lights)),
+					storage_data(1, lights + light_index, sizeof(lights[0])),
 					sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
 					sampler_with_textures(3, (GFX_Image *[]){ skybox.gpu }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 				};
@@ -1426,7 +1447,7 @@ int main(void) {
 				}
 
 				// :grass
-				{
+				if (draw_grass) {
 					Mesh *mesh = &meshes[MESH_GRASS_BILLBOARD];
 
 					gfx_cmd_pipeline_bind(cmd, &pipeline_grass);
@@ -1467,7 +1488,7 @@ int main(void) {
 
 						Uniform uniforms[] = {
 							storage_buffers(0, buffer, offset, size),
-							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
+							sampler_with_textures(1, images, countof(images), nearest_sampler),
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
 							sampler_with_textures(3, (GFX_Image *[]){ heightmap.gpu }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
@@ -1560,7 +1581,7 @@ int main(void) {
 				.pSignalSemaphores = signal_semaphores,
 			};
 
-			if (vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->cmd_buffers[context->current_frame_index].in_flight_fence) != VK_SUCCESS) {
+			if (vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->frame_commands[context->current_frame_index].in_flight_fence) != VK_SUCCESS) {
 				LOG_ERROR("failed to submit command buffer to queue.");
 				break;
 			}
@@ -1632,7 +1653,64 @@ PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName = STUB_vkSetDebugUtil
 PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabel = STUB_vkCmdBeginDebugUtilsLabel;
 PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel = STUB_vkCmdEndDebugUtilsLabel;
 
-VkImageUsageFlags gfx__image_opt_to_vk_usage(ImageOptions opt) {
+// :map
+static UniformType descriptor_type_to_uniform_type[VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT] = {
+	[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = UNIFORM_TYPE_IMAGE,
+	[VK_DESCRIPTOR_TYPE_STORAGE_IMAGE] = UNIFORM_TYPE_STORAGE_IMAGE,
+	[VK_DESCRIPTOR_TYPE_SAMPLER] = UNIFORM_TYPE_SAMPLER,
+	[VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER] = UNIFORM_TYPE_SAMPLER_WITH_IMAGE,
+
+	[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = UNIFORM_TYPE_UNIFORM_BUFFER,
+	[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = UNIFORM_TYPE_STORAGE_BUFFER,
+
+	[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC] = UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC,
+	[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC] = UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC,
+};
+
+static VkDescriptorType uniform_type_to_descriptor_type[UNIFORM_TYPE_COUNT] = {
+	[UNIFORM_TYPE_IMAGE] = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+	[UNIFORM_TYPE_STORAGE_IMAGE] = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	[UNIFORM_TYPE_SAMPLER] = VK_DESCRIPTOR_TYPE_SAMPLER,
+	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+	[UNIFORM_TYPE_UNIFORM_BUFFER] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	[UNIFORM_TYPE_STORAGE_BUFFER] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+};
+
+static const char *uniform_type_to_string[UNIFORM_TYPE_COUNT] = {
+	[UNIFORM_TYPE_IMAGE] = "UNIFORM_TYPE_IMAGE",
+	[UNIFORM_TYPE_STORAGE_IMAGE] = "UNIFORM_TYPE_STORAGE_IMAGE",
+	[UNIFORM_TYPE_SAMPLER] = "UNIFORM_TYPE_SAMPLER",
+	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = "UNIFORM_TYPE_SAMPLER_WITH_IMAGE",
+	[UNIFORM_TYPE_UNIFORM_BUFFER] = "UNIFORM_TYPE_UNIFORM_BUFFER",
+	[UNIFORM_TYPE_STORAGE_BUFFER] = "UNIFORM_TYPE_STORAGE_BUFFER",
+	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = "UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC",
+	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = "UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC"
+};
+
+VkImageLayout resource_usage_to_image_layout[RESOURCE_USAGE_COUNT] = {
+	[RESOURCE_USAGE_UNDEFINED] = VK_IMAGE_LAYOUT_UNDEFINED,
+
+	[RESOURCE_USAGE_TRANSFER_SRC] = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	[RESOURCE_USAGE_SHADER_READ] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+	[RESOURCE_USAGE_VERTEX_SHADER_READ] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+	[RESOURCE_USAGE_FRAGMENT_SHADER_READ] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+	[RESOURCE_USAGE_COMPUTE_SHADER_READ] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+	[RESOURCE_USAGE_VERTEX_BUFFER] = VK_IMAGE_LAYOUT_UNDEFINED,
+	[RESOURCE_USAGE_INDEX_BUFFER] = VK_IMAGE_LAYOUT_UNDEFINED,
+	[RESOURCE_USAGE_PRESENT] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+
+	[RESOURCE_USAGE_TRANSFER_DST] = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+	[RESOURCE_USAGE_SHADER_WRITE] = VK_IMAGE_LAYOUT_GENERAL,
+	[RESOURCE_USAGE_VERTEX_SHADER_WRITE] = VK_IMAGE_LAYOUT_GENERAL,
+	[RESOURCE_USAGE_FRAGMENT_SHADER_WRITE] = VK_IMAGE_LAYOUT_GENERAL,
+	[RESOURCE_USAGE_COMPUTE_SHADER_WRITE] = VK_IMAGE_LAYOUT_GENERAL,
+	[RESOURCE_USAGE_COLOR_ATTACHMENT] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	[RESOURCE_USAGE_DEPTH_ATTACHMENT] = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+};
+
+VkImageUsageFlags gfx__image_options_to_vulkan_usage(ImageOptions opt) {
 	VkImageUsageFlags result = 0;
 	if (FLAG_GET(opt.usage, IMAGE_USAGE_RENDER)) {
 		if (pixel_format_is_depth(opt.format))
@@ -1655,87 +1733,68 @@ VkImageUsageFlags gfx__image_opt_to_vk_usage(ImageOptions opt) {
 		result |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	}
 
+	if (opt.pixels && (result & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0)
+		result |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
 	return result;
 }
 
-VkBufferUsageFlags gfx__to_vk_buffer_usage(BufferUsage usage) {
+VkBufferUsageFlags gfx__buffer_options_to_vulkan_usage(BufferOptions options) {
 	VkBufferUsageFlags result = 0;
-	if (FLAG_GET(usage, BUFFER_USAGE_UNIFORM))
+	if (FLAG_GET(options.usage, BUFFER_USAGE_UNIFORM))
 		result |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	if (FLAG_GET(usage, BUFFER_USAGE_STORAGE))
+	if (FLAG_GET(options.usage, BUFFER_USAGE_STORAGE))
 		result |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	if (FLAG_GET(usage, BUFFER_USAGE_VERTEX))
+	if (FLAG_GET(options.usage, BUFFER_USAGE_VERTEX))
 		result |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	if (FLAG_GET(usage, BUFFER_USAGE_INDEX))
+	if (FLAG_GET(options.usage, BUFFER_USAGE_INDEX))
 		result |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-	if (FLAG_GET(usage, BUFFER_USAGE_TRANSFER))
+	if (FLAG_GET(options.usage, BUFFER_USAGE_TRANSFER) || options.data)
 		result |= VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
 	return result;
 }
 
-VkMemoryPropertyFlags gfx__memory_type_to_vk_memory_property_flags(BufferMemory memory) {
-	switch (memory) {
-		case BUFFER_MEMORY_LOCAL:
-			return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-		case BUFFER_MEMORY_SHARED:
-			return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	}
+VkMemoryPropertyFlags memory_type_to_memory_property_flags[BUFFER_MEMORY_COUNT] = {
+	[BUFFER_MEMORY_LOCAL] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	[BUFFER_MEMORY_SHARED] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+};
 
-	ASSERT(false);
-	return 0;
-}
+VkFormat pixel_format_to_vulkan_format[PIXELFORMAT_COUNT] = {
+	[PIXELFORMAT_RGBA8_UNORM] = VK_FORMAT_R8G8B8A8_UNORM,
+	[PIXELFORMAT_RGBA8_SRGB] = VK_FORMAT_R8G8B8A8_SRGB,
+	[PIXELFORMAT_RGBA16_FLOAT] = VK_FORMAT_R16G16B16A16_SFLOAT,
+	[PIXELFORMAT_R32_FLOAT] = VK_FORMAT_R32_SFLOAT,
+	[PIXELFORMAT_DEPTH] = VK_FORMAT_D32_SFLOAT,
+	[PIXELFORMAT_DEPTH_STENCIL] = VK_FORMAT_D24_UNORM_S8_UINT,
+	[PIXELFORMAT_BACKBUFFER] = VK_FORMAT_B8G8R8A8_SRGB,
+};
 
-VkFormat gfx__pixel_format_to_vk_format(PixelFormat format) {
-	switch (format) {
-		case PIXELFORMAT_RGBA8_UNORM:
-			return VK_FORMAT_R8G8B8A8_UNORM;
-		case PIXELFORMAT_RGBA8_SRGB:
-			return VK_FORMAT_R8G8B8A8_SRGB;
-		case PIXELFORMAT_RGBA16_FLOAT:
-			return VK_FORMAT_R16G16B16A16_SFLOAT;
-		case PIXELFORMAT_R32_FLOAT:
-			return VK_FORMAT_R32_SFLOAT;
-		case PIXELFORMAT_DEPTH:
-			return VK_FORMAT_D32_SFLOAT;
-		case PIXELFORMAT_DEPTH_STENCIL:
-			return VK_FORMAT_D24_UNORM_S8_UINT;
-		case PIXELFORMAT_BACKBUFFER:
-			return VK_FORMAT_B8G8R8A8_SRGB;
-	}
+uint32_t pixel_format_to_stride[PIXELFORMAT_COUNT] = {
+	[PIXELFORMAT_RGBA8_UNORM] = 4,
+	[PIXELFORMAT_RGBA8_SRGB] = 4,
+	[PIXELFORMAT_RGBA16_FLOAT] = 2 * 4,
+	[PIXELFORMAT_R32_FLOAT] = 4,
+	[PIXELFORMAT_DEPTH] = 4,
+	[PIXELFORMAT_DEPTH_STENCIL] = 4,
+	[PIXELFORMAT_BACKBUFFER] = 4,
+};
 
-	return VK_FORMAT_UNDEFINED;
-}
+const char *pixel_format_to_string[PIXELFORMAT_COUNT] = {
+	[PIXELFORMAT_RGBA8_UNORM] = "RGBA8_UNORM",
+	[PIXELFORMAT_RGBA8_SRGB] = "RGBA8_SRGB",
+	[PIXELFORMAT_RGBA16_FLOAT] = "RGBA16_FLOAT",
+	[PIXELFORMAT_R32_FLOAT] = "R32_FLOAT",
+	[PIXELFORMAT_DEPTH] = "DEPTH",
+	[PIXELFORMAT_DEPTH_STENCIL] = "DEPTH_STENCIL",
+	[PIXELFORMAT_BACKBUFFER] = "BACKBUFFER",
+};
 
 VkImageAspectFlags gfx__image_options_to_aspect(ImageOptions options) {
 	if (pixel_format_is_depth_stencil(options.format))
 		return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 	if (pixel_format_is_depth(options.format))
 		return VK_IMAGE_ASPECT_DEPTH_BIT;
-
-	return VK_IMAGE_ASPECT_COLOR_BIT;
-}
-
-uint32_t gfx__pixel_format_to_stride(PixelFormat format) {
-	switch (format) {
-		case PIXELFORMAT_RGBA8_UNORM:
-			return 4;
-		case PIXELFORMAT_RGBA8_SRGB:
-			return 4;
-		case PIXELFORMAT_RGBA16_FLOAT:
-			return 2 * 4;
-		case PIXELFORMAT_R32_FLOAT:
-			return 4;
-		case PIXELFORMAT_DEPTH:
-			return 4;
-		case PIXELFORMAT_DEPTH_STENCIL:
-			return 4;
-		case PIXELFORMAT_BACKBUFFER:
-			return 4;
-			break;
-	}
-	if (pixel_format_is_depth(format))
-		return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 
 	return VK_IMAGE_ASPECT_COLOR_BIT;
 }
@@ -1820,12 +1879,12 @@ uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_f
 	return 0;
 }
 
-GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferMemory memory, BufferUsage usage, const char *debug_name) {
+GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions options) {
 	GFX_Buffer *result = 0;
 	LOG_DEBUG("creating vulkan buffer.");
 
 	bool ok = context && (context->buffer_count < MAX_BUFFERS || context->first_free_buffer);
-	const char *name = debug_name ? debug_name : "<unnamed_buffer>";
+	const char *name = options.debug_name ? options.debug_name : "<unnamed_buffer>";
 
 	if (ok) { // acquire new buffer
 		if (context->first_free_buffer) {
@@ -1843,11 +1902,10 @@ GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferMemory me
 	VkBufferUsageFlags vk_usage = 0;
 	VkMemoryPropertyFlags memory_flags = 0;
 	if (ok) {
-		result->memory_type = memory;
-		result->usage = usage;
+		result->options = options;
 
-		vk_usage = gfx__to_vk_buffer_usage(usage);
-		memory_flags = gfx__memory_type_to_vk_memory_property_flags(memory);
+		vk_usage = gfx__buffer_options_to_vulkan_usage(options);
+		memory_flags = memory_type_to_memory_property_flags[options.memory];
 
 		ok = vk_usage && memory_flags;
 		if (ok == false)
@@ -1901,6 +1959,12 @@ GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferMemory me
 		}
 	}
 
+	if (ok && options.data) { // upload
+		GFX_CommandContext *cmd = gfx_transfer_cmd(context);
+
+		gfx_cmd_buffer_upload(cmd, result, 0, size, options.data);
+	}
+
 #if DEV_BUILD
 	if (ok) { // assign debug name
 		VkDebugUtilsObjectNameInfoEXT name_info = {
@@ -1941,17 +2005,19 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 	}
 
 	uint32_t layer_count = gfx__image_options_to_layer_count(options);
-	VkFormat vk_format = gfx__pixel_format_to_vk_format(options.format);
+	VkFormat vk_format = pixel_format_to_vulkan_format[options.format];
 
 	if (ok) { // make vulkan image handle
 
-		VkImageUsageFlags vk_usage = gfx__image_opt_to_vk_usage(options);
+		VkImageUsageFlags vk_usage = gfx__image_options_to_vulkan_usage(options);
 		VkSampleCountFlags vk_sample = gfx__usage_to_vk_sample(context->device.limits, options);
 		VkImageCreateFlags vk_flags = gfx__opt_to_vk_image_flags(options);
 
 		result->width = width, result->height = height;
 		result->options = options;
 		result->res_usage = RESOURCE_USAGE_UNDEFINED;
+		options.max_mip_level = options.max_mip_level ? options.max_mip_level : 1;
+		result->miplevels = MIN(options.max_mip_level, (uint32_t)log2(maxf(width, height)) + 1);
 
 		VkImageCreateInfo image_info = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1963,13 +2029,13 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 			  .height = height,
 			  .depth = 1,
 			},
-			.mipLevels = 1,
+			.mipLevels = result->miplevels,
 			.arrayLayers = layer_count,
 			.samples = vk_sample,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage = vk_usage,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.initialLayout = gfx__usage_to_image_layout(result->res_usage),
+			.initialLayout = resource_usage_to_image_layout[result->res_usage],
 		};
 
 		ok = vkCreateImage(context->device.logical, &image_info, 0, &result->handle) == VK_SUCCESS;
@@ -2009,13 +2075,74 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 			.subresourceRange = {
 			  .aspectMask = vk_aspect,
 			  .baseMipLevel = 0,
-			  .levelCount = 1,
+			  .levelCount = result->miplevels,
 			  .baseArrayLayer = 0,
 			  .layerCount = layer_count,
 			}
 		};
 
 		ok = vkCreateImageView(context->device.logical, &view_info, 0, &result->view) == VK_SUCCESS;
+	}
+
+	if (ok && options.pixels) { // upload
+		GFX_CommandContext *cmd = gfx_transfer_cmd(context);
+
+		gfx_cmd_image_upload(cmd, result, result->width, result->height, options.pixels);
+
+		VkFormatProperties format_properties;
+		vkGetPhysicalDeviceFormatProperties(context->device.physical, vk_format, &format_properties);
+		bool blit_support = format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+		if (blit_support == false)
+			LOG_WARN("pixel format (%s) does not support linear blitting.", pixel_format_to_string[options.format]);
+
+		if (result->miplevels > 1 && blit_support) {
+			uint32_t mip_width = width, mip_height = height;
+			VkImageAspectFlags aspect = gfx__image_options_to_aspect(options);
+
+			for (uint32_t level = 1; level < result->miplevels; ++level) {
+				gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_TRANSFER_SRC, level - 1, 1, result);
+
+				VkImageBlit blit = { 0 };
+
+				VkImageBlit blit_info = {
+					.srcOffsets[1] = {
+					  .x = mip_width,
+					  .y = mip_height,
+					  .z = 1,
+					},
+					.srcSubresource = {
+					  .aspectMask = aspect,
+					  .baseArrayLayer = 0,
+					  .layerCount = layer_count,
+					  .mipLevel = level - 1,
+					},
+					.dstOffsets[1] = {
+					  .x = mip_width > 1 ? mip_width / 2 : 1,
+					  .y = mip_height > 1 ? mip_height / 2 : 1,
+					  .z = 1,
+					},
+					.dstSubresource = {
+					  .aspectMask = aspect,
+					  .baseArrayLayer = 0,
+					  .layerCount = layer_count,
+					  .mipLevel = level,
+					},
+				};
+
+				vkCmdBlitImage(cmd->handle,
+					result->handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					result->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					1, &blit_info, VK_FILTER_LINEAR);
+
+				if (mip_width > 1)
+					mip_width /= 2;
+				if (mip_height > 1)
+					mip_height /= 2;
+			}
+		}
+		gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_TRANSFER_SRC, result->miplevels - 1, 1, result);
+
+		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, result);
 	}
 
 #if DEV_BUILD
@@ -2072,6 +2199,7 @@ GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt) {
 			.maxAnisotropy = context->device.limits.maxSamplerAnisotropy,
 			.compareEnable = opt.compare_enable,
 			.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+			.maxLod = VK_LOD_CLAMP_NONE
 		};
 
 		ok = vkCreateSampler(context->device.logical, &result->info, NULL, &result->handle) == VK_SUCCESS;
@@ -2302,41 +2430,6 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 	arena_scratch_end(scratch);
 	return result;
 }
-
-static UniformType descriptor_type_to_uniform_type[VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT] = {
-	[VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE] = UNIFORM_TYPE_IMAGE,
-	[VK_DESCRIPTOR_TYPE_STORAGE_IMAGE] = UNIFORM_TYPE_STORAGE_IMAGE,
-	[VK_DESCRIPTOR_TYPE_SAMPLER] = UNIFORM_TYPE_SAMPLER,
-	[VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER] = UNIFORM_TYPE_SAMPLER_WITH_IMAGE,
-
-	[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] = UNIFORM_TYPE_UNIFORM_BUFFER,
-	[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER] = UNIFORM_TYPE_STORAGE_BUFFER,
-
-	[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC] = UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC,
-	[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC] = UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC,
-};
-
-static VkDescriptorType uniform_type_to_descriptor_type[UNIFORM_TYPE_COUNT] = {
-	[UNIFORM_TYPE_IMAGE] = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-	[UNIFORM_TYPE_STORAGE_IMAGE] = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-	[UNIFORM_TYPE_SAMPLER] = VK_DESCRIPTOR_TYPE_SAMPLER,
-	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-	[UNIFORM_TYPE_UNIFORM_BUFFER] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-	[UNIFORM_TYPE_STORAGE_BUFFER] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
-};
-
-static const char *uniform_type_to_string[UNIFORM_TYPE_COUNT] = {
-	[UNIFORM_TYPE_IMAGE] = "UNIFORM_TYPE_IMAGE",
-	[UNIFORM_TYPE_STORAGE_IMAGE] = "UNIFORM_TYPE_STORAGE_IMAGE",
-	[UNIFORM_TYPE_SAMPLER] = "UNIFORM_TYPE_SAMPLER",
-	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = "UNIFORM_TYPE_SAMPLER_WITH_IMAGE",
-	[UNIFORM_TYPE_UNIFORM_BUFFER] = "UNIFORM_TYPE_UNIFORM_BUFFER",
-	[UNIFORM_TYPE_STORAGE_BUFFER] = "UNIFORM_TYPE_STORAGE_BUFFER",
-	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = "UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC",
-	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = "UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC"
-};
 
 bool gfx__uniforms_to_descriptor_bindings(Uniform *uniforms, uint32_t uniform_count, VkDescriptorSetLayoutBinding bindings[32], VkShaderStageFlagBits stages) {
 	bool ok = uniforms && uniform_count > 0 && bindings;
@@ -2634,6 +2727,7 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 			.sampleShadingEnable = VK_FALSE,
 			.rasterizationSamples = options.sample_count ? (VkSampleCountFlags)options.sample_count : VK_SAMPLE_COUNT_1_BIT,
+			.alphaToCoverageEnable = options.color_attachment_count ? VK_TRUE : VK_FALSE,
 			.minSampleShading = 1.0f,
 		};
 
@@ -2679,13 +2773,13 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			};
 
 			for (uint32_t attachment_index = 0; attachment_index < options.color_attachment_count; ++attachment_index)
-				color_attachment_formats[attachment_index] = gfx__pixel_format_to_vk_format(options.color_attachments[attachment_index]);
+				color_attachment_formats[attachment_index] = pixel_format_to_vulkan_format[options.color_attachments[attachment_index]];
 
 			r_create_info = (VkPipelineRenderingCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
 				.colorAttachmentCount = options.color_attachment_count,
 				.pColorAttachmentFormats = color_attachment_formats,
-				.depthAttachmentFormat = pixel_format_is_depth_stencil(options.depth_attachment) ? gfx__pixel_format_to_vk_format(options.depth_attachment) : VK_FORMAT_D32_SFLOAT,
+				.depthAttachmentFormat = pixel_format_is_depth_stencil(options.depth_attachment) ? pixel_format_to_vulkan_format[options.depth_attachment] : VK_FORMAT_D32_SFLOAT,
 			};
 		}
 
@@ -2874,6 +2968,7 @@ GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd
 			.type = IMAGE_TYPE_2D,
 			.usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_TRANSFER,
 		};
+		result.miplevels = 1;
 		/* result.view_info = surface->view_infos[image_index]; */
 		result.width = surface->info.imageExtent.width;
 		result.height = surface->info.imageExtent.height;
@@ -2986,20 +3081,39 @@ bool gfx_startup(GFX_Context *context) {
 	}
 
 	if (ok) {
-		context->staging_buffer_frame_size = MiB(256);
-		context->staging_buffer =
+		context->frame_staging_buffer_slice_size = MiB(64);
+		context->frame_staging_buffer =
 			gfx_buffer_make(
 				context,
-				context->staging_buffer_frame_size * MAX_FRAMES_IN_FLIGHT,
-				BUFFER_MEMORY_SHARED,
-				BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE, "staging_buffer");
-		ok = context->staging_buffer;
+				context->frame_staging_buffer_slice_size * MAX_FRAMES_IN_FLIGHT,
+				(BufferOptions){
+				  .debug_name = "frame_staging_buffer",
+				  .memory = BUFFER_MEMORY_SHARED,
+				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
+				});
+
+		ok = context->frame_staging_buffer;
+
+		context->transfer_staging_buffer_slice_size = MiB(256);
+		context->transfer_staging_buffer =
+			gfx_buffer_make(
+				context,
+				context->transfer_staging_buffer_slice_size * MAX_TRANSFERS_IN_FLIGHT,
+				(BufferOptions){
+				  .debug_name = "transfer_staging_buffer",
+				  .memory = BUFFER_MEMORY_SHARED,
+				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
+				});
+		ok = context->transfer_staging_buffer;
+
 		if (ok == false) {
-			LOG_ERROR("failed to create context staging buffer.");
+			LOG_ERROR("failed to create context staging buffers.");
 		}
 	}
-	if (ok)
-		vkMapMemory(context->device.logical, context->staging_buffer->memory, 0, context->staging_buffer->size, 0, (void **)&context->staging_buffer->mapped);
+	if (ok) {
+		vkMapMemory(context->device.logical, context->frame_staging_buffer->memory, 0, context->frame_staging_buffer->size, 0, (void **)&context->frame_staging_buffer->mapped);
+		vkMapMemory(context->device.logical, context->transfer_staging_buffer->memory, 0, context->transfer_staging_buffer->size, 0, (void **)&context->transfer_staging_buffer->mapped);
+	}
 
 	if (ok) {
 		context->initialized = true;
@@ -3042,11 +3156,18 @@ void gfx_shutdown(GFX_Context *context) {
 			break;
 	}
 
-	for (uint32_t index = 0; index < countof(context->cmd_buffers); ++index) {
-		GFX_CommandContext *cmd_buffer = &context->cmd_buffers[index];
+	for (uint32_t index = 0; index < countof(context->frame_commands); ++index) {
+		GFX_CommandContext *cmd_buffer = &context->frame_commands[index];
 
 		if (cmd_buffer->descriptor_pool)
 			vkDestroyDescriptorPool(context->device.logical, cmd_buffer->descriptor_pool, 0);
+		if (cmd_buffer->in_flight_fence)
+			vkDestroyFence(context->device.logical, cmd_buffer->in_flight_fence, 0);
+	}
+
+	for (uint32_t index = 0; index < countof(context->transfer_commands); ++index) {
+		GFX_CommandContext *cmd_buffer = &context->transfer_commands[index];
+
 		if (cmd_buffer->in_flight_fence)
 			vkDestroyFence(context->device.logical, cmd_buffer->in_flight_fence, 0);
 	}
@@ -3106,6 +3227,8 @@ VkPipelineStageFlags gfx__usage_to_pipeline_stage(ResourceUsage usage) {
 
 		case RESOURCE_USAGE_PRESENT:
 			return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		case RESOURCE_USAGE_COUNT:
+			break;
 	}
 
 	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
@@ -3148,45 +3271,7 @@ VkAccessFlags gfx__usage_to_access(ResourceUsage usage) {
 
 		case RESOURCE_USAGE_PRESENT:
 			return 0;
-	}
-
-	ASSERT_FORMAT(false, "unhandled/invalid ResourceUsage [%u] in %s.", usage, __func__);
-	return 0;
-}
-
-VkImageLayout gfx__usage_to_image_layout(ResourceUsage usage) {
-	switch (usage) {
-		case RESOURCE_USAGE_UNDEFINED:
-			return VK_IMAGE_LAYOUT_UNDEFINED;
-
-		case RESOURCE_USAGE_TRANSFER_SRC:
-			return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		case RESOURCE_USAGE_TRANSFER_DST:
-			return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-
-		case RESOURCE_USAGE_SHADER_READ:
-		case RESOURCE_USAGE_VERTEX_SHADER_READ:
-		case RESOURCE_USAGE_FRAGMENT_SHADER_READ:
-		case RESOURCE_USAGE_COMPUTE_SHADER_READ:
-			return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-		case RESOURCE_USAGE_SHADER_WRITE:
-		case RESOURCE_USAGE_VERTEX_SHADER_WRITE:
-		case RESOURCE_USAGE_FRAGMENT_SHADER_WRITE:
-		case RESOURCE_USAGE_COMPUTE_SHADER_WRITE:
-			return VK_IMAGE_LAYOUT_GENERAL;
-
-		case RESOURCE_USAGE_COLOR_ATTACHMENT:
-			return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		case RESOURCE_USAGE_DEPTH_ATTACHMENT:
-			return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		case RESOURCE_USAGE_PRESENT:
-			return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-		case RESOURCE_USAGE_VERTEX_BUFFER:
-		case RESOURCE_USAGE_INDEX_BUFFER:
+		case RESOURCE_USAGE_COUNT:
 			break;
 	}
 
@@ -3200,7 +3285,7 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 	bool ok = context;
 
 	if (ok) {
-		result = &context->cmd_buffers[context->current_frame_index];
+		result = &context->frame_commands[context->current_frame_index];
 		result->frame_index = context->current_frame_index;
 		memory_zero_array(result->swapchains);
 		memory_zero_array(result->swapchain_image_indices);
@@ -3216,9 +3301,9 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 		vkResetFences(context->device.logical, 1, &result->in_flight_fence);
 		vkResetDescriptorPool(context->device.logical, result->descriptor_pool, 0);
 
-		result->transient_buffer = context->staging_buffer;
-		result->transient_arena[0] = arena_wrap(context->staging_buffer->mapped, context->staging_buffer->size);
-		result->transient_arena->offset = context->current_frame_index * context->staging_buffer_frame_size;
+		result->transient_buffer = context->frame_staging_buffer;
+		result->transient_arena[0] = arena_wrap(context->frame_staging_buffer->mapped, context->frame_staging_buffer->size);
+		result->transient_arena->offset = context->current_frame_index * context->frame_staging_buffer_slice_size;
 
 		// Begin command recording
 		VkCommandBufferBeginInfo cb_begin_info = {
@@ -3231,10 +3316,87 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 			LOG_WARN("failed to begin command buffer recording.");
 	}
 
+	if (ok) // submit transfer batch
+		gfx_transfer_flush(context);
+
 	if (ok == false)
 		result = 0;
 
 	return result;
+}
+
+GFX_CommandContext *gfx_transfer_cmd(GFX_Context *context) {
+	GFX_CommandContext *result = 0;
+
+	bool ok = context;
+	if (ok) {
+		result = &context->transfer_commands[context->current_transfer_index];
+
+		if (result->recording == 0)
+			ok = vkWaitForFences(context->device.logical, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+	}
+
+	if (ok && result->recording == 0) {
+		// reset resources
+		vkResetCommandBuffer(result->handle, 0);
+		vkResetFences(context->device.logical, 1, &result->in_flight_fence);
+
+		result->transient_buffer = context->transfer_staging_buffer;
+		result->transient_arena[0] = arena_wrap(context->transfer_staging_buffer->mapped, context->transfer_staging_buffer->size);
+		result->transient_arena->offset = context->current_transfer_index * context->transfer_staging_buffer_slice_size;
+
+		// Begin command recording
+		VkCommandBufferBeginInfo cb_begin_info = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		};
+		ok = vkBeginCommandBuffer(result->handle, &cb_begin_info) == VK_SUCCESS;
+
+		if (ok == false)
+			LOG_WARN("failed to begin command buffer recording.");
+	}
+
+	if (ok)
+		result->recording = 1;
+
+	if (ok == false)
+		result = 0;
+
+	return result;
+}
+
+bool gfx_transfer_flush(GFX_Context *context) {
+	bool ok = context;
+
+	GFX_CommandContext *cmd = 0;
+	if (ok) { // check if recording
+		cmd = &context->transfer_commands[context->current_transfer_index];
+
+		ok = cmd->recording;
+	}
+
+	if (ok) { // end recording
+		ok = vkEndCommandBuffer(cmd->handle) == VK_SUCCESS;
+		if (ok == false)
+			LOG_INFO("failed to record transfer command buffer.");
+
+		cmd->recording = 0;
+	}
+
+	if (ok) { // submit to queue
+		VkSubmitInfo submit_info = {
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+			.commandBufferCount = 1,
+			.pCommandBuffers = &cmd->handle,
+		};
+
+		ok = vkQueueSubmit(context->graphics_queue, 1, &submit_info, cmd->in_flight_fence) == VK_SUCCESS;
+		if (ok == false)
+			LOG_ERROR("failed to submit transfer command buffer to queue.");
+
+		context->current_transfer_index = (context->current_transfer_index + 1) % MAX_TRANSFERS_IN_FLIGHT;
+	}
+
+	return ok;
 }
 
 GFX_CommandContext gfx_transfer_batch_begin(GFX_Context *context) {
@@ -3261,9 +3423,9 @@ GFX_CommandContext gfx_transfer_batch_begin(GFX_Context *context) {
 	if (ok) {
 		result.handle = cmd;
 		result.transient_arena[0] = arena_wrap(
-			context->staging_buffer->mapped + context->current_frame_index * context->staging_buffer_frame_size,
-			context->staging_buffer_frame_size); // TODO: staging buffer pool
-		result.transient_buffer = context->staging_buffer;
+			context->frame_staging_buffer->mapped + context->current_frame_index * context->frame_staging_buffer_slice_size,
+			context->frame_staging_buffer_slice_size); // TODO: staging buffer pool
+		result.transient_buffer = context->frame_staging_buffer;
 	}
 
 	return result;
@@ -3655,18 +3817,33 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 		ok = vkAllocateCommandBuffers(context->device.logical, &cb_allocate_info, buffers) == VK_SUCCESS;
 
 		for (uint32_t frame_index = 0; frame_index < countof(buffers); ++frame_index)
-			context->cmd_buffers[frame_index].handle = buffers[frame_index];
+			context->frame_commands[frame_index].handle = buffers[frame_index];
 	}
 
-	if (ok) { // allocate frame fences
+	if (ok) { // allocate transfer command buffers
+		VkCommandBuffer buffers[MAX_TRANSFERS_IN_FLIGHT];
+		VkCommandBufferAllocateInfo cb_allocate_info = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.commandPool = context->graphics_command_pool,
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = countof(buffers)
+		};
+		ok = vkAllocateCommandBuffers(context->device.logical, &cb_allocate_info, buffers) == VK_SUCCESS;
 
+		for (uint32_t transfer_index = 0; transfer_index < countof(buffers); ++transfer_index)
+			context->transfer_commands[transfer_index].handle = buffers[transfer_index];
+	}
+
+	if (ok) { // allocate fences
 		VkFenceCreateInfo f_create_info = {
 			.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
 			.flags = VK_FENCE_CREATE_SIGNALED_BIT
 		};
 
-		for (uint32_t frame_index = 0; frame_index < countof(context->cmd_buffers); ++frame_index)
-			ok &= vkCreateFence(context->device.logical, &f_create_info, 0, &context->cmd_buffers[frame_index].in_flight_fence) == VK_SUCCESS;
+		for (uint32_t frame_index = 0; frame_index < countof(context->frame_commands); ++frame_index)
+			ok &= vkCreateFence(context->device.logical, &f_create_info, 0, &context->frame_commands[frame_index].in_flight_fence) == VK_SUCCESS;
+		for (uint32_t transfer_index = 0; transfer_index < countof(context->transfer_commands); ++transfer_index)
+			ok &= vkCreateFence(context->device.logical, &f_create_info, 0, &context->transfer_commands[transfer_index].in_flight_fence) == VK_SUCCESS;
 	}
 
 	if (ok) { // allocate frame descriptor pools
@@ -3705,7 +3882,7 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 		};
 
 		for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index)
-			ok &= vkCreateDescriptorPool(context->device.logical, &dp_create_info, 0, &context->cmd_buffers[frame_index].descriptor_pool) == VK_SUCCESS;
+			ok &= vkCreateDescriptorPool(context->device.logical, &dp_create_info, 0, &context->frame_commands[frame_index].descriptor_pool) == VK_SUCCESS;
 	}
 	return ok;
 }
@@ -3718,7 +3895,7 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 
 	// TODO: cache descriptor sets instead?
 	if (ok) { // allocate descriptor set
-		cmd = &context->cmd_buffers[context->current_frame_index];
+		cmd = &context->frame_commands[context->current_frame_index];
 
 		VkDescriptorSetAllocateInfo alloc_info = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -3861,7 +4038,6 @@ void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer
 		LOG_WARN("%s - invalid parameter '%s' passed", __func__, cmd == 0 || cmd->handle == 0 ? "GFX_CommandContext" : "GFX_Image");
 
 	if (ok) {
-		ResourceUsage original = dst->res_usage;
 		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
 
 		uint32_t layer_count = gfx__image_options_to_layer_count(dst->options);
@@ -3869,7 +4045,7 @@ void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer
 
 		for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
 			regions[layer_index] = (VkBufferImageCopy){
-				.bufferOffset = src_offset + (layer_index * width * height * gfx__pixel_format_to_stride(dst->options.format)),
+				.bufferOffset = src_offset + (layer_index * width * height * pixel_format_to_stride[dst->options.format]),
 				.bufferRowLength = 0,
 				.bufferImageHeight = 0,
 				.imageSubresource = {
@@ -3883,7 +4059,6 @@ void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer
 			};
 		}
 		vkCmdCopyBufferToImage(cmd->handle, src->handle, dst->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layer_count, regions);
-		gfx_cmd_image_transition(cmd, original, dst);
 	}
 
 	arena_scratch_end(scratch);
@@ -3912,7 +4087,7 @@ void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, Resource
 	}
 }
 
-void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, GFX_Image *target) {
+void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
 	bool ok = cmd && target;
 
 	if (ok) {
@@ -3926,8 +4101,8 @@ void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceU
 		VkPipelineStageFlags dst_stage = gfx__usage_to_pipeline_stage(dst);
 		VkAccessFlags src_access = gfx__usage_to_access(src);
 		VkAccessFlags dst_access = gfx__usage_to_access(dst);
-		VkImageLayout src_layout = gfx__usage_to_image_layout(src);
-		VkImageLayout dst_layout = gfx__usage_to_image_layout(dst);
+		VkImageLayout src_layout = resource_usage_to_image_layout[src];
+		VkImageLayout dst_layout = resource_usage_to_image_layout[dst];
 
 		VkImageMemoryBarrier image_barrier = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -3941,8 +4116,8 @@ void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceU
 			.subresourceRange = {
 			  .aspectMask = gfx__image_options_to_aspect(target->options),
 			  .baseArrayLayer = 0,
-			  .baseMipLevel = 0,
-			  .levelCount = 1,
+			  .baseMipLevel = base_miplevel,
+			  .levelCount = level_count,
 			  .layerCount = gfx__image_options_to_layer_count(target->options),
 			},
 		};
@@ -3958,11 +4133,10 @@ void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceU
 }
 
 void gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target) {
-	gfx_cmd_image_barrier(cmd, target->res_usage, dst, target);
+	gfx_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
 }
 
 void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
-	// TODO: Store current image layout, transition if necessary
 	VkImageBlit blit_info = {
 		.srcOffsets[1] = {
 		  .x = source_rect.width,
@@ -3988,19 +4162,21 @@ void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Imag
 		},
 	};
 	vkCmdBlitImage(cmd->handle,
-		source->handle,
-		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		target->handle,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		source->handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		target->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		1, &blit_info, 0);
 }
 
 void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
-	uint32_t stride = gfx__pixel_format_to_stride(image->options.format);
+	uint32_t stride = pixel_format_to_stride[image->options.format];
 	uint64_t size = width * height * stride * gfx__image_options_to_layer_count(image->options);
-	uint64_t start_offset = cmd->transient_arena->offset;
-	memory_copy(arena_push(cmd->transient_arena, alignup(size, 256), 1, 0), pixels, size);
+	uint64_t start_offset = gfx_cmd_put(cmd, size, pixels);
 	gfx_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
+}
+
+void gfx_cmd_buffer_upload(GFX_CommandContext *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data) {
+	uint64_t staging_offset = gfx_cmd_put(cmd, size, data);
+	gfx_cmd_buffer_to_buffer(cmd, buffer, cmd->transient_buffer, offset, staging_offset, size);
 }
 
 void gfx_cmd_pipeline_bind(GFX_CommandContext *cmd, GFX_Pipeline *pipeline) {
@@ -4655,8 +4831,11 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 	ImguiInteraction result = imgui_interact(id, rect);
 
 	bool ok = imgui_state.batch_arena;
-	if (ok)
+	if (ok) {
+		y = result.held ? y + 1 : y;
+
 		push_rect(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
+	}
 
 	return result;
 }

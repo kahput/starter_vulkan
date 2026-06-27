@@ -18,6 +18,7 @@ layout(push_constant) uniform ConstantBlock {
     vec4 emissive;
     vec2 metallic_roughness;
     vec2 uv_offset;
+    vec2 uv_scale;
     uint use_heightmap;
 } pc;
 
@@ -34,7 +35,7 @@ float shadow_calculation(vec4 lightspace, float bias);
 
 void main() {
     vec4 albedo = texture(u_textures[TEXTURE_ALBEDO], fs_input.uv + pc.uv_offset) * pc.tint;
-    if (albedo.a < 1.0) discard;
+    if (albedo.a < 0.75) discard;
     albedo.xyz *= (1 - fs_input.uv.y) + 0.5;
 
     vec3 normal = normalize(fs_input.normal);
