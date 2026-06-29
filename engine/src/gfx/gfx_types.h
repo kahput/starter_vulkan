@@ -33,7 +33,7 @@ typedef enum {
 	PIXELFORMAT_DEPTH_STENCIL,
 	PIXELFORMAT_BACKBUFFER,
 
-    PIXELFORMAT_COUNT,
+	PIXELFORMAT_COUNT,
 } PixelFormat;
 
 static inline bool pixel_format_is_depth_stencil(PixelFormat format) { return format == PIXELFORMAT_DEPTH_STENCIL; }
@@ -72,11 +72,11 @@ typedef enum {
 } BufferUsage;
 
 typedef enum {
-	BUFFER_MEMORY_LOCAL,
-	BUFFER_MEMORY_SHARED,
+	MEMORY_TYPE_GPU,
+	MEMORY_TYPE_CPU,
 
-    BUFFER_MEMORY_COUNT,
-} BufferMemory;
+	MEMORY_TYPE_COUNT,
+} MemoryType;
 
 typedef enum {
 	SHADER_STAGE_VERTEX,
@@ -111,7 +111,7 @@ typedef struct {
 	const char *debug_name;
 
 	BufferUsage usage;
-	BufferMemory memory;
+	MemoryType memory;
 
 	void *data;
 } BufferOptions;
@@ -187,5 +187,5 @@ typedef enum {
 	RESOURCE_USAGE_COLOR_ATTACHMENT,
 	RESOURCE_USAGE_DEPTH_ATTACHMENT,
 
-    RESOURCE_USAGE_COUNT,
+	RESOURCE_USAGE_COUNT,
 } ResourceUsage;

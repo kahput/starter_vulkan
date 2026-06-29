@@ -1,7 +1,7 @@
-
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
+#include "core/geom.h"
 #include "core/input_types.h"
 #include "core/logger.h"
 #include "core/debug.h"
@@ -21,6 +21,7 @@
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
 #include <vulkan/vulkan_core.h>
+#include <wchar.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_TRANSFERS_IN_FLIGHT 2
@@ -79,7 +80,7 @@ typedef struct {
 
 	union {
 		struct {
-			GFX_Buffer *handle; // transient if 0
+			GFX_Buffer *handle;
 			uint64_t offset, size;
 			void *data;
 		} buffer;
@@ -107,6 +108,8 @@ struct Shader {
 
 	VkDescriptorSetLayout set_layouts[MAX_UNIFORM_SETS];
 	UniformSet set_infos[MAX_UNIFORM_SETS];
+
+	PipelineOptions options;
 };
 
 #define SWAPCHAIN_IMAGE_COUNT 3
@@ -125,6 +128,8 @@ struct Swapchain {
 	VkImageView views[SWAPCHAIN_IMAGE_COUNT];
 	VkImageViewCreateInfo view_infos[SWAPCHAIN_IMAGE_COUNT];
 	uint32_t image_count;
+
+	GFX_Image wrapper;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
 	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
@@ -261,7 +266,8 @@ bool gfx_sampler_destroy(GFX_Context *context, GFX_Sampler *sampler);
 bool gfx_swapchain_destroy(GFX_Context *context, GFX_Swapchain *surface);
 void pipeline_destroy(GFX_Context *context, GFX_Pipeline *pipeline);
 
-GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *surface);
+GFX_Image *gfx_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *swapchain);
+void gfx_present(GFX_Context *context, GFX_Swapchain *swapchain, GFX_Image *image);
 bool gfx_swapchain_resize(GFX_Context *context, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height);
 bool gfx_image_resize(GFX_Context *context, GFX_Image *image, uint32_t new_width, uint32_t new_height);
 
@@ -341,8 +347,8 @@ uint64_t gfx_cmd_put(GFX_CommandContext *cmd, uint64_t size, void *src);
 void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
 void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height);
 void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target);
-void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target);
-void gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target);
+bool gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target);
+bool gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target);
 void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target);
 void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels);
 void gfx_cmd_buffer_upload(GFX_CommandContext *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data);
@@ -384,6 +390,8 @@ typedef struct {
 	uint32_t vertex_offset, index_offset;
 	uint32_t vertex_count, index_count;
 	uint32_t material_id;
+
+	aabb3 bounds;
 } MeshPart;
 
 typedef struct {
@@ -408,6 +416,8 @@ typedef struct {
 
 	uint64_t total_vertex_count;
 	uint64_t total_index_count;
+
+	aabb3 bounds;
 } Mesh;
 
 typedef enum {
@@ -435,7 +445,7 @@ typedef struct {
 	float4x4 *skin_matrices;
 } MeshInstance;
 
-String8 meshid_to_path[MESH_COUNT] = {
+String8 meshid_to_metadata[MESH_COUNT] = {
 	[MESH_HERO_MALE] = str_comp("assets/models/hero_male.glb"),
 	[MESH_GDBOT] = str_comp("assets/models/gdbot.glb"),
 	[MESH_MAGE] = str_comp("assets/models/mage.glb"),
@@ -444,6 +454,43 @@ String8 meshid_to_path[MESH_COUNT] = {
 	[MESH_ROOM_LARGE] = str_comp("assets/models/room-large.glb"),
 	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
 };
+
+typedef enum {
+	ENTITY_FEATURE_DRAW_MESH,
+	ENTITY_FEATURE_SKIN_MESH,
+	ENTITY_FEATURE_CAST_SHADOW,
+
+	// Gameplay
+	ENTITY_FEATURE_PLAYER_CONTROLLED,
+	ENTITY_FEATURE_INTERACTABLE,
+	ENTITY_FEATURE_COLLIDABLE,
+
+	ENTITY_FEATURE_MAX,
+} EntityFeature;
+
+#define ENTITY_BITSET_WIDTH 64
+#define ENTITY_BITSET_SIZE (ENTITY_FEATURE_MAX + 63) / 64
+typedef uint64_t FeatureBitset[ENTITY_BITSET_SIZE];
+typedef struct {
+	FeatureBitset features;
+
+	MeshID meshid;
+	Transform3 transform;
+
+	// skinning
+	uint64_t skinned_vertices_offset;
+	float4x4 *skin_matrices;
+
+	// gameplay
+	float interact_radius;
+	Shape shape;
+} Entity;
+
+#define MAX_ENTITIES 1024
+typedef struct {
+	Entity entities[MAX_ENTITIES];
+	uint32_t entity_count;
+} World;
 
 typedef enum {
 	FACE_RIGHT,
@@ -464,6 +511,7 @@ typedef enum {
 	AXIS_XYZ,
 } Axis;
 
+// :functions
 Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
@@ -504,6 +552,62 @@ uint32_t find_animation(AnimationClip *clips, uint32_t count, String8 target) {
 			return anim_index;
 
 	return 0;
+}
+
+Entity *ecs_spawn(World *world) {
+	Entity *result = 0;
+	bool ok = world;
+
+	if (ok) {
+		result = &world->entities[0];
+
+		ok = world->entity_count < MAX_ENTITIES;
+	}
+
+	if (ok) {
+		result = &world->entities[world->entity_count++];
+
+		result->transform.rotation = quat4_identity();
+		result->transform.scale = FLOAT3_ONE;
+	}
+
+	if (ok == false) {
+		ASSERT(false);
+	}
+
+	return result;
+}
+
+static inline void ecs__bitset_flip(FeatureBitset bitset, EntityFeature feature, bool on) {
+	uint32_t index = feature / ENTITY_BITSET_WIDTH;
+
+	if (on)
+		bitset[index] |= 1ULL << (feature % ENTITY_BITSET_WIDTH);
+	else
+		bitset[index] &= ~(1ULL << (feature % ENTITY_BITSET_WIDTH));
+}
+static inline bool ecs__bitset_test(FeatureBitset bitset, EntityFeature feature) {
+	uint32_t index = feature / ENTITY_BITSET_WIDTH;
+	return bitset[index] & (1ULL << (feature % ENTITY_BITSET_WIDTH));
+}
+
+void ecs_enable(Entity *entity, EntityFeature feature) {
+	bool ok = entity && feature < ENTITY_FEATURE_MAX;
+	if (ok)
+		ecs__bitset_flip(entity->features, feature, true);
+}
+void ecs_disable(Entity *entity, EntityFeature feature) {
+	bool ok = entity && (uint32_t)feature < ENTITY_FEATURE_MAX;
+	if (ok)
+		ecs__bitset_flip(entity->features, feature, false);
+}
+
+static inline bool ecs_has(Entity *entity, EntityFeature feature) {
+	bool ok = entity && (uint32_t)feature < ENTITY_FEATURE_MAX;
+	if (ok)
+		ok = ecs__bitset_test(entity->features, feature);
+
+	return ok;
 }
 
 int main(void) {
@@ -597,13 +701,17 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/shadow.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/blank.fragment.spv"));
 
-		pipeline_shadow = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, (PipelineOptions){ .debug_name = "pipeline_shadow" });
+		pipeline_shadow = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+			(PipelineOptions){
+			  .debug_name = "pipeline_shadow",
+			});
 		arena_scratch_end(scratch);
 	}
 
 	GFX_Pipeline pipeline_3d = { 0 };
 	GFX_Pipeline pipeline_skybox = { 0 };
 	GFX_Pipeline pipeline_grass = { 0 };
+	GFX_Pipeline pipeline_line = { 0 };
 	{ // create 3d graphics pipelines
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
@@ -639,6 +747,16 @@ int main(void) {
 			  .sample_count = SAMPLE_COUNT_8,
 			});
 
+		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line.vertex.spv"));
+		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+		pipeline_line = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+			(PipelineOptions){
+			  .debug_name = "debug_line",
+			  .color_attachment_count = 1,
+			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
+			  .sample_count = SAMPLE_COUNT_8,
+			});
+
 		arena_scratch_end(scratch);
 	}
 
@@ -666,13 +784,13 @@ int main(void) {
 	GFX_Buffer *geometry = gfx_buffer_make(context, MiB(256),
 		(BufferOptions){
 		  .debug_name = "geometry",
-		  .memory = BUFFER_MEMORY_LOCAL,
+		  .memory = MEMORY_TYPE_GPU,
 		  .usage = BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER,
 		});
 	GFX_Buffer *grass_instancing_buffer = gfx_buffer_make(context, MiB(128),
 		(BufferOptions){
 		  .debug_name = "grass_instancing",
-		  .memory = BUFFER_MEMORY_LOCAL,
+		  .memory = MEMORY_TYPE_GPU,
 		  .usage = BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER,
 		});
 
@@ -690,13 +808,13 @@ int main(void) {
 	AnimationClip *animations[MESH_COUNT] = { 0 };
 
 	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
-		if (meshid_to_path[meshid].length == 0)
+		if (meshid_to_metadata[meshid].length == 0)
 			continue;
-		meshes[meshid] = load_gltf(arena, meshid_to_path[meshid]);
+		meshes[meshid] = load_gltf(arena, meshid_to_metadata[meshid]);
 
 		if (meshes[meshid].skeleton.bone_count == 0 || meshid == MESH_MAGE)
 			continue;
-		animations[meshid] = load_gltf_animations(arena, meshid_to_path[meshid], &animation_counts[meshid]);
+		animations[meshid] = load_gltf_animations(arena, meshid_to_metadata[meshid], &animation_counts[meshid]);
 	}
 
 	{ // :upload
@@ -732,9 +850,9 @@ int main(void) {
 			for (uint32_t z = 0; z < map_depth; ++z) {
 				for (uint32_t x = 0; x < map_width; ++x) {
 					float3 pos = {
-						.x = x - (map_width * 0.5f) + ((float)(rand() % 10) / 10),
+						.x = x - (map_width * 0.5f) + randf_range(0.0, 1.0),
 						.y = 0.0f,
-						.z = z - (map_depth * 0.5f) + ((float)(rand() % 10) / 10),
+						.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 					};
 					pos = float3_scale(pos, 1.f / 2.f);
 					*arena_push_count(cmd->transient_arena, float4, 1) = float4_from_float3(pos, 1.0f);
@@ -813,11 +931,32 @@ int main(void) {
 		},
 	};
 
-	MeshInstance instances[256] = {
-		[0] = { MESH_HERO_MALE, { FLOAT3_ZERO, FLOAT4_ZERO, FLOAT3_ONE }, true, 0, 0 },
-		[1] = { MESH_TERRAIN_FLAT, { { 0.0f, 0.0f, 0.0f }, FLOAT4_ZERO, FLOAT3_ONE }, 0, true, 0 },
-	};
-	uint32_t instance_count = 2;
+	World world = { .entity_count = 1 };
+
+	Entity *player = ecs_spawn(&world);
+	player->meshid = MESH_HERO_MALE;
+	player->shape.as.aabb3 = meshes[player->meshid].bounds;
+
+	ecs_enable(player, ENTITY_FEATURE_DRAW_MESH);
+	ecs_enable(player, ENTITY_FEATURE_SKIN_MESH);
+	ecs_enable(player, ENTITY_FEATURE_CAST_SHADOW);
+	ecs_enable(player, ENTITY_FEATURE_PLAYER_CONTROLLED);
+	ecs_enable(player, ENTITY_FEATURE_COLLIDABLE);
+
+	Entity *barrel = ecs_spawn(&world);
+	barrel->meshid = MESH_BARREL;
+	barrel->transform.translation = (float3){ 3.0f, 0.0f, 0.0f };
+	barrel->interact_radius = 3.0f;
+	barrel->shape.as.aabb3 = meshes[barrel->meshid].bounds;
+
+	ecs_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
+	ecs_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
+	ecs_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
+	ecs_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
+
+	Entity *terrain = ecs_spawn(&world);
+	terrain->meshid = MESH_TERRAIN_FLAT;
+	ecs_enable(terrain, ENTITY_FEATURE_DRAW_MESH);
 
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
@@ -841,6 +980,7 @@ int main(void) {
 
 					} else {
 						gfx_swapchain_resize(context, swapchains[0], dims.x, dims.y);
+						gfx_image_resize(context, compute_image, dims.x, dims.y);
 					}
 				} break;
 
@@ -882,7 +1022,7 @@ int main(void) {
 		} Light;
 
 		Light lights[] = {
-			{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() },
+			{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() }, // day
 			{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 0.5f, 0.2f, 1.0f }, float4x4_identity() }, // sunset
 			{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.05f, 0.15f, 0.6f, 1.0f }, float4x4_identity() }, // night
 		};
@@ -904,6 +1044,17 @@ int main(void) {
 					os_cursor_capture(main_render, false);
 
 				scene_camera_orbit(camera, mouse_delta);
+				for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
+					Entity *entity = &world.entities[entity_index];
+
+					if (ecs_has(entity, ENTITY_FEATURE_SKIN_MESH)) {
+						Mesh *mesh = &meshes[entity->meshid];
+						entity->skin_matrices = arena_push_count(frame_arena, float4x4, mesh->skeleton.bone_count);
+
+						for (uint32_t index = 0; index < mesh->skeleton.bone_count; ++index)
+							entity->skin_matrices[index] = float4x4_identity();
+					}
+				}
 
 				// :editor
 				imgui_frame_begin(batch_2d);
@@ -936,14 +1087,19 @@ int main(void) {
 					float button_x = panel_x + pad;
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
 						use_heightmap = !use_heightmap;
-						instances[1].id = use_heightmap ? MESH_TERRAIN_HEIGHTMAP : MESH_TERRAIN_FLAT;
+						for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
+							Entity *entity = &world.entities[entity_index];
+
+							if (entity->meshid == MESH_TERRAIN_FLAT || entity->meshid == MESH_TERRAIN_HEIGHTMAP)
+								entity->meshid = use_heightmap ? MESH_TERRAIN_HEIGHTMAP : MESH_TERRAIN_FLAT;
+						}
 					}
 					button_x += button_w + pad;
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
 						draw_grass = !draw_grass;
 					button_x += button_w + pad;
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
-                        light_index  = (light_index + 1) % countof(lights);
+						light_index = (light_index + 1) % countof(lights);
 					}
 					button_x += button_w + pad;
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
@@ -955,10 +1111,8 @@ int main(void) {
 			} break;
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
-				MeshInstance *instance = &instances[0];
-
-				Transform3 *tranform = &instance->transform;
-				Mesh *mesh = &meshes[instance->id];
+				Transform3 *transform = &player->transform;
+				Mesh *mesh = &meshes[player->meshid];
 
 				static uint32_t current_anim = 0;
 				static float anim_t = 0.0f;
@@ -972,14 +1126,13 @@ int main(void) {
 					.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
 				};
 
-				{ // :player
+				{ // :camera
 					static float azimuth = C_PIf * 3 / 2.f;
 					static float theta = C_PIf / 3.f;
-					anim_t += dt;
-
 					static const float sensitivity = 1.0f;
 					static const float spring_arm_length = 10.f;
-					static const float walk_speed = 3.0f, run_speed = 6.0f;
+
+					anim_t += dt;
 
 					float yaw_delta = mouse_delta.x * sensitivity;
 					float pitch_delta = mouse_delta.y * sensitivity;
@@ -990,7 +1143,7 @@ int main(void) {
 
 					theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
 
-					float3 camera_offset = float3_subtract(camera->position, tranform->translation);
+					float3 camera_offset = float3_subtract(camera->position, transform->translation);
 
 					float r = float3_length(camera_offset);
 					if (r < EPSILON)
@@ -1008,16 +1161,23 @@ int main(void) {
 					if (da < -C_PI)
 						da += C_PI * 2.f;
 
-					float t = 1.0f - expf(-10.0f * dt);
+					float t = 1.0f - expf(-15.0f * dt);
 
 					current_azimuth += t * da;
 					current_theta += t * (theta - current_theta);
 
 					camera->position = (float3){
-						(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + tranform->translation.x,
+						(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + transform->translation.x,
 						spring_arm_length * cosf(current_theta),
-						(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + tranform->translation.z,
+						(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + transform->translation.z,
 					};
+				}
+
+				float3 move_delta = { 0 };
+				(void)move_delta;
+				float move_speed = 0;
+				{ // :move
+					static const float walk_speed = 3.0f, run_speed = 6.0f;
 
 					float3 camera_position = camera->position;
 					float3 camera_target = camera->target;
@@ -1040,16 +1200,57 @@ int main(void) {
 					float length = float3_length(direction);
 					if (length > EPSILON)
 						direction = float3_scale(direction, 1 / length);
+					move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
 
-					float speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
-					tranform->translation = float3_add(tranform->translation, float3_scale(direction, speed * dt));
+					move_delta = float3_scale(direction, move_speed * dt);
+				}
 
-					camera->target.x = tranform->translation.x;
-					camera->target.z = tranform->translation.z;
+#if 1
+				{ // :collision
+					if (float3_length_squared(move_delta) > 0) {
+						float t_remaining = 1.0f;
+						for (uint32_t iteration = 0; iteration < 4 && t_remaining > 0.0f; ++iteration) {
+							// Collision detection
+							float3 ro = transform->translation;
+							float3 rd = float3_normalize_safe(move_delta, EPSILON);
+
+							Raycast3Result nearest = RAY3_NO_HIT;
+							for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
+								Entity *other = &world.entities[entity_index];
+								if (other == player || ecs_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
+									continue;
+
+								float3 center = float3_add(aabb3_center(other->shape.as.aabb3), other->transform.translation);
+								// NOTE: Minkowski sum
+								float3 half_extent =
+									float4x4_transform(
+										float4x4_scaling(other->transform.scale),
+										float4_from_float3(aabb3_half_extent(other->shape.as.aabb3), 0.0f));
+
+								float3 swept_extent = float3_add(half_extent, aabb3_half_extent(player->shape.as.aabb3));
+
+								Raycast3Result result = raycast_aabb3(ro, rd, center, swept_extent);
+								if (result.t < nearest.t)
+									nearest = result;
+							}
+
+							// Collision resolution
+							float t_actual = nearest.t / (move_speed * dt);
+							float t_min = fminf(1.0f, t_actual);
+
+							transform->translation = float3_add(transform->translation, float3_scale(move_delta, t_min - 0.001f));
+
+							move_delta = float3_subtract(move_delta, float3_scale(nearest.normal, float3_dot(move_delta, nearest.normal)));
+							t_remaining -= t_min;
+						}
+					}
+
+					camera->target.x = transform->translation.x;
+					camera->target.z = transform->translation.z;
 
 					if (use_heightmap) {
-						float px = clampf(tranform->translation.x + map_width * 0.5f, 0.0f, map_width);
-						float pz = clampf(tranform->translation.z + map_depth * 0.5f, 0.0f, map_depth);
+						float px = clampf(transform->translation.x + map_width * 0.5f, 0.0f, map_width);
+						float pz = clampf(transform->translation.z + map_depth * 0.5f, 0.0f, map_depth);
 
 						int32_t x0 = (int32_t)px;
 						int32_t z0 = (int32_t)pz;
@@ -1070,16 +1271,48 @@ int main(void) {
 						float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
 
 						float height = top_edge + v * (bottom_edge - top_edge);
-						tranform->translation.y = height * 40.f;
-						camera->position.y += tranform->translation.y;
-						camera->target.y = tranform->translation.y + 1.5f;
+						/* float hs = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f; */
+						/* tranform->translation.y = hs * 40.f; */
+						transform->translation.y = height * 40.f;
+						camera->position.y += transform->translation.y;
+						camera->target.y = transform->translation.y + 1.5f;
 					} else {
-						tranform->translation.y = 0.0f;
-						camera->target.y = tranform->translation.y + 1.5f;
+						transform->translation.y = 0.0f;
+						camera->target.y = transform->translation.y + 1.5f;
+					}
+				}
+#else
+				transform->translation = float3_add(transform->translation, move_delta);
+				camera->target.x = transform->translation.x;
+				camera->target.z = transform->translation.z;
+#endif
+
+				{ // :interact
+
+					Entity *target = 0;
+					float closest = FLOAT_MAX;
+
+					if (input_key_pressed(KEY_CODE_F)) {
+						for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
+							Entity *entity = &world.entities[entity_index];
+							if (ecs_has(entity, ENTITY_FEATURE_INTERACTABLE) == false || target == player)
+								continue;
+
+							float3 offset = float3_subtract(entity->transform.translation, transform->translation);
+							float dist_sq = float3_dot(offset, offset);
+
+							if (dist_sq <= (entity->interact_radius * entity->interact_radius) && dist_sq < closest) {
+								closest = dist_sq;
+								target = entity;
+							}
+						}
+
+						if (target)
+							LOG_INFO("interaction with entity %u (%s)!", indexof(world.entities, target), str8_filename(meshid_to_metadata[target->meshid]).text);
 					}
 				}
 
-				Pose final = anim_pose_sample(frame_arena, &animations[instance->id][current_anim], fmodf(anim_t, animations[instance->id][current_anim].duration));
+				Pose final = anim_pose_sample(frame_arena, &animations[player->meshid][current_anim], fmodf(anim_t, animations[player->meshid][current_anim].duration));
 				{ // handle current animation
 					uint32_t target_anim = current_anim;
 					if (float2_length_squared(input_vector)) {
@@ -1089,18 +1322,18 @@ int main(void) {
 						quat4 target_rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
 
 						float t = 1.0f - expf(-15.0f * dt);
-						tranform->rotation = quat4_slerp(tranform->rotation, target_rotation, t);
+						transform->rotation = quat4_slerp(transform->rotation, target_rotation, t);
 
 						if (input_key_down(KEY_CODE_LEFTSHIFT))
-							target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/run-loop"));
+							target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/run-loop"));
 						else
-							target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/walk-loop"));
+							target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/walk-loop"));
 					} else
-						target_anim = find_animation(animations[instance->id], animation_counts[instance->id], s("freehand/idle-loop"));
+						target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/idle-loop"));
 
 					if (current_anim != target_anim) {
 						Pose start = final;
-						Pose end = anim_pose_sample(frame_arena, &animations[instance->id][target_anim], fmodf(anim_t, animations[instance->id][target_anim].duration));
+						Pose end = anim_pose_sample(frame_arena, &animations[player->meshid][target_anim], fmodf(anim_t, animations[player->meshid][target_anim].duration));
 
 						final = anim_pose_blend_local(frame_arena, &end, &start, blend_t, 0);
 
@@ -1112,7 +1345,7 @@ int main(void) {
 					}
 				}
 
-				instance->skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &final, &mesh->skeleton), &mesh->skeleton);
+				player->skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &final, &mesh->skeleton), &mesh->skeleton);
 			} break;
 			default:
 				break;
@@ -1124,46 +1357,41 @@ int main(void) {
 			continue;
 
 		// Swapchain image acquisition
-		GFX_Image compute_blit_target = gfx_swapchain_backbuffer(context, cmd, swapchains[0]);
-		if (compute_blit_target.handle) {
+		GFX_Image *compute_blit_target = gfx_backbuffer(context, cmd, swapchains[0]);
+		if (compute_blit_target) {
 			// transition swapchain target & blit src compute image
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, &compute_blit_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, compute_blit_target);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
 			gfx_cmd_pipeline_bind(cmd, &c_pipeline);
 			gfx_bind(context, &c_pipeline, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
-			gfx_cmd_dispatch(cmd, 40, 23, 1);
+			gfx_cmd_dispatch(cmd, (compute_blit_target->width / 16) + 1, (compute_blit_target->height / 16) + 1, 1);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
-			gfx_cmd_image_blit(cmd, (Rectangle){ .width = 640, .height = 360 }, compute_image, (Rectangle){ .width = 640, .height = 360 }, &compute_blit_target);
+			Rectangle area = rect(0, 0, compute_blit_target->width, compute_blit_target->height);
+			gfx_cmd_image_blit(cmd, area, compute_image, area, compute_blit_target);
 
 			// transition swapchain images for presenting
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &compute_blit_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, compute_blit_target);
 		}
 
-		GFX_Image main_target = gfx_swapchain_backbuffer(context, cmd, swapchains[1]);
-		if (main_target.handle) {
+		GFX_Image *main_target = gfx_backbuffer(context, cmd, swapchains[1]);
+		if (main_target) {
 			// transition swapchain & offscren targets for drawing
-			gfx_cmd_image_transition(
-				cmd,
-				RESOURCE_USAGE_COLOR_ATTACHMENT,
-				&main_target);
-			gfx_cmd_image_transition(
-				cmd,
-				RESOURCE_USAGE_COLOR_ATTACHMENT,
-				offscreen_render);
-
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, main_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, offscreen_render);
 			static float blink_timer = 0.0f;
 
 			blink_timer += dt;
 
-			for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
-				MeshInstance *instance = &instances[instance_index];
-				if (animation_counts[instance->id] == 0 || instance->skin_matrices == 0)
+			// :skinning
+			for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
+				Entity *instance = &world.entities[instance_index];
+				if (ecs_has(instance, ENTITY_FEATURE_SKIN_MESH) == false || animation_counts[instance->meshid] == 0 || instance->skin_matrices == 0)
 					continue;
 
-				Mesh *mesh = &meshes[instance->id];
+				Mesh *mesh = &meshes[instance->meshid];
 
 				uint64_t matrices_size = mesh->skeleton.bone_count * sizeof(float4x4);
 				uint64_t matrices_offset = gfx_cmd_put(cmd, matrices_size, instance->skin_matrices);
@@ -1171,33 +1399,30 @@ int main(void) {
 				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
 				instance->skinned_vertices_offset = gfx_cmd_put(cmd, skinned_vertices_size, 0);
 
-				{ // :skinning
+				gfx_cmd_pipeline_bind(cmd, &pipeline_skinning);
+				struct {
+					uint32_t vertex_count;
+					uint32_t _pad0;
+					uint64_t skinning_matrices_address;
+					uint64_t input_address;
+					uint64_t skinning_address;
+					uint64_t output_address;
+				} pc = {
+					.vertex_count = mesh->total_vertex_count,
+					.skinning_matrices_address = cmd->transient_buffer->address + matrices_offset,
+					.input_address = mesh->buffer->address + mesh->buffer_vertex_byte_offset,
+					.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
+					.output_address = cmd->transient_buffer->address + instance->skinned_vertices_offset,
+				};
+				vkCmdPushConstants(cmd->handle, pipeline_skinning.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 
-					gfx_cmd_pipeline_bind(cmd, &pipeline_skinning);
-					struct {
-						uint32_t vertex_count;
-						uint32_t _pad0;
-						uint64_t skinning_matrices_address;
-						uint64_t input_address;
-						uint64_t skinning_address;
-						uint64_t output_address;
-					} pc = {
-						.vertex_count = mesh->total_vertex_count,
-						.skinning_matrices_address = cmd->transient_buffer->address + matrices_offset,
-						.input_address = mesh->buffer->address + mesh->buffer_vertex_byte_offset,
-						.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
-						.output_address = cmd->transient_buffer->address + instance->skinned_vertices_offset,
-					};
-					vkCmdPushConstants(cmd->handle, pipeline_skinning.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-
-					gfx_cmd_dispatch(cmd, (mesh->total_vertex_count + 255) / 256, 1, 1);
-					gfx_cmd_buffer_barrier(
-						cmd,
-						RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
-						RESOURCE_USAGE_VERTEX_SHADER_READ,
-						instance->skinned_vertices_offset,
-						skinned_vertices_size, cmd->transient_buffer);
-				}
+				gfx_cmd_dispatch(cmd, (mesh->total_vertex_count + 255) / 256, 1, 1);
+				gfx_cmd_buffer_barrier(
+					cmd,
+					RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
+					RESOURCE_USAGE_VERTEX_SHADER_READ,
+					instance->skinned_vertices_offset,
+					skinned_vertices_size, cmd->transient_buffer);
 			}
 
 			typedef struct {
@@ -1217,6 +1442,7 @@ int main(void) {
 				float4x4_lookat(float3_from_float4(lights[light_index].position), FLOAT3_ZERO, FLOAT3_Y));
 
 			Frame3D frame_data = {
+				.viewport = { dims.x, dims.y },
 				.ambient_strength = ambient_strength,
 				.fog_density = fog_density,
 				.fog_gradient = fog_gradient,
@@ -1266,13 +1492,13 @@ int main(void) {
 					array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))) //
 				);
 
-				// :draw
-				for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
-					MeshInstance *instance = &instances[instance_index];
-					if (instance->cast_shadow == false)
+				// :shadow
+				for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
+					Entity *instance = &world.entities[instance_index];
+					if (ecs_has(instance, ENTITY_FEATURE_CAST_SHADOW) == false)
 						continue;
 
-					Mesh *mesh = &meshes[instance->id];
+					Mesh *mesh = &meshes[instance->meshid];
 
 					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -1291,7 +1517,7 @@ int main(void) {
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
-						if (animation_counts[instance->id] && instance->skin_matrices) {
+						if (animation_counts[instance->meshid] && instance->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = instance->skinned_vertices_offset;
 						}
@@ -1317,7 +1543,7 @@ int main(void) {
 					  .imageView = offscreen_render->view,
 					  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					  .resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-					  .resolveImageView = main_target.view,
+					  .resolveImageView = main_target->view,
 					  .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
 					  .clearValue.color = { { 1.00f, 1.00f, 0.00f, 1.0f } },
 					  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -1336,8 +1562,8 @@ int main(void) {
 				};
 
 				VkExtent2D extent = {
-					.width = main_target.width,
-					.height = main_target.height,
+					.width = main_target->width,
+					.height = main_target->height,
 				};
 
 				VkRenderingInfo renderpass_info = {
@@ -1360,7 +1586,7 @@ int main(void) {
 				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
 
 				frame_data.view = float4x4_lookat(camera->position, camera->target, camera->up);
-				frame_data.proj = float4x4_perspective(to_radians(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+				frame_data.proj = float4x4_perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
 				frame_data.camera_position = float4_from_float3(camera->position, 0.0f);
 
 				gfx_cmd_pipeline_bind(cmd, &pipeline_3d);
@@ -1374,9 +1600,12 @@ int main(void) {
 				gfx_bind(context, &pipeline_3d, 0, uniforms, countof(uniforms));
 
 				// :draw
-				for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
-					MeshInstance *instance = &instances[instance_index];
-					Mesh *mesh = &meshes[instance->id];
+				for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
+					Entity *instance = &world.entities[instance_index];
+					if (ecs_has(instance, ENTITY_FEATURE_DRAW_MESH) == false)
+						continue;
+
+					Mesh *mesh = &meshes[instance->meshid];
 
 					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -1404,12 +1633,12 @@ int main(void) {
 							.uv_scale = { 1.0f, 1.0f },
 						};
 
-						if (instance->id == MESH_TERRAIN_FLAT) {
+						if (instance->meshid == MESH_TERRAIN_FLAT) {
 							pc.uv_scale.x *= 8.f;
 							pc.uv_scale.y *= 8.f;
 						}
 
-						if (instance->id == MESH_HERO_MALE && part_index == 3) { // hero head
+						if (instance->meshid == MESH_HERO_MALE && part_index == 3) { // hero head
 							if (blink_timer > 2.0f && blink_timer < 2.1f)
 								pc.uv_offset.x = 1.0f / 3.0f;
 							else if (blink_timer > 2.1f && blink_timer < 2.3f) {
@@ -1422,7 +1651,7 @@ int main(void) {
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
-						if (animation_counts[instance->id] && instance->skin_matrices) {
+						if (animation_counts[instance->meshid] && instance->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = instance->skinned_vertices_offset;
 						}
@@ -1504,6 +1733,119 @@ int main(void) {
 					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 				}
 
+				{ // :overlay
+					for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
+						Entity *instance = &world.entities[instance_index];
+						if (ecs_has(instance, ENTITY_FEATURE_COLLIDABLE) == false)
+							continue;
+
+						gfx_cmd_pipeline_bind(cmd, &pipeline_line);
+
+						float3 min = instance->shape.as.aabb3.min;
+						float3 max = instance->shape.as.aabb3.max;
+						float3 bounding_box_size = float3_subtract(max, min);
+
+						float thickness = 3.0f;
+						float pick_length = minf(bounding_box_size.z, minf(bounding_box_size.x, bounding_box_size.y)) * 0.25f;
+
+						float4 selection[] = {
+							// 0
+							{ min.x, min.y, min.z, thickness },
+							{ min.x + pick_length, min.y, min.z, thickness },
+
+							{ min.x, min.y, min.z, thickness },
+							{ min.x, min.y + pick_length, min.z, thickness },
+
+							{ min.x, min.y, min.z, thickness },
+							{ min.x, min.y, min.z + pick_length, thickness },
+
+							// 1
+							{ max.x, min.y, min.z, thickness },
+							{ max.x - pick_length, min.y, min.z, thickness },
+
+							{ max.x, min.y, min.z, thickness },
+							{ max.x, min.y + pick_length, min.z, thickness },
+
+							{ max.x, min.y, min.z, thickness },
+							{ max.x, min.y, min.z + pick_length, thickness },
+
+							// 2
+							{ min.x, max.y, min.z, thickness },
+							{ min.x + pick_length, max.y, min.z, thickness },
+
+							{ min.x, max.y, min.z, thickness },
+							{ min.x, max.y - pick_length, min.z, thickness },
+
+							{ min.x, max.y, min.z, thickness },
+							{ min.x, max.y, min.z + pick_length, thickness },
+
+							// 3
+							{ max.x, max.y, min.z, thickness },
+							{ max.x - pick_length, max.y, min.z, thickness },
+
+							{ max.x, max.y, min.z, thickness },
+							{ max.x, max.y - pick_length, min.z, thickness },
+
+							{ max.x, max.y, min.z, thickness },
+							{ max.x, max.y, min.z + pick_length, thickness },
+
+							// 4
+							{ min.x, min.y, max.z, thickness },
+							{ min.x + pick_length, min.y, max.z, thickness },
+
+							{ min.x, min.y, max.z, thickness },
+							{ min.x, min.y + pick_length, max.z, thickness },
+
+							{ min.x, min.y, max.z, thickness },
+							{ min.x, min.y, max.z - pick_length, thickness },
+
+							// 5
+							{ max.x, min.y, max.z, thickness },
+							{ max.x - pick_length, min.y, max.z, thickness },
+
+							{ max.x, min.y, max.z, thickness },
+							{ max.x, min.y + pick_length, max.z, thickness },
+
+							{ max.x, min.y, max.z, thickness },
+							{ max.x, min.y, max.z - pick_length, thickness },
+
+							// 6
+							{ min.x, max.y, max.z, thickness },
+							{ min.x + pick_length, max.y, max.z, thickness },
+
+							{ min.x, max.y, max.z, thickness },
+							{ min.x, max.y - pick_length, max.z, thickness },
+
+							{ min.x, max.y, max.z, thickness },
+							{ min.x, max.y, max.z - pick_length, thickness },
+
+							// 7
+							{ max.x, max.y, max.z, thickness },
+							{ max.x - pick_length, max.y, max.z, thickness },
+
+							{ max.x, max.y, max.z, thickness },
+							{ max.x, max.y - pick_length, max.z, thickness },
+
+							{ max.x, max.y, max.z, thickness },
+							{ max.x, max.y, max.z - pick_length, thickness },
+						};
+						Uniform uniforms[] = {
+							storage_data(0, selection, sizeof(selection)),
+						};
+						gfx_bind(context, &pipeline_line, 1, uniforms, countof(uniforms));
+						struct {
+							float4x4 model;
+							float4 color;
+						} pc = {
+							.model = float4x4_compose_quat(instance->transform.translation, instance->transform.rotation, instance->transform.scale),
+							.color = FLOAT4_ONE,
+						};
+
+						vkCmdPushConstants(cmd->handle, pipeline_line.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdDraw(cmd->handle, 24 * 2 * 6, 1, 0, 0);
+					}
+				}
+
 				if (batch_2d->offset) { // :canvas
 					typedef struct {
 						float4x4 view;
@@ -1540,7 +1882,7 @@ int main(void) {
 
 				vkCmdEndRendering(cmd->handle);
 			}
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &main_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, main_target);
 
 		} else { //  TODO: resize swapchain
 			gfx_swapchain_resize(context, swapchains[1], dims.x, dims.y);
@@ -1630,6 +1972,7 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_2d);
 		pipeline_destroy(context, &pipeline_skybox);
 		pipeline_destroy(context, &pipeline_grass);
+		pipeline_destroy(context, &pipeline_line);
 	}
 
 	gfx_shutdown(context);
@@ -1641,9 +1984,13 @@ int main(void) {
 }
 
 // EXTENSIONS
-static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkCreateDebugUtilsMessenger(VkInstance i, const VkDebugUtilsMessengerCreateInfoEXT *c, const VkAllocationCallbacks *a, VkDebugUtilsMessengerEXT *m) { return VK_ERROR_EXTENSION_NOT_PRESENT; }
+static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkCreateDebugUtilsMessenger(VkInstance i, const VkDebugUtilsMessengerCreateInfoEXT *c, const VkAllocationCallbacks *a, VkDebugUtilsMessengerEXT *m) {
+	return VK_ERROR_EXTENSION_NOT_PRESENT;
+}
 static VKAPI_ATTR void VKAPI_CALL STUB_vkDestroyDebugUtilsMessenger(VkInstance i, VkDebugUtilsMessengerEXT m, const VkAllocationCallbacks *a) {}
-static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkSetDebugUtilsObjectName(VkDevice d, const VkDebugUtilsObjectNameInfoEXT *n) { return VK_SUCCESS; }
+static VKAPI_ATTR VkResult VKAPI_CALL STUB_vkSetDebugUtilsObjectName(VkDevice d, const VkDebugUtilsObjectNameInfoEXT *n) {
+	return VK_SUCCESS;
+}
 static VKAPI_ATTR void VKAPI_CALL STUB_vkCmdBeginDebugUtilsLabel(VkCommandBuffer c, const VkDebugUtilsLabelEXT *l) {}
 static VKAPI_ATTR void VKAPI_CALL STUB_vkCmdEndDebugUtilsLabel(VkCommandBuffer c) {}
 
@@ -1712,20 +2059,20 @@ VkImageLayout resource_usage_to_image_layout[RESOURCE_USAGE_COUNT] = {
 
 VkImageUsageFlags gfx__image_options_to_vulkan_usage(ImageOptions opt) {
 	VkImageUsageFlags result = 0;
-	if (FLAG_GET(opt.usage, IMAGE_USAGE_RENDER)) {
+	if (has_flag(opt.usage, IMAGE_USAGE_RENDER)) {
 		if (pixel_format_is_depth(opt.format))
 			result |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		else
 			result |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	}
 
-	if (FLAG_GET(opt.usage, IMAGE_USAGE_SAMPLE))
+	if (has_flag(opt.usage, IMAGE_USAGE_SAMPLE))
 		result |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
-	if (FLAG_GET(opt.usage, IMAGE_USAGE_STORAGE))
+	if (has_flag(opt.usage, IMAGE_USAGE_STORAGE))
 		result |= VK_IMAGE_USAGE_STORAGE_BIT;
 
-	if (FLAG_GET(opt.usage, IMAGE_USAGE_TRANSFER))
+	if (has_flag(opt.usage, IMAGE_USAGE_TRANSFER))
 		result |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
 	if (result == 0) { // default
@@ -1741,23 +2088,23 @@ VkImageUsageFlags gfx__image_options_to_vulkan_usage(ImageOptions opt) {
 
 VkBufferUsageFlags gfx__buffer_options_to_vulkan_usage(BufferOptions options) {
 	VkBufferUsageFlags result = 0;
-	if (FLAG_GET(options.usage, BUFFER_USAGE_UNIFORM))
+	if (has_flag(options.usage, BUFFER_USAGE_UNIFORM))
 		result |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	if (FLAG_GET(options.usage, BUFFER_USAGE_STORAGE))
+	if (has_flag(options.usage, BUFFER_USAGE_STORAGE))
 		result |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	if (FLAG_GET(options.usage, BUFFER_USAGE_VERTEX))
+	if (has_flag(options.usage, BUFFER_USAGE_VERTEX))
 		result |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	if (FLAG_GET(options.usage, BUFFER_USAGE_INDEX))
+	if (has_flag(options.usage, BUFFER_USAGE_INDEX))
 		result |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-	if (FLAG_GET(options.usage, BUFFER_USAGE_TRANSFER) || options.data)
+	if (has_flag(options.usage, BUFFER_USAGE_TRANSFER) || options.data)
 		result |= VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
 	return result;
 }
 
-VkMemoryPropertyFlags memory_type_to_memory_property_flags[BUFFER_MEMORY_COUNT] = {
-	[BUFFER_MEMORY_LOCAL] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	[BUFFER_MEMORY_SHARED] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+VkMemoryPropertyFlags memory_type_to_memory_property_flags[MEMORY_TYPE_COUNT] = {
+	[MEMORY_TYPE_GPU] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	[MEMORY_TYPE_CPU] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 };
 
 VkFormat pixel_format_to_vulkan_format[PIXELFORMAT_COUNT] = {
@@ -1802,7 +2149,7 @@ VkImageAspectFlags gfx__image_options_to_aspect(ImageOptions options) {
 VkSampleCountFlags gfx__usage_to_vk_sample(VkPhysicalDeviceLimits limits, ImageOptions options) {
 	VkSampleCountFlags result = MAX((VkSampleCountFlags)options.sample, VK_SAMPLE_COUNT_1_BIT);
 
-	if (FLAG_GET(options.usage, IMAGE_USAGE_SAMPLE)) {
+	if (has_flag(options.usage, IMAGE_USAGE_SAMPLE)) {
 		if (pixel_format_is_depth(options.format)) {
 			result = MIN(result, limits.sampledImageDepthSampleCounts);
 			result = MIN(result, limits.sampledImageStencilSampleCounts);
@@ -1811,7 +2158,7 @@ VkSampleCountFlags gfx__usage_to_vk_sample(VkPhysicalDeviceLimits limits, ImageO
 		}
 	}
 
-	if (FLAG_GET(options.usage, IMAGE_USAGE_RENDER)) {
+	if (has_flag(options.usage, IMAGE_USAGE_RENDER)) {
 		if (pixel_format_is_depth(options.format)) {
 			result = MIN(result, limits.framebufferDepthSampleCounts);
 			result = MIN(result, limits.framebufferStencilSampleCounts);
@@ -1819,11 +2166,12 @@ VkSampleCountFlags gfx__usage_to_vk_sample(VkPhysicalDeviceLimits limits, ImageO
 			result = MIN(result, limits.framebufferColorSampleCounts);
 	}
 
-	if (FLAG_GET(options.usage, IMAGE_USAGE_STORAGE))
+	if (has_flag(options.usage, IMAGE_USAGE_STORAGE))
 		result = MIN(result, limits.storageImageSampleCounts);
 
-	if (result < options.sample)
+	if (result < options.sample) {
 		LOG_WARN("requested sample size of [%u] is too large, clamping to [%u]", options.sample, result);
+	}
 
 	return result;
 }
@@ -1856,9 +2204,9 @@ VkImageViewType gfx__opt_to_vk_view_type(ImageOptions opt) {
 VkImageLayout gfx__opt_to_initial_layout(ImageOptions opt) {
 	VkImageLayout result = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	if (FLAG_GET(opt.usage, IMAGE_USAGE_SAMPLE))
+	if (has_flag(opt.usage, IMAGE_USAGE_SAMPLE))
 		result = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	if (FLAG_GET(opt.usage, IMAGE_USAGE_RENDER))
+	if (has_flag(opt.usage, IMAGE_USAGE_RENDER))
 		result = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	return result;
@@ -1908,8 +2256,9 @@ GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions o
 		memory_flags = memory_type_to_memory_property_flags[options.memory];
 
 		ok = vk_usage && memory_flags;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("invalid properties passed, aborting creation of %s", name);
+		}
 	}
 
 	if (ok) { // create buffer handle
@@ -2092,8 +2441,9 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 		VkFormatProperties format_properties;
 		vkGetPhysicalDeviceFormatProperties(context->device.physical, vk_format, &format_properties);
 		bool blit_support = format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
-		if (blit_support == false)
+		if (blit_support == false) {
 			LOG_WARN("pixel format (%s) does not support linear blitting.", pixel_format_to_string[options.format]);
+		}
 
 		if (result->miplevels > 1 && blit_support) {
 			uint32_t mip_width = width, mip_height = height;
@@ -2203,8 +2553,9 @@ GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt) {
 		};
 
 		ok = vkCreateSampler(context->device.logical, &result->info, NULL, &result->handle) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create vulkan sampler.");
+		}
 	}
 
 #if DEV_BUILD
@@ -2256,8 +2607,9 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 		}; // TODO: Have os decide this
 
 		ok = vkCreateXcbSurfaceKHR(context->instance, &surface_create_info, 0, &result->surface) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create vulkan surface.");
+		}
 	}
 
 	VkSurfaceCapabilitiesKHR capabilities;
@@ -2398,6 +2750,21 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 		}
 	}
 
+	if (ok) { // fill in defaults for wrapper
+		GFX_Image *wrapper = &result->wrapper;
+
+		wrapper->options = (ImageOptions){
+			.debug_name = name,
+			.format = PIXELFORMAT_BACKBUFFER,
+			.sample = SAMPLE_COUNT_1,
+			.type = IMAGE_TYPE_2D,
+			.usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_TRANSFER,
+		};
+		wrapper->miplevels = 1;
+		wrapper->width = result->info.imageExtent.width;
+		wrapper->height = result->info.imageExtent.height;
+	}
+
 	if (ok) { // create semaphores
 		VkSemaphoreCreateInfo s_create_info = {
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -2521,6 +2888,7 @@ static inline bool gfx__reflect_shader_uniforms(String8 bytecode, UniformSet set
 GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecode) {
 	LOG_DEBUG("creating vulkan compute pipeline.");
 	GFX_Pipeline result = { 0 };
+	const char *name = result.options.debug_name = "<unnamed_compute>";
 
 	bool ok = compute_bytecode.text && compute_bytecode.length > 0;
 	if (ok == false)
@@ -2534,8 +2902,9 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 		};
 
 		ok = vkCreateShaderModule(context->device.logical, &csm_create_info, NULL, &result.shaders[SHADER_STAGE_COMPUTE]) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create compute pipeline shader module.");
+		}
 	}
 
 	uint32_t set_count = 0;
@@ -2570,8 +2939,9 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 		};
 
 		ok = vkCreatePipelineLayout(context->device.logical, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create compute pipeline layout.");
+		}
 	}
 
 	if (ok) { // create compute pipeline
@@ -2589,8 +2959,9 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 		};
 
 		ok = vkCreateComputePipelines(context->device.logical, 0, 1, &cp_create_info, NULL, &result.handle) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create compute pipeline.");
+		}
 	}
 
 	if (ok == false) // remove half-made resources on error
@@ -2602,6 +2973,9 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, PipelineOptions options) {
 	LOG_DEBUG("creating vulkan grahpics pipeline.");
 	GFX_Pipeline result = { 0 };
+	result.options = options;
+	const char *name = result.options.debug_name ? result.options.debug_name : "<unnamed_raster>";
+	result.options.debug_name = name;
 
 	bool ok = true;
 
@@ -2609,8 +2983,9 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 		ok &= vertex_bytecode.text && vertex_bytecode.length > 0;
 		ok &= fragment_bytecode.text && fragment_bytecode.length > 0;
 
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("invalid shader bytecode passed.");
+		}
 	}
 
 	if (ok) { // create shader module
@@ -2628,8 +3003,9 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 
 		ok &= vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &result.shaders[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
 		ok &= vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &result.shaders[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create vertex/fragment shader module.");
+		}
 	}
 
 	uint32_t set_count = 0;
@@ -2666,8 +3042,9 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 		};
 
 		ok = vkCreatePipelineLayout(context->device.logical, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create pipeline layout.");
+		}
 	}
 
 	if (ok) { // create graphics pipeline
@@ -2800,8 +3177,9 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 		};
 
 		ok = vkCreateGraphicsPipelines(context->device.logical, 0, 1, &gp_create_info, NULL, &result.handle) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to create compute pipeline.");
+		}
 	}
 
 	if (ok == false) // remove half-made resources on error
@@ -2936,8 +3314,8 @@ void pipeline_destroy(GFX_Context *context, GFX_Pipeline *pipeline) {
 	}
 }
 
-GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *surface) {
-	GFX_Image result = { 0 };
+GFX_Image *gfx_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *swapchain) {
+	GFX_Image *result = 0;
 	bool ok = true;
 
 	uint32_t swapchain_index = cmd->swapchain_count;
@@ -2945,9 +3323,9 @@ GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd
 	if (ok) { // acquire swapchain image
 		VkResult result = vkAcquireNextImageKHR(
 			context->device.logical,
-			surface->handle,
+			swapchain->handle,
 			UINT64_MAX,
-			surface->image_available_semaphores[context->current_frame_index],
+			swapchain->image_available_semaphores[context->current_frame_index],
 			VK_NULL_HANDLE, &cmd->swapchain_image_indices[swapchain_index]);
 		image_index = cmd->swapchain_image_indices[swapchain_index];
 
@@ -2956,26 +3334,19 @@ GFX_Image gfx_swapchain_backbuffer(GFX_Context *context, GFX_CommandContext *cmd
 
 	if (ok) { // wrap swapchain
 		cmd->swapchain_count++;
-		cmd->swapchains[swapchain_index] = surface;
+		cmd->swapchains[swapchain_index] = swapchain;
 
-		result.handle = surface->images[image_index];
-		result.view = surface->views[image_index];
-		result.memory = 0; // not managed
-		result.options = (ImageOptions){
-			.debug_name = "swapchain_image",
-			.format = PIXELFORMAT_BACKBUFFER,
-			.sample = SAMPLE_COUNT_1,
-			.type = IMAGE_TYPE_2D,
-			.usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_TRANSFER,
-		};
-		result.miplevels = 1;
-		/* result.view_info = surface->view_infos[image_index]; */
-		result.width = surface->info.imageExtent.width;
-		result.height = surface->info.imageExtent.height;
+		result = &swapchain->wrapper;
+
+		result->handle = swapchain->images[image_index];
+		result->view = swapchain->views[image_index];
+		result->width = swapchain->info.imageExtent.width;
+		result->res_usage = RESOURCE_USAGE_UNDEFINED;
+		result->height = swapchain->info.imageExtent.height;
 	}
 
 	if (ok == false)
-		memory_zero(&result, sizeof(result));
+		result = 0;
 
 	return result;
 }
@@ -3088,7 +3459,7 @@ bool gfx_startup(GFX_Context *context) {
 				context->frame_staging_buffer_slice_size * MAX_FRAMES_IN_FLIGHT,
 				(BufferOptions){
 				  .debug_name = "frame_staging_buffer",
-				  .memory = BUFFER_MEMORY_SHARED,
+				  .memory = MEMORY_TYPE_CPU,
 				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
 
@@ -3101,7 +3472,7 @@ bool gfx_startup(GFX_Context *context) {
 				context->transfer_staging_buffer_slice_size * MAX_TRANSFERS_IN_FLIGHT,
 				(BufferOptions){
 				  .debug_name = "transfer_staging_buffer",
-				  .memory = BUFFER_MEMORY_SHARED,
+				  .memory = MEMORY_TYPE_CPU,
 				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
 		ok = context->transfer_staging_buffer;
@@ -3117,8 +3488,9 @@ bool gfx_startup(GFX_Context *context) {
 
 	if (ok) {
 		context->initialized = true;
-	} else
+	} else {
 		LOG_WARN("failed to initialize vulkan context.");
+	}
 
 	return ok;
 }
@@ -3312,8 +3684,9 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 
 		ok = vkBeginCommandBuffer(result->handle, &cb_begin_info) == VK_SUCCESS;
 
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to begin command buffer recording.");
+		}
 	}
 
 	if (ok) // submit transfer batch
@@ -3351,8 +3724,9 @@ GFX_CommandContext *gfx_transfer_cmd(GFX_Context *context) {
 		};
 		ok = vkBeginCommandBuffer(result->handle, &cb_begin_info) == VK_SUCCESS;
 
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to begin command buffer recording.");
+		}
 	}
 
 	if (ok)
@@ -3376,8 +3750,9 @@ bool gfx_transfer_flush(GFX_Context *context) {
 
 	if (ok) { // end recording
 		ok = vkEndCommandBuffer(cmd->handle) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_INFO("failed to record transfer command buffer.");
+		}
 
 		cmd->recording = 0;
 	}
@@ -3444,8 +3819,9 @@ bool gfx_transfer_batch_submit(GFX_Context *context, GFX_CommandContext *batch) 
 		};
 
 		ok = vkQueueSubmit(context->graphics_queue, 1, &submit_info, NULL) == VK_SUCCESS;
-		if (ok == false)
+		if (ok == false) {
 			LOG_WARN("failed to submit transfer commands.");
+		}
 		vkQueueWaitIdle(context->graphics_queue); // TODO: Handle staging buffer chunking
 	}
 
@@ -3922,12 +4298,15 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 			}
 
 			if (found_index == -1) {
-				LOG_ERROR("uniform binding [%u] is not a part of shader inputs.", uniform->binding);
+				LOG_ERROR("shader '%s' has no uniform at set = %u, binding = %u.", pipeline->options.debug_name, set_index, uniform->binding);
 				ASSERT(false);
 			}
-			ASSERT_FORMAT(uniform->type == pipeline->set_infos[set_index].uniforms[found_index].type,
-				"uniform binding '%s' passed as %s, expected %s.",
-				pipeline_set->uniforms[found_index].name, uniform_type_to_string[uniform->type], uniform_type_to_string[pipeline_set->uniforms[found_index].type]);
+
+			Uniform *reflected_uniform = &pipeline->set_infos[set_index].uniforms[found_index];
+
+			ASSERT_FORMAT(uniform->type == reflected_uniform->type,
+				"uniform binding '%s' (set = %u, binding = %u) of shader '%s' supplied as: %s, expected: %s.",
+				reflected_uniform->name, set_index, reflected_uniform->binding, pipeline->options.debug_name, uniform_type_to_string[uniform->type], uniform_type_to_string[pipeline_set->uniforms[found_index].type]);
 
 			switch (uniform->type) {
 				case UNIFORM_TYPE_STORAGE_IMAGE:
@@ -4034,8 +4413,9 @@ void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buff
 void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	bool ok = cmd && cmd->handle && dst && dst->handle;
-	if (ok == false)
+	if (ok == false) {
 		LOG_WARN("%s - invalid parameter '%s' passed", __func__, cmd == 0 || cmd->handle == 0 ? "GFX_CommandContext" : "GFX_Image");
+	}
 
 	if (ok) {
 		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
@@ -4087,7 +4467,7 @@ void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, Resource
 	}
 }
 
-void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
+bool gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
 	bool ok = cmd && target;
 
 	if (ok) {
@@ -4130,10 +4510,12 @@ void gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceU
 			0, NULL,
 			1, &image_barrier);
 	}
+
+	return ok;
 }
 
-void gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target) {
-	gfx_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
+bool gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target) {
+	return gfx_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
 }
 
 void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
@@ -4191,7 +4573,7 @@ void gfx_cmd_dispatch(GFX_CommandContext *cmd, uint32_t x, uint32_t y, uint32_t 
 Image2D load_image(Arena *arena, String8 path) {
 	Image2D result = { .format = PIXELFORMAT_RGBA8_UNORM };
 
-	bool ok = true;
+	bool ok = arena && path.length;
 
 	uint8_t *pixels = 0;
 	int32_t channels = 0;
@@ -4280,12 +4662,15 @@ Mesh load_gltf(Arena *arena, String8 path) {
 	String8 directory = str8_directory(path);
 
 	if (ok) { // load materials
-		result.material_count = data->materials_count;
+		result.material_count = data->materials_count + 1;
 		result.materials = arena_push_count(arena, Material, result.material_count);
+		result.materials[0] = (Material){
+			.tint = FLOAT4_ONE,
+		};
 
 		for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
 			cgltf_material *material = &data->materials[material_index];
-			Material *out = &result.materials[material_index];
+			Material *out = &result.materials[material_index + 1];
 			out->tint = (float4){ 1.0f, 1.0f, 1.0f, 1.0f };
 
 			if (material->has_pbr_metallic_roughness) {
@@ -4338,6 +4723,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
 		result.skinning = data->skins_count > 0 ? arena_push_count(arena, SkinningData, result.total_vertex_count) : 0;
+		result.bounds = aabb3_empty();
 
 		uint32_t part_offset = 0;
 		uint64_t vertex_offset = 0, index_offset = 0;
@@ -4354,6 +4740,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
 				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
 				MeshPart *part = &result.parts[part_offset++];
+				part->bounds = aabb3_empty();
 
 				part->vertex_count = primitive->attributes[0].data->count;
 				part->vertex_offset = vertex_offset;
@@ -4372,6 +4759,10 @@ Mesh load_gltf(Arena *arena, String8 path) {
 					switch (attribute->type) {
 						case cgltf_attribute_type_position:
 							offset = offsetof(Vertex3, position);
+							if (has_transform == false) {
+								part->bounds.min = float3_wrap(accessor->min);
+								part->bounds.max = float3_wrap(accessor->max);
+							}
 							break;
 						case cgltf_attribute_type_normal:
 							offset = offsetof(Vertex3, normal);
@@ -4414,6 +4805,8 @@ Mesh load_gltf(Arena *arena, String8 path) {
 								pos->x = new_pos.x;
 								pos->y = new_pos.y;
 								pos->z = new_pos.z;
+
+								aabb3_expand(&part->bounds, new_pos);
 							} else if (attribute->type == cgltf_attribute_type_normal) {
 								float3 *norm = (float3 *)dst;
 								float3 new_norm = float4x4_transform(transform, float4_from_float3(*norm, 0.0f));
@@ -4429,6 +4822,9 @@ Mesh load_gltf(Arena *arena, String8 path) {
 						}
 					}
 				}
+
+				result.bounds.min = float3_min(result.bounds.min, part->bounds.min);
+				result.bounds.max = float3_max(result.bounds.max, part->bounds.max);
 
 				if (data->skins_count > 0 && skinned == 0 && node->parent && node->parent->mesh == 0) { // add dummy skinned data
 					int32_t parent_bone = -1;
@@ -4453,7 +4849,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 					cgltf_pbr_metallic_roughness *pbr = &material->pbr_metallic_roughness;
 
 					if (material)
-						part->material_id = cgltf_material_index(data, material);
+						part->material_id = cgltf_material_index(data, material) + 1;
 				}
 
 				vertex_offset += part->vertex_count;
@@ -4542,6 +4938,8 @@ static inline float3 face_orient(float3 v, Face face) {
 
 Mesh generate_plane_from_heightmap(Arena *arena, Face orientation, float w, float h, Image2D heightmap) {
 	Mesh result = { 0 };
+	result.bounds.min = (float3){ .x = -w * 0.5f, .y = 0.0f, .y = -h * 0.5f };
+	result.bounds.max = (float3){ .x = w * 0.5f, .y = 0.0f, .y = h * 0.5f };
 
 	bool ok = arena;
 
@@ -4605,6 +5003,8 @@ Mesh generate_plane_from_heightmap(Arena *arena, Face orientation, float w, floa
 
 Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
+	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
+	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
 
 	bool ok = arena;
 

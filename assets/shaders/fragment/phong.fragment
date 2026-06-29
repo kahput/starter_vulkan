@@ -18,7 +18,6 @@ layout(push_constant) uniform ConstantBlock {
     vec2 metallic_roughness;
     vec2 uv_offset;
     vec2 uv_scale;
-    float mipmap_level;
 } pc;
 
 in ShaderInput {

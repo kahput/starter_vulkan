@@ -12,16 +12,17 @@ layout(set = 1, binding = 0) readonly buffer LineBlock {
     Point points_buffer[];
 };
 
-layout(push_constant) uniform constants {
+layout(push_constant) uniform ConstantBlock {
     mat4 model;
-} push;
+    vec4 color;
+} pc;
 
 const ivec2 quad[6] = ivec2[6](ivec2(0, -1), ivec2(0, 1), ivec2(1,  1),
         ivec2(0, -1), ivec2(1, 1), ivec2(1, -1) );
 
 void main() {
     float aspect = frame.viewport.x / frame.viewport.y;
-    mat4 mvp = frame.projection * frame.view * push.model;
+    mat4 mvp = frame.projection * frame.view * pc.model;
 
     int line_index = (gl_VertexIndex / 6) * 2;
     Point start = points_buffer[line_index]; 

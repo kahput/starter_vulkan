@@ -19,16 +19,18 @@ DIR *os__open_dir_cwd(String8 path);
 
 OS_File os_file_open(String8 filepath, OS_FileMode mode) {
 	OS_File result = os__open_file_cwd(filepath, os__mode_to_flags(mode), 0666);
-	if (result == OS_INVALID_FILE)
+	if (result == OS_INVALID_FILE) {
 		LOG_WARN("failed to read '%.*s' - %s", filepath.length, filepath.text, strerror(errno));
+    }
 
 	return result;
 }
 
 OS_File os_file_open_async(String8 path, OS_FileMode mode) {
 	OS_File result = os__open_file_cwd(path, os__mode_to_flags(mode), 0666);
-	if (os_file_valid(result) == false)
+	if (os_file_valid(result) == false) {
 		LOG_WARN("failed to read '%.*s' - %s", str_spread(path), strerror(errno));
+    }
 
     return result;
 }
@@ -49,8 +51,9 @@ void os_file_close(OS_File file) {
 		return;
 
 	// EBADF - fd isn't a valid open file descriptor.
-	if (close(file) == -1)
+	if (close(file) == -1) {
 		LOG_WARN("%s", strerror(errno));
+    }
 }
 
 bool os_file_exists(String8 filepath) {
@@ -61,8 +64,9 @@ bool os_file_exists(String8 filepath) {
 	if (fd) {
 		result = true;
 		fd = close(fd);
-	} else if (errno != ENOENT)
+	} else if (errno != ENOENT) {
 		LOG_WARN("os_file_exists - %s", strerror(errno));
+    }
 
 	return result;
 }
@@ -90,8 +94,9 @@ uint64_t os_file_write(OS_File file, const void *buffer, uint64_t size) {
 		running_offset += written_bytes;
 	}
 
-	if (written_bytes == -1)
+	if (written_bytes == -1) {
 		LOG_WARN("os_file_write - %s", strerror(errno));
+    }
 
 	return running_offset - (uint8_t *)buffer;
 }
@@ -165,8 +170,9 @@ bool os_directory_exists(String8 path) {
 	if (dir) {
 		result = true;
 		closedir(dir);
-	} else if (errno != ENOENT)
+	} else if (errno != ENOENT) {
 		LOG_WARN("os_directory_exists - %s", strerror(errno));
+    }
 
 	return result;
 }
@@ -176,8 +182,9 @@ bool os_directory_make(String8 path) {
 	if (os_directory_exists(path) == false) {
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		int32_t result = mkdir((char *)os__concat_cwd(scratch.arena, path).text, 0755);
-		if (result == -1)
+		if (result == -1) {
 			LOG_WARN("os_directory_make - %s", strerror(errno));
+        }
 		arena_scratch_end(scratch);
 
 		result = true;
@@ -191,8 +198,9 @@ bool os_directory_delete(String8 path) {
 	if (os_directory_exists(path) == true) {
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		int32_t result = rmdir((char *)os__concat_cwd(scratch.arena, path).text);
-		if (result == -1)
+		if (result == -1) {
 			LOG_WARN("os_directory_make - %s", strerror(errno));
+        }
 		arena_scratch_end(scratch);
 
 		result = true;

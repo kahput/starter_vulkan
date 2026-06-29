@@ -10,8 +10,9 @@ OS_Library os_library_load(String8 path) {
 	String8 cwd = os_current_directory(scratch.arena); // TODO: Internal header to get os__concat_cwd();
 	result = dlopen((char *)str8_filepath_join(scratch.arena, cwd, path).text, RTLD_NOW);
 
-	if (result == NULL)
+	if (result == NULL) {
 		LOG_WARN("os_library_load - %s", dlerror());
+	}
 
 	arena_scratch_end(scratch);
 	return result;
@@ -21,8 +22,9 @@ void os_library_unload(OS_Library lib) {
 	if (os_library_valid(lib) == false)
 		return;
 
-	if (dlclose(lib) != 0)
+	if (dlclose(lib) != 0) {
 		LOG_WARN("os_library_unload - %s", dlerror());
+    }
 }
 
 void os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
@@ -39,8 +41,9 @@ void os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
 	if (error == false) {
 		void *result = dlsym(lib, (char *)symbol.text);
 
-		if (result == NULL)
+		if (result == NULL) {
 			LOG_WARN("os_library_symbol - %s", dlerror());
+        }
 
 		*(void **)out_symbol = result;
 	}

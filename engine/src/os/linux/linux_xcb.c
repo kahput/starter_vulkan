@@ -170,7 +170,7 @@ OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint
 		XCB_COPY_FROM_PARENT,
 		value_mask,
 		values);
-	if (FLAG_GET(flags, OS_SURFACE_FLAG_RESIZEABLE) == false)
+	if (has_flag(flags, OS_SURFACE_FLAG_RESIZEABLE) == false)
 		os__surface_set_min_max(surface, surface->width, surface->height, width, height);
 
 	// Change title

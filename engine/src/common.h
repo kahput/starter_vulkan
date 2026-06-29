@@ -65,7 +65,7 @@
 
 #define BIT(b) 1 << b
 
-#define FLAG_GET(flags, flag) ((flags & flag) == flag)
+#define has_flag(flags, flag) ((flags & flag) == flag)
 #define HEADER(ptr, T) ((T *)ptr - 1)
 #define HEADER_SET(ptr, x, T) (*((T *)ptr - 1) = x)
 

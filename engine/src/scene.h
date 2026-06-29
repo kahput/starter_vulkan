@@ -15,3 +15,4 @@ typedef struct {
 } Camera3;
 
 void scene_camera_orbit(Camera3 *camera, float2 mouse_delta);
+void scene_camera_follow(Camera3 *camera, float2 mouse_delta, float3 target);

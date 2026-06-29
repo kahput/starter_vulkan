@@ -1,8 +1,19 @@
 #include "cmath.h"
 #include "core/logger.h"
+#include <stdlib.h>
+
+float randf_range(float min, float max) {
+	return min + ((float)rand() / RAND_MAX) * (max - min);
+}
+uint32_t randu_range(uint32_t min, uint32_t max) {
+	return min + (rand() % (max - min + 1));
+}
+int32_t randi_range(int32_t min, int32_t max) {
+	return min + (rand() % (max - min + 1));
+}
 
 bool float2_equal(float2 a, float2 b) {
-	bool result = a.x == b.x && a.y == b.y;
+	bool result = equalf(a.x, b.x) && equalf(a.y, b.y);
 
 	return result;
 }
@@ -87,7 +98,8 @@ float3 float3_scale(float3 v, float s) {
 }
 
 bool float3_equal(float3 a, float3 b) {
-	bool result = a.x == b.x && a.y == b.y && a.z == b.z;
+	bool result = equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z);
+
 	return result;
 }
 
@@ -116,7 +128,7 @@ float float3_length_squared(float3 v) {
 }
 
 float float3_length(float3 v) {
-	float result = sqrtf(float3_length_squared(v));
+	float result = sqrtf(float3_dot(v, v));
 
 	return result;
 }
@@ -189,20 +201,14 @@ float3 float3_rotate(float3 v, float angle, float3 axis) {
 			float3_scale(k, float3_dot(k, v) * (1.0f - c))));
 }
 
-float4 float4_scale(float4 v, float s) {
-	float4 result = { v.x * s, v.y * s, v.z * s, v.w * s };
-
-	return result;
-}
-
-float float4_length_squared(float4 v) {
-	float result = v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;
+bool float4_equal(float4 a, float4 b) {
+	bool result = equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z) && equalf(a.w, b.w);
 
 	return result;
 }
 
 float float4_length(float4 v) {
-	float result = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+	float result = sqrtf(float4_dot(v, v));
 
 	return result;
 }
@@ -291,22 +297,22 @@ quat4 quat4_slerp(quat4 q, quat4 p, float t) {
 }
 
 bool float4x4_equal(float4x4 lhs, float4x4 rhs) {
-	return lhs.elements[0] == rhs.elements[0] &&
-		lhs.elements[1] == rhs.elements[1] &&
-		lhs.elements[2] == rhs.elements[2] &&
-		lhs.elements[3] == rhs.elements[3] &&
-		lhs.elements[4] == rhs.elements[4] &&
-		lhs.elements[5] == rhs.elements[5] &&
-		lhs.elements[6] == rhs.elements[6] &&
-		lhs.elements[7] == rhs.elements[7] &&
-		lhs.elements[8] == rhs.elements[8] &&
-		lhs.elements[9] == rhs.elements[9] &&
-		lhs.elements[10] == rhs.elements[10] &&
-		lhs.elements[11] == rhs.elements[11] &&
-		lhs.elements[12] == rhs.elements[12] &&
-		lhs.elements[13] == rhs.elements[13] &&
-		lhs.elements[14] == rhs.elements[14] &&
-		lhs.elements[15] == rhs.elements[15];
+	return equalf(lhs.elements[0], rhs.elements[0]) &&
+		equalf(lhs.elements[1], rhs.elements[1]) &&
+		equalf(lhs.elements[2], rhs.elements[2]) &&
+		equalf(lhs.elements[3], rhs.elements[3]) &&
+		equalf(lhs.elements[4], rhs.elements[4]) &&
+		equalf(lhs.elements[5], rhs.elements[5]) &&
+		equalf(lhs.elements[6], rhs.elements[6]) &&
+		equalf(lhs.elements[7], rhs.elements[7]) &&
+		equalf(lhs.elements[8], rhs.elements[8]) &&
+		equalf(lhs.elements[9], rhs.elements[9]) &&
+		equalf(lhs.elements[10], rhs.elements[10]) &&
+		equalf(lhs.elements[11], rhs.elements[11]) &&
+		equalf(lhs.elements[12], rhs.elements[12]) &&
+		equalf(lhs.elements[13], rhs.elements[13]) &&
+		equalf(lhs.elements[14], rhs.elements[14]) &&
+		equalf(lhs.elements[15], rhs.elements[15]);
 }
 
 float4x4 float4x4_identity(void) {
@@ -619,90 +625,4 @@ void float3_print(float3 v) {
 
 void float4_print(float4 v) {
 	LOG_INFO("float4 { %.2f, %.2f, %.2f, %.2f }", v.x, v.y, v.z, v.w);
-}
-
-Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
-	float denominator = float3_dot(rd, pn);
-	if (fabsf(denominator) < EPSILON)
-		return RAY3_NO_HIT;
-
-	float t = (float3_dot(po, pn) - float3_dot(ro, pn)) / denominator;
-
-	if (t < 0.0f)
-		return RAY3_NO_HIT;
-
-	float3 point = float3_add(ro, float3_scale(rd, t));
-
-	Raycast3Result result = {
-		.hit = true,
-		.t = t,
-		.normal = pn,
-		.point = point,
-	};
-
-	return result;
-}
-
-Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent) {
-	float3 min = float3_subtract(center, extent);
-	float3 max = float3_add(center, extent);
-
-	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
-	if (float3_length(rd)) {
-		// left
-		float3 po = float3_subtract(center, (float3){ extent.x, 0.0f, 0.0f });
-		float3 pn = { -1.0f, 0.0f, 0.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// right
-		po = float3_add(center, (float3){ extent.x, 0.0f, 0.0f });
-		pn = (float3){ 1.0f, 0.0f, 0.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// front
-		po = float3_add(center, (float3){ 0.0f, 0.0f, extent.z });
-		pn = (float3){ 0.0f, 0.0f, 1.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// back
-		po = float3_subtract(center, (float3){ 0.0f, 0.0f, extent.z });
-		pn = (float3){ 0.0f, 0.0f, -1.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// NOTE: no vertical movement, ignoring top and bottom for now
-	}
-
-	return result;
 }

@@ -9,7 +9,7 @@
 #define C_PIf ((float)C_PI)
 #define TAU C_PI * 2
 #define TAUf C_PIf * 2
-#define EPSILON 1e-6f
+#define EPSILON 1e-5f
 
 #define FLOAT_MAX 3.40282347e+38F
 #define FLOAT_MIN -FLOAT_MAX
@@ -32,25 +32,39 @@ typedef struct {
 } float4x4;
 typedef float4 quat4;
 
-typedef struct {
-	bool hit;
-	float t;
-	float3 normal, point;
-} Raycast3Result;
-static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
-
 // --- scalar ---
-static inline float to_radians(float degree) { return degree * (C_PIf / 180.f); }
-static inline float to_degrees(float radians) { return radians * (180.0f / C_PIf); }
+static inline float deg_to_rad(float degree) { return degree * (C_PIf / 180.f); }
+static inline float rad_to_deg(float radians) { return radians * (180.0f / C_PIf); }
 
+float randf_range(float min, float max);
+uint32_t randu_range(uint32_t min, uint32_t max);
+int32_t randi_range(int32_t min, int32_t max);
 static inline float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
 static inline float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
 static inline float lerpf(float start, float end, float t) { return start + (end - start) * t; }
-/* static inline float lerp_anglef(float start, float end, float t) { */
-/* 	float difference = fmod(end - start, TAU); */
-/* 	float distance = fmod(2.0 * difference, TAU) - difference; */
-/* 	return start + distance * t; */
-/* } */
+static inline bool equalf(float a, float b) {
+	if (a == b)
+		return true;
+
+	float tolerance = (float)EPSILON * fabsf(a);
+	if (tolerance < (float)EPSILON)
+		tolerance = (float)EPSILON;
+
+	return fabsf(a - b) < tolerance;
+}
+static inline bool zerof(float v) { return fabsf(v) < (float)EPSILON; }
+static inline float wrapf(float value, float min, float max) {
+	float range = max - min;
+	if (zerof(range))
+		return min;
+
+	float result = value - (range * floorf((value - min) / range));
+	if (equalf(result, max))
+		return min;
+
+	return result;
+}
+static inline float fractf(float v) { return v - floorf(v); }
 static inline float minf(float a, float b) { return a < b ? a : b; }
 static inline float maxf(float a, float b) { return a > b ? a : b; }
 
@@ -82,7 +96,7 @@ void float2_print(float2 v);
 
 static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
 static inline float3 float3_from_float4(float4 v) { return (float3){ v.x, v.y, v.z }; }
-static inline float3 float3_fill(float value) { return (float3){ value, value, value }; }
+static inline float3 float3_splat(float v) { return (float3){ v, v, v }; }
 static inline float3 float3_wrap(float v[3]) { return (float3){ .x = v[0], .y = v[1], .z = v[2] }; }
 
 bool float3_equal(float3 a, float3 b);
@@ -117,9 +131,13 @@ void float3_print(float3 v);
 static inline float4 float4_from_float3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w }; }
 static inline float4 float4_wrap(float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
 
-float4 float4_scale(float4 v, float s);
-float float4_length_squared(float4 v);
+bool float4_equal(float4 a, float4 b);
+
+static inline float4 float4_scale(float4 v, float s) { return (float4){ v.x * s, v.y * s, v.z * s, v.w * s }; }
+static inline float float4_dot(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
 float float4_length(float4 v);
+
+static inline quat4 quat4_identity(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
 
 float3 quat4_to_euler(quat4 quat);
 quat4 quat4_from_axis_angle(float3 axis, float angle);
@@ -152,13 +170,6 @@ float4x4 float4x4_orthographic(float left, float right, float top,
 	float bottom, float near, float far);
 
 float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
-
-float3 frustum_center(float4x4 perspective, float4x4 view);
 void float4x4_print(float4x4 m);
-
-// --- Raycasting ---
-
-Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
-Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
 
 #endif /* CMATH_H_ */
