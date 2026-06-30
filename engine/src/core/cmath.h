@@ -77,7 +77,7 @@ static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y };
 bool float2_equal(float2 a, float2 b);
 float2 float2_negate(float2 v);
 
-float float2_length_squared(float2 v);
+float float2_length_sq(float2 v);
 float float2_length(float2 v);
 float2 float2_normalize(float2 v);
 float2 float2_normalize_safe(float2 v, float epsilon);
@@ -110,7 +110,7 @@ float3 float3_scale(float3 v, float s);
 float float3_dot(float3 a, float3 b);
 float3 float3_cross(float3 a, float3 b);
 
-float float3_length_squared(float3 v);
+float float3_length_sq(float3 v);
 float float3_length(float3 v);
 
 float3 float3_normalize(float3 v);
@@ -159,6 +159,8 @@ float4x4 float4x4_translation(float3 translation);
 float4x4 float4x4_rotation(float angle, float3 axis);
 float4x4 float4x4_scaling(float3 scale);
 float4x4 float4x4_from_quat(quat4 q);
+
+float4x4 float4x4_transpose(float4x4 m);
 
 float4x4 float4x4_compose(float3 position, float3 rotation_rad, float3 scale);
 float4x4 float4x4_compose_quat(float3 position, float4 rotation, float3 scale);

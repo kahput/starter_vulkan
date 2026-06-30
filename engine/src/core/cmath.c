@@ -24,7 +24,7 @@ float2 float2_negate(float2 v) {
 	return result;
 }
 
-float float2_length_squared(float2 v) {
+float float2_length_sq(float2 v) {
 	float result = v.x * v.x + v.y * v.y;
 
 	return result;
@@ -121,7 +121,7 @@ float3 float3_cross(float3 a, float3 b) {
 	return result;
 }
 
-float float3_length_squared(float3 v) {
+float float3_length_sq(float3 v) {
 	float result = float3_dot(v, v);
 
 	return result;
@@ -498,6 +498,32 @@ float4x4 float4x4_from_quat(quat4 q) {
 	  [3]  = 0.0f,                [7]  = 0.0f,                  [11] = 0.0f,                  [15] = 1.0f
 	}};
 	// clang-format on
+	return result;
+}
+
+float4x4 float4x4_transpose(float4x4 m) {
+	float4x4 result = { 0 };
+
+	result.elements[0] = m.elements[0];
+	result.elements[1] = m.elements[4];
+	result.elements[2] = m.elements[8];
+	result.elements[3] = m.elements[12];
+
+	result.elements[4] = m.elements[1];
+	result.elements[5] = m.elements[5];
+	result.elements[6] = m.elements[9];
+	result.elements[7] = m.elements[13];
+
+	result.elements[8] = m.elements[2];
+	result.elements[9] = m.elements[6];
+	result.elements[10] = m.elements[10];
+	result.elements[11] = m.elements[14];
+
+	result.elements[12] = m.elements[3];
+	result.elements[13] = m.elements[7];
+	result.elements[14] = m.elements[11];
+	result.elements[15] = m.elements[15];
+
 	return result;
 }
 

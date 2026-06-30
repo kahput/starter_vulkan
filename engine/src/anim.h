@@ -46,6 +46,7 @@ typedef struct {
 	uint32_t bone_count;
 
 	float4x4 *inverse_rest_matrices;
+	float4x4 *bind_pose_matrices;
 } Skeleton;
 
 Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t);

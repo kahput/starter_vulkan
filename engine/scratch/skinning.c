@@ -391,7 +391,7 @@ typedef struct {
 	uint32_t vertex_count, index_count;
 	uint32_t material_id;
 
-	aabb3 bounds;
+	AABB3 bounds;
 } MeshPart;
 
 typedef struct {
@@ -417,7 +417,7 @@ typedef struct {
 	uint64_t total_vertex_count;
 	uint64_t total_index_count;
 
-	aabb3 bounds;
+	AABB3 bounds;
 } Mesh;
 
 typedef enum {
@@ -457,13 +457,15 @@ String8 meshid_to_metadata[MESH_COUNT] = {
 
 typedef enum {
 	ENTITY_FEATURE_DRAW_MESH,
-	ENTITY_FEATURE_SKIN_MESH,
 	ENTITY_FEATURE_CAST_SHADOW,
 
 	// Gameplay
 	ENTITY_FEATURE_PLAYER_CONTROLLED,
 	ENTITY_FEATURE_INTERACTABLE,
 	ENTITY_FEATURE_COLLIDABLE,
+	ENTITY_FEATURE_FOLLOW_TARGET,
+
+	ENTITY_FEATURE_ANIMATE,
 
 	ENTITY_FEATURE_MAX,
 } EntityFeature;
@@ -471,7 +473,7 @@ typedef enum {
 #define ENTITY_BITSET_WIDTH 64
 #define ENTITY_BITSET_SIZE (ENTITY_FEATURE_MAX + 63) / 64
 typedef uint64_t FeatureBitset[ENTITY_BITSET_SIZE];
-typedef struct {
+typedef struct Entity {
 	FeatureBitset features;
 
 	MeshID meshid;
@@ -481,9 +483,16 @@ typedef struct {
 	uint64_t skinned_vertices_offset;
 	float4x4 *skin_matrices;
 
+	uint32_t current_anim;
+	float anim_t, blend_t;
+
 	// gameplay
 	float interact_radius;
 	Shape shape;
+
+	float move_speed;
+
+	struct Entity *target;
 } Entity;
 
 #define MAX_ENTITIES 1024
@@ -493,15 +502,15 @@ typedef struct {
 } World;
 
 typedef enum {
-	FACE_RIGHT,
-	FACE_LEFT,
-	FACE_UP,
-	FACE_DOWN,
-	FACE_FORWARD,
-	FACE_BACKWARD,
+	AXIS_PLANE_RIGHT,
+	AXIS_PLANE_LEFT,
+	AXIS_PLANE_UP,
+	AXIS_PLANE_DOWN,
+	AXIS_PLANE_FORWARD,
+	AXIS_PLANE_BACKWARD,
 
-	FACE_COUNT,
-} Face;
+	AXIS_PLANE_COUNT,
+} AxisPlane;
 
 typedef enum {
 	AXIS_X,
@@ -510,17 +519,63 @@ typedef enum {
 	AXIS_XY = AXIS_Z,
 	AXIS_XYZ,
 } Axis;
+/* typedef enum { */
+/* 	AXIS_MODE_X = BIT(0), */
+/* 	AXIS_MODE_Y = BIT(1), */
+/* 	AXIS_MODE_Z = BIT(2), */
+/* 	AXIS_MODE_XY = AXIS_MODE_X | AXIS_MODE_Y, */
+/* 	AXIS_MODE_YZ = AXIS_MODE_Y | AXIS_MODE_Z, */
+/* 	AXIS_MODE_ZX = AXIS_MODE_Z | AXIS_MODE_X, */
+/* 	AXIS_MODE_XYZ = AXIS_MODE_X | AXIS_MODE_Y | AXIS_MODE_Z, */
+/* } AxisMode; */
 
 // :functions
 Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
-Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
-Mesh generate_plane_from_heightmap(Arena *arena, Face orientation, float w, float h, Image2D heightmap);
+Mesh generate_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
+Mesh generate_plane_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
 void push_rect(Arena *arena, Rectangle rect, Color color);
+
+// Writes `segments` line segments tracing an arc from angle 0 to `angle_span`
+// in the given plane, centered on `center`. Returns points written (segments*2).
+static uint32_t push_line_arc(float4 *points, float3 center, float radius, uint8_t segments,
+	AxisPlane plane, float angle_span, float thickness) {
+	for (uint32_t i = 0; i < segments; ++i) {
+		float a = ((float)i / segments) * angle_span;
+		float an = ((float)(i + 1) / segments) * angle_span;
+		float ca = cosf(a), sa = sinf(a);
+		float can = cosf(an), san = sinf(an);
+
+		float4 p0, p1;
+		switch (plane) {
+			case AXIS_PLANE_DOWN:
+			case AXIS_PLANE_UP:
+				p0 = (float4){ center.x + ca * radius, center.y, center.z + sa * radius, thickness };
+				p1 = (float4){ center.x + can * radius, center.y, center.z + san * radius, thickness };
+				break;
+			case AXIS_PLANE_LEFT:
+			case AXIS_PLANE_RIGHT:
+				p0 = (float4){ center.x, center.y + sa * radius, center.z + ca * radius, thickness };
+				p1 = (float4){ center.x, center.y + san * radius, center.z + can * radius, thickness };
+				break;
+			case AXIS_PLANE_BACKWARD:
+			case AXIS_PLANE_FORWARD:
+				p0 = (float4){ center.x + ca * radius, center.y + sa * radius, center.z, thickness };
+				p1 = (float4){ center.x + can * radius, center.y + san * radius, center.z, thickness };
+				break;
+			case AXIS_PLANE_COUNT:
+				ASSERT(false);
+				break;
+		}
+		points[i * 2 + 0] = p0;
+		points[i * 2 + 1] = p1;
+	}
+	return segments * 2;
+}
 
 typedef struct {
 	Arena *batch_arena;
@@ -554,7 +609,7 @@ uint32_t find_animation(AnimationClip *clips, uint32_t count, String8 target) {
 	return 0;
 }
 
-Entity *ecs_spawn(World *world) {
+Entity *entity_spawn(World *world) {
 	Entity *result = 0;
 	bool ok = world;
 
@@ -578,7 +633,7 @@ Entity *ecs_spawn(World *world) {
 	return result;
 }
 
-static inline void ecs__bitset_flip(FeatureBitset bitset, EntityFeature feature, bool on) {
+static inline void entity__bitset_flip(FeatureBitset bitset, EntityFeature feature, bool on) {
 	uint32_t index = feature / ENTITY_BITSET_WIDTH;
 
 	if (on)
@@ -586,26 +641,26 @@ static inline void ecs__bitset_flip(FeatureBitset bitset, EntityFeature feature,
 	else
 		bitset[index] &= ~(1ULL << (feature % ENTITY_BITSET_WIDTH));
 }
-static inline bool ecs__bitset_test(FeatureBitset bitset, EntityFeature feature) {
+static inline bool entity__bitset_test(FeatureBitset bitset, EntityFeature feature) {
 	uint32_t index = feature / ENTITY_BITSET_WIDTH;
 	return bitset[index] & (1ULL << (feature % ENTITY_BITSET_WIDTH));
 }
 
-void ecs_enable(Entity *entity, EntityFeature feature) {
+void entity_enable(Entity *entity, EntityFeature feature) {
 	bool ok = entity && feature < ENTITY_FEATURE_MAX;
 	if (ok)
-		ecs__bitset_flip(entity->features, feature, true);
+		entity__bitset_flip(entity->features, feature, true);
 }
-void ecs_disable(Entity *entity, EntityFeature feature) {
+void entity_disable(Entity *entity, EntityFeature feature) {
 	bool ok = entity && (uint32_t)feature < ENTITY_FEATURE_MAX;
 	if (ok)
-		ecs__bitset_flip(entity->features, feature, false);
+		entity__bitset_flip(entity->features, feature, false);
 }
 
-static inline bool ecs_has(Entity *entity, EntityFeature feature) {
+static inline bool entity_has(Entity *entity, EntityFeature feature) {
 	bool ok = entity && (uint32_t)feature < ENTITY_FEATURE_MAX;
 	if (ok)
-		ok = ecs__bitset_test(entity->features, feature);
+		ok = entity__bitset_test(entity->features, feature);
 
 	return ok;
 }
@@ -798,10 +853,10 @@ int main(void) {
 	const uint32_t map_depth = 256;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	meshes[MESH_TERRAIN_FLAT] = generate_plane(arena, FACE_UP, map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT] = generate_plane(arena, AXIS_PLANE_UP, map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_TERRAIN_HEIGHTMAP] = generate_plane_from_heightmap(arena, FACE_UP, 256.f, 256.f, heightmap);
+	meshes[MESH_TERRAIN_HEIGHTMAP] = generate_plane_from_heightmap(arena, AXIS_PLANE_UP, 256.f, 256.f, heightmap);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
@@ -932,31 +987,36 @@ int main(void) {
 	};
 
 	World world = { .entity_count = 1 };
+	bool draw_collision_shapes = 0;
 
-	Entity *player = ecs_spawn(&world);
+	Entity *player = entity_spawn(&world);
 	player->meshid = MESH_HERO_MALE;
-	player->shape.as.aabb3 = meshes[player->meshid].bounds;
+	player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f);
+	/* player->shape = shape_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
+	/* player->shape.as.aabb3 = meshes[player->meshid].bounds; */
 
-	ecs_enable(player, ENTITY_FEATURE_DRAW_MESH);
-	ecs_enable(player, ENTITY_FEATURE_SKIN_MESH);
-	ecs_enable(player, ENTITY_FEATURE_CAST_SHADOW);
-	ecs_enable(player, ENTITY_FEATURE_PLAYER_CONTROLLED);
-	ecs_enable(player, ENTITY_FEATURE_COLLIDABLE);
+	entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
+	/* entity_enable(player, ENTITY_FEATURE_CAST_SHADOW); */
+	entity_enable(player, ENTITY_FEATURE_PLAYER_CONTROLLED);
+	entity_enable(player, ENTITY_FEATURE_COLLIDABLE);
+	entity_enable(player, ENTITY_FEATURE_ANIMATE);
 
-	Entity *barrel = ecs_spawn(&world);
+	Entity *barrel = entity_spawn(&world);
 	barrel->meshid = MESH_BARREL;
-	barrel->transform.translation = (float3){ 3.0f, 0.0f, 0.0f };
+	barrel->transform.translation = (float3){ 10.0f, 0.0f, 0.0f };
 	barrel->interact_radius = 3.0f;
 	barrel->shape.as.aabb3 = meshes[barrel->meshid].bounds;
+	barrel->target = player;
 
-	ecs_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
-	ecs_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
-	ecs_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
-	ecs_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
+	entity_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
+	entity_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
+	entity_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
+	entity_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
+	/* entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET); */
 
-	Entity *terrain = ecs_spawn(&world);
+	Entity *terrain = entity_spawn(&world);
 	terrain->meshid = MESH_TERRAIN_FLAT;
-	ecs_enable(terrain, ENTITY_FEATURE_DRAW_MESH);
+	entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH);
 
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
@@ -1044,15 +1104,15 @@ int main(void) {
 					os_cursor_capture(main_render, false);
 
 				scene_camera_orbit(camera, mouse_delta);
-				for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
-					Entity *entity = &world.entities[entity_index];
 
-					if (ecs_has(entity, ENTITY_FEATURE_SKIN_MESH)) {
-						Mesh *mesh = &meshes[entity->meshid];
-						entity->skin_matrices = arena_push_count(frame_arena, float4x4, mesh->skeleton.bone_count);
-
-						for (uint32_t index = 0; index < mesh->skeleton.bone_count; ++index)
-							entity->skin_matrices[index] = float4x4_identity();
+				for (uint32_t index = 0; index < world.entity_count; ++index) {
+					Entity *entity = &world.entities[index];
+					if (entity_has(entity, ENTITY_FEATURE_ANIMATE)) {
+						uint32_t bone_count = meshes[entity->meshid].skeleton.bone_count;
+						entity->skin_matrices = arena_push_count(frame_arena, float4x4, bone_count);
+						for (uint32_t bone_index = 0; bone_index < bone_count; ++bone_index) {
+							entity->skin_matrices[bone_index] = float4x4_identity();
+						}
 					}
 				}
 
@@ -1103,6 +1163,7 @@ int main(void) {
 					}
 					button_x += button_w + pad;
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
+						draw_collision_shapes = !draw_collision_shapes;
 					}
 
 					imgui_frame_end();
@@ -1111,28 +1172,191 @@ int main(void) {
 			} break;
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
-				Transform3 *transform = &player->transform;
-				Mesh *mesh = &meshes[player->meshid];
 
-				static uint32_t current_anim = 0;
-				static float anim_t = 0.0f;
-				static float blend_t = 0.0f;
+				for (uint32_t index = 0; index < world.entity_count; ++index) {
+					Entity *entity = &world.entities[index];
 
-				float current_theta = 0;
-				float current_azimuth = 0; // [-pi, pi]
+					float2 input_vector = { 0 };
+					float3 move_delta = { 0 };
 
-				float2 input_vector = {
-					.x = input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
-					.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
-				};
+					// :player
+					if (entity_has(entity, ENTITY_FEATURE_PLAYER_CONTROLLED)) {
+						input_vector = (float2){
+							.x = input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
+							.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
+						};
+
+						if (float2_length_sq(input_vector) > 0) {
+							float3 camera_offset = float3_subtract(camera->position, player->transform.translation);
+							float r = float3_length(camera_offset);
+							if (r < EPSILON)
+								r = EPSILON;
+
+							float current_theta = acosf(camera_offset.y / r);
+							float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+																							  //
+							float target_angle = -current_azimuth - C_PIf + atan2f(input_vector.x, input_vector.y);
+							quat4 target_rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
+
+							float t = 1.0f - expf(-15.0f * dt);
+							entity->transform.rotation = quat4_slerp(entity->transform.rotation, target_rotation, t);
+						}
+
+						const float walk_speed = 3.0f, run_speed = 6.0f;
+
+						float3 camera_position = camera->position;
+						float3 camera_target = camera->target;
+
+						camera_position.y = 0.0f;
+						camera_target.y = 0.0f;
+
+						float3 forward, right;
+
+						forward = float3_normalize(float3_subtract(camera_target, camera_position));
+
+						right = float3_cross(forward, camera->up);
+						right = float3_normalize(right);
+
+						float3 direction = { 0, 0, 0 };
+
+						direction = float3_add(direction, float3_scale(forward, input_vector.x));
+						direction = float3_add(direction, float3_scale(right, input_vector.y));
+
+						float length = float3_length(direction);
+						if (length > EPSILON)
+							direction = float3_scale(direction, 1 / length);
+						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
+
+						move_delta = float3_scale(direction, entity->move_speed * dt);
+					}
+
+					// :ai
+					if (entity_has(entity, ENTITY_FEATURE_FOLLOW_TARGET)) {
+						float3 delta = float3_subtract(entity->target->transform.translation, entity->transform.translation);
+						float3 direction = float3_normalize_safe(delta, EPSILON);
+
+						entity->transform.rotation = quat4_from_axis_angle(FLOAT3_Y, atan2f(direction.x, direction.z));
+
+						entity->move_speed = 3.0f;
+
+						input_vector = (float2){ direction.x, direction.z };
+						move_delta = float3_scale(direction, entity->move_speed * dt);
+					}
+
+					// :collision
+					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE)) {
+						float t_remaining = float3_length_sq(move_delta) > 0 ? 1.0f : 0.0f;
+						for (uint32_t iteration = 0; iteration < 6 && t_remaining > 0.0f; ++iteration) {
+							// Collision detection
+							float3 ro = entity->transform.translation;
+							float3 rd = float3_normalize_safe(move_delta, EPSILON);
+
+							Raycast3Result nearest = RAY3_NO_HIT;
+							for (uint32_t other_index = 0; other_index < world.entity_count; ++other_index) {
+								Entity *other = &world.entities[other_index];
+								if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
+									continue;
+
+								float3 center = float3_add(aabb3_center(other->shape.as.aabb3), other->transform.translation);
+								// NOTE: Minkowski sum
+								float3 half_extent =
+									float4x4_transform(
+										float4x4_scaling(other->transform.scale),
+										float4_from_float3(aabb3_half_extent(other->shape.as.aabb3), 0.0f));
+
+								float3 swept_extent = float3_add(half_extent, aabb3_half_extent(entity->shape.as.aabb3));
+
+								Raycast3Result result = raycast_aabb3(ro, rd, center, swept_extent);
+								if (result.t < nearest.t)
+									nearest = result;
+							}
+
+							// Collision resolution
+							float t_actual = nearest.t / (entity->move_speed * dt);
+							float t_min = fminf(1.0f, t_actual);
+
+							entity->transform.translation = float3_add(entity->transform.translation, float3_scale(move_delta, t_min - 0.001f));
+
+							move_delta = float3_subtract(move_delta, float3_scale(nearest.normal, float3_dot(move_delta, nearest.normal)));
+							t_remaining -= t_min;
+						}
+
+						if (use_heightmap) {
+							float px = clampf(entity->transform.translation.x + map_width * 0.5f, 0.0f, map_width);
+							float pz = clampf(entity->transform.translation.z + map_depth * 0.5f, 0.0f, map_depth);
+
+							int32_t x0 = (int32_t)px;
+							int32_t z0 = (int32_t)pz;
+
+							int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
+							int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
+
+							float hs[4] = {
+								[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+								[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+								[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+								[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+							};
+							float u = px - (float)x0;
+							float v = pz - (float)z0;
+
+							float top_edge = hs[0] + u * (hs[1] - hs[0]);
+							float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
+
+							float height = top_edge + v * (bottom_edge - top_edge);
+							/* float hs = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f; */
+							/* tranform->translation.y = hs * 40.f; */
+							entity->transform.translation.y = height * 40.f;
+						} else
+							entity->transform.translation.y = 0.0f;
+					}
+
+					if (
+						entity_has(entity, ENTITY_FEATURE_ANIMATE) &&
+						entity_has(entity, ENTITY_FEATURE_DRAW_MESH) //
+					) { // :skeletal
+						Pose final = anim_pose_sample(
+							frame_arena,
+							&animations[entity->meshid][entity->current_anim],
+							fmodf(entity->anim_t, animations[player->meshid][entity->current_anim].duration) //
+						);
+
+						uint32_t target_anim = entity->current_anim;
+						if (float2_length_sq(input_vector)) {
+							input_vector = float2_normalize(input_vector);
+
+							if (input_key_down(KEY_CODE_LEFTSHIFT))
+								target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/run-loop"));
+							else
+								target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/walk-loop"));
+						} else
+							target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/idle-loop"));
+
+						if (entity->current_anim != target_anim) {
+							Pose start = final;
+							Pose end = anim_pose_sample(frame_arena, &animations[player->meshid][target_anim], fmodf(entity->anim_t, animations[player->meshid][target_anim].duration));
+
+							final = anim_pose_blend_local(frame_arena, &end, &start, entity->blend_t, 0);
+
+							entity->blend_t += dt * 5;
+							if (entity->blend_t >= 1.0f) {
+								entity->current_anim = target_anim;
+								entity->blend_t = 0.0f;
+							}
+						}
+
+						Mesh *mesh = &meshes[entity->meshid];
+						entity->skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &final, &mesh->skeleton), &mesh->skeleton);
+
+						entity->anim_t += dt;
+					}
+				}
 
 				{ // :camera
 					static float azimuth = C_PIf * 3 / 2.f;
 					static float theta = C_PIf / 3.f;
 					static const float sensitivity = 1.0f;
 					static const float spring_arm_length = 10.f;
-
-					anim_t += dt;
 
 					float yaw_delta = mouse_delta.x * sensitivity;
 					float pitch_delta = mouse_delta.y * sensitivity;
@@ -1143,14 +1367,14 @@ int main(void) {
 
 					theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
 
-					float3 camera_offset = float3_subtract(camera->position, transform->translation);
+					float3 camera_offset = float3_subtract(camera->position, player->transform.translation);
 
 					float r = float3_length(camera_offset);
 					if (r < EPSILON)
 						r = EPSILON;
 
-					current_theta = acosf(camera_offset.y / r);
-					current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+					float current_theta = acosf(camera_offset.y / r);
+					float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
 
 					if (current_azimuth < 0)
 						current_azimuth += C_PIf * 2.f;
@@ -1167,125 +1391,20 @@ int main(void) {
 					current_theta += t * (theta - current_theta);
 
 					camera->position = (float3){
-						(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + transform->translation.x,
+						(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + player->transform.translation.x,
 						spring_arm_length * cosf(current_theta),
-						(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + transform->translation.z,
+						(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + player->transform.translation.z,
 					};
-				}
 
-				float3 move_delta = { 0 };
-				(void)move_delta;
-				float move_speed = 0;
-				{ // :move
-					static const float walk_speed = 3.0f, run_speed = 6.0f;
-
-					float3 camera_position = camera->position;
-					float3 camera_target = camera->target;
-
-					camera_position.y = 0.0f;
-					camera_target.y = 0.0f;
-
-					float3 forward, right;
-
-					forward = float3_normalize(float3_subtract(camera_target, camera_position));
-
-					right = float3_cross(forward, camera->up);
-					right = float3_normalize(right);
-
-					float3 direction = { 0, 0, 0 };
-
-					direction = float3_add(direction, float3_scale(forward, input_vector.x));
-					direction = float3_add(direction, float3_scale(right, input_vector.y));
-
-					float length = float3_length(direction);
-					if (length > EPSILON)
-						direction = float3_scale(direction, 1 / length);
-					move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
-
-					move_delta = float3_scale(direction, move_speed * dt);
-				}
-
-#if 1
-				{ // :collision
-					if (float3_length_squared(move_delta) > 0) {
-						float t_remaining = 1.0f;
-						for (uint32_t iteration = 0; iteration < 4 && t_remaining > 0.0f; ++iteration) {
-							// Collision detection
-							float3 ro = transform->translation;
-							float3 rd = float3_normalize_safe(move_delta, EPSILON);
-
-							Raycast3Result nearest = RAY3_NO_HIT;
-							for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
-								Entity *other = &world.entities[entity_index];
-								if (other == player || ecs_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
-									continue;
-
-								float3 center = float3_add(aabb3_center(other->shape.as.aabb3), other->transform.translation);
-								// NOTE: Minkowski sum
-								float3 half_extent =
-									float4x4_transform(
-										float4x4_scaling(other->transform.scale),
-										float4_from_float3(aabb3_half_extent(other->shape.as.aabb3), 0.0f));
-
-								float3 swept_extent = float3_add(half_extent, aabb3_half_extent(player->shape.as.aabb3));
-
-								Raycast3Result result = raycast_aabb3(ro, rd, center, swept_extent);
-								if (result.t < nearest.t)
-									nearest = result;
-							}
-
-							// Collision resolution
-							float t_actual = nearest.t / (move_speed * dt);
-							float t_min = fminf(1.0f, t_actual);
-
-							transform->translation = float3_add(transform->translation, float3_scale(move_delta, t_min - 0.001f));
-
-							move_delta = float3_subtract(move_delta, float3_scale(nearest.normal, float3_dot(move_delta, nearest.normal)));
-							t_remaining -= t_min;
-						}
-					}
-
-					camera->target.x = transform->translation.x;
-					camera->target.z = transform->translation.z;
+					camera->target.x = player->transform.translation.x;
+					camera->target.z = player->transform.translation.z;
 
 					if (use_heightmap) {
-						float px = clampf(transform->translation.x + map_width * 0.5f, 0.0f, map_width);
-						float pz = clampf(transform->translation.z + map_depth * 0.5f, 0.0f, map_depth);
-
-						int32_t x0 = (int32_t)px;
-						int32_t z0 = (int32_t)pz;
-
-						int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
-						int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
-
-						float hs[4] = {
-							[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-							[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-							[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
-							[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
-						};
-						float u = px - (float)x0;
-						float v = pz - (float)z0;
-
-						float top_edge = hs[0] + u * (hs[1] - hs[0]);
-						float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
-
-						float height = top_edge + v * (bottom_edge - top_edge);
-						/* float hs = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f; */
-						/* tranform->translation.y = hs * 40.f; */
-						transform->translation.y = height * 40.f;
-						camera->position.y += transform->translation.y;
-						camera->target.y = transform->translation.y + 1.5f;
-					} else {
-						transform->translation.y = 0.0f;
-						camera->target.y = transform->translation.y + 1.5f;
-					}
+						camera->position.y += player->transform.translation.y;
+						camera->target.y = player->transform.translation.y + 1.5f;
+					} else
+						camera->target.y = player->transform.translation.y + 1.5f;
 				}
-#else
-				transform->translation = float3_add(transform->translation, move_delta);
-				camera->target.x = transform->translation.x;
-				camera->target.z = transform->translation.z;
-#endif
 
 				{ // :interact
 
@@ -1295,10 +1414,10 @@ int main(void) {
 					if (input_key_pressed(KEY_CODE_F)) {
 						for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
 							Entity *entity = &world.entities[entity_index];
-							if (ecs_has(entity, ENTITY_FEATURE_INTERACTABLE) == false || target == player)
+							if (entity_has(entity, ENTITY_FEATURE_INTERACTABLE) == false || entity == player)
 								continue;
 
-							float3 offset = float3_subtract(entity->transform.translation, transform->translation);
+							float3 offset = float3_subtract(entity->transform.translation, player->transform.translation);
 							float dist_sq = float3_dot(offset, offset);
 
 							if (dist_sq <= (entity->interact_radius * entity->interact_radius) && dist_sq < closest) {
@@ -1312,40 +1431,6 @@ int main(void) {
 					}
 				}
 
-				Pose final = anim_pose_sample(frame_arena, &animations[player->meshid][current_anim], fmodf(anim_t, animations[player->meshid][current_anim].duration));
-				{ // handle current animation
-					uint32_t target_anim = current_anim;
-					if (float2_length_squared(input_vector)) {
-						input_vector = float2_normalize(input_vector);
-
-						float target_angle = -current_azimuth - C_PIf + atan2f(input_vector.x, input_vector.y);
-						quat4 target_rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
-
-						float t = 1.0f - expf(-15.0f * dt);
-						transform->rotation = quat4_slerp(transform->rotation, target_rotation, t);
-
-						if (input_key_down(KEY_CODE_LEFTSHIFT))
-							target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/run-loop"));
-						else
-							target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/walk-loop"));
-					} else
-						target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/idle-loop"));
-
-					if (current_anim != target_anim) {
-						Pose start = final;
-						Pose end = anim_pose_sample(frame_arena, &animations[player->meshid][target_anim], fmodf(anim_t, animations[player->meshid][target_anim].duration));
-
-						final = anim_pose_blend_local(frame_arena, &end, &start, blend_t, 0);
-
-						blend_t += dt * 5;
-						if (blend_t >= 1.0f) {
-							current_anim = target_anim;
-							blend_t = 0.0f;
-						}
-					}
-				}
-
-				player->skin_matrices = anim_pose_skinning_matrices(frame_arena, anim_pose_local_to_model(frame_arena, &final, &mesh->skeleton), &mesh->skeleton);
 			} break;
 			default:
 				break;
@@ -1388,7 +1473,7 @@ int main(void) {
 			// :skinning
 			for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
 				Entity *instance = &world.entities[instance_index];
-				if (ecs_has(instance, ENTITY_FEATURE_SKIN_MESH) == false || animation_counts[instance->meshid] == 0 || instance->skin_matrices == 0)
+				if (entity_has(instance, ENTITY_FEATURE_ANIMATE) == false || animation_counts[instance->meshid] == 0 || instance->skin_matrices == 0)
 					continue;
 
 				Mesh *mesh = &meshes[instance->meshid];
@@ -1494,11 +1579,11 @@ int main(void) {
 
 				// :shadow
 				for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-					Entity *instance = &world.entities[instance_index];
-					if (ecs_has(instance, ENTITY_FEATURE_CAST_SHADOW) == false)
+					Entity *entity = &world.entities[instance_index];
+					if (entity_has(entity, ENTITY_FEATURE_CAST_SHADOW) == false)
 						continue;
 
-					Mesh *mesh = &meshes[instance->meshid];
+					Mesh *mesh = &meshes[entity->meshid];
 
 					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -1506,9 +1591,9 @@ int main(void) {
 						Material *material = &mesh->materials[part->material_id];
 
 						float4x4 transform = float4x4_compose_quat(
-							instance->transform.translation,
-							instance->transform.rotation,
-							instance->transform.scale //
+							entity->transform.translation,
+							entity->transform.rotation,
+							entity->transform.scale //
 						);
 						struct {
 							float4x4 model;
@@ -1517,9 +1602,9 @@ int main(void) {
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
-						if (animation_counts[instance->meshid] && instance->skin_matrices) {
+						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
 							buffer = cmd->transient_buffer;
-							offset = instance->skinned_vertices_offset;
+							offset = entity->skinned_vertices_offset;
 						}
 
 						gfx_bind(context, &pipeline_shadow, 1,
@@ -1601,11 +1686,11 @@ int main(void) {
 
 				// :draw
 				for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-					Entity *instance = &world.entities[instance_index];
-					if (ecs_has(instance, ENTITY_FEATURE_DRAW_MESH) == false)
+					Entity *entity = &world.entities[instance_index];
+					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
 						continue;
 
-					Mesh *mesh = &meshes[instance->meshid];
+					Mesh *mesh = &meshes[entity->meshid];
 
 					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -1613,9 +1698,9 @@ int main(void) {
 						Material *material = &mesh->materials[part->material_id];
 
 						float4x4 transform = float4x4_compose_quat(
-							instance->transform.translation,
-							instance->transform.rotation,
-							instance->transform.scale //
+							entity->transform.translation,
+							entity->transform.rotation,
+							entity->transform.scale //
 						);
 						struct {
 							float4x4 model;
@@ -1633,12 +1718,12 @@ int main(void) {
 							.uv_scale = { 1.0f, 1.0f },
 						};
 
-						if (instance->meshid == MESH_TERRAIN_FLAT) {
+						if (entity->meshid == MESH_TERRAIN_FLAT) {
 							pc.uv_scale.x *= 8.f;
 							pc.uv_scale.y *= 8.f;
 						}
 
-						if (instance->meshid == MESH_HERO_MALE && part_index == 3) { // hero head
+						if (entity->meshid == MESH_HERO_MALE && part_index == 3) { // hero head
 							if (blink_timer > 2.0f && blink_timer < 2.1f)
 								pc.uv_offset.x = 1.0f / 3.0f;
 							else if (blink_timer > 2.1f && blink_timer < 2.3f) {
@@ -1651,9 +1736,9 @@ int main(void) {
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
-						if (animation_counts[instance->meshid] && instance->skin_matrices) {
+						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
 							buffer = cmd->transient_buffer;
-							offset = instance->skinned_vertices_offset;
+							offset = entity->skinned_vertices_offset;
 						}
 
 						GFX_Image *images[] = {
@@ -1734,115 +1819,134 @@ int main(void) {
 				}
 
 				{ // :overlay
-					for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-						Entity *instance = &world.entities[instance_index];
-						if (ecs_has(instance, ENTITY_FEATURE_COLLIDABLE) == false)
-							continue;
+					if (draw_collision_shapes) {
+						for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
+							Entity *entity = &world.entities[instance_index];
+							if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) == false)
+								continue;
 
-						gfx_cmd_pipeline_bind(cmd, &pipeline_line);
+							gfx_cmd_pipeline_bind(cmd, &pipeline_line);
 
-						float3 min = instance->shape.as.aabb3.min;
-						float3 max = instance->shape.as.aabb3.max;
-						float3 bounding_box_size = float3_subtract(max, min);
+							Shape *shape = &entity->shape;
+							float thickness = 3.0f;
+							uint32_t line_segment_count = 0;
+							float4 *points = 0;
 
-						float thickness = 3.0f;
-						float pick_length = minf(bounding_box_size.z, minf(bounding_box_size.x, bounding_box_size.y)) * 0.25f;
+							switch (shape->kind) {
+								case SHAPE_KIND_AABB3: {
+									float3 min = shape->as.aabb3.min;
+									float3 max = shape->as.aabb3.max;
+									float3 bounding_box_size = float3_subtract(max, min);
 
-						float4 selection[] = {
-							// 0
-							{ min.x, min.y, min.z, thickness },
-							{ min.x + pick_length, min.y, min.z, thickness },
+									float4 outline[] = {
+										{ min.x, min.y, min.z, thickness },
+										{ min.x, max.y, min.z, thickness },
 
-							{ min.x, min.y, min.z, thickness },
-							{ min.x, min.y + pick_length, min.z, thickness },
+										{ min.x, min.y, max.z, thickness },
+										{ min.x, max.y, max.z, thickness },
 
-							{ min.x, min.y, min.z, thickness },
-							{ min.x, min.y, min.z + pick_length, thickness },
+										{ max.x, min.y, min.z, thickness },
+										{ max.x, max.y, min.z, thickness },
 
-							// 1
-							{ max.x, min.y, min.z, thickness },
-							{ max.x - pick_length, min.y, min.z, thickness },
+										{ max.x, min.y, max.z, thickness },
+										{ max.x, max.y, max.z, thickness },
 
-							{ max.x, min.y, min.z, thickness },
-							{ max.x, min.y + pick_length, min.z, thickness },
+										{ min.x, min.y, min.z, thickness },
+										{ min.x, min.y, max.z, thickness },
 
-							{ max.x, min.y, min.z, thickness },
-							{ max.x, min.y, min.z + pick_length, thickness },
+										{ min.x, min.y, min.z, thickness },
+										{ max.x, min.y, min.z, thickness },
 
-							// 2
-							{ min.x, max.y, min.z, thickness },
-							{ min.x + pick_length, max.y, min.z, thickness },
+										{ max.x, min.y, max.z, thickness },
+										{ max.x, min.y, min.z, thickness },
 
-							{ min.x, max.y, min.z, thickness },
-							{ min.x, max.y - pick_length, min.z, thickness },
+										{ max.x, min.y, max.z, thickness },
+										{ min.x, min.y, max.z, thickness },
 
-							{ min.x, max.y, min.z, thickness },
-							{ min.x, max.y, min.z + pick_length, thickness },
+										{ min.x, max.y, min.z, thickness },
+										{ min.x, max.y, max.z, thickness },
 
-							// 3
-							{ max.x, max.y, min.z, thickness },
-							{ max.x - pick_length, max.y, min.z, thickness },
+										{ min.x, max.y, min.z, thickness },
+										{ max.x, max.y, min.z, thickness },
 
-							{ max.x, max.y, min.z, thickness },
-							{ max.x, max.y - pick_length, min.z, thickness },
+										{ max.x, max.y, max.z, thickness },
+										{ max.x, max.y, min.z, thickness },
 
-							{ max.x, max.y, min.z, thickness },
-							{ max.x, max.y, min.z + pick_length, thickness },
+										{ max.x, max.y, max.z, thickness },
+										{ min.x, max.y, max.z, thickness },
+									};
+									points = arena_push_count(frame_arena, float4, countof(outline));
+									memory_copy_array(points, outline);
+									line_segment_count = countof(outline) / 2;
 
-							// 4
-							{ min.x, min.y, max.z, thickness },
-							{ min.x + pick_length, min.y, max.z, thickness },
+								} break;
+								case SHAPE_KIND_SPHERE: {
+									float3 c = shape->as.sphere.center;
+									float r = shape->as.sphere.radius;
 
-							{ min.x, min.y, max.z, thickness },
-							{ min.x, min.y + pick_length, max.z, thickness },
+									uint8_t segments = 32;
+									points = arena_push_count(frame_arena, float4, 3 * (segments * 2));
 
-							{ min.x, min.y, max.z, thickness },
-							{ min.x, min.y, max.z - pick_length, thickness },
+									uint32_t cursor = 0;
+									cursor += push_line_arc(points + cursor, c, r, segments, AXIS_PLANE_UP, TAU, thickness);
+									cursor += push_line_arc(points + cursor, c, r, segments, AXIS_PLANE_RIGHT, TAU, thickness);
+									cursor += push_line_arc(points + cursor, c, r, segments, AXIS_PLANE_FORWARD, TAU, thickness);
+									line_segment_count = cursor / 2;
 
-							// 5
-							{ max.x, min.y, max.z, thickness },
-							{ max.x - pick_length, min.y, max.z, thickness },
+								} break;
+								case SHAPE_KIND_CAPSULE: {
+									float r = shape->as.capsule.radius;
+									float3 centers[] = { shape->as.capsule.a, shape->as.capsule.b };
 
-							{ max.x, min.y, max.z, thickness },
-							{ max.x, min.y + pick_length, max.z, thickness },
+									uint8_t segments = 32;
+									points = arena_push_count(frame_arena, float4, 6 * (segments * 2) + 8);
 
-							{ max.x, min.y, max.z, thickness },
-							{ max.x, min.y, max.z - pick_length, thickness },
+									uint32_t cursor = 0;
+									// clang-format off
+									float4 spine[] = {
+										{ centers[0].x - r, centers[0].y, centers[0].z, thickness }, { centers[0].x - r, centers[1].y, centers[0].z, thickness },
+										{ centers[0].x + r, centers[0].y, centers[0].z, thickness }, { centers[0].x + r, centers[1].y, centers[0].z, thickness },
+										{ centers[0].x, centers[0].y, centers[0].z - r, thickness }, { centers[0].x, centers[1].y, centers[0].z - r, thickness },
+										{ centers[0].x, centers[0].y, centers[0].z + r, thickness }, { centers[0].x, centers[1].y, centers[0].z + r, thickness },
+									};
+									// clang-format on
+									memory_copy_array(points, spine);
+									cursor += countof(spine);
 
-							// 6
-							{ min.x, max.y, max.z, thickness },
-							{ min.x + pick_length, max.y, max.z, thickness },
+									for (uint32_t end = 0; end < countof(centers); ++end) {
+										float3 c = centers[end];
+										float signed_r = (end == 0) ? -r : r;
 
-							{ min.x, max.y, max.z, thickness },
-							{ min.x, max.y - pick_length, max.z, thickness },
+										cursor += push_line_arc(points + cursor, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness);
+										cursor += push_line_arc(points + cursor, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness);
+										cursor += push_line_arc(points + cursor, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness);
+									}
 
-							{ min.x, max.y, max.z, thickness },
-							{ min.x, max.y, max.z - pick_length, thickness },
+									line_segment_count = cursor / 2;
 
-							// 7
-							{ max.x, max.y, max.z, thickness },
-							{ max.x - pick_length, max.y, max.z, thickness },
+								} break;
+									break;
+								case SHAPE_KIND_PLANE:
+									break;
+							}
 
-							{ max.x, max.y, max.z, thickness },
-							{ max.x, max.y - pick_length, max.z, thickness },
+							if (points) {
+								Uniform uniforms[] = {
+									storage_data(0, points, line_segment_count * 2 * sizeof(float4)),
+								};
+								gfx_bind(context, &pipeline_line, 1, uniforms, countof(uniforms));
+								struct {
+									float4x4 model;
+									float4 color;
+								} pc = {
+									.model = float4x4_compose_quat(entity->transform.translation, entity->transform.rotation, entity->transform.scale),
+									.color = FLOAT4_ONE,
+								};
 
-							{ max.x, max.y, max.z, thickness },
-							{ max.x, max.y, max.z - pick_length, thickness },
-						};
-						Uniform uniforms[] = {
-							storage_data(0, selection, sizeof(selection)),
-						};
-						gfx_bind(context, &pipeline_line, 1, uniforms, countof(uniforms));
-						struct {
-							float4x4 model;
-							float4 color;
-						} pc = {
-							.model = float4x4_compose_quat(instance->transform.translation, instance->transform.rotation, instance->transform.scale),
-							.color = FLOAT4_ONE,
-						};
-
-						vkCmdPushConstants(cmd->handle, pipeline_line.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-						vkCmdDraw(cmd->handle, 24 * 2 * 6, 1, 0, 0);
+								vkCmdPushConstants(cmd->handle, pipeline_line.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+								vkCmdDraw(cmd->handle, line_segment_count * 2 * 6, 1, 0, 0);
+							}
+						}
 					}
 				}
 
@@ -1883,7 +1987,6 @@ int main(void) {
 				vkCmdEndRendering(cmd->handle);
 			}
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, main_target);
-
 		} else { //  TODO: resize swapchain
 			gfx_swapchain_resize(context, swapchains[1], dims.x, dims.y);
 			if (depthbuffer->width != dims.x || depthbuffer->height != dims.y)
@@ -4607,8 +4710,8 @@ Image2D load_image(Arena *arena, String8 path) {
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count) {
 	Image2D result = { 0 };
 
-	Image2D images[FACE_COUNT];
-	for (uint32_t face_index = 0; face_index < FACE_COUNT; ++face_index) {
+	Image2D images[AXIS_PLANE_COUNT];
+	for (uint32_t face_index = 0; face_index < AXIS_PLANE_COUNT; ++face_index) {
 		images[face_index] = load_image(arena, paths[face_index]);
 
 		if (face_index > 0) {
@@ -4880,11 +4983,14 @@ Mesh load_gltf(Arena *arena, String8 path) {
 			result.skeleton.bone_count = skin->joints_count;
 			result.skeleton.bones = arena_push_count(arena, Bone, result.skeleton.bone_count);
 			result.skeleton.inverse_rest_matrices = arena_push_count(arena, float4x4, result.skeleton.bone_count);
+			result.skeleton.bind_pose_matrices = arena_push_count(arena, float4x4, result.skeleton.bone_count);
 
 			cgltf_accessor_unpack_floats(accessor, (float *)result.skeleton.inverse_rest_matrices, accessor->count * cgltf_num_components(accessor->type));
 
 			for (uint32_t joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
 				cgltf_node *joint = skin->joints[joint_index];
+				cgltf_node_transform_world(joint, result.skeleton.bind_pose_matrices[joint_index].elements);
+
 				memory_copy(
 					result.skeleton.bones[joint_index].name,
 					joint->name,
@@ -4907,25 +5013,25 @@ Mesh load_gltf(Arena *arena, String8 path) {
 	return result;
 }
 
-static inline float3 face_orient(float3 v, Face face) {
+static inline float3 face_orient(float3 v, AxisPlane face) {
 	float3 result = { 0 };
 	switch (face) {
-		case FACE_UP:
+		case AXIS_PLANE_UP:
 			result = (float3){ v.x, v.y, v.z };
 			break;
-		case FACE_DOWN:
+		case AXIS_PLANE_DOWN:
 			result = (float3){ v.x, -v.y, -v.z };
 			break;
-		case FACE_RIGHT:
+		case AXIS_PLANE_RIGHT:
 			result = (float3){ v.y, v.z, v.x };
 			break;
-		case FACE_LEFT:
+		case AXIS_PLANE_LEFT:
 			result = (float3){ -v.y, v.z, -v.x };
 			break;
-		case FACE_FORWARD:
+		case AXIS_PLANE_FORWARD:
 			result = (float3){ v.x, v.z, -v.y };
 			break;
-		case FACE_BACKWARD:
+		case AXIS_PLANE_BACKWARD:
 			result = (float3){ -v.x, v.z, v.y };
 			break;
 		default:
@@ -4936,7 +5042,7 @@ static inline float3 face_orient(float3 v, Face face) {
 	return result;
 }
 
-Mesh generate_plane_from_heightmap(Arena *arena, Face orientation, float w, float h, Image2D heightmap) {
+Mesh generate_plane_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -w * 0.5f, .y = 0.0f, .y = -h * 0.5f };
 	result.bounds.max = (float3){ .x = w * 0.5f, .y = 0.0f, .y = h * 0.5f };
@@ -5001,7 +5107,7 @@ Mesh generate_plane_from_heightmap(Arena *arena, Face orientation, float w, floa
 	return result;
 }
 
-Mesh generate_plane(Arena *arena, Face orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+Mesh generate_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
 	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };

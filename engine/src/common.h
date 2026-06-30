@@ -46,8 +46,8 @@
 #define memory_compare(a, b, size) memcmp((a), (b), (size))
 
 #define memory_copy_struct(d, s) memory_copy((d), (s), sizeof(*(d)))
-#define memory_copy_array(d, s) memory_copy((d), (s), sizeof(d))
-#define memory_copy_count(d, s, c) memory_copy((d), (s), sizeof(*(d)) * (c))
+#define memory_copy_array(d, s) memory_copy((d), (s), sizeof(s))
+#define memory_copy_count(d, s, c) memory_copy((d), (s), sizeof(*(s)) * (c))
 
 #define memory_zero(s, z) memory_set((s), 0, (z))
 #define memory_zero_struct(s) memory_zero(&(s), sizeof((s)))
