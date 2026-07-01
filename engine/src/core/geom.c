@@ -23,14 +23,14 @@ Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
 	return result;
 }
 
-Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent) {
-	float3 min = float3_subtract(center, extent);
-	float3 max = float3_add(center, extent);
+Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_extent) {
+	float3 min = float3_subtract(center, half_extent);
+	float3 max = float3_add(center, half_extent);
 
 	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
-	if (float3_length(rd)) {
+	if (float3_length_sq(rd)) {
 		// left
-		float3 po = float3_subtract(center, (float3){ extent.x, 0.0f, 0.0f });
+		float3 po = float3_subtract(center, (float3){ half_extent.x, 0.0f, 0.0f });
 		float3 pn = { -1.0f, 0.0f, 0.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -43,7 +43,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent)
 			result = temp;
 
 		// right
-		po = float3_add(center, (float3){ extent.x, 0.0f, 0.0f });
+		po = float3_add(center, (float3){ half_extent.x, 0.0f, 0.0f });
 		pn = (float3){ 1.0f, 0.0f, 0.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -56,7 +56,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent)
 			result = temp;
 
 		// front
-		po = float3_add(center, (float3){ 0.0f, 0.0f, extent.z });
+		po = float3_add(center, (float3){ 0.0f, 0.0f, half_extent.z });
 		pn = (float3){ 0.0f, 0.0f, 1.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -69,7 +69,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent)
 			result = temp;
 
 		// back
-		po = float3_subtract(center, (float3){ 0.0f, 0.0f, extent.z });
+		po = float3_subtract(center, (float3){ 0.0f, 0.0f, half_extent.z });
 		pn = (float3){ 0.0f, 0.0f, -1.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -81,7 +81,31 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent)
 		if (temp.t < result.t)
 			result = temp;
 
-		// NOTE: no vertical movement, ignoring top and bottom for now
+		// top
+		po = float3_add(center, (float3){ 0.0f, half_extent.y, 0.0f });
+		pn = (float3){ 0.0f, 1.0f, 0.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
+
+		// bottom
+		po = float3_subtract(center, (float3){ 0.0f, half_extent.y, 0.0f });
+		pn = (float3){ 0.0f, -1.0f, 0.0f };
+
+		temp = raycast_plane(ro, rd, po, pn);
+		if ((temp.point.x < min.x || temp.point.x > max.x) ||
+			(temp.point.y < min.y || temp.point.y > max.y) ||
+			(temp.point.z < min.z || temp.point.z > max.z)) {
+			temp = RAY3_NO_HIT;
+		}
+		if (temp.t < result.t)
+			result = temp;
 	}
 
 	return result;
@@ -110,16 +134,38 @@ float distance_point_segment_squared(float3 point, float3 a, float3 b) {
 }
 
 // R = R - (n dot (R - P))n = R = R - tn
-float3 closest_point_on_plane3(float3 point, float3 po, float3 pn) {
-	float t = float3_dot(float3_subtract(point, po), pn) / float3_dot(pn, pn);
-	return float3_subtract(point, float3_scale(pn, t));
+
+float3 plane3_closest_point(Plane p, float3 to) {
+	float t = (float3_dot(to, p.normal) - p.distance) / float3_length_sq(p.normal);
+	return float3_subtract(to, float3_scale(p.normal, t));
 }
 
-float3 closest_point_on_segment3(float3 point, float3 a, float3 b) {
+float3 segment3_closest_point(float3 a, float3 b, float3 to) {
 	float3 ab = float3_subtract(b, a);
+	float lenght_sq = float3_length_sq(ab);
+	if (lenght_sq < EPSILON)
+		return a;
 
-	float t = float3_dot(float3_subtract(point, a), ab) / float3_dot(ab, ab);
+	float t = float3_dot(float3_subtract(to, a), ab) / lenght_sq;
 	t = clampf(t, 0.0f, 1.0f);
 
 	return float3_add(a, float3_scale(ab, t)); // a + t * ab
+}
+
+bool triangle3_contains_point(Triangle3 t, float3 p) {
+	bool result = false;
+
+	float3 a = float3_subtract(t.a, p);
+	float3 b = float3_subtract(t.b, p);
+	float3 c = float3_subtract(t.c, p);
+
+	float3 norm_pab = float3_cross(a, b);
+	float3 norm_pbc = float3_cross(b, c);
+	float3 norm_pca = float3_cross(c, a);
+
+	result = float3_dot(norm_pab, norm_pbc) >= 0.0f;
+	if (result)
+		result = float3_dot(norm_pbc, norm_pca) >= 0.0f;
+
+	return result;
 }

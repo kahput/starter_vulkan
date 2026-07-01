@@ -240,6 +240,13 @@ typedef struct {
 
 typedef struct {
 	float3 position;
+	float thickness;
+	uint32_t color;
+	float3 _pad0;
+} Line3;
+
+typedef struct {
+	float3 position;
 	float _pad0;
 	float3 normal;
 	float _pad1;
@@ -538,44 +545,12 @@ Mesh generate_plane(Arena *arena, AxisPlane orientation, float width, float heig
 Mesh generate_plane_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
-void push_rect(Arena *arena, Rectangle rect, Color color);
+void push_rect2(Arena *arena, Rectangle rect, Color color);
 
-// Writes `segments` line segments tracing an arc from angle 0 to `angle_span`
-// in the given plane, centered on `center`. Returns points written (segments*2).
-static uint32_t push_line_arc(float4 *points, float3 center, float radius, uint8_t segments,
-	AxisPlane plane, float angle_span, float thickness) {
-	for (uint32_t i = 0; i < segments; ++i) {
-		float a = ((float)i / segments) * angle_span;
-		float an = ((float)(i + 1) / segments) * angle_span;
-		float ca = cosf(a), sa = sinf(a);
-		float can = cosf(an), san = sinf(an);
-
-		float4 p0, p1;
-		switch (plane) {
-			case AXIS_PLANE_DOWN:
-			case AXIS_PLANE_UP:
-				p0 = (float4){ center.x + ca * radius, center.y, center.z + sa * radius, thickness };
-				p1 = (float4){ center.x + can * radius, center.y, center.z + san * radius, thickness };
-				break;
-			case AXIS_PLANE_LEFT:
-			case AXIS_PLANE_RIGHT:
-				p0 = (float4){ center.x, center.y + sa * radius, center.z + ca * radius, thickness };
-				p1 = (float4){ center.x, center.y + san * radius, center.z + can * radius, thickness };
-				break;
-			case AXIS_PLANE_BACKWARD:
-			case AXIS_PLANE_FORWARD:
-				p0 = (float4){ center.x + ca * radius, center.y + sa * radius, center.z, thickness };
-				p1 = (float4){ center.x + can * radius, center.y + san * radius, center.z, thickness };
-				break;
-			case AXIS_PLANE_COUNT:
-				ASSERT(false);
-				break;
-		}
-		points[i * 2 + 0] = p0;
-		points[i * 2 + 1] = p1;
-	}
-	return segments * 2;
-}
+void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color);
+void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
+void push_triangle3(Arena *arena, Triangle3 t, float thickness, Color color);
+void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
 
 typedef struct {
 	Arena *batch_arena;
@@ -1005,14 +980,15 @@ int main(void) {
 	barrel->meshid = MESH_BARREL;
 	barrel->transform.translation = (float3){ 10.0f, 0.0f, 0.0f };
 	barrel->interact_radius = 3.0f;
-	barrel->shape.as.aabb3 = meshes[barrel->meshid].bounds;
+	barrel->shape = shape_from_aabb3(meshes[barrel->meshid].bounds);
 	barrel->target = player;
 
 	entity_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
 	entity_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
 	entity_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
 	entity_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
-	/* entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET); */
+	entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET);
+	/* entity_enable(barrel, ENTITY_FEATURE_ANIMATE); */
 
 	Entity *terrain = entity_spawn(&world);
 	terrain->meshid = MESH_TERRAIN_FLAT;
@@ -1065,9 +1041,13 @@ int main(void) {
 		}
 
 		// :update
-		Arena batch_2d[1] = { {
+		Arena batch_2d[] = { {
 		  .base = arena_push_count(frame_arena, Vertex2, 6 * 1024),
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
+		} };
+		Arena batch_line[] = { {
+		  .base = arena_push_count(frame_arena, Line3, 6 * 1024),
+		  .capacity = sizeof(Line3) * 6 * 1024,
 		} };
 
 		static float ambient_strength = 0.2f;
@@ -1135,7 +1115,7 @@ int main(void) {
 
 					Rectangle panel = rect(panel_x, panel_y, panel_w, fence_h + total_element_h + pad * 2);
 
-					push_rect(batch_2d, panel, rgb(25, 25, 25));
+					push_rect2(batch_2d, panel, rgb(25, 25, 25));
 					fog_density = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.001f, 0.05f, fog_density);
 					panel_y += element_h + pad;
 					fog_gradient = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 15.0f, fog_gradient);
@@ -1172,6 +1152,41 @@ int main(void) {
 			} break;
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
+
+				for (uint32_t index = 0; index < world.entity_count; ++index) { // :heightmap
+					Entity *entity = &world.entities[index];
+					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
+						continue;
+
+					if (use_heightmap) {
+						float px = clampf(entity->transform.translation.x + map_width * 0.5f, 0.0f, map_width);
+						float pz = clampf(entity->transform.translation.z + map_depth * 0.5f, 0.0f, map_depth);
+
+						int32_t x0 = (int32_t)px;
+						int32_t z0 = (int32_t)pz;
+
+						int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
+						int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
+
+						float hs[4] = {
+							[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+							[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+							[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+							[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+						};
+						float u = px - (float)x0;
+						float v = pz - (float)z0;
+
+						float top_edge = hs[0] + u * (hs[1] - hs[0]);
+						float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
+
+						float height = top_edge + v * (bottom_edge - top_edge);
+						/* float hs = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f; */
+						/* tranform->translation.y = hs * 40.f; */
+						entity->transform.translation.y = height * 40.f;
+					} else
+						entity->transform.translation.y = 0.0f;
+				}
 
 				for (uint32_t index = 0; index < world.entity_count; ++index) {
 					Entity *entity = &world.entities[index];
@@ -1245,11 +1260,13 @@ int main(void) {
 
 					// :collision
 					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE)) {
-						float t_remaining = float3_length_sq(move_delta) > 0 ? 1.0f : 0.0f;
-						for (uint32_t iteration = 0; iteration < 6 && t_remaining > 0.0f; ++iteration) {
+						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
+							if (float3_length_sq(move_delta) <= EPSILON)
+								break;
+
 							// Collision detection
-							float3 ro = entity->transform.translation;
-							float3 rd = float3_normalize_safe(move_delta, EPSILON);
+							float3 ro = float3_add(entity->transform.translation, aabb3_center(entity->shape.as.aabb3));
+							float3 rd = move_delta;
 
 							Raycast3Result nearest = RAY3_NO_HIT;
 							for (uint32_t other_index = 0; other_index < world.entity_count; ++other_index) {
@@ -1264,61 +1281,39 @@ int main(void) {
 										float4x4_scaling(other->transform.scale),
 										float4_from_float3(aabb3_half_extent(other->shape.as.aabb3), 0.0f));
 
-								float3 swept_extent = float3_add(half_extent, aabb3_half_extent(entity->shape.as.aabb3));
+								float3 swept_extent = float3_add(
+									half_extent,
+									aabb3_half_extent(entity->shape.as.aabb3) //
+								);
 
 								Raycast3Result result = raycast_aabb3(ro, rd, center, swept_extent);
 								if (result.t < nearest.t)
 									nearest = result;
 							}
+							if (nearest.hit == false) {
+								entity->transform.translation = float3_add(entity->transform.translation, move_delta);
+								break;
+							}
 
 							// Collision resolution
-							float t_actual = nearest.t / (entity->move_speed * dt);
-							float t_min = fminf(1.0f, t_actual);
+							float t_min = maxf(minf(nearest.t, 1.0f) - 0.01f, 0.0f);
 
-							entity->transform.translation = float3_add(entity->transform.translation, float3_scale(move_delta, t_min - 0.001f));
+							entity->transform.translation = float3_add(entity->transform.translation, float3_scale(move_delta, t_min));
 
 							move_delta = float3_subtract(move_delta, float3_scale(nearest.normal, float3_dot(move_delta, nearest.normal)));
-							t_remaining -= t_min;
+							move_delta = float3_scale(move_delta, 1.0f - t_min);
 						}
-
-						if (use_heightmap) {
-							float px = clampf(entity->transform.translation.x + map_width * 0.5f, 0.0f, map_width);
-							float pz = clampf(entity->transform.translation.z + map_depth * 0.5f, 0.0f, map_depth);
-
-							int32_t x0 = (int32_t)px;
-							int32_t z0 = (int32_t)pz;
-
-							int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
-							int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
-
-							float hs[4] = {
-								[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-								[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-								[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
-								[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
-							};
-							float u = px - (float)x0;
-							float v = pz - (float)z0;
-
-							float top_edge = hs[0] + u * (hs[1] - hs[0]);
-							float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
-
-							float height = top_edge + v * (bottom_edge - top_edge);
-							/* float hs = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f; */
-							/* tranform->translation.y = hs * 40.f; */
-							entity->transform.translation.y = height * 40.f;
-						} else
-							entity->transform.translation.y = 0.0f;
 					}
 
 					if (
 						entity_has(entity, ENTITY_FEATURE_ANIMATE) &&
-						entity_has(entity, ENTITY_FEATURE_DRAW_MESH) //
-					) { // :skeletal
+						entity_has(entity, ENTITY_FEATURE_DRAW_MESH) &&
+						animation_counts[entity->meshid] // :skeletal
+					) {
 						Pose final = anim_pose_sample(
 							frame_arena,
 							&animations[entity->meshid][entity->current_anim],
-							fmodf(entity->anim_t, animations[player->meshid][entity->current_anim].duration) //
+							fmodf(entity->anim_t, animations[entity->meshid][entity->current_anim].duration) //
 						);
 
 						uint32_t target_anim = entity->current_anim;
@@ -1326,15 +1321,15 @@ int main(void) {
 							input_vector = float2_normalize(input_vector);
 
 							if (input_key_down(KEY_CODE_LEFTSHIFT))
-								target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/run-loop"));
+								target_anim = find_animation(animations[entity->meshid], animation_counts[entity->meshid], s("freehand/run-loop"));
 							else
-								target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/walk-loop"));
+								target_anim = find_animation(animations[entity->meshid], animation_counts[entity->meshid], s("freehand/walk-loop"));
 						} else
-							target_anim = find_animation(animations[player->meshid], animation_counts[player->meshid], s("freehand/idle-loop"));
+							target_anim = find_animation(animations[entity->meshid], animation_counts[entity->meshid], s("freehand/idle-loop"));
 
 						if (entity->current_anim != target_anim) {
 							Pose start = final;
-							Pose end = anim_pose_sample(frame_arena, &animations[player->meshid][target_anim], fmodf(entity->anim_t, animations[player->meshid][target_anim].duration));
+							Pose end = anim_pose_sample(frame_arena, &animations[entity->meshid][target_anim], fmodf(entity->anim_t, animations[entity->meshid][target_anim].duration));
 
 							final = anim_pose_blend_local(frame_arena, &end, &start, entity->blend_t, 0);
 
@@ -1825,128 +1820,66 @@ int main(void) {
 							if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) == false)
 								continue;
 
-							gfx_cmd_pipeline_bind(cmd, &pipeline_line);
-
 							Shape *shape = &entity->shape;
 							float thickness = 3.0f;
-							uint32_t line_segment_count = 0;
-							float4 *points = 0;
 
 							switch (shape->kind) {
 								case SHAPE_KIND_AABB3: {
-									float3 min = shape->as.aabb3.min;
-									float3 max = shape->as.aabb3.max;
-									float3 bounding_box_size = float3_subtract(max, min);
-
-									float4 outline[] = {
-										{ min.x, min.y, min.z, thickness },
-										{ min.x, max.y, min.z, thickness },
-
-										{ min.x, min.y, max.z, thickness },
-										{ min.x, max.y, max.z, thickness },
-
-										{ max.x, min.y, min.z, thickness },
-										{ max.x, max.y, min.z, thickness },
-
-										{ max.x, min.y, max.z, thickness },
-										{ max.x, max.y, max.z, thickness },
-
-										{ min.x, min.y, min.z, thickness },
-										{ min.x, min.y, max.z, thickness },
-
-										{ min.x, min.y, min.z, thickness },
-										{ max.x, min.y, min.z, thickness },
-
-										{ max.x, min.y, max.z, thickness },
-										{ max.x, min.y, min.z, thickness },
-
-										{ max.x, min.y, max.z, thickness },
-										{ min.x, min.y, max.z, thickness },
-
-										{ min.x, max.y, min.z, thickness },
-										{ min.x, max.y, max.z, thickness },
-
-										{ min.x, max.y, min.z, thickness },
-										{ max.x, max.y, min.z, thickness },
-
-										{ max.x, max.y, max.z, thickness },
-										{ max.x, max.y, min.z, thickness },
-
-										{ max.x, max.y, max.z, thickness },
-										{ min.x, max.y, max.z, thickness },
-									};
-									points = arena_push_count(frame_arena, float4, countof(outline));
-									memory_copy_array(points, outline);
-									line_segment_count = countof(outline) / 2;
-
+									AABB3 a = aabb3_move(shape->as.aabb3, entity->transform.translation);
+									push_aabb3_outline(batch_line, a, thickness, WHITE);
 								} break;
 								case SHAPE_KIND_SPHERE: {
-									float3 c = shape->as.sphere.center;
+									float3 c = float3_add(shape->as.sphere.center, entity->transform.translation);
 									float r = shape->as.sphere.radius;
-
 									uint8_t segments = 32;
-									points = arena_push_count(frame_arena, float4, 3 * (segments * 2));
 
-									uint32_t cursor = 0;
-									cursor += push_line_arc(points + cursor, c, r, segments, AXIS_PLANE_UP, TAU, thickness);
-									cursor += push_line_arc(points + cursor, c, r, segments, AXIS_PLANE_RIGHT, TAU, thickness);
-									cursor += push_line_arc(points + cursor, c, r, segments, AXIS_PLANE_FORWARD, TAU, thickness);
-									line_segment_count = cursor / 2;
-
+									push_arc3(batch_line, c, r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
+									push_arc3(batch_line, c, r, segments, AXIS_PLANE_RIGHT, TAU, thickness, WHITE);
+									push_arc3(batch_line, c, r, segments, AXIS_PLANE_FORWARD, TAU, thickness, WHITE);
 								} break;
 								case SHAPE_KIND_CAPSULE: {
 									float r = shape->as.capsule.radius;
-									float3 centers[] = { shape->as.capsule.a, shape->as.capsule.b };
+									float3 centers[] = {
+										float3_add(shape->as.capsule.a, entity->transform.translation),
+										float3_add(shape->as.capsule.b, entity->transform.translation),
+									};
 
 									uint8_t segments = 32;
-									points = arena_push_count(frame_arena, float4, 6 * (segments * 2) + 8);
-
-									uint32_t cursor = 0;
+									Line3 *spine_points = arena_push_count(batch_line, Line3, 8);
 									// clang-format off
-									float4 spine[] = {
-										{ centers[0].x - r, centers[0].y, centers[0].z, thickness }, { centers[0].x - r, centers[1].y, centers[0].z, thickness },
-										{ centers[0].x + r, centers[0].y, centers[0].z, thickness }, { centers[0].x + r, centers[1].y, centers[0].z, thickness },
-										{ centers[0].x, centers[0].y, centers[0].z - r, thickness }, { centers[0].x, centers[1].y, centers[0].z - r, thickness },
-										{ centers[0].x, centers[0].y, centers[0].z + r, thickness }, { centers[0].x, centers[1].y, centers[0].z + r, thickness },
+									Line3 spine[] = {
+										{ {centers[0].x - r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x - r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO},
+										{ {centers[0].x + r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x + r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO},
+										{ {centers[0].x, centers[0].y, centers[0].z - r}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x, centers[1].y, centers[0].z - r}, thickness, color_pack(WHITE), FLOAT3_ZERO},
+										{ {centers[0].x, centers[0].y, centers[0].z + r}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x, centers[1].y, centers[0].z + r}, thickness, color_pack(WHITE), FLOAT3_ZERO},
 									};
 									// clang-format on
-									memory_copy_array(points, spine);
-									cursor += countof(spine);
+									memory_copy_array(spine_points, spine);
 
 									for (uint32_t end = 0; end < countof(centers); ++end) {
 										float3 c = centers[end];
 										float signed_r = (end == 0) ? -r : r;
 
-										cursor += push_line_arc(points + cursor, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness);
-										cursor += push_line_arc(points + cursor, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness);
-										cursor += push_line_arc(points + cursor, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness);
+										push_arc3(batch_line, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
+										push_arc3(batch_line, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness, WHITE);
+										push_arc3(batch_line, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness, WHITE);
 									}
-
-									line_segment_count = cursor / 2;
 
 								} break;
 									break;
 								case SHAPE_KIND_PLANE:
 									break;
 							}
-
-							if (points) {
-								Uniform uniforms[] = {
-									storage_data(0, points, line_segment_count * 2 * sizeof(float4)),
-								};
-								gfx_bind(context, &pipeline_line, 1, uniforms, countof(uniforms));
-								struct {
-									float4x4 model;
-									float4 color;
-								} pc = {
-									.model = float4x4_compose_quat(entity->transform.translation, entity->transform.rotation, entity->transform.scale),
-									.color = FLOAT4_ONE,
-								};
-
-								vkCmdPushConstants(cmd->handle, pipeline_line.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-								vkCmdDraw(cmd->handle, line_segment_count * 2 * 6, 1, 0, 0);
-							}
 						}
+					}
+
+					if (batch_line->offset) {
+						gfx_cmd_pipeline_bind(cmd, &pipeline_line);
+						Uniform uniforms[] = {
+							storage_data(0, batch_line->base, batch_line->offset),
+						};
+						gfx_bind(context, &pipeline_line, 1, uniforms, countof(uniforms));
+						vkCmdDraw(cmd->handle, (batch_line->offset / sizeof(Line3)) * 6, 1, 0, 0);
 					}
 				}
 
@@ -5259,7 +5192,7 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 	return result;
 }
 
-void push_rect(Arena *arena, Rectangle rect, Color color) {
+void push_rect2(Arena *arena, Rectangle rect, Color color) {
 	float4 f_color = {
 		.x = color.r / 255.f,
 		.y = color.g / 255.f,
@@ -5340,7 +5273,7 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 	if (ok) {
 		y = result.held ? y + 1 : y;
 
-		push_rect(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
+		push_rect2(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
 	}
 
 	return result;
@@ -5348,7 +5281,7 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 
 float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float t) {
 	const float pad = bounds.width * 0.8f;
-	push_rect(imgui_state.batch_arena, bounds, WHITE);
+	push_rect2(imgui_state.batch_arena, bounds, WHITE);
 
 	t = clampf(t, min, max);
 
@@ -5371,15 +5304,15 @@ float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float 
 		t = min + (mouse_ratio * (max - min));
 	}
 
-	push_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
-																					 : DARK_GRAY);
+	push_rect2(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+																					  : DARK_GRAY);
 
 	return t;
 }
 
 float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float t) {
 	const float pad = bounds.height * 0.8f;
-	push_rect(imgui_state.batch_arena, bounds, WHITE);
+	push_rect2(imgui_state.batch_arena, bounds, WHITE);
 
 	t = clampf(t, min, max);
 
@@ -5402,8 +5335,108 @@ float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float 
 		t = min + (mouse_ratio * (max - min));
 	}
 
-	push_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
-																					 : DARK_GRAY);
+	push_rect2(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+																					  : DARK_GRAY);
 
 	return t;
+}
+
+void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color) {
+	for (uint32_t i = 0; i < segments; ++i) {
+		float a = ((float)i / segments) * angle_span;
+		float an = ((float)(i + 1) / segments) * angle_span;
+		float ca = cosf(a), sa = sinf(a);
+		float can = cosf(an), san = sinf(an);
+
+		Line3 p0, p1;
+		switch (plane) {
+			case AXIS_PLANE_DOWN:
+			case AXIS_PLANE_UP:
+				p0 = (Line3){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p1 = (Line3){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				break;
+			case AXIS_PLANE_LEFT:
+			case AXIS_PLANE_RIGHT:
+				p0 = (Line3){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p1 = (Line3){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				break;
+			case AXIS_PLANE_BACKWARD:
+			case AXIS_PLANE_FORWARD:
+				p0 = (Line3){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
+				p1 = (Line3){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
+				break;
+			case AXIS_PLANE_COUNT:
+				ASSERT(false);
+				break;
+		}
+
+		*arena_push_count(arena, Line3, 1) = p0;
+		*arena_push_count(arena, Line3, 1) = p1;
+	}
+}
+
+void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
+	float3 min = aabb3.min;
+	float3 max = aabb3.max;
+	float3 bounding_box_size = float3_subtract(max, min);
+
+	Line3 outline[] = {
+		{ { min.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { min.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { max.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { max.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { min.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { min.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { max.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { max.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { min.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { min.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { max.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+
+		{ { max.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+	};
+
+	Line3 *points = arena_push_count(arena, Line3, countof(outline));
+	memory_copy_array(points, outline);
+}
+
+void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
+	*arena_push_count(arena, Line3, 1) = (Line3){
+		.position = start,
+		.thickness = thickness,
+		.color = color_pack(color),
+	};
+	*arena_push_count(arena, Line3, 1) = (Line3){
+		.position = end,
+		.thickness = thickness,
+		.color = color_pack(color),
+	};
+}
+
+void push_triangle3(Arena *arena, Triangle3 t, float thickness, Color color) {
+	push_line3(arena, t.a, t.b, thickness, color);
+	push_line3(arena, t.b, t.c, thickness, color);
+	push_line3(arena, t.c, t.a, thickness, color);
 }

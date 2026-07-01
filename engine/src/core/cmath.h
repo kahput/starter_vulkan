@@ -94,6 +94,7 @@ void float2_print(float2 v);
 
 // --- float3 ---
 
+static inline float2 float3_xy(float3 v) { return (float2){ v.x, v.y }; }
 static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
 static inline float3 float3_from_float4(float4 v) { return (float3){ v.x, v.y, v.z }; }
 static inline float3 float3_splat(float v) { return (float3){ v, v, v }; }
@@ -128,6 +129,8 @@ void float3_print(float3 v);
 
 // --- float4 & quaternions ---
 
+static inline float2 float4_xy(float4 v) { return (float2){ v.x, v.y }; }
+static inline float3 float4_xyz(float4 v) { return (float3){ v.x, v.y, v.z }; }
 static inline float4 float4_from_float3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w }; }
 static inline float4 float4_wrap(float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
 

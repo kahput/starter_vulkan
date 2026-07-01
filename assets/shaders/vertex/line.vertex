@@ -6,30 +6,30 @@
 struct Point {
     vec3 position;
     float thickness;
+    uint color;
 };
 
 layout(set = 1, binding = 0) readonly buffer LineBlock {
     Point points_buffer[];
 };
 
-layout(push_constant) uniform ConstantBlock {
-    mat4 model;
-    vec4 color;
-} pc;
-
 const ivec2 quad[6] = ivec2[6](ivec2(0, -1), ivec2(0, 1), ivec2(1,  1),
         ivec2(0, -1), ivec2(1, 1), ivec2(1, -1) );
 
+out ShaderOutput {
+    layout (location = 0) vec4 color;
+} vs_output;
+
 void main() {
     float aspect = frame.viewport.x / frame.viewport.y;
-    mat4 mvp = frame.projection * frame.view * pc.model;
+    mat4 vp = frame.projection * frame.view;
 
     int line_index = (gl_VertexIndex / 6) * 2;
     Point start = points_buffer[line_index]; 
     Point end = points_buffer[line_index + 1]; 
 
-    vec4 clip_position0 = mvp * vec4(start.position, 1.0f);
-    vec4 clip_position1 = mvp * vec4(end.position, 1.0f);
+    vec4 clip_position0 = vp * vec4(start.position, 1.0f);
+    vec4 clip_position1 = vp * vec4(end.position, 1.0f);
 
     vec2 ndc_position0 = clip_position0.xy / clip_position0.w;
     vec2 ndc_position1 = clip_position1.xy / clip_position1.w;
@@ -47,5 +47,6 @@ void main() {
 
     vertex_position.xy += offset * vertex_position.w * float(quad_position.y);
 
+    vs_output.color = unpackUnorm4x8(start.color);
     gl_Position = vertex_position;
 }

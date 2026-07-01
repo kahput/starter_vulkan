@@ -16,6 +16,10 @@ typedef struct {
 static inline float3 ray_at(Ray3 r, float t) { return float3_add(r.origin, float3_scale(r.direction, t)); }
 
 typedef struct {
+	float3 start, end;
+} Segment3;
+
+typedef struct {
 	float3 min, max;
 } AABB3;
 static inline AABB3 aabb3_from_center(float3 center, float3 half_extent) { return (AABB3){ .min = float3_subtract(center, half_extent), .max = float3_add(center, half_extent) }; }
@@ -28,6 +32,12 @@ static inline void aabb3_expand(AABB3 *a, float3 point) {
 	a->max = float3_max(a->max, point);
 }
 static inline AABB3 aabb3_merge(AABB3 a, AABB3 b) { return (AABB3){ .min = float3_min(a.min, b.min), .max = float3_max(a.max, b.max) }; }
+static inline AABB3 aabb3_move(AABB3 a, float3 delta) { return (AABB3){ .min = float3_add(a.min, delta), .max = float3_add(a.max, delta) }; }
+static inline bool aabb3_overlap(AABB3 a, AABB3 b) {
+	return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+		(a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+		(a.min.z <= b.max.z && a.max.z >= b.min.z);
+}
 
 typedef struct {
 	float3 center;
@@ -57,6 +67,10 @@ static inline Capsule capsule_from_center(float3 center, float3 up, float height
 	return (Capsule){ float3_subtract(center, offset), float3_add(center, offset), radius };
 }
 
+typedef struct {
+	float3 a, b, c;
+} Triangle3;
+
 typedef enum {
 	SHAPE_KIND_AABB3,
 	SHAPE_KIND_SPHERE,
@@ -81,13 +95,15 @@ typedef struct {
 
 static inline Shape shape_sphere(float3 center, float radius) { return (Shape){ .kind = SHAPE_KIND_SPHERE, .as.sphere = { .center = center, .radius = radius } }; }
 static inline Shape shape_capsule(float3 center, float height, float radius) { return (Shape){ .kind = SHAPE_KIND_CAPSULE, .as.capsule = capsule_from_center(center, FLOAT3_Y, height, radius) }; }
+static inline Shape shape_from_aabb3(AABB3 a) { return (Shape){ .kind = SHAPE_KIND_AABB3, .as.aabb3 = a }; }
 
 Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
 Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
 
-float distance_point_plane_squared(float3 point, float3 po, float3 pn);
-float distance_point_segment_squared(float3 point, float3 a, float3 b);
-float3 closest_point_on_plane3(float3 point, float3 po, float3 pn);
-float3 closest_point_on_segment3(float3 point, float3 a, float3 b);
+float3 plane3_closest_point(Plane p, float3 to);
+float3 segment3_closest_point(float3 start, float3 end, float3 to);
+float3 triangle3_closest_point(Triangle3 t, float3 to);
+
+bool triangle3_contains_point(Triangle3 triangle, float3 point);
 
 #endif /* GEOM_H_ */
