@@ -99,6 +99,7 @@ static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0
 static inline float3 float3_from_float4(float4 v) { return (float3){ v.x, v.y, v.z }; }
 static inline float3 float3_splat(float v) { return (float3){ v, v, v }; }
 static inline float3 float3_wrap(float v[3]) { return (float3){ .x = v[0], .y = v[1], .z = v[2] }; }
+#define float3_spread(v) v.x, v.y, v.z
 
 bool float3_equal(float3 a, float3 b);
 float3 float3_negate(float3 v);

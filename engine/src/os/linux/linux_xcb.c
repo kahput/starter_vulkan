@@ -323,12 +323,8 @@ void os_surface_set_max(OS_Surface *surface, uint32_t width, uint32_t height);
 float os_surface_dpi(OS_Surface *surface) {
 	return 1.0f;
 }
-uint32x2 os_surface_size(OS_Surface *surface) {
+uint2 os_surface_size(OS_Surface *surface) {
 	return (uint32x2){ surface->width, surface->height };
-}
-
-Rectangle os_client_rect(OS_Surface *surface) {
-	return (Rectangle){ .width = surface->width, .height = surface->height };
 }
 
 /* void os_cursor_show(bool show); */

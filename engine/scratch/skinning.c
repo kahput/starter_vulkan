@@ -433,6 +433,7 @@ typedef enum {
 	MESH_MAGE,
 	MESH_BARREL,
 	MESH_ROOM,
+	MESH_TEST_LEVEL,
 
 	MESH_ROOM_LARGE,
 	MESH_TERRAIN_FLAT,
@@ -459,6 +460,7 @@ String8 meshid_to_metadata[MESH_COUNT] = {
 	[MESH_BARREL] = str_comp("assets/models/barrel.glb"),
 	[MESH_ROOM] = str_comp("assets/models/room.glb"),
 	[MESH_ROOM_LARGE] = str_comp("assets/models/room-large.glb"),
+	[MESH_TEST_LEVEL] = str_comp("assets/models/test_level.glb"),
 	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
 };
 
@@ -548,9 +550,10 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 void push_rect2(Arena *arena, Rectangle rect, Color color);
 
 void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color);
+void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
 void push_triangle3(Arena *arena, Triangle3 t, float thickness, Color color);
-void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
+void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
 
 typedef struct {
 	Arena *batch_arena;
@@ -824,8 +827,8 @@ int main(void) {
 		  .usage = BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER,
 		});
 
-	const uint32_t map_width = 256;
-	const uint32_t map_depth = 256;
+	const uint32_t map_width = 32;
+	const uint32_t map_depth = 32;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
 	meshes[MESH_TERRAIN_FLAT] = generate_plane(arena, AXIS_PLANE_UP, map_width, map_depth, map_width, map_depth);
@@ -962,12 +965,13 @@ int main(void) {
 	};
 
 	World world = { .entity_count = 1 };
-	bool draw_collision_shapes = 0;
+	bool draw_collision_shapes = true;
 
 	Entity *player = entity_spawn(&world);
 	player->meshid = MESH_HERO_MALE;
-	player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f);
-	/* player->shape = shape_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
+	/* player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
+	player->transform.translation.z = -3;
+	player->shape = shape_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f);
 	/* player->shape.as.aabb3 = meshes[player->meshid].bounds; */
 
 	entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
@@ -987,12 +991,18 @@ int main(void) {
 	entity_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
 	entity_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
 	entity_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
-	entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET);
+	/* entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET); */
 	/* entity_enable(barrel, ENTITY_FEATURE_ANIMATE); */
 
-	Entity *terrain = entity_spawn(&world);
-	terrain->meshid = MESH_TERRAIN_FLAT;
-	entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH);
+	/* Entity *terrain = entity_spawn(&world); */
+	/* terrain->meshid = MESH_TERRAIN_FLAT; */
+	/* entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH); */
+
+	Entity *level = entity_spawn(&world);
+	level->meshid = MESH_TEST_LEVEL;
+	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
+
+	Triangle3 test_triangle = { { 0.0f, 0.25f, 1.0f }, { 1.0f, 0.25f, -1.0f }, { -1.0f, 0.25f, -1.0f } };
 
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
@@ -1052,7 +1062,7 @@ int main(void) {
 
 		static float ambient_strength = 0.2f;
 		static float fog_density = 0.02f, fog_gradient = 5.0f;
-		static bool use_heightmap = 0, draw_grass = true;
+		static bool use_heightmap = false, draw_grass = false;
 		static uint32_t light_index = 0;
 
 		typedef struct {
@@ -1153,6 +1163,7 @@ int main(void) {
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
 
+#if 0
 				for (uint32_t index = 0; index < world.entity_count; ++index) { // :heightmap
 					Entity *entity = &world.entities[index];
 					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
@@ -1187,12 +1198,14 @@ int main(void) {
 					} else
 						entity->transform.translation.y = 0.0f;
 				}
+#endif
 
 				for (uint32_t index = 0; index < world.entity_count; ++index) {
 					Entity *entity = &world.entities[index];
 
 					float2 input_vector = { 0 };
-					float3 move_delta = { 0 };
+					float3 velocity = { 0 };
+					float3 direction = { 0 };
 
 					// :player
 					if (entity_has(entity, ENTITY_FEATURE_PLAYER_CONTROLLED)) {
@@ -1232,8 +1245,6 @@ int main(void) {
 						right = float3_cross(forward, camera->up);
 						right = float3_normalize(right);
 
-						float3 direction = { 0, 0, 0 };
-
 						direction = float3_add(direction, float3_scale(forward, input_vector.x));
 						direction = float3_add(direction, float3_scale(right, input_vector.y));
 
@@ -1242,7 +1253,8 @@ int main(void) {
 							direction = float3_scale(direction, 1 / length);
 						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
 
-						move_delta = float3_scale(direction, entity->move_speed * dt);
+						velocity = float3_scale(direction, entity->move_speed * dt);
+						velocity = float3_add(velocity, (float3){ 0.0f, -0.1f, 0.0f });
 					}
 
 					// :ai
@@ -1255,20 +1267,20 @@ int main(void) {
 						entity->move_speed = 3.0f;
 
 						input_vector = (float2){ direction.x, direction.z };
-						move_delta = float3_scale(direction, entity->move_speed * dt);
+						velocity = float3_scale(direction, entity->move_speed * dt);
 					}
 
 					// :collision
 					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE)) {
 						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
-							if (float3_length_sq(move_delta) <= EPSILON)
+							if (float3_length_sq(velocity) <= EPSILON)
 								break;
+							Raycast3Result nearest = RAY3_NO_HIT;
 
 							// Collision detection
 							float3 ro = float3_add(entity->transform.translation, aabb3_center(entity->shape.as.aabb3));
-							float3 rd = move_delta;
+							float3 rd = velocity;
 
-							Raycast3Result nearest = RAY3_NO_HIT;
 							for (uint32_t other_index = 0; other_index < world.entity_count; ++other_index) {
 								Entity *other = &world.entities[other_index];
 								if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
@@ -1290,18 +1302,41 @@ int main(void) {
 								if (result.t < nearest.t)
 									nearest = result;
 							}
+
+							if (entity->shape.kind == SHAPE_KIND_SPHERE) {
+								Mesh *collision_mesh = &meshes[level->meshid];
+								for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
+									MeshPart *part = &collision_mesh->parts[part_index];
+									for (uint32_t index = 0; index < part->index_count / 3; ++index) {
+										Triangle3 t = {
+											.a = collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 0]].position,
+											.b = collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 1]].position,
+											.c = collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 2]].position,
+										};
+
+										float3 sphere_center = float3_add(entity->transform.translation, entity->shape.as.sphere.center);
+										float len = float3_length(velocity);
+										float3 dir = float3_scale(velocity, 1 / len);
+										Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, dir, len, t);
+										if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t)
+											nearest = test_triangle_sweep;
+									}
+								}
+							}
+
 							if (nearest.hit == false) {
-								entity->transform.translation = float3_add(entity->transform.translation, move_delta);
+								entity->transform.translation = float3_add(entity->transform.translation, velocity);
 								break;
 							}
 
 							// Collision resolution
 							float t_min = maxf(minf(nearest.t, 1.0f) - 0.01f, 0.0f);
 
-							entity->transform.translation = float3_add(entity->transform.translation, float3_scale(move_delta, t_min));
+							entity->transform.translation = float3_add(entity->transform.translation, float3_scale(velocity, t_min));
 
-							move_delta = float3_subtract(move_delta, float3_scale(nearest.normal, float3_dot(move_delta, nearest.normal)));
-							move_delta = float3_scale(move_delta, 1.0f - t_min);
+							velocity = float3_subtract(velocity, float3_scale(nearest.normal, float3_dot(velocity, nearest.normal)));
+							velocity = float3_scale(velocity, 1.0f - t_min);
+							push_line3(batch_line, nearest.point, float3_add(nearest.point, float3_scale(nearest.normal, 1.0f)), 3.0f, RED);
 						}
 					}
 
@@ -1346,6 +1381,7 @@ int main(void) {
 						entity->anim_t += dt;
 					}
 				}
+				push_triangle3(batch_line, test_triangle, 3.0f, WHITE);
 
 				{ // :camera
 					static float azimuth = C_PIf * 3 / 2.f;
@@ -1394,11 +1430,8 @@ int main(void) {
 					camera->target.x = player->transform.translation.x;
 					camera->target.z = player->transform.translation.z;
 
-					if (use_heightmap) {
-						camera->position.y += player->transform.translation.y;
-						camera->target.y = player->transform.translation.y + 1.5f;
-					} else
-						camera->target.y = player->transform.translation.y + 1.5f;
+					camera->position.y += player->transform.translation.y;
+					camera->target.y = player->transform.translation.y + 1.5f;
 				}
 
 				{ // :interact
@@ -5439,4 +5472,30 @@ void push_triangle3(Arena *arena, Triangle3 t, float thickness, Color color) {
 	push_line3(arena, t.a, t.b, thickness, color);
 	push_line3(arena, t.b, t.c, thickness, color);
 	push_line3(arena, t.c, t.a, thickness, color);
+}
+
+void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
+	float3 right = { 0 }, up = { 0 };
+	float dot = float3_dot(plane.normal, FLOAT3_Y);
+	if (fabsf(dot) >= 0.99f) {
+		right.x = dot > 0 ? 1.0f : -1.0f;
+		up.z = -1.0f;
+	} else {
+		right = float3_normalize_safe(float3_cross(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }), EPSILON);
+		up = float3_normalize_safe(float3_cross(plane.normal, right), EPSILON);
+	}
+
+	float3 center = float3_scale(plane.normal, plane.distance);
+	float3 h = float3_scale(right, width * 0.5f);
+	float3 v = float3_scale(up, height * 0.5f);
+
+	float3 corners[] = {
+		float3_add(float3_subtract(center, h), v),
+		float3_add(float3_add(center, h), v),
+		float3_subtract(float3_add(center, h), v),
+		float3_subtract(float3_subtract(center, h), v),
+	};
+
+	for (uint32_t index = 0; index < countof(corners); ++index)
+		push_line3(arena, corners[index], corners[(index + 1) % countof(corners)], thickness, color);
 }

@@ -160,15 +160,6 @@ typedef struct { float32x3 min, max; } Interval3;
 #define rgb(r, g, b) (Color){ r, g, b, 255 }
 typedef struct { uint8_t r, g, b, a; } Color;
 
-#define rect(x, y, w, h) (Rectangle){ x, y, w, h }
-typedef struct {
-	float x, y, width, height;
-} Rectangle;
-
-static inline Rectangle rect_from_dimensions(float width, float height) { return (Rectangle){ 0, 0, width, height }; }
-static inline bool rect_contains(Rectangle rect, float x, float y) { return x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height; }
-static inline bool rect_contains_float2(Rectangle rect, float32x2 position) { return rect_contains(rect, position.x, position.y); }
-
 // clang-format on
 
 #define RED rgb(255, 0, 0)
@@ -187,8 +178,8 @@ static inline uint32_t color_pack(Color c) {
 static inline Color color_from_float(float r, float g, float b, float a) {
 	return (Color){ CLAMP(r, 0.0f, 1.0f) * 255.f, CLAMP(g, 0.0f, 1.0f) * 255.f, CLAMP(b, 0.0f, 1.0f) * 255.f, CLAMP(a, 0.0f, 1.0f) * 255.f };
 }
-static inline float32x4 color_to_float(Color color) {
-	return (float32x4){ color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f };
+static inline float4 color_to_float(Color color) {
+	return (float4){ color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f };
 }
 static inline Color color_lerp(Color start, Color end, float t) {
 	return (Color){ start.r + (end.r - start.r) * t, start.g + (end.g - start.g) * t, start.b + (end.b - start.b) * t, start.a + (end.a - start.a) * t };
