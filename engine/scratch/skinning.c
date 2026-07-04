@@ -21,7 +21,6 @@
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
 #include <vulkan/vulkan_core.h>
-#include <wchar.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_TRANSFERS_IN_FLIGHT 2
@@ -243,7 +242,7 @@ typedef struct {
 	float thickness;
 	uint32_t color;
 	float3 _pad0;
-} Line3;
+} Line;
 
 typedef struct {
 	float3 position;
@@ -548,6 +547,9 @@ Mesh generate_plane_from_heightmap(Arena *arena, AxisPlane orientation, float w,
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
 void push_rect2(Arena *arena, Rectangle rect, Color color);
+void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color);
+void push_rect2_outline(Arena *arena, Rectangle rect, float thickness, Color color);
+void push_triangle2(Arena *arena, Triangle2 triangle, float thickness, Color color);
 
 void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color);
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
@@ -744,7 +746,7 @@ int main(void) {
 	GFX_Pipeline pipeline_3d = { 0 };
 	GFX_Pipeline pipeline_skybox = { 0 };
 	GFX_Pipeline pipeline_grass = { 0 };
-	GFX_Pipeline pipeline_line = { 0 };
+	GFX_Pipeline pipeline_line3d = { 0 };
 	{ // create 3d graphics pipelines
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch3d.vertex.spv"));
@@ -752,7 +754,7 @@ int main(void) {
 
 		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
-			  .debug_name = "pipeline_3d",
+			  .debug_name = "spatial",
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
@@ -782,9 +784,9 @@ int main(void) {
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-		pipeline_line = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_line3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
-			  .debug_name = "debug_line",
+			  .debug_name = "line3d",
 			  .color_attachment_count = 1,
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
@@ -794,6 +796,7 @@ int main(void) {
 	}
 
 	GFX_Pipeline pipeline_2d = { 0 };
+	GFX_Pipeline pipeline_line2d = { 0 };
 	{
 		ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -802,7 +805,20 @@ int main(void) {
 
 		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
-			  .debug_name = "pipeline_2d",
+			  .debug_name = "canvas",
+			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
+			  .color_attachment_count = 1,
+			  .sample_count = SAMPLE_COUNT_8,
+			  .cull_mode = CULL_MODE_BACK,
+			  .disable_depth_test = true,
+			  .disable_depth_write = true,
+			});
+
+		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line2d.vertex.spv"));
+		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
+		pipeline_line2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+			(PipelineOptions){
+			  .debug_name = "line2d",
 			  .color_attachments = { PIXELFORMAT_BACKBUFFER },
 			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
@@ -839,6 +855,7 @@ int main(void) {
 
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
+	(void)animations;
 
 	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
 		if (meshid_to_metadata[meshid].length == 0)
@@ -1055,10 +1072,17 @@ int main(void) {
 		  .base = arena_push_count(frame_arena, Vertex2, 6 * 1024),
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
 		} };
-		Arena batch_line[] = { {
-		  .base = arena_push_count(frame_arena, Line3, 6 * 1024),
-		  .capacity = sizeof(Line3) * 6 * 1024,
+		Arena batch_line3d[] = { {
+		  .base = arena_push_count(frame_arena, Line, 6 * 1024),
+		  .capacity = sizeof(Line) * 6 * 1024,
 		} };
+
+		Arena batch_line2d[] = {
+			{
+			  .base = arena_push_count(frame_arena, Line, 6 * 1024),
+			  .capacity = sizeof(Line) * 6 * 1024,
+			}
+		};
 
 		static float ambient_strength = 0.2f;
 		static float fog_density = 0.02f, fog_gradient = 5.0f;
@@ -1086,6 +1110,7 @@ int main(void) {
 			state = (state + 1) % VIEWPORT_STATE_COUNT;
 
 		Camera3 *camera = &cameras[state];
+#if 0
 		switch (state) {
 			case VIEWPORT_STATE_EDITOR: {
 				if (input_mouse_down(MOUSE_BUTTON_MIDDLE))
@@ -1163,7 +1188,7 @@ int main(void) {
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
 
-#if 0
+	#if 0
 				for (uint32_t index = 0; index < world.entity_count; ++index) { // :heightmap
 					Entity *entity = &world.entities[index];
 					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
@@ -1198,7 +1223,7 @@ int main(void) {
 					} else
 						entity->transform.translation.y = 0.0f;
 				}
-#endif
+	#endif
 
 				for (uint32_t index = 0; index < world.entity_count; ++index) {
 					Entity *entity = &world.entities[index];
@@ -1254,7 +1279,7 @@ int main(void) {
 						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
 
 						velocity = float3_scale(direction, entity->move_speed * dt);
-						velocity = float3_add(velocity, (float3){ 0.0f, -0.1f, 0.0f });
+						/* velocity = float3_add(velocity, (float3){ 0.0f, -0.1f, 0.0f }); */
 					}
 
 					// :ai
@@ -1315,9 +1340,10 @@ int main(void) {
 										};
 
 										float3 sphere_center = float3_add(entity->transform.translation, entity->shape.as.sphere.center);
+										float radius = entity->shape.as.sphere.radius;
 										float len = float3_length(velocity);
 										float3 dir = float3_scale(velocity, 1 / len);
-										Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, dir, len, t);
+										Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, radius, dir, len, t);
 										if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t)
 											nearest = test_triangle_sweep;
 									}
@@ -1463,6 +1489,80 @@ int main(void) {
 			default:
 				break;
 		}
+#else
+		Rectangle viewport = rect(0, 0, dims.x, dims.y);
+		float2 center = { viewport.width / 2.0f, viewport.height / 2.0f };
+		push_rect2(batch_2d, viewport, WHITE);
+
+		float2 t_center = { center.x + 50.f, center.y - 100.f };
+		float t_size = 80.f;
+		float2 triangle_polygon[] = {
+			float2_add(t_center, (float2){ 0.0f, -t_size }),
+			float2_add(t_center, (float2){ t_size, t_size }),
+			float2_add(t_center, (float2){ -t_size, t_size }),
+		};
+
+		float2 q_center = float2_subtract(center, float2_splat(100.f));
+		float2 q_extent = float2_splat(100.f);
+		float2 quad_polygon[] = {
+			{ q_center.x - q_extent.x, q_center.y - q_extent.y },
+			{ q_center.x + q_extent.x, q_center.y - q_extent.y },
+			{ q_center.x - q_extent.x, q_center.y + q_extent.y },
+			{ q_center.x + q_extent.x, q_center.y + q_extent.y },
+		};
+
+		push_triangle2(batch_line2d, (Triangle2){ triangle_polygon[0], triangle_polygon[1], triangle_polygon[2] }, 3.0f, BLACK);
+
+		float2 rc = quad_polygon[0];
+		float2 re = float2_subtract(quad_polygon[3], quad_polygon[0]);
+		push_rect2_outline(batch_2d, rect(rc.x, rc.y, re.x, re.y), 3.0f, BLACK);
+
+		float2 *sum_points = arena_push_count(frame_arena, float2, countof(triangle_polygon) * countof(quad_polygon));
+		uint32_t point_count = 0;
+
+		for (uint32_t angle = 0; angle < 32; ++angle) {
+			float2 direction = { cosf((angle / 32.0f) * TAU), sinf((angle / 32.0f) * TAU) };
+
+			float2 tp = { 0 };
+			float triangle_max_distance = -FLOAT_MAX;
+			for (uint32_t index = 0; index < countof(triangle_polygon); ++index) {
+				float distance = float2_dot(triangle_polygon[index], direction);
+				if (distance > triangle_max_distance) {
+					triangle_max_distance = distance;
+					tp = triangle_polygon[index];
+				}
+			}
+
+			float2 qp = { 0 };
+			float quad_max_distance = -FLOAT_MAX;
+			direction = float2_scale(direction, -1.0f);
+			for (uint32_t index = 0; index < countof(quad_polygon); ++index) {
+				float distance = float2_dot(quad_polygon[index], direction);
+				if (distance > quad_max_distance) {
+					quad_max_distance = distance;
+					qp = quad_polygon[index];
+				}
+			}
+
+			float2 sum_point = float2_add(center, float2_subtract(qp, tp));
+			bool found = false;
+			for (uint32_t index = 0; index < point_count; ++index) {
+				if (float2_equal(sum_point, sum_points[index])) {
+					found = true;
+					break;
+				}
+			}
+
+			if (found == false) {
+				sum_points[point_count++] = sum_point;
+			}
+		}
+
+		for (uint32_t index = 0; index < point_count; ++index) {
+			push_line2(batch_line2d, sum_points[index], sum_points[(index + 1) % point_count], 3.0f, BLACK);
+		}
+
+#endif
 
 		// Frame resources
 		GFX_CommandContext *cmd = gfx_frame_begin(context);
@@ -1859,16 +1959,16 @@ int main(void) {
 							switch (shape->kind) {
 								case SHAPE_KIND_AABB3: {
 									AABB3 a = aabb3_move(shape->as.aabb3, entity->transform.translation);
-									push_aabb3_outline(batch_line, a, thickness, WHITE);
+									push_aabb3_outline(batch_line3d, a, thickness, WHITE);
 								} break;
 								case SHAPE_KIND_SPHERE: {
 									float3 c = float3_add(shape->as.sphere.center, entity->transform.translation);
 									float r = shape->as.sphere.radius;
 									uint8_t segments = 32;
 
-									push_arc3(batch_line, c, r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
-									push_arc3(batch_line, c, r, segments, AXIS_PLANE_RIGHT, TAU, thickness, WHITE);
-									push_arc3(batch_line, c, r, segments, AXIS_PLANE_FORWARD, TAU, thickness, WHITE);
+									push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
+									push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_RIGHT, TAU, thickness, WHITE);
+									push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_FORWARD, TAU, thickness, WHITE);
 								} break;
 								case SHAPE_KIND_CAPSULE: {
 									float r = shape->as.capsule.radius;
@@ -1878,9 +1978,9 @@ int main(void) {
 									};
 
 									uint8_t segments = 32;
-									Line3 *spine_points = arena_push_count(batch_line, Line3, 8);
+									Line *spine_points = arena_push_count(batch_line3d, Line, 8);
 									// clang-format off
-									Line3 spine[] = {
+									Line spine[] = {
 										{ {centers[0].x - r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x - r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO},
 										{ {centers[0].x + r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x + r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO},
 										{ {centers[0].x, centers[0].y, centers[0].z - r}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x, centers[1].y, centers[0].z - r}, thickness, color_pack(WHITE), FLOAT3_ZERO},
@@ -1893,9 +1993,9 @@ int main(void) {
 										float3 c = centers[end];
 										float signed_r = (end == 0) ? -r : r;
 
-										push_arc3(batch_line, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
-										push_arc3(batch_line, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness, WHITE);
-										push_arc3(batch_line, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness, WHITE);
+										push_arc3(batch_line3d, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
+										push_arc3(batch_line3d, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness, WHITE);
+										push_arc3(batch_line3d, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness, WHITE);
 									}
 
 								} break;
@@ -1906,31 +2006,31 @@ int main(void) {
 						}
 					}
 
-					if (batch_line->offset) {
-						gfx_cmd_pipeline_bind(cmd, &pipeline_line);
+					if (batch_line3d->offset) {
+						gfx_cmd_pipeline_bind(cmd, &pipeline_line3d);
 						Uniform uniforms[] = {
-							storage_data(0, batch_line->base, batch_line->offset),
+							storage_data(0, batch_line3d->base, batch_line3d->offset),
 						};
-						gfx_bind(context, &pipeline_line, 1, uniforms, countof(uniforms));
-						vkCmdDraw(cmd->handle, (batch_line->offset / sizeof(Line3)) * 6, 1, 0, 0);
+						gfx_bind(context, &pipeline_line3d, 1, uniforms, countof(uniforms));
+						vkCmdDraw(cmd->handle, (batch_line3d->offset / sizeof(Line)) * 6, 1, 0, 0);
 					}
 				}
 
-				if (batch_2d->offset) { // :canvas
-					typedef struct {
-						float4x4 view;
-						float4x4 projection;
-						float2 camera_position;
-						float2 viewport;
-						float time;
-					} Frame2D;
+				typedef struct {
+					float4x4 view;
+					float4x4 projection;
+					float2 camera_position;
+					float2 viewport;
+					float time;
+				} Frame2D;
 
-					Frame2D frame_2d = {
-						.view = float4x4_identity(),
-						.projection = float4x4_orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
-						.viewport = float2_from_uint2(dims),
-						.time = time,
-					};
+				Frame2D frame_2d = {
+					.view = float4x4_identity(),
+					.projection = float4x4_orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
+					.viewport = float2_from_uint2(dims),
+					.time = time,
+				};
+				if (batch_2d->offset) { // :canvas
 
 					gfx_cmd_pipeline_bind(cmd, &pipeline_2d);
 
@@ -1948,6 +2048,16 @@ int main(void) {
 					gfx_bind(context, &pipeline_2d, 1, uniforms1, countof(uniforms1));
 
 					vkCmdDraw(cmd->handle, batch_2d->offset / sizeof(Vertex2), 1, 0, 0);
+				}
+
+				if (batch_line2d->offset) {
+					gfx_cmd_pipeline_bind(cmd, &pipeline_line2d);
+					Uniform uniforms[] = {
+						storage_data(0, batch_line2d->base, batch_line2d->offset),
+					};
+					gfx_bind(context, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
+					gfx_bind(context, &pipeline_line2d, 1, uniforms, countof(uniforms));
+					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(Line)) * 6, 1, 0, 0);
 				}
 
 				vkCmdEndRendering(cmd->handle);
@@ -2041,7 +2151,8 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_2d);
 		pipeline_destroy(context, &pipeline_skybox);
 		pipeline_destroy(context, &pipeline_grass);
-		pipeline_destroy(context, &pipeline_line);
+		pipeline_destroy(context, &pipeline_line3d);
+		pipeline_destroy(context, &pipeline_line2d);
 	}
 
 	gfx_shutdown(context);
@@ -5259,6 +5370,32 @@ void push_rect2(Arena *arena, Rectangle rect, Color color) {
 	memory_copy(arena_push_count(arena, Vertex2, 6), quad, sizeof(quad));
 }
 
+void push_rect2_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
+	push_rect2(arena, rect(rect.x, rect.y, rect.width, thickness), color);
+	push_rect2(arena, rect(rect.x, rect.y, thickness, rect.height), color);
+	push_rect2(arena, rect(rect.x + rect.width, rect.y, thickness, rect.height + thickness), color);
+	push_rect2(arena, rect(rect.x, rect.y + rect.height, rect.width + thickness, thickness), color);
+}
+
+void push_triangle2(Arena *arena, Triangle2 t, float thickness, Color color) {
+	push_line2(arena, t.a, t.b, thickness, color);
+	push_line2(arena, t.b, t.c, thickness, color);
+	push_line2(arena, t.c, t.a, thickness, color);
+}
+
+void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
+	*arena_push_count(arena, Line, 1) = (Line){
+		.position = float3_from_float2(start),
+		.thickness = thickness,
+		.color = color_pack(color),
+	};
+	*arena_push_count(arena, Line, 1) = (Line){
+		.position = float3_from_float2(end),
+		.thickness = thickness,
+		.color = color_pack(color),
+	};
+}
+
 void imgui_frame_begin(Arena *arena) {
 	imgui_state.batch_arena = arena;
 	imgui_state.mouse_position = float2_from_double2(input_mouse_position());
@@ -5381,30 +5518,30 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Axis
 		float ca = cosf(a), sa = sinf(a);
 		float can = cosf(an), san = sinf(an);
 
-		Line3 p0, p1;
+		Line p0, p1;
 		switch (plane) {
 			case AXIS_PLANE_DOWN:
 			case AXIS_PLANE_UP:
-				p0 = (Line3){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), FLOAT3_ZERO };
-				p1 = (Line3){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p0 = (Line){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p1 = (Line){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), FLOAT3_ZERO };
 				break;
 			case AXIS_PLANE_LEFT:
 			case AXIS_PLANE_RIGHT:
-				p0 = (Line3){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), FLOAT3_ZERO };
-				p1 = (Line3){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p0 = (Line){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p1 = (Line){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), FLOAT3_ZERO };
 				break;
 			case AXIS_PLANE_BACKWARD:
 			case AXIS_PLANE_FORWARD:
-				p0 = (Line3){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
-				p1 = (Line3){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
+				p0 = (Line){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
+				p1 = (Line){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
 				break;
 			case AXIS_PLANE_COUNT:
 				ASSERT(false);
 				break;
 		}
 
-		*arena_push_count(arena, Line3, 1) = p0;
-		*arena_push_count(arena, Line3, 1) = p1;
+		*arena_push_count(arena, Line, 1) = p0;
+		*arena_push_count(arena, Line, 1) = p1;
 	}
 }
 
@@ -5413,7 +5550,7 @@ void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 	float3 max = aabb3.max;
 	float3 bounding_box_size = float3_subtract(max, min);
 
-	Line3 outline[] = {
+	Line outline[] = {
 		{ { min.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
 		{ { min.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
 
@@ -5451,17 +5588,17 @@ void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 		{ { min.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
 	};
 
-	Line3 *points = arena_push_count(arena, Line3, countof(outline));
+	Line *points = arena_push_count(arena, Line, countof(outline));
 	memory_copy_array(points, outline);
 }
 
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(arena, Line3, 1) = (Line3){
+	*arena_push_count(arena, Line, 1) = (Line){
 		.position = start,
 		.thickness = thickness,
 		.color = color_pack(color),
 	};
-	*arena_push_count(arena, Line3, 1) = (Line3){
+	*arena_push_count(arena, Line, 1) = (Line){
 		.position = end,
 		.thickness = thickness,
 		.color = color_pack(color),

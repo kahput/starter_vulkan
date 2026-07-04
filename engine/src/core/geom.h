@@ -26,7 +26,7 @@ static inline bool rect_contains(Rectangle rect, float x, float y) { return x > 
 static inline bool rect_contains_float2(Rectangle rect, float2 position) { return rect_contains(rect, position.x, position.y); }
 
 typedef struct {
-	float3 start, end;
+	float3 a, b;
 } Segment3;
 
 typedef struct {
@@ -34,8 +34,19 @@ typedef struct {
 } Triangle3;
 
 typedef struct {
+	float2 a, b, c;
+} Triangle2;
+
+typedef struct {
 	float3 min, max;
 } AABB3;
+
+typedef struct {
+	float2 min, max;
+} AABB2;
+
+static inline AABB2 aabb2_from_center(float2 center, float2 half_extent) { return (AABB2){ .min = float2_subtract(center, half_extent), .max = float2_add(center, half_extent) }; }
+
 static inline AABB3 aabb3_from_center(float3 center, float3 half_extent) { return (AABB3){ .min = float3_subtract(center, half_extent), .max = float3_add(center, half_extent) }; }
 static inline float3 aabb3_center(AABB3 a) { return float3_scale(float3_add(a.min, a.max), 0.5f); }
 static inline float3 aabb3_extent(AABB3 a) { return float3_subtract(a.max, a.min); }
@@ -80,13 +91,13 @@ static inline Plane plane_from_triangle(Triangle3 t) {
 typedef struct {
 	float3 a, b;
 	float radius;
-} Capsule;
+} Capsule3;
 
-static inline Capsule capsule_from_center(float3 center, float3 up, float height, float radius) {
+static inline Capsule3 capsule_from_center(float3 center, float3 up, float height, float radius) {
 	float actual_height = fmaxf(height, radius * 2.0f);
 
 	float3 offset = float3_scale(up, (actual_height * 0.5f) - radius);
-	return (Capsule){ float3_subtract(center, offset), float3_add(center, offset), radius };
+	return (Capsule3){ float3_subtract(center, offset), float3_add(center, offset), radius };
 }
 
 typedef enum {
@@ -106,7 +117,7 @@ typedef struct {
 	union {
 		AABB3 aabb3;
 		Sphere sphere;
-		Capsule capsule;
+		Capsule3 capsule;
 		Plane plane;
 	} as;
 } Shape;
@@ -118,11 +129,14 @@ static inline Shape shape_from_aabb3(AABB3 a) { return (Shape){ .kind = SHAPE_KI
 Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
 Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
 
-Raycast3Result sphere_sweep_triangle3(float3 origin, float3 direction, float max_distance, Triangle3 triangle);
+Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direction, float max_distance, Triangle3 triangle);
+
+float segment3_squared_distance(Segment3 segment, float3 point);
 
 float3 plane_closest_point(Plane p, float3 to);
-float3 segment3_closest_point(float3 start, float3 end, float3 to);
+float3 segment3_closest_point(Segment3 segment, float3 to);
 float3 triangle3_closest_point(Triangle3 t, float3 to);
+float3 aabb3_closest_point(AABB3 a, float3 to);
 
 bool triangle3_contains_point(Triangle3 triangle, float3 point);
 

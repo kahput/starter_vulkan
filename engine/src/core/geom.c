@@ -111,31 +111,32 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_ex
 	return result;
 }
 
-Raycast3Result sphere_sweep_triangle3(float3 origin, float3 direction, float max_distance, Triangle3 triangle) {
+Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direction, float max_distance, Triangle3 triangle) {
 	Raycast3Result result = RAY3_NO_HIT;
 	result.t = 1.0f;
 
 	bool embedded = false;
+	float radius_sq = radius * radius;
 
 	Plane triangle_plane = plane_from_triangle(triangle);
 	float3 velocity = float3_scale(direction, max_distance);
 
-	if (float3_dot(triangle_plane.normal, direction) < 0.0f) { // front facing
-
+	bool ok = float3_dot(triangle_plane.normal, direction) < 0.0f; // front facing
+	if (ok) {
 		float t0, t1;
 
 		float signed_distance = plane_signed_distance(triangle_plane, origin);
 		float ndotv = float3_dot(triangle_plane.normal, velocity);
 
 		if (equalf(ndotv, 0.0f)) {
-			if (fabsf(signed_distance) >= 1.0f) {
-				goto exit_early;
+			if (fabsf(signed_distance) >= radius) {
+				return result;
 			} else {
 				embedded = true;
 			}
 		} else {
-			t0 = (-1.0f - signed_distance) / ndotv;
-			t1 = (1.0f - signed_distance) / ndotv;
+			t0 = (-radius - signed_distance) / ndotv;
+			t1 = (radius - signed_distance) / ndotv;
 
 			if (t0 > t1) {
 				float temp = t0;
@@ -144,7 +145,7 @@ Raycast3Result sphere_sweep_triangle3(float3 origin, float3 direction, float max
 			}
 
 			if (t0 > 1.0f || t1 < 0.0f) {
-				goto exit_early;
+				return result;
 			} else {
 				t0 = clampf(t0, 0.0f, 1.0f);
 				t1 = clampf(t1, 0.0f, 1.0f);
@@ -153,137 +154,77 @@ Raycast3Result sphere_sweep_triangle3(float3 origin, float3 direction, float max
 
 		if (embedded == false) {
 			float3 plane_contact_point =
-				float3_add(float3_subtract(origin, triangle_plane.normal), float3_scale(velocity, t0));
+				float3_add(float3_subtract(origin, float3_scale(triangle_plane.normal, radius)), float3_scale(velocity, t0));
 
 			if (triangle3_contains_point(triangle, plane_contact_point)) {
 				result.hit = true;
 				result.t = t0;
 				result.point = plane_contact_point;
 				result.normal = float3_normalize_safe(triangle_plane.normal, EPSILON);
+				return result;
 			}
 		}
 
 		if (result.hit == false) {
-			float3 base = origin;
 			float velocity_length_sq = float3_dot(velocity, velocity);
-
-			float a, b, c;
-			float new_t;
 
 			// a *t^2 + b*t + c = 0
 
-			a = velocity_length_sq;
+			float3 vertices[] = { triangle.a, triangle.b, triangle.c };
 
-			b = 2.0 * float3_dot(velocity, float3_subtract(base, triangle.a));
-			c = float3_length_sq(float3_subtract(triangle.a, base)) - 1.0f;
-			if (lowest_root(a, b, c, result.t, &new_t)) {
-				result.hit = true;
-				result.t = new_t;
-				result.point = triangle.a;
-				float3 sphere_center_at_t = float3_add(base, float3_scale(velocity, result.t));
-				result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
-			}
+			// vertices
+			for (uint32_t vertex_index = 0; vertex_index < countof(vertices); ++vertex_index) {
+				float3 vertex = vertices[vertex_index];
+				float a = velocity_length_sq;
 
-			b = 2.0 * float3_dot(velocity, float3_subtract(base, triangle.b));
-			c = float3_length_sq(float3_subtract(triangle.b, base)) - 1.0f;
-			if (lowest_root(a, b, c, result.t, &new_t)) {
-				result.hit = true;
-				result.t = new_t;
-				result.point = triangle.b;
-				float3 sphere_center_at_t = float3_add(base, float3_scale(velocity, result.t));
-				result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
-			}
+				float b = 2.0 * float3_dot(velocity, float3_subtract(origin, vertex));
+				float c = float3_length_sq(float3_subtract(vertex, origin)) - radius_sq;
 
-			b = 2.0 * float3_dot(velocity, float3_subtract(base, triangle.c));
-			c = float3_length_sq(float3_subtract(triangle.c, base)) - 1.0f;
-			if (lowest_root(a, b, c, result.t, &new_t)) {
-				result.hit = true;
-				result.t = new_t;
-				result.point = triangle.c;
-				float3 sphere_center_at_t = float3_add(base, float3_scale(velocity, result.t));
-				result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
-			}
-
-			float3 edge = float3_subtract(triangle.b, triangle.a);
-			float3 base_to_vertex = float3_subtract(triangle.a, base);
-
-			float edge_length_sq = float3_length_sq(edge);
-			float edge_dot_velocity = float3_dot(edge, velocity);
-			float edge_dot_base_to_vertex = float3_dot(edge, base_to_vertex);
-
-			a = edge_length_sq * -velocity_length_sq + (edge_dot_velocity * edge_dot_velocity);
-			b = edge_length_sq * (2.0f * float3_dot(velocity, base_to_vertex)) - 2.0 * edge_dot_velocity * edge_dot_base_to_vertex;
-			c = edge_length_sq * (1.0f - float3_length_sq(base_to_vertex)) + (edge_dot_base_to_vertex * edge_dot_base_to_vertex);
-
-			if (lowest_root(a, b, c, result.t, &new_t)) {
-				float f = (edge_dot_velocity * new_t - edge_dot_base_to_vertex) / edge_length_sq;
-				if (f >= 0.0f && f <= 1.0) {
+				float temp_t;
+				if (lowest_root(a, b, c, result.t, &temp_t)) {
 					result.hit = true;
-					result.t = new_t;
-					result.point = float3_add(triangle.a, float3_scale(edge, f));
-					float3 sphere_center_at_t = float3_add(base, float3_scale(velocity, result.t));
+					result.t = temp_t;
+					result.point = vertex;
+					float3 sphere_center_at_t = float3_add(origin, float3_scale(velocity, result.t));
 					result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
 				}
 			}
 
-			edge = float3_subtract(triangle.c, triangle.b);
-			base_to_vertex = float3_subtract(triangle.b, base);
+			// edges
+			for (uint32_t edge_index = 0; edge_index < countof(vertices); ++edge_index) {
+				float3 edge = float3_subtract(vertices[(edge_index + 1) % 3], vertices[edge_index]);
+				float3 vertex = vertices[edge_index];
+				float3 origin_to_vertex = float3_subtract(vertex, origin);
 
-			edge_length_sq = float3_length_sq(edge);
-			edge_dot_velocity = float3_dot(edge, velocity);
-			edge_dot_base_to_vertex = float3_dot(edge, base_to_vertex);
+				float edge_length_sq = float3_length_sq(edge);
+				float edge_dot_velocity = float3_dot(edge, velocity);
+				float edge_dot_origin_to_vertex = float3_dot(edge, origin_to_vertex);
 
-			a = edge_length_sq * -velocity_length_sq + (edge_dot_velocity * edge_dot_velocity);
-			b = edge_length_sq * (2.0f * float3_dot(velocity, base_to_vertex)) - 2.0 * edge_dot_velocity * edge_dot_base_to_vertex;
-			c = edge_length_sq * (1.0f - float3_length_sq(base_to_vertex)) + (edge_dot_base_to_vertex * edge_dot_base_to_vertex);
+				float a = edge_length_sq * -velocity_length_sq + (edge_dot_velocity * edge_dot_velocity);
+				float b = edge_length_sq * (2.0f * float3_dot(velocity, origin_to_vertex)) - 2.0 * edge_dot_velocity * edge_dot_origin_to_vertex;
+				float c = edge_length_sq * (radius_sq - float3_length_sq(origin_to_vertex)) + (edge_dot_origin_to_vertex * edge_dot_origin_to_vertex);
 
-			if (lowest_root(a, b, c, result.t, &new_t)) {
-				float f = (edge_dot_velocity * new_t - edge_dot_base_to_vertex) / edge_length_sq;
-				if (f >= 0.0f && f <= 1.0) {
-					result.hit = true;
-					result.t = new_t;
-					result.point = float3_add(triangle.b, float3_scale(edge, f));
-					float3 sphere_center_at_t = float3_add(base, float3_scale(velocity, result.t));
-					result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
-				}
-			}
-
-			edge = float3_subtract(triangle.a, triangle.c);
-			base_to_vertex = float3_subtract(triangle.c, base);
-
-			edge_length_sq = float3_length_sq(edge);
-			edge_dot_velocity = float3_dot(edge, velocity);
-			edge_dot_base_to_vertex = float3_dot(edge, base_to_vertex);
-
-			a = edge_length_sq * -velocity_length_sq + (edge_dot_velocity * edge_dot_velocity);
-			b = edge_length_sq * (2.0f * float3_dot(velocity, base_to_vertex)) - 2.0 * edge_dot_velocity * edge_dot_base_to_vertex;
-			c = edge_length_sq * (1.0f - float3_length_sq(base_to_vertex)) + (edge_dot_base_to_vertex * edge_dot_base_to_vertex);
-
-			if (lowest_root(a, b, c, result.t, &new_t)) {
-				float f = (edge_dot_velocity * new_t - edge_dot_base_to_vertex) / edge_length_sq;
-				if (f >= 0.0f && f <= 1.0) {
-					result.hit = true;
-					result.t = new_t;
-					result.point = float3_add(triangle.c, float3_scale(edge, f));
-					float3 sphere_center_at_t = float3_add(base, float3_scale(velocity, result.t));
-					result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
+				float temp_t;
+				if (lowest_root(a, b, c, result.t, &temp_t)) {
+					float f = (edge_dot_velocity * temp_t - edge_dot_origin_to_vertex) / edge_length_sq;
+					if (f >= 0.0f && f <= 1.0) {
+						result.hit = true;
+						result.t = temp_t;
+						result.point = float3_add(vertex, float3_scale(edge, f));
+						float3 sphere_center_at_t = float3_add(origin, float3_scale(velocity, result.t));
+						result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
+					}
 				}
 			}
 		}
 	}
 
-exit_early: {}
 	return result;
 }
 
-float distance_point_plane(float3 point, float3 po, float3 pn) {
-	pn = float3_normalize_safe(pn, EPSILON);
-	return float3_dot(float3_subtract(point, po), pn);
-}
-
-float distance_point_segment_squared(float3 point, float3 a, float3 b) {
-	float3 ab = float3_subtract(b, a);
-	float3 ap = float3_subtract(point, a);
+float segment3_squared_distance(Segment3 segment, float3 point) {
+	float3 ab = float3_subtract(segment.b, segment.a);
+	float3 ap = float3_subtract(point, segment.a);
 
 	float t = float3_dot(ap, ab);
 	if (t <= 0.0f)
@@ -291,7 +232,7 @@ float distance_point_segment_squared(float3 point, float3 a, float3 b) {
 
 	float length_squared = float3_dot(ab, ab);
 	if (t >= length_squared) {
-		float3 bp = float3_subtract(point, b);
+		float3 bp = float3_subtract(point, segment.b);
 		return float3_dot(bp, bp);
 	}
 
@@ -299,21 +240,39 @@ float distance_point_segment_squared(float3 point, float3 a, float3 b) {
 }
 
 // R = R - (n dot (R - P))n = R = R - tn
-float3 plane_closest_point(Plane p, float3 to) {
-	float t = (float3_dot(to, p.normal) - p.distance) / float3_length_sq(p.normal);
-	return float3_subtract(to, float3_scale(p.normal, t));
+float3 plane_closest_point(Plane p, float3 point) {
+	float t = (float3_dot(point, p.normal) - p.distance) / float3_length_sq(p.normal);
+	return float3_subtract(point, float3_scale(p.normal, t));
 }
 
-float3 segment3_closest_point(float3 a, float3 b, float3 to) {
-	float3 ab = float3_subtract(b, a);
-	float lenght_sq = float3_length_sq(ab);
-	if (lenght_sq < EPSILON)
-		return a;
+float3 segment3_closest_point(Segment3 segment, float3 point) {
+	float3 result = { 0 };
+	float3 ab = float3_subtract(segment.b, segment.a);
 
-	float t = float3_dot(float3_subtract(to, a), ab) / lenght_sq;
-	t = clampf(t, 0.0f, 1.0f);
+	float t = float3_dot(float3_subtract(point, segment.a), ab);
+	if (t <= 0.0f) {
+		result = segment.a;
+	} else {
+		float denominator = float3_length_sq(ab);
+		if (t >= denominator) {
+			result = segment.b;
+		} else {
+			t = t / denominator;
+			result = float3_add(segment.a, float3_scale(ab, t));
+		}
+	}
 
-	return float3_add(a, float3_scale(ab, t)); // a + t * ab
+	return result;
+}
+
+float3 aabb3_closest_point(AABB3 a, float3 to) {
+	float3 result = { 0 };
+
+	result.x = clampf(to.x, a.min.x, a.max.x);
+	result.y = clampf(to.y, a.min.y, a.max.y);
+	result.z = clampf(to.z, a.min.z, a.max.z);
+
+	return result;
 }
 
 bool triangle3_contains_point(Triangle3 t, float3 p) {

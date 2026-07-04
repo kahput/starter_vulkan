@@ -70,6 +70,7 @@ static inline float maxf(float a, float b) { return a > b ? a : b; }
 
 // --- float2 ---
 static inline float2 float2_make(float x, float y) { return (float2){ x, y }; }
+static inline float2 float2_splat(float v) { return (float2){ v, v }; }
 static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.x, (float)d.y }; }
 static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
 static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y }; }
