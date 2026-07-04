@@ -2,6 +2,7 @@
 #define GEOM_H_
 
 #include "cmath.h"
+#include "core/arena.h"
 
 typedef struct {
 	bool hit;
@@ -34,18 +35,8 @@ typedef struct {
 } Triangle3;
 
 typedef struct {
-	float2 a, b, c;
-} Triangle2;
-
-typedef struct {
 	float3 min, max;
 } AABB3;
-
-typedef struct {
-	float2 min, max;
-} AABB2;
-
-static inline AABB2 aabb2_from_center(float2 center, float2 half_extent) { return (AABB2){ .min = float2_subtract(center, half_extent), .max = float2_add(center, half_extent) }; }
 
 static inline AABB3 aabb3_from_center(float3 center, float3 half_extent) { return (AABB3){ .min = float3_subtract(center, half_extent), .max = float3_add(center, half_extent) }; }
 static inline float3 aabb3_center(AABB3 a) { return float3_scale(float3_add(a.min, a.max), 0.5f); }
@@ -100,13 +91,52 @@ static inline Capsule3 capsule_from_center(float3 center, float3 up, float heigh
 	return (Capsule3){ float3_subtract(center, offset), float3_add(center, offset), radius };
 }
 
+typedef struct {
+	float3 *vertices;
+	uint32_t vertex_count;
+} ConvexPolygon3;
+
+static inline ConvexPolygon3 convex3_from_triangle3(Arena *arena, Triangle3 triangle) {
+	ConvexPolygon3 result = {
+		.vertices = arena_push_count(arena, float3, 3),
+		.vertex_count = 3,
+	};
+
+	result.vertices[0] = triangle.a;
+	result.vertices[1] = triangle.b;
+	result.vertices[2] = triangle.c;
+
+	return result;
+}
+
+static inline ConvexPolygon3 convex3_from_aabb3(Arena *arena, AABB3 aabb) {
+	ConvexPolygon3 result = {
+		.vertices = arena_push_count(arena, float3, 8),
+		.vertex_count = 8,
+	};
+	float3 min = aabb.min;
+	float3 max = aabb.max;
+
+	result.vertices[0] = (float3){ min.x, min.y, min.z };
+	result.vertices[1] = (float3){ max.x, min.y, min.z };
+	result.vertices[2] = (float3){ min.x, min.y, max.z };
+	result.vertices[3] = (float3){ max.x, min.y, max.z };
+
+	result.vertices[4] = (float3){ min.x, max.y, min.z };
+	result.vertices[5] = (float3){ max.x, max.y, min.z };
+	result.vertices[6] = (float3){ min.x, max.y, max.z };
+	result.vertices[7] = (float3){ max.x, max.y, max.z };
+
+	return result;
+}
+
 typedef enum {
 	SHAPE_KIND_AABB3,
 	SHAPE_KIND_SPHERE,
-	SHAPE_KIND_CAPSULE,
+	SHAPE_KIND_CAPSULE3,
 	SHAPE_KIND_PLANE,
+	SHAPE_KIND_CONVEX_POLYGON,
 	/* SHAPE_KIND_CYLINDER, */
-	/* SHAPE_KIND_CONVEX_POLYGON, */
 	/* SHAPE_KIND_CONCAVE_POLYGON, */
 	/* SHAPE_KIND_HEIGHTMAP, */
 } ShapeKind;
@@ -119,12 +149,19 @@ typedef struct {
 		Sphere sphere;
 		Capsule3 capsule;
 		Plane plane;
+		ConvexPolygon3 convex;
 	} as;
-} Shape;
+} Shape3;
 
-static inline Shape shape_sphere(float3 center, float radius) { return (Shape){ .kind = SHAPE_KIND_SPHERE, .as.sphere = { .center = center, .radius = radius } }; }
-static inline Shape shape_capsule(float3 center, float height, float radius) { return (Shape){ .kind = SHAPE_KIND_CAPSULE, .as.capsule = capsule_from_center(center, FLOAT3_Y, height, radius) }; }
-static inline Shape shape_from_aabb3(AABB3 a) { return (Shape){ .kind = SHAPE_KIND_AABB3, .as.aabb3 = a }; }
+static inline Shape3 shape3_sphere(float3 center, float radius) { return (Shape3){ .kind = SHAPE_KIND_SPHERE, .as.sphere = { .center = center, .radius = radius } }; }
+static inline Shape3 shape3_capsule(float3 center, float height, float radius) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = capsule_from_center(center, FLOAT3_Y, height, radius) }; }
+static inline Shape3 shape3_convex_polygon(float3 *vertices, uint32_t vertex_count) { return (Shape3){ .kind = SHAPE_KIND_CONVEX_POLYGON, .as.convex = { vertices, vertex_count } }; }
+
+static inline Shape3 shape3_from_aabb3(AABB3 a) { return (Shape3){ .kind = SHAPE_KIND_AABB3, .as.aabb3 = a }; }
+static inline Shape3 shape3_from_convex3(ConvexPolygon3 c) { return (Shape3){ .kind = SHAPE_KIND_CONVEX_POLYGON, .as.convex = c }; }
+static inline Shape3 shape3_from_sphere(Sphere s) { return (Shape3){ .kind = SHAPE_KIND_SPHERE, .as.sphere = s }; }
+
+float3 shape3_support(Shape3 s, float3 direction);
 
 Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
 Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
@@ -142,4 +179,13 @@ bool triangle3_contains_point(Triangle3 triangle, float3 point);
 
 bool lowest_root(float a, float b, float c, float max_r, float *root);
 
-#endif /* GEOM_H_ */
+typedef struct {
+	float3 points[4];
+	uint32_t point_count;
+} Simplex3;
+
+bool simplex_line(Simplex3 *simplex, float3 *direction);
+bool simplex_triangle(Simplex3 *simplex, float3 *direction);
+bool simplex_tetrahedron(Simplex3 *simplex, float3 *direction);
+
+#endif

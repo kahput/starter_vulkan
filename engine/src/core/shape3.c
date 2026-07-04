@@ -1,5 +1,43 @@
-#include "geom.h"
+#include "shape3.h"
 #include "core/cmath.h"
+#include "core/debug.h"
+
+float3 shape3_support(Shape3 s, float3 direction) {
+	float3 result = { 0 };
+
+	direction = float3_normalize_safe(direction, EPSILON);
+	ASSERT(equalf(float3_length_sq(direction), 0.0f) == false);
+
+	switch (s.kind) {
+		case SHAPE_KIND_AABB3:
+		case SHAPE_KIND_CAPSULE3:
+		case SHAPE_KIND_PLANE:
+			ASSERT(!"Implement support function");
+			break;
+
+		case SHAPE_KIND_SPHERE: {
+			Sphere *sphere = &s.as.sphere;
+			result = float3_add(sphere->center, float3_scale(direction, sphere->radius));
+		} break;
+		case SHAPE_KIND_CONVEX_POLYGON: {
+			ConvexPolygon3 *polygon = &s.as.convex;
+			ASSERT(polygon->vertices && polygon->vertex_count);
+
+			result = polygon->vertices[0];
+			float best_distance = float3_dot(result, direction);
+			for (uint32_t index = 1; index < polygon->vertex_count; ++index) {
+				float distance = float3_dot(polygon->vertices[index], direction);
+				if (distance > best_distance) {
+					best_distance = distance;
+					result = polygon->vertices[index];
+				}
+			}
+		} break;
+			break;
+	}
+
+	return result;
+}
 
 Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
 	float denominator = float3_dot(rd, pn);
@@ -325,4 +363,111 @@ bool lowest_root(float a, float b, float c, float max_r, float *root) {
 	}
 
 	return false;
+}
+
+bool simplex_line(Simplex3 *simplex, float3 *direction) {
+	float3 origin = { 0 };
+
+	float3 a = simplex->points[1];
+	float3 b = simplex->points[0];
+
+	float3 ab = float3_subtract(b, a);
+	float3 ao = float3_subtract(origin, a);
+
+	if (float3_dot(ab, ao) > 0.0f) {
+		*direction = float3_cross(float3_cross(ab, ao), ab);
+	} else {
+		simplex->points[0] = a;
+		simplex->point_count = 1;
+		*direction = ao;
+	}
+
+	return false;
+}
+bool simplex_triangle(Simplex3 *simplex, float3 *direction) {
+	float3 origin = { 0 };
+
+	float3 a = simplex->points[2];
+	float3 b = simplex->points[1];
+	float3 c = simplex->points[0];
+
+	float3 ab = float3_subtract(b, a);
+	float3 ac = float3_subtract(c, a);
+	float3 ao = float3_subtract(origin, a);
+
+	float3 abc = float3_cross(ab, ac);
+	if (float3_dot(float3_cross(abc, ac), ao) > 0.0f) {
+		simplex->points[1] = a;
+		simplex->point_count = 2;
+
+		if (float3_dot(ac, ao) > 0.0f) {
+			simplex->points[0] = c;
+			*direction = float3_cross(float3_cross(ac, ao), ac);
+		} else {
+			simplex->points[0] = b;
+			return simplex_line(simplex, direction);
+		}
+	} else {
+		if (float3_dot(float3_cross(ab, abc), ao) > 0.0f) {
+			simplex->points[1] = a;
+			simplex->points[0] = b;
+			simplex->point_count = 2;
+			return simplex_line(simplex, direction);
+		} else {
+			if (float3_dot(abc, ao) > 0.0f) {
+				*direction = abc;
+			} else {
+				simplex->points[2] = a;
+				simplex->points[1] = c;
+				simplex->points[0] = b;
+				*direction = float3_scale(abc, -1.0f);
+			}
+		}
+	}
+
+	return false;
+}
+
+bool simplex_tetrahedron(Simplex3 *simplex, float3 *direction) {
+	float3 origin = { 0 };
+
+	float3 a = simplex->points[3];
+	float3 b = simplex->points[2];
+	float3 c = simplex->points[1];
+	float3 d = simplex->points[0];
+
+	float3 ab = float3_subtract(b, a);
+	float3 ac = float3_subtract(c, a);
+	float3 ad = float3_subtract(d, a);
+	float3 ao = float3_subtract(origin, a);
+
+	float3 abc = float3_cross(ab, ac);
+	float3 acd = float3_cross(ac, ad);
+	float3 adb = float3_cross(ad, ab);
+
+	if (float3_dot(abc, ao) > 0.0f) {
+		simplex->points[0] = c;
+		simplex->points[1] = b;
+		simplex->points[2] = a;
+		simplex->point_count = 3;
+		return simplex_triangle(simplex, direction);
+	}
+
+	if (float3_dot(acd, ao) > 0.0f) {
+		simplex->points[0] = d;
+		simplex->points[1] = c;
+		simplex->points[2] = a;
+		simplex->point_count = 3;
+		return simplex_triangle(simplex, direction);
+	}
+
+	if (float3_dot(adb, ao) > 0.0f) {
+		simplex->points[0] = b;
+		simplex->points[1] = d;
+		simplex->points[2] = a;
+		simplex->point_count = 3;
+		return simplex_triangle(simplex, direction);
+	}
+
+	return true;
 }

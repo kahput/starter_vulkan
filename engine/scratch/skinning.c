@@ -1,7 +1,8 @@
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
-#include "core/geom.h"
+#include "core/shape3.h"
+#include "core/shape2.h"
 #include "core/input_types.h"
 #include "core/logger.h"
 #include "core/debug.h"
@@ -496,7 +497,7 @@ typedef struct Entity {
 
 	// gameplay
 	float interact_radius;
-	Shape shape;
+	Shape3 shape;
 
 	float move_speed;
 
@@ -988,7 +989,7 @@ int main(void) {
 	player->meshid = MESH_HERO_MALE;
 	/* player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
 	player->transform.translation.z = -3;
-	player->shape = shape_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f);
+	player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f);
 	/* player->shape.as.aabb3 = meshes[player->meshid].bounds; */
 
 	entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
@@ -1001,7 +1002,7 @@ int main(void) {
 	barrel->meshid = MESH_BARREL;
 	barrel->transform.translation = (float3){ 10.0f, 0.0f, 0.0f };
 	barrel->interact_radius = 3.0f;
-	barrel->shape = shape_from_aabb3(meshes[barrel->meshid].bounds);
+	barrel->shape = shape3_from_aabb3(meshes[barrel->meshid].bounds);
 	barrel->target = player;
 
 	entity_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
@@ -1018,8 +1019,6 @@ int main(void) {
 	Entity *level = entity_spawn(&world);
 	level->meshid = MESH_TEST_LEVEL;
 	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
-
-	Triangle3 test_triangle = { { 0.0f, 0.25f, 1.0f }, { 1.0f, 0.25f, -1.0f }, { -1.0f, 0.25f, -1.0f } };
 
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
@@ -1110,7 +1109,58 @@ int main(void) {
 			state = (state + 1) % VIEWPORT_STATE_COUNT;
 
 		Camera3 *camera = &cameras[state];
-#if 0
+#if 1
+
+		{ // :gjk
+			float3 player_center = float3_add(player->transform.translation, (float3){ 0.0f, 1.0f, 0.0f });
+			AABB3 aabb = aabb3_from_center(player_center, (float3){ 1.0f, 1.0f, 1.0f });
+			Sphere s = { player_center, 1.0f };
+			Triangle3 triangle = { { 0.0f, 0.25f, 1.0f }, { 1.0f, 0.25f, -1.0f }, { -1.0f, 0.25f, -1.0f } };
+
+			Shape3 a = shape3_from_sphere(s);
+			Shape3 b = shape3_from_convex3(convex3_from_triangle3(frame_arena, triangle));
+
+			float3 support = float3_subtract(shape3_support(a, (float3){ 1.0f, 0.0f, 0.0f }), shape3_support(b, (float3){ -1.0f, 0.0f, 0.0f }));
+
+			Simplex3 simplex = { 0 };
+			simplex.points[simplex.point_count++] = support;
+
+			float3 direction = float3_scale(support, -1.0f);
+			float3 origin = { 0 };
+
+			bool collided = false;
+			while (true) {
+				if (equalf(float3_length_sq(direction), 0.0f)) {
+					collided = true;
+					break;
+				}
+
+				float3 sa = shape3_support(a, direction);
+				float3 sb = shape3_support(b, float3_scale(direction, -1.0f));
+				support = float3_subtract(sa, sb);
+
+				if (float3_dot(support, direction) <= 0.0f)
+					break;
+
+				simplex.points[simplex.point_count++] = support;
+				if (simplex.point_count == 2) { // line
+					collided = simplex_line(&simplex, &direction);
+				} else if (simplex.point_count == 3) { // triangle
+					collided = simplex_triangle(&simplex, &direction);
+				} else if (simplex.point_count == 4) { // tetrahedron
+					collided = simplex_tetrahedron(&simplex, &direction);
+				} else {
+					ASSERT(!"Invalid state for 2D/3D GJK");
+				}
+
+				if (collided) {
+					break;
+				}
+			}
+			push_triangle3(batch_line3d, triangle, 3.0f, collided ? RED : GREEN);
+			/* push_aabb3_outline(batch_line3d, aabb, 3.0f, collided ? RED : GREEN); */
+		}
+
 		switch (state) {
 			case VIEWPORT_STATE_EDITOR: {
 				if (input_mouse_down(MOUSE_BUTTON_MIDDLE))
@@ -1279,7 +1329,7 @@ int main(void) {
 						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
 
 						velocity = float3_scale(direction, entity->move_speed * dt);
-						/* velocity = float3_add(velocity, (float3){ 0.0f, -0.1f, 0.0f }); */
+						velocity = float3_add(velocity, (float3){ 0.0f, -0.1f, 0.0f });
 					}
 
 					// :ai
@@ -1344,8 +1394,10 @@ int main(void) {
 										float len = float3_length(velocity);
 										float3 dir = float3_scale(velocity, 1 / len);
 										Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, radius, dir, len, t);
-										if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t)
+										if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t) {
 											nearest = test_triangle_sweep;
+											push_triangle3(batch_line3d, t, 3.0f, RED);
+										}
 									}
 								}
 							}
@@ -1362,7 +1414,7 @@ int main(void) {
 
 							velocity = float3_subtract(velocity, float3_scale(nearest.normal, float3_dot(velocity, nearest.normal)));
 							velocity = float3_scale(velocity, 1.0f - t_min);
-							push_line3(batch_line, nearest.point, float3_add(nearest.point, float3_scale(nearest.normal, 1.0f)), 3.0f, RED);
+							push_line3(batch_line3d, nearest.point, float3_add(nearest.point, float3_scale(nearest.normal, 1.0f)), 3.0f, RED);
 						}
 					}
 
@@ -1407,7 +1459,6 @@ int main(void) {
 						entity->anim_t += dt;
 					}
 				}
-				push_triangle3(batch_line, test_triangle, 3.0f, WHITE);
 
 				{ // :camera
 					static float azimuth = C_PIf * 3 / 2.f;
@@ -1490,11 +1541,13 @@ int main(void) {
 				break;
 		}
 #else
+
+		// :minkowski
 		Rectangle viewport = rect(0, 0, dims.x, dims.y);
 		float2 center = { viewport.width / 2.0f, viewport.height / 2.0f };
 		push_rect2(batch_2d, viewport, WHITE);
 
-		float2 t_center = { center.x + 50.f, center.y - 100.f };
+		float2 t_center = { center.x + 200.f, center.y - 150.f };
 		float t_size = 80.f;
 		float2 triangle_polygon[] = {
 			float2_add(t_center, (float2){ 0.0f, -t_size }),
@@ -1502,7 +1555,7 @@ int main(void) {
 			float2_add(t_center, (float2){ -t_size, t_size }),
 		};
 
-		float2 q_center = float2_subtract(center, float2_splat(100.f));
+		float2 q_center = float2_add(float2_subtract(center, float2_splat(100.f)), (float2){ 300.f, -200.f });
 		float2 q_extent = float2_splat(100.f);
 		float2 quad_polygon[] = {
 			{ q_center.x - q_extent.x, q_center.y - q_extent.y },
@@ -1510,6 +1563,9 @@ int main(void) {
 			{ q_center.x - q_extent.x, q_center.y + q_extent.y },
 			{ q_center.x + q_extent.x, q_center.y + q_extent.y },
 		};
+
+		push_line2(batch_line2d, (float2){ 0.0f, center.y }, (float2){ dims.x, center.y }, 1.0f, RED);
+		push_line2(batch_line2d, (float2){ center.x, 0.0f }, (float2){ center.x, dims.y }, 1.0f, GREEN);
 
 		push_triangle2(batch_line2d, (Triangle2){ triangle_polygon[0], triangle_polygon[1], triangle_polygon[2] }, 3.0f, BLACK);
 
@@ -1544,7 +1600,7 @@ int main(void) {
 				}
 			}
 
-			float2 sum_point = float2_add(center, float2_subtract(qp, tp));
+			float2 sum_point = float2_add(center, float2_subtract(tp, qp));
 			bool found = false;
 			for (uint32_t index = 0; index < point_count; ++index) {
 				if (float2_equal(sum_point, sum_points[index])) {
@@ -1953,7 +2009,7 @@ int main(void) {
 							if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) == false)
 								continue;
 
-							Shape *shape = &entity->shape;
+							Shape3 *shape = &entity->shape;
 							float thickness = 3.0f;
 
 							switch (shape->kind) {
@@ -1970,7 +2026,7 @@ int main(void) {
 									push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_RIGHT, TAU, thickness, WHITE);
 									push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_FORWARD, TAU, thickness, WHITE);
 								} break;
-								case SHAPE_KIND_CAPSULE: {
+								case SHAPE_KIND_CAPSULE3: {
 									float r = shape->as.capsule.radius;
 									float3 centers[] = {
 										float3_add(shape->as.capsule.a, entity->transform.translation),
@@ -2001,6 +2057,8 @@ int main(void) {
 								} break;
 									break;
 								case SHAPE_KIND_PLANE:
+									break;
+								case SHAPE_KIND_CONVEX_POLYGON:
 									break;
 							}
 						}
