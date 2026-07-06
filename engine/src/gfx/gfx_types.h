@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "core/strings.h"
 
 typedef enum {
 	UNIFORM_TYPE_IMAGE,
@@ -17,6 +18,17 @@ typedef enum {
 	UNIFORM_TYPE_COUNT,
 } UniformType;
 
+static String8 uniform_type_to_string[UNIFORM_TYPE_COUNT] = {
+	[UNIFORM_TYPE_IMAGE] = str_comp("UNIFORM_TYPE_IMAGE"),
+	[UNIFORM_TYPE_STORAGE_IMAGE] = str_comp("UNIFORM_TYPE_STORAGE_IMAGE"),
+	[UNIFORM_TYPE_SAMPLER] = str_comp("UNIFORM_TYPE_SAMPLER"),
+	[UNIFORM_TYPE_SAMPLER_WITH_IMAGE] = str_comp("UNIFORM_TYPE_SAMPLER_WITH_IMAGE"),
+	[UNIFORM_TYPE_UNIFORM_BUFFER] = str_comp("UNIFORM_TYPE_UNIFORM_BUFFER"),
+	[UNIFORM_TYPE_STORAGE_BUFFER] = str_comp("UNIFORM_TYPE_STORAGE_BUFFER"),
+	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = str_comp("UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC"),
+	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = str_comp("UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC"),
+};
+
 typedef struct {
 	UniformType type;
 	uint32_t binding;
@@ -24,25 +36,47 @@ typedef struct {
 } ShaderBinding;
 
 typedef enum {
-	PIXELFORMAT_RGBA8_UNORM,
-	PIXELFORMAT_RGBA8_SRGB,
-	PIXELFORMAT_RGBA16_FLOAT,
-	PIXELFORMAT_R32_FLOAT,
+	PIXEL_FORMAT_RGBA8_UNORM,
+	PIXEL_FORMAT_RGBA8_SRGB,
+	PIXEL_FORMAT_RGBA16_FLOAT,
+	PIXEL_FORMAT_R32_FLOAT,
 
-	PIXELFORMAT_DEPTH,
-	PIXELFORMAT_DEPTH_STENCIL,
-	PIXELFORMAT_BACKBUFFER,
+	PIXEL_FORMAT_DEPTH,
+	PIXEL_FORMAT_DEPTHSTENCIL,
+	PIXEL_FORMAT_BACKBUFFER,
 
-	PIXELFORMAT_COUNT,
+	PIXEL_FORMAT_COUNT,
 } PixelFormat;
 
-static inline bool pixel_format_is_depth_stencil(PixelFormat format) { return format == PIXELFORMAT_DEPTH_STENCIL; }
-static inline bool pixel_format_is_depth(PixelFormat format) { return format == PIXELFORMAT_DEPTH || pixel_format_is_depth_stencil(format); }
+static inline bool pixel_format_is_depth_stencil(PixelFormat format) { return format == PIXEL_FORMAT_DEPTHSTENCIL; }
+static inline bool pixel_format_is_depth(PixelFormat format) { return format == PIXEL_FORMAT_DEPTH || pixel_format_is_depth_stencil(format); }
+
+static uint32_t pixel_format_to_stride[PIXEL_FORMAT_COUNT] = {
+	[PIXEL_FORMAT_RGBA8_UNORM] = 4,
+	[PIXEL_FORMAT_RGBA8_SRGB] = 4,
+	[PIXEL_FORMAT_RGBA16_FLOAT] = 2 * 4,
+	[PIXEL_FORMAT_R32_FLOAT] = 4,
+	[PIXEL_FORMAT_DEPTH] = 4,
+	[PIXEL_FORMAT_DEPTHSTENCIL] = 4,
+	[PIXEL_FORMAT_BACKBUFFER] = 4,
+};
+
+static const String8 pixel_format_to_string[PIXEL_FORMAT_COUNT] = {
+	[PIXEL_FORMAT_RGBA8_UNORM] = str_comp("RGBA8_UNORM"),
+	[PIXEL_FORMAT_RGBA8_SRGB] = str_comp("RGBA8_SRGB"),
+	[PIXEL_FORMAT_RGBA16_FLOAT] = str_comp("RGBA16_FLOAT"),
+	[PIXEL_FORMAT_R32_FLOAT] = str_comp("R32_FLOAT"),
+	[PIXEL_FORMAT_DEPTH] = str_comp("DEPTH"),
+	[PIXEL_FORMAT_DEPTHSTENCIL] = str_comp("DEPTH_STENCIL"),
+	[PIXEL_FORMAT_BACKBUFFER] = str_comp("BACKBUFFER"),
+};
 
 typedef enum {
 	IMAGE_TYPE_2D,
 	IMAGE_TYPE_3D,
 	IMAGE_TYPE_CUBE,
+
+	IMAGE_TYPE_COUNT,
 } ImageType;
 
 typedef enum {
@@ -64,11 +98,11 @@ typedef enum {
 } ImageSampleCount;
 
 typedef enum {
-	BUFFER_USAGE_VERTEX = 0x1,
-	BUFFER_USAGE_INDEX = 0x2,
-	BUFFER_USAGE_UNIFORM = 0x4,
-	BUFFER_USAGE_STORAGE = 0x8,
-	BUFFER_USAGE_TRANSFER = 0x10
+	BUFFER_USAGE_VERTEX = BIT(0),
+	BUFFER_USAGE_INDEX = BIT(1),
+	BUFFER_USAGE_UNIFORM = BIT(2),
+	BUFFER_USAGE_STORAGE = BIT(3),
+	BUFFER_USAGE_TRANSFER = BIT(4)
 } BufferUsage;
 
 typedef enum {
@@ -122,8 +156,8 @@ typedef struct {
 	ImageType type;
 	uint32_t slice_count, max_mip_level;
 	PixelFormat format;
-	ImageUsageFlags usage; // zero initialized equals IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER
-	ImageSampleCount sample; // zero initilized equals SAMPLE_COUNT_1
+	ImageUsageFlags usage; // zero initializes to IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER
+	ImageSampleCount sample; // zero initializes to SAMPLE_COUNT_1
 
 	void *pixels;
 } ImageOptions;
@@ -143,14 +177,15 @@ typedef struct {
 	bool compare_enable;
 } SamplerOptions;
 
-#define sampler_opt(filter, mode)  \
-	(SamplerOptions) {             \
-		.min_filter = (filter),    \
-		.mag_filter = (filter),    \
-		.mipmap_filter = (filter), \
-		.address_mode_u = (mode),  \
-		.address_mode_v = (mode),  \
-		.address_mode_w = (mode),  \
+#define sampler_opt(name, filter, mode) \
+	(SamplerOptions) {                  \
+		.debug_name = (name),           \
+		.min_filter = (filter),         \
+		.mag_filter = (filter),         \
+		.mipmap_filter = (filter),      \
+		.address_mode_u = (mode),       \
+		.address_mode_v = (mode),       \
+		.address_mode_w = (mode),       \
 	}
 
 #define MAX_COLOR_ATTACHMENTS 8
@@ -189,3 +224,273 @@ typedef enum {
 
 	RESOURCE_USAGE_COUNT,
 } ResourceUsage;
+
+// ============================================================
+// ========================= TEMPORARY =========================
+// ============================================================
+
+#if 1
+	#define MAX_FRAMES_IN_FLIGHT 2
+	#define MAX_TRANSFERS_IN_FLIGHT 2
+
+	#include <vulkan/vulkan_core.h>
+	#include "os.h"
+
+typedef struct GFX_Buffer GFX_Buffer;
+struct GFX_Buffer {
+	GFX_Buffer *next;
+
+	VkBuffer handle;
+	VkDeviceMemory memory;
+	uint8_t *mapped;
+	VkDeviceAddress address;
+
+	uint64_t size;
+	VkBufferCreateInfo info;
+
+	BufferOptions options;
+};
+
+typedef struct GFX_Image GFX_Image;
+struct GFX_Image {
+	GFX_Image *next;
+
+	VkImage handle;
+	VkImageView view;
+	VkDeviceMemory memory;
+
+	uint32_t width, height, miplevels;
+
+	ImageOptions options;
+	ResourceUsage res_usage;
+};
+
+typedef struct GFX_Sampler GFX_Sampler;
+struct GFX_Sampler {
+	GFX_Sampler *next;
+
+	VkSampler handle;
+	VkSamplerCreateInfo info;
+};
+
+typedef struct {
+	char name[128];
+
+	UniformType type;
+	uint32_t binding, count;
+
+	union {
+		struct {
+			GFX_Buffer *handle;
+			uint64_t offset, size;
+			void *data;
+		} buffer;
+
+		struct {
+			GFX_Image **images;
+			GFX_Sampler *sampler;
+		} sampler_with_textures;
+	} resource;
+} Uniform;
+
+typedef struct {
+	Uniform uniforms[32];
+	uint32_t uniform_count;
+} UniformSet;
+
+static inline Uniform uniform_data(uint32_t binding, void *data, uint64_t size) {
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_UNIFORM_BUFFER,
+		.binding = binding,
+		.count = 1,
+		.resource.buffer = { .data = data, .size = size },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, s(result.name).length)); */
+
+	return result;
+}
+
+static inline Uniform storage_data(uint32_t binding, void *data, uint64_t size) {
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_STORAGE_BUFFER,
+		.binding = binding,
+		.count = 1,
+		.resource.buffer = { .data = data, .size = size },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
+}
+
+static inline Uniform storage_images(uint32_t binding, GFX_Image **images, uint32_t image_count) {
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_STORAGE_IMAGE,
+		.binding = binding,
+		.count = image_count,
+		.resource.sampler_with_textures.images = images,
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
+}
+
+/* static inline Uniform uniform_buffer(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) { */
+/* 	return (Uniform){ .type = UNIFORM_TYPE_UNIFORM_BUFFER, .binding = binding, .count = 1, .as.buffer = { .handle = buffer, .offset = offset, .size = size } }; */
+/* } */
+
+static inline Uniform storage_buffers(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) {
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_STORAGE_BUFFER,
+		.binding = binding,
+		.count = 1,
+		.resource.buffer = { .handle = buffer, .offset = offset, .size = size },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
+}
+
+static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images, uint32_t image_count, GFX_Sampler *sampler) {
+	Uniform result = {
+		.name = { 0 },
+		.type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE,
+		.binding = binding,
+		.count = image_count,
+		.resource.sampler_with_textures = { .images = images, .sampler = sampler },
+	};
+	/* memory_copy(result.name, name.text, MIN(name.length, sizeof(result.name) - 1)); */
+
+	return result;
+}
+
+	#define MAX_UNIFORM_SETS 4
+typedef struct Shader GFX_Pipeline;
+struct Shader {
+	GFX_Pipeline *next;
+
+	VkPipeline handle;
+	VkPipelineLayout layout;
+	VkShaderModule shaders[SHADER_STAGE_COUNT];
+
+	VkDescriptorSetLayout set_layouts[MAX_UNIFORM_SETS];
+	UniformSet set_infos[MAX_UNIFORM_SETS];
+
+	PipelineOptions options;
+};
+
+	#define SWAPCHAIN_IMAGE_COUNT 3
+typedef struct Swapchain GFX_Swapchain;
+struct Swapchain {
+	GFX_Swapchain *next;
+
+	OS_Surface *native;
+
+	VkSwapchainKHR handle;
+	VkSurfaceKHR surface;
+
+	VkSwapchainCreateInfoKHR info;
+
+	VkImage images[SWAPCHAIN_IMAGE_COUNT];
+	VkImageView views[SWAPCHAIN_IMAGE_COUNT];
+	VkImageViewCreateInfo view_infos[SWAPCHAIN_IMAGE_COUNT];
+	uint32_t image_count;
+
+	GFX_Image wrapper;
+
+	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
+	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
+};
+
+	#define MAX_BUFFERS 1024
+	#define MAX_IMAGES 512
+	#define MAX_SAMPLERS 32
+	#define MAX_SHADERS 32
+	#define MAX_SWAPCHAINS 8
+/* #define MAX_SAMPLERS 32 */
+/* #define MAX_BINDSETS 4096 */
+
+typedef struct {
+	VkPhysicalDevice physical;
+	VkDevice logical;
+
+	VkPhysicalDeviceLimits limits;
+	VkPhysicalDeviceProperties properties;
+} VulkanDevice;
+
+typedef struct {
+	VkCommandBuffer handle;
+	VkFence in_flight_fence;
+	VkDescriptorPool descriptor_pool;
+
+	GFX_Swapchain *swapchains[MAX_SWAPCHAINS];
+	uint32_t swapchain_image_indices[MAX_SWAPCHAINS];
+	uint32_t swapchain_count;
+
+	GFX_Buffer *transient_buffer;
+	Arena transient_arena[1];
+
+	uint32_t frame_index, recording;
+} GFX_CommandContext;
+
+typedef struct {
+	Arena arena[1];
+
+	VkInstance instance;
+	VulkanDevice device;
+
+	// Engine globals
+	VkCommandPool graphics_command_pool;
+	VkPushConstantRange global_range;
+
+	GFX_Buffer *frame_staging_buffer;
+	uint64_t frame_staging_buffer_slice_size;
+
+	GFX_Buffer *transfer_staging_buffer;
+	uint64_t transfer_staging_buffer_slice_size;
+
+	VkQueue graphics_queue, present_queue;
+	VkQueue transfer_queue, compute_queue;
+
+	int32_t graphics_index, present_index;
+	int32_t transfer_index, compute_index;
+
+	// Transfer
+	GFX_CommandContext transfer_commands[2];
+	uint32_t current_transfer_index;
+
+	// Frame
+	GFX_CommandContext frame_commands[MAX_FRAMES_IN_FLIGHT];
+	uint32_t current_frame_index;
+
+	// Resources
+	GFX_Buffer *buffer_pool;
+	uint32_t buffer_count;
+
+	GFX_Image *image_pool;
+	uint32_t image_count;
+
+	GFX_Sampler *sampler_pool;
+	uint32_t sampler_count;
+
+	GFX_Pipeline *shader_pool;
+	uint32_t shader_count;
+
+	GFX_Swapchain *swapchain_pool;
+	uint32_t swapchain_count;
+
+	GFX_Buffer *first_free_buffer;
+	GFX_Image *first_free_image;
+	GFX_Sampler *first_free_sampler;
+	GFX_Pipeline *first_free_shader;
+	GFX_Swapchain *first_free_swapchain;
+
+	bool initialized;
+	#ifdef DEV_BUILD
+	VkDebugUtilsMessengerEXT debug_messenger;
+	#endif
+} GFX_Context;
+#endif

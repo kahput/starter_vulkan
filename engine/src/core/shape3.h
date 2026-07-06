@@ -17,16 +17,6 @@ typedef struct {
 static inline float3 ray_at(Ray3 r, float t) { return float3_add(r.origin, float3_scale(r.direction, t)); }
 
 typedef struct {
-	float x, y, width, height;
-} Rectangle;
-#define rect(x, y, w, h) \
-	(Rectangle) { x, y, w, h }
-
-static inline Rectangle rect_from_dimensions(float width, float height) { return (Rectangle){ 0, 0, width, height }; }
-static inline bool rect_contains(Rectangle rect, float x, float y) { return x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height; }
-static inline bool rect_contains_float2(Rectangle rect, float2 position) { return rect_contains(rect, position.x, position.y); }
-
-typedef struct {
 	float3 a, b;
 } Segment3;
 
@@ -173,6 +163,7 @@ float segment3_squared_distance(Segment3 segment, float3 point);
 float3 plane_closest_point(Plane p, float3 to);
 float3 segment3_closest_point(Segment3 segment, float3 to);
 float3 triangle3_closest_point(Triangle3 t, float3 to);
+float3 tetrahedron_closest_point(float3 a, float3 b, float3 c, float3 d, float3 to);
 float3 aabb3_closest_point(AABB3 a, float3 to);
 
 bool triangle3_contains_point(Triangle3 triangle, float3 point);
@@ -180,12 +171,17 @@ bool triangle3_contains_point(Triangle3 triangle, float3 point);
 bool lowest_root(float a, float b, float c, float max_r, float *root);
 
 typedef struct {
-	float3 points[4];
+	float3 support_a[4], support_b[4], points[4];
 	uint32_t point_count;
 } Simplex3;
 
-bool simplex_line(Simplex3 *simplex, float3 *direction);
-bool simplex_triangle(Simplex3 *simplex, float3 *direction);
-bool simplex_tetrahedron(Simplex3 *simplex, float3 *direction);
+float3 simplex_closest_point_to_origin(Simplex3 simplex);
+
+float3 simplex_line(Simplex3 *simplex, float3 *direction);
+float3 simplex_triangle(Simplex3 *simplex, float3 *direction);
+float3 simplex_tetrahedron(Simplex3 *simplex, float3 *direction);
+
+extern float max_error;
+float gjk_distance_squared(Shape3 a, Shape3 b, float reference_dist_sq);
 
 #endif

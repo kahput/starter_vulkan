@@ -1,7 +1,8 @@
 #version 450
 #pragma shader_stage(vertex)
 
-#include "spatial.glsl"
+// Only this inlucde changes to "canvas.glsl"
+#include "spatial.glsl"  
 
 struct Point {
     vec3 position;

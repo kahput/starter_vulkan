@@ -22,9 +22,10 @@ void arena_destroy(Arena *arena) {
 }
 
 void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) {
-	ASSERT(alignment > 0 && ((alignment & (alignment - 1)) == 0));
+	alignment = alignup(alignment, 2);
+
 	uintptr_t current = (uintptr_t)arena->base + arena->offset;
-	uintptr_t aligned = alignup(current, alignment);
+	uintptr_t aligned = alignup(current, alignment ? alignment : 1);
 
 	size_t padding = aligned - current;
 
@@ -81,4 +82,3 @@ ArenaTemp arena_scratch_begin(Arena *conflict) {
 	Arena *selected = conflict == &scratch_arenas[0] ? &scratch_arenas[1] : &scratch_arenas[0];
 	return arena_temp_begin(selected);
 }
-

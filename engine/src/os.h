@@ -1,3 +1,5 @@
+#pragma once
+
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
@@ -91,6 +93,7 @@ bool os_directory_delete(String8 path);
 /* } OS_DirectoryEntry; */
 
 /* OS_DirectoryEntry *os_directory_walk(Arena *arena, String8 path, bool recurse, uint32_t *count); */
+String8 *os_directory_files(Arena *arena, String8 path, uint32_t *count);
 
 // ----------------------
 // - Dynamic libraries

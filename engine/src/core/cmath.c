@@ -401,7 +401,7 @@ float4x4 float4x4_scale(float4x4 m, float3 s) {
 float4x4 float4x4_rotate(float4x4 m, float angle, float3 axis) {
 	// Post-multiply by rotation: result = m * R
 	// Means: each of the first 3 columns of m gets mixed by R.
-	float4x4 r = float4x4_rotation(angle, axis);
+	float4x4 r = float4x4_rotation(axis, angle);
 	float4x4 result = m;
 
 	// Cache m's basis columns (col 0,1,2). Translation col stays as-is.
@@ -449,7 +449,7 @@ float4x4 float4x4_translation(float3 v) {
 	return result;
 }
 
-float4x4 float4x4_rotation(float angle, float3 axis) {
+float4x4 float4x4_rotation(float3 axis, float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
@@ -532,9 +532,9 @@ float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 
 	float4x4 T = float4x4_translation(position);
 	float4x4 S = float4x4_scaling(scale);
-	float4x4 rotation_x = float4x4_rotation(rotation.x, FLOAT3_X);
-	float4x4 rotation_y = float4x4_rotation(rotation.y, FLOAT3_Y);
-	float4x4 rotation_z = float4x4_rotation(rotation.z, FLOAT3_Z);
+	float4x4 rotation_x = float4x4_rotation(FLOAT3_X, rotation.x);
+	float4x4 rotation_y = float4x4_rotation(FLOAT3_Y, rotation.y);
+	float4x4 rotation_z = float4x4_rotation(FLOAT3_Z, rotation.z);
 	float4x4 R = float4x4_multiply(rotation_z, float4x4_multiply(rotation_y, rotation_x));
 
 	result = float4x4_multiply(T, float4x4_multiply(R, S));

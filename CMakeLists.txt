@@ -31,7 +31,7 @@ endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
-set(NATIVE_SCRATCHES xcb_scratch skinning material_scratch spriv)
+set(NATIVE_SCRATCHES xcb_scratch skinning material_scratch spriv gjk)
 
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -71,7 +71,9 @@ else()
         PROJECT_SOURCES 
         "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
         "${CMAKE_SOURCE_DIR}/engine/src/os/linux/*.c" 
-        "${CMAKE_SOURCE_DIR}/engine/src/*.h")
+        "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/*.h"
+    )
 
     if(MSVC)
         set(CONFIG $<CONFIG>)
@@ -127,6 +129,7 @@ else()
             "${CMAKE_SOURCE_DIR}/engine/src/anim.c"
             "${CMAKE_SOURCE_DIR}/engine/src/scene.c"
             "${CMAKE_SOURCE_DIR}/engine/src/input.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
         )
         add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
         target_include_directories(

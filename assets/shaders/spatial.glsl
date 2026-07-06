@@ -5,6 +5,12 @@ struct Vertex3 {
     vec4 tangent;
 };
 
+struct Vertex2 {
+    vec2 position; 
+    vec2 uv;
+    vec4 color;
+};
+
 struct Light {
     vec4 position;
     vec4 color;

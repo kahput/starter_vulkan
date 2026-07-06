@@ -161,7 +161,7 @@ float4x4 float4x4_rotate(float4x4 matrix, float angle_radians, float3 axis);
 float4x4 float4x4_scale(float4x4 matrix, float3 scale);
 
 float4x4 float4x4_translation(float3 translation);
-float4x4 float4x4_rotation(float angle, float3 axis);
+float4x4 float4x4_rotation(float3 axis, float angle);
 float4x4 float4x4_scaling(float3 scale);
 float4x4 float4x4_from_quat(quat4 q);
 
