@@ -136,6 +136,8 @@ typedef enum {
 	MESH_TERRAIN_HEIGHTMAP,
 	MESH_GRASS_BILLBOARD,
 
+	MESH_CYLINDER,
+
 	MESH_COUNT,
 } MeshID;
 
@@ -239,8 +241,12 @@ Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
-Mesh generate_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
-Mesh generate_plane_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
+Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
+Mesh mesh_from_cone(Arena *arena, float hegiht, float radius, uint32_t segments);
+
+Mesh mesh_from_cone(Arena *arena, float height, float radius, uint32_t segments);
+Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
+Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
 typedef struct {
@@ -255,11 +261,13 @@ typedef struct {
 
 void push_rect2(Arena *arena, Rectangle rect, Color color);
 void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color);
+void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color color);
 void push_rect2_outline(Arena *arena, Rectangle rect, float thickness, Color color);
 void push_triangle2(Arena *arena, Triangle2 triangle, float thickness, Color color);
 
-void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color);
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
+void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color);
+void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color);
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
 void push_triangle3(Arena *arena, Triangle3 t, float thickness, Color color);
 void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
@@ -578,14 +586,17 @@ int main(void) {
 	const uint32_t map_depth = 32;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	meshes[MESH_TERRAIN_FLAT] = generate_plane(permanent, AXIS_PLANE_UP, map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT] = mesh_from_plane(permanent, AXIS_PLANE_UP, map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_TERRAIN_HEIGHTMAP] = generate_plane_from_heightmap(permanent, AXIS_PLANE_UP, 256.f, 256.f, heightmap);
+	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_from_heightmap(permanent, AXIS_PLANE_UP, 256.f, 256.f, heightmap);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
+
+	meshes[MESH_CYLINDER] = mesh_from_cylinder(permanent, 0.5f, 0.5f, 0.5f, 32, 0, true, true);
 
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
+	(void)animations;
 
 	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
 		if (meshid_to_metadata[meshid].length == 0)
@@ -615,6 +626,8 @@ int main(void) {
 					if (img->pixels) {
 						String8 head = str8_filename(meshid_to_metadata[mesh_index]);
 						String8 tail = texture_slot_to_string[texture_slot];
+
+						head = head.length ? head : s("gen");
 
 						String8 name = { .length = head.length + tail.length + 1 };
 						name.text = arena_push_count(permanent, uint8_t, name.length + 1);
@@ -753,7 +766,7 @@ int main(void) {
 	World world = { .entity_count = 1 };
 
 	Entity *player = entity_spawn(&world);
-	player->meshid = MESH_HERO_MALE;
+	player->meshid = MESH_CYLINDER;
 	/* player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
 	player->transform.translation.z = -3;
 	player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f);
@@ -859,6 +872,18 @@ int main(void) {
 
 		Camera3 *camera = &cameras[state];
 #if 1
+
+		static uint32_t triangle_step = 0;
+		if (input_key_pressed(KEY_CODE_N))
+			triangle_step = (triangle_step + 1) % (meshes[MESH_CYLINDER].total_index_count / 3);
+
+		for (uint32_t index = 0; index < 3; ++index) {
+			uint32_t triangle_index = meshes[MESH_CYLINDER].indices[triangle_step * 3 + index];
+			Vertex3 v = meshes[MESH_CYLINDER].vertices[triangle_index];
+
+			float3 origin = { 0.0f, 2.0f, 0.0f };
+			push_arrow3(batch_line3d, origin, float3_add(v.position, origin), 3.0f, RED);
+		}
 
 	#if 0 
 		{ // :gjk
@@ -4544,7 +4569,139 @@ static inline float3 face_orient(float3 v, AxisPlane face) {
 	return result;
 }
 
-Mesh generate_plane_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap) {
+Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap) {
+	Mesh result = { 0 };
+
+	bool ok = arena;
+
+	if (ok) {
+		rings += 2; // add top and bottom rings
+		segments = MAX(3, segments);
+		top_cap = !!(top_cap);
+		bottom_cap = !!(bottom_cap);
+
+		uint32_t cap_vertices = 1 + segments;
+		result.total_vertex_count = (segments * rings) + (cap_vertices * (top_cap + bottom_cap));
+		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+
+		uint32_t vertex_cursor = 0;
+		for (uint32_t ring = 0; ring < rings; ++ring) {
+			float rv = (float)ring / (rings - 1);
+			float y = half_height - rv * (half_height * 2);
+			float r = top_radius + rv * (bottom_radius - top_radius);
+
+			for (uint32_t segment = 0; segment < segments; ++segment) {
+				float sv = (float)segment / (segments - 1);
+
+				float a = ((float)segment / segments) * TAU;
+				float ca = cosf(a), sa = -sinf(a);
+
+				result.vertices[vertex_cursor++] = (Vertex3){
+					.position = { ca * r, y, sa * r },
+					.normal = { ca, 0.0f, sa },
+					.uv = { sv, rv },
+				};
+			}
+		}
+
+		uint32_t center_indices[2] = { 0 };
+		uint32_t ring_start_indices[2] = { 0 };
+
+		bool cap_enabled[2] = { top_cap, bottom_cap };
+
+		for (uint32_t end_index = 0; end_index < 2; ++end_index) {
+			if (cap_enabled[end_index] == false)
+				continue;
+
+			float rv = (float)end_index / 1;
+			float y = half_height - rv * (half_height * 2);
+			float r = top_radius + rv * (bottom_radius - top_radius);
+
+			uint32_t center_index = center_indices[end_index] = vertex_cursor++;
+			result.vertices[center_index] = (Vertex3){
+				.position = { 0.0f, y, 0.0f },
+				.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
+				.uv = { 0.5f, 0.5f }
+			};
+
+			ring_start_indices[end_index] = vertex_cursor;
+			for (uint32_t segment = 0; segment < segments; ++segment) {
+				float sv = (float)segment / (segments - 1);
+
+				float a = ((float)segment / segments) * TAU;
+				float ca = cosf(a), sa = -sinf(a);
+
+				result.vertices[vertex_cursor++] = (Vertex3){
+					.position = { ca * r, y, sa * r },
+					.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
+					.uv = { (ca + 1.0f) * 0.5f, (sa + 1.0f) * 0.5f } // Planar mapping
+				};
+			}
+		}
+
+		uint32_t face_count = segments * (rings - 1);
+
+		uint32_t side_index_count = face_count * 6;
+		uint32_t cap_index_count = segments * 3 * (top_cap + bottom_cap);
+
+		result.total_index_count = side_index_count + cap_index_count;
+		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+
+		uint32_t cursor = 0;
+		for (uint32_t face = 0; face < face_count; ++face) {
+			uint32_t index = face, ring = index / segments;
+			uint32_t next_index = (index + 1) / segments > ring ? ring * segments : index + 1;
+
+			result.indices[cursor++] = index;
+			result.indices[cursor++] = index + segments;
+			result.indices[cursor++] = next_index + segments;
+
+			result.indices[cursor++] = index;
+			result.indices[cursor++] = next_index + segments;
+			result.indices[cursor++] = next_index;
+		}
+
+		for (uint32_t segment = 0; segment < segments; ++segment) {
+			uint32_t next = (segment + 1) % segments;
+
+			if (cap_enabled[0]) {
+				result.indices[cursor++] = center_indices[0];
+				result.indices[cursor++] = ring_start_indices[0] + segment;
+				result.indices[cursor++] = ring_start_indices[0] + next;
+			}
+
+			if (cap_enabled[1]) {
+				result.indices[cursor++] = center_indices[1];
+				result.indices[cursor++] = ring_start_indices[1] + next;
+				result.indices[cursor++] = ring_start_indices[1] + segment;
+			}
+		}
+
+		result.part_count = 1;
+		result.parts = arena_push_count(arena, MeshPart, result.part_count);
+
+		result.parts[0].vertex_count = result.total_vertex_count;
+		result.parts[0].index_count = result.total_index_count;
+
+		result.material_count = 1;
+		result.materials = arena_push_count(arena, Material, result.material_count);
+
+		result.materials[0] = (Material){
+			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
+			.emissive = FLOAT4_ONE,
+			.metallic_roughness = { 0.0f, 0.5f },
+		};
+	}
+
+	return result;
+}
+
+// TODO: Fix normal for cones
+Mesh mesh_from_cone(Arena *arena, float height, float radius, uint32_t segments) {
+	return mesh_from_cylinder(arena, height * 0.5f, radius, 0.0f, segments, 0, false, true);
+}
+
+Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -w * 0.5f, .y = 0.0f, .y = -h * 0.5f };
 	result.bounds.max = (float3){ .x = w * 0.5f, .y = 0.0f, .y = h * 0.5f };
@@ -4609,7 +4766,7 @@ Mesh generate_plane_from_heightmap(Arena *arena, AxisPlane orientation, float w,
 	return result;
 }
 
-Mesh generate_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
 	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
@@ -4821,6 +4978,22 @@ void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color c
 	};
 }
 
+void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
+	float2 shaft_end = float2_add(start, float2_scale(float2_subtract(end, start), 0.75f));
+	push_line2(arena, start, shaft_end, thickness, color);
+
+	*arena_push_count(arena, Line, 1) = (Line){
+		.position = float3_from_float2(shaft_end),
+		.thickness = thickness * 4,
+		.color = color_pack(color),
+	};
+	*arena_push_count(arena, Line, 1) = (Line){
+		.position = float3_from_float2(end),
+		.thickness = 0.0f,
+		.color = color_pack(color),
+	};
+}
+
 void imgui_frame_begin(Arena *arena) {
 	imgui_state.batch_arena = arena;
 	imgui_state.mouse_position = float2_from_double2(input_mouse_position());
@@ -5026,6 +5199,22 @@ void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color c
 	*arena_push_count(arena, Line, 1) = (Line){
 		.position = end,
 		.thickness = thickness,
+		.color = color_pack(color),
+	};
+}
+
+void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
+	float3 shaft_end = float3_add(start, float3_scale(float3_subtract(end, start), 0.80f));
+	push_line3(arena, start, shaft_end, thickness, color);
+
+	*arena_push_count(arena, Line, 1) = (Line){
+		.position = shaft_end,
+		.thickness = thickness * 4,
+		.color = color_pack(color),
+	};
+	*arena_push_count(arena, Line, 1) = (Line){
+		.position = end,
+		.thickness = 0.0f,
 		.color = color_pack(color),
 	};
 }
