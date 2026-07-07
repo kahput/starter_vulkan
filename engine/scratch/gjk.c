@@ -87,7 +87,7 @@ static float sphere_capsule_distance(Sphere s, Capsule3 c) {
 static float sphere_triangle_distance(Sphere s, Triangle3 t) {
 	float3 closest = triangle3_closest_point(t, s.center);
 	float d = float3_length(float3_subtract(s.center, closest));
-	return fmaxf(0.0f, d - s.radius);
+	return fmaxf(0.0f, fabsf(d - s.radius));
 }
 
 static float aabb_aabb_distance(AABB3 a, AABB3 b) {
@@ -341,6 +341,10 @@ static void test_sphere_triangle_grid(Arena *arena) {
 			float err = fabsf(got - expected);
 			if (err > max_abs_error)
 				max_abs_error = err;
+			if (err > 0.2f) {
+				uint32_t y = 0;
+				(void)y;
+			}
 		}
 	}
 

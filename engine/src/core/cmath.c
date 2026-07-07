@@ -327,33 +327,33 @@ float4x4 float4x4_identity(void) {
 float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs) {
 	float4x4 result = { 0 };
 
-#define MAT4_DOT(row, col)                                  \
+#define DOT(row, col)                                  \
 	(lhs.elements[0 + row] * rhs.elements[col * 4 + 0] +    \
 		lhs.elements[4 + row] * rhs.elements[col * 4 + 1] + \
 		lhs.elements[8 + row] * rhs.elements[col * 4 + 2] + \
 		lhs.elements[12 + row] * rhs.elements[col * 4 + 3])
 
-	result.elements[0] = MAT4_DOT(0, 0);
-	result.elements[4] = MAT4_DOT(0, 1);
-	result.elements[8] = MAT4_DOT(0, 2);
-	result.elements[12] = MAT4_DOT(0, 3);
+	result.elements[0] = DOT(0, 0);
+	result.elements[4] = DOT(0, 1);
+	result.elements[8] = DOT(0, 2);
+	result.elements[12] = DOT(0, 3);
 
-	result.elements[1] = MAT4_DOT(1, 0);
-	result.elements[5] = MAT4_DOT(1, 1);
-	result.elements[9] = MAT4_DOT(1, 2);
-	result.elements[13] = MAT4_DOT(1, 3);
+	result.elements[1] = DOT(1, 0);
+	result.elements[5] = DOT(1, 1);
+	result.elements[9] = DOT(1, 2);
+	result.elements[13] = DOT(1, 3);
 
-	result.elements[2] = MAT4_DOT(2, 0);
-	result.elements[6] = MAT4_DOT(2, 1);
-	result.elements[10] = MAT4_DOT(2, 2);
-	result.elements[14] = MAT4_DOT(2, 3);
+	result.elements[2] = DOT(2, 0);
+	result.elements[6] = DOT(2, 1);
+	result.elements[10] = DOT(2, 2);
+	result.elements[14] = DOT(2, 3);
 
-	result.elements[3] = MAT4_DOT(3, 0);
-	result.elements[7] = MAT4_DOT(3, 1);
-	result.elements[11] = MAT4_DOT(3, 2);
-	result.elements[15] = MAT4_DOT(3, 3);
+	result.elements[3] = DOT(3, 0);
+	result.elements[7] = DOT(3, 1);
+	result.elements[11] = DOT(3, 2);
+	result.elements[15] = DOT(3, 3);
 
-#undef MAT4_DOT
+#undef DOT
 
 	return result;
 }

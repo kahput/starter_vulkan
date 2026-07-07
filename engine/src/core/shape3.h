@@ -23,6 +23,7 @@ typedef struct {
 typedef struct {
 	float3 a, b, c;
 } Triangle3;
+static inline Triangle3 triangle3_move(Triangle3 t, float3 offset) { return (Triangle3){ float3_add(offset, t.a), float3_add(offset, t.b), float3_add(offset, t.c) }; }
 
 typedef struct {
 	float3 min, max;

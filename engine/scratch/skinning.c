@@ -269,10 +269,12 @@ void push_rect2_outline(Arena *arena, Rectangle rect, float thickness, Color col
 void push_triangle2(Arena *arena, Triangle2 triangle, float thickness, Color color);
 
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
-void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color);
+void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color,
+	float4x4 view, float4x4 projeciton, float viewport_width);
 void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color);
+void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color);
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
-void push_triangle3(Arena *arena, Triangle3 t, float thickness, Color color);
+void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color color);
 void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
 
 typedef struct {
@@ -600,7 +602,7 @@ int main(void) {
 		ArenaTemp scratch = arena_scratch_begin(0);
 
 		// Proportions in meters (Total length = 0.20m)
-        float mult = 5.0f;
+		float mult = 5.0f;
 		float shaft_half_height = 0.075f * mult; // Total shaft length is 0.15m
 		float shaft_radius = 0.005f * mult; // 5mm thick
 		float head_height = 0.050f * mult; // 5cm tall cone
@@ -613,8 +615,7 @@ int main(void) {
 			shaft_half_height,
 			shaft_radius, shaft_radius,
 			16, 1,
-			false, true 
-		);
+			false, true);
 
 		float3 cone_origin = { 0.0f, shaft_half_height * 2.0f, 0.0f };
 		Mesh head = mesh_from_cone(
@@ -801,7 +802,7 @@ int main(void) {
 	World world = { .entity_count = 1 };
 
 	Entity *player = entity_spawn(&world);
-	player->meshid = MESH_GIZMOS_ARROW;
+	player->meshid = MESH_HERO_MALE;
 	/* player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
 	player->transform.translation.z = -3;
 	player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f);
@@ -834,6 +835,7 @@ int main(void) {
 	Entity *level = entity_spawn(&world);
 	level->meshid = MESH_TEST_LEVEL;
 	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
+	world.entity_count = 0;
 
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
@@ -887,8 +889,8 @@ int main(void) {
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
 		} };
 		Arena batch_line3d[] = { {
-		  .base = arena_push_count(frame_arena, Line, 6 * 1024),
-		  .capacity = sizeof(Line) * 6 * 1024,
+		  .base = arena_push_count(frame_arena, Line, 6 * 2048),
+		  .capacity = sizeof(Line) * 6 * 2048,
 		} };
 		Arena batch_line2d[] = {
 			{
@@ -912,62 +914,85 @@ int main(void) {
 		if (input_key_pressed(KEY_CODE_N))
 			triangle_step = (triangle_step + 1) % (meshes[MESH_CYLINDER].total_index_count / 3);
 
-		for (uint32_t index = 0; index < 3; ++index) {
-			uint32_t triangle_index = meshes[MESH_CYLINDER].indices[triangle_step * 3 + index];
-			Vertex3 v = meshes[MESH_CYLINDER].vertices[triangle_index];
+		float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
+		float4x4 proj = float4x4_perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
 
-			float3 origin = { 0.0f, 2.0f, 0.0f };
-			push_arrow3(batch_line3d, origin, float3_add(v.position, origin), 3.0f, RED);
-		}
-
-	#if 0 
 		{ // :gjk
-			float sample_count = 1024.f;
-			float3 player_center = { .x = (905.f / sample_count) * 4.0f, .y = 1.0f, .z = (335 / sample_count) * 4.0f };
-
 			Triangle3 triangle = { { 0.0f, 0.25f, 1.0f }, { 1.0f, 0.25f, -1.0f }, { -1.0f, 0.25f, -1.0f } };
 			Shape3 b = shape3_from_convex3(convex3_from_triangle3(frame_arena, triangle));
 
-		#if 1
-			bool errored = false;
-			for (uint32_t z = 0; z < (uint32_t)sample_count; ++z) {
-				for (uint32_t x = 0; x < (uint32_t)sample_count; ++x) {
-					float3 player_center = { .x = (x / sample_count) * 4.0f, .y = 1.0f, .z = (z / sample_count) * 4.0f };
-					Sphere s = { player_center, 1.0f };
-					Shape3 a = shape3_from_sphere(s);
+			float3 center = {
+				(29.0f / 128.0f) * 4.0f - 2.0f,
+				1.0f,
+				(24.0f / 128.0f) * 4.0f - 2.0f,
+			};
+			Sphere s = { center, 1.0f };
+			Shape3 a = shape3_from_sphere(s);
 
-					float3 support = float3_subtract(shape3_support(a, (float3){ 1.0f, 0.0f, 0.0f }), shape3_support(b, (float3){ -1.0f, 0.0f, 0.0f }));
-					if (equalf(float3_length_sq(support), 0.0f)) {
-						LOG_INFO("Degenerate initial support at player_center (%g, %g, %g)", player_center.x, player_center.y, player_center.z);
-					}
-					float3 closest = triangle3_closest_point(triangle, player_center);
-					float center_to_tri = float3_length(float3_subtract(player_center, closest));
-					float reference_dist = fmaxf(0.0f, center_to_tri - s.radius); // radius = 1.0f here
-					float reference_dist_sq = reference_dist * reference_dist;
-					float dist_sq = gjk_distance_squared(a, b, reference_dist_sq);
+			uint32_t resolution = 16;
+			float3 *minkowski_shape_points = arena_push_count(frame_arena, float3, resolution * resolution);
 
-					if (max_error > 0.01f && errored == false) {
-						LOG_INFO("Failed at %dx%d", x, z);
-						errored = true;
+			float3 origin = { 0.0f, 2.0f, 0.0f };
+			for (uint32_t theta_index = 0; theta_index < resolution; ++theta_index) {
+				for (uint32_t azimuth_index = 0; azimuth_index < resolution; ++azimuth_index) {
+					float theta = ((float)theta_index / resolution) * TAU;
+					float azimuth = ((float)azimuth_index / resolution) * TAU;
+
+					float3 direction = {
+						sinf(theta) * cosf(azimuth),
+						cosf(theta),
+						sinf(theta) * sinf(azimuth),
+					};
+
+					float3 triangle_support = shape3_support(b, direction);
+					float3 sphere_support = shape3_support(a, float3_scale(direction, -1.0f));
+
+					float3 support = float3_subtract(triangle_support, sphere_support);
+					minkowski_shape_points[azimuth_index + theta_index * resolution] = support;
+				}
+			}
+
+			float3 visual_offset = { -3.0f, 3.0f, 0.0f }; // Separate debug view position
+			push_sphere_outline(batch_line3d, visual_offset, 0.1f, 16, 3.0f, YELLOW);
+
+			push_triangle3_outline(batch_line3d, triangle3_move(triangle, visual_offset), 1.0f, RED);
+			for (uint32_t theta_index = 0; theta_index < resolution; ++theta_index) {
+				float theta = ((float)theta_index / resolution) * TAU;
+				float r = s.radius * sinf(theta);
+
+				float3 c = float3_add(visual_offset, s.center);
+
+				push_arc3(batch_line3d, float3_add(c, (float3){ 0.0f, cosf(theta), 0.0f }), r, 16, AXIS_PLANE_UP, TAU, 1.0f, RED);
+				push_arc3(batch_line3d, float3_add(c, (float3){ cosf(theta), 0.0f, 0.0f }), r, 16, AXIS_PLANE_RIGHT, TAU, 1.0f, RED);
+				push_arc3(batch_line3d, float3_add(c, (float3){ 0.0f, 0.0f, cosf(theta) }), r, 16, AXIS_PLANE_FORWARD, TAU, 1.0f, RED);
+			}
+			for (uint32_t t = 0; t < resolution; ++t) {
+				for (uint32_t a = 0; a < resolution; ++a) {
+					uint32_t curr = a + t * resolution;
+					uint32_t next_a = ((a + 1) % resolution) + t * resolution;
+					uint32_t next_t = a + ((t + 1) % resolution) * resolution;
+
+					float3 p_curr = float3_add(visual_offset, minkowski_shape_points[curr]);
+					float3 p_next_a = float3_add(visual_offset, minkowski_shape_points[next_a]);
+					float3 p_next_t = float3_add(visual_offset, minkowski_shape_points[next_t]);
+
+					// Draw lines connecting horizontal and vertical neighbors
+					push_line3(batch_line3d, p_curr, p_next_a, 1.0f, GREEN);
+					if (t < resolution - 1) { // Avoid wrapping poles awkwardly
+						push_line3(batch_line3d, p_curr, p_next_t, 1.0f, GREEN);
 					}
 				}
 			}
-		#else
-			Sphere s = { player_center, 1.0f };
-			Shape3 a = shape3_from_sphere(s);
 
-			float3 support = float3_subtract(shape3_support(a, (float3){ 1.0f, 0.0f, 0.0f }), shape3_support(b, (float3){ -1.0f, 0.0f, 0.0f }));
-			if (equalf(float3_length_sq(support), 0.0f)) {
-				LOG_INFO("Degenerate initial support at player_center (%g, %g, %g)", player_center.x, player_center.y, player_center.z);
-			}
-			float3 closest = triangle3_closest_point(triangle, player_center);
-			float center_to_tri = float3_length(float3_subtract(player_center, closest));
-			float reference_dist = fmaxf(0.0f, center_to_tri - s.radius); // radius = 1.0f here
-			float reference_dist_sq = reference_dist * reference_dist;
-			float dist_sq = gjk_distance_squared(a, b, reference_dist_sq);
-		#endif
+			float3 closest = triangle3_closest_point(triangle, s.center);
+			float d = float3_length(float3_subtract(s.center, closest));
+			float expected = fmaxf(0.0f, d - s.radius);
+
+			float got_sq = gjk_distance_squared(a, b, expected * expected);
+			float got = sqrtf(fmaxf(0.0f, got_sq));
+
+			float err = fabsf(got - expected);
 		}
-	#endif
 
 		switch (state) {
 			case VIEWPORT_STATE_EDITOR: {
@@ -1008,9 +1033,7 @@ int main(void) {
 								float r = shape->as.sphere.radius;
 								uint8_t segments = 32;
 
-								push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
-								push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_RIGHT, TAU, thickness, WHITE);
-								push_arc3(batch_line3d, c, r, segments, AXIS_PLANE_FORWARD, TAU, thickness, WHITE);
+								push_sphere_outline(batch_line3d, c, r, segments, thickness, WHITE);
 							} break;
 							case SHAPE_KIND_CAPSULE3: {
 								float r = shape->as.capsule.radius;
@@ -1265,7 +1288,7 @@ int main(void) {
 										Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, radius, dir, len, t);
 										if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t) {
 											nearest = test_triangle_sweep;
-											push_triangle3(batch_line3d, t, 3.0f, RED);
+											push_triangle3_outline(batch_line3d, t, 3.0f, RED);
 										}
 									}
 								}
@@ -1283,7 +1306,7 @@ int main(void) {
 
 							velocity = float3_subtract(velocity, float3_scale(nearest.normal, float3_dot(velocity, nearest.normal)));
 							velocity = float3_scale(velocity, 1.0f - t_min);
-							push_line3(batch_line3d, nearest.point, float3_add(nearest.point, float3_scale(nearest.normal, 1.0f)), 3.0f, RED);
+							push_arrow3(batch_line3d, nearest.point, float3_add(nearest.point, float3_scale(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
 						}
 					}
 
@@ -5232,6 +5255,12 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Axis
 	}
 }
 
+void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
+	push_arc3(arena, center, radius, segments, AXIS_PLANE_UP, TAU, thickness, color);
+	push_arc3(arena, center, radius, segments, AXIS_PLANE_RIGHT, TAU, thickness, color);
+	push_arc3(arena, center, radius, segments, AXIS_PLANE_FORWARD, TAU, thickness, color);
+}
+
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
 	float3 min = aabb3.min;
 	float3 max = aabb3.max;
@@ -5292,10 +5321,28 @@ void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color c
 	};
 }
 
-void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	float3 shaft_end = float3_add(start, float3_scale(float3_subtract(end, start), 0.80f));
-	push_line3(arena, start, shaft_end, thickness, color);
+void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color,
+	float4x4 view, float4x4 projeciton, float viewport_width) {
+	float3 direction = float3_subtract(end, start);
+	float total_world_length = float3_length(direction);
+	if (total_world_length < EPSILON)
+		return;
 
+	float3 dir_norm = float3_scale(direction, 1.0f / total_world_length);
+
+	float4x4 vp = float4x4_multiply(projeciton, view);
+	float w = vp.elements[3] * end.x + vp.elements[7] * end.y + vp.elements[11] * end.z + vp.elements[15] * 1.0f;
+
+	float desired_pixel_length = thickness * 5.0f;
+
+	float world_head_length = (2.0f * w * desired_pixel_length) / (projeciton.elements[0] * viewport_width);
+
+	if (world_head_length > total_world_length * 0.5f)
+		world_head_length = total_world_length * 0.5f;
+
+	float3 shaft_end = float3_subtract(end, float3_scale(dir_norm, world_head_length));
+
+	push_line3(arena, start, shaft_end, thickness, color);
 	*arena_push_count(arena, Line, 1) = (Line){
 		.position = shaft_end,
 		.thickness = thickness * 4,
@@ -5308,7 +5355,7 @@ void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color 
 	};
 }
 
-void push_triangle3(Arena *arena, Triangle3 t, float thickness, Color color) {
+void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color color) {
 	push_line3(arena, t.a, t.b, thickness, color);
 	push_line3(arena, t.b, t.c, thickness, color);
 	push_line3(arena, t.c, t.a, thickness, color);

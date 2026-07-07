@@ -166,6 +166,8 @@ typedef struct { uint8_t r, g, b, a; } Color;
 #define GREEN rgb(0, 255, 0)
 #define BLUE rgb(0, 0, 255)
 
+#define YELLOW rgb(255, 255, 0)
+
 #define WHITE rgb(255, 255, 255)
 #define GRAY rgb(128, 128, 128)
 #define DARK_GRAY rgb(64, 64, 64)
