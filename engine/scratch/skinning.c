@@ -137,6 +137,7 @@ typedef enum {
 	MESH_GRASS_BILLBOARD,
 
 	MESH_CYLINDER,
+	MESH_GIZMOS_ARROW,
 
 	MESH_COUNT,
 } MeshID;
@@ -241,12 +242,14 @@ Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
-Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
-Mesh mesh_from_cone(Arena *arena, float hegiht, float radius, uint32_t segments);
+Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
+Mesh mesh_from_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments);
 
-Mesh mesh_from_cone(Arena *arena, float height, float radius, uint32_t segments);
 Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
 Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
+
+Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
+
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
 typedef struct {
@@ -592,7 +595,39 @@ int main(void) {
 	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_from_heightmap(permanent, AXIS_PLANE_UP, 256.f, 256.f, heightmap);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_CYLINDER] = mesh_from_cylinder(permanent, 0.5f, 0.5f, 0.5f, 32, 0, true, true);
+	meshes[MESH_CYLINDER] = mesh_from_cylinder(permanent, FLOAT3_Y, 1.0f, 0.5f, 0.5f, 32, 0, true, true);
+	{
+		ArenaTemp scratch = arena_scratch_begin(0);
+
+		// Proportions in meters (Total length = 0.20m)
+        float mult = 5.0f;
+		float shaft_half_height = 0.075f * mult; // Total shaft length is 0.15m
+		float shaft_radius = 0.005f * mult; // 5mm thick
+		float head_height = 0.050f * mult; // 5cm tall cone
+		float head_radius = 0.018f * mult; // 1.8cm base radius
+
+		float3 cylinder_origin = { 0.0f, shaft_half_height, 0.0f };
+		Mesh shaft = mesh_from_cylinder(
+			scratch.arena,
+			cylinder_origin,
+			shaft_half_height,
+			shaft_radius, shaft_radius,
+			16, 1,
+			false, true 
+		);
+
+		float3 cone_origin = { 0.0f, shaft_half_height * 2.0f, 0.0f };
+		Mesh head = mesh_from_cone(
+			scratch.arena,
+			cone_origin,
+			head_height,
+			head_radius,
+			16);
+
+		meshes[MESH_GIZMOS_ARROW] = mesh_merge(permanent, array_arg(Mesh, shaft, head));
+
+		arena_scratch_end(scratch);
+	}
 
 	uint32_t animation_counts[MESH_COUNT] = { 0 };
 	AnimationClip *animations[MESH_COUNT] = { 0 };
@@ -766,7 +801,7 @@ int main(void) {
 	World world = { .entity_count = 1 };
 
 	Entity *player = entity_spawn(&world);
-	player->meshid = MESH_CYLINDER;
+	player->meshid = MESH_GIZMOS_ARROW;
 	/* player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
 	player->transform.translation.z = -3;
 	player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f);
@@ -4569,7 +4604,7 @@ static inline float3 face_orient(float3 v, AxisPlane face) {
 	return result;
 }
 
-Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap) {
+Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap) {
 	Mesh result = { 0 };
 
 	bool ok = arena;
@@ -4597,7 +4632,7 @@ Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, fl
 				float ca = cosf(a), sa = -sinf(a);
 
 				result.vertices[vertex_cursor++] = (Vertex3){
-					.position = { ca * r, y, sa * r },
+					.position = float3_add(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { ca, 0.0f, sa },
 					.uv = { sv, rv },
 				};
@@ -4619,7 +4654,7 @@ Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, fl
 
 			uint32_t center_index = center_indices[end_index] = vertex_cursor++;
 			result.vertices[center_index] = (Vertex3){
-				.position = { 0.0f, y, 0.0f },
+				.position = float3_add(origin, (float3){ 0.0f, y, 0.0f }),
 				.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 				.uv = { 0.5f, 0.5f }
 			};
@@ -4632,7 +4667,7 @@ Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, fl
 				float ca = cosf(a), sa = -sinf(a);
 
 				result.vertices[vertex_cursor++] = (Vertex3){
-					.position = { ca * r, y, sa * r },
+					.position = float3_add(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 					.uv = { (ca + 1.0f) * 0.5f, (sa + 1.0f) * 0.5f } // Planar mapping
 				};
@@ -4697,8 +4732,75 @@ Mesh mesh_from_cylinder(Arena *arena, float half_height, float bottom_radius, fl
 }
 
 // TODO: Fix normal for cones
-Mesh mesh_from_cone(Arena *arena, float height, float radius, uint32_t segments) {
-	return mesh_from_cylinder(arena, height * 0.5f, radius, 0.0f, segments, 0, false, true);
+Mesh mesh_from_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments) {
+	return mesh_from_cylinder(arena, origin, height * 0.5f, radius, 0.0f, segments, 0, false, true);
+}
+
+Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+	Mesh result = { 0 };
+	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
+	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
+
+	bool ok = arena;
+
+	if (ok) {
+		subdivision_x += 2;
+		subdivision_z += 2;
+		result.total_vertex_count = subdivision_x * subdivision_z;
+
+		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		for (uint32_t z = 0; z < subdivision_z; ++z) {
+			for (uint32_t x = 0; x < subdivision_x; ++x) {
+				uint32_t index = x + z * subdivision_x;
+
+				float3 local = {
+					.x = (((float)x / (subdivision_x - 1)) - 0.5f) * width,
+					.y = 0.0f,
+					.z = (((float)z / (subdivision_z - 1)) - 0.5f) * height,
+				};
+				result.vertices[index] = (Vertex3){
+					.position = face_orient(local, orientation),
+					.normal = { 0.0f, 1.0f, 0.0f },
+					.uv = { (float)x / (subdivision_x - 1), (float)z / (subdivision_z - 1) },
+				};
+			}
+		}
+
+		uint32_t face_count = (subdivision_x - 1) * (subdivision_z - 1);
+
+		result.total_index_count = face_count * 6;
+		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+
+		uint32_t cursor = 0;
+		for (uint32_t face = 0; face < face_count; ++face) {
+			uint32_t index = face + face / (subdivision_x - 1);
+
+			result.indices[cursor++] = index;
+			result.indices[cursor++] = index + subdivision_x;
+			result.indices[cursor++] = index + 1;
+
+			result.indices[cursor++] = index + 1;
+			result.indices[cursor++] = index + subdivision_x;
+			result.indices[cursor++] = index + subdivision_x + 1;
+		}
+
+		result.part_count = 1;
+		result.parts = arena_push_count(arena, MeshPart, result.part_count);
+
+		result.parts[0].vertex_count = result.total_vertex_count;
+		result.parts[0].index_count = result.total_index_count;
+
+		result.material_count = 1;
+		result.materials = arena_push_count(arena, Material, result.material_count);
+
+		result.materials[0] = (Material){
+			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
+			.emissive = FLOAT4_ONE,
+			.metallic_roughness = { 0.0f, 0.5f },
+		};
+	}
+
+	return result;
 }
 
 Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap) {
@@ -4766,68 +4868,55 @@ Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, 
 	return result;
 }
 
-Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count) {
 	Mesh result = { 0 };
-	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
-	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
 
-	bool ok = arena;
-
+	bool ok = arena && meshes && mesh_count;
 	if (ok) {
-		subdivision_x += 2;
-		subdivision_z += 2;
-		result.total_vertex_count = subdivision_x * subdivision_z;
+		result.bounds = aabb3_empty();
+
+		for (uint32_t mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
+			Mesh *mesh = &meshes[mesh_index];
+			ASSERT(mesh->skeleton.bone_count == 0 && "Merging of skeletal meshes not managed");
+
+			result.total_vertex_count += mesh->total_vertex_count;
+			result.total_index_count += mesh->total_index_count;
+			result.part_count += mesh->part_count;
+			result.material_count += mesh->material_count;
+		}
 
 		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
-		for (uint32_t z = 0; z < subdivision_z; ++z) {
-			for (uint32_t x = 0; x < subdivision_x; ++x) {
-				uint32_t index = x + z * subdivision_x;
-
-				float3 local = {
-					.x = (((float)x / (subdivision_x - 1)) - 0.5f) * width,
-					.y = 0.0f,
-					.z = (((float)z / (subdivision_z - 1)) - 0.5f) * height,
-				};
-				result.vertices[index] = (Vertex3){
-					.position = face_orient(local, orientation),
-					.normal = { 0.0f, 1.0f, 0.0f },
-					.uv = { (float)x / (subdivision_x - 1), (float)z / (subdivision_z - 1) },
-				};
-			}
-		}
-
-		uint32_t face_count = (subdivision_x - 1) * (subdivision_z - 1);
-
-		result.total_index_count = face_count * 6;
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
-
-		uint32_t cursor = 0;
-		for (uint32_t face = 0; face < face_count; ++face) {
-			uint32_t index = face + face / (subdivision_x - 1);
-
-			result.indices[cursor++] = index;
-			result.indices[cursor++] = index + subdivision_x;
-			result.indices[cursor++] = index + 1;
-
-			result.indices[cursor++] = index + 1;
-			result.indices[cursor++] = index + subdivision_x;
-			result.indices[cursor++] = index + subdivision_x + 1;
-		}
-
-		result.part_count = 1;
 		result.parts = arena_push_count(arena, MeshPart, result.part_count);
-
-		result.parts[0].vertex_count = result.total_vertex_count;
-		result.parts[0].index_count = result.total_index_count;
-
-		result.material_count = 1;
 		result.materials = arena_push_count(arena, Material, result.material_count);
 
-		result.materials[0] = (Material){
-			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = FLOAT4_ONE,
-			.metallic_roughness = { 0.0f, 0.5f },
-		};
+		uint32_t vertex_cursor = 0, index_cursor = 0;
+		uint32_t part_cursor = 0, material_cursor = 0;
+		for (uint32_t mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
+			Mesh *mesh = &meshes[mesh_index];
+
+			memory_copy(result.vertices + vertex_cursor, mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3));
+			memory_copy(result.indices + index_cursor, mesh->indices, mesh->total_index_count * sizeof(uint32_t));
+			memory_copy(result.materials + material_cursor, mesh->materials, mesh->material_count * sizeof(Material));
+
+			for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
+				MeshPart *part = &mesh->parts[part_index];
+				result.parts[part_cursor + part_index] = (MeshPart){
+					.vertex_offset = vertex_cursor + part->vertex_offset,
+					.vertex_count = part->vertex_count,
+					.index_offset = index_cursor + part->index_offset,
+					.index_count = part->index_count,
+					.bounds = part->bounds,
+					.material_id = material_cursor + part->material_id,
+				};
+			}
+
+			vertex_cursor += mesh->total_vertex_count;
+			index_cursor += mesh->total_index_count;
+			material_cursor += mesh->material_count;
+			part_cursor += mesh->part_count;
+			result.bounds = aabb3_merge(result.bounds, mesh->bounds);
+		}
 	}
 
 	return result;
