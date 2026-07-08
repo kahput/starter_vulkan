@@ -4,11 +4,37 @@
 #include "core/cmath.h"
 #include "core/debug.h"
 
+Shape3 shape3_move(Shape3 s, float3 displacement) {
+	Shape3 result = s;
+
+	switch (s.kind) {
+		case SHAPE_KIND_AABB3:
+			result = shape3_from_aabb3(aabb3_move(s.as.aabb3, displacement));
+			break;
+		case SHAPE_KIND_SPHERE:
+			result = shape3_sphere(add3(s.as.sphere.center, displacement), s.as.sphere.radius);
+			break;
+		case SHAPE_KIND_CAPSULE3:
+			result = shape3_from_capsule3(capsule3_move(s.as.capsule, displacement));
+			break;
+		case SHAPE_KIND_PLANE: {
+			float3 c = add3(plane_center(s.as.plane), displacement);
+			result = shape3_from_plane(plane_from_point_normal(c, normalize3_safe(scale3(c, -1.0f), EPSILON)));
+		} break;
+		case SHAPE_KIND_CONVEX_POLYGON: {
+			for (uint32_t index = 0; index < s.as.convex.vertex_count; ++index)
+				s.as.convex.vertices[index] = add3(s.as.convex.vertices[index], displacement);
+		} break;
+	}
+
+	return result;
+}
+
 float3 shape3_support(Shape3 s, float3 direction) {
 	float3 result = { 0 };
 
-	direction = float3_normalize_safe(direction, EPSILON);
-	ASSERT(equalf(float3_length_sq(direction), 0.0f) == false);
+	direction = normalize3_safe(direction, EPSILON);
+	ASSERT(equalf(length3_sq(direction), 0.0f) == false);
 
 	ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -18,24 +44,24 @@ float3 shape3_support(Shape3 s, float3 direction) {
 	switch (s.kind) {
 		case SHAPE_KIND_CAPSULE3: {
 			Capsule3 *capsule = &s.as.capsule;
-			float adotd = float3_dot(capsule->a, direction);
-			float bdotd = float3_dot(capsule->b, direction);
+			float adotd = dot3(capsule->a, direction);
+			float bdotd = dot3(capsule->b, direction);
 			result = adotd > bdotd
-				? float3_add(capsule->a, float3_scale(direction, capsule->radius))
-				: float3_add(capsule->b, float3_scale(direction, capsule->radius));
+				? add3(capsule->a, scale3(direction, capsule->radius))
+				: add3(capsule->b, scale3(direction, capsule->radius));
 		} break;
 		case SHAPE_KIND_SPHERE: {
 			Sphere *sphere = &s.as.sphere;
-			result = float3_add(sphere->center, float3_scale(direction, sphere->radius));
+			result = add3(sphere->center, scale3(direction, sphere->radius));
 		} break;
 		case SHAPE_KIND_CONVEX_POLYGON: {
 			ConvexPolygon3 *polygon = &s.as.convex;
 			ASSERT(polygon->vertices && polygon->vertex_count);
 
 			result = polygon->vertices[0];
-			float best_distance = float3_dot(result, direction);
+			float best_distance = dot3(result, direction);
 			for (uint32_t index = 1; index < polygon->vertex_count; ++index) {
-				float distance = float3_dot(polygon->vertices[index], direction);
+				float distance = dot3(polygon->vertices[index], direction);
 				if (distance > best_distance) {
 					best_distance = distance;
 					result = polygon->vertices[index];
@@ -52,16 +78,16 @@ float3 shape3_support(Shape3 s, float3 direction) {
 }
 
 Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
-	float denominator = float3_dot(rd, pn);
+	float denominator = dot3(rd, pn);
 	if (fabsf(denominator) < EPSILON)
 		return RAY3_NO_HIT;
 
-	float t = (float3_dot(po, pn) - float3_dot(ro, pn)) / denominator;
+	float t = (dot3(po, pn) - dot3(ro, pn)) / denominator;
 
 	if (t < 0.0f)
 		return RAY3_NO_HIT;
 
-	float3 point = float3_add(ro, float3_scale(rd, t));
+	float3 point = add3(ro, scale3(rd, t));
 
 	Raycast3Result result = {
 		.hit = true,
@@ -74,13 +100,13 @@ Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
 }
 
 Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_extent) {
-	float3 min = float3_subtract(center, half_extent);
-	float3 max = float3_add(center, half_extent);
+	float3 min = sub3(center, half_extent);
+	float3 max = add3(center, half_extent);
 
 	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
-	if (float3_length_sq(rd)) {
+	if (length3_sq(rd)) {
 		// left
-		float3 po = float3_subtract(center, (float3){ half_extent.x, 0.0f, 0.0f });
+		float3 po = sub3(center, (float3){ half_extent.x, 0.0f, 0.0f });
 		float3 pn = { -1.0f, 0.0f, 0.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -93,7 +119,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_ex
 			result = temp;
 
 		// right
-		po = float3_add(center, (float3){ half_extent.x, 0.0f, 0.0f });
+		po = add3(center, (float3){ half_extent.x, 0.0f, 0.0f });
 		pn = (float3){ 1.0f, 0.0f, 0.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -106,7 +132,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_ex
 			result = temp;
 
 		// front
-		po = float3_add(center, (float3){ 0.0f, 0.0f, half_extent.z });
+		po = add3(center, (float3){ 0.0f, 0.0f, half_extent.z });
 		pn = (float3){ 0.0f, 0.0f, 1.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -119,7 +145,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_ex
 			result = temp;
 
 		// back
-		po = float3_subtract(center, (float3){ 0.0f, 0.0f, half_extent.z });
+		po = sub3(center, (float3){ 0.0f, 0.0f, half_extent.z });
 		pn = (float3){ 0.0f, 0.0f, -1.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -132,7 +158,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_ex
 			result = temp;
 
 		// top
-		po = float3_add(center, (float3){ 0.0f, half_extent.y, 0.0f });
+		po = add3(center, (float3){ 0.0f, half_extent.y, 0.0f });
 		pn = (float3){ 0.0f, 1.0f, 0.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -145,7 +171,7 @@ Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_ex
 			result = temp;
 
 		// bottom
-		po = float3_subtract(center, (float3){ 0.0f, half_extent.y, 0.0f });
+		po = sub3(center, (float3){ 0.0f, half_extent.y, 0.0f });
 		pn = (float3){ 0.0f, -1.0f, 0.0f };
 
 		temp = raycast_plane(ro, rd, po, pn);
@@ -169,14 +195,14 @@ Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direct
 	float radius_sq = radius * radius;
 
 	Plane triangle_plane = plane_from_triangle(triangle);
-	float3 velocity = float3_scale(direction, max_distance);
+	float3 velocity = scale3(direction, max_distance);
 
-	bool ok = float3_dot(triangle_plane.normal, direction) < 0.0f; // front facing
+	bool ok = dot3(triangle_plane.normal, direction) < 0.0f; // front facing
 	if (ok) {
 		float t0, t1;
 
 		float signed_distance = plane_signed_distance(triangle_plane, origin);
-		float ndotv = float3_dot(triangle_plane.normal, velocity);
+		float ndotv = dot3(triangle_plane.normal, velocity);
 
 		if (equalf(ndotv, 0.0f)) {
 			if (fabsf(signed_distance) >= radius) {
@@ -204,19 +230,19 @@ Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direct
 
 		if (embedded == false) {
 			float3 plane_contact_point =
-				float3_add(float3_subtract(origin, float3_scale(triangle_plane.normal, radius)), float3_scale(velocity, t0));
+				add3(sub3(origin, scale3(triangle_plane.normal, radius)), scale3(velocity, t0));
 
 			if (triangle3_contains_point(triangle, plane_contact_point)) {
 				result.hit = true;
 				result.t = t0;
 				result.point = plane_contact_point;
-				result.normal = float3_normalize_safe(triangle_plane.normal, EPSILON);
+				result.normal = normalize3_safe(triangle_plane.normal, EPSILON);
 				return result;
 			}
 		}
 
 		if (result.hit == false) {
-			float velocity_length_sq = float3_dot(velocity, velocity);
+			float velocity_length_sq = dot3(velocity, velocity);
 
 			// a *t^2 + b*t + c = 0
 
@@ -227,32 +253,32 @@ Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direct
 				float3 vertex = vertices[vertex_index];
 				float a = velocity_length_sq;
 
-				float b = 2.0 * float3_dot(velocity, float3_subtract(origin, vertex));
-				float c = float3_length_sq(float3_subtract(vertex, origin)) - radius_sq;
+				float b = 2.0 * dot3(velocity, sub3(origin, vertex));
+				float c = length3_sq(sub3(vertex, origin)) - radius_sq;
 
 				float temp_t;
 				if (lowest_root(a, b, c, result.t, &temp_t)) {
 					result.hit = true;
 					result.t = temp_t;
 					result.point = vertex;
-					float3 sphere_center_at_t = float3_add(origin, float3_scale(velocity, result.t));
-					result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
+					float3 sphere_center_at_t = add3(origin, scale3(velocity, result.t));
+					result.normal = normalize3(sub3(sphere_center_at_t, result.point));
 				}
 			}
 
 			// edges
 			for (uint32_t edge_index = 0; edge_index < countof(vertices); ++edge_index) {
-				float3 edge = float3_subtract(vertices[(edge_index + 1) % 3], vertices[edge_index]);
+				float3 edge = sub3(vertices[(edge_index + 1) % 3], vertices[edge_index]);
 				float3 vertex = vertices[edge_index];
-				float3 origin_to_vertex = float3_subtract(vertex, origin);
+				float3 origin_to_vertex = sub3(vertex, origin);
 
-				float edge_length_sq = float3_length_sq(edge);
-				float edge_dot_velocity = float3_dot(edge, velocity);
-				float edge_dot_origin_to_vertex = float3_dot(edge, origin_to_vertex);
+				float edge_length_sq = length3_sq(edge);
+				float edge_dot_velocity = dot3(edge, velocity);
+				float edge_dot_origin_to_vertex = dot3(edge, origin_to_vertex);
 
 				float a = edge_length_sq * -velocity_length_sq + (edge_dot_velocity * edge_dot_velocity);
-				float b = edge_length_sq * (2.0f * float3_dot(velocity, origin_to_vertex)) - 2.0 * edge_dot_velocity * edge_dot_origin_to_vertex;
-				float c = edge_length_sq * (radius_sq - float3_length_sq(origin_to_vertex)) + (edge_dot_origin_to_vertex * edge_dot_origin_to_vertex);
+				float b = edge_length_sq * (2.0f * dot3(velocity, origin_to_vertex)) - 2.0 * edge_dot_velocity * edge_dot_origin_to_vertex;
+				float c = edge_length_sq * (radius_sq - length3_sq(origin_to_vertex)) + (edge_dot_origin_to_vertex * edge_dot_origin_to_vertex);
 
 				float temp_t;
 				if (lowest_root(a, b, c, result.t, &temp_t)) {
@@ -260,9 +286,9 @@ Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direct
 					if (f >= 0.0f && f <= 1.0) {
 						result.hit = true;
 						result.t = temp_t;
-						result.point = float3_add(vertex, float3_scale(edge, f));
-						float3 sphere_center_at_t = float3_add(origin, float3_scale(velocity, result.t));
-						result.normal = float3_normalize(float3_subtract(sphere_center_at_t, result.point));
+						result.point = add3(vertex, scale3(edge, f));
+						float3 sphere_center_at_t = add3(origin, scale3(velocity, result.t));
+						result.normal = normalize3(sub3(sphere_center_at_t, result.point));
 					}
 				}
 			}
@@ -273,42 +299,42 @@ Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direct
 }
 
 float segment3_squared_distance(Segment3 segment, float3 point) {
-	float3 ab = float3_subtract(segment.b, segment.a);
-	float3 ap = float3_subtract(point, segment.a);
+	float3 ab = sub3(segment.b, segment.a);
+	float3 ap = sub3(point, segment.a);
 
-	float t = float3_dot(ap, ab);
+	float t = dot3(ap, ab);
 	if (t <= 0.0f)
-		return float3_dot(ap, ap);
+		return dot3(ap, ap);
 
-	float length_squared = float3_dot(ab, ab);
+	float length_squared = dot3(ab, ab);
 	if (t >= length_squared) {
-		float3 bp = float3_subtract(point, segment.b);
-		return float3_dot(bp, bp);
+		float3 bp = sub3(point, segment.b);
+		return dot3(bp, bp);
 	}
 
-	return float3_dot(ap, ap) - (t * t) / length_squared;
+	return dot3(ap, ap) - (t * t) / length_squared;
 }
 
 // R = R - (n dot (R - P))n = R = R - tn
 float3 plane_closest_point(Plane p, float3 point) {
-	float t = (float3_dot(point, p.normal) - p.distance) / float3_length_sq(p.normal);
-	return float3_subtract(point, float3_scale(p.normal, t));
+	float t = (dot3(point, p.normal) - p.distance) / length3_sq(p.normal);
+	return sub3(point, scale3(p.normal, t));
 }
 
 float3 segment3_closest_point(Segment3 segment, float3 point) {
 	float3 result = { 0 };
-	float3 ab = float3_subtract(segment.b, segment.a);
+	float3 ab = sub3(segment.b, segment.a);
 
-	float t = float3_dot(float3_subtract(point, segment.a), ab);
+	float t = dot3(sub3(point, segment.a), ab);
 	if (t <= 0.0f) {
 		result = segment.a;
 	} else {
-		float denominator = float3_length_sq(ab);
+		float denominator = length3_sq(ab);
 		if (t >= denominator) {
 			result = segment.b;
 		} else {
 			t = t / denominator;
-			result = float3_add(segment.a, float3_scale(ab, t));
+			result = add3(segment.a, scale3(ab, t));
 		}
 	}
 
@@ -327,9 +353,9 @@ float3 triangle3_closest_point(Triangle3 t, float3 p) {
 	float3 bc_point = segment3_closest_point((Segment3){ t.b, t.c }, p);
 	float3 ca_point = segment3_closest_point((Segment3){ t.c, t.a }, p);
 
-	float ab_len_sq = float3_length_sq(float3_subtract(ab_point, p));
-	float bc_len_sq = float3_length_sq(float3_subtract(bc_point, p));
-	float ca_len_sq = float3_length_sq(float3_subtract(ca_point, p));
+	float ab_len_sq = length3_sq(sub3(ab_point, p));
+	float bc_len_sq = length3_sq(sub3(bc_point, p));
+	float ca_len_sq = length3_sq(sub3(ca_point, p));
 
 	if (ab_len_sq < bc_len_sq && ab_len_sq < ca_len_sq)
 		result = ab_point;
@@ -343,8 +369,8 @@ float3 triangle3_closest_point(Triangle3 t, float3 p) {
 
 static bool tetrahedron_face_is_candidate(float3 a, float3 b, float3 c, float3 opposite, float3 p) {
 	float3 n = plane_from_triangle((Triangle3){ a, b, c }).normal;
-	float side_opposite = float3_dot(n, float3_subtract(opposite, a));
-	float side_p = float3_dot(n, float3_subtract(p, a));
+	float side_opposite = dot3(n, sub3(opposite, a));
+	float side_p = dot3(n, sub3(p, a));
 	return side_opposite * side_p <= 0.0f;
 }
 
@@ -365,7 +391,7 @@ float3 tetrahedron_closest_point(float3 a, float3 b, float3 c, float3 d, float3 
 		if (tetrahedron_face_is_candidate(faces[face_indx].a, faces[face_indx].b, faces[face_indx].c, faces[face_indx].opposite, p)) {
 			Triangle3 tri = { faces[face_indx].a, faces[face_indx].b, faces[face_indx].c };
 			float3 q = triangle3_closest_point(tri, p);
-			float dist = float3_length_sq(float3_subtract(q, p));
+			float dist = length3_sq(sub3(q, p));
 			if (dist < closest_square_distance) {
 				result = q;
 				closest_square_distance = dist;
@@ -387,26 +413,28 @@ float3 aabb3_closest_point(AABB3 a, float3 to) {
 }
 
 bool triangle3_contains_point(Triangle3 t, float3 p) {
-	bool result = false;
-
 	Plane plane = plane_from_triangle(t);
-	result = equalf(float3_dot(plane.normal, p), plane.distance);
 
-	if (result) {
-		float3 a = float3_subtract(t.a, p);
-		float3 b = float3_subtract(t.b, p);
-		float3 c = float3_subtract(t.c, p);
-
-		float3 norm_pab = float3_cross(a, b);
-		float3 norm_pbc = float3_cross(b, c);
-		float3 norm_pca = float3_cross(c, a);
-
-		result = float3_dot(norm_pab, norm_pbc) >= 0.0f;
-		if (result)
-			result = float3_dot(norm_pbc, norm_pca) >= 0.0f;
+	// 1. Ensure the point is on the triangle's infinite plane
+	if (!equalf(dot3(plane.normal, p), plane.distance)) {
+		return false;
 	}
 
-	return result;
+	float3 a = sub3(t.a, p);
+	float3 b = sub3(t.b, p);
+	float3 c = sub3(t.c, p);
+
+	float3 norm_pab = cross3(a, b);
+	float3 norm_pbc = cross3(b, c);
+	float3 norm_pca = cross3(c, a);
+
+	// 2. Test each edge cross-product against the actual face normal
+	bool sign_ab = dot3(norm_pab, plane.normal) >= 0.0f;
+	bool sign_bc = dot3(norm_pbc, plane.normal) >= 0.0f;
+	bool sign_ca = dot3(norm_pca, plane.normal) >= 0.0f;
+
+	// All three must match direction (handles both CW and CCW winding safety)
+	return (sign_ab == sign_bc) && (sign_bc == sign_ca);
 }
 
 bool lowest_root(float a, float b, float c, float max_r, float *root) {
@@ -493,17 +521,18 @@ void simplex_update(Simplex3 *simplex, uint32_t *new, uint32_t count) {
 float3 simplex_line(Simplex3 *simplex, float3 *direction) {
 	float3 origin = { 0 };
 
-	float3 a = simplex->points[1];
-	float3 b = simplex->points[0];
+	float3 a = simplex->points[simplex->point_count - 1];
+	float3 b = simplex->points[simplex->point_count - 2];
 
-	float3 ab = float3_subtract(b, a);
-	float3 ao = float3_subtract(origin, a);
+	float3 ab = sub3(b, a);
+	float3 ao = sub3(origin, a);
 
 	float3 result = { 0 };
-	if (float3_dot(ab, ao) > 0.0f) {
-		*direction = float3_cross(float3_cross(ab, ao), ab);
-		float t = float3_dot(ao, ab) / float3_dot(ab, ab);
-		result = float3_add(a, float3_scale(ab, t));
+	float ab_len_sq = length3_sq(ab);
+	if (ab_len_sq > EPSILON && dot3(ab, ao) > 0.0f) {
+		*direction = cross3(cross3(ab, ao), ab);
+		float t = dot3(ao, ab) / ab_len_sq;
+		result = add3(a, scale3(ab, t));
 	} else {
 		simplex_update(simplex, array_arg(uint32_t, 1));
 		*direction = ao;
@@ -516,118 +545,51 @@ float3 simplex_line(Simplex3 *simplex, float3 *direction) {
 float3 simplex_triangle(Simplex3 *simplex, float3 *direction) {
 	float3 origin = { 0 };
 
-	float3 a = simplex->points[2];
-	float3 b = simplex->points[1];
-	float3 c = simplex->points[0];
+	float3 a = simplex->points[simplex->point_count - 1];
+	float3 b = simplex->points[simplex->point_count - 2];
+	float3 c = simplex->points[simplex->point_count - 3];
 
-	float3 ab = float3_subtract(b, a);
-	float3 ac = float3_subtract(c, a);
-	float3 ao = float3_subtract(origin, a);
+	float3 ab = sub3(b, a);
+	float3 ac = sub3(c, a);
+	float3 ao = sub3(origin, a);
 
-	float3 abc = float3_cross(ab, ac);
-	float abc_len_sq = float3_length_sq(abc);
+	float3 abc = cross3(ab, ac);
+	float abc_len_sq = length3_sq(abc);
 
-	if (abc_len_sq < EPSILON * EPSILON) {
-		// vertex a
-		float3 closest_point = a;
-		float best_dist_sq = float3_length_sq(a);
-		Simplex3 new_simplex = *simplex;
-		simplex_update(&new_simplex, array_arg(uint32_t, 2));
-
-		// vertex b
-		float b_len_sq = float3_length_sq(b);
-		if (b_len_sq < best_dist_sq) {
-			new_simplex = *simplex;
-			simplex_update(&new_simplex, array_arg(uint32_t, 1));
-			closest_point = b;
-			best_dist_sq = b_len_sq;
-		}
-
-		// vertex c
-		float c_len_sq = float3_length_sq(c);
-		if (c_len_sq < best_dist_sq) {
-			new_simplex = *simplex;
-			simplex_update(&new_simplex, array_arg(uint32_t, 0));
-			closest_point = c;
-			best_dist_sq = c_len_sq;
-		}
-
-		// edge ab
-		float ab_len_sq = float3_length_sq(ab);
-		if (ab_len_sq > EPSILON * EPSILON) {
-			float t = clampf(-float3_dot(a, ab) / ab_len_sq, 0.0f, 1.0f);
-			float3 q = float3_add(a, float3_scale(ab, t));
-			float dist_sq = float3_length_sq(q);
-			if (dist_sq < best_dist_sq) {
-				new_simplex = *simplex;
-				simplex_update(&new_simplex, array_arg(uint32_t, 1, 2));
-				closest_point = q;
-				best_dist_sq = dist_sq;
-			}
-		}
-
-		// edge ac
-		float ac_len_sq = float3_length_sq(ac);
-		if (ac_len_sq > EPSILON * EPSILON) {
-			float v = clampf(-float3_dot(a, ac) / ac_len_sq, 0.0f, 1.0f);
-			float3 q = float3_add(a, float3_scale(ac, v));
-			float dist_sq = float3_length_sq(q);
-			if (dist_sq < best_dist_sq) {
-				new_simplex = *simplex;
-				simplex_update(&new_simplex, array_arg(uint32_t, 0, 2));
-				closest_point = q;
-				best_dist_sq = dist_sq;
-			}
-		}
-
-		// edge bc
-		float3 bc = float3_subtract(c, b);
-		float bc_len_sq = float3_length_sq(bc);
-		if (bc_len_sq > EPSILON * EPSILON) {
-			float v = clampf(-float3_dot(b, bc) / bc_len_sq, 0.0f, 1.0f);
-			float3 q = float3_add(b, float3_scale(bc, v));
-			float dist_sq = float3_length_sq(q);
-			if (dist_sq < best_dist_sq) {
-				new_simplex = *simplex;
-				simplex_update(&new_simplex, array_arg(uint32_t, 0, 1));
-				closest_point = q;
-				best_dist_sq = dist_sq;
-			}
-		}
-
-		if (best_dist_sq > EPSILON * EPSILON) {
-			*direction = float3_scale(closest_point, -1.0f);
+	if (abc_len_sq < EPSILON) { // triangle is colinear
+		if (length3_sq(ab) > length3_sq(ac)) {
+			simplex_update(simplex, array_arg(uint32_t, 1, 2));
+			return simplex_line(simplex, direction);
 		} else {
-			*direction = (float3){ 0.0f, 0.0f, 0.0f };
+			simplex_update(simplex, array_arg(uint32_t, 0, 2));
+			return simplex_line(simplex, direction);
 		}
-		*simplex = new_simplex;
-		return closest_point;
 	}
 
 	float3 result = { 0 };
-	if (float3_dot(float3_cross(abc, ac), ao) > 0.0f) {
-		if (float3_dot(ac, ao) > 0.0f) {
+	if (dot3(cross3(abc, ac), ao) > 0.0f) {
+		if (dot3(ac, ao) > 0.0f) {
 			simplex_update(simplex, array_arg(uint32_t, 0, 2));
-			*direction = float3_cross(float3_cross(ac, ao), ac);
+			*direction = cross3(cross3(ac, ao), ac);
 
-			float t = float3_dot(ao, ac) / float3_dot(ac, ac);
-			result = float3_add(a, float3_scale(ac, t));
+			float t = dot3(ao, ac) / dot3(ac, ac);
+			result = add3(a, scale3(ac, t));
 		} else {
 			simplex_update(simplex, array_arg(uint32_t, 1, 2));
 			result = simplex_line(simplex, direction);
 		}
 	} else {
-		if (float3_dot(float3_cross(ab, abc), ao) > 0.0f) {
+		if (dot3(cross3(ab, abc), ao) > 0.0f) {
 			simplex_update(simplex, array_arg(uint32_t, 1, 2));
 			result = simplex_line(simplex, direction);
 		} else {
-			if (float3_dot(abc, ao) > 0.0f) {
+			if (dot3(abc, ao) > 0.0f) {
 				*direction = abc;
-				result = triangle3_closest_point((Triangle3){ a, b, c }, origin);
+				result = plane_project_point(plane_from_triangle((Triangle3){ a, b, c }), origin);
 			} else {
 				simplex_update(simplex, array_arg(uint32_t, 1, 0, 2));
-				*direction = float3_scale(abc, -1.0f);
-				result = triangle3_closest_point((Triangle3){ b, c, a }, origin);
+				*direction = scale3(abc, -1.0f);
+				result = plane_project_point(plane_from_triangle((Triangle3){ b, c, a }), origin);
 			}
 			/* result = float3_subtract(origin, float3_scale(abc, float3_dot(ao, abc) / float3_dot(abc, abc))); */
 		}
@@ -639,26 +601,28 @@ float3 simplex_triangle(Simplex3 *simplex, float3 *direction) {
 float3 simplex_tetrahedron(Simplex3 *simplex, float3 *direction) {
 	float3 origin = { 0 };
 
-	float3 a = simplex->points[3];
-	float3 b = simplex->points[2];
-	float3 c = simplex->points[1];
-	float3 d = simplex->points[0];
+	float3 a = simplex->points[simplex->point_count - 1];
+	float3 b = simplex->points[simplex->point_count - 2];
+	float3 c = simplex->points[simplex->point_count - 3];
+	float3 d = simplex->points[simplex->point_count - 4];
 
-	float3 ab = float3_subtract(b, a);
-	float3 ac = float3_subtract(c, a);
-	float3 ad = float3_subtract(d, a);
-	float3 ao = float3_subtract(origin, a);
+	float3 ab = sub3(b, a);
+	float3 ac = sub3(c, a);
+	float3 ad = sub3(d, a);
+	float3 ao = sub3(origin, a);
 
-	float3 abc = float3_cross(ab, ac);
-	float3 acd = float3_cross(ac, ad);
-	float3 adb = float3_cross(ad, ab);
+	float3 abc = cross3(ab, ac);
+	float3 acd = cross3(ac, ad);
+	float3 adb = cross3(ad, ab);
 
-	bool abc_direction = float3_dot(abc, ao) > 0.0f;
-	bool acd_direction = float3_dot(acd, ao) > 0.0f;
-	bool adb_direction = float3_dot(adb, ao) > 0.0f;
+	bool abc_direction = dot3(abc, ao) > 0.0f;
+	bool acd_direction = dot3(acd, ao) > 0.0f;
+	bool adb_direction = dot3(adb, ao) > 0.0f;
 
-	if (abc_direction == false && acd_direction == false && adb_direction == false)
+	if (abc_direction == false && acd_direction == false && adb_direction == false) {
+		*direction = (float3){ 0 };
 		return origin;
+	}
 
 	if (abc_direction && acd_direction == false && adb_direction == false) {
 		simplex_update(simplex, array_arg(uint32_t, 1, 2, 3));
@@ -693,9 +657,9 @@ float3 simplex_tetrahedron(Simplex3 *simplex, float3 *direction) {
 	float3 d_adb = *direction;
 	float3 p_adb = simplex_triangle(&adb_simplex, &d_adb);
 
-	float abc_d2 = float3_dot(p_abc, p_abc);
-	float acd_d2 = float3_dot(p_acd, p_acd);
-	float adb_d2 = float3_dot(p_adb, p_adb);
+	float abc_d2 = dot3(p_abc, p_abc);
+	float acd_d2 = dot3(p_acd, p_acd);
+	float adb_d2 = dot3(p_adb, p_adb);
 
 	if (abc_d2 <= acd_d2 && abc_d2 <= adb_d2) {
 		*direction = d_abc;
@@ -718,86 +682,63 @@ float3 simplex_tetrahedron(Simplex3 *simplex, float3 *direction) {
 
 float max_error = 0.0f;
 float gjk_distance_squared(Shape3 a, Shape3 b, float reference_dist_sq) {
-	float3 support = float3_subtract(shape3_support(a, (float3){ 1.0f, 0.0f, 0.0f }), shape3_support(b, (float3){ -1.0f, 0.0f, 0.0f }));
+	float tolerance = 0.001;
+	float max_lower_bound = 0.0f;
+
+	float3 sa = shape3_support(a, (float3){ 1.0f, 0.0f, 0.0f });
+	float3 sb = shape3_support(b, (float3){ -1.0f, 0.0f, 0.0f });
+	float3 support = sub3(sa, sb);
+	float3 direction = scale3(support, -1.0f);
+
+	float3 v = support;
+	float closest_distance = length3_sq(v);
 
 	Simplex3 simplex = { 0 };
+	simplex.support_a[simplex.point_count] = sa;
+	simplex.support_b[simplex.point_count] = sb;
 	simplex.points[simplex.point_count++] = support;
 
-	float3 direction = float3_scale(support, -1.0f);
-	if (equalf(float3_length_sq(direction), 0.0f))
-		return 0.0f;
-
-	float3 origin = { 0 };
-
-	float previous_length_sq = FLOAT_MAX;
-	float tolerence_sq = 0.001 * 0.001;
-
-	uint32_t loop_count = 0;
 	while (true) {
+		if (closest_distance <= tolerance * tolerance)
+			return 0.0f;
+
+		float direction_length_sq = length3_sq(direction);
+		if (direction_length_sq <= tolerance * tolerance)
+			return max_lower_bound * max_lower_bound;
+
 		float3 sa = shape3_support(a, direction);
-		float3 sb = shape3_support(b, float3_scale(direction, -1.0f));
-		float3 support = float3_subtract(sa, sb);
+		float3 sb = shape3_support(b, scale3(direction, -1.0f));
+		float3 w = sub3(sa, sb);
+
+		float upper_bound = sqrtf(closest_distance);
+
+		// Project the new support point (w) onto the normalized closest point vector
+		float lower_bound = dot3(v, w) / length3(v);
+		if (lower_bound > max_lower_bound)
+			max_lower_bound = lower_bound;
+
+		// the gap between the unsampled space is smaller than our tolerance
+		if (upper_bound - max_lower_bound <= tolerance)
+			return max_lower_bound * max_lower_bound;
 
 		simplex.support_a[simplex.point_count] = sa;
 		simplex.support_b[simplex.point_count] = sb;
-		simplex.points[simplex.point_count++] = support;
+		simplex.points[simplex.point_count++] = w;
 
-		/* float proj_new = float3_dot(support, direction); */
-		/* float proj_old = float3_dot(simplex.points[0], direction); */
-
-		/* const float progress_epsilon = 1e-5f; */
-		/* if ((proj_new - proj_old) <= progress_epsilon) { */
-		/* 	break; */
-		/* } */
-
-		uint32_t before_count = simplex.point_count;
-		float3 proj;
 		if (simplex.point_count == 2) // line
-			proj = simplex_line(&simplex, &direction);
+			v = simplex_line(&simplex, &direction);
 		else if (simplex.point_count == 3) // triangle
-			proj = simplex_triangle(&simplex, &direction);
+			v = simplex_triangle(&simplex, &direction);
 		else if (simplex.point_count == 4) // tetrahedron
-			proj = simplex_tetrahedron(&simplex, &direction);
+			v = simplex_tetrahedron(&simplex, &direction);
 		else {
-			ASSERT(!"Invalid state for 2D/3D GJK");
+			ASSERT(!"Invalid state for 3D GJK");
 		}
 
-		float len_sq = float3_length_sq(proj);
-		if (equalf(float3_length_sq(direction), 0.0f)) {
-			previous_length_sq = len_sq;
-
-			float error = fabsf(reference_dist_sq - len_sq);
-			if (equalf(reference_dist_sq, len_sq) == false && error > max_error) {
-				max_error = error;
-				LOG_INFO("direciton == 0.0f - error: %g, actual: %g, result: %g, loop_count = %d", max_error, reference_dist_sq, previous_length_sq, loop_count);
-			}
-
-			break;
-		}
-
-		if (len_sq < previous_length_sq)
-			previous_length_sq = len_sq;
-		else {
-			float error = fabsf(reference_dist_sq - previous_length_sq);
-			if (equalf(reference_dist_sq, previous_length_sq) == false && error > max_error) {
-				max_error = error;
-				LOG_INFO("len_sq < previous_length_sq - error: %g, actual: %g, result: %g, prior_count = %d, new_count = %d", max_error, reference_dist_sq, previous_length_sq, before_count, simplex.point_count);
-			}
-			break;
-		}
-
-		if (len_sq < tolerence_sq) {
-			float error = fabsf(reference_dist_sq - previous_length_sq);
-			if (equalf(reference_dist_sq, previous_length_sq) == false && error > max_error) {
-				max_error = error;
-				LOG_INFO("len_sq < tolerence_sq - error: %g, actual: %g, result: %g, prior_count = %d, new_count = %d", max_error, reference_dist_sq, previous_length_sq, before_count, simplex.point_count);
-			}
-			return 0.0f;
-		}
-
-		loop_count += 1;
+		float len_sq = length3_sq(v);
+		if (len_sq < closest_distance)
+			closest_distance = len_sq;
 	}
-	ASSERT(equalf(max_error, FLOAT_MAX) == false);
 
-	return previous_length_sq;
+	return max_lower_bound * max_lower_bound;
 }

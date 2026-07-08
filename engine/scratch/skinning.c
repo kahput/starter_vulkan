@@ -323,7 +323,7 @@ Entity *entity_spawn(World *world) {
 		result = &world->entities[world->entity_count++];
 
 		result->transform.rotation = quat4_identity();
-		result->transform.scale = FLOAT3_ONE;
+		result->transform.scale = one3;
 	}
 
 	if (ok == false) {
@@ -704,7 +704,7 @@ int main(void) {
 					.y = 0.0f,
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
-				pos = float3_scale(pos, 1.f / 2.f);
+				pos = scale3(pos, 1.f / 2.f);
 				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_multiply(float4x4_rotation(FLOAT3_Y, randf_range(0, TAU)), float4x4_translation(pos));
 			}
 		}
@@ -835,7 +835,6 @@ int main(void) {
 	Entity *level = entity_spawn(&world);
 	level->meshid = MESH_TEST_LEVEL;
 	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
-	world.entity_count = 0;
 
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
@@ -888,7 +887,7 @@ int main(void) {
 		  .base = arena_push_count(frame_arena, Vertex2, 6 * 1024),
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
 		} };
-		Arena batch_line3d[] = { {
+		Arena batch_line3[] = { {
 		  .base = arena_push_count(frame_arena, Line, 6 * 2048),
 		  .capacity = sizeof(Line) * 6 * 2048,
 		} };
@@ -916,83 +915,6 @@ int main(void) {
 
 		float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
 		float4x4 proj = float4x4_perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
-
-		{ // :gjk
-			Triangle3 triangle = { { 0.0f, 0.25f, 1.0f }, { 1.0f, 0.25f, -1.0f }, { -1.0f, 0.25f, -1.0f } };
-			Shape3 b = shape3_from_convex3(convex3_from_triangle3(frame_arena, triangle));
-
-			float3 center = {
-				(29.0f / 128.0f) * 4.0f - 2.0f,
-				1.0f,
-				(24.0f / 128.0f) * 4.0f - 2.0f,
-			};
-			Sphere s = { center, 1.0f };
-			Shape3 a = shape3_from_sphere(s);
-
-			uint32_t resolution = 16;
-			float3 *minkowski_shape_points = arena_push_count(frame_arena, float3, resolution * resolution);
-
-			float3 origin = { 0.0f, 2.0f, 0.0f };
-			for (uint32_t theta_index = 0; theta_index < resolution; ++theta_index) {
-				for (uint32_t azimuth_index = 0; azimuth_index < resolution; ++azimuth_index) {
-					float theta = ((float)theta_index / resolution) * TAU;
-					float azimuth = ((float)azimuth_index / resolution) * TAU;
-
-					float3 direction = {
-						sinf(theta) * cosf(azimuth),
-						cosf(theta),
-						sinf(theta) * sinf(azimuth),
-					};
-
-					float3 triangle_support = shape3_support(b, direction);
-					float3 sphere_support = shape3_support(a, float3_scale(direction, -1.0f));
-
-					float3 support = float3_subtract(triangle_support, sphere_support);
-					minkowski_shape_points[azimuth_index + theta_index * resolution] = support;
-				}
-			}
-
-			float3 visual_offset = { -3.0f, 3.0f, 0.0f }; // Separate debug view position
-			push_sphere_outline(batch_line3d, visual_offset, 0.1f, 16, 3.0f, YELLOW);
-
-			push_triangle3_outline(batch_line3d, triangle3_move(triangle, visual_offset), 1.0f, RED);
-			for (uint32_t theta_index = 0; theta_index < resolution; ++theta_index) {
-				float theta = ((float)theta_index / resolution) * TAU;
-				float r = s.radius * sinf(theta);
-
-				float3 c = float3_add(visual_offset, s.center);
-
-				push_arc3(batch_line3d, float3_add(c, (float3){ 0.0f, cosf(theta), 0.0f }), r, 16, AXIS_PLANE_UP, TAU, 1.0f, RED);
-				push_arc3(batch_line3d, float3_add(c, (float3){ cosf(theta), 0.0f, 0.0f }), r, 16, AXIS_PLANE_RIGHT, TAU, 1.0f, RED);
-				push_arc3(batch_line3d, float3_add(c, (float3){ 0.0f, 0.0f, cosf(theta) }), r, 16, AXIS_PLANE_FORWARD, TAU, 1.0f, RED);
-			}
-			for (uint32_t t = 0; t < resolution; ++t) {
-				for (uint32_t a = 0; a < resolution; ++a) {
-					uint32_t curr = a + t * resolution;
-					uint32_t next_a = ((a + 1) % resolution) + t * resolution;
-					uint32_t next_t = a + ((t + 1) % resolution) * resolution;
-
-					float3 p_curr = float3_add(visual_offset, minkowski_shape_points[curr]);
-					float3 p_next_a = float3_add(visual_offset, minkowski_shape_points[next_a]);
-					float3 p_next_t = float3_add(visual_offset, minkowski_shape_points[next_t]);
-
-					// Draw lines connecting horizontal and vertical neighbors
-					push_line3(batch_line3d, p_curr, p_next_a, 1.0f, GREEN);
-					if (t < resolution - 1) { // Avoid wrapping poles awkwardly
-						push_line3(batch_line3d, p_curr, p_next_t, 1.0f, GREEN);
-					}
-				}
-			}
-
-			float3 closest = triangle3_closest_point(triangle, s.center);
-			float d = float3_length(float3_subtract(s.center, closest));
-			float expected = fmaxf(0.0f, d - s.radius);
-
-			float got_sq = gjk_distance_squared(a, b, expected * expected);
-			float got = sqrtf(fmaxf(0.0f, got_sq));
-
-			float err = fabsf(got - expected);
-		}
 
 		switch (state) {
 			case VIEWPORT_STATE_EDITOR: {
@@ -1026,30 +948,30 @@ int main(void) {
 						switch (shape->kind) {
 							case SHAPE_KIND_AABB3: {
 								AABB3 a = aabb3_move(shape->as.aabb3, entity->transform.translation);
-								push_aabb3_outline(batch_line3d, a, thickness, WHITE);
+								push_aabb3_outline(batch_line3, a, thickness, WHITE);
 							} break;
 							case SHAPE_KIND_SPHERE: {
-								float3 c = float3_add(shape->as.sphere.center, entity->transform.translation);
+								float3 c = add3(shape->as.sphere.center, entity->transform.translation);
 								float r = shape->as.sphere.radius;
 								uint8_t segments = 32;
 
-								push_sphere_outline(batch_line3d, c, r, segments, thickness, WHITE);
+								push_sphere_outline(batch_line3, c, r, segments, thickness, WHITE);
 							} break;
 							case SHAPE_KIND_CAPSULE3: {
 								float r = shape->as.capsule.radius;
 								float3 centers[] = {
-									float3_add(shape->as.capsule.a, entity->transform.translation),
-									float3_add(shape->as.capsule.b, entity->transform.translation),
+									add3(shape->as.capsule.a, entity->transform.translation),
+									add3(shape->as.capsule.b, entity->transform.translation),
 								};
 
 								uint8_t segments = 32;
-								Line *spine_points = arena_push_count(batch_line3d, Line, 8);
+								Line *spine_points = arena_push_count(batch_line3, Line, 8);
 								// clang-format off
 									Line spine[] = {
-										{ {centers[0].x - r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x - r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO},
-										{ {centers[0].x + r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x + r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), FLOAT3_ZERO},
-										{ {centers[0].x, centers[0].y, centers[0].z - r}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x, centers[1].y, centers[0].z - r}, thickness, color_pack(WHITE), FLOAT3_ZERO},
-										{ {centers[0].x, centers[0].y, centers[0].z + r}, thickness, color_pack(WHITE), FLOAT3_ZERO}, { {centers[0].x, centers[1].y, centers[0].z + r}, thickness, color_pack(WHITE), FLOAT3_ZERO},
+										{ {centers[0].x - r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), zero3}, { {centers[0].x - r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), zero3},
+										{ {centers[0].x + r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), zero3}, { {centers[0].x + r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), zero3},
+										{ {centers[0].x, centers[0].y, centers[0].z - r}, thickness, color_pack(WHITE), zero3}, { {centers[0].x, centers[1].y, centers[0].z - r}, thickness, color_pack(WHITE), zero3},
+										{ {centers[0].x, centers[0].y, centers[0].z + r}, thickness, color_pack(WHITE), zero3}, { {centers[0].x, centers[1].y, centers[0].z + r}, thickness, color_pack(WHITE), zero3},
 									};
 								// clang-format on
 								memory_copy_array(spine_points, spine);
@@ -1058,9 +980,9 @@ int main(void) {
 									float3 c = centers[end];
 									float signed_r = (end == 0) ? -r : r;
 
-									push_arc3(batch_line3d, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
-									push_arc3(batch_line3d, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness, WHITE);
-									push_arc3(batch_line3d, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness, WHITE);
+									push_arc3(batch_line3, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
+									push_arc3(batch_line3, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness, WHITE);
+									push_arc3(batch_line3, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness, WHITE);
 								}
 
 							} break;
@@ -1181,9 +1103,9 @@ int main(void) {
 							.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
 						};
 
-						if (float2_length_sq(input_vector) > 0) {
-							float3 camera_offset = float3_subtract(camera->position, player->transform.translation);
-							float r = float3_length(camera_offset);
+						if (length2_sq(input_vector) > 0) {
+							float3 camera_offset = sub3(camera->position, player->transform.translation);
+							float r = length3(camera_offset);
 							if (r < EPSILON)
 								r = EPSILON;
 
@@ -1207,45 +1129,45 @@ int main(void) {
 
 						float3 forward, right;
 
-						forward = float3_normalize(float3_subtract(camera_target, camera_position));
+						forward = normalize3(sub3(camera_target, camera_position));
 
-						right = float3_cross(forward, camera->up);
-						right = float3_normalize(right);
+						right = cross3(forward, camera->up);
+						right = normalize3(right);
 
-						direction = float3_add(direction, float3_scale(forward, input_vector.x));
-						direction = float3_add(direction, float3_scale(right, input_vector.y));
+						direction = add3(direction, scale3(forward, input_vector.x));
+						direction = add3(direction, scale3(right, input_vector.y));
 
-						float length = float3_length(direction);
+						float length = length3(direction);
 						if (length > EPSILON)
-							direction = float3_scale(direction, 1 / length);
+							direction = scale3(direction, 1 / length);
 						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
 
-						velocity = float3_scale(direction, entity->move_speed * dt);
-						velocity = float3_add(velocity, (float3){ 0.0f, -0.1f, 0.0f });
+						velocity = scale3(direction, entity->move_speed * dt);
+						velocity = add3(velocity, (float3){ 0.0f, -0.1f, 0.0f });
 					}
 
 					// :ai
 					if (entity_has(entity, ENTITY_FEATURE_FOLLOW_TARGET)) {
-						float3 delta = float3_subtract(entity->target->transform.translation, entity->transform.translation);
-						float3 direction = float3_normalize_safe(delta, EPSILON);
+						float3 delta = sub3(entity->target->transform.translation, entity->transform.translation);
+						float3 direction = normalize3_safe(delta, EPSILON);
 
 						entity->transform.rotation = quat4_from_axis_angle(FLOAT3_Y, atan2f(direction.x, direction.z));
 
 						entity->move_speed = 3.0f;
 
 						input_vector = (float2){ direction.x, direction.z };
-						velocity = float3_scale(direction, entity->move_speed * dt);
+						velocity = scale3(direction, entity->move_speed * dt);
 					}
 
 					// :collision
 					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE)) {
 						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
-							if (float3_length_sq(velocity) <= EPSILON)
+							if (length3_sq(velocity) <= EPSILON)
 								break;
 							Raycast3Result nearest = RAY3_NO_HIT;
 
 							// Collision detection
-							float3 ro = float3_add(entity->transform.translation, aabb3_center(entity->shape.as.aabb3));
+							float3 ro = add3(entity->transform.translation, aabb3_center(entity->shape.as.aabb3));
 							float3 rd = velocity;
 
 							for (uint32_t other_index = 0; other_index < world.entity_count; ++other_index) {
@@ -1253,60 +1175,61 @@ int main(void) {
 								if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
 									continue;
 
-								float3 center = float3_add(aabb3_center(other->shape.as.aabb3), other->transform.translation);
+								float3 center = add3(aabb3_center(other->shape.as.aabb3), other->transform.translation);
 								// NOTE: Minkowski sum
 								float3 half_extent =
 									float4x4_transform(
 										float4x4_scaling(other->transform.scale),
 										float4_from_float3(aabb3_half_extent(other->shape.as.aabb3), 0.0f));
 
-								float3 swept_extent = float3_add(
-									half_extent,
-									aabb3_half_extent(entity->shape.as.aabb3) //
-								);
+								float3 swept_extent = add3(half_extent, aabb3_half_extent(entity->shape.as.aabb3));
 
 								Raycast3Result result = raycast_aabb3(ro, rd, center, swept_extent);
 								if (result.t < nearest.t)
 									nearest = result;
 							}
 
-							if (entity->shape.kind == SHAPE_KIND_SPHERE) {
-								Mesh *collision_mesh = &meshes[level->meshid];
-								for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
-									MeshPart *part = &collision_mesh->parts[part_index];
-									for (uint32_t index = 0; index < part->index_count / 3; ++index) {
-										Triangle3 t = {
-											.a = collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 0]].position,
-											.b = collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 1]].position,
-											.c = collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 2]].position,
-										};
+							Mesh *collision_mesh = &meshes[level->meshid];
+							for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
+								MeshPart *part = &collision_mesh->parts[part_index];
+								for (uint32_t index = 0; index < part->index_count / 3; ++index) {
+									ConvexPolygon3 triangle_polygon = {
+										.vertices = (float3[]){
+										  collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 0]].position,
+										  collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 1]].position,
+										  collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 2]].position,
+										},
+										.vertex_count = 3,
+									};
 
-										float3 sphere_center = float3_add(entity->transform.translation, entity->shape.as.sphere.center);
-										float radius = entity->shape.as.sphere.radius;
-										float len = float3_length(velocity);
-										float3 dir = float3_scale(velocity, 1 / len);
-										Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, radius, dir, len, t);
-										if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t) {
-											nearest = test_triangle_sweep;
-											push_triangle3_outline(batch_line3d, t, 3.0f, RED);
-										}
+									float3 sphere_center = add3(entity->transform.translation, entity->shape.as.sphere.center);
+									float radius = entity->shape.as.sphere.radius;
+									float len = length3(velocity);
+									float3 dir = scale3(velocity, 1 / len);
+									Triangle3 t = { triangle_polygon.vertices[0], triangle_polygon.vertices[1], triangle_polygon.vertices[2] };
+									Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, radius, dir, len, t);
+									if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t) {
+										Plane tp = plane_from_triangle(t);
+										nearest = test_triangle_sweep;
+
+										push_triangle3_outline(batch_line3, t, 3.0f, RED);
 									}
 								}
 							}
 
 							if (nearest.hit == false) {
-								entity->transform.translation = float3_add(entity->transform.translation, velocity);
+								entity->transform.translation = add3(entity->transform.translation, velocity);
 								break;
 							}
 
 							// Collision resolution
 							float t_min = maxf(minf(nearest.t, 1.0f) - 0.01f, 0.0f);
 
-							entity->transform.translation = float3_add(entity->transform.translation, float3_scale(velocity, t_min));
+							entity->transform.translation = add3(entity->transform.translation, scale3(velocity, t_min));
 
-							velocity = float3_subtract(velocity, float3_scale(nearest.normal, float3_dot(velocity, nearest.normal)));
-							velocity = float3_scale(velocity, 1.0f - t_min);
-							push_arrow3(batch_line3d, nearest.point, float3_add(nearest.point, float3_scale(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
+							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
+							velocity = scale3(velocity, 1.0f - t_min);
+							push_arrow3(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
 						}
 					}
 
@@ -1322,8 +1245,8 @@ int main(void) {
 						);
 
 						uint32_t target_anim = entity->current_anim;
-						if (float2_length_sq(input_vector)) {
-							input_vector = float2_normalize(input_vector);
+						if (length2_sq(input_vector)) {
+							input_vector = normalize2(input_vector);
 
 							if (input_key_down(KEY_CODE_LEFTSHIFT))
 								target_anim = find_animation(animations[entity->meshid], animation_counts[entity->meshid], s("freehand/run-loop"));
@@ -1367,9 +1290,9 @@ int main(void) {
 
 					theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
 
-					float3 camera_offset = float3_subtract(camera->position, player->transform.translation);
+					float3 camera_offset = sub3(camera->position, player->transform.translation);
 
-					float r = float3_length(camera_offset);
+					float r = length3(camera_offset);
 					if (r < EPSILON)
 						r = EPSILON;
 
@@ -1414,8 +1337,8 @@ int main(void) {
 							if (entity_has(entity, ENTITY_FEATURE_INTERACTABLE) == false || entity == player)
 								continue;
 
-							float3 offset = float3_subtract(entity->transform.translation, player->transform.translation);
-							float dist_sq = float3_dot(offset, offset);
+							float3 offset = sub3(entity->transform.translation, player->transform.translation);
+							float dist_sq = dot3(offset, offset);
 
 							if (dist_sq <= (entity->interact_radius * entity->interact_radius) && dist_sq < closest) {
 								closest = dist_sq;
@@ -1600,7 +1523,7 @@ int main(void) {
 			float ortho_size = 10.0f;
 			lights[light_index].matrix = float4x4_multiply(
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				float4x4_lookat(float3_from_float4(lights[light_index].position), FLOAT3_ZERO, FLOAT3_Y));
+				float4x4_lookat(float3_from_float4(lights[light_index].position), zero3, FLOAT3_Y));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },
@@ -1787,7 +1710,7 @@ int main(void) {
 						} pc = {
 							.model = transform,
 							.base_color = material->tint,
-							.emissive = FLOAT4_ONE,
+							.emissive = one4,
 							.metallic_roughness = { 0.0f, 0.5f },
 							.uv_offset = { 0.0f, 0.0f },
 							.uv_scale = { 1.0f, 1.0f },
@@ -1855,7 +1778,7 @@ int main(void) {
 							uint32_t use_heightmap;
 						} pc = {
 							.base_color = material->tint,
-							.emissive = FLOAT4_ONE,
+							.emissive = one4,
 							.metallic_roughness = { 0.0f, 0.5f },
 							.uv_offset = { 0.0f, 0.0f },
 							.uv_scale = { 1.0f, 1.0f },
@@ -1892,13 +1815,13 @@ int main(void) {
 				}
 
 				{ // :overlay
-					if (batch_line3d->offset) {
+					if (batch_line3->offset) {
 						gfx_cmd_pipeline_bind(cmd, &pipeline_line3d);
 						Uniform uniforms[] = {
-							storage_data(0, batch_line3d->base, batch_line3d->offset),
+							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
 						gfx_bind(context, &pipeline_line3d, 1, uniforms, countof(uniforms));
-						vkCmdDraw(cmd->handle, (batch_line3d->offset / sizeof(Line)) * 6, 1, 0, 0);
+						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(Line)) * 6, 1, 0, 0);
 					}
 				}
 
@@ -4353,7 +4276,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 		result.material_count = data->materials_count + 1;
 		result.materials = arena_push_count(arena, Material, result.material_count);
 		result.materials[0] = (Material){
-			.tint = FLOAT4_ONE,
+			.tint = one4,
 		};
 
 		for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
@@ -4364,7 +4287,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 			if (material->has_pbr_metallic_roughness) {
 				cgltf_pbr_metallic_roughness *pbr = &material->pbr_metallic_roughness;
 
-				out->tint = float4_wrap(pbr->base_color_factor);
+				out->tint = wrap4(pbr->base_color_factor);
 				out->metallic_roughness = (float2){
 					.x = pbr->metallic_factor,
 					.y = pbr->roughness_factor,
@@ -4448,8 +4371,8 @@ Mesh load_gltf(Arena *arena, String8 path) {
 						case cgltf_attribute_type_position:
 							offset = offsetof(Vertex3, position);
 							if (has_transform == false) {
-								part->bounds.min = float3_wrap(accessor->min);
-								part->bounds.max = float3_wrap(accessor->max);
+								part->bounds.min = wrap3(accessor->min);
+								part->bounds.max = wrap3(accessor->max);
 							}
 							break;
 						case cgltf_attribute_type_normal:
@@ -4498,11 +4421,11 @@ Mesh load_gltf(Arena *arena, String8 path) {
 							} else if (attribute->type == cgltf_attribute_type_normal) {
 								float3 *norm = (float3 *)dst;
 								float3 new_norm = float4x4_transform(transform, float4_from_float3(*norm, 0.0f));
-								*norm = float3_normalize(new_norm);
+								*norm = normalize3(new_norm);
 							} else if (attribute->type == cgltf_attribute_type_tangent) {
 								float4 *tan = (float4 *)dst;
 								float3 new_tan = float4x4_transform(transform, (float4){ tan->x, tan->y, tan->z, 0.0f });
-								float3 norm_tan = float3_normalize(new_tan);
+								float3 norm_tan = normalize3(new_tan);
 								tan->x = norm_tan.x;
 								tan->y = norm_tan.y;
 								tan->z = norm_tan.z;
@@ -4511,8 +4434,8 @@ Mesh load_gltf(Arena *arena, String8 path) {
 					}
 				}
 
-				result.bounds.min = float3_min(result.bounds.min, part->bounds.min);
-				result.bounds.max = float3_max(result.bounds.max, part->bounds.max);
+				result.bounds.min = less3(result.bounds.min, part->bounds.min);
+				result.bounds.max = more3(result.bounds.max, part->bounds.max);
 
 				if (data->skins_count > 0 && skinned == 0 && node->parent && node->parent->mesh == 0) { // add dummy skinned data
 					int32_t parent_bone = -1;
@@ -4655,7 +4578,7 @@ Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bo
 				float ca = cosf(a), sa = -sinf(a);
 
 				result.vertices[vertex_cursor++] = (Vertex3){
-					.position = float3_add(origin, (float3){ ca * r, y, sa * r }),
+					.position = add3(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { ca, 0.0f, sa },
 					.uv = { sv, rv },
 				};
@@ -4677,7 +4600,7 @@ Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bo
 
 			uint32_t center_index = center_indices[end_index] = vertex_cursor++;
 			result.vertices[center_index] = (Vertex3){
-				.position = float3_add(origin, (float3){ 0.0f, y, 0.0f }),
+				.position = add3(origin, (float3){ 0.0f, y, 0.0f }),
 				.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 				.uv = { 0.5f, 0.5f }
 			};
@@ -4690,7 +4613,7 @@ Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bo
 				float ca = cosf(a), sa = -sinf(a);
 
 				result.vertices[vertex_cursor++] = (Vertex3){
-					.position = float3_add(origin, (float3){ ca * r, y, sa * r }),
+					.position = add3(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 					.uv = { (ca + 1.0f) * 0.5f, (sa + 1.0f) * 0.5f } // Planar mapping
 				};
@@ -4746,7 +4669,7 @@ Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bo
 
 		result.materials[0] = (Material){
 			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = FLOAT4_ONE,
+			.emissive = one4,
 			.metallic_roughness = { 0.0f, 0.5f },
 		};
 	}
@@ -4818,7 +4741,7 @@ Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float hei
 
 		result.materials[0] = (Material){
 			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = FLOAT4_ONE,
+			.emissive = one4,
 			.metallic_roughness = { 0.0f, 0.5f },
 		};
 	}
@@ -4883,7 +4806,7 @@ Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, 
 
 		result.materials[0] = (Material){
 			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = FLOAT4_ONE,
+			.emissive = one4,
 			.metallic_roughness = { 0.0f, 0.5f },
 		};
 	}
@@ -5091,7 +5014,7 @@ void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color c
 }
 
 void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
-	float2 shaft_end = float2_add(start, float2_scale(float2_subtract(end, start), 0.75f));
+	float2 shaft_end = add2(start, scale2(sub2(end, start), 0.75f));
 	push_line2(arena, start, shaft_end, thickness, color);
 
 	*arena_push_count(arena, Line, 1) = (Line){
@@ -5232,18 +5155,18 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Axis
 		switch (plane) {
 			case AXIS_PLANE_DOWN:
 			case AXIS_PLANE_UP:
-				p0 = (Line){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), FLOAT3_ZERO };
-				p1 = (Line){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p0 = (Line){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), zero3 };
+				p1 = (Line){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), zero3 };
 				break;
 			case AXIS_PLANE_LEFT:
 			case AXIS_PLANE_RIGHT:
-				p0 = (Line){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), FLOAT3_ZERO };
-				p1 = (Line){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), FLOAT3_ZERO };
+				p0 = (Line){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), zero3 };
+				p1 = (Line){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), zero3 };
 				break;
 			case AXIS_PLANE_BACKWARD:
 			case AXIS_PLANE_FORWARD:
-				p0 = (Line){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
-				p1 = (Line){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), FLOAT3_ZERO };
+				p0 = (Line){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), zero3 };
+				p1 = (Line){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), zero3 };
 				break;
 			case AXIS_PLANE_COUNT:
 				ASSERT(false);
@@ -5264,44 +5187,44 @@ void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segm
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
 	float3 min = aabb3.min;
 	float3 max = aabb3.max;
-	float3 bounding_box_size = float3_subtract(max, min);
+	float3 bounding_box_size = sub3(max, min);
 
 	Line outline[] = {
-		{ { min.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { min.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, min.y, min.z }, thickness, color_pack(color), zero3 },
+		{ { min.x, max.y, min.z }, thickness, color_pack(color), zero3 },
 
-		{ { min.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { min.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, min.y, max.z }, thickness, color_pack(color), zero3 },
+		{ { min.x, max.y, max.z }, thickness, color_pack(color), zero3 },
 
-		{ { max.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { max.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, min.y, min.z }, thickness, color_pack(color), zero3 },
+		{ { max.x, max.y, min.z }, thickness, color_pack(color), zero3 },
 
-		{ { max.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { max.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, min.y, max.z }, thickness, color_pack(color), zero3 },
+		{ { max.x, max.y, max.z }, thickness, color_pack(color), zero3 },
 
-		{ { min.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { min.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, min.y, min.z }, thickness, color_pack(color), zero3 },
+		{ { min.x, min.y, max.z }, thickness, color_pack(color), zero3 },
 
-		{ { min.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { max.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, min.y, min.z }, thickness, color_pack(color), zero3 },
+		{ { max.x, min.y, min.z }, thickness, color_pack(color), zero3 },
 
-		{ { max.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { max.x, min.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, min.y, max.z }, thickness, color_pack(color), zero3 },
+		{ { max.x, min.y, min.z }, thickness, color_pack(color), zero3 },
 
-		{ { max.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { min.x, min.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, min.y, max.z }, thickness, color_pack(color), zero3 },
+		{ { min.x, min.y, max.z }, thickness, color_pack(color), zero3 },
 
-		{ { min.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { min.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, max.y, min.z }, thickness, color_pack(color), zero3 },
+		{ { min.x, max.y, max.z }, thickness, color_pack(color), zero3 },
 
-		{ { min.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { max.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { min.x, max.y, min.z }, thickness, color_pack(color), zero3 },
+		{ { max.x, max.y, min.z }, thickness, color_pack(color), zero3 },
 
-		{ { max.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { max.x, max.y, min.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, max.y, max.z }, thickness, color_pack(color), zero3 },
+		{ { max.x, max.y, min.z }, thickness, color_pack(color), zero3 },
 
-		{ { max.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
-		{ { min.x, max.y, max.z }, thickness, color_pack(color), FLOAT3_ZERO },
+		{ { max.x, max.y, max.z }, thickness, color_pack(color), zero3 },
+		{ { min.x, max.y, max.z }, thickness, color_pack(color), zero3 },
 	};
 
 	Line *points = arena_push_count(arena, Line, countof(outline));
@@ -5323,12 +5246,12 @@ void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color c
 
 void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width) {
-	float3 direction = float3_subtract(end, start);
-	float total_world_length = float3_length(direction);
+	float3 direction = sub3(end, start);
+	float total_world_length = length3(direction);
 	if (total_world_length < EPSILON)
 		return;
 
-	float3 dir_norm = float3_scale(direction, 1.0f / total_world_length);
+	float3 dir_norm = scale3(direction, 1.0f / total_world_length);
 
 	float4x4 vp = float4x4_multiply(projeciton, view);
 	float w = vp.elements[3] * end.x + vp.elements[7] * end.y + vp.elements[11] * end.z + vp.elements[15] * 1.0f;
@@ -5340,7 +5263,7 @@ void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color 
 	if (world_head_length > total_world_length * 0.5f)
 		world_head_length = total_world_length * 0.5f;
 
-	float3 shaft_end = float3_subtract(end, float3_scale(dir_norm, world_head_length));
+	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
 	push_line3(arena, start, shaft_end, thickness, color);
 	*arena_push_count(arena, Line, 1) = (Line){
@@ -5363,24 +5286,24 @@ void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color co
 
 void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
 	float3 right = { 0 }, up = { 0 };
-	float dot = float3_dot(plane.normal, FLOAT3_Y);
+	float dot = dot3(plane.normal, FLOAT3_Y);
 	if (fabsf(dot) >= 0.99f) {
 		right.x = dot > 0 ? 1.0f : -1.0f;
 		up.z = -1.0f;
 	} else {
-		right = float3_normalize_safe(float3_cross(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }), EPSILON);
-		up = float3_normalize_safe(float3_cross(plane.normal, right), EPSILON);
+		right = normalize3_safe(cross3(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }), EPSILON);
+		up = normalize3_safe(cross3(plane.normal, right), EPSILON);
 	}
 
-	float3 center = float3_scale(plane.normal, plane.distance);
-	float3 h = float3_scale(right, width * 0.5f);
-	float3 v = float3_scale(up, height * 0.5f);
+	float3 center = scale3(plane.normal, plane.distance);
+	float3 h = scale3(right, width * 0.5f);
+	float3 v = scale3(up, height * 0.5f);
 
 	float3 corners[] = {
-		float3_add(float3_subtract(center, h), v),
-		float3_add(float3_add(center, h), v),
-		float3_subtract(float3_add(center, h), v),
-		float3_subtract(float3_subtract(center, h), v),
+		add3(sub3(center, h), v),
+		add3(add3(center, h), v),
+		sub3(add3(center, h), v),
+		sub3(sub3(center, h), v),
 	};
 
 	for (uint32_t index = 0; index < countof(corners); ++index)

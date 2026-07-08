@@ -7,25 +7,25 @@
 
 #define C_PI 3.14159265358979323846264338327950288
 #define C_PIf ((float)C_PI)
-#define TAU C_PI * 2
-#define TAUf C_PIf * 2
+#define TAU (C_PI * 2)
+#define TAUf (C_PIf * 2)
 #define EPSILON 1e-5f
 
 #define FLOAT_MAX 3.40282347e+38F
 #define FLOAT_MIN -FLOAT_MAX
 
-#define FLOAT2_ZERO (float2){ 0.0f, 0.0f }
-#define FLOAT2_ONE (float2){ 1.0f, 1.0f }
-
 #define FLOAT3_X (float3){ 1.0f, 0.0f, 0.0f }
 #define FLOAT3_Y (float3){ 0.0f, 1.0f, 0.0f }
 #define FLOAT3_Z (float3){ 0.0f, 0.0f, 1.0f }
 
-#define FLOAT3_ZERO (float3){ 0.0f, 0.0f, 0.0f }
-#define FLOAT3_ONE (float3){ 1.0f, 1.0f, 1.0f }
+#define zero2 (float2){ 0.0f, 0.0f }
+#define one2 (float2){ 1.0f, 1.0f }
 
-#define FLOAT4_ZERO (float4){ 0.0f, 0.0f, 0.0f, 0.0f }
-#define FLOAT4_ONE (float4){ 1.0f, 1.0f, 1.0f, 1.0f }
+#define zero3 (float3){ 0.0f, 0.0f, 0.0f }
+#define one3 (float3){ 1.0f, 1.0f, 1.0f }
+
+#define zero4 (float4){ 0.0f, 0.0f, 0.0f, 0.0f }
+#define one4 (float4){ 1.0f, 1.0f, 1.0f, 1.0f }
 
 typedef struct {
 	float elements[4 * 4];
@@ -70,85 +70,81 @@ static inline float maxf(float a, float b) { return a > b ? a : b; }
 
 // --- float2 ---
 static inline float2 float2_make(float x, float y) { return (float2){ x, y }; }
-static inline float2 float2_splat(float v) { return (float2){ v, v }; }
+static inline float2 splat2(float v) { return (float2){ v, v }; }
 static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.x, (float)d.y }; }
 static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
 static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y }; }
+#define spread2(v) v.x, v.y
 
-bool float2_equal(float2 a, float2 b);
-float2 float2_negate(float2 v);
+static inline bool equal2(float2 a, float2 b) { return equalf(a.x, b.x) && equalf(a.y, b.y); }
+static inline float2 negate2(float2 v) { return (float2){ -v.x, -v.y }; }
 
-float float2_length_sq(float2 v);
-float float2_length(float2 v);
-float2 float2_normalize(float2 v);
-float2 float2_normalize_safe(float2 v, float epsilon);
+static inline float2 add2(float2 a, float2 b) { return (float2){ a.x + b.x, a.y + b.y }; }
+static inline float2 sub2(float2 a, float2 b) { return (float2){ a.x - b.x, a.y - b.y }; }
+static inline float2 scale2(float2 v, float s) { return (float2){ v.x * s, v.y * s }; }
 
-float2 float2_add(float2 a, float2 b);
-float2 float2_subtract(float2 a, float2 b);
-float2 float2_divide(float2 a, float2 b);
-float2 float2_scale(float2 v, float s);
+static inline float dot2(float2 a, float2 b) { return a.x * b.x + a.y * b.y; }
+static inline float length2_sq(float2 v) { return dot2(v, v); }
+float length2(float2 v);
 
-float2 float2_lerp(float2 start, float2 end, float t);
-float2 float2_clamp(float2 v, float2 min, float2 max);
+static inline float2 normalize2(float2 v) { return scale2(v, 1.0f / length2(v)); }
+float2 normalize2_safe(float2 v, float epsilon);
 
-void float2_print(float2 v);
+static inline float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t) }; }
+static inline float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
 
 // --- float3 ---
-
 static inline float2 float3_xy(float3 v) { return (float2){ v.x, v.y }; }
 static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
 static inline float3 float3_from_float4(float4 v) { return (float3){ v.x, v.y, v.z }; }
-static inline float3 float3_splat(float v) { return (float3){ v, v, v }; }
-static inline float3 float3_wrap(float v[3]) { return (float3){ .x = v[0], .y = v[1], .z = v[2] }; }
-#define float3_spread(v) v.x, v.y, v.z
+static inline float3 splat3(float v) { return (float3){ v, v, v }; }
+static inline float3 wrap3(float v[3]) { return (float3){ v[0], v[1], v[2] }; }
+#define spread3(v) v.x, v.y, v.z
 
-bool float3_equal(float3 a, float3 b);
-float3 float3_negate(float3 v);
-float float2_dot(float2 a, float2 b);
+static inline bool equal3(float3 a, float3 b) { return equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z); }
+static inline float3 negate3(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
 
-float3 float3_add(float3 a, float3 b);
-float3 float3_subtract(float3 a, float3 b);
-float3 float3_scale(float3 v, float s);
+static inline float3 add3(float3 a, float3 b) { return (float3){ a.x + b.x, a.y + b.y, a.z + b.z }; }
+static inline float3 sub3(float3 a, float3 b) { return (float3){ a.x - b.x, a.y - b.y, a.z - b.z }; }
+static inline float3 scale3(float3 v, float s) { return (float3){ v.x * s, v.y * s, v.z * s }; }
 
-float float3_dot(float3 a, float3 b);
-float3 float3_cross(float3 a, float3 b);
+static inline float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+static inline float3 cross3(float3 a, float3 b) { return (float3){ .x = a.y * b.z - b.y * a.z, .y = a.z * b.x - b.z * a.x, .z = a.x * b.y - b.x * a.y }; }
+static inline float length3_sq(float3 v) { return dot3(v, v); }
+float length3(float3 v);
 
-float float3_length_sq(float3 v);
-float float3_length(float3 v);
+static inline float3 normalize3(float3 v) { return scale3(v, 1.0f / length3(v)); }
+float3 normalize3_safe(float3 v, float epsilon);
 
-float3 float3_normalize(float3 v);
-float3 float3_normalize_safe(float3 v, float epsilon);
+static inline float min3(float3 v) { return minf(v.x, minf(v.y, v.z)); }
+static inline float max3(float3 v) { return maxf(v.x, maxf(v.y, v.z)); }
+static inline float3 less3(float3 a, float3 b) { return (float3){ minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z) }; }
+static inline float3 more3(float3 a, float3 b) { return (float3){ maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z) }; }
+static inline float3 clamp3(float3 v, float min, float max) { return (float3){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max) }; }
+static inline float3 lerp3(float3 start, float3 end, float t) { return (float3){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t), lerpf(start.z, end.z, t) }; }
 
-float3 float3_min(float3 a, float3 b);
-float3 float3_max(float3 a, float3 b);
-float3 float3_clamp(float3 v, float3 min, float3 max);
-float3 float3_lerp(float3 start, float3 end, float t);
-
-float float3_angle(float3 a, float3 b);
-float3 float3_rotate(float3 v, float angle, float3 axis);
-
-void float3_print(float3 v);
+float angle3(float3 a, float3 b);
+float3 rotate3(float3 v, float angle, float3 axis);
 
 // --- float4 & quaternions ---
 
 static inline float2 float4_xy(float4 v) { return (float2){ v.x, v.y }; }
 static inline float3 float4_xyz(float4 v) { return (float3){ v.x, v.y, v.z }; }
 static inline float4 float4_from_float3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w }; }
-static inline float4 float4_wrap(float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
+static inline float4 wrap4(float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
+#define spread4(v) v.x, v.y, v.z, v.w
 
-bool float4_equal(float4 a, float4 b);
+static inline bool equal4(float4 a, float4 b) { return equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z) && equalf(a.w, b.w); }
 
-static inline float4 float4_scale(float4 v, float s) { return (float4){ v.x * s, v.y * s, v.z * s, v.w * s }; }
-static inline float float4_dot(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
-float float4_length(float4 v);
+static inline float4 scale4(float4 v, float s) { return (float4){ v.x * s, v.y * s, v.z * s, v.w * s }; }
+static inline float dot4(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
+float length4(float4 v);
 
 static inline quat4 quat4_identity(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
 
 float3 quat4_to_euler(quat4 quat);
 quat4 quat4_from_axis_angle(float3 axis, float angle);
-float4 quat4_slerp(quat4 q, quat4 p, float t);
-
-void float4_print(float4 v);
+quat4 quat4_slerp(quat4 q, quat4 p, float t);
 
 // --- float4x4 ---
 
@@ -177,6 +173,5 @@ float4x4 float4x4_orthographic(float left, float right, float top,
 	float bottom, float near, float far);
 
 float4x4 float4x4_lookat(float3 eye, float3 center, float3 up);
-void float4x4_print(float4x4 m);
 
 #endif /* CMATH_H_ */

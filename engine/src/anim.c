@@ -63,7 +63,7 @@ Pose anim_pose_blend_local(Arena *arena, Pose *target, Pose *source, float blend
 			Transform3 *source_transform = &source->transforms[bone_index];
 			Transform3 *target_transform = &target->transforms[bone_index];
 
-			result.transforms[bone_index].translation = float3_lerp(
+			result.transforms[bone_index].translation = lerp3(
 				source_transform->translation,
 				target_transform->translation,
 				bone_blend_weight);
@@ -73,7 +73,7 @@ Pose anim_pose_blend_local(Arena *arena, Pose *target, Pose *source, float blend
 				target_transform->rotation,
 				bone_blend_weight);
 
-			result.transforms[bone_index].scale = float3_lerp(
+			result.transforms[bone_index].scale = lerp3(
 				source_transform->scale,
 				target_transform->scale,
 				bone_blend_weight);

@@ -12,38 +12,14 @@ int32_t randi_range(int32_t min, int32_t max) {
 	return min + (rand() % (max - min + 1));
 }
 
-bool float2_equal(float2 a, float2 b) {
-	bool result = equalf(a.x, b.x) && equalf(a.y, b.y);
+float length2(float2 v) {
+	float result = sqrt(dot2(v, v));
 
 	return result;
 }
 
-float2 float2_negate(float2 v) {
-	float2 result = { -v.x, -v.y };
-
-	return result;
-}
-
-float float2_length_sq(float2 v) {
-	float result = v.x * v.x + v.y * v.y;
-
-	return result;
-}
-
-float float2_length(float2 v) {
-	float result = sqrt(v.x * v.x + v.y * v.y);
-
-	return result;
-}
-float2 float2_normalize(float2 v) {
-	float length = float2_length(v);
-	float2 result = { .x = v.x / length, .y = v.y / length };
-
-	return result;
-}
-
-float2 float2_normalize_safe(float2 v, float epsilon) {
-	float length = float2_length(v);
+float2 normalize2_safe(float2 v, float epsilon) {
+	float length = length2(v);
 	if (length < EPSILON) {
 		return (float2){ 0 };
 	}
@@ -52,136 +28,23 @@ float2 float2_normalize_safe(float2 v, float epsilon) {
 	return result;
 }
 
-float2 float2_add(float2 a, float2 b) {
-	float2 result = { a.x + b.x, a.y + b.y };
-
-	return result;
-}
-float2 float2_subtract(float2 a, float2 b) {
-	float2 result = { a.x - b.x, a.y - b.y };
+float length3(float3 v) {
+	float result = sqrtf(dot3(v, v));
 
 	return result;
 }
 
-float2 float2_divide(float2 a, float2 b) {
-	float2 result = { a.x / b.x, a.y / b.y };
-
-	return result;
-}
-
-float2 float2_scale(float2 v, float s) {
-	float2 result = { v.x * s, v.y * s };
-
-	return result;
-}
-
-float float2_dot(float2 a, float2 b) {
-	float result = a.x * b.x + a.y * b.y;
-
-	return result;
-}
-
-float3 float3_add(float3 a, float3 b) {
-	float3 result = { a.x + b.x, a.y + b.y, a.z + b.z };
-
-	return result;
-}
-float3 float3_subtract(float3 a, float3 b) {
-	float3 result = { a.x - b.x, a.y - b.y, a.z - b.z };
-
-	return result;
-}
-float3 float3_scale(float3 v, float s) {
-	float3 result = { v.x * s, v.y * s, v.z * s };
-
-	return result;
-}
-
-bool float3_equal(float3 a, float3 b) {
-	bool result = equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z);
-
-	return result;
-}
-
-float3 float3_negate(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
-
-float float3_dot(float3 a, float3 b) {
-	float result = a.x * b.x + a.y * b.y + a.z * b.z;
-
-	return result;
-}
-
-float3 float3_cross(float3 a, float3 b) {
-	float3 result = {
-		.x = a.y * b.z - b.y * a.z,
-		.y = a.z * b.x - b.z * a.x,
-		.z = a.x * b.y - b.x * a.y,
-	};
-
-	return result;
-}
-
-float float3_length_sq(float3 v) {
-	float result = float3_dot(v, v);
-
-	return result;
-}
-
-float float3_length(float3 v) {
-	float result = sqrtf(float3_dot(v, v));
-
-	return result;
-}
-
-float3 float3_normalize(float3 v) {
-	float3 result = float3_scale(v, 1 / float3_length(v));
-
-	return result;
-}
-float3 float3_normalize_safe(float3 v, float epsilon) {
-	float length = float3_length(v);
+float3 normalize3_safe(float3 v, float epsilon) {
+	float length = length3(v);
 	if (length < epsilon)
 		return (float3){ 0 };
 
-	return float3_scale(v, 1.0f / length);
+	return scale3(v, 1.0f / length);
 }
 
-float3 float3_min(float3 a, float3 b) {
-	float3 result = {
-		.x = minf(a.x, b.x),
-		.y = minf(a.y, b.y),
-		.z = minf(a.z, b.z),
-	};
-
-	return result;
-}
-float3 float3_max(float3 a, float3 b) {
-	float3 result = {
-		.x = maxf(a.x, b.x),
-		.y = maxf(a.y, b.y),
-		.z = maxf(a.z, b.z),
-	};
-
-	return result;
-}
-
-float3 float3_lerp(float3 start, float3 end, float amount) {
-	float3 result = { 0 };
-
-	result.x = start.x + amount * (end.x - start.x);
-	result.y = start.y + amount * (end.y - start.y);
-	result.z = start.z + amount * (end.z - start.z);
-
-	return result;
-}
-
-float float3_angle(float3 a, float3 b) {
-	float dot = float3_dot(float3_normalize_safe(a, EPSILON), float3_normalize_safe(b, EPSILON));
-
-	if (dot > 1.0f)
-		dot = 1.0f;
-	if (dot < -1.0f)
-		dot = -1.0f;
+float angle3(float3 a, float3 b) {
+	float dot = dot3(normalize3_safe(a, EPSILON), normalize3_safe(b, EPSILON));
+	dot = clampf(dot, -1.0f, 1.0f);
 
 	return acosf(dot);
 }
@@ -189,26 +52,20 @@ float float3_angle(float3 a, float3 b) {
 /* Right Hand, Rodrigues' rotation formula:
 	v = v*cos(t) + (kxv)sin(t) + k*(k.v)(1 - cos(t))
 */
-float3 float3_rotate(float3 v, float angle, float3 axis) {
+float3 rotate3(float3 v, float angle, float3 axis) {
 	float c = cosf(angle);
 	float s = sinf(angle);
-	float3 k = float3_normalize_safe(axis, EPSILON);
+	float3 k = normalize3_safe(axis, EPSILON);
 
-	return float3_add(
-		float3_scale(v, c),
-		float3_add(
-			float3_scale(float3_cross(k, v), s),
-			float3_scale(k, float3_dot(k, v) * (1.0f - c))));
+	return add3(
+		scale3(v, c),
+		add3(
+			scale3(cross3(k, v), s),
+			scale3(k, dot3(k, v) * (1.0f - c))));
 }
 
-bool float4_equal(float4 a, float4 b) {
-	bool result = equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z) && equalf(a.w, b.w);
-
-	return result;
-}
-
-float float4_length(float4 v) {
-	float result = sqrtf(float4_dot(v, v));
+float length4(float4 v) {
+	float result = sqrtf(dot4(v, v));
 
 	return result;
 }
@@ -238,10 +95,10 @@ float3 quat4_to_euler(quat4 q) {
 quat4 quat4_from_axis_angle(float3 axis, float angle) {
 	quat4 result = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-	float length = float3_length(axis);
+	float length = length3(axis);
 	if (length > EPSILON) {
 		angle *= 0.5f;
-		axis = float3_scale(axis, 1.0f / length);
+		axis = scale3(axis, 1.0f / length);
 
 		float s = sinf(angle);
 		float c = cosf(angle);
@@ -327,7 +184,7 @@ float4x4 float4x4_identity(void) {
 float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs) {
 	float4x4 result = { 0 };
 
-#define DOT(row, col)                                  \
+#define DOT(row, col)                                       \
 	(lhs.elements[0 + row] * rhs.elements[col * 4 + 0] +    \
 		lhs.elements[4 + row] * rhs.elements[col * 4 + 1] + \
 		lhs.elements[8 + row] * rhs.elements[col * 4 + 2] + \
@@ -454,7 +311,7 @@ float4x4 float4x4_rotation(float3 axis, float angle) {
 	float s = sinf(angle);
 	float t = 1.0f - c;
 
-	float3 normalized_axis = float3_normalize_safe(axis, EPSILON);
+	float3 normalized_axis = normalize3_safe(axis, EPSILON);
 	float x = normalized_axis.x;
 	float y = normalized_axis.y;
 	float z = normalized_axis.z;
@@ -594,26 +451,26 @@ float4x4 float4x4_orthographic(float left, float right, float bottom, float top,
 float4x4 float4x4_lookat(float3 eye, float3 center, float3 up) {
 	float4x4 result = float4x4_identity();
 
-	float3 f = float3_normalize_safe(float3_subtract(center, eye), EPSILON);
-	float3 r = float3_normalize_safe(float3_cross(f, up), EPSILON);
-	float3 u = float3_cross(r, f);
+	float3 f = normalize3_safe(sub3(center, eye), EPSILON);
+	float3 r = normalize3_safe(cross3(f, up), EPSILON);
+	float3 u = cross3(r, f);
 
 	// Row 0: Right Vector (s)
 	result.elements[0] = r.x; // Col 0
 	result.elements[4] = r.y; // Col 1
 	result.elements[8] = r.z; // Col 2
-	result.elements[12] = -float3_dot(r, eye); // Translation X
+	result.elements[12] = -dot3(r, eye); // Translation X
 
 	// Row 1: Up Vector (u)
 	result.elements[1] = u.x; // Col 0
 	result.elements[5] = u.y; // Col 1
 	result.elements[9] = u.z; // Col 2
-	result.elements[13] = -float3_dot(u, eye); // Translation Y
+	result.elements[13] = -dot3(u, eye); // Translation Y
 
 	result.elements[2] = -f.x; // Col 0
 	result.elements[6] = -f.y; // Col 1
 	result.elements[10] = -f.z; // Col 2
-	result.elements[14] = float3_dot(f, eye); // Translation Z (-dot(-f, eye))
+	result.elements[14] = dot3(f, eye); // Translation Z (-dot(-f, eye))
 
 	result.elements[3] = 0.0f;
 	result.elements[7] = 0.0f;
@@ -639,16 +496,4 @@ void float4x4_print(float4x4 m) {
 		m.elements[2], m.elements[6], m.elements[10], m.elements[14],
 		// Row 3: indices 3, 7, 11, 15
 		m.elements[3], m.elements[7], m.elements[11], m.elements[15]);
-}
-
-void float2_print(float2 v) {
-	LOG_INFO("float2 { %.2f, %.2f, %.2f }", v.x, v.y);
-}
-
-void float3_print(float3 v) {
-	LOG_INFO("float3 { %.2f, %.2f, %.2f }", v.x, v.y, v.z);
-}
-
-void float4_print(float4 v) {
-	LOG_INFO("float4 { %.2f, %.2f, %.2f, %.2f }", v.x, v.y, v.z, v.w);
 }
