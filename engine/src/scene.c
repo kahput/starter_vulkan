@@ -51,7 +51,7 @@ void scene_camera_orbit(Camera3 *camera, float2 mouse_delta) {
 		// tan(theta) = o / a = y / x;
 		float current_azimuth = atan2f(camera_position.z, camera_position.x);
 
-		current_theta = CLAMP(current_theta - pitch_delta, EPSILON * 2, C_PIf - EPSILON * 2);
+		current_theta = CLAMP(current_theta - pitch_delta, EPSILON * 2, PIf - EPSILON * 2);
 		current_azimuth += yaw_delta;
 
 		// Apply move

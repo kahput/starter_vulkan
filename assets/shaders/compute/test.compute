@@ -7,20 +7,34 @@ layout (local_size_x = 16, local_size_y = 16) in;
 //descriptor bindings for the pipeline
 layout(rgba16f,set = 0, binding = 0) uniform image2D image;
 
+ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
+ivec2 resolution = imageSize(image);
+
+layout(push_constant) uniform ConstantBlock {
+    vec2 mouse;
+    float time;
+} pc;
+
+vec4 srgb_to_linear(vec4 c) {
+    bvec3 cutoff = lessThanEqual(c.rgb, vec3(0.04045));
+
+    vec3 lower = c.rgb / 12.92;
+    vec3 upper = pow((c.rgb + 0.055) / 1.055, vec3(2.4));
+
+    return vec4(mix(upper, lower, cutoff), c.a);
+}
+
+
 void main() {
-    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
-	ivec2 size = imageSize(image);
+    vec2 st = vec2(texelCoord) / vec2(resolution);
+    st.y = 1.0 - st.y;
 
-    if(texelCoord.x < size.x && texelCoord.y < size.y)
-    {
-        vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+    bool ok = texelCoord.x < resolution.x && texelCoord.y < resolution.y;
+    if (ok) {
+        vec4 color = vec4(vec3(pow(st.x, 5.0)), 1.0);
+        vec3 pct = vec3(smoothstep(0.00, 0.01, abs(st.y-pow(st.x, 5.0))));
 
-        if(gl_LocalInvocationID.x != 0 && gl_LocalInvocationID.y != 0)
-        {
-            color.x = float(texelCoord.x)/(size.x);
-            color.y = float(texelCoord.y)/(size.y);	
-        }
-    
-        imageStore(image, texelCoord, color);
+        color.rgb = pct * color.rgb + (1.0 - pct) * vec3(0.0, 1.0, 0.0);
+        imageStore(image, texelCoord, srgb_to_linear(color));
     }
 }

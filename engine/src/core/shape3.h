@@ -33,7 +33,7 @@ static inline AABB3 aabb3_from_center(float3 center, float3 half_extent) { retur
 static inline float3 aabb3_center(AABB3 a) { return scale3(add3(a.min, a.max), 0.5f); }
 static inline float3 aabb3_extent(AABB3 a) { return sub3(a.max, a.min); }
 static inline float3 aabb3_half_extent(AABB3 a) { return scale3(aabb3_extent(a), 0.5f); }
-static inline AABB3 aabb3_empty(void) { return (AABB3){ .min = splat3(FLOAT_MAX), .max = splat3(FLOAT_MIN) }; }
+static inline AABB3 aabb3_empty(void) { return (AABB3){ .min = splat3(FLOAT_MAX), .max = splat3(-FLOAT_MAX) }; }
 static inline void aabb3_expand(AABB3 *a, float3 point) {
 	a->min = less3(a->min, point);
 	a->max = more3(a->max, point);
@@ -143,7 +143,7 @@ typedef struct {
 } Shape3;
 
 static inline Shape3 shape3_sphere(float3 center, float radius) { return (Shape3){ .kind = SHAPE_KIND_SPHERE, .as.sphere = { .center = center, .radius = radius } }; }
-static inline Shape3 shape3_capsule(float3 center, float height, float radius) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = capsule_from_center(center, FLOAT3_Y, height, radius) }; }
+static inline Shape3 shape3_capsule(float3 center, float height, float radius) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = capsule_from_center(center, up3, height, radius) }; }
 static inline Shape3 shape3_convex_polygon(float3 *vertices, uint32_t vertex_count) { return (Shape3){ .kind = SHAPE_KIND_CONVEX_POLYGON, .as.convex = { vertices, vertex_count } }; }
 
 static inline Shape3 shape3_from_aabb3(AABB3 a) { return (Shape3){ .kind = SHAPE_KIND_AABB3, .as.aabb3 = a }; }
@@ -155,36 +155,7 @@ static inline Shape3 shape3_from_plane(Plane p) { return (Shape3){ .kind = SHAPE
 Shape3 shape3_move(Shape3 s, float3 displacement);
 float3 shape3_support(Shape3 s, float3 direction);
 
-Raycast3Result shapecast(Shape3 a, Shape3 b, float3 direction, float max_distance);
 Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
 Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
-
-Raycast3Result sphere_sweep_triangle3(float3 origin, float radius, float3 direction, float max_distance, Triangle3 triangle);
-
-float segment3_squared_distance(Segment3 segment, float3 point);
-
-float3 plane_closest_point(Plane p, float3 to);
-float3 segment3_closest_point(Segment3 segment, float3 to);
-float3 triangle3_closest_point(Triangle3 t, float3 to);
-float3 tetrahedron_closest_point(float3 a, float3 b, float3 c, float3 d, float3 to);
-float3 aabb3_closest_point(AABB3 a, float3 to);
-
-bool triangle3_contains_point(Triangle3 triangle, float3 point);
-
-bool lowest_root(float a, float b, float c, float max_r, float *root);
-
-typedef struct {
-	float3 support_a[4], support_b[4], points[4];
-	uint32_t point_count;
-} Simplex3;
-
-float3 simplex_closest_point_to_origin(Simplex3 simplex);
-
-float3 simplex_line(Simplex3 *simplex, float3 *direction);
-float3 simplex_triangle(Simplex3 *simplex, float3 *direction);
-float3 simplex_tetrahedron(Simplex3 *simplex, float3 *direction);
-
-extern float max_error;
-float gjk_distance_squared(Shape3 a, Shape3 b, float reference_dist_sq);
 
 #endif

@@ -150,7 +150,7 @@ void os_file_write_entire(String8 path, const void *buffer, uint64_t size) {
 	}
 }
 
-uint64_t os_file_last_modified(String8 path) {
+OS_Timestamp os_file_last_modified(String8 path) {
 	struct stat attrib;
 	if (stat((char *)path.text, &attrib) == 0)
 		return (uint64_t)attrib.st_mtime;

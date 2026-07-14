@@ -35,7 +35,7 @@ typedef struct {
 	float thickness;
 	uint32_t color;
 	float3 _pad0;
-} Line;
+} LinePoint;
 
 typedef struct {
 	float3 position;
@@ -47,8 +47,8 @@ typedef struct {
 } Vertex3;
 
 typedef struct {
-	uint32x4 bone_ids;
-	float32x4 weights;
+	uint4 bone_ids;
+	float4 weights;
 } SkinningData;
 
 typedef enum {
@@ -81,6 +81,13 @@ typedef struct {
 	PixelFormat format;
 	uint32_t width, height;
 } Image2D;
+
+typedef enum {
+	DRAW_PASS_OPAQUE,
+	DRAW_PASS_TRANSPARENT,
+
+	DRAW_PASS_COUNT,
+} DrawPass;
 
 typedef struct {
 	Image2D textures[TEXTURE_SLOT_COUNT];
@@ -185,6 +192,7 @@ typedef struct Entity {
 	FeatureBitset features;
 
 	MeshID meshid;
+	DrawPass pass;
 	Transform3 transform;
 
 	// skinning
@@ -242,25 +250,15 @@ Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
-Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
-Mesh mesh_from_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments);
+Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
+Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments);
 
-Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
-Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
+Mesh mesh_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
+Mesh mesh_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
 
 Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
 
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
-
-typedef struct {
-	uint8_t *buffer;
-	uint64_t offset, capacity;
-} DrawBucket;
-
-typedef struct {
-	DrawBucket *bucket_line;
-	DrawBucket *bucket_2d;
-} DrawFrame;
 
 void push_rect2(Arena *arena, Rectangle rect, Color color);
 void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color);
@@ -276,6 +274,7 @@ void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segm
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
 void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color color);
 void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
+void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness);
 
 typedef struct {
 	Arena *batch_arena;
@@ -365,6 +364,20 @@ static inline bool entity_has(Entity *entity, EntityFeature feature) {
 	return ok;
 }
 
+int32_t cmp_mesh_sort(const void *p1, const void *p2) {
+	// Keep the const qualifier to prevent compiler warnings
+	const struct {
+		float distance;
+		Entity *mesh;
+	} *m1 = p1, *m2 = p2;
+
+	if (m2->distance > m1->distance)
+		return 1;
+	if (m2->distance < m1->distance)
+		return -1;
+	return 0;
+}
+
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
 
@@ -381,7 +394,8 @@ int main(void) {
 	GFX_Context context[] = { 0 };
 
 	gfx_startup(context);
-	GFX_Swapchain *swapchains[] = { gfx_swapchain_make(context, popup_compute, "popup"), gfx_swapchain_make(context, main_render, "main") };
+	GFX_Swapchain *main_swapchain = gfx_swapchain_make(context, main_render, "main");
+	GFX_Swapchain *popup_swapchain = gfx_swapchain_make(context, popup_compute, "popup");
 
 	// :targets
 	GFX_Image *compute_image = gfx_image_make(context, 640, 360,
@@ -432,6 +446,13 @@ int main(void) {
 
 	Image2D terrain_texture = load_image(permanent, s("assets/textures/base_grass.png"));
 	Image2D grid_texture = load_image(permanent, s("assets/textures/prototype/texture_09.png"));
+	Image2D window_texture = load_image(permanent, s("assets/textures/blending_transparent_window.png"));
+	window_texture.handle = gfx_image_make(context, window_texture.width, window_texture.height,
+		(ImageOptions){
+		  .debug_name = "window",
+		  .format = PIXEL_FORMAT_RGBA8_SRGB,
+		  .pixels = window_texture.pixels,
+		});
 
 	Image2D heightmap = load_image(permanent, s("assets/textures/heightmap.png"));
 	heightmap.handle = gfx_image_make(context, heightmap.width, heightmap.height,
@@ -491,7 +512,7 @@ int main(void) {
 	GFX_Pipeline pipeline_skybox = { 0 };
 	GFX_Pipeline pipeline_grass = { 0 };
 	GFX_Pipeline pipeline_line3d = { 0 };
-	{ // create 3d graphics pipelines
+	{ // create 3d opaque graphics pipelines
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/phong.fragment.spv"));
@@ -534,6 +555,25 @@ int main(void) {
 			  .color_attachment_count = 1,
 			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
 			  .sample_count = SAMPLE_COUNT_8,
+			});
+
+		arena_scratch_end(scratch);
+	}
+
+	OS_Timestamp transparent_ts = os_file_last_modified(s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
+	GFX_Pipeline transparent = { 0 };
+	{ // create 3d transparent pipelines
+		ArenaTemp scratch = arena_scratch_begin(0);
+		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
+		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
+
+		transparent = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+			(PipelineOptions){
+			  .debug_name = "transparent",
+			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachment_count = 1,
+			  .sample_count = SAMPLE_COUNT_8,
+			  .cull_mode = CULL_MODE_NONE,
 			});
 
 		arena_scratch_end(scratch);
@@ -591,13 +631,13 @@ int main(void) {
 	const uint32_t map_depth = 32;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	meshes[MESH_TERRAIN_FLAT] = mesh_from_plane(permanent, AXIS_PLANE_UP, map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, AXIS_PLANE_UP, map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_from_heightmap(permanent, AXIS_PLANE_UP, 256.f, 256.f, heightmap);
+	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, AXIS_PLANE_UP, 256.f, 256.f, heightmap);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_CYLINDER] = mesh_from_cylinder(permanent, FLOAT3_Y, 1.0f, 0.5f, 0.5f, 32, 0, true, true);
+	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, up3, 1.0f, 0.5f, 0.5f, 32, 0, true, true);
 	{
 		ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -609,7 +649,7 @@ int main(void) {
 		float head_radius = 0.018f * mult; // 1.8cm base radius
 
 		float3 cylinder_origin = { 0.0f, shaft_half_height, 0.0f };
-		Mesh shaft = mesh_from_cylinder(
+		Mesh shaft = mesh_cylinder(
 			scratch.arena,
 			cylinder_origin,
 			shaft_half_height,
@@ -618,7 +658,7 @@ int main(void) {
 			false, true);
 
 		float3 cone_origin = { 0.0f, shaft_half_height * 2.0f, 0.0f };
-		Mesh head = mesh_from_cone(
+		Mesh head = mesh_cone(
 			scratch.arena,
 			cone_origin,
 			head_height,
@@ -705,7 +745,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_multiply(float4x4_rotation(FLOAT3_Y, randf_range(0, TAU)), float4x4_translation(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_multiply(float4x4_rotation(up3, randf_range(0, TAU)), float4x4_translation(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -746,14 +786,13 @@ int main(void) {
 		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, geometry);
 	}
 
-	bool is_open = true;
-
 	float dt = 0.0f;
 	float last_frame = 0.0f;
 
 	Arena frame_arena[] = { arena_make(MiB(4)) };
 
 	// :init
+	float2 compute_mouse = { 0 };
 	typedef enum {
 		VIEWPORT_STATE_EDITOR,
 		VIEWPORT_STATE_GAME,
@@ -768,14 +807,14 @@ int main(void) {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		  .position = { 0.0f, 1.5f, 20.f },
 		  .target = { 0.0f, 1.5f, 0.0f },
-		  .up = FLOAT3_Y,
+		  .up = up3,
 		  .fovy = 45.f,
 		},
 		[VIEWPORT_STATE_GAME] = {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		  .position = { 0.0f, 1.5f, 20.f },
 		  .target = { 0.0f, 1.5f, 0.0f },
-		  .up = FLOAT3_Y,
+		  .up = up3,
 		  .fovy = 45.f,
 		},
 	};
@@ -803,9 +842,8 @@ int main(void) {
 
 	Entity *player = entity_spawn(&world);
 	player->meshid = MESH_HERO_MALE;
-	/* player->shape = shape_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
-	player->transform.translation.z = -3;
-	player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f);
+	player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f);
+	/* player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
 	/* player->shape.as.aabb3 = meshes[player->meshid].bounds; */
 
 	entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
@@ -836,6 +874,19 @@ int main(void) {
 	level->meshid = MESH_TEST_LEVEL;
 	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
 
+	Entity *transparent_entities[3] = { 0 };
+	(void)transparent_entities;
+	for (uint32_t index = 0; index < 3; ++index) {
+		Entity *cylinder = transparent_entities[index] = entity_spawn(&world);
+
+		cylinder->transform.translation = f3(0.0f, 0.0f, index * -3.0f);
+		cylinder->transform.scale = f3(2.0f, 1.0f, 2.0f);
+		cylinder->meshid = MESH_CYLINDER;
+		cylinder->pass = DRAW_PASS_TRANSPARENT;
+		entity_enable(cylinder, ENTITY_FEATURE_DRAW_MESH);
+	}
+
+	bool is_open = true;
 	while (is_open) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
 		dt = time - last_frame;
@@ -846,18 +897,21 @@ int main(void) {
 		while (os_event_poll(&event)) {
 			switch (event.type) {
 				case OS_EVENT_TYPE_SURFACE_CLOSE:
-					is_open = false;
+					if (event.surface == main_render)
+						is_open = false;
+					else
+						os_surface_close(popup_compute);
 					break;
 
 				case OS_EVENT_TYPE_SURFACE_RESIZE: {
 					uint2 dims = { event.as.resize.width, event.as.resize.height };
 					if (event.surface == main_render) {
-						gfx_swapchain_resize(context, swapchains[1], dims.x, dims.y);
+						gfx_swapchain_resize(context, main_swapchain, dims.x, dims.y);
 						gfx_image_resize(context, depthbuffer, dims.x, dims.y);
 						gfx_image_resize(context, offscreen_render, dims.x, dims.y);
 
 					} else {
-						gfx_swapchain_resize(context, swapchains[0], dims.x, dims.y);
+						gfx_swapchain_resize(context, popup_swapchain, dims.x, dims.y);
 						gfx_image_resize(context, compute_image, dims.x, dims.y);
 					}
 				} break;
@@ -876,6 +930,10 @@ int main(void) {
 				case OS_EVENT_TYPE_MOUSE_MOVE:
 					if (event.surface == main_render)
 						input_feed_mouse_motion((double)event.as.mouse_move.x, (double)event.as.mouse_move.y);
+					else {
+						compute_mouse.x = event.as.mouse_move.x;
+						compute_mouse.y = event.as.mouse_move.y;
+					}
 					break;
 				default:
 					break;
@@ -888,13 +946,13 @@ int main(void) {
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
 		} };
 		Arena batch_line3[] = { {
-		  .base = arena_push_count(frame_arena, Line, 6 * 2048),
-		  .capacity = sizeof(Line) * 6 * 2048,
+		  .base = arena_push_count(frame_arena, LinePoint, 6 * 2048),
+		  .capacity = sizeof(LinePoint) * 6 * 2048,
 		} };
 		Arena batch_line2d[] = {
 			{
-			  .base = arena_push_count(frame_arena, Line, 6 * 1024),
-			  .capacity = sizeof(Line) * 6 * 1024,
+			  .base = arena_push_count(frame_arena, LinePoint, 6 * 1024),
+			  .capacity = sizeof(LinePoint) * 6 * 1024,
 			}
 		};
 
@@ -907,8 +965,6 @@ int main(void) {
 			state = (state + 1) % VIEWPORT_STATE_COUNT;
 
 		Camera3 *camera = &cameras[state];
-#if 1
-
 		static uint32_t triangle_step = 0;
 		if (input_key_pressed(KEY_CODE_N))
 			triangle_step = (triangle_step + 1) % (meshes[MESH_CYLINDER].total_index_count / 3);
@@ -932,65 +988,6 @@ int main(void) {
 						entity->skin_matrices = arena_push_count(frame_arena, float4x4, bone_count);
 						for (uint32_t bone_index = 0; bone_index < bone_count; ++bone_index) {
 							entity->skin_matrices[bone_index] = float4x4_identity();
-						}
-					}
-				}
-
-				if (draw_collision_shapes) {
-					for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-						Entity *entity = &world.entities[instance_index];
-						if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) == false)
-							continue;
-
-						Shape3 *shape = &entity->shape;
-						float thickness = 3.0f;
-
-						switch (shape->kind) {
-							case SHAPE_KIND_AABB3: {
-								AABB3 a = aabb3_move(shape->as.aabb3, entity->transform.translation);
-								push_aabb3_outline(batch_line3, a, thickness, WHITE);
-							} break;
-							case SHAPE_KIND_SPHERE: {
-								float3 c = add3(shape->as.sphere.center, entity->transform.translation);
-								float r = shape->as.sphere.radius;
-								uint8_t segments = 32;
-
-								push_sphere_outline(batch_line3, c, r, segments, thickness, WHITE);
-							} break;
-							case SHAPE_KIND_CAPSULE3: {
-								float r = shape->as.capsule.radius;
-								float3 centers[] = {
-									add3(shape->as.capsule.a, entity->transform.translation),
-									add3(shape->as.capsule.b, entity->transform.translation),
-								};
-
-								uint8_t segments = 32;
-								Line *spine_points = arena_push_count(batch_line3, Line, 8);
-								// clang-format off
-									Line spine[] = {
-										{ {centers[0].x - r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), zero3}, { {centers[0].x - r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), zero3},
-										{ {centers[0].x + r, centers[0].y, centers[0].z}, thickness, color_pack(WHITE), zero3}, { {centers[0].x + r, centers[1].y, centers[0].z}, thickness, color_pack(WHITE), zero3},
-										{ {centers[0].x, centers[0].y, centers[0].z - r}, thickness, color_pack(WHITE), zero3}, { {centers[0].x, centers[1].y, centers[0].z - r}, thickness, color_pack(WHITE), zero3},
-										{ {centers[0].x, centers[0].y, centers[0].z + r}, thickness, color_pack(WHITE), zero3}, { {centers[0].x, centers[1].y, centers[0].z + r}, thickness, color_pack(WHITE), zero3},
-									};
-								// clang-format on
-								memory_copy_array(spine_points, spine);
-
-								for (uint32_t end = 0; end < countof(centers); ++end) {
-									float3 c = centers[end];
-									float signed_r = (end == 0) ? -r : r;
-
-									push_arc3(batch_line3, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
-									push_arc3(batch_line3, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, C_PIf, thickness, WHITE);
-									push_arc3(batch_line3, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, C_PIf, thickness, WHITE);
-								}
-
-							} break;
-								break;
-							case SHAPE_KIND_PLANE:
-								break;
-							case SHAPE_KIND_CONVEX_POLYGON:
-								break;
 						}
 					}
 				}
@@ -1052,42 +1049,41 @@ int main(void) {
 			case VIEWPORT_STATE_GAME: {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
 
-	#if 0
-				for (uint32_t index = 0; index < world.entity_count; ++index) { // :heightmap
-					Entity *entity = &world.entities[index];
-					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
-						continue;
+				if (0)
+					for (uint32_t index = 0; index < world.entity_count; ++index) { // :heightmap
+						Entity *entity = &world.entities[index];
+						if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
+							continue;
 
-					if (use_heightmap) {
-						float px = clampf(entity->transform.translation.x + map_width * 0.5f, 0.0f, map_width);
-						float pz = clampf(entity->transform.translation.z + map_depth * 0.5f, 0.0f, map_depth);
+						if (use_heightmap) {
+							float px = clampf(entity->transform.translation.x + map_width * 0.5f, 0.0f, map_width);
+							float pz = clampf(entity->transform.translation.z + map_depth * 0.5f, 0.0f, map_depth);
 
-						int32_t x0 = (int32_t)px;
-						int32_t z0 = (int32_t)pz;
+							int32_t x0 = (int32_t)px;
+							int32_t z0 = (int32_t)pz;
 
-						int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
-						int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
+							int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
+							int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
 
-						float hs[4] = {
-							[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-							[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-							[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
-							[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
-						};
-						float u = px - (float)x0;
-						float v = pz - (float)z0;
+							float hs[4] = {
+								[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+								[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
+								[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+								[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+							};
+							float u = px - (float)x0;
+							float v = pz - (float)z0;
 
-						float top_edge = hs[0] + u * (hs[1] - hs[0]);
-						float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
+							float top_edge = hs[0] + u * (hs[1] - hs[0]);
+							float bottom_edge = hs[2] + u * (hs[3] - hs[2]);
 
-						float height = top_edge + v * (bottom_edge - top_edge);
-						/* float hs = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f; */
-						/* tranform->translation.y = hs * 40.f; */
-						entity->transform.translation.y = height * 40.f;
-					} else
-						entity->transform.translation.y = 0.0f;
-				}
-	#endif
+							float height = top_edge + v * (bottom_edge - top_edge);
+							/* float hs = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f; */
+							/* tranform->translation.y = hs * 40.f; */
+							entity->transform.translation.y = height * 40.f;
+						} else
+							entity->transform.translation.y = 0.0f;
+					}
 
 				for (uint32_t index = 0; index < world.entity_count; ++index) {
 					Entity *entity = &world.entities[index];
@@ -1112,8 +1108,8 @@ int main(void) {
 							float current_theta = acosf(camera_offset.y / r);
 							float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
 																							  //
-							float target_angle = -current_azimuth - C_PIf + atan2f(input_vector.x, input_vector.y);
-							quat4 target_rotation = quat4_from_axis_angle(FLOAT3_Y, target_angle);
+							float target_angle = -current_azimuth - PIf + atan2f(input_vector.x, input_vector.y);
+							quat4 target_rotation = quat4_from_axis_angle(up3, target_angle);
 
 							float t = 1.0f - expf(-15.0f * dt);
 							entity->transform.rotation = quat4_slerp(entity->transform.rotation, target_rotation, t);
@@ -1143,7 +1139,7 @@ int main(void) {
 						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
 
 						velocity = scale3(direction, entity->move_speed * dt);
-						velocity = add3(velocity, (float3){ 0.0f, -0.1f, 0.0f });
+						/* velocity = add3(velocity, (float3){ 0.0f, -0.1f, 0.0f }); */
 					}
 
 					// :ai
@@ -1151,7 +1147,7 @@ int main(void) {
 						float3 delta = sub3(entity->target->transform.translation, entity->transform.translation);
 						float3 direction = normalize3_safe(delta, EPSILON);
 
-						entity->transform.rotation = quat4_from_axis_angle(FLOAT3_Y, atan2f(direction.x, direction.z));
+						entity->transform.rotation = quat4_from_axis_angle(up3, atan2f(direction.x, direction.z));
 
 						entity->move_speed = 3.0f;
 
@@ -1167,28 +1163,6 @@ int main(void) {
 							Raycast3Result nearest = RAY3_NO_HIT;
 
 							// Collision detection
-							float3 ro = add3(entity->transform.translation, aabb3_center(entity->shape.as.aabb3));
-							float3 rd = velocity;
-
-							for (uint32_t other_index = 0; other_index < world.entity_count; ++other_index) {
-								Entity *other = &world.entities[other_index];
-								if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
-									continue;
-
-								float3 center = add3(aabb3_center(other->shape.as.aabb3), other->transform.translation);
-								// NOTE: Minkowski sum
-								float3 half_extent =
-									float4x4_transform(
-										float4x4_scaling(other->transform.scale),
-										float4_from_float3(aabb3_half_extent(other->shape.as.aabb3), 0.0f));
-
-								float3 swept_extent = add3(half_extent, aabb3_half_extent(entity->shape.as.aabb3));
-
-								Raycast3Result result = raycast_aabb3(ro, rd, center, swept_extent);
-								if (result.t < nearest.t)
-									nearest = result;
-							}
-
 							Mesh *collision_mesh = &meshes[level->meshid];
 							for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
 								MeshPart *part = &collision_mesh->parts[part_index];
@@ -1202,18 +1176,13 @@ int main(void) {
 										.vertex_count = 3,
 									};
 
-									float3 sphere_center = add3(entity->transform.translation, entity->shape.as.sphere.center);
-									float radius = entity->shape.as.sphere.radius;
 									float len = length3(velocity);
 									float3 dir = scale3(velocity, 1 / len);
-									Triangle3 t = { triangle_polygon.vertices[0], triangle_polygon.vertices[1], triangle_polygon.vertices[2] };
-									Raycast3Result test_triangle_sweep = sphere_sweep_triangle3(sphere_center, radius, dir, len, t);
-									if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t) {
-										Plane tp = plane_from_triangle(t);
-										nearest = test_triangle_sweep;
 
-										push_triangle3_outline(batch_line3, t, 3.0f, RED);
-									}
+									Shape3 moved = shape3_move(entity->shape, entity->transform.translation);
+									/* Raycast3Result test_triangle_sweep = shapecast(translated_shape, shape3_from_convex3(triangle_polygon), dir, len); */
+									/* if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t) */
+									/* 	nearest = test_triangle_sweep; */
 								}
 							}
 
@@ -1223,12 +1192,14 @@ int main(void) {
 							}
 
 							// Collision resolution
-							float t_min = maxf(minf(nearest.t, 1.0f) - 0.01f, 0.0f);
+							float t_min = maxf(minf(nearest.t, 1.0f), 0.0f);
 
 							entity->transform.translation = add3(entity->transform.translation, scale3(velocity, t_min));
+							entity->transform.translation = add3(entity->transform.translation, scale3(nearest.normal, 0.001f));
 
 							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
 							velocity = scale3(velocity, 1.0f - t_min);
+
 							push_arrow3(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
 						}
 					}
@@ -1276,19 +1247,19 @@ int main(void) {
 				}
 
 				{ // :camera
-					static float azimuth = C_PIf * 3 / 2.f;
-					static float theta = C_PIf / 3.f;
+					static float azimuth = PIf * 3 / 2.f;
+					static float theta = PIf / 3.f;
 					static const float sensitivity = 1.0f;
 					static const float spring_arm_length = 10.f;
 
 					float yaw_delta = mouse_delta.x * sensitivity;
 					float pitch_delta = mouse_delta.y * sensitivity;
 
-					azimuth = fmodf(azimuth + yaw_delta, C_PIf * 2.f);
+					azimuth = fmodf(azimuth + yaw_delta, PIf * 2.f);
 					if (azimuth < 0)
-						azimuth += C_PIf * 2.f;
+						azimuth += PIf * 2.f;
 
-					theta = clampf(theta - pitch_delta, C_PIf / 4.f, C_PIf / 2.f);
+					theta = clampf(theta - pitch_delta, PIf / 4.f, PIf / 2.f);
 
 					float3 camera_offset = sub3(camera->position, player->transform.translation);
 
@@ -1300,13 +1271,13 @@ int main(void) {
 					float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
 
 					if (current_azimuth < 0)
-						current_azimuth += C_PIf * 2.f;
+						current_azimuth += PIf * 2.f;
 
 					float da = azimuth - current_azimuth;
-					if (da > C_PI)
-						da -= C_PI * 2.f;
-					if (da < -C_PI)
-						da += C_PI * 2.f;
+					if (da > PIf)
+						da -= PIf * 2.f;
+					if (da < -PIf)
+						da += PIf * 2.f;
 
 					float t = 1.0f - expf(-15.0f * dt);
 
@@ -1355,8 +1326,18 @@ int main(void) {
 			default:
 				break;
 		}
-#else
 
+		if (draw_collision_shapes) {
+			for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
+				Entity *entity = &world.entities[instance_index];
+				if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) == false)
+					continue;
+
+				push_shape3_outline(batch_line3, &entity->shape, entity->transform.translation, 3.0f);
+			}
+		}
+
+#if 0
 		// :minkowski
 		Rectangle viewport = rect(0, 0, dims.x, dims.y);
 		float2 center = { viewport.width / 2.0f, viewport.height / 2.0f };
@@ -1365,13 +1346,13 @@ int main(void) {
 		float2 t_center = { center.x + 200.f, center.y - 150.f };
 		float t_size = 80.f;
 		float2 triangle_polygon[] = {
-			float2_add(t_center, (float2){ 0.0f, -t_size }),
-			float2_add(t_center, (float2){ t_size, t_size }),
-			float2_add(t_center, (float2){ -t_size, t_size }),
+			add2(t_center, (float2){ 0.0f, -t_size }),
+			add2(t_center, (float2){ t_size, t_size }),
+			add2(t_center, (float2){ -t_size, t_size }),
 		};
 
-		float2 q_center = float2_add(float2_subtract(center, float2_splat(100.f)), (float2){ 300.f, -200.f });
-		float2 q_extent = float2_splat(100.f);
+		float2 q_center = add2(sub2(center, splat2(100.f)), (float2){ 300.f, -200.f });
+		float2 q_extent = splat2(100.f);
 		float2 quad_polygon[] = {
 			{ q_center.x - q_extent.x, q_center.y - q_extent.y },
 			{ q_center.x + q_extent.x, q_center.y - q_extent.y },
@@ -1385,7 +1366,7 @@ int main(void) {
 		push_triangle2(batch_line2d, (Triangle2){ triangle_polygon[0], triangle_polygon[1], triangle_polygon[2] }, 3.0f, BLACK);
 
 		float2 rc = quad_polygon[0];
-		float2 re = float2_subtract(quad_polygon[3], quad_polygon[0]);
+		float2 re = sub2(quad_polygon[3], quad_polygon[0]);
 		push_rect2_outline(batch_2d, rect(rc.x, rc.y, re.x, re.y), 3.0f, BLACK);
 
 		float2 *sum_points = arena_push_count(frame_arena, float2, countof(triangle_polygon) * countof(quad_polygon));
@@ -1397,7 +1378,7 @@ int main(void) {
 			float2 tp = { 0 };
 			float triangle_max_distance = -FLOAT_MAX;
 			for (uint32_t index = 0; index < countof(triangle_polygon); ++index) {
-				float distance = float2_dot(triangle_polygon[index], direction);
+				float distance = dot2(triangle_polygon[index], direction);
 				if (distance > triangle_max_distance) {
 					triangle_max_distance = distance;
 					tp = triangle_polygon[index];
@@ -1406,19 +1387,19 @@ int main(void) {
 
 			float2 qp = { 0 };
 			float quad_max_distance = -FLOAT_MAX;
-			direction = float2_scale(direction, -1.0f);
+			direction = scale2(direction, -1.0f);
 			for (uint32_t index = 0; index < countof(quad_polygon); ++index) {
-				float distance = float2_dot(quad_polygon[index], direction);
+				float distance = dot2(quad_polygon[index], direction);
 				if (distance > quad_max_distance) {
 					quad_max_distance = distance;
 					qp = quad_polygon[index];
 				}
 			}
 
-			float2 sum_point = float2_add(center, float2_subtract(tp, qp));
+			float2 sum_point = add2(center, sub2(tp, qp));
 			bool found = false;
 			for (uint32_t index = 0; index < point_count; ++index) {
-				if (float2_equal(sum_point, sum_points[index])) {
+				if (equal2(sum_point, sum_points[index])) {
 					found = true;
 					break;
 				}
@@ -1441,8 +1422,9 @@ int main(void) {
 			continue;
 
 		// Swapchain image acquisition
-		GFX_Image *compute_blit_target = gfx_backbuffer(context, cmd, swapchains[0]);
+		GFX_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gfx_backbuffer(context, cmd, popup_swapchain) : 0;
 		if (compute_blit_target) {
+			ASSERT(compute_blit_target->width == compute_image->width && compute_blit_target->height == compute_image->height);
 			// transition swapchain target & blit src compute image
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, compute_blit_target);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
@@ -1451,6 +1433,15 @@ int main(void) {
 			gfx_bind(context, &c_pipeline, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
+			struct {
+				float2 mouse;
+				float time;
+			} pc = {
+				.mouse = compute_mouse,
+				.time = (float)time,
+			};
+
+			vkCmdPushConstants(cmd->handle, c_pipeline.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 			gfx_cmd_dispatch(cmd, (compute_blit_target->width / 16) + 1, (compute_blit_target->height / 16) + 1, 1);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
 			Rectangle area = rect(0, 0, compute_blit_target->width, compute_blit_target->height);
@@ -1458,9 +1449,13 @@ int main(void) {
 
 			// transition swapchain images for presenting
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, compute_blit_target);
+		} else if (os_surface_drawable(popup_compute)) {
+			uint2 dims = os_surface_size(popup_compute);
+			gfx_swapchain_resize(context, popup_swapchain, dims.x, dims.y);
+			gfx_image_resize(context, compute_image, dims.x, dims.y);
 		}
 
-		GFX_Image *main_target = gfx_backbuffer(context, cmd, swapchains[1]);
+		GFX_Image *main_target = gfx_backbuffer(context, cmd, main_swapchain);
 		if (main_target) {
 			// transition swapchain & offscren targets for drawing
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, main_target);
@@ -1523,7 +1518,7 @@ int main(void) {
 			float ortho_size = 10.0f;
 			lights[light_index].matrix = float4x4_multiply(
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				float4x4_lookat(float3_from_float4(lights[light_index].position), zero3, FLOAT3_Y));
+				float4x4_lookat(float3_from_float4(lights[light_index].position), zero3, up3));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },
@@ -1685,7 +1680,7 @@ int main(void) {
 				gfx_cmd_pipeline_bind(cmd, &pipeline_3d);
 				for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
 					Entity *entity = &world.entities[instance_index];
-					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
+					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity->pass != DRAW_PASS_OPAQUE)
 						continue;
 
 					Mesh *mesh = &meshes[entity->meshid];
@@ -1705,27 +1700,25 @@ int main(void) {
 							float4 base_color;
 							float4 emissive;
 							float2 metallic_roughness;
-							float2 uv_offset;
-							float2 uv_scale;
+							float4 uv_transform; // xy = scale, zw = offset
 						} pc = {
 							.model = transform,
 							.base_color = material->tint,
 							.emissive = one4,
 							.metallic_roughness = { 0.0f, 0.5f },
-							.uv_offset = { 0.0f, 0.0f },
-							.uv_scale = { 1.0f, 1.0f },
+							.uv_transform = { 1.0f, 1.0f, 0.0f, 0.0f },
 						};
 
 						if (entity->meshid == MESH_TERRAIN_FLAT) {
-							pc.uv_scale.x *= 8.f;
-							pc.uv_scale.y *= 8.f;
+							pc.uv_transform.x *= 8.f;
+							pc.uv_transform.y *= 8.f;
 						}
 
 						if (entity->meshid == MESH_HERO_MALE && part_index == 3) { // hero head
 							if (blink_timer > 2.0f && blink_timer < 2.1f)
-								pc.uv_offset.x = 1.0f / 3.0f;
+								pc.uv_transform.z = 1.0f / 3.0f;
 							else if (blink_timer > 2.1f && blink_timer < 2.3f) {
-								pc.uv_offset.x = 2.0f / 3.0f;
+								pc.uv_transform.z = 2.0f / 3.0f;
 							} else if (blink_timer >= 2.3f) {
 								blink_timer = 0.0f;
 							}
@@ -1773,15 +1766,13 @@ int main(void) {
 							float4 base_color;
 							float4 emissive;
 							float2 metallic_roughness;
-							float2 uv_offset;
-							float2 uv_scale;
+							float4 uv_transform;
 							uint32_t use_heightmap;
 						} pc = {
 							.base_color = material->tint,
 							.emissive = one4,
 							.metallic_roughness = { 0.0f, 0.5f },
-							.uv_offset = { 0.0f, 0.0f },
-							.uv_scale = { 1.0f, 1.0f },
+							.uv_transform = { 1.0f, 1.0f, 0.0f, 0.0f },
 							.use_heightmap = use_heightmap,
 						};
 
@@ -1814,6 +1805,73 @@ int main(void) {
 					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 				}
 
+				{ // :transparent
+
+					typedef struct {
+						float distance;
+						Entity *entity;
+					} MeshSort;
+					MeshSort *transparent_meshes = arena_push_count(frame_arena, MeshSort, world.entity_count);
+
+					uint32_t transparent_mesh_count = 0;
+					for (uint32_t index = 0; index < world.entity_count; ++index) {
+						Entity *entity = &world.entities[index];
+						if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity->pass != DRAW_PASS_TRANSPARENT)
+							continue;
+
+						Mesh *mesh = &meshes[entity->meshid];
+						float3 center = add3(entity->transform.translation, aabb3_center(mesh->bounds));
+
+						transparent_meshes[transparent_mesh_count++] = (MeshSort){
+							.distance = length3_sq(sub3(camera->position, center)),
+							.entity = entity
+						};
+					}
+					arena_pop(frame_arena, sizeof(MeshSort) * (world.entity_count - transparent_mesh_count));
+
+					qsort(transparent_meshes, transparent_mesh_count, sizeof(MeshSort), cmp_mesh_sort);
+
+					if (transparent_mesh_count)
+						gfx_cmd_pipeline_bind(cmd, &transparent);
+
+					for (uint32_t index = 0; index < transparent_mesh_count; ++index) {
+						Entity *e = transparent_meshes[index].entity;
+						Mesh *mesh = &meshes[e->meshid];
+
+						GFX_Buffer *buffer = mesh->buffer;
+						uint64_t offset = mesh->buffer_vertex_byte_offset;
+						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						if (entity_has(e, ENTITY_FEATURE_ANIMATE) && animation_counts[e->meshid] && e->skin_matrices) {
+							buffer = cmd->transient_buffer;
+							offset = e->skinned_vertices_offset;
+						}
+
+						GFX_Image *images[] = {
+							[TEXTURE_SLOT_ALBEDO] = window_texture.handle,
+							[TEXTURE_SLOT_METAL_ROUGHNESS] = white_texture,
+							[TEXTURE_SLOT_NORMAL] = white_texture,
+							[TEXTURE_SLOT_OCCLUSION] = white_texture,
+							[TEXTURE_SLOT_EMISSIVE] = white_texture,
+						};
+
+						Uniform uniforms[] = {
+							storage_buffers(0, buffer, offset, size),
+							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
+						};
+
+						gfx_bind(context, &transparent, 1, uniforms, countof(uniforms));
+
+						vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
+							MeshPart *part = &mesh->parts[part_index];
+							float4x4 world_from_object = float4x4_compose_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
+
+							vkCmdPushConstants(cmd->handle, transparent.layout, VK_SHADER_STAGE_ALL, 0, sizeof(world_from_object), world_from_object.elements);
+							vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
+						}
+					}
+				}
+
 				{ // :overlay
 					if (batch_line3->offset) {
 						gfx_cmd_pipeline_bind(cmd, &pipeline_line3d);
@@ -1821,7 +1879,7 @@ int main(void) {
 							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
 						gfx_bind(context, &pipeline_line3d, 1, uniforms, countof(uniforms));
-						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(Line)) * 6, 1, 0, 0);
+						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(LinePoint)) * 6, 1, 0, 0);
 					}
 				}
 
@@ -1866,14 +1924,14 @@ int main(void) {
 					};
 					gfx_bind(context, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
 					gfx_bind(context, &pipeline_line2d, 1, uniforms, countof(uniforms));
-					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(Line)) * 6, 1, 0, 0);
+					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(LinePoint)) * 6, 1, 0, 0);
 				}
 
 				vkCmdEndRendering(cmd->handle);
 			}
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, main_target);
-		} else { //  TODO: resize swapchain
-			gfx_swapchain_resize(context, swapchains[1], dims.x, dims.y);
+		} else {
+			gfx_swapchain_resize(context, main_swapchain, dims.x, dims.y);
 			if (depthbuffer->width != dims.x || depthbuffer->height != dims.y)
 				gfx_image_resize(context, depthbuffer, dims.x, dims.y);
 			if (offscreen_render->width != dims.x || offscreen_render->height != dims.y)
@@ -1931,7 +1989,7 @@ int main(void) {
 
 		OS_Timestamp current_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
 		if (compute_ts != current_ts) {
-			LOG_INFO("hot-reloading...");
+			LOG_INFO("hot-reloading %s...", c_pipeline.options.debug_name);
 			vkDeviceWaitIdle(context->device.logical); // TODO: Proper synchronization for hot-reload
 			pipeline_destroy(context, &c_pipeline);
 
@@ -1943,11 +2001,27 @@ int main(void) {
 			compute_ts = current_ts;
 		}
 
+		current_ts = os_file_last_modified(s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
+		if (transparent_ts != current_ts) {
+			LOG_INFO("hot-reloading %s...", transparent.options.debug_name);
+			vkDeviceWaitIdle(context->device.logical); // TODO: Proper synchronization for hot-reload
+			PipelineOptions options = transparent.options;
+			memory_copy_array(options.color_attachments, transparent.options.color_attachments);
+
+			pipeline_destroy(context, &transparent);
+
+			ArenaTemp scratch = arena_scratch_begin(NULL);
+			String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
+			String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
+			transparent = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, options);
+
+			arena_scratch_end(scratch);
+
+			transparent_ts = current_ts;
+		}
+
 		context->current_frame_index = (context->current_frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
 		arena_reset(frame_arena);
-
-		/* batch.offset = 0; */
-		/* batch.memory = scratch_buffers[context->current_frame].mapped; */
 	}
 
 	// :destroy
@@ -1958,6 +2032,7 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_shadow);
 		pipeline_destroy(context, &pipeline_3d);
 		pipeline_destroy(context, &pipeline_2d);
+		pipeline_destroy(context, &transparent);
 		pipeline_destroy(context, &pipeline_skybox);
 		pipeline_destroy(context, &pipeline_grass);
 		pipeline_destroy(context, &pipeline_line3d);
@@ -2556,7 +2631,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 	return result;
 }
 
-bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[MAX_UNIFORM_SETS]) {
+bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[GFX_LIMIT_UNIFORM_SETS]) {
 	bool ok = sets;
 
 	ArenaTemp scratch = arena_scratch_begin(0);
@@ -2566,7 +2641,7 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[MAX_UNIFORM_S
 		ok = spvReflectCreateShaderModule(bytecode.length, bytecode.text, &module) == SPV_REFLECT_RESULT_SUCCESS;
 
 		if (ok == false)
-			LOG_ERROR("failed to reflect shader bytecode.");
+			LOG_ERROR("%s - failed to reflect shader bytecode.", __func__);
 	}
 
 	uint32_t set_count = 0;
@@ -2581,7 +2656,7 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[MAX_UNIFORM_S
 	}
 
 	if (ok) { // populate uniform metadata
-		ASSERT(set_count <= MAX_UNIFORM_SETS);
+		ASSERT(set_count <= GFX_LIMIT_UNIFORM_SETS);
 
 		for (uint32_t set_index = 0; set_index < MIN(set_count, 3); ++set_index) {
 			SpvReflectDescriptorSet *spv_set = &reflect_sets[set_index];
@@ -2618,6 +2693,9 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[MAX_UNIFORM_S
 		}
 	}
 
+	if (ok == false)
+		memory_zero(sets, sizeof(UniformSet[GFX_LIMIT_UNIFORM_SETS]));
+
 	arena_scratch_end(scratch);
 	spvReflectDestroyShaderModule(&module);
 
@@ -2632,7 +2710,7 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 
 	LOG_DEBUG("creating '%s' swapchain.", name);
 	if (ok == false)
-		LOG_WARN("invalid shader bytecode passed.");
+		LOG_WARN("%s - invalid shader bytecode passed.", __func__);
 
 	if (ok) { // create shader module
 		VkShaderModuleCreateInfo csm_create_info = {
@@ -2649,10 +2727,10 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 
 	uint32_t set_count = 0;
 	if (ok) { // create descriptor set layouts
-		gfx_reflect_shader_uniforms(compute_bytecode, result.set_infos);
+		ok = gfx_reflect_shader_uniforms(compute_bytecode, result.set_infos);
 
 		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
-		for (uint32_t set_index = 0; set_index < MAX_UNIFORM_SETS; ++set_index) {
+		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS && ok; ++set_index) {
 			UniformSet *set = &result.set_infos[set_count];
 			if (set->uniform_count == 0)
 				continue;
@@ -2757,7 +2835,7 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 		gfx_reflect_shader_uniforms(vertex_bytecode, result.set_infos);
 
 		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
-		for (uint32_t set_index = 0; set_index < MAX_UNIFORM_SETS; ++set_index) {
+		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS; ++set_index) {
 			UniformSet *set = &result.set_infos[set_count];
 			if (set->uniform_count == 0)
 				continue;
@@ -2860,16 +2938,21 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			.maxDepthBounds = 1.0f
 		};
 
-		VkPipelineColorBlendAttachmentState color_attachment_blends[MAX_COLOR_ATTACHMENTS] = { 0 };
+		VkPipelineColorBlendAttachmentState color_attachment_blends[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
 		VkPipelineColorBlendStateCreateInfo cbs_create_info = { 0 };
 
-		VkFormat color_attachment_formats[MAX_COLOR_ATTACHMENTS] = { 0 };
+		VkFormat color_attachment_formats[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
 		VkPipelineRenderingCreateInfo r_create_info = { 0 };
 
 		{ // attachment state
+			VkColorComponentFlags rgba_write_mask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 			VkPipelineColorBlendAttachmentState color_attachment_blend_default = {
-				.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+				.colorWriteMask = rgba_write_mask,
 				.blendEnable = VK_TRUE,
+
+				// Color: result = src.rgb + dst.rgb
+				/* .srcColorBlendFactor = VK_BLEND_FACTOR_ONE, */
+				/* .dstColorBlendFactor = VK_BLEND_FACTOR_ONE, */
 
 				// Color: result = src.rgb * src.a + dst.rgb * (1 - src.a)
 				.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
@@ -2882,7 +2965,7 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 				.alphaBlendOp = VK_BLEND_OP_ADD,
 			};
 			for (uint32_t index = 0; index < options.color_attachment_count; ++index)
-				memory_copy(color_attachment_blends + index, &color_attachment_blend_default, sizeof(VkPipelineColorBlendAttachmentState));
+				color_attachment_blends[index] = color_attachment_blend_default;
 
 			cbs_create_info = (VkPipelineColorBlendStateCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -3643,7 +3726,7 @@ bool gfx__vk_device_make(GFX_Context *context) {
 
 	bool ok = true;
 	if (ok) { // select physical device
-
+		LOG_DEBUG("finding suitable device...");
 		uint32_t physical_device_count = 0;
 		vkEnumeratePhysicalDevices(context->instance, &physical_device_count, 0);
 
@@ -3657,13 +3740,15 @@ bool gfx__vk_device_make(GFX_Context *context) {
 			}
 		}
 
-		if (context->device.physical == 0) {
+		ok = context->device.physical != 0;
+
+		if (ok == false)
 			LOG_ERROR("failed to find suitable graphics card with Vulkan 1.3 support.");
-			ok = false;
-		}
 	}
 
 	if (ok) { // find queue indices
+		LOG_INFO("Device: %s", context->device.properties.deviceName);
+
 		uint32_t queue_family_count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(context->device.physical, &queue_family_count, 0);
 
@@ -3832,27 +3917,27 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 		VkDescriptorPoolSize sizes[] = {
 			{
 			  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			  .descriptorCount = 1000,
+			  .descriptorCount = 1024,
 			},
 			{
 			  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-			  .descriptorCount = 1000,
+			  .descriptorCount = 1024,
 			},
 			{
 			  .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			  .descriptorCount = 1000,
+			  .descriptorCount = 1024,
 			},
 			{
 			  .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			  .descriptorCount = 1000,
+			  .descriptorCount = 1024,
 			},
 			{
 			  .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
-			  .descriptorCount = 1000,
+			  .descriptorCount = 1024,
 			},
 			{
 			  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			  .descriptorCount = 1000,
+			  .descriptorCount = 1024,
 			},
 		};
 
@@ -3860,7 +3945,7 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 			.poolSizeCount = countof(sizes),
 			.pPoolSizes = sizes,
-			.maxSets = 1000,
+			.maxSets = 1024,
 		};
 
 		for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index)
@@ -3871,6 +3956,8 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 
 bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
 	bool ok = context && pipeline && uniforms && uniform_count > 0;
+	if (ok == false)
+		LOG_ERROR("%s - invalid parameters.", __func__);
 
 	GFX_CommandContext *cmd = 0;
 	VkDescriptorSet set = 0;
@@ -4550,7 +4637,7 @@ static inline float3 face_orient(float3 v, AxisPlane face) {
 	return result;
 }
 
-Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap) {
+Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap) {
 	Mesh result = { 0 };
 
 	bool ok = arena;
@@ -4558,8 +4645,10 @@ Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bo
 	if (ok) {
 		rings += 2; // add top and bottom rings
 		segments = MAX(3, segments);
-		top_cap = !!(top_cap);
-		bottom_cap = !!(bottom_cap);
+
+		// map from 0 to 1
+		top_cap = top_cap > 0;
+		bottom_cap = bottom_cap > 0;
 
 		uint32_t cap_vertices = 1 + segments;
 		result.total_vertex_count = (segments * rings) + (cap_vertices * (top_cap + bottom_cap));
@@ -4580,7 +4669,7 @@ Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bo
 				result.vertices[vertex_cursor++] = (Vertex3){
 					.position = add3(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { ca, 0.0f, sa },
-					.uv = { sv, rv },
+					.uv = { sv, 1.0 - rv },
 				};
 			}
 		}
@@ -4678,11 +4767,11 @@ Mesh mesh_from_cylinder(Arena *arena, float3 origin, float half_height, float bo
 }
 
 // TODO: Fix normal for cones
-Mesh mesh_from_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments) {
-	return mesh_from_cylinder(arena, origin, height * 0.5f, radius, 0.0f, segments, 0, false, true);
+Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments) {
+	return mesh_cylinder(arena, origin, height * 0.5f, radius, 0.0f, segments, 0, false, true);
 }
 
-Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+Mesh mesh_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
 	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
@@ -4749,7 +4838,7 @@ Mesh mesh_from_plane(Arena *arena, AxisPlane orientation, float width, float hei
 	return result;
 }
 
-Mesh mesh_from_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap) {
+Mesh mesh_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -w * 0.5f, .y = 0.0f, .y = -h * 0.5f };
 	result.bounds.max = (float3){ .x = w * 0.5f, .y = 0.0f, .y = h * 0.5f };
@@ -5001,12 +5090,12 @@ void push_triangle2(Arena *arena, Triangle2 t, float thickness, Color color) {
 }
 
 void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = float3_from_float2(start),
 		.thickness = thickness,
 		.color = color_pack(color),
 	};
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = float3_from_float2(end),
 		.thickness = thickness,
 		.color = color_pack(color),
@@ -5017,12 +5106,12 @@ void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color 
 	float2 shaft_end = add2(start, scale2(sub2(end, start), 0.75f));
 	push_line2(arena, start, shaft_end, thickness, color);
 
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = float3_from_float2(shaft_end),
 		.thickness = thickness * 4,
 		.color = color_pack(color),
 	};
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = float3_from_float2(end),
 		.thickness = 0.0f,
 		.color = color_pack(color),
@@ -5151,30 +5240,30 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Axis
 		float ca = cosf(a), sa = sinf(a);
 		float can = cosf(an), san = sinf(an);
 
-		Line p0, p1;
+		LinePoint p0, p1;
 		switch (plane) {
 			case AXIS_PLANE_DOWN:
 			case AXIS_PLANE_UP:
-				p0 = (Line){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), zero3 };
-				p1 = (Line){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), zero3 };
+				p0 = (LinePoint){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), zero3 };
+				p1 = (LinePoint){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), zero3 };
 				break;
 			case AXIS_PLANE_LEFT:
 			case AXIS_PLANE_RIGHT:
-				p0 = (Line){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), zero3 };
-				p1 = (Line){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), zero3 };
+				p0 = (LinePoint){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), zero3 };
+				p1 = (LinePoint){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), zero3 };
 				break;
 			case AXIS_PLANE_BACKWARD:
 			case AXIS_PLANE_FORWARD:
-				p0 = (Line){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), zero3 };
-				p1 = (Line){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), zero3 };
+				p0 = (LinePoint){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), zero3 };
+				p1 = (LinePoint){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), zero3 };
 				break;
 			case AXIS_PLANE_COUNT:
 				ASSERT(false);
 				break;
 		}
 
-		*arena_push_count(arena, Line, 1) = p0;
-		*arena_push_count(arena, Line, 1) = p1;
+		*arena_push_count(arena, LinePoint, 1) = p0;
+		*arena_push_count(arena, LinePoint, 1) = p1;
 	}
 }
 
@@ -5189,7 +5278,7 @@ void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
-	Line outline[] = {
+	LinePoint outline[] = {
 		{ { min.x, min.y, min.z }, thickness, color_pack(color), zero3 },
 		{ { min.x, max.y, min.z }, thickness, color_pack(color), zero3 },
 
@@ -5227,17 +5316,17 @@ void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 		{ { min.x, max.y, max.z }, thickness, color_pack(color), zero3 },
 	};
 
-	Line *points = arena_push_count(arena, Line, countof(outline));
+	LinePoint *points = arena_push_count(arena, LinePoint, countof(outline));
 	memory_copy_array(points, outline);
 }
 
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = start,
 		.thickness = thickness,
 		.color = color_pack(color),
 	};
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = end,
 		.thickness = thickness,
 		.color = color_pack(color),
@@ -5255,23 +5344,21 @@ void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color 
 
 	float4x4 vp = float4x4_multiply(projeciton, view);
 	float w = vp.elements[3] * end.x + vp.elements[7] * end.y + vp.elements[11] * end.z + vp.elements[15] * 1.0f;
-
 	float desired_pixel_length = thickness * 5.0f;
 
 	float world_head_length = (2.0f * w * desired_pixel_length) / (projeciton.elements[0] * viewport_width);
-
 	if (world_head_length > total_world_length * 0.5f)
 		world_head_length = total_world_length * 0.5f;
 
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
 	push_line3(arena, start, shaft_end, thickness, color);
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = shaft_end,
 		.thickness = thickness * 4,
 		.color = color_pack(color),
 	};
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
 		.position = end,
 		.thickness = 0.0f,
 		.color = color_pack(color),
@@ -5286,7 +5373,7 @@ void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color co
 
 void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
 	float3 right = { 0 }, up = { 0 };
-	float dot = dot3(plane.normal, FLOAT3_Y);
+	float dot = dot3(plane.normal, up3);
 	if (fabsf(dot) >= 0.99f) {
 		right.x = dot > 0 ? 1.0f : -1.0f;
 		up.z = -1.0f;
@@ -5308,4 +5395,58 @@ void push_rect3_outline(Arena *arena, Plane plane, float width, float height, fl
 
 	for (uint32_t index = 0; index < countof(corners); ++index)
 		push_line3(arena, corners[index], corners[(index + 1) % countof(corners)], thickness, color);
+}
+
+void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness) {
+	switch (shape->kind) {
+		case SHAPE_KIND_AABB3: {
+			AABB3 a = aabb3_move(shape->as.aabb3, offset);
+			push_aabb3_outline(arena, a, thickness, WHITE);
+		} break;
+		case SHAPE_KIND_SPHERE: {
+			float3 c = add3(shape->as.sphere.center, offset);
+			float r = shape->as.sphere.radius;
+			uint8_t segments = 32;
+
+			push_sphere_outline(arena, c, r, segments, thickness, WHITE);
+		} break;
+		case SHAPE_KIND_CAPSULE3: {
+			float r = shape->as.capsule.radius;
+			float3 centers[] = {
+				add3(shape->as.capsule.a, offset),
+				add3(shape->as.capsule.b, offset),
+			};
+
+			uint8_t segments = 32;
+			LinePoint *spine_points = arena_push_count(arena, LinePoint, 8);
+			LinePoint spine[] = {
+				{ { centers[0].x - r, centers[0].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
+				{ { centers[0].x - r, centers[1].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
+
+				{ { centers[0].x + r, centers[0].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
+				{ { centers[0].x + r, centers[1].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
+
+				{ { centers[0].x, centers[0].y, centers[0].z - r }, thickness, color_pack(WHITE), zero3 },
+				{ { centers[0].x, centers[1].y, centers[0].z - r }, thickness, color_pack(WHITE), zero3 },
+
+				{ { centers[0].x, centers[0].y, centers[0].z + r }, thickness, color_pack(WHITE), zero3 },
+				{ { centers[0].x, centers[1].y, centers[0].z + r }, thickness, color_pack(WHITE), zero3 },
+			};
+			memory_copy_array(spine_points, spine);
+
+			for (uint32_t end = 0; end < countof(centers); ++end) {
+				float3 c = centers[end];
+				float signed_r = (end == 0) ? -r : r;
+
+				push_arc3(arena, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
+				push_arc3(arena, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, PIf, thickness, WHITE);
+				push_arc3(arena, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, PIf, thickness, WHITE);
+			}
+		} break;
+			break;
+		case SHAPE_KIND_PLANE:
+			break;
+		case SHAPE_KIND_CONVEX_POLYGON:
+			break;
+	}
 }

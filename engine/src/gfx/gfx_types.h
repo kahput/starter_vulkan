@@ -4,6 +4,14 @@
 #include "core/strings.h"
 
 typedef enum {
+	GFX_LIMIT_UNIFORM_SETS = 4,
+	GFX_LIMIT_UNIFORMS_PER_SET = 32,
+	GFX_LIMIT_COLOR_ATTACHMENTS = 4,
+
+	GFX_LIMIT_COUNT,
+} GfxLimits;
+
+typedef enum {
 	UNIFORM_TYPE_IMAGE,
 	UNIFORM_TYPE_STORAGE_IMAGE,
 	UNIFORM_TYPE_SAMPLER,
@@ -123,7 +131,7 @@ typedef enum {
 typedef enum sampler_filter {
 	FILTER_NEAREST = 0,
 	FILTER_LINEAR = 1
-} SamplerFilterMode;
+} FilterMode;
 
 typedef enum sampler_address_mode {
 	WRAP_MODE_REPEAT = 0,
@@ -132,7 +140,7 @@ typedef enum sampler_address_mode {
 	WRAP_MODE_CLAMP_BORDER = 3,
 
 	WRAP_MODE_COUNT,
-} SamplerWrapMode;
+} WrapMode;
 
 typedef enum cull_mode {
 	CULL_MODE_NONE = 0,
@@ -165,14 +173,14 @@ typedef struct {
 typedef struct {
 	const char *debug_name;
 
-	SamplerFilterMode min_filter;
-	SamplerFilterMode mag_filter;
+	FilterMode min_filter;
+	FilterMode mag_filter;
 
-	SamplerFilterMode mipmap_filter;
+	FilterMode mipmap_filter;
 
-	SamplerWrapMode address_mode_u;
-	SamplerWrapMode address_mode_v;
-	SamplerWrapMode address_mode_w;
+	WrapMode address_mode_u;
+	WrapMode address_mode_v;
+	WrapMode address_mode_w;
 
 	bool compare_enable;
 } SamplerOptions;
@@ -188,14 +196,13 @@ typedef struct {
 		.address_mode_w = (mode),       \
 	}
 
-#define MAX_COLOR_ATTACHMENTS 8
 typedef struct {
 	const char *debug_name;
 
 	ImageSampleCount sample_count;
 	PipelineCullMode cull_mode;
 
-	PixelFormat color_attachments[MAX_COLOR_ATTACHMENTS];
+	PixelFormat color_attachments[GFX_LIMIT_COLOR_ATTACHMENTS];
 	uint32_t color_attachment_count;
 
 	PixelFormat depth_attachment;
@@ -294,7 +301,7 @@ typedef struct {
 } Uniform;
 
 typedef struct {
-	Uniform uniforms[32];
+	Uniform uniforms[GFX_LIMIT_UNIFORMS_PER_SET];
 	uint32_t uniform_count;
 } UniformSet;
 
@@ -367,7 +374,6 @@ static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images
 	return result;
 }
 
-	#define MAX_UNIFORM_SETS 4
 typedef struct Shader GFX_Pipeline;
 struct Shader {
 	GFX_Pipeline *next;
@@ -376,8 +382,8 @@ struct Shader {
 	VkPipelineLayout layout;
 	VkShaderModule shaders[SHADER_STAGE_COUNT];
 
-	VkDescriptorSetLayout set_layouts[MAX_UNIFORM_SETS];
-	UniformSet set_infos[MAX_UNIFORM_SETS];
+	VkDescriptorSetLayout set_layouts[GFX_LIMIT_UNIFORM_SETS];
+	UniformSet set_infos[GFX_LIMIT_UNIFORM_SETS];
 
 	PipelineOptions options;
 };
@@ -424,7 +430,9 @@ typedef struct {
 typedef struct {
 	VkCommandBuffer handle;
 	VkFence in_flight_fence;
+
 	VkDescriptorPool descriptor_pool;
+	uint32_t descriptor_count;
 
 	GFX_Swapchain *swapchains[MAX_SWAPCHAINS];
 	uint32_t swapchain_image_indices[MAX_SWAPCHAINS];

@@ -5,18 +5,17 @@
 
 #include <math.h>
 
-#define C_PI 3.14159265358979323846264338327950288
-#define C_PIf ((float)C_PI)
-#define TAU (C_PI * 2)
-#define TAUf (C_PIf * 2)
+#define PI 3.14159265358979323846264338327950288
+#define PIf ((float)PI)
+#define TAU (PI * 2)
+#define TAUf (PIf * 2)
 #define EPSILON 1e-5f
 
 #define FLOAT_MAX 3.40282347e+38F
-#define FLOAT_MIN -FLOAT_MAX
 
-#define FLOAT3_X (float3){ 1.0f, 0.0f, 0.0f }
-#define FLOAT3_Y (float3){ 0.0f, 1.0f, 0.0f }
-#define FLOAT3_Z (float3){ 0.0f, 0.0f, 1.0f }
+#define right3 (float3){ 1.0f, 0.0f, 0.0f }
+#define up3 (float3){ 0.0f, 1.0f, 0.0f }
+#define forward3 (float3){ 0.0f, 0.0f, 1.0f }
 
 #define zero2 (float2){ 0.0f, 0.0f }
 #define one2 (float2){ 1.0f, 1.0f }
@@ -33,8 +32,8 @@ typedef struct {
 typedef float4 quat4;
 
 // --- scalar ---
-static inline float deg_to_rad(float degree) { return degree * (C_PIf / 180.f); }
-static inline float rad_to_deg(float radians) { return radians * (180.0f / C_PIf); }
+static inline float deg_to_rad(float degree) { return degree * (PIf / 180.f); }
+static inline float rad_to_deg(float radians) { return radians * (180.0f / PIf); }
 
 float randf_range(float min, float max);
 uint32_t randu_range(uint32_t min, uint32_t max);
@@ -75,6 +74,7 @@ static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.
 static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
 static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y }; }
 #define spread2(v) v.x, v.y
+#define cast2(v, T) ((T){ v.x, v.y })
 
 static inline bool equal2(float2 a, float2 b) { return equalf(a.x, b.x) && equalf(a.y, b.y); }
 static inline float2 negate2(float2 v) { return (float2){ -v.x, -v.y }; }

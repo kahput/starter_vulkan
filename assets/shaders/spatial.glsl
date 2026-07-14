@@ -1,3 +1,6 @@
+#define PI 3.14159265358979323846264338327950288
+#define TAU PI * 2.0
+
 struct Vertex3 {
     vec4 position; 
     vec4 normal;
@@ -34,3 +37,7 @@ layout(set = 0, binding = 1) readonly buffer LightBlock {
 
 layout(set = 0, binding = 2) uniform sampler2DShadow u_shadow;
 layout(set = 0, binding = 3) uniform samplerCube u_skybox;
+
+vec2 transform_uv(vec2 uv, vec4 uv_st) {
+    return uv * uv_st.xy + uv_st.zw;
+}

@@ -21,7 +21,7 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions opt);
 GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, const char *debug_name);
 
-bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet out_sets[MAX_UNIFORM_SETS]);
+bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet out_sets[GFX_LIMIT_UNIFORM_SETS]);
 GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 bytecode);
 GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vs_bytecode, String8 fs_bytecode, PipelineOptions options);
 

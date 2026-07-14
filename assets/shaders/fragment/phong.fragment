@@ -16,8 +16,7 @@ layout(push_constant) uniform ConstantBlock {
     vec4 tint;
     vec4 emissive;
     vec2 metallic_roughness;
-    vec2 uv_offset;
-    vec2 uv_scale;
+    vec4 uv_st;
 } pc;
 
 in ShaderInput {
@@ -32,7 +31,7 @@ layout(location = 0) out vec4 out_color;
 float shadow_calculation(vec4 lightspace, float bias); 
 
 void main() {
-    vec4 albedo = texture(u_textures[TEXTURE_ALBEDO], fs_input.uv + pc.uv_offset) * pc.tint;
+    vec4 albedo = texture(u_textures[TEXTURE_ALBEDO], fs_input.uv) * pc.tint;
 
     vec3 normal = normalize(fs_input.normal);
     vec3 fragment_to_light = normalize(lights[0].position.xyz - fs_input.worldspace);

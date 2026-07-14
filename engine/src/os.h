@@ -13,6 +13,8 @@ typedef enum {
 	OS_BACKEND_LINUX,
 	OS_BACKEND_WEB,
 
+	OS_BACKEND_COUNT,
+
 #ifdef LINUX_BUILD
 	OS_BACKEND = OS_BACKEND_LINUX,
 #elif WINDOWS_BUILD
@@ -23,6 +25,12 @@ typedef enum {
 	#error Unsupported backend
 #endif
 } OS_Backend;
+
+static String8 os_to_string[OS_BACKEND_COUNT] = {
+	[OS_BACKEND_WINDOWS] = str_comp("windows"),
+	[OS_BACKEND_LINUX] = str_comp("linux"),
+	[OS_BACKEND_WEB] = str_comp("web"),
+};
 
 // ----------------------
 // - System Information & Time
@@ -59,6 +67,7 @@ typedef enum {
 
 OS_File os_file_open(String8 path, OS_FileMode);
 OS_File os_file_open_async(String8 path, OS_FileMode mode);
+
 uint64_t os_file_size(OS_File handle);
 void os_file_close(OS_File handle);
 
@@ -69,12 +78,13 @@ bool os_file_copy(String8 src, String8 dst);
 String8 os_file_read_entire(Arena *arena, String8 path);
 void os_file_write_entire(String8 filename, const void *buffer, uint64_t size);
 
-typedef uint64_t OS_Timestamp;
 bool os_file_exists(String8 path);
 bool os_file_delete(String8 path);
-OS_Timestamp os_file_last_modified(String8 filepath);
-String8 os_current_directory(Arena *arena);
 
+typedef uint64_t OS_Timestamp;
+OS_Timestamp os_file_last_modified(String8 filepath);
+
+String8 os_current_directory(Arena *arena);
 bool os_directory_exists(String8 path);
 bool os_directory_make(String8 path);
 bool os_directory_delete(String8 path);
@@ -124,6 +134,9 @@ void os_surface_close(OS_Surface *surface);
 
 void os_surface_show(OS_Surface *surface);
 void os_surface_hide(OS_Surface *surface);
+
+bool os_surface_minimized(OS_Surface *surface);
+bool os_surface_drawable(OS_Surface *surface);
 
 void os_surface_set_min(OS_Surface *surface, uint32_t width, uint32_t height);
 void os_surface_set_max(OS_Surface *surface, uint32_t width, uint32_t height);

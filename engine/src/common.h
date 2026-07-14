@@ -120,6 +120,10 @@ typedef float32x2 float2;
 typedef float32x3 float3;
 typedef float32x4 float4;
 
+#define f2(x, y) (float2){ (x), (y) } 
+#define f3(x, y, z) (float3){ (x), (y), (z) } 
+#define f4(x, y, z, w) (float4){ (x), (y), (z), (w) } 
+
 typedef double float64;
 typedef struct { float64 x, y; } float64x2;
 typedef struct { float64 x, y, z; } float64x3;

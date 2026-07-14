@@ -12,8 +12,7 @@ layout(push_constant) uniform ConstantBlock {
     vec4 tint;
     vec4 emissive;
     vec2 metallic_roughness;
-    vec2 uv_offset;
-    vec2 uv_scale;
+    vec4 uv_st;
 } pc;
 
 out ShaderOutput {
@@ -31,7 +30,7 @@ void main() {
     vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
 
     vs_output.normal = mat3(transpose(inverse(pc.model))) * vertex.normal.xyz;
-    vs_output.uv = vertex.uv * pc.uv_scale;
+    vs_output.uv = transform_uv(vertex.uv, pc.uv_st);
 
     float dist = length(vec3(frame.view * vec4(vs_output.worldspace, 1.0)));
     vs_output.fog_strength = exp(-pow(dist * frame.fog_density, frame.fog_gradient));

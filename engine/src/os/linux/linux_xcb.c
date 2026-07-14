@@ -18,7 +18,7 @@ struct OS_Surface {
 	uint32_t width, height;
 
 	int32x2 virtual_cursor;
-	bool cursor_captured, warping;
+	bool cursor_captured, warping, minimized, occluded;
 };
 
 typedef struct {
@@ -30,13 +30,16 @@ typedef struct {
 	xcb_atom_t wm_protocols_atom;
 	xcb_atom_t wm_delete_window_atom;
 	xcb_atom_t wm_transient_for_atom;
-	xcb_atom_t wm_window_type;
+	xcb_atom_t wm_window_type_atom;
+	xcb_atom_t wm_state_atom;
 
 	uint8_t keycodes[KEY_CODE_COUNT];
 	uint64_t start_time;
 
 	OS_Surface surfaces[32];
-	uint32_t count;
+	uint32_t surface_count;
+
+	OS_Surface *fullscreen;
 
 	bool initialized;
 } OS_DisplayState;
@@ -57,67 +60,81 @@ typedef enum {
 } Atom;
 
 bool os_display_startup(void) {
-	state->conn = xcb_connect(0, 0);
-	if (xcb_connection_has_error(state->conn)) {
-		LOG_ERROR("os_display_startup - failed to connect to X server");
-		return false;
-	}
-	state->root.handle = xcb_setup_roots_iterator(xcb_get_setup(state->conn)).data->root;
-	xcb_xkb_use_extension(state->conn, XCB_XKB_MAJOR_VERSION, XCB_XKB_MINOR_VERSION);
-	xcb_xkb_per_client_flags(state->conn, XCB_XKB_ID_USE_CORE_KBD, XCB_XKB_PER_CLIENT_FLAG_DETECTABLE_AUTO_REPEAT, 1, 0, 0, 0);
-
-	xcb_pixmap_t cursor_pixmap = xcb_generate_id(state->conn);
-	xcb_create_pixmap(
-		state->conn,
-		1, // Depth
-		cursor_pixmap,
-		state->root.handle,
-		1, 1); // Width, height
-	state->hidden_cursor = xcb_generate_id(state->conn);
-	xcb_create_cursor(
-		state->conn,
-		state->hidden_cursor,
-		cursor_pixmap,
-		cursor_pixmap,
-		0, 0, 0, // Foreground RGB
-		0, 0, 0, // Background RGB
-		0, 0 // Hotspot X, Y
-	);
-	xcb_free_pixmap(state->conn, cursor_pixmap);
-
-	create_key_table();
-
-	const char *atom_strings[] = {
-		"WM_PROTOCOLS",
-		"WM_DELETE_WINDOW"
-		"WM_TRANSIENT_FOR"
-		"_NET_WM_WINDOW_TYPE"
-	};
-
-	xcb_intern_atom_reply_t *proto_reply = os__atom(s("WM_PROTOCOLS"));
-	xcb_intern_atom_reply_t *close_reply = os__atom(s("WM_DELETE_WINDOW"));
-	xcb_intern_atom_reply_t *transient_reply = os__atom(s("WM_TRANSIENT_FOR"));
-	xcb_intern_atom_reply_t *type_reply = os__atom(s("_NET_WM_WINDOW_TYPE"));
-	xcb_intern_atom_reply_t *state_reply = os__atom(s("_NET_WM_STATE"));
-
-	if (proto_reply == 0 ||
-		close_reply == 0 ||
-		transient_reply == 0 ||
-		type_reply == 0 ||
-		state_reply == 0) {
-		LOG_INFO("failed to aquire X server protocol.");
-		return -1;
+	bool ok = true;
+	if (ok) {
+		state->conn = xcb_connect(0, 0);
+		ok = xcb_connection_has_error(state->conn) == 0;
+		if (ok == false)
+			LOG_ERROR("%s - connection request to X server failed.", __func__);
 	}
 
-	state->wm_protocols_atom = proto_reply->atom;
-	state->wm_delete_window_atom = close_reply->atom;
-	state->wm_transient_for_atom = transient_reply->atom;
-	state->wm_window_type = type_reply->atom;
+	xcb_intern_atom_reply_t *proto_reply = 0;
+	xcb_intern_atom_reply_t *close_reply = 0;
+	xcb_intern_atom_reply_t *transient_reply = 0;
+	xcb_intern_atom_reply_t *type_reply = 0;
+	xcb_intern_atom_reply_t *state_reply = 0;
+	if (ok) {
+		state->root.handle = xcb_setup_roots_iterator(xcb_get_setup(state->conn)).data->root;
+		xcb_xkb_use_extension(state->conn, XCB_XKB_MAJOR_VERSION, XCB_XKB_MINOR_VERSION);
+		xcb_xkb_per_client_flags(state->conn, XCB_XKB_ID_USE_CORE_KBD, XCB_XKB_PER_CLIENT_FLAG_DETECTABLE_AUTO_REPEAT, 1, 0, 0, 0);
 
-	free(close_reply);
-	free(proto_reply);
-	free(transient_reply);
-	free(type_reply);
+		xcb_pixmap_t cursor_pixmap = xcb_generate_id(state->conn);
+		xcb_create_pixmap(
+			state->conn,
+			1, // Depth
+			cursor_pixmap,
+			state->root.handle,
+			1, 1); // Width, height
+		state->hidden_cursor = xcb_generate_id(state->conn);
+		xcb_create_cursor(
+			state->conn,
+			state->hidden_cursor,
+			cursor_pixmap,
+			cursor_pixmap,
+			0, 0, 0, // Foreground RGB
+			0, 0, 0, // Background RGB
+			0, 0 // Hotspot X, Y
+		);
+		xcb_free_pixmap(state->conn, cursor_pixmap);
+
+		create_key_table();
+
+		const char *atom_strings[] = {
+			"WM_PROTOCOLS",
+			"WM_DELETE_WINDOW"
+			"WM_TRANSIENT_FOR"
+			"_NET_WM_WINDOW_TYPE"
+		};
+
+		proto_reply = os__atom(s("WM_PROTOCOLS"));
+		close_reply = os__atom(s("WM_DELETE_WINDOW"));
+		transient_reply = os__atom(s("WM_TRANSIENT_FOR"));
+		type_reply = os__atom(s("_NET_WM_WINDOW_TYPE"));
+		state_reply = os__atom(s("_NET_WM_STATE"));
+
+		ok = proto_reply && close_reply && transient_reply && type_reply && state_reply;
+		if (ok == false)
+			LOG_INFO("failed to aquire X server protocol.");
+	}
+
+	if (ok) {
+		state->wm_protocols_atom = proto_reply->atom;
+		state->wm_delete_window_atom = close_reply->atom;
+		state->wm_transient_for_atom = transient_reply->atom;
+		state->wm_window_type_atom = type_reply->atom;
+		state->wm_state_atom = state_reply->atom;
+	}
+
+	if (close_reply)
+		free(close_reply);
+	if (proto_reply)
+		free(proto_reply);
+	if (transient_reply)
+		free(transient_reply);
+	if (type_reply)
+		free(type_reply);
+	if (state_reply)
+		free(state_reply);
 
 	state->initialized = true;
 	return true;
@@ -134,68 +151,75 @@ OS_Surface *os_surface_open(uint32_t width, uint32_t height, String8 title, OS_S
 }
 
 OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags) {
-	if (state->initialized == false) {
-		LOG_WARN("%s - display must be initialized before surface creation, call os_display_startup.", __func__);
-		return 0;
+	bool ok = state->initialized;
+	if (ok == false)
+		LOG_WARN("%s - X server uninitialized, call os_display_startup first.", __func__);
+
+	OS_Surface *surface = 0;
+	ok = parent && state->surface_count < countof(state->surfaces);
+
+	if (ok) {
+		surface = &state->surfaces[state->surface_count++];
+
+		uint32_t event_mask =
+			XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE |
+			XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
+			XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_BUTTON_MOTION |
+			XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW |
+			XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE |
+			XCB_EVENT_MASK_VISIBILITY_CHANGE;
+
+		uint32_t value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
+		uint32_t values[] = {
+			0x00aade87,
+			event_mask
+		};
+
+		surface->width = width;
+		surface->height = height;
+
+		surface->handle = xcb_generate_id(state->conn);
+
+		xcb_create_window(
+			state->conn,
+			XCB_COPY_FROM_PARENT, // Depth
+			surface->handle,
+			state->root.handle, // parent window
+			0, 0, // x, y
+			surface->width, surface->height, // width, height
+			0, // border width
+			XCB_WINDOW_CLASS_INPUT_OUTPUT,
+			XCB_COPY_FROM_PARENT,
+			value_mask,
+			values);
+		if (has_flag(flags, OS_SURFACE_FLAG_RESIZEABLE) == false)
+			os__surface_set_min_max(surface, surface->width, surface->height, width, height);
+
+		// Change title
+		xcb_change_property(
+			state->conn,
+			XCB_PROP_MODE_REPLACE,
+			surface->handle,
+			XCB_ATOM_WM_NAME,
+			XCB_ATOM_STRING,
+			8,
+			title.length,
+			title.text);
+		// Register WM_DELETE_WINDOW
+		xcb_change_property(
+			state->conn,
+			XCB_PROP_MODE_REPLACE,
+			surface->handle,
+			state->wm_delete_window_atom,
+			XCB_ATOM_ATOM,
+			32,
+			1,
+			&state->wm_delete_window_atom);
+
+		xcb_map_window(state->conn, surface->handle);
+		xcb_flush(state->conn);
 	}
-	uint32_t event_mask =
-		XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE |
-		XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
-		XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_BUTTON_MOTION |
-		XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW |
-		XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE |
-		XCB_EVENT_MASK_VISIBILITY_CHANGE;
 
-	uint32_t value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
-	uint32_t values[] = {
-		0x00aade87,
-		event_mask
-	};
-
-	OS_Surface *surface = &state->surfaces[state->count++];
-	surface->width = width;
-	surface->height = height;
-
-	surface->handle = xcb_generate_id(state->conn);
-
-	xcb_create_window(
-		state->conn,
-		XCB_COPY_FROM_PARENT, // Depth
-		surface->handle,
-		state->root.handle, // parent window
-		0, 0, // x, y
-		surface->width, surface->height, // width, height
-		0, // border width
-		XCB_WINDOW_CLASS_INPUT_OUTPUT,
-		XCB_COPY_FROM_PARENT,
-		value_mask,
-		values);
-	if (has_flag(flags, OS_SURFACE_FLAG_RESIZEABLE) == false)
-		os__surface_set_min_max(surface, surface->width, surface->height, width, height);
-
-	// Change title
-	xcb_change_property(
-		state->conn,
-		XCB_PROP_MODE_REPLACE,
-		surface->handle,
-		XCB_ATOM_WM_NAME,
-		XCB_ATOM_STRING,
-		8,
-		title.length,
-		title.text);
-	// Register WM_DELETE_WINDOW
-	xcb_change_property(
-		state->conn,
-		XCB_PROP_MODE_REPLACE,
-		surface->handle,
-		state->wm_delete_window_atom,
-		XCB_ATOM_ATOM,
-		32,
-		1,
-		&state->wm_delete_window_atom);
-
-	xcb_map_window(state->conn, surface->handle);
-	xcb_flush(state->conn);
 	return surface;
 }
 
@@ -203,15 +227,38 @@ void os_surface_close(OS_Surface *surface) {
 	xcb_destroy_window(state->conn, surface->handle);
 	xcb_flush(state->conn);
 }
-bool os_surface_valid(OS_Surface *surface);
+
+bool os_surface_valid(OS_Surface *surface) {
+	bool ok = state->initialized && surface;
+	if (ok)
+		ok &= surface > state->surfaces && surface < state->surfaces + countof(state->surfaces);
+	return ok;
+}
+
+bool os_surface_minimized(OS_Surface *surface) {
+	bool ok = state->initialized && surface && os_surface_valid(surface);
+	if (ok)
+		ok = surface->minimized;
+	return ok;
+}
+
+bool os_surface_drawable(OS_Surface *surface) {
+	return os_surface_valid(surface) && surface->minimized == false && surface->occluded == false;
+}
 
 void os_surface_show(OS_Surface *surface) {
-	xcb_map_window(state->conn, surface->handle);
-	xcb_flush(state->conn);
+	bool ok = state->initialized && surface && os_surface_valid(surface);
+	if (ok) {
+		xcb_map_window(state->conn, surface->handle);
+		xcb_flush(state->conn);
+	}
 }
 void os_surface_hide(OS_Surface *surface) {
-	xcb_unmap_window(state->conn, surface->handle);
-	xcb_flush(state->conn);
+	bool ok = state->initialized && surface && os_surface_valid(surface);
+	if (ok) {
+		xcb_unmap_window(state->conn, surface->handle);
+		xcb_flush(state->conn);
+	}
 }
 
 bool os_event_poll(OS_Event *dst) {
@@ -220,13 +267,14 @@ bool os_event_poll(OS_Event *dst) {
 		return false;
 
 	memory_zero(dst, sizeof(OS_Event));
-	switch (src->response_type & ~0x80) {
+
+	uint32_t event_type = src->response_type & ~0x80;
+	switch (event_type) {
 		case XCB_CLIENT_MESSAGE: {
 			xcb_client_message_event_t *cm = (xcb_client_message_event_t *)src;
 			if (cm->data.data32[0] == state->wm_delete_window_atom) {
 				dst->surface = os__surface_from_handle(cm->window);
-				if (dst->surface == 0)
-					ASSERT_MESSAGE(false, "The event doesn't belong to any window");
+				ASSERT_MESSAGE(dst->surface != 0, "The event doesn't belong to any window");
 				dst->type = OS_EVENT_TYPE_SURFACE_CLOSE;
 			}
 		} break;
@@ -245,6 +293,20 @@ bool os_event_poll(OS_Event *dst) {
 				dst->as.resize.width = surface->width;
 				dst->as.resize.height = surface->height;
 			}
+		} break;
+		case XCB_VISIBILITY_NOTIFY: {
+			xcb_visibility_notify_event_t *ev = (xcb_visibility_notify_event_t *)src;
+			OS_Surface *surface = os__surface_from_handle(ev->window);
+			if (surface)
+				surface->occluded = ev->state == XCB_VISIBILITY_FULLY_OBSCURED;
+		} break;
+
+		case XCB_UNMAP_NOTIFY:
+		case XCB_MAP_NOTIFY: {
+			xcb_map_notify_event_t *mn = (xcb_map_notify_event_t *)src;
+			OS_Surface *surface = os__surface_from_handle(mn->window);
+			if (surface)
+				surface->minimized = event_type != XCB_MAP_NOTIFY;
 		} break;
 
 		case XCB_KEY_PRESS:
@@ -598,7 +660,7 @@ void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h
 
 OS_Surface *os__surface_from_handle(xcb_window_t window) {
 	OS_Surface *result = 0;
-	for (uint32_t index = 0; index < state->count; ++index) {
+	for (uint32_t index = 0; index < state->surface_count; ++index) {
 		if (state->surfaces[index].handle == window)
 			result = &state->surfaces[index];
 	}
