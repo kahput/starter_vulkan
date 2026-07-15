@@ -17,6 +17,7 @@
 #include "gfx/vulkan/tables.h"
 #include "scene.h"
 #include "spirv_reflect/spirv_reflect.h"
+#include <ccd/ccd.h>
 
 #include <math.h>
 
@@ -217,24 +218,6 @@ typedef struct {
 	uint32_t entity_count;
 } World;
 
-typedef enum {
-	AXIS_PLANE_RIGHT,
-	AXIS_PLANE_LEFT,
-	AXIS_PLANE_UP,
-	AXIS_PLANE_DOWN,
-	AXIS_PLANE_FORWARD,
-	AXIS_PLANE_BACKWARD,
-
-	AXIS_PLANE_COUNT,
-} AxisPlane;
-
-typedef enum {
-	AXIS_X,
-	AXIS_Y,
-	AXIS_Z,
-	AXIS_XY = AXIS_Z,
-	AXIS_XYZ,
-} Axis;
 /* typedef enum { */
 /* 	AXIS_MODE_X = BIT(0), */
 /* 	AXIS_MODE_Y = BIT(1), */
@@ -253,8 +236,8 @@ Mesh load_gltf(Arena *arena, String8 path);
 Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
 Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments);
 
-Mesh mesh_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
-Mesh mesh_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap);
+Mesh mesh_plane(Arena *arena, Side orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
+Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D heightmap);
 
 Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
 
@@ -269,7 +252,7 @@ void push_triangle2(Arena *arena, Triangle2 triangle, float thickness, Color col
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
 void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width);
-void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color);
+void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color);
 void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color);
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
 void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color color);
@@ -393,7 +376,8 @@ int main(void) {
 	Arena permanent[] = { arena_make(MiB(256)) };
 	GFX_Context context[] = { 0 };
 
-	gfx_startup(context);
+	if (gfx_startup(context) == false)
+		return 0;
 	GFX_Swapchain *main_swapchain = gfx_swapchain_make(context, main_render, "main");
 	GFX_Swapchain *popup_swapchain = gfx_swapchain_make(context, popup_compute, "popup");
 
@@ -631,10 +615,10 @@ int main(void) {
 	const uint32_t map_depth = 32;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, AXIS_PLANE_UP, map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, SIDE_UP, map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, AXIS_PLANE_UP, 256.f, 256.f, heightmap);
+	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, SIDE_UP, 256.f, 256.f, heightmap);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
 	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, up3, 1.0f, 0.5f, 0.5f, 32, 0, true, true);
@@ -745,7 +729,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_multiply(float4x4_rotation(up3, randf_range(0, TAU)), float4x4_translation(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_mul(float4x4_rotation(up3, randf_range(0, TAU)), float4x4_translation(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -842,9 +826,9 @@ int main(void) {
 
 	Entity *player = entity_spawn(&world);
 	player->meshid = MESH_HERO_MALE;
-	player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f);
+	/* player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
 	/* player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
-	/* player->shape.as.aabb3 = meshes[player->meshid].bounds; */
+	player->shape.as.aabb3 = meshes[player->meshid].bounds;
 
 	entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
 	/* entity_enable(player, ENTITY_FEATURE_CAST_SHADOW); */
@@ -879,8 +863,8 @@ int main(void) {
 	for (uint32_t index = 0; index < 3; ++index) {
 		Entity *cylinder = transparent_entities[index] = entity_spawn(&world);
 
-		cylinder->transform.translation = f3(0.0f, 0.0f, index * -3.0f);
-		cylinder->transform.scale = f3(2.0f, 1.0f, 2.0f);
+		cylinder->transform.translation = make3(0.0f, 0.0f, index * -3.0f);
+		cylinder->transform.scale = make3(2.0f, 1.0f, 2.0f);
 		cylinder->meshid = MESH_CYLINDER;
 		cylinder->pass = DRAW_PASS_TRANSPARENT;
 		entity_enable(cylinder, ENTITY_FEATURE_DRAW_MESH);
@@ -957,7 +941,7 @@ int main(void) {
 		};
 
 		uint2 dims = os_surface_size(main_render);
-		float2 mouse_delta = float2_from_double2(input_mouse_delta());
+		float2 mouse_delta = cast2df(input_mouse_delta());
 		mouse_delta.x /= dims.x;
 		mouse_delta.y /= dims.y;
 
@@ -1099,9 +1083,9 @@ int main(void) {
 							.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
 						};
 
-						if (length2_sq(input_vector) > 0) {
+						if (dot2(input_vector, input_vector) > 0) {
 							float3 camera_offset = sub3(camera->position, player->transform.translation);
-							float r = length3(camera_offset);
+							float r = len3(camera_offset);
 							if (r < EPSILON)
 								r = EPSILON;
 
@@ -1125,15 +1109,15 @@ int main(void) {
 
 						float3 forward, right;
 
-						forward = normalize3(sub3(camera_target, camera_position));
+						forward = norm3(sub3(camera_target, camera_position));
 
 						right = cross3(forward, camera->up);
-						right = normalize3(right);
+						right = norm3(right);
 
 						direction = add3(direction, scale3(forward, input_vector.x));
 						direction = add3(direction, scale3(right, input_vector.y));
 
-						float length = length3(direction);
+						float length = len3(direction);
 						if (length > EPSILON)
 							direction = scale3(direction, 1 / length);
 						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
@@ -1145,7 +1129,7 @@ int main(void) {
 					// :ai
 					if (entity_has(entity, ENTITY_FEATURE_FOLLOW_TARGET)) {
 						float3 delta = sub3(entity->target->transform.translation, entity->transform.translation);
-						float3 direction = normalize3_safe(delta, EPSILON);
+						float3 direction = norm3(delta);
 
 						entity->transform.rotation = quat4_from_axis_angle(up3, atan2f(direction.x, direction.z));
 
@@ -1158,32 +1142,30 @@ int main(void) {
 					// :collision
 					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE)) {
 						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
-							if (length3_sq(velocity) <= EPSILON)
+							if (lensq3(velocity) <= EPSILON)
 								break;
 							Raycast3Result nearest = RAY3_NO_HIT;
 
-							// Collision detection
-							Mesh *collision_mesh = &meshes[level->meshid];
-							for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
-								MeshPart *part = &collision_mesh->parts[part_index];
-								for (uint32_t index = 0; index < part->index_count / 3; ++index) {
-									ConvexPolygon3 triangle_polygon = {
-										.vertices = (float3[]){
-										  collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 0]].position,
-										  collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 1]].position,
-										  collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 2]].position,
-										},
-										.vertex_count = 3,
-									};
+							Ray3 r = { entity->transform.translation, velocity };
 
-									float len = length3(velocity);
-									float3 dir = scale3(velocity, 1 / len);
+							for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
+								Entity *other = &world.entities[entity_index];
+								if (other == player || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
+									continue;
 
-									Shape3 moved = shape3_move(entity->shape, entity->transform.translation);
-									/* Raycast3Result test_triangle_sweep = shapecast(translated_shape, shape3_from_convex3(triangle_polygon), dir, len); */
-									/* if (test_triangle_sweep.hit && test_triangle_sweep.t < nearest.t) */
-									/* 	nearest = test_triangle_sweep; */
-								}
+								float3 center = add3(aabb3_center(other->shape.as.aabb3), other->transform.translation);
+								// NOTE: Minkowski sum
+								float3 half_extent =
+									float4x4_transform(
+										float4x4_scaling(other->transform.scale),
+										xyz0(aabb3_half_extent(other->shape.as.aabb3)) //
+									);
+
+								float3 swept_extent = add3(half_extent, aabb3_half_extent(player->shape.as.aabb3));
+
+								Raycast3Result result = raycast_aabb3(r, aabb3_from_center(center, swept_extent));
+								if (result.t < nearest.t)
+									nearest = result;
 							}
 
 							if (nearest.hit == false) {
@@ -1216,8 +1198,8 @@ int main(void) {
 						);
 
 						uint32_t target_anim = entity->current_anim;
-						if (length2_sq(input_vector)) {
-							input_vector = normalize2(input_vector);
+						if (dot2(input_vector, input_vector)) {
+							input_vector = norm2(input_vector);
 
 							if (input_key_down(KEY_CODE_LEFTSHIFT))
 								target_anim = find_animation(animations[entity->meshid], animation_counts[entity->meshid], s("freehand/run-loop"));
@@ -1263,7 +1245,7 @@ int main(void) {
 
 					float3 camera_offset = sub3(camera->position, player->transform.translation);
 
-					float r = length3(camera_offset);
+					float r = len3(camera_offset);
 					if (r < EPSILON)
 						r = EPSILON;
 
@@ -1516,9 +1498,9 @@ int main(void) {
 			} Frame3D;
 
 			float ortho_size = 10.0f;
-			lights[light_index].matrix = float4x4_multiply(
+			lights[light_index].matrix = float4x4_mul(
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				float4x4_lookat(float3_from_float4(lights[light_index].position), zero3, up3));
+				float4x4_lookat(xyz(lights[light_index].position), zero3, up3));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },
@@ -1666,7 +1648,7 @@ int main(void) {
 
 				frame_data.view = float4x4_lookat(camera->position, camera->target, camera->up);
 				frame_data.proj = float4x4_perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
-				frame_data.camera_position = float4_from_float3(camera->position, 0.0f);
+				frame_data.camera_position = xyzs(camera->position, 0.0f);
 
 				Uniform uniforms[] = {
 					uniform_data(0, &frame_data, sizeof(frame_data)),
@@ -1823,7 +1805,7 @@ int main(void) {
 						float3 center = add3(entity->transform.translation, aabb3_center(mesh->bounds));
 
 						transparent_meshes[transparent_mesh_count++] = (MeshSort){
-							.distance = length3_sq(sub3(camera->position, center)),
+							.distance = lensq3(sub3(camera->position, center)),
 							.entity = entity
 						};
 					}
@@ -1894,7 +1876,7 @@ int main(void) {
 				Frame2D frame_2d = {
 					.view = float4x4_identity(),
 					.projection = float4x4_orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
-					.viewport = float2_from_uint2(dims),
+					.viewport = cast2uf(dims),
 					.time = time,
 				};
 				if (batch_2d->offset) { // :canvas
@@ -4302,9 +4284,9 @@ Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count) {
 
 	bool ok = arena && paths;
 
-	Image2D images[AXIS_PLANE_COUNT];
+	Image2D images[SIDE_COUNT_3D];
 	if (ok) {
-		for (uint32_t face_index = 0; face_index < AXIS_PLANE_COUNT; ++face_index) {
+		for (uint32_t face_index = 0; face_index < SIDE_COUNT_3D; ++face_index) {
 			images[face_index] = load_image(arena, paths[face_index]);
 
 			if (face_index > 0)
@@ -4499,7 +4481,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 
 							if (attribute->type == cgltf_attribute_type_position) {
 								float3 *pos = (float3 *)dst;
-								float3 new_pos = float4x4_transform(transform, float4_from_float3(*pos, 1.0f));
+								float3 new_pos = float4x4_transform(transform, xyzs(*pos, 1.0f));
 								pos->x = new_pos.x;
 								pos->y = new_pos.y;
 								pos->z = new_pos.z;
@@ -4507,12 +4489,12 @@ Mesh load_gltf(Arena *arena, String8 path) {
 								aabb3_expand(&part->bounds, new_pos);
 							} else if (attribute->type == cgltf_attribute_type_normal) {
 								float3 *norm = (float3 *)dst;
-								float3 new_norm = float4x4_transform(transform, float4_from_float3(*norm, 0.0f));
-								*norm = normalize3(new_norm);
+								float3 new_norm = float4x4_transform(transform, xyzs(*norm, 0.0f));
+								*norm = norm3(new_norm);
 							} else if (attribute->type == cgltf_attribute_type_tangent) {
 								float4 *tan = (float4 *)dst;
 								float3 new_tan = float4x4_transform(transform, (float4){ tan->x, tan->y, tan->z, 0.0f });
-								float3 norm_tan = normalize3(new_tan);
+								float3 norm_tan = norm3(new_tan);
 								tan->x = norm_tan.x;
 								tan->y = norm_tan.y;
 								tan->z = norm_tan.z;
@@ -4608,25 +4590,25 @@ Mesh load_gltf(Arena *arena, String8 path) {
 	return result;
 }
 
-static inline float3 face_orient(float3 v, AxisPlane face) {
+static inline float3 face_orient(float3 v, Side face) {
 	float3 result = { 0 };
 	switch (face) {
-		case AXIS_PLANE_UP:
+		case SIDE_UP:
 			result = (float3){ v.x, v.y, v.z };
 			break;
-		case AXIS_PLANE_DOWN:
+		case SIDE_DOWN:
 			result = (float3){ v.x, -v.y, -v.z };
 			break;
-		case AXIS_PLANE_RIGHT:
+		case SIDE_RIGHT:
 			result = (float3){ v.y, v.z, v.x };
 			break;
-		case AXIS_PLANE_LEFT:
+		case SIDE_LEFT:
 			result = (float3){ -v.y, v.z, -v.x };
 			break;
-		case AXIS_PLANE_FORWARD:
+		case SIDE_FRONT:
 			result = (float3){ v.x, v.z, -v.y };
 			break;
-		case AXIS_PLANE_BACKWARD:
+		case SIDE_BACK:
 			result = (float3){ -v.x, v.z, v.y };
 			break;
 		default:
@@ -4771,7 +4753,7 @@ Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t
 	return mesh_cylinder(arena, origin, height * 0.5f, radius, 0.0f, segments, 0, false, true);
 }
 
-Mesh mesh_plane(Arena *arena, AxisPlane orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+Mesh mesh_plane(Arena *arena, Side orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
 	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
@@ -4838,7 +4820,7 @@ Mesh mesh_plane(Arena *arena, AxisPlane orientation, float width, float height, 
 	return result;
 }
 
-Mesh mesh_heightmap(Arena *arena, AxisPlane orientation, float w, float h, Image2D heightmap) {
+Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D heightmap) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -w * 0.5f, .y = 0.0f, .y = -h * 0.5f };
 	result.bounds.max = (float3){ .x = w * 0.5f, .y = 0.0f, .y = h * 0.5f };
@@ -5091,12 +5073,12 @@ void push_triangle2(Arena *arena, Triangle2 t, float thickness, Color color) {
 
 void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
 	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = float3_from_float2(start),
+		.position = xy0(start),
 		.thickness = thickness,
 		.color = color_pack(color),
 	};
 	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = float3_from_float2(end),
+		.position = xy0(end),
 		.thickness = thickness,
 		.color = color_pack(color),
 	};
@@ -5107,12 +5089,12 @@ void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color 
 	push_line2(arena, start, shaft_end, thickness, color);
 
 	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = float3_from_float2(shaft_end),
+		.position = xy0(shaft_end),
 		.thickness = thickness * 4,
 		.color = color_pack(color),
 	};
 	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = float3_from_float2(end),
+		.position = xy0(end),
 		.thickness = 0.0f,
 		.color = color_pack(color),
 	};
@@ -5120,7 +5102,7 @@ void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color 
 
 void imgui_frame_begin(Arena *arena) {
 	imgui_state.batch_arena = arena;
-	imgui_state.mouse_position = float2_from_double2(input_mouse_position());
+	imgui_state.mouse_position = cast2df(input_mouse_position());
 	imgui_state.mouse_pressed = input_mouse_pressed(MOUSE_BUTTON_LEFT);
 	imgui_state.mouse_released = input_mouse_released(MOUSE_BUTTON_LEFT);
 }
@@ -5233,7 +5215,7 @@ float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float 
 	return t;
 }
 
-void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, AxisPlane plane, float angle_span, float thickness, Color color) {
+void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color) {
 	for (uint32_t i = 0; i < segments; ++i) {
 		float a = ((float)i / segments) * angle_span;
 		float an = ((float)(i + 1) / segments) * angle_span;
@@ -5242,22 +5224,23 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Axis
 
 		LinePoint p0, p1;
 		switch (plane) {
-			case AXIS_PLANE_DOWN:
-			case AXIS_PLANE_UP:
+			case SIDE_DOWN:
+			case SIDE_UP:
 				p0 = (LinePoint){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), zero3 };
 				p1 = (LinePoint){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), zero3 };
 				break;
-			case AXIS_PLANE_LEFT:
-			case AXIS_PLANE_RIGHT:
+			case SIDE_LEFT:
+			case SIDE_RIGHT:
 				p0 = (LinePoint){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), zero3 };
 				p1 = (LinePoint){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), zero3 };
 				break;
-			case AXIS_PLANE_BACKWARD:
-			case AXIS_PLANE_FORWARD:
+			case SIDE_BACK:
+			case SIDE_FRONT:
 				p0 = (LinePoint){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), zero3 };
 				p1 = (LinePoint){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), zero3 };
 				break;
-			case AXIS_PLANE_COUNT:
+
+			default:
 				ASSERT(false);
 				break;
 		}
@@ -5268,9 +5251,9 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Axis
 }
 
 void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
-	push_arc3(arena, center, radius, segments, AXIS_PLANE_UP, TAU, thickness, color);
-	push_arc3(arena, center, radius, segments, AXIS_PLANE_RIGHT, TAU, thickness, color);
-	push_arc3(arena, center, radius, segments, AXIS_PLANE_FORWARD, TAU, thickness, color);
+	push_arc3(arena, center, radius, segments, SIDE_UP, TAU, thickness, color);
+	push_arc3(arena, center, radius, segments, SIDE_RIGHT, TAU, thickness, color);
+	push_arc3(arena, center, radius, segments, SIDE_FRONT, TAU, thickness, color);
 }
 
 void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
@@ -5336,13 +5319,13 @@ void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color c
 void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width) {
 	float3 direction = sub3(end, start);
-	float total_world_length = length3(direction);
+	float total_world_length = len3(direction);
 	if (total_world_length < EPSILON)
 		return;
 
 	float3 dir_norm = scale3(direction, 1.0f / total_world_length);
 
-	float4x4 vp = float4x4_multiply(projeciton, view);
+	float4x4 vp = float4x4_mul(projeciton, view);
 	float w = vp.elements[3] * end.x + vp.elements[7] * end.y + vp.elements[11] * end.z + vp.elements[15] * 1.0f;
 	float desired_pixel_length = thickness * 5.0f;
 
@@ -5378,8 +5361,8 @@ void push_rect3_outline(Arena *arena, Plane plane, float width, float height, fl
 		right.x = dot > 0 ? 1.0f : -1.0f;
 		up.z = -1.0f;
 	} else {
-		right = normalize3_safe(cross3(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }), EPSILON);
-		up = normalize3_safe(cross3(plane.normal, right), EPSILON);
+		right = norm3(cross3(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }));
+		up = norm3(cross3(plane.normal, right));
 	}
 
 	float3 center = scale3(plane.normal, plane.distance);
@@ -5438,9 +5421,9 @@ void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 				float3 c = centers[end];
 				float signed_r = (end == 0) ? -r : r;
 
-				push_arc3(arena, centers[end], r, segments, AXIS_PLANE_UP, TAU, thickness, WHITE);
-				push_arc3(arena, centers[end], signed_r, segments, AXIS_PLANE_RIGHT, PIf, thickness, WHITE);
-				push_arc3(arena, centers[end], signed_r, segments, AXIS_PLANE_FORWARD, PIf, thickness, WHITE);
+				push_arc3(arena, centers[end], r, segments, SIDE_UP, TAU, thickness, WHITE);
+				push_arc3(arena, centers[end], signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
+				push_arc3(arena, centers[end], signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
 			}
 		} break;
 			break;

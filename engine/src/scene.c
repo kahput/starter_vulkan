@@ -9,7 +9,7 @@ static float zoom_speed = 5.0f;
 void scene_camera_orbit(Camera3 *camera, float2 mouse_delta) {
 	float3 camera_target_offset = sub3(camera->target, camera->position);
 
-	float3 camera_forward = normalize3(camera_target_offset);
+	float3 camera_forward = norm3(camera_target_offset);
 	float3 camera_right = cross3(camera->up, camera_forward);
 	float3 camera_up = cross3(camera_right, camera_forward);
 
@@ -32,7 +32,7 @@ void scene_camera_orbit(Camera3 *camera, float2 mouse_delta) {
 
 	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTCTRL)) {
 		float zoom = mouse_delta.y * zoom_speed;
-		float3 camera_forward = normalize3(sub3(camera->target, camera->position));
+		float3 camera_forward = norm3(sub3(camera->target, camera->position));
 		camera->position = add3(camera->position, scale3(camera_forward, -zoom));
 	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE)) {
 		float yaw_delta = mouse_delta.x * turn_rate;
@@ -44,9 +44,9 @@ void scene_camera_orbit(Camera3 *camera, float2 mouse_delta) {
 		 */
 
 		float3 camera_position = sub3(camera->position, camera->target);
-		float r = MAX(length3(camera_position), EPSILON);
+		float r = MAX(len3(camera_position), EPSILON);
 
-		float camera_xz = length2((float2){ camera_position.x, camera_position.z });
+		float camera_xz = len((float2){ camera_position.x, camera_position.z });
 		float current_theta = atan2f(camera_xz, camera_position.y);
 		// tan(theta) = o / a = y / x;
 		float current_azimuth = atan2f(camera_position.z, camera_position.x);

@@ -2,6 +2,9 @@
 #include "core/logger.h"
 #include <stdlib.h>
 
+const float DEG2RAD = (PIf / 180.f);
+const float RAD2DEG = 180.0f / PIf;
+
 float randf_range(float min, float max) {
 	return min + ((float)rand() / RAND_MAX) * (max - min);
 }
@@ -12,30 +15,20 @@ int32_t randi_range(int32_t min, int32_t max) {
 	return min + (rand() % (max - min + 1));
 }
 
-float length2(float2 v) {
+float len(float2 v) {
 	float result = sqrt(dot2(v, v));
 
 	return result;
 }
 
-float2 normalize2_safe(float2 v, float epsilon) {
-	float length = length2(v);
-	if (length < EPSILON) {
-		return (float2){ 0 };
-	}
-
-	float2 result = { .x = v.x / length, .y = v.y / length };
-	return result;
-}
-
-float length3(float3 v) {
+float len3(float3 v) {
 	float result = sqrtf(dot3(v, v));
 
 	return result;
 }
 
 float3 normalize3_safe(float3 v, float epsilon) {
-	float length = length3(v);
+	float length = len3(v);
 	if (length < epsilon)
 		return (float3){ 0 };
 
@@ -64,7 +57,7 @@ float3 rotate3(float3 v, float angle, float3 axis) {
 			scale3(k, dot3(k, v) * (1.0f - c))));
 }
 
-float length4(float4 v) {
+float len4(float4 v) {
 	float result = sqrtf(dot4(v, v));
 
 	return result;
@@ -95,7 +88,7 @@ float3 quat4_to_euler(quat4 q) {
 quat4 quat4_from_axis_angle(float3 axis, float angle) {
 	quat4 result = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-	float length = length3(axis);
+	float length = len3(axis);
 	if (length > EPSILON) {
 		angle *= 0.5f;
 		axis = scale3(axis, 1.0f / length);
@@ -181,7 +174,7 @@ float4x4 float4x4_identity(void) {
 	return result;
 }
 
-float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs) {
+float4x4 float4x4_mul(float4x4 lhs, float4x4 rhs) {
 	float4x4 result = { 0 };
 
 #define DOT(row, col)                                       \
@@ -392,9 +385,9 @@ float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 	float4x4 rotation_x = float4x4_rotation(right3, rotation.x);
 	float4x4 rotation_y = float4x4_rotation(up3, rotation.y);
 	float4x4 rotation_z = float4x4_rotation(forward3, rotation.z);
-	float4x4 R = float4x4_multiply(rotation_z, float4x4_multiply(rotation_y, rotation_x));
+	float4x4 R = float4x4_mul(rotation_z, float4x4_mul(rotation_y, rotation_x));
 
-	result = float4x4_multiply(T, float4x4_multiply(R, S));
+	result = float4x4_mul(T, float4x4_mul(R, S));
 	return result;
 }
 
@@ -403,7 +396,7 @@ float4x4 float4x4_compose_quat(float3 position, quat4 rotation, float3 scale) {
 	float4x4 T = float4x4_translation(position);
 	float4x4 S = float4x4_scaling(scale);
 	float4x4 R = float4x4_from_quat(rotation);
-	result = float4x4_multiply(T, float4x4_multiply(R, S));
+	result = float4x4_mul(T, float4x4_mul(R, S));
 	return result;
 }
 

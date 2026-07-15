@@ -50,8 +50,8 @@ typedef struct {
 	float3 center;
 	float radius;
 } Sphere;
-static inline Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), length3(aabb3_half_extent(a)) }; }
-static inline bool sphere_contains_point(Sphere s, float3 p) { return length3_sq(sub3(p, s.center)) <= s.radius * s.radius; }
+static inline Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), len3(aabb3_half_extent(a)) }; }
+static inline bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.center)) <= s.radius * s.radius; }
 
 typedef struct {
 	float3 normal;
@@ -65,7 +65,7 @@ static inline float3 plane_project_point(Plane p, float3 point) { return sub3(po
 static inline Plane plane_from_triangle(Triangle3 t) {
 	Plane result = { 0 };
 
-	result.normal = normalize3_safe(cross3(sub3(t.b, t.a), sub3(t.c, t.a)), EPSILON);
+	result.normal = norm3(cross3(sub3(t.b, t.a), sub3(t.c, t.a)));
 	result.distance = dot3(result.normal, t.a);
 
 	return result;
@@ -155,7 +155,7 @@ static inline Shape3 shape3_from_plane(Plane p) { return (Shape3){ .kind = SHAPE
 Shape3 shape3_move(Shape3 s, float3 displacement);
 float3 shape3_support(Shape3 s, float3 direction);
 
-Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn);
-Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 extent);
+Raycast3Result raycast_plane(Ray3 r, Plane p);
+Raycast3Result raycast_aabb3(Ray3 r, AABB3 a);
 
 #endif

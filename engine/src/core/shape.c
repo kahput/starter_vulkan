@@ -19,7 +19,7 @@ Shape3 shape3_move(Shape3 s, float3 displacement) {
 			break;
 		case SHAPE_KIND_PLANE: {
 			float3 c = add3(plane_center(s.as.plane), displacement);
-			result = shape3_from_plane(plane_from_point_normal(c, normalize3_safe(scale3(c, -1.0f), EPSILON)));
+			result = shape3_from_plane(plane_from_point_normal(c, norm3(scale3(c, -1.0f))));
 		} break;
 		case SHAPE_KIND_CONVEX_POLYGON: {
 			for (uint32_t index = 0; index < s.as.convex.vertex_count; ++index)
@@ -33,8 +33,8 @@ Shape3 shape3_move(Shape3 s, float3 displacement) {
 float3 shape3_support(Shape3 s, float3 direction) {
 	float3 result = { 0 };
 
-	direction = normalize3_safe(direction, EPSILON);
-	ASSERT(equalf(length3_sq(direction), 0.0f) == false);
+	direction = norm3(direction);
+	ASSERT(equalf(lensq3(direction), 0.0f) == false);
 
 	ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -77,111 +77,50 @@ float3 shape3_support(Shape3 s, float3 direction) {
 	return result;
 }
 
-Raycast3Result raycast_plane(float3 ro, float3 rd, float3 po, float3 pn) {
-	float denominator = dot3(rd, pn);
+Raycast3Result raycast_plane(Ray3 r, Plane p) {
+	float denominator = dot3(r.direction, p.normal);
 	if (fabsf(denominator) < EPSILON)
 		return RAY3_NO_HIT;
 
-	float t = (dot3(po, pn) - dot3(ro, pn)) / denominator;
+	float3 po = scale3(p.normal, p.distance);
+	float t = (dot3(po, p.normal) - dot3(r.origin, p.normal)) / denominator;
 
 	if (t < 0.0f)
 		return RAY3_NO_HIT;
 
-	float3 point = add3(ro, scale3(rd, t));
+	float3 point = add3(r.origin, scale3(r.direction, t));
 
 	Raycast3Result result = {
 		.hit = true,
 		.t = t,
-		.normal = pn,
+		.normal = p.normal,
 		.point = point,
 	};
 
 	return result;
 }
 
-Raycast3Result raycast_aabb3(float3 ro, float3 rd, float3 center, float3 half_extent) {
-	float3 min = sub3(center, half_extent);
-	float3 max = add3(center, half_extent);
+Raycast3Result raycast_aabb3(Ray3 r, AABB3 a) {
+	float3 c = aabb3_center(a);
+	float3 he = aabb3_half_extent(a);
+	float3 min = a.min;
+	float3 max = a.max;
 
 	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
-	if (length3_sq(rd)) {
-		// left
-		float3 po = sub3(center, (float3){ half_extent.x, 0.0f, 0.0f });
-		float3 pn = { -1.0f, 0.0f, 0.0f };
+	if (lensq3(r.direction)) {
+		for (uint32_t side = 0; side < SIDE_COUNT_3D; ++side) {
+			float3 pn = side_to_float3[side];
+			float3 po = add3(c, mul3(pn, he));
 
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
+			temp = raycast_plane(r, plane_from_point_normal(po, pn));
+			if ((temp.point.x < min.x || temp.point.x > max.x) ||
+				(temp.point.y < min.y || temp.point.y > max.y) ||
+				(temp.point.z < min.z || temp.point.z > max.z)) {
+				temp = RAY3_NO_HIT;
+			}
+			if (temp.t < result.t)
+				result = temp;
 		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// right
-		po = add3(center, (float3){ half_extent.x, 0.0f, 0.0f });
-		pn = (float3){ 1.0f, 0.0f, 0.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// front
-		po = add3(center, (float3){ 0.0f, 0.0f, half_extent.z });
-		pn = (float3){ 0.0f, 0.0f, 1.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// back
-		po = sub3(center, (float3){ 0.0f, 0.0f, half_extent.z });
-		pn = (float3){ 0.0f, 0.0f, -1.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// top
-		po = add3(center, (float3){ 0.0f, half_extent.y, 0.0f });
-		pn = (float3){ 0.0f, 1.0f, 0.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
-
-		// bottom
-		po = sub3(center, (float3){ 0.0f, half_extent.y, 0.0f });
-		pn = (float3){ 0.0f, -1.0f, 0.0f };
-
-		temp = raycast_plane(ro, rd, po, pn);
-		if ((temp.point.x < min.x || temp.point.x > max.x) ||
-			(temp.point.y < min.y || temp.point.y > max.y) ||
-			(temp.point.z < min.z || temp.point.z > max.z)) {
-			temp = RAY3_NO_HIT;
-		}
-		if (temp.t < result.t)
-			result = temp;
 	}
 
 	return result;

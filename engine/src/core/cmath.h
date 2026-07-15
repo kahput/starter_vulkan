@@ -13,9 +13,8 @@
 
 #define FLOAT_MAX 3.40282347e+38F
 
-#define right3 (float3){ 1.0f, 0.0f, 0.0f }
-#define up3 (float3){ 0.0f, 1.0f, 0.0f }
-#define forward3 (float3){ 0.0f, 0.0f, 1.0f }
+/* #define forward3f (float3){ 0.0f, 0.0f, 1.0f } */
+/* #define backwardf (float3){ 0.0f, 0.0f, -1.0f } */
 
 #define zero2 (float2){ 0.0f, 0.0f }
 #define one2 (float2){ 1.0f, 1.0f }
@@ -32,8 +31,10 @@ typedef struct {
 typedef float4 quat4;
 
 // --- scalar ---
-static inline float deg_to_rad(float degree) { return degree * (PIf / 180.f); }
-static inline float rad_to_deg(float radians) { return radians * (180.0f / PIf); }
+extern const float DEG2RAD;
+extern const float RAD2DEG;
+static inline float deg_to_rad(float degree) { return degree * DEG2RAD; }
+static inline float rad_to_deg(float radians) { return radians * RAD2DEG; }
 
 float randf_range(float min, float max);
 uint32_t randu_range(uint32_t min, uint32_t max);
@@ -68,11 +69,10 @@ static inline float minf(float a, float b) { return a < b ? a : b; }
 static inline float maxf(float a, float b) { return a > b ? a : b; }
 
 // --- float2 ---
-static inline float2 float2_make(float x, float y) { return (float2){ x, y }; }
-static inline float2 splat2(float v) { return (float2){ v, v }; }
-static inline float2 float2_from_double2(double2 d) { return (float2){ (float)d.x, (float)d.y }; }
-static inline float2 float2_from_uint2(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
+static inline float2 cast2df(double2 d) { return (float2){ (float)d.x, (float)d.y }; }
+static inline float2 cast2uf(uint2 u) { return (float2){ (float)u.x, (float)u.y }; }
 static inline float2 float2_from_float3(float3 v) { return (float2){ v.x, v.y }; }
+
 #define spread2(v) v.x, v.y
 #define cast2(v, T) ((T){ v.x, v.y })
 
@@ -84,37 +84,46 @@ static inline float2 sub2(float2 a, float2 b) { return (float2){ a.x - b.x, a.y 
 static inline float2 scale2(float2 v, float s) { return (float2){ v.x * s, v.y * s }; }
 
 static inline float dot2(float2 a, float2 b) { return a.x * b.x + a.y * b.y; }
-static inline float length2_sq(float2 v) { return dot2(v, v); }
-float length2(float2 v);
 
-static inline float2 normalize2(float2 v) { return scale2(v, 1.0f / length2(v)); }
-float2 normalize2_safe(float2 v, float epsilon);
+static inline float lensq2(float2 v) { return dot2(v, v); }
+float len(float2 v);
+
+static inline float2 norm2(float2 v) {
+	float length = len(v);
+	if (length < EPSILON)
+		return (float2){ 0 };
+
+	return scale2(v, 1.0f / len(v));
+}
 
 static inline float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t) }; }
 static inline float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
 
 // --- float3 ---
-static inline float2 float3_xy(float3 v) { return (float2){ v.x, v.y }; }
-static inline float3 float3_from_float2(float2 v) { return (float3){ v.x, v.y, 0.0f }; }
-static inline float3 float3_from_float4(float4 v) { return (float3){ v.x, v.y, v.z }; }
-static inline float3 splat3(float v) { return (float3){ v, v, v }; }
 static inline float3 wrap3(float v[3]) { return (float3){ v[0], v[1], v[2] }; }
 #define spread3(v) v.x, v.y, v.z
+#define cast3(v, T) ((T){ v.x, v.y, v.z })
 
-static inline bool equal3(float3 a, float3 b) { return equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z); }
-static inline float3 negate3(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
+static inline bool equal3f(float3 a, float3 b) { return equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z); }
+static inline float3 negate3f(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
 
 static inline float3 add3(float3 a, float3 b) { return (float3){ a.x + b.x, a.y + b.y, a.z + b.z }; }
+static inline float3 mul3(float3 a, float3 b) { return (float3){ a.x * b.x, a.y * b.y, a.z * b.z }; }
 static inline float3 sub3(float3 a, float3 b) { return (float3){ a.x - b.x, a.y - b.y, a.z - b.z }; }
 static inline float3 scale3(float3 v, float s) { return (float3){ v.x * s, v.y * s, v.z * s }; }
 
 static inline float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 static inline float3 cross3(float3 a, float3 b) { return (float3){ .x = a.y * b.z - b.y * a.z, .y = a.z * b.x - b.z * a.x, .z = a.x * b.y - b.x * a.y }; }
-static inline float length3_sq(float3 v) { return dot3(v, v); }
-float length3(float3 v);
+static inline float lensq3(float3 v) { return dot3(v, v); }
+float len3(float3 v);
 
-static inline float3 normalize3(float3 v) { return scale3(v, 1.0f / length3(v)); }
-float3 normalize3_safe(float3 v, float epsilon);
+static inline float3 norm3(float3 v) {
+	float length = len3(v);
+	if (length < EPSILON)
+		return (float3){ 0 };
+
+	return scale3(v, 1.0f / len3(v));
+}
 
 static inline float min3(float3 v) { return minf(v.x, minf(v.y, v.z)); }
 static inline float max3(float3 v) { return maxf(v.x, maxf(v.y, v.z)); }
@@ -127,18 +136,15 @@ float angle3(float3 a, float3 b);
 float3 rotate3(float3 v, float angle, float3 axis);
 
 // --- float4 & quaternions ---
-
-static inline float2 float4_xy(float4 v) { return (float2){ v.x, v.y }; }
-static inline float3 float4_xyz(float4 v) { return (float3){ v.x, v.y, v.z }; }
-static inline float4 float4_from_float3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w }; }
 static inline float4 wrap4(float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
 #define spread4(v) v.x, v.y, v.z, v.w
+#define cast4(v, T) ((T){ v.x, v.y, v.z, v.w })
 
 static inline bool equal4(float4 a, float4 b) { return equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z) && equalf(a.w, b.w); }
 
 static inline float4 scale4(float4 v, float s) { return (float4){ v.x * s, v.y * s, v.z * s, v.w * s }; }
 static inline float dot4(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
-float length4(float4 v);
+float len4(float4 v);
 
 static inline quat4 quat4_identity(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
 
@@ -147,10 +153,9 @@ quat4 quat4_from_axis_angle(float3 axis, float angle);
 quat4 quat4_slerp(quat4 q, quat4 p, float t);
 
 // --- float4x4 ---
-
 bool float4x4_equal(float4x4 lhs, float4x4 rhs);
 float4x4 float4x4_identity(void);
-float4x4 float4x4_multiply(float4x4 lhs, float4x4 rhs);
+float4x4 float4x4_mul(float4x4 lhs, float4x4 rhs);
 
 float4x4 float4x4_translate(float4x4 matrix, float3 translation);
 float4x4 float4x4_rotate(float4x4 matrix, float angle_radians, float3 axis);
