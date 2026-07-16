@@ -2,6 +2,7 @@
 #define GEOM_H_
 
 #include "cmath.h"
+#include "common.h"
 #include "core/arena.h"
 
 typedef struct {
@@ -58,6 +59,7 @@ typedef struct {
 	float distance;
 } Plane;
 
+static inline Plane plane_from_side(Side s) { return (Plane){ side_to_float3[s], 0.0f }; }
 static inline Plane plane_from_point_normal(float3 point, float3 normal) { return (Plane){ normal, dot3(point, normal) }; }
 static inline float3 plane_center(Plane p) { return scale3(p.normal, p.distance); }
 static inline float plane_signed_distance(Plane p, float3 point) { return dot3(p.normal, point) - p.distance; }
@@ -143,7 +145,7 @@ typedef struct {
 } Shape3;
 
 static inline Shape3 shape3_sphere(float3 center, float radius) { return (Shape3){ .kind = SHAPE_KIND_SPHERE, .as.sphere = { .center = center, .radius = radius } }; }
-static inline Shape3 shape3_capsule(float3 center, float height, float radius) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = capsule_from_center(center, up3, height, radius) }; }
+static inline Shape3 shape3_capsule(float3 center, float height, float radius) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = capsule_from_center(center, unit3(UP), height, radius) }; }
 static inline Shape3 shape3_convex_polygon(float3 *vertices, uint32_t vertex_count) { return (Shape3){ .kind = SHAPE_KIND_CONVEX_POLYGON, .as.convex = { vertices, vertex_count } }; }
 
 static inline Shape3 shape3_from_aabb3(AABB3 a) { return (Shape3){ .kind = SHAPE_KIND_AABB3, .as.aabb3 = a }; }

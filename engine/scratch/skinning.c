@@ -32,11 +32,10 @@ typedef struct {
 } Vertex2;
 
 typedef struct {
-	float3 position;
-	float thickness;
+	float4 a, b; // xyz + thickness
 	uint32_t color;
 	float3 _pad0;
-} LinePoint;
+} Line;
 
 typedef struct {
 	float3 position;
@@ -218,16 +217,6 @@ typedef struct {
 	uint32_t entity_count;
 } World;
 
-/* typedef enum { */
-/* 	AXIS_MODE_X = BIT(0), */
-/* 	AXIS_MODE_Y = BIT(1), */
-/* 	AXIS_MODE_Z = BIT(2), */
-/* 	AXIS_MODE_XY = AXIS_MODE_X | AXIS_MODE_Y, */
-/* 	AXIS_MODE_YZ = AXIS_MODE_Y | AXIS_MODE_Z, */
-/* 	AXIS_MODE_ZX = AXIS_MODE_Z | AXIS_MODE_X, */
-/* 	AXIS_MODE_XYZ = AXIS_MODE_X | AXIS_MODE_Y | AXIS_MODE_Z, */
-/* } AxisMode; */
-
 // :functions
 Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
@@ -236,7 +225,7 @@ Mesh load_gltf(Arena *arena, String8 path);
 Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
 Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments);
 
-Mesh mesh_plane(Arena *arena, Side orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
+Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z);
 Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D heightmap);
 
 Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
@@ -615,13 +604,13 @@ int main(void) {
 	const uint32_t map_depth = 32;
 
 	Mesh meshes[MESH_COUNT] = { 0 };
-	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, SIDE_UP, map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, plane_from_side(SIDE_UP), map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, SIDE_UP, 256.f, 256.f, heightmap);
+	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, SIDE_TOP, 256.f, 256.f, heightmap);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, up3, 1.0f, 0.5f, 0.5f, 32, 0, true, true);
+	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, unit3(UP), 1.0f, 0.5f, 0.5f, 32, 0, true, true);
 	{
 		ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -729,7 +718,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_mul(float4x4_rotation(up3, randf_range(0, TAU)), float4x4_translation(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_mul(float4x4_rotation(unit3(UP), randf_range(0, TAU)), float4x4_translation(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -791,14 +780,14 @@ int main(void) {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		  .position = { 0.0f, 1.5f, 20.f },
 		  .target = { 0.0f, 1.5f, 0.0f },
-		  .up = up3,
+		  .up = unit3(UP),
 		  .fovy = 45.f,
 		},
 		[VIEWPORT_STATE_GAME] = {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		  .position = { 0.0f, 1.5f, 20.f },
 		  .target = { 0.0f, 1.5f, 0.0f },
-		  .up = up3,
+		  .up = unit3(UP),
 		  .fovy = 45.f,
 		},
 	};
@@ -855,7 +844,7 @@ int main(void) {
 	/* entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH); */
 
 	Entity *level = entity_spawn(&world);
-	level->meshid = MESH_TEST_LEVEL;
+	level->meshid = MESH_TERRAIN_FLAT;
 	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
 
 	Entity *transparent_entities[3] = { 0 };
@@ -930,13 +919,13 @@ int main(void) {
 		  .capacity = sizeof(Vertex2) * 6 * 1024,
 		} };
 		Arena batch_line3[] = { {
-		  .base = arena_push_count(frame_arena, LinePoint, 6 * 2048),
-		  .capacity = sizeof(LinePoint) * 6 * 2048,
+		  .base = arena_push_count(frame_arena, Line, 6 * 2048),
+		  .capacity = sizeof(Line) * 6 * 2048,
 		} };
 		Arena batch_line2d[] = {
 			{
-			  .base = arena_push_count(frame_arena, LinePoint, 6 * 1024),
-			  .capacity = sizeof(LinePoint) * 6 * 1024,
+			  .base = arena_push_count(frame_arena, Line, 6 * 1024),
+			  .capacity = sizeof(Line) * 6 * 1024,
 			}
 		};
 
@@ -1093,7 +1082,7 @@ int main(void) {
 							float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
 																							  //
 							float target_angle = -current_azimuth - PIf + atan2f(input_vector.x, input_vector.y);
-							quat4 target_rotation = quat4_from_axis_angle(up3, target_angle);
+							quat4 target_rotation = quat4_from_axis_angle(unit3(UP), target_angle);
 
 							float t = 1.0f - expf(-15.0f * dt);
 							entity->transform.rotation = quat4_slerp(entity->transform.rotation, target_rotation, t);
@@ -1131,7 +1120,7 @@ int main(void) {
 						float3 delta = sub3(entity->target->transform.translation, entity->transform.translation);
 						float3 direction = norm3(delta);
 
-						entity->transform.rotation = quat4_from_axis_angle(up3, atan2f(direction.x, direction.z));
+						entity->transform.rotation = quat4_from_axis_angle(unit3(UP), atan2f(direction.x, direction.z));
 
 						entity->move_speed = 3.0f;
 
@@ -1147,7 +1136,6 @@ int main(void) {
 							Raycast3Result nearest = RAY3_NO_HIT;
 
 							Ray3 r = { entity->transform.translation, velocity };
-
 							for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
 								Entity *other = &world.entities[entity_index];
 								if (other == player || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
@@ -1500,7 +1488,7 @@ int main(void) {
 			float ortho_size = 10.0f;
 			lights[light_index].matrix = float4x4_mul(
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				float4x4_lookat(xyz(lights[light_index].position), zero3, up3));
+				float4x4_lookat(xyz(lights[light_index].position), zero3, unit3(UP)));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },
@@ -1861,7 +1849,7 @@ int main(void) {
 							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
 						gfx_bind(context, &pipeline_line3d, 1, uniforms, countof(uniforms));
-						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(LinePoint)) * 6, 1, 0, 0);
+						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(Line)) * 6, 1, 0, 0);
 					}
 				}
 
@@ -1906,7 +1894,7 @@ int main(void) {
 					};
 					gfx_bind(context, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
 					gfx_bind(context, &pipeline_line2d, 1, uniforms, countof(uniforms));
-					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(LinePoint)) * 6, 1, 0, 0);
+					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(Line)) * 6, 1, 0, 0);
 				}
 
 				vkCmdEndRendering(cmd->handle);
@@ -4284,9 +4272,9 @@ Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count) {
 
 	bool ok = arena && paths;
 
-	Image2D images[SIDE_COUNT_3D];
+	Image2D images[SIDE_COUNT3];
 	if (ok) {
-		for (uint32_t face_index = 0; face_index < SIDE_COUNT_3D; ++face_index) {
+		for (uint32_t face_index = 0; face_index < SIDE_COUNT3; ++face_index) {
 			images[face_index] = load_image(arena, paths[face_index]);
 
 			if (face_index > 0)
@@ -4593,10 +4581,10 @@ Mesh load_gltf(Arena *arena, String8 path) {
 static inline float3 face_orient(float3 v, Side face) {
 	float3 result = { 0 };
 	switch (face) {
-		case SIDE_UP:
+		case SIDE_TOP:
 			result = (float3){ v.x, v.y, v.z };
 			break;
-		case SIDE_DOWN:
+		case SIDE_BOTTOM:
 			result = (float3){ v.x, -v.y, -v.z };
 			break;
 		case SIDE_RIGHT:
@@ -4753,7 +4741,7 @@ Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t
 	return mesh_cylinder(arena, origin, height * 0.5f, radius, 0.0f, segments, 0, false, true);
 }
 
-Mesh mesh_plane(Arena *arena, Side orientation, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
+Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
 	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
 	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
@@ -4766,20 +4754,25 @@ Mesh mesh_plane(Arena *arena, Side orientation, float width, float height, uint3
 		result.total_vertex_count = subdivision_x * subdivision_z;
 
 		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+
+		float3 right = norm3(cross3(p.normal, fabsf(dot3(unit3(UP), p.normal)) >= 0.99f ? unit3(BACKWARD) : unit3(UP)));
+		float3 up = cross3(p.normal, right);
+
+		Vertex3 *vertex_cursor = result.vertices;
 		for (uint32_t z = 0; z < subdivision_z; ++z) {
 			for (uint32_t x = 0; x < subdivision_x; ++x) {
-				uint32_t index = x + z * subdivision_x;
-
 				float3 local = {
 					.x = (((float)x / (subdivision_x - 1)) - 0.5f) * width,
 					.y = 0.0f,
 					.z = (((float)z / (subdivision_z - 1)) - 0.5f) * height,
 				};
-				result.vertices[index] = (Vertex3){
-					.position = face_orient(local, orientation),
-					.normal = { 0.0f, 1.0f, 0.0f },
+
+				*vertex_cursor = (Vertex3){
+					.position = add3(scale3(right, local.x), scale3(up, local.z)),
+					.normal = p.normal,
 					.uv = { (float)x / (subdivision_x - 1), (float)z / (subdivision_z - 1) },
 				};
+				vertex_cursor++;
 			}
 		}
 
@@ -4793,12 +4786,12 @@ Mesh mesh_plane(Arena *arena, Side orientation, float width, float height, uint3
 			uint32_t index = face + face / (subdivision_x - 1);
 
 			result.indices[cursor++] = index;
-			result.indices[cursor++] = index + subdivision_x;
 			result.indices[cursor++] = index + 1;
+			result.indices[cursor++] = index + subdivision_x;
 
 			result.indices[cursor++] = index + 1;
-			result.indices[cursor++] = index + subdivision_x;
 			result.indices[cursor++] = index + subdivision_x + 1;
+			result.indices[cursor++] = index + subdivision_x;
 		}
 
 		result.part_count = 1;
@@ -5072,14 +5065,9 @@ void push_triangle2(Arena *arena, Triangle2 t, float thickness, Color color) {
 }
 
 void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = xy0(start),
-		.thickness = thickness,
-		.color = color_pack(color),
-	};
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = xy0(end),
-		.thickness = thickness,
+	*arena_push_count(arena, Line, 1) = (Line){
+		.a = xy0s(start, thickness),
+		.b = xy0s(end, thickness),
 		.color = color_pack(color),
 	};
 }
@@ -5088,14 +5076,9 @@ void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color 
 	float2 shaft_end = add2(start, scale2(sub2(end, start), 0.75f));
 	push_line2(arena, start, shaft_end, thickness, color);
 
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = xy0(shaft_end),
-		.thickness = thickness * 4,
-		.color = color_pack(color),
-	};
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = xy0(end),
-		.thickness = 0.0f,
+	*arena_push_count(arena, Line, 1) = (Line){
+		.a = xy0s(shaft_end, thickness * 4.0f),
+		.b = xy0s(end, 0.0f),
 		.color = color_pack(color),
 	};
 }
@@ -5222,22 +5205,22 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Side
 		float ca = cosf(a), sa = sinf(a);
 		float can = cosf(an), san = sinf(an);
 
-		LinePoint p0, p1;
+		float3 p0, p1;
 		switch (plane) {
-			case SIDE_DOWN:
-			case SIDE_UP:
-				p0 = (LinePoint){ { center.x + ca * radius, center.y, center.z + sa * radius }, thickness, color_pack(color), zero3 };
-				p1 = (LinePoint){ { center.x + can * radius, center.y, center.z + san * radius }, thickness, color_pack(color), zero3 };
+			case SIDE_BOTTOM:
+			case SIDE_TOP:
+				p0 = (float3){ center.x + ca * radius, center.y, center.z + sa * radius };
+				p1 = (float3){ center.x + can * radius, center.y, center.z + san * radius };
 				break;
 			case SIDE_LEFT:
 			case SIDE_RIGHT:
-				p0 = (LinePoint){ { center.x, center.y + sa * radius, center.z + ca * radius }, thickness, color_pack(color), zero3 };
-				p1 = (LinePoint){ { center.x, center.y + san * radius, center.z + can * radius }, thickness, color_pack(color), zero3 };
+				p0 = (float3){ center.x, center.y + sa * radius, center.z + ca * radius };
+				p1 = (float3){ center.x, center.y + san * radius, center.z + can * radius };
 				break;
 			case SIDE_BACK:
 			case SIDE_FRONT:
-				p0 = (LinePoint){ { center.x + ca * radius, center.y + sa * radius, center.z }, thickness, color_pack(color), zero3 };
-				p1 = (LinePoint){ { center.x + can * radius, center.y + san * radius, center.z }, thickness, color_pack(color), zero3 };
+				p0 = (float3){ center.x + ca * radius, center.y + sa * radius, center.z };
+				p1 = (float3){ center.x + can * radius, center.y + san * radius, center.z };
 				break;
 
 			default:
@@ -5245,13 +5228,12 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Side
 				break;
 		}
 
-		*arena_push_count(arena, LinePoint, 1) = p0;
-		*arena_push_count(arena, LinePoint, 1) = p1;
+		push_line3(arena, p0, p1, thickness, color);
 	}
 }
 
 void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
-	push_arc3(arena, center, radius, segments, SIDE_UP, TAU, thickness, color);
+	push_arc3(arena, center, radius, segments, SIDE_TOP, TAU, thickness, color);
 	push_arc3(arena, center, radius, segments, SIDE_RIGHT, TAU, thickness, color);
 	push_arc3(arena, center, radius, segments, SIDE_FRONT, TAU, thickness, color);
 }
@@ -5261,57 +5243,29 @@ void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
-	LinePoint outline[] = {
-		{ { min.x, min.y, min.z }, thickness, color_pack(color), zero3 },
-		{ { min.x, max.y, min.z }, thickness, color_pack(color), zero3 },
-
-		{ { min.x, min.y, max.z }, thickness, color_pack(color), zero3 },
-		{ { min.x, max.y, max.z }, thickness, color_pack(color), zero3 },
-
-		{ { max.x, min.y, min.z }, thickness, color_pack(color), zero3 },
-		{ { max.x, max.y, min.z }, thickness, color_pack(color), zero3 },
-
-		{ { max.x, min.y, max.z }, thickness, color_pack(color), zero3 },
-		{ { max.x, max.y, max.z }, thickness, color_pack(color), zero3 },
-
-		{ { min.x, min.y, min.z }, thickness, color_pack(color), zero3 },
-		{ { min.x, min.y, max.z }, thickness, color_pack(color), zero3 },
-
-		{ { min.x, min.y, min.z }, thickness, color_pack(color), zero3 },
-		{ { max.x, min.y, min.z }, thickness, color_pack(color), zero3 },
-
-		{ { max.x, min.y, max.z }, thickness, color_pack(color), zero3 },
-		{ { max.x, min.y, min.z }, thickness, color_pack(color), zero3 },
-
-		{ { max.x, min.y, max.z }, thickness, color_pack(color), zero3 },
-		{ { min.x, min.y, max.z }, thickness, color_pack(color), zero3 },
-
-		{ { min.x, max.y, min.z }, thickness, color_pack(color), zero3 },
-		{ { min.x, max.y, max.z }, thickness, color_pack(color), zero3 },
-
-		{ { min.x, max.y, min.z }, thickness, color_pack(color), zero3 },
-		{ { max.x, max.y, min.z }, thickness, color_pack(color), zero3 },
-
-		{ { max.x, max.y, max.z }, thickness, color_pack(color), zero3 },
-		{ { max.x, max.y, min.z }, thickness, color_pack(color), zero3 },
-
-		{ { max.x, max.y, max.z }, thickness, color_pack(color), zero3 },
-		{ { min.x, max.y, max.z }, thickness, color_pack(color), zero3 },
+	Line outline[] = {
+		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack(color), zero3 },
+		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
+		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack(color), zero3 },
+		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, color_pack(color), zero3 },
+		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack(color), zero3 },
+		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack(color), zero3 },
+		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack(color), zero3 },
+		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack(color), zero3 },
+		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
+		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack(color), zero3 },
+		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack(color), zero3 },
+		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
 	};
 
-	LinePoint *points = arena_push_count(arena, LinePoint, countof(outline));
+	Line *points = arena_push_count(arena, Line, countof(outline));
 	memory_copy_array(points, outline);
 }
 
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = start,
-		.thickness = thickness,
-		.color = color_pack(color),
-	};
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = end,
-		.thickness = thickness,
+	*arena_push_count(arena, Line, 1) = (Line){
+		.a = xyzs(start, thickness),
+		.b = xyzs(end, thickness),
 		.color = color_pack(color),
 	};
 }
@@ -5336,14 +5290,9 @@ void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color 
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
 	push_line3(arena, start, shaft_end, thickness, color);
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = shaft_end,
-		.thickness = thickness * 4,
-		.color = color_pack(color),
-	};
-	*arena_push_count(arena, LinePoint, 1) = (LinePoint){
-		.position = end,
-		.thickness = 0.0f,
+	*arena_push_count(arena, Line, 1) = (Line){
+		.a = xyzs(shaft_end, thickness * 4.0f),
+		.b = xyz0(end),
 		.color = color_pack(color),
 	};
 }
@@ -5356,7 +5305,7 @@ void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color co
 
 void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
 	float3 right = { 0 }, up = { 0 };
-	float dot = dot3(plane.normal, up3);
+	float dot = dot3(plane.normal, unit3(UP));
 	if (fabsf(dot) >= 0.99f) {
 		right.x = dot > 0 ? 1.0f : -1.0f;
 		up.z = -1.0f;
@@ -5401,19 +5350,12 @@ void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 			};
 
 			uint8_t segments = 32;
-			LinePoint *spine_points = arena_push_count(arena, LinePoint, 8);
-			LinePoint spine[] = {
-				{ { centers[0].x - r, centers[0].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
-				{ { centers[0].x - r, centers[1].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
-
-				{ { centers[0].x + r, centers[0].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
-				{ { centers[0].x + r, centers[1].y, centers[0].z }, thickness, color_pack(WHITE), zero3 },
-
-				{ { centers[0].x, centers[0].y, centers[0].z - r }, thickness, color_pack(WHITE), zero3 },
-				{ { centers[0].x, centers[1].y, centers[0].z - r }, thickness, color_pack(WHITE), zero3 },
-
-				{ { centers[0].x, centers[0].y, centers[0].z + r }, thickness, color_pack(WHITE), zero3 },
-				{ { centers[0].x, centers[1].y, centers[0].z + r }, thickness, color_pack(WHITE), zero3 },
+			Line *spine_points = arena_push_count(arena, Line, 8);
+			Line spine[] = {
+				{ { centers[0].x - r, centers[0].y, centers[0].z, thickness }, { centers[0].x - r, centers[1].y, centers[0].z, thickness }, color_pack(WHITE), zero3 },
+				{ { centers[0].x + r, centers[0].y, centers[0].z, thickness }, { centers[0].x + r, centers[1].y, centers[0].z, thickness }, color_pack(WHITE), zero3 },
+				{ { centers[0].x, centers[0].y, centers[0].z - r, thickness }, { centers[0].x, centers[1].y, centers[0].z - r, thickness }, color_pack(WHITE), zero3 },
+				{ { centers[0].x, centers[0].y, centers[0].z + r, thickness }, { centers[0].x, centers[1].y, centers[0].z + r, thickness }, color_pack(WHITE), zero3 },
 			};
 			memory_copy_array(spine_points, spine);
 
@@ -5421,7 +5363,7 @@ void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 				float3 c = centers[end];
 				float signed_r = (end == 0) ? -r : r;
 
-				push_arc3(arena, centers[end], r, segments, SIDE_UP, TAU, thickness, WHITE);
+				push_arc3(arena, centers[end], r, segments, SIDE_TOP, TAU, thickness, WHITE);
 				push_arc3(arena, centers[end], signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
 				push_arc3(arena, centers[end], signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
 			}

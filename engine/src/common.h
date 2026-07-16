@@ -132,6 +132,8 @@ static inline float4 splat4(float v) { return (float4) {v, v, v, v }; }
 #define xy(v) make2((v).x, (v).y)
 #define xys(v, s) make3((v).x, (v).y, (s))
 #define xy0(v) make3((v).x, (v).y, 0.0f)
+#define xy00(v) make4((v).x, (v).y, 0.0f, 0.0f)
+#define xy0s(v, s) make4((v).x, (v).y, 0.0f, (s))
 #define xy1(v) make3((v).x, (v).y, 1.0f)
 #define xyss(v, s0, s1) make4((v).x, (v).y, (s0), (s1))
 
@@ -221,51 +223,60 @@ typedef struct {
 typedef enum {
 	SIDE_RIGHT,
 	SIDE_LEFT,
-	SIDE_UP,
-	SIDE_DOWN,
-	SIDE_COUNT_2D,
 
-	SIDE_FRONT = SIDE_COUNT_2D,
+	SIDE_TOP,
+	SIDE_UP = SIDE_TOP,
+
+	SIDE_BOTTOM,
+	SIDE_DOWN = SIDE_BOTTOM,
+
+	SIDE_COUNT2,
+
+	SIDE_FRONT = SIDE_COUNT2,
+	SIDE_FORWARD = SIDE_FRONT,
+
 	SIDE_BACK,
+	SIDE_BACKWARD = SIDE_BACK,
 
-	SIDE_COUNT_3D,
+	SIDE_COUNT3,
 } Side;
 
-static float2 side_to_float2[SIDE_COUNT_2D] = {
+static const float2 side_to_float2[SIDE_COUNT2] = {
 	[SIDE_RIGHT] = { 1.0f, 0.0f },
 	[SIDE_LEFT] = { -1.0f, 0.0f },
 
-	[SIDE_UP] = { 0.0f, -1.0f },
-	[SIDE_DOWN] = { 0.0f, 1.0f },
+	[SIDE_TOP] = { 0.0f, -1.0f },
+	[SIDE_BOTTOM] = { 0.0f, 1.0f },
 };
 
-static float3 side_to_float3[SIDE_COUNT_3D] = {
+static const float3 side_to_float3[SIDE_COUNT3] = {
 	[SIDE_RIGHT] = { 1.0f, 0.0f, 0.0f },
 	[SIDE_LEFT] = { -1.0f, 0.0f, 0.0f },
 
-	[SIDE_UP] = { 0.0f, 1.0f, 0.0f },
-	[SIDE_DOWN] = { 0.0f, -1.0f, 0.0f },
+	[SIDE_TOP] = { 0.0f, 1.0f, 0.0f },
+	[SIDE_BOTTOM] = { 0.0f, -1.0f, 0.0f },
 
-	[SIDE_FRONT] = { 0.0f, 0.0f, -1.0f },
-	[SIDE_BACK] = { 0.0f, 0.0f, 1.0f },
+	[SIDE_FRONT] = { 0.0f, 0.0f, 1.0f },
+	[SIDE_BACK] = { 0.0f, 0.0f, -1.0f },
 };
 
-#define right2 side_to_float2[SIDE_RIGHT]
-#define left2 side_to_float2[SIDE_LEFT]
-#define up2 side_to_float2[SIDE_UP]
-#define down2 side_to_float2[SIDE_DOWN]
-
-#define right3 side_to_float3[SIDE_RIGHT]
-#define left3 side_to_float3[SIDE_LEFT]
-#define up3 side_to_float3[SIDE_UP]
-#define down3 side_to_float3[SIDE_DOWN]
-#define forward3 side_to_float3[SIDE_FRONT]
-#define backward3 side_to_float3[SIDE_BACK]
+#define unit2(s) side_to_float2[SIDE_##s]
+#define unit3(s) side_to_float3[SIDE_##s]
 
 typedef enum {
 	AXIS_X,
 	AXIS_Y,
-	AXIS_Z,
-	AXIS_XY = AXIS_Z,
-	AXIS_XYZ,
+	AXIS_COUNT2,
+	AXIS_Z = AXIS_COUNT2,
+	AXIS_COUNT3,
 } Axis;
+
+typedef enum {
+	AXIS_MODE_X = BIT(0),
+	AXIS_MODE_Y = BIT(1),
+	AXIS_MODE_Z = BIT(2),
+	AXIS_MODE_XY = AXIS_MODE_X | AXIS_MODE_Y,
+	AXIS_MODE_YZ = AXIS_MODE_Y | AXIS_MODE_Z,
+	AXIS_MODE_ZX = AXIS_MODE_Z | AXIS_MODE_X,
+	AXIS_MODE_XYZ = AXIS_MODE_X | AXIS_MODE_Y | AXIS_MODE_Z,
+} AxisMode;

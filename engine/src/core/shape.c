@@ -108,7 +108,7 @@ Raycast3Result raycast_aabb3(Ray3 r, AABB3 a) {
 
 	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
 	if (lensq3(r.direction)) {
-		for (uint32_t side = 0; side < SIDE_COUNT_3D; ++side) {
+		for (uint32_t side = 0; side < SIDE_COUNT3; ++side) {
 			float3 pn = side_to_float3[side];
 			float3 po = add3(c, mul3(pn, he));
 
