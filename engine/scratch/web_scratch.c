@@ -7,14 +7,21 @@
 #include <emscripten/html5_webgl.h>
 #include <GLES3/gl3.h>
 
+#include "core/shape2.h"
+#include "input.h"
 #include "os.h"
 
 OS_Event events[256];
 
-bool on_keydown(int type, const EmscriptenKeyboardEvent *event, void *data) {
-	bool pressed = type == EMSCRIPTEN_EVENT_KEYPRESS;
-	LOG_INFO("%s %s", event->key, pressed ? "pressed" : "released");
+InputState input = { 0 };
+bool on_keypress(int type, const EmscriptenKeyboardEvent *event, void *data) {
+	input.keys[event->key[0]].state = true;
 	return true;
+}
+
+bool on_keyrelease(int type, const EmscriptenKeyboardEvent *event, void *data) {
+	input.keys[event->key[0]].state = false;
+    return true;
 }
 
 typedef struct {
@@ -71,11 +78,17 @@ GLuint shaderProgram;
 GLuint vao;
 
 void main_loop(void) {
+	input_update();
+
 	glClearColor(170.f / 255.f, 222.f / 255.f, 135.f / 255.f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	glUseProgram(shaderProgram);
 	glBindVertexArray(vao);
+
+	if (input_key_down(KEY_CODE_A)) {
+		LOG_INFO("A");
+	}
 
 	glDrawArrays(GL_TRIANGLES, 0, batch.offset / sizeof(Vertex2));
 }
@@ -87,7 +100,10 @@ int main(void) {
 	EmscriptenWebGLContextAttributes context_attribs;
 	emscripten_webgl_init_context_attributes(&context_attribs);
 
-	emscripten_set_keydown_callback("#canvas", NULL, true, on_keydown);
+	input_set_context(&input);
+
+	emscripten_set_keypress_callback("#canvas", 0, true, on_keypress);
+    emscripten_set_keyup_callback("#canvas", 0, true, on_keyrelease);
 	/* emscripten_set_mousemove_callback("#canvas", NULL, true, on_mousemove); */
 
 	context_attribs.majorVersion = 2;

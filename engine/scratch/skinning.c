@@ -29,13 +29,13 @@
 typedef struct {
 	float2 position, uv;
 	float4 color;
-} Vertex2;
+} DrawVertex2;
 
 typedef struct {
 	float4 a, b; // xyz + thickness
 	uint32_t color;
 	float3 _pad0;
-} Line;
+} DrawLine;
 
 typedef struct {
 	float3 position;
@@ -44,12 +44,12 @@ typedef struct {
 	float _pad1;
 	float2 uv;
 	float4 tangent;
-} Vertex3;
+} DrawVertex3;
 
 typedef struct {
 	uint4 bone_ids;
 	float4 weights;
-} SkinningData;
+} DrawSkinningVertex;
 
 typedef enum {
 	TEXTURE_SLOT_ALBEDO,
@@ -106,8 +106,8 @@ typedef struct {
 
 typedef struct {
 	// CPU
-	Vertex3 *vertices;
-	SkinningData *skinning;
+	DrawVertex3 *vertices;
+	DrawSkinningVertex *skinning;
 	uint32_t *indices;
 
 	// GPU
@@ -144,6 +144,7 @@ typedef enum {
 	MESH_GRASS_BILLBOARD,
 
 	MESH_CYLINDER,
+	MESH_SPHERE,
 	MESH_GIZMOS_ARROW,
 
 	MESH_COUNT,
@@ -222,6 +223,7 @@ Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
+Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, uint32_t rings);
 Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
 Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments);
 
@@ -611,6 +613,7 @@ int main(void) {
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
 	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, unit3(UP), 1.0f, 0.5f, 0.5f, 32, 0, true, true);
+	meshes[MESH_SPHERE] = mesh_sphere(permanent, unit3(UP), 1.0f, 32, 16);
 	{
 		ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -731,13 +734,13 @@ int main(void) {
 			Mesh *mesh = &meshes[mesh_index];
 			mesh->buffer = geometry;
 
-			uint64_t total_vertex_buffer_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
+			uint64_t total_vertex_buffer_size = alignup(mesh->total_vertex_count * sizeof(DrawVertex3), 256);
 			uint64_t total_index_buffer_size = alignup(mesh->total_index_count * sizeof(uint32_t), 256);
-			uint64_t total_skinning_buffer_size = alignup(mesh->total_vertex_count * sizeof(SkinningData), 256);
+			uint64_t total_skinning_buffer_size = alignup(mesh->total_vertex_count * sizeof(DrawSkinningVertex), 256);
 
 			// Vertices
 			mesh->buffer_vertex_byte_offset = geometry_upload_cursor;
-			memory_copy(arena_push(cmd->transient_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3));
+			memory_copy(arena_push(cmd->transient_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(DrawVertex3));
 			geometry_upload_cursor += total_vertex_buffer_size;
 
 			// Indices
@@ -748,7 +751,7 @@ int main(void) {
 			// Skinning
 			if (mesh->skeleton.bone_count) {
 				mesh->buffer_skinning_data_byte_offset = geometry_upload_cursor;
-				memory_copy(arena_push(cmd->transient_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(SkinningData));
+				memory_copy(arena_push(cmd->transient_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(DrawSkinningVertex));
 				geometry_upload_cursor += total_skinning_buffer_size;
 			}
 		}
@@ -808,13 +811,13 @@ int main(void) {
 	bool use_heightmap = false;
 	float ambient_strength = 0.2f;
 	float fog_density = 0.02f, fog_gradient = 5.0f;
-	bool draw_collision_shapes = true, draw_grass = true;
+	bool draw_collision_shapes = true, draw_grass = true, draw_skybox = true;
 	uint32_t light_index = 0;
 
 	World world = { .entity_count = 1 };
 
 	Entity *player = entity_spawn(&world);
-	player->meshid = MESH_HERO_MALE;
+	player->meshid = MESH_SPHERE;
 	/* player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
 	/* player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
 	player->shape.as.aabb3 = meshes[player->meshid].bounds;
@@ -844,13 +847,11 @@ int main(void) {
 	/* entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH); */
 
 	Entity *level = entity_spawn(&world);
-	level->meshid = MESH_TERRAIN_FLAT;
+	level->meshid = MESH_TEST_LEVEL;
 	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
 
-	Entity *transparent_entities[3] = { 0 };
-	(void)transparent_entities;
 	for (uint32_t index = 0; index < 3; ++index) {
-		Entity *cylinder = transparent_entities[index] = entity_spawn(&world);
+		Entity *cylinder = entity_spawn(&world);
 
 		cylinder->transform.translation = make3(0.0f, 0.0f, index * -3.0f);
 		cylinder->transform.scale = make3(2.0f, 1.0f, 2.0f);
@@ -915,17 +916,17 @@ int main(void) {
 
 		// :update
 		Arena batch_2d[] = { {
-		  .base = arena_push_count(frame_arena, Vertex2, 6 * 1024),
-		  .capacity = sizeof(Vertex2) * 6 * 1024,
+		  .base = arena_push_count(frame_arena, DrawVertex2, 6 * 1024),
+		  .capacity = sizeof(DrawVertex2) * 6 * 1024,
 		} };
 		Arena batch_line3[] = { {
-		  .base = arena_push_count(frame_arena, Line, 6 * 2048),
-		  .capacity = sizeof(Line) * 6 * 2048,
+		  .base = arena_push_count(frame_arena, DrawLine, 6 * 2048),
+		  .capacity = sizeof(DrawLine) * 6 * 2048,
 		} };
 		Arena batch_line2d[] = {
 			{
-			  .base = arena_push_count(frame_arena, Line, 6 * 1024),
-			  .capacity = sizeof(Line) * 6 * 1024,
+			  .base = arena_push_count(frame_arena, DrawLine, 6 * 1024),
+			  .capacity = sizeof(DrawLine) * 6 * 1024,
 			}
 		};
 
@@ -1307,85 +1308,6 @@ int main(void) {
 			}
 		}
 
-#if 0
-		// :minkowski
-		Rectangle viewport = rect(0, 0, dims.x, dims.y);
-		float2 center = { viewport.width / 2.0f, viewport.height / 2.0f };
-		push_rect2(batch_2d, viewport, WHITE);
-
-		float2 t_center = { center.x + 200.f, center.y - 150.f };
-		float t_size = 80.f;
-		float2 triangle_polygon[] = {
-			add2(t_center, (float2){ 0.0f, -t_size }),
-			add2(t_center, (float2){ t_size, t_size }),
-			add2(t_center, (float2){ -t_size, t_size }),
-		};
-
-		float2 q_center = add2(sub2(center, splat2(100.f)), (float2){ 300.f, -200.f });
-		float2 q_extent = splat2(100.f);
-		float2 quad_polygon[] = {
-			{ q_center.x - q_extent.x, q_center.y - q_extent.y },
-			{ q_center.x + q_extent.x, q_center.y - q_extent.y },
-			{ q_center.x - q_extent.x, q_center.y + q_extent.y },
-			{ q_center.x + q_extent.x, q_center.y + q_extent.y },
-		};
-
-		push_line2(batch_line2d, (float2){ 0.0f, center.y }, (float2){ dims.x, center.y }, 1.0f, RED);
-		push_line2(batch_line2d, (float2){ center.x, 0.0f }, (float2){ center.x, dims.y }, 1.0f, GREEN);
-
-		push_triangle2(batch_line2d, (Triangle2){ triangle_polygon[0], triangle_polygon[1], triangle_polygon[2] }, 3.0f, BLACK);
-
-		float2 rc = quad_polygon[0];
-		float2 re = sub2(quad_polygon[3], quad_polygon[0]);
-		push_rect2_outline(batch_2d, rect(rc.x, rc.y, re.x, re.y), 3.0f, BLACK);
-
-		float2 *sum_points = arena_push_count(frame_arena, float2, countof(triangle_polygon) * countof(quad_polygon));
-		uint32_t point_count = 0;
-
-		for (uint32_t angle = 0; angle < 32; ++angle) {
-			float2 direction = { cosf((angle / 32.0f) * TAU), sinf((angle / 32.0f) * TAU) };
-
-			float2 tp = { 0 };
-			float triangle_max_distance = -FLOAT_MAX;
-			for (uint32_t index = 0; index < countof(triangle_polygon); ++index) {
-				float distance = dot2(triangle_polygon[index], direction);
-				if (distance > triangle_max_distance) {
-					triangle_max_distance = distance;
-					tp = triangle_polygon[index];
-				}
-			}
-
-			float2 qp = { 0 };
-			float quad_max_distance = -FLOAT_MAX;
-			direction = scale2(direction, -1.0f);
-			for (uint32_t index = 0; index < countof(quad_polygon); ++index) {
-				float distance = dot2(quad_polygon[index], direction);
-				if (distance > quad_max_distance) {
-					quad_max_distance = distance;
-					qp = quad_polygon[index];
-				}
-			}
-
-			float2 sum_point = add2(center, sub2(tp, qp));
-			bool found = false;
-			for (uint32_t index = 0; index < point_count; ++index) {
-				if (equal2(sum_point, sum_points[index])) {
-					found = true;
-					break;
-				}
-			}
-
-			if (found == false) {
-				sum_points[point_count++] = sum_point;
-			}
-		}
-
-		for (uint32_t index = 0; index < point_count; ++index) {
-			push_line2(batch_line2d, sum_points[index], sum_points[(index + 1) % point_count], 3.0f, BLACK);
-		}
-
-#endif
-
 		// Frame resources
 		GFX_CommandContext *cmd = gfx_frame_begin(context);
 		if (cmd == 0)
@@ -1445,7 +1367,7 @@ int main(void) {
 				uint64_t matrices_size = mesh->skeleton.bone_count * sizeof(float4x4);
 				uint64_t matrices_offset = gfx_cmd_put(cmd, matrices_size, instance->skin_matrices);
 
-				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3), 256);
+				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(DrawVertex3), 256);
 				instance->skinned_vertices_offset = gfx_cmd_put(cmd, skinned_vertices_size, 0);
 
 				gfx_cmd_pipeline_bind(cmd, &pipeline_skinning);
@@ -1565,7 +1487,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						uint64_t size = mesh->total_vertex_count * sizeof(DrawVertex3);
 						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = entity->skinned_vertices_offset;
@@ -1696,7 +1618,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						uint64_t size = mesh->total_vertex_count * sizeof(DrawVertex3);
 						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = entity->skinned_vertices_offset;
@@ -1748,7 +1670,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						uint64_t size = mesh->total_vertex_count * sizeof(DrawVertex3);
 						GFX_Image *images[] = {
 							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].handle,
 							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].handle,
@@ -1770,7 +1692,7 @@ int main(void) {
 					}
 				}
 
-				{ // :skybox
+				if (draw_skybox) { // :skybox
 					gfx_cmd_pipeline_bind(cmd, &pipeline_skybox);
 					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 				}
@@ -1810,7 +1732,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3);
+						uint64_t size = mesh->total_vertex_count * sizeof(DrawVertex3);
 						if (entity_has(e, ENTITY_FEATURE_ANIMATE) && animation_counts[e->meshid] && e->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = e->skinned_vertices_offset;
@@ -1834,6 +1756,18 @@ int main(void) {
 						vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 							MeshPart *part = &mesh->parts[part_index];
+
+							struct {
+								float4x4 model;
+								float4 tint;
+								float4 emissive;
+								float2 metallic_roughness;
+								float4 uv_st;
+							} pc = {
+								.model = float4x4_compose_quat(e->transform.translation, e->transform.rotation, e->transform.scale),
+								.tint = mesh->materials[part->material_id].tint,
+								.emissive = mesh->materials[part->material_id].tint,
+							};
 							float4x4 world_from_object = float4x4_compose_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
 
 							vkCmdPushConstants(cmd->handle, transparent.layout, VK_SHADER_STAGE_ALL, 0, sizeof(world_from_object), world_from_object.elements);
@@ -1849,7 +1783,7 @@ int main(void) {
 							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
 						gfx_bind(context, &pipeline_line3d, 1, uniforms, countof(uniforms));
-						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(Line)) * 6, 1, 0, 0);
+						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(DrawLine)) * 6, 1, 0, 0);
 					}
 				}
 
@@ -1884,7 +1818,7 @@ int main(void) {
 					gfx_bind(context, &pipeline_2d, 0, uniforms0, countof(uniforms0));
 					gfx_bind(context, &pipeline_2d, 1, uniforms1, countof(uniforms1));
 
-					vkCmdDraw(cmd->handle, batch_2d->offset / sizeof(Vertex2), 1, 0, 0);
+					vkCmdDraw(cmd->handle, batch_2d->offset / sizeof(DrawVertex2), 1, 0, 0);
 				}
 
 				if (batch_line2d->offset) {
@@ -1894,7 +1828,7 @@ int main(void) {
 					};
 					gfx_bind(context, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
 					gfx_bind(context, &pipeline_line2d, 1, uniforms, countof(uniforms));
-					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(Line)) * 6, 1, 0, 0);
+					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(DrawLine)) * 6, 1, 0, 0);
 				}
 
 				vkCmdEndRendering(cmd->handle);
@@ -4388,9 +4322,9 @@ Mesh load_gltf(Arena *arena, String8 path) {
 		}
 
 		result.parts = arena_push_count(arena, MeshPart, result.part_count);
-		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DrawVertex3, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
-		result.skinning = data->skins_count > 0 ? arena_push_count(arena, SkinningData, result.total_vertex_count) : 0;
+		result.skinning = data->skins_count > 0 ? arena_push_count(arena, DrawSkinningVertex, result.total_vertex_count) : 0;
 		result.bounds = aabb3_empty();
 
 		uint32_t part_offset = 0;
@@ -4426,35 +4360,35 @@ Mesh load_gltf(Arena *arena, String8 path) {
 					uint32_t offset = 0;
 					switch (attribute->type) {
 						case cgltf_attribute_type_position:
-							offset = offsetof(Vertex3, position);
+							offset = offsetof(DrawVertex3, position);
 							if (has_transform == false) {
 								part->bounds.min = wrap3(accessor->min);
 								part->bounds.max = wrap3(accessor->max);
 							}
 							break;
 						case cgltf_attribute_type_normal:
-							offset = offsetof(Vertex3, normal);
+							offset = offsetof(DrawVertex3, normal);
 							break;
 						case cgltf_attribute_type_tangent:
-							offset = offsetof(Vertex3, tangent);
+							offset = offsetof(DrawVertex3, tangent);
 							break;
 						case cgltf_attribute_type_texcoord:
-							offset = offsetof(Vertex3, uv);
+							offset = offsetof(DrawVertex3, uv);
 							break;
 						case cgltf_attribute_type_weights:
-							offset = offsetof(SkinningData, weights);
+							offset = offsetof(DrawSkinningVertex, weights);
 							skinned++;
 							break;
 						case cgltf_attribute_type_joints:
-							offset = offsetof(SkinningData, bone_ids);
+							offset = offsetof(DrawSkinningVertex, bone_ids);
 							skinned++;
 							break;
 						default:
 							continue;
 					}
 
-					Vertex3 *mesh_vertices = result.vertices + vertex_offset;
-					SkinningData *mesh_skinning = result.skinning + vertex_offset;
+					DrawVertex3 *mesh_vertices = result.vertices + vertex_offset;
+					DrawSkinningVertex *mesh_skinning = result.skinning + vertex_offset;
 
 					for (uint32_t vertex_index = 0; vertex_index < part->vertex_count; ++vertex_index) {
 						if (attribute->type == cgltf_attribute_type_weights)
@@ -4504,7 +4438,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 					}
 
 					if (parent_bone >= 0) {
-						SkinningData *mesh_skinning = result.skinning + vertex_offset;
+						DrawSkinningVertex *mesh_skinning = result.skinning + vertex_offset;
 						for (uint32_t vertex_index = 0; vertex_index < part->vertex_count; ++vertex_index) {
 							mesh_skinning[vertex_index].bone_ids = (uint32x4){ parent_bone, 0, 0, 0 };
 							mesh_skinning[vertex_index].weights = (float4){ 1.0f, 0.0f, 0.0f, 0.0f };
@@ -4607,22 +4541,92 @@ static inline float3 face_orient(float3 v, Side face) {
 	return result;
 }
 
+Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, uint32_t rings) {
+	Mesh result = { 0 };
+	bool ok = arena;
+	if (ok) {
+		rings = MAX(rings, 1);
+		rings += 2; // end caps
+		segments = MAX(segments, 4) + 1; // duplicate seam segment
+
+		result.total_vertex_count = rings * segments;
+		result.bounds = aabb3_empty();
+		result.vertices = arena_push_count(arena, DrawVertex3, result.total_vertex_count);
+
+		uint32_t vertex_cursor = 0;
+		for (uint32_t ring = 0; ring < rings; ++ring) {
+			float theta = ((float)ring / (rings - 1)) * PIf;
+			float ct = cosf(theta), st = sinf(theta);
+
+			for (uint32_t segment = 0; segment < segments; ++segment) {
+				float azimuth = ((float)segment / (segments - 1)) * TAU;
+				float ca = cosf(azimuth), sa = -sinf(azimuth);
+
+				result.vertices[vertex_cursor++] = (DrawVertex3){
+					.position = add3(origin, make3(st * ca * radius, ct * radius, st * sa * radius)),
+					.normal = { st * ca, ct, st * sa },
+					.uv = { (float)segment / (segments - 1), (float)ring / (rings - 1) },
+				};
+
+				aabb3_expand(&result.bounds, result.vertices[vertex_cursor - 1].position);
+			}
+		}
+
+		uint32_t face_count = (segments - 1) * (rings - 1);
+		result.total_index_count = face_count * 6;
+		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+
+		uint32_t index_cursor = 0;
+		for (uint32_t face = 0; face < face_count; ++face) {
+			uint32_t ring = face / (segments - 1);
+			uint32_t segment = face % (segments - 1);
+			uint32_t index = ring * segments + segment;
+
+			result.indices[index_cursor++] = index;
+			result.indices[index_cursor++] = index + segments;
+			result.indices[index_cursor++] = index + segments + 1;
+
+			result.indices[index_cursor++] = index;
+			result.indices[index_cursor++] = index + segments + 1;
+			result.indices[index_cursor++] = index + 1;
+		}
+
+		result.part_count = 1;
+		result.parts = arena_push_count(arena, MeshPart, result.part_count);
+
+		result.parts[0].vertex_count = result.total_vertex_count;
+		result.parts[0].index_count = result.total_index_count;
+		result.parts[0].bounds = result.bounds;
+
+		result.material_count = 1;
+		result.materials = arena_push_count(arena, Material, result.material_count);
+
+		result.materials[0] = (Material){
+			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
+			.emissive = one4,
+			.metallic_roughness = { 0.0f, 0.5f },
+		};
+	}
+
+	return result;
+}
+
 Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap) {
 	Mesh result = { 0 };
 
 	bool ok = arena;
-
 	if (ok) {
 		rings += 2; // add top and bottom rings
-		segments = MAX(3, segments);
+		segments = MAX(3, segments) + 1;
 
 		// map from 0 to 1
 		top_cap = top_cap > 0;
 		bottom_cap = bottom_cap > 0;
 
 		uint32_t cap_vertices = 1 + segments;
+		result.bounds = aabb3_empty();
 		result.total_vertex_count = (segments * rings) + (cap_vertices * (top_cap + bottom_cap));
-		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DrawVertex3, result.total_vertex_count);
 
 		uint32_t vertex_cursor = 0;
 		for (uint32_t ring = 0; ring < rings; ++ring) {
@@ -4633,14 +4637,15 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 			for (uint32_t segment = 0; segment < segments; ++segment) {
 				float sv = (float)segment / (segments - 1);
 
-				float a = ((float)segment / segments) * TAU;
+				float a = ((float)segment / (segments - 1)) * TAU;
 				float ca = cosf(a), sa = -sinf(a);
 
-				result.vertices[vertex_cursor++] = (Vertex3){
+				result.vertices[vertex_cursor++] = (DrawVertex3){
 					.position = add3(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { ca, 0.0f, sa },
 					.uv = { sv, 1.0 - rv },
 				};
+				aabb3_expand(&result.bounds, result.vertices[vertex_cursor - 1].position);
 			}
 		}
 
@@ -4658,7 +4663,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 			float r = top_radius + rv * (bottom_radius - top_radius);
 
 			uint32_t center_index = center_indices[end_index] = vertex_cursor++;
-			result.vertices[center_index] = (Vertex3){
+			result.vertices[center_index] = (DrawVertex3){
 				.position = add3(origin, (float3){ 0.0f, y, 0.0f }),
 				.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 				.uv = { 0.5f, 0.5f }
@@ -4671,7 +4676,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 				float a = ((float)segment / segments) * TAU;
 				float ca = cosf(a), sa = -sinf(a);
 
-				result.vertices[vertex_cursor++] = (Vertex3){
+				result.vertices[vertex_cursor++] = (DrawVertex3){
 					.position = add3(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 					.uv = { (ca + 1.0f) * 0.5f, (sa + 1.0f) * 0.5f } // Planar mapping
@@ -4753,12 +4758,12 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 		subdivision_z += 2;
 		result.total_vertex_count = subdivision_x * subdivision_z;
 
-		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DrawVertex3, result.total_vertex_count);
 
 		float3 right = norm3(cross3(p.normal, fabsf(dot3(unit3(UP), p.normal)) >= 0.99f ? unit3(BACKWARD) : unit3(UP)));
 		float3 up = cross3(p.normal, right);
 
-		Vertex3 *vertex_cursor = result.vertices;
+		DrawVertex3 *vertex_cursor = result.vertices;
 		for (uint32_t z = 0; z < subdivision_z; ++z) {
 			for (uint32_t x = 0; x < subdivision_x; ++x) {
 				float3 local = {
@@ -4767,7 +4772,7 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 					.z = (((float)z / (subdivision_z - 1)) - 0.5f) * height,
 				};
 
-				*vertex_cursor = (Vertex3){
+				*vertex_cursor = (DrawVertex3){
 					.position = add3(scale3(right, local.x), scale3(up, local.z)),
 					.normal = p.normal,
 					.uv = { (float)x / (subdivision_x - 1), (float)z / (subdivision_z - 1) },
@@ -4823,7 +4828,7 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 	if (ok) {
 		result.total_vertex_count = heightmap.width * heightmap.height;
 
-		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DrawVertex3, result.total_vertex_count);
 		for (uint32_t z = 0; z < heightmap.height; ++z) {
 			for (uint32_t x = 0; x < heightmap.width; ++x) {
 				uint32_t index = x + z * heightmap.width;
@@ -4833,7 +4838,7 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 					.y = ((heightmap.pixels[index * 4] / 255.f) - 0.5f) * 40.f,
 					.z = (((float)z / (heightmap.height - 1)) - 0.5f) * h,
 				};
-				result.vertices[index] = (Vertex3){
+				result.vertices[index] = (DrawVertex3){
 					.position = face_orient(local, orientation),
 					.normal = { 0.0f, 1.0f, 0.0f },
 					.uv = { (float)x / (heightmap.width - 1), (float)z / (heightmap.height - 1) },
@@ -4895,7 +4900,7 @@ Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count) {
 			result.material_count += mesh->material_count;
 		}
 
-		result.vertices = arena_push_count(arena, Vertex3, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DrawVertex3, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
 		result.parts = arena_push_count(arena, MeshPart, result.part_count);
 		result.materials = arena_push_count(arena, Material, result.material_count);
@@ -4905,7 +4910,7 @@ Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count) {
 		for (uint32_t mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
 			Mesh *mesh = &meshes[mesh_index];
 
-			memory_copy(result.vertices + vertex_cursor, mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3));
+			memory_copy(result.vertices + vertex_cursor, mesh->vertices, mesh->total_vertex_count * sizeof(DrawVertex3));
 			memory_copy(result.indices + index_cursor, mesh->indices, mesh->total_index_count * sizeof(uint32_t));
 			memory_copy(result.materials + material_cursor, mesh->materials, mesh->material_count * sizeof(Material));
 
@@ -5036,19 +5041,19 @@ void push_rect2(Arena *arena, Rectangle rect, Color color) {
 	/* float v1 = (src.y + src.height) / image.height; */
 
 	// clang-format off
-    Vertex2 quad[] = {
+    DrawVertex2 quad[] = {
         // pos      // tex
-        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x0, y0}, .uv = {0.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}, 
+        (DrawVertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (DrawVertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index},
+        (DrawVertex2){.position = {x0, y0}, .uv = {0.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}, 
 
-        (Vertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x1, y1}, .uv = {1.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (Vertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}
+        (DrawVertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (DrawVertex2){.position = {x1, y1}, .uv = {1.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
+        (DrawVertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}
     };
 	// clang-format on
 
-	memory_copy(arena_push_count(arena, Vertex2, 6), quad, sizeof(quad));
+	memory_copy(arena_push_count(arena, DrawVertex2, 6), quad, sizeof(quad));
 }
 
 void push_rect2_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
@@ -5065,7 +5070,7 @@ void push_triangle2(Arena *arena, Triangle2 t, float thickness, Color color) {
 }
 
 void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xy0s(start, thickness),
 		.b = xy0s(end, thickness),
 		.color = color_pack(color),
@@ -5076,7 +5081,7 @@ void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color 
 	float2 shaft_end = add2(start, scale2(sub2(end, start), 0.75f));
 	push_line2(arena, start, shaft_end, thickness, color);
 
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xy0s(shaft_end, thickness * 4.0f),
 		.b = xy0s(end, 0.0f),
 		.color = color_pack(color),
@@ -5243,7 +5248,7 @@ void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
-	Line outline[] = {
+	DrawLine outline[] = {
 		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack(color), zero3 },
 		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
 		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack(color), zero3 },
@@ -5258,12 +5263,12 @@ void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
 	};
 
-	Line *points = arena_push_count(arena, Line, countof(outline));
+	DrawLine *points = arena_push_count(arena, DrawLine, countof(outline));
 	memory_copy_array(points, outline);
 }
 
 void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xyzs(start, thickness),
 		.b = xyzs(end, thickness),
 		.color = color_pack(color),
@@ -5290,7 +5295,7 @@ void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color 
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
 	push_line3(arena, start, shaft_end, thickness, color);
-	*arena_push_count(arena, Line, 1) = (Line){
+	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xyzs(shaft_end, thickness * 4.0f),
 		.b = xyz0(end),
 		.color = color_pack(color),
@@ -5350,8 +5355,8 @@ void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 			};
 
 			uint8_t segments = 32;
-			Line *spine_points = arena_push_count(arena, Line, 8);
-			Line spine[] = {
+			DrawLine *spine_points = arena_push_count(arena, DrawLine, 8);
+			DrawLine spine[] = {
 				{ { centers[0].x - r, centers[0].y, centers[0].z, thickness }, { centers[0].x - r, centers[1].y, centers[0].z, thickness }, color_pack(WHITE), zero3 },
 				{ { centers[0].x + r, centers[0].y, centers[0].z, thickness }, { centers[0].x + r, centers[1].y, centers[0].z, thickness }, color_pack(WHITE), zero3 },
 				{ { centers[0].x, centers[0].y, centers[0].z - r, thickness }, { centers[0].x, centers[1].y, centers[0].z - r, thickness }, color_pack(WHITE), zero3 },

@@ -39,7 +39,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         PROJECT_SOURCES 
         "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
         "${CMAKE_SOURCE_DIR}/engine/src/os/web/*.c" 
-        "${CMAKE_SOURCE_DIR}/engine/src/*.h")
+        "${CMAKE_SOURCE_DIR}/engine/src/*.h"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/input.c"
+    )
 
     foreach(NAME ${WEB_SCRATCHES})
         set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")

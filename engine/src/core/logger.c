@@ -65,7 +65,10 @@ void logger_log(LogLevel level, const char *fmt, ...) {
 
 	va_list arg_ptr;
 	va_start(arg_ptr, fmt);
-	if (fmt[0] != '#')
+
+	bool decorate = fmt[0] != '#';
+
+	if (decorate) {
 		printf(
 			"%s " // timestamp
 			"%s%s[%s]\x1b[0m " // color, indent, log level
@@ -75,13 +78,15 @@ void logger_log(LogLevel level, const char *fmt, ...) {
 			indent_buffer,
 			g_level_strings[level], // Log level string
 			g_logger.prefix ? g_logger.prefix : "");
-	else
+		if (level >= LOG_LEVEL_ERROR)
+			printf("%s", g_log_level_colors[level]);
+	} else
 		fmt += 1;
 
-	if (level >= LOG_LEVEL_ERROR)
-		printf("%s", g_log_level_colors[level]);
 	vprintf(fmt, arg_ptr);
-	printf("\x1b[0m\n");
+	if (decorate)
+		printf("\x1b[0m");
+    printf("\n");
 	fflush(stdout);
 	va_end(arg_ptr);
 }

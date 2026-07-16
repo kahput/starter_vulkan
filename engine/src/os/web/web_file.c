@@ -10,7 +10,7 @@ const char *os__mode_to_string(OS_FileMode mode) {
 }
 
 OS_File os_file_open(String8 path, OS_FileMode mode) {
-	FILE *file = fopen(path.text, os__mode_to_string(mode));
+	FILE *file = fopen((char *)path.text, os__mode_to_string(mode));
 	OS_File result = (OS_File)file;
 
 	if (file == NULL) {
