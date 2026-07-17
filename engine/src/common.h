@@ -100,6 +100,16 @@ static inline uint64_t hash64(void *memory, size_t size) {
 	return h;
 }
 
+static inline uint32_t largest_active_bit32u(uint32_t value) {
+	for (int32_t index = 31; index >= 0; --index) {
+		if (value >> index) {
+			return index;
+		}
+	}
+
+	return 0;
+}
+
 // From https://stackoverflow.com/a/5889254
 static inline uint64_t hash64_combine(uint64_t lhs, uint64_t rhs) {
 	lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);
@@ -208,7 +218,7 @@ static inline uint32_t color_pack(Color c) {
 static inline Color color_from_float(float r, float g, float b, float a) {
 	return (Color){ CLAMP(r, 0.0f, 1.0f) * 255.f, CLAMP(g, 0.0f, 1.0f) * 255.f, CLAMP(b, 0.0f, 1.0f) * 255.f, CLAMP(a, 0.0f, 1.0f) * 255.f };
 }
-static inline float4 color_to_float(Color color) {
+static inline float4 color_to_float4(Color color) {
 	return (float4){ color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f };
 }
 static inline Color color_lerp(Color start, Color end, float t) {

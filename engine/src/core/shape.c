@@ -77,20 +77,20 @@ float3 shape3_support(Shape3 s, float3 direction) {
 	return result;
 }
 
-Raycast3Result raycast_plane(Ray3 r, Plane p) {
+CastResult3 raycast_plane(Ray3 r, Plane p) {
 	float denominator = dot3(r.direction, p.normal);
 	if (fabsf(denominator) < EPSILON)
-		return RAY3_NO_HIT;
+		return CAST3_NO_HIT;
 
 	float3 po = scale3(p.normal, p.distance);
 	float t = (dot3(po, p.normal) - dot3(r.origin, p.normal)) / denominator;
 
 	if (t < 0.0f)
-		return RAY3_NO_HIT;
+		return CAST3_NO_HIT;
 
 	float3 point = add3(r.origin, scale3(r.direction, t));
 
-	Raycast3Result result = {
+	CastResult3 result = {
 		.hit = true,
 		.t = t,
 		.normal = p.normal,
@@ -100,13 +100,13 @@ Raycast3Result raycast_plane(Ray3 r, Plane p) {
 	return result;
 }
 
-Raycast3Result raycast_aabb3(Ray3 r, AABB3 a) {
+CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
 	float3 c = aabb3_center(a);
 	float3 he = aabb3_half_extent(a);
 	float3 min = a.min;
 	float3 max = a.max;
 
-	Raycast3Result result = RAY3_NO_HIT, temp = RAY3_NO_HIT;
+	CastResult3 result = CAST3_NO_HIT, temp = CAST3_NO_HIT;
 	if (lensq3(r.direction)) {
 		for (uint32_t side = 0; side < SIDE_COUNT3; ++side) {
 			float3 pn = side_to_float3[side];
@@ -116,7 +116,7 @@ Raycast3Result raycast_aabb3(Ray3 r, AABB3 a) {
 			if ((temp.point.x < min.x || temp.point.x > max.x) ||
 				(temp.point.y < min.y || temp.point.y > max.y) ||
 				(temp.point.z < min.z || temp.point.z > max.z)) {
-				temp = RAY3_NO_HIT;
+				temp = CAST3_NO_HIT;
 			}
 			if (temp.t < result.t)
 				result = temp;

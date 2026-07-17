@@ -1,6 +1,10 @@
 #include "strings.h"
 #include "common.h"
 #include "core/arena.h"
+#include "core/debug.h"
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 bool str8__ispathdelim(char c) {
 	return c == '/' || c == '\\';
@@ -59,6 +63,59 @@ String8 str8_filepath_join(Arena *arena, String8 head, String8 tail) {
 	return result;
 }
 
+String8 str8_copy(Arena *arena, String8 src) {
+	String8 result = { 0 };
+
+	bool ok = arena && src.length;
+	if (ok) {
+		result.length = src.length;
+		uint32_t new_size = src.text[src.length - 1] != '\0' ? src.length + 1 : src.length;
+
+		result.text = arena_push_count(arena, uint8_t, new_size);
+		memory_copy(result.text, src.text, src.length);
+		result.text[new_size] = '\0';
+	}
+
+	return result;
+}
+
+String8 str8_push_format_list(Arena *arena, String8 format, va_list args) {
+	String8 result = { 0 };
+
+	bool ok = arena;
+	if (ok == false)
+		LOG_WARN("%s - invalid parameters", __func__);
+
+	int32_t length = 0;
+	if (ok) {
+		ASSERT(format.text[format.length] == '\0');
+
+		va_list copy;
+		va_copy(copy, args);
+
+		length = vsnprintf(0, 0, (char *)format.text, copy);
+		ok = length >= 0;
+		va_end(copy);
+	}
+
+	if (ok) {
+		result.length = length;
+		result.text = arena_push_count(arena, uint8_t, result.length + 1);
+		vsnprintf((char *)result.text, result.length + 1, (char *)format.text, args);
+	}
+
+	return result;
+}
+String8 str8_pushf(Arena *arena, String8 format, ...) {
+	va_list args;
+	va_start(args, format);
+	String8 result = str8_push_format_list(arena, format, args);
+	arena->offset -= 1;
+	va_end(args);
+
+	return result;
+}
+
 String8 str8_filename(String8 path) {
 	if (path.length == 0)
 		return path;
@@ -88,4 +145,8 @@ String8 str8_directory(String8 path) {
 	}
 
 	return result;
+}
+
+double str8_to_f64(String8 s) {
+	return strtod((char *)s.text, 0);
 }

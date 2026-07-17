@@ -1,35 +1,36 @@
 #include "lexer.h"
 #include "common.h"
+#include "core/arena.h"
 #include "core/debug.h"
 #include "core/logger.h"
 #include "core/strings.h"
 #include <string.h>
 
 // clang-format off
-const char *token_type_names[TOKEN_MAX] = {
-    [TOKEN_UNKNOWN]       = "UNKNOWN",
-    [TOKEN_OPEN_PAREN]    = "(",   [TOKEN_CLOSE_PAREN]   = ")",
-    [TOKEN_OPEN_BRACE]    = "{",   [TOKEN_CLOSE_BRACE]   = "}",
-    [TOKEN_OPEN_BRACKET]  = "[",   [TOKEN_CLOSE_BRACKET] = "]",
-    [TOKEN_COMMA]         = ",",   [TOKEN_DOT]           = ".",
-    [TOKEN_SEMICOLON]     = ";",   [TOKEN_COLON]         = ":",
-    [TOKEN_SLASH]         = "/",   [TOKEN_STAR]          = "*",
-    [TOKEN_PERCENT]       = "%",   [TOKEN_TILDE]         = "~",
-    [TOKEN_CARET]         = "^",   [TOKEN_QUESTION_MARK] = "?",
-    [TOKEN_MINUS]         = "-",   [TOKEN_MINUS_MINUS]   = "--",
-    [TOKEN_PLUS]          = "+",   [TOKEN_PLUS_PLUS]     = "++",
-    [TOKEN_BANG]          = "!",   [TOKEN_BANG_EQUAL]    = "!=",
-    [TOKEN_EQUAL]         = "=",   [TOKEN_EQUAL_EQUAL]   = "==",
-    [TOKEN_GREATER]       = ">",   [TOKEN_GREATER_EQUAL] = ">=",
-    [TOKEN_LESS]          = "<",   [TOKEN_LESS_EQUAL]    = "<=",
-    [TOKEN_AMP]           = "&",   [TOKEN_AMP_AMP]       = "&&",
-    [TOKEN_PIPE]          = "|",   [TOKEN_PIPE_PIPE]     = "||",
-    [TOKEN_IDENTIFIER]    = "IDENTIFIER",
-    [TOKEN_STRING]        = "STRING",
-    [TOKEN_INTEGER]       = "INTEGER",
-    [TOKEN_FLOAT]         = "FLOAT",
+const String8 token_type_to_string[TOKEN_MAX] = {
+    [TOKEN_UNKNOWN]       = str_comp("UNKNOWN"),
+    [TOKEN_OPEN_PAREN]    = str_comp("("),   [TOKEN_CLOSE_PAREN]   = str_comp(")"),
+    [TOKEN_OPEN_BRACE]    = str_comp("{"),   [TOKEN_CLOSE_BRACE]   = str_comp("}"),
+    [TOKEN_OPEN_BRACKET]  = str_comp("["),   [TOKEN_CLOSE_BRACKET] = str_comp("]"),
+    [TOKEN_COMMA]         = str_comp(","),   [TOKEN_DOT]           = str_comp("."),
+    [TOKEN_SEMICOLON]     = str_comp(";"),   [TOKEN_COLON]         = str_comp(":"),
+    [TOKEN_SLASH]         = str_comp("/"),   [TOKEN_STAR]          = str_comp("*"),
+    [TOKEN_PERCENT]       = str_comp("%"),   [TOKEN_TILDE]         = str_comp("~"),
+    [TOKEN_CARET]         = str_comp("^"),   [TOKEN_QUESTION_MARK] = str_comp("?"),
+    [TOKEN_MINUS]         = str_comp("-"),   [TOKEN_MINUS_MINUS]   = str_comp("--"),
+    [TOKEN_PLUS]          = str_comp("+"),   [TOKEN_PLUS_PLUS]     = str_comp("++"),
+    [TOKEN_BANG]          = str_comp("!"),   [TOKEN_BANG_EQUAL]    = str_comp("!="),
+    [TOKEN_EQUAL]         = str_comp("="),   [TOKEN_EQUAL_EQUAL]   = str_comp("=="),
+    [TOKEN_GREATER]       = str_comp(">"),   [TOKEN_GREATER_EQUAL] = str_comp(">="),
+    [TOKEN_LESS]          = str_comp("<"),   [TOKEN_LESS_EQUAL]    = str_comp("<="),
+    [TOKEN_AMP]           = str_comp("&"),   [TOKEN_AMP_AMP]       = str_comp("&&"),
+    [TOKEN_PIPE]          = str_comp("|"),   [TOKEN_PIPE_PIPE]     = str_comp("||"),
+    [TOKEN_IDENTIFIER]    = str_comp("IDENTIFIER"),
+    [TOKEN_STRING]        = str_comp("STRING"),
+    [TOKEN_INTEGER]       = str_comp("INTEGER"),
+    [TOKEN_FLOAT]         = str_comp("FLOAT"),
 
-    [TOKEN_EOF]           = "EOF",
+    [TOKEN_EOF]           = str_comp("EOF"),
 };
 // clang-format on
 
@@ -359,10 +360,51 @@ Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_next(lexer);
 	if (t.type != type) {
 		ASSERT(false);
-		LOG_WARN("Lexer: expected '%s' got '%s' (%.*s) at %d:%d",
-			token_type_names[type], token_type_names[t.type],
-			t.lexeme.length, t.lexeme.text, t.line, t.column);
+		LOG_WARN("Lexer: expected '%.*s' got '%.*s' (%.*s) at %d:%d",
+			str_spread(token_type_to_string[type]),
+			str_spread(token_type_to_string[t.type]),
+			str_spread(t.lexeme),
+			t.line, t.column);
 	}
+	return t;
+}
+
+Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count) {
+	Token t = lexer_next(lexer);
+	bool found = false;
+	for (uint32_t index = 0; index < type_count; ++index) {
+		if (t.type == types[index]) {
+			found = true;
+			break;
+		}
+	}
+
+	if (found == false) {
+		ArenaTemp scratch = arena_scratch_begin(0);
+		String8 types_string = { scratch.arena->base, 0 };
+		for (uint32_t index = 0; index < type_count; ++index) {
+			String8 type_string = token_type_to_string[types[index]];
+			bool last = index == type_count - 1;
+
+			char *concat = arena_push_count(scratch.arena, char, type_string.length + (last ? 0 : 3));
+			types_string.length += type_string.length + (last ? 0 : 3);
+
+			memory_copy(concat, type_string.text, type_string.length);
+			if (last == false) {
+				concat[type_string.length] = ' ';
+				concat[type_string.length + 1] = '|';
+				concat[type_string.length + 2] = ' ';
+			}
+		}
+
+		LOG_WARN("Lexer: expected '%.*s' got '%.*s' (%.*s) at %d:%d",
+			str_spread(types_string),
+			str_spread(token_type_to_string[t.type]),
+			str_spread(t.lexeme),
+			t.line, t.column);
+		arena_scratch_end(scratch);
+	}
+
 	return t;
 }
 

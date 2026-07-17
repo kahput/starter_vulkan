@@ -9,8 +9,8 @@ typedef struct {
 	bool hit;
 	float t;
 	float3 normal, point;
-} Raycast3Result;
-static Raycast3Result RAY3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
+} CastResult3;
+static CastResult3 CAST3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
 
 typedef struct {
 	float3 origin, direction;
@@ -157,7 +157,7 @@ static inline Shape3 shape3_from_plane(Plane p) { return (Shape3){ .kind = SHAPE
 Shape3 shape3_move(Shape3 s, float3 displacement);
 float3 shape3_support(Shape3 s, float3 direction);
 
-Raycast3Result raycast_plane(Ray3 r, Plane p);
-Raycast3Result raycast_aabb3(Ray3 r, AABB3 a);
+CastResult3 raycast_plane(Ray3 r, Plane p);
+CastResult3 raycast_aabb3(Ray3 r, AABB3 a);
 
 #endif

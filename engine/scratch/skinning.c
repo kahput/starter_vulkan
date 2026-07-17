@@ -1,4 +1,5 @@
 #include "common.h"
+#include "core/json.h"
 #include "core/arena.h"
 #include "core/cmath.h"
 #include "core/shape3.h"
@@ -339,7 +340,6 @@ static inline bool entity_has(Entity *entity, EntityFeature feature) {
 }
 
 int32_t cmp_mesh_sort(const void *p1, const void *p2) {
-	// Keep the const qualifier to prevent compiler warnings
 	const struct {
 		float distance;
 		Entity *mesh;
@@ -814,50 +814,83 @@ int main(void) {
 	bool draw_collision_shapes = true, draw_grass = true, draw_skybox = true;
 	uint32_t light_index = 0;
 
-	World world = { .entity_count = 1 };
+	World scenes[] = {
+		{ .entity_count = 1 },
+		{ .entity_count = 1 },
+	};
 
-	Entity *player = entity_spawn(&world);
-	player->meshid = MESH_SPHERE;
-	/* player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
-	/* player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
-	player->shape.as.aabb3 = meshes[player->meshid].bounds;
+	World *scene = scenes + 0;
 
-	entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
-	/* entity_enable(player, ENTITY_FEATURE_CAST_SHADOW); */
-	entity_enable(player, ENTITY_FEATURE_PLAYER_CONTROLLED);
-	entity_enable(player, ENTITY_FEATURE_COLLIDABLE);
-	entity_enable(player, ENTITY_FEATURE_ANIMATE);
+	{ // 3D Test
+		World *world = scenes + 0;
 
-	Entity *barrel = entity_spawn(&world);
-	barrel->meshid = MESH_BARREL;
-	barrel->transform.translation = (float3){ 10.0f, 0.0f, 0.0f };
-	barrel->interact_radius = 3.0f;
-	barrel->shape = shape3_from_aabb3(meshes[barrel->meshid].bounds);
-	barrel->target = player;
+		{ // :json
+			JSON json = { .arena = arena_make(MiB(32)) };
+			json_parse_string(&json, s("{ \"hi\": 32, \"bye\": \"String\" }"));
+			ArenaTemp scratch = arena_scratch_begin(0);
+			String8 string = json_stringify(scratch.arena, &json);
+			os_file_write_entire(s("assets/data/test.json"), string.text, string.length);
 
-	entity_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
-	entity_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
-	entity_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
-	entity_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
-	/* entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET); */
-	/* entity_enable(barrel, ENTITY_FEATURE_ANIMATE); */
+			json_parse_file(&json, s("assets/data/world.json"));
+			string = json_stringify((Arena[]){ arena_make(MiB(1024)) }, &json);
+			os_file_write_entire(s("assets/data/test.json"), string.text, string.length);
+			arena_scratch_end(scratch);
 
-	/* Entity *terrain = entity_spawn(&world); */
-	/* terrain->meshid = MESH_TERRAIN_FLAT; */
-	/* entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH); */
+			JSON_Node *root = &json.root;
 
-	Entity *level = entity_spawn(&world);
-	level->meshid = MESH_TEST_LEVEL;
-	entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
+			JSON_Node *layers = json_find(root, s("layers"));
+			JSON_Node *layer = json_child_at(json_find(root, s("layers")), 0);
 
-	for (uint32_t index = 0; index < 3; ++index) {
-		Entity *cylinder = entity_spawn(&world);
+			LOG_INFO("%s", layers->key);
+			LOG_INFO("LAYER[%d] - count = %d", 0, layer->value.children->count);
+		}
 
-		cylinder->transform.translation = make3(0.0f, 0.0f, index * -3.0f);
-		cylinder->transform.scale = make3(2.0f, 1.0f, 2.0f);
-		cylinder->meshid = MESH_CYLINDER;
-		cylinder->pass = DRAW_PASS_TRANSPARENT;
-		entity_enable(cylinder, ENTITY_FEATURE_DRAW_MESH);
+		Entity *player = entity_spawn(world);
+		player->meshid = MESH_HERO_MALE;
+		/* player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
+		/* player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
+		player->shape.as.aabb3 = meshes[player->meshid].bounds;
+
+		entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
+		/* entity_enable(player, ENTITY_FEATURE_CAST_SHADOW); */
+		entity_enable(player, ENTITY_FEATURE_PLAYER_CONTROLLED);
+		entity_enable(player, ENTITY_FEATURE_COLLIDABLE);
+		entity_enable(player, ENTITY_FEATURE_ANIMATE);
+
+		Entity *barrel = entity_spawn(world);
+		barrel->meshid = MESH_BARREL;
+		barrel->transform.translation = (float3){ 10.0f, 0.0f, 0.0f };
+		barrel->interact_radius = 3.0f;
+		barrel->shape = shape3_from_aabb3(meshes[barrel->meshid].bounds);
+		barrel->target = player;
+
+		entity_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
+		entity_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
+		entity_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
+		entity_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
+		/* entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET); */
+		/* entity_enable(barrel, ENTITY_FEATURE_ANIMATE); */
+
+		/* Entity *terrain = entity_spawn(&world); */
+		/* terrain->meshid = MESH_TERRAIN_FLAT; */
+		/* entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH); */
+
+		Entity *level = entity_spawn(world);
+		level->meshid = MESH_TEST_LEVEL;
+		entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
+
+		for (uint32_t index = 0; index < 3; ++index) {
+			Entity *cylinder = entity_spawn(world);
+
+			cylinder->transform.translation = make3(0.0f, 0.0f, index * -3.0f);
+			cylinder->transform.scale = make3(2.0f, 1.0f, 2.0f);
+			cylinder->meshid = MESH_CYLINDER;
+			cylinder->pass = DRAW_PASS_TRANSPARENT;
+
+			cylinder->shape = shape3_from_aabb3(meshes[cylinder->meshid].bounds);
+			entity_enable(cylinder, ENTITY_FEATURE_DRAW_MESH);
+			entity_enable(cylinder, ENTITY_FEATURE_COLLIDABLE);
+		}
 	}
 
 	bool is_open = true;
@@ -955,8 +988,8 @@ int main(void) {
 
 				scene_camera_orbit(camera, mouse_delta);
 
-				for (uint32_t index = 0; index < world.entity_count; ++index) {
-					Entity *entity = &world.entities[index];
+				for (uint32_t index = 0; index < scene->entity_count; ++index) {
+					Entity *entity = &scene->entities[index];
 					if (entity_has(entity, ENTITY_FEATURE_ANIMATE)) {
 						uint32_t bone_count = meshes[entity->meshid].skeleton.bone_count;
 						entity->skin_matrices = arena_push_count(frame_arena, float4x4, bone_count);
@@ -997,8 +1030,8 @@ int main(void) {
 					float button_x = panel_x + pad;
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
 						use_heightmap = !use_heightmap;
-						for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
-							Entity *entity = &world.entities[entity_index];
+						for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
+							Entity *entity = &scene->entities[entity_index];
 
 							if (entity->meshid == MESH_TERRAIN_FLAT || entity->meshid == MESH_TERRAIN_HEIGHTMAP)
 								entity->meshid = use_heightmap ? MESH_TERRAIN_HEIGHTMAP : MESH_TERRAIN_FLAT;
@@ -1008,13 +1041,17 @@ int main(void) {
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
 						draw_grass = !draw_grass;
 					button_x += button_w + pad;
-					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
+					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
 						light_index = (light_index + 1) % countof(lights);
-					}
 					button_x += button_w + pad;
-					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
+					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
 						draw_collision_shapes = !draw_collision_shapes;
-					}
+
+					panel_y += element_h + pad;
+					button_x = panel_x + pad;
+					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
+						scene = &scenes[(indexof(scenes, scene) + 1) % countof(scenes)];
+					button_x += button_w + pad;
 
 					imgui_frame_end();
 				}
@@ -1024,8 +1061,8 @@ int main(void) {
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
 
 				if (0)
-					for (uint32_t index = 0; index < world.entity_count; ++index) { // :heightmap
-						Entity *entity = &world.entities[index];
+					for (uint32_t index = 0; index < scene->entity_count; ++index) { // :heightmap
+						Entity *entity = &scene->entities[index];
 						if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false)
 							continue;
 
@@ -1059,8 +1096,8 @@ int main(void) {
 							entity->transform.translation.y = 0.0f;
 					}
 
-				for (uint32_t index = 0; index < world.entity_count; ++index) {
-					Entity *entity = &world.entities[index];
+				for (uint32_t index = 0; index < scene->entity_count; ++index) {
+					Entity *entity = &scene->entities[index];
 
 					float2 input_vector = { 0 };
 					float3 velocity = { 0 };
@@ -1074,7 +1111,7 @@ int main(void) {
 						};
 
 						if (dot2(input_vector, input_vector) > 0) {
-							float3 camera_offset = sub3(camera->position, player->transform.translation);
+							float3 camera_offset = sub3(camera->position, entity->transform.translation);
 							float r = len3(camera_offset);
 							if (r < EPSILON)
 								r = EPSILON;
@@ -1117,8 +1154,9 @@ int main(void) {
 					}
 
 					// :ai
-					if (entity_has(entity, ENTITY_FEATURE_FOLLOW_TARGET)) {
-						float3 delta = sub3(entity->target->transform.translation, entity->transform.translation);
+					if (entity->target && entity_has(entity, ENTITY_FEATURE_FOLLOW_TARGET)) {
+						Entity *target = entity->target;
+						float3 delta = sub3(target->transform.translation, entity->transform.translation);
 						float3 direction = norm3(delta);
 
 						entity->transform.rotation = quat4_from_axis_angle(unit3(UP), atan2f(direction.x, direction.z));
@@ -1130,16 +1168,16 @@ int main(void) {
 					}
 
 					// :collision
-					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE)) {
+					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) && entity->shape.kind == SHAPE_KIND_AABB3) {
 						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
 							if (lensq3(velocity) <= EPSILON)
 								break;
-							Raycast3Result nearest = RAY3_NO_HIT;
+							CastResult3 nearest = CAST3_NO_HIT;
 
 							Ray3 r = { entity->transform.translation, velocity };
-							for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
-								Entity *other = &world.entities[entity_index];
-								if (other == player || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false)
+							for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
+								Entity *other = &scene->entities[entity_index];
+								if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false || other->shape.kind != SHAPE_KIND_AABB3)
 									continue;
 
 								float3 center = add3(aabb3_center(other->shape.as.aabb3), other->transform.translation);
@@ -1149,10 +1187,9 @@ int main(void) {
 										float4x4_scaling(other->transform.scale),
 										xyz0(aabb3_half_extent(other->shape.as.aabb3)) //
 									);
+								float3 swept_extent = add3(half_extent, aabb3_half_extent(entity->shape.as.aabb3));
 
-								float3 swept_extent = add3(half_extent, aabb3_half_extent(player->shape.as.aabb3));
-
-								Raycast3Result result = raycast_aabb3(r, aabb3_from_center(center, swept_extent));
+								CastResult3 result = raycast_aabb3(r, aabb3_from_center(center, swept_extent));
 								if (result.t < nearest.t)
 									nearest = result;
 							}
@@ -1217,7 +1254,16 @@ int main(void) {
 					}
 				}
 
-				{ // :camera
+				Entity *player = 0;
+				for (uint32_t index = 0; index < scene->entity_count; ++index) {
+					Entity *e = &scene->entities[index];
+					if (entity_has(e, ENTITY_FEATURE_PLAYER_CONTROLLED)) {
+						player = e;
+						break;
+					}
+				}
+
+				if (player) { // :camera
 					static float azimuth = PIf * 3 / 2.f;
 					static float theta = PIf / 3.f;
 					static const float sensitivity = 1.0f;
@@ -1268,14 +1314,13 @@ int main(void) {
 					camera->target.y = player->transform.translation.y + 1.5f;
 				}
 
-				{ // :interact
-
+				if (player) { // :interact
 					Entity *target = 0;
 					float closest = FLOAT_MAX;
 
 					if (input_key_pressed(KEY_CODE_F)) {
-						for (uint32_t entity_index = 0; entity_index < world.entity_count; ++entity_index) {
-							Entity *entity = &world.entities[entity_index];
+						for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
+							Entity *entity = &scene->entities[entity_index];
 							if (entity_has(entity, ENTITY_FEATURE_INTERACTABLE) == false || entity == player)
 								continue;
 
@@ -1289,7 +1334,7 @@ int main(void) {
 						}
 
 						if (target)
-							LOG_INFO("interaction with entity %u (%s)!", indexof(world.entities, target), str8_filename(meshid_to_metadata[target->meshid]).text);
+							LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), str8_filename(meshid_to_metadata[target->meshid]).text);
 					}
 				}
 
@@ -1299,12 +1344,16 @@ int main(void) {
 		}
 
 		if (draw_collision_shapes) {
-			for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-				Entity *entity = &world.entities[instance_index];
+			for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
+				Entity *entity = &scene->entities[instance_index];
 				if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) == false)
 					continue;
 
-				push_shape3_outline(batch_line3, &entity->shape, entity->transform.translation, 3.0f);
+				Shape3 a = { 0 };
+				if (entity->shape.kind == SHAPE_KIND_AABB3)
+					a = shape3_from_aabb3(aabb3_from_center(aabb3_center(entity->shape.as.aabb3), mul3(aabb3_half_extent(entity->shape.as.aabb3), entity->transform.scale)));
+
+				push_shape3_outline(batch_line3, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
 			}
 		}
 
@@ -1357,8 +1406,8 @@ int main(void) {
 			blink_timer += dt;
 
 			// :skinning
-			for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-				Entity *instance = &world.entities[instance_index];
+			for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
+				Entity *instance = &scene->entities[instance_index];
 				if (entity_has(instance, ENTITY_FEATURE_ANIMATE) == false || animation_counts[instance->meshid] == 0 || instance->skin_matrices == 0)
 					continue;
 
@@ -1464,8 +1513,8 @@ int main(void) {
 				);
 
 				// :shadow
-				for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-					Entity *entity = &world.entities[instance_index];
+				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
+					Entity *entity = &scene->entities[instance_index];
 					if (entity_has(entity, ENTITY_FEATURE_CAST_SHADOW) == false)
 						continue;
 
@@ -1570,8 +1619,8 @@ int main(void) {
 
 				// :draw
 				gfx_cmd_pipeline_bind(cmd, &pipeline_3d);
-				for (uint32_t instance_index = 0; instance_index < world.entity_count; ++instance_index) {
-					Entity *entity = &world.entities[instance_index];
+				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
+					Entity *entity = &scene->entities[instance_index];
 					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity->pass != DRAW_PASS_OPAQUE)
 						continue;
 
@@ -1659,13 +1708,13 @@ int main(void) {
 							float4 emissive;
 							float2 metallic_roughness;
 							float4 uv_transform;
-							uint32_t use_heightmap;
+							uint32_t material_flags;
 						} pc = {
 							.base_color = material->tint,
 							.emissive = one4,
 							.metallic_roughness = { 0.0f, 0.5f },
 							.uv_transform = { 1.0f, 1.0f, 0.0f, 0.0f },
-							.use_heightmap = use_heightmap,
+							.material_flags = use_heightmap << 0,
 						};
 
 						GFX_Buffer *buffer = mesh->buffer;
@@ -1703,11 +1752,11 @@ int main(void) {
 						float distance;
 						Entity *entity;
 					} MeshSort;
-					MeshSort *transparent_meshes = arena_push_count(frame_arena, MeshSort, world.entity_count);
+					MeshSort *transparent_meshes = arena_push_count(frame_arena, MeshSort, scene->entity_count);
 
 					uint32_t transparent_mesh_count = 0;
-					for (uint32_t index = 0; index < world.entity_count; ++index) {
-						Entity *entity = &world.entities[index];
+					for (uint32_t index = 0; index < scene->entity_count; ++index) {
+						Entity *entity = &scene->entities[index];
 						if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity->pass != DRAW_PASS_TRANSPARENT)
 							continue;
 
@@ -1719,7 +1768,7 @@ int main(void) {
 							.entity = entity
 						};
 					}
-					arena_pop(frame_arena, sizeof(MeshSort) * (world.entity_count - transparent_mesh_count));
+					arena_pop(frame_arena, sizeof(MeshSort) * (scene->entity_count - transparent_mesh_count));
 
 					qsort(transparent_meshes, transparent_mesh_count, sizeof(MeshSort), cmp_mesh_sort);
 
@@ -4668,6 +4717,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 				.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 				.uv = { 0.5f, 0.5f }
 			};
+			aabb3_expand(&result.bounds, result.vertices[center_index].position);
 
 			ring_start_indices[end_index] = vertex_cursor;
 			for (uint32_t segment = 0; segment < segments; ++segment) {
@@ -4681,6 +4731,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 					.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 					.uv = { (ca + 1.0f) * 0.5f, (sa + 1.0f) * 0.5f } // Planar mapping
 				};
+				aabb3_expand(&result.bounds, result.vertices[vertex_cursor - 1].position);
 			}
 		}
 
@@ -4727,6 +4778,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 
 		result.parts[0].vertex_count = result.total_vertex_count;
 		result.parts[0].index_count = result.total_index_count;
+		result.parts[0].bounds = result.bounds;
 
 		result.material_count = 1;
 		result.materials = arena_push_count(arena, Material, result.material_count);
@@ -5023,13 +5075,6 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 }
 
 void push_rect2(Arena *arena, Rectangle rect, Color color) {
-	float4 f_color = {
-		.x = color.r / 255.f,
-		.y = color.g / 255.f,
-		.z = color.b / 255.f,
-		.w = color.a / 255.f,
-	};
-
 	float x0 = rect.x;
 	float y0 = rect.y;
 	float x1 = rect.x + rect.width;
@@ -5043,13 +5088,13 @@ void push_rect2(Arena *arena, Rectangle rect, Color color) {
 	// clang-format off
     DrawVertex2 quad[] = {
         // pos      // tex
-        (DrawVertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (DrawVertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index},
-        (DrawVertex2){.position = {x0, y0}, .uv = {0.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}, 
+        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x0, y0 }, .uv = { 0.0f, 0.0f }, .color = color_to_float4(color) }, // , .image_id = image_index}, 
 
-        (DrawVertex2){.position = {x0, y1}, .uv = {0.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (DrawVertex2){.position = {x1, y1}, .uv = {1.0f, 1.0f}, .color = f_color }, // , .image_id = image_index},
-        (DrawVertex2){.position = {x1, y0}, .uv = {1.0f, 0.0f}, .color = f_color }, // , .image_id = image_index}
+        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x1, y1 }, .uv = { 1.0f, 1.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_to_float4(color) }, // , .image_id = image_index}
     };
 	// clang-format on
 
@@ -5336,10 +5381,9 @@ void push_rect3_outline(Arena *arena, Plane plane, float width, float height, fl
 
 void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness) {
 	switch (shape->kind) {
-		case SHAPE_KIND_AABB3: {
-			AABB3 a = aabb3_move(shape->as.aabb3, offset);
-			push_aabb3_outline(arena, a, thickness, WHITE);
-		} break;
+		case SHAPE_KIND_AABB3:
+			push_aabb3_outline(arena, aabb3_move(shape->as.aabb3, offset), thickness, WHITE);
+			break;
 		case SHAPE_KIND_SPHERE: {
 			float3 c = add3(shape->as.sphere.center, offset);
 			float r = shape->as.sphere.radius;

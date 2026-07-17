@@ -28,4 +28,4 @@ void arena_temp_end(ArenaTemp temp);
 ArenaTemp arena_scratch_begin(Arena *conflict);
 static inline void arena_scratch_end(ArenaTemp scratch) { arena_temp_end(scratch); }
 
-#define arena_push_count(a, T, c) (T *)arena_push((a), sizeof(T) * (c), MAX(8, alignof(T)), true)
+#define arena_push_count(a, T, c) (T *)arena_push((a), sizeof(T) * (c), alignof(T), true)
