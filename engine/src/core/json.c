@@ -7,6 +7,8 @@
 #include "core/strings.h"
 #include "os.h"
 
+JSON_Node JSON_NIL = { 0 };
+
 typedef enum {
 	JSON_KEYWORD_NULL = TOKEN_KEYWORD_0,
 	JSON_KEYWORD_TRUE,
@@ -29,8 +31,8 @@ String8 json_keyword_to_string[keyword(JSON_KEYWORD_MAX)] = {
 };
 #undef keyword
 
-JSON_Node json_parse_object(JSON *json, Lexer *lexer);
-JSON_Node json_parse_array(JSON *json, Lexer *lexer);
+JSON_Value json_parse_object(Arena *arena, Lexer *lexer);
+JSON_Value json_parse_array(Arena *arena, Lexer *lexer);
 
 typedef struct {
 	uint32_t page_size, page_index, page_local_index;
@@ -49,8 +51,32 @@ static inline JSON_ContainerSlot json__locate(uint32_t index) {
 	return result;
 }
 
-static inline JSON_Node json_parse_value(JSON *json, Lexer *lexer) {
-	JSON_Node result = { 0 };
+static inline JSON_Node *json_append(Arena *arena, JSON_Container **container) {
+	JSON_Node *result = &JSON_NIL;
+
+	bool ok = arena && container;
+	if (ok) {
+		JSON_Container *con = *container;
+		if (con == 0) {
+			con = *container = arena_push_count(arena, JSON_Container, 1);
+			con->pages[0] = arena_push_count(arena, JSON_Node, JSON_CONTAINER_INITIAL_PAGE_SIZE);
+		}
+
+		JSON_ContainerSlot slot = json__locate(con->count);
+
+		JSON_Node *page = con->pages[slot.page_index];
+		if (page == 0)
+			page = con->pages[slot.page_index] = arena_push_count(arena, JSON_Node, slot.page_size);
+
+		result = &page[slot.page_local_index];
+		con->count++;
+	}
+
+	return result;
+}
+
+static inline JSON_Value json_parse_value(Arena *arena, Lexer *lexer) {
+	JSON_Value result = { 0 };
 
 	bool ok = lexer;
 	if (ok) {
@@ -58,11 +84,11 @@ static inline JSON_Node json_parse_value(JSON *json, Lexer *lexer) {
 
 		switch (value.type) {
 			case TOKEN_OPEN_BRACE: // OBJECT
-				result = json_parse_object(json, lexer);
+				result = json_parse_object(arena, lexer);
 				break;
 
 			case TOKEN_OPEN_BRACKET: // ARRAY
-				result = json_parse_array(json, lexer);
+				result = json_parse_array(arena, lexer);
 				break;
 
 			case TOKEN_PLUS:
@@ -71,27 +97,23 @@ static inline JSON_Node json_parse_value(JSON *json, Lexer *lexer) {
 				double mul = 1.0f - (value.type == TOKEN_MINUS) * 2.0f;
 
 				value = lexer_expect_multiple(lexer, array_arg(TokenType, TOKEN_INTEGER, TOKEN_FLOAT));
-				result.type = JSON_TYPE_NUMBER;
-				result.value.number = mul * str8_to_f64(value.lexeme);
+				result = json_number(mul * str8_to_f64(value.lexeme));
 				break;
 
 			case TOKEN_FLOAT: // NUMBER
 			case TOKEN_INTEGER:
-				result.type = JSON_TYPE_NUMBER;
-				result.value.number = str8_to_f64(value.lexeme);
+				result = json_number(str8_to_f64(value.lexeme));
 				lexer_next(lexer);
 				break;
 
 			case TOKEN_STRING: {
-				result.type = JSON_TYPE_STRING;
-				result.value.string = str8_copy(&json->arena, value.lexeme);
+				result = json_string(arena, value.lexeme);
 				lexer_next(lexer);
 			} break;
 
 			case JSON_KEYWORD_TRUE: // BOOL
 			case JSON_KEYWORD_FALSE:
-				result.type = JSON_TYPE_BOOLEAN;
-				result.value.boolean = (uint32_t)value.type == JSON_KEYWORD_TRUE;
+				result = json_bool((uint32_t)value.type == JSON_KEYWORD_TRUE);
 				lexer_next(lexer);
 				break;
 
@@ -107,40 +129,37 @@ static inline JSON_Node json_parse_value(JSON *json, Lexer *lexer) {
 	return result;
 }
 
-JSON_Node *json_append(JSON *json, JSON_Node *parent) {
-	JSON_Node *result = 0;
+JSON_Node *json_append_item(Arena *arena, JSON_Node *parent) {
+	JSON_Node *result = &JSON_NIL;
 
-	bool ok = json && parent;
+	bool ok = arena && json_valid(parent) && parent->value.type == JSON_TYPE_ARRAY;
+	if (ok)
+		result = json_append(arena, &parent->value.as.children);
 
+	return result;
+}
+
+JSON_Node *json_append_field(Arena *arena, JSON_Node *parent, String8 key) {
+	JSON_Node *result = &JSON_NIL;
+
+	bool ok = arena && json_valid(parent) && parent->value.type == JSON_TYPE_OBJECT;
 	if (ok) {
-		JSON_Container *con = parent->value.children;
-		if (con == 0) {
-			con = parent->value.children = arena_push_count(&json->arena, JSON_Container, 1);
-			parent->value.children->pages[0] = arena_push_count(&json->arena, JSON_Node, JSON_CONTAINER_INITIAL_PAGE_SIZE);
-		}
-
-		JSON_ContainerSlot slot = json__locate(con->count);
-
-		JSON_Node *page = parent->value.children->pages[slot.page_index];
-		if (page == 0)
-			page = parent->value.children->pages[slot.page_index] = arena_push_count(&json->arena, JSON_Node, slot.page_size);
-
-		result = &page[slot.page_local_index];
-		con->count++;
+		result = json_append(arena, &parent->value.as.children);
+		result->key = str8_copy(arena, key);
 	}
 
 	return result;
 }
 
-JSON_Node json_parse_array(JSON *json, Lexer *lexer) {
-	JSON_Node result = { .type = JSON_TYPE_ARRAY };
+JSON_Value json_parse_array(Arena *arena, Lexer *lexer) {
+	JSON_Value result = { .type = JSON_TYPE_ARRAY }; // dummy node
 
-	bool ok = json && lexer;
+	bool ok = arena && lexer;
 	if (ok) {
 		lexer_expect(lexer, TOKEN_OPEN_BRACKET);
 
 		do {
-			*json_append(json, &result) = json_parse_value(json, lexer);
+			json_append(arena, &result.as.children)->value = json_parse_value(arena, lexer);
 		} while (lexer_match(lexer, TOKEN_COMMA, 0));
 		Token close_brace = lexer_expect(lexer, TOKEN_CLOSE_BRACKET);
 	}
@@ -148,10 +167,10 @@ JSON_Node json_parse_array(JSON *json, Lexer *lexer) {
 	return result;
 }
 
-JSON_Node json_parse_object(JSON *json, Lexer *lexer) {
-	JSON_Node result = { .type = JSON_TYPE_OBJECT };
+JSON_Value json_parse_object(Arena *arena, Lexer *lexer) {
+	JSON_Value result = { .type = JSON_TYPE_OBJECT };
 
-	bool ok = json && lexer;
+	bool ok = arena && lexer;
 	if (ok) {
 		Token open_brace = lexer_expect(lexer, TOKEN_OPEN_BRACE);
 
@@ -159,9 +178,10 @@ JSON_Node json_parse_object(JSON *json, Lexer *lexer) {
 			Token key = lexer_expect(lexer, TOKEN_STRING);
 			lexer_expect(lexer, TOKEN_COLON);
 
-			JSON_Node *value = json_append(json, &result);
-			*value = json_parse_value(json, lexer);
-			value->key = str8_copy(&json->arena, key.lexeme);
+			JSON_Node *node = json_append(arena, &result.as.children);
+			node->key = str8_copy(arena, key.lexeme);
+			node->value = json_parse_value(arena, lexer);
+
 		} while (lexer_match(lexer, TOKEN_COMMA, 0));
 
 		Token close_brace = lexer_expect(lexer, TOKEN_CLOSE_BRACE);
@@ -170,32 +190,38 @@ JSON_Node json_parse_object(JSON *json, Lexer *lexer) {
 	return result;
 }
 
-bool json_parse_string(JSON *json, String8 source) {
-	bool ok = json;
+JSON_Node *json_parse_string(Arena *arena, String8 source) {
+	JSON_Node *result = &JSON_NIL;
+
+	bool ok = arena;
 	if (ok) {
 		Lexer lexer = lexer_make(source, json_keyword_to_string, countof(json_keyword_to_string));
-		json->root = json_parse_value(json, &lexer);
+		result = arena_push_count(arena, JSON_Node, 1);
+		result->value = json_parse_value(arena, &lexer);
 	}
 
-	return ok;
+	return result;
 }
 
-bool json_parse_file(JSON *json, String8 path) {
-	bool ok = json;
+JSON_Node *json_parse_file(Arena *arena, String8 path) {
+	JSON_Node *result = &JSON_NIL;
+
+	bool ok = arena;
 	if (ok) {
-		Lexer lexer = lexer_make(os_file_read_entire(&json->arena, path), json_keyword_to_string, countof(json_keyword_to_string));
-		json->root = json_parse_value(json, &lexer);
+		Lexer lexer = lexer_make(os_file_read_entire(arena, path), json_keyword_to_string, countof(json_keyword_to_string));
+		result = arena_push_count(arena, JSON_Node, 1);
+		result->value = json_parse_value(arena, &lexer);
 	}
 
-	return ok;
+	return result;
 }
 
 JSON_Node *json_find(JSON_Node *node, String8 key) {
-	JSON_Node *result = 0;
+	JSON_Node *result = &JSON_NIL;
 
-	bool ok = node && node->type == JSON_TYPE_OBJECT && node->value.children;
+	bool ok = json_valid(node) && node->value.type == JSON_TYPE_OBJECT && node->value.as.children;
 	if (ok) {
-		JSON_Container *container = node->value.children;
+		JSON_Container *container = node->value.as.children;
 		for (uint32_t index = 0; index < container->count; ++index) { // TODO: Hashmap
 			JSON_ContainerSlot slot = json__locate(index);
 
@@ -213,12 +239,45 @@ JSON_Node *json_find(JSON_Node *node, String8 key) {
 	return result;
 }
 
-JSON_Node *json_child_at(JSON_Node *node, uint32_t index) {
-	JSON_Node *result = 0;
+JSON_Node *json_find_path(JSON_Node *node, String8 path) {
+	JSON_Node *result = &JSON_NIL;
 
-	bool ok = node && node->type == JSON_TYPE_ARRAY && node->value.children;
+	bool ok = json_is_container(node) && node->value.as.children;
 	if (ok) {
-		JSON_Container *container = node->value.children;
+		Lexer lexer = lexer_make(path, 0, 0);
+		Token token = { 0 };
+
+		JSON_Node *cur = node;
+		while ((token = lexer_next(&lexer)).type != TOKEN_EOF) {
+			if (token.type == TOKEN_OPEN_BRACKET) {
+				Token num = lexer_expect(&lexer, TOKEN_INTEGER);
+				cur = json_child_at(cur, str8_to_u64(num.lexeme));
+				lexer_expect(&lexer, TOKEN_CLOSE_BRACKET);
+			} else if (token.type == TOKEN_IDENTIFIER)
+				cur = json_find(cur, token.lexeme);
+			else if (token.type == TOKEN_DOT) {
+				Token key = lexer_expect(&lexer, TOKEN_IDENTIFIER);
+				cur = json_find(cur, key.lexeme);
+			}
+
+			if (cur == &JSON_NIL) {
+				cur = 0;
+				break;
+			}
+		}
+
+		if (cur)
+			result = cur;
+	}
+	return result;
+}
+
+JSON_Node *json_child_at(JSON_Node *node, uint32_t index) {
+	JSON_Node *result = &JSON_NIL;
+
+	bool ok = json_valid(node) && node->value.type == JSON_TYPE_ARRAY && node->value.as.children;
+	if (ok) {
+		JSON_Container *container = node->value.as.children;
 		JSON_ContainerSlot slot = json__locate(index);
 		JSON_Node *page = container->pages[slot.page_index];
 		if (page)
@@ -228,63 +287,57 @@ JSON_Node *json_child_at(JSON_Node *node, uint32_t index) {
 	return result;
 }
 
-void json_write_value(Arena *arena, JSON_Node *node, uint32_t *depth) {
-	switch (node->type) {
-		case JSON_TYPE_NULL: {
-			arena_push_count(arena, uint8_t, 4);
-		};
-		case JSON_TYPE_BOOLEAN:
-		case JSON_TYPE_STRING:
-		case JSON_TYPE_OBJECT:
-		case JSON_TYPE_ARRAY:
-		case JSON_TYPE_NUMBER:
-		case JSON_TYPE_MAX:
-			break;
-	}
+static inline void json_indent(Arena *arena, uint32_t indent_level, String8 indent_string) {
+	if (indent_string.length)
+		for (uint32_t index = 0; index < indent_level; ++index)
+			str8_pushf(arena, s("%.*s"), str_spread(indent_string));
 }
 
-void json_write_children(Arena *arena, JSON_Container *children, uint32_t *depth) {
+void json_write_children(Arena *arena, JSON_Container *children, String8 indent, bool keyed, uint32_t *depth) {
 	bool ok = children;
 	if (ok) {
 		for (uint32_t index = 0; index < children->count; ++index) {
 			JSON_ContainerSlot slot = json__locate(index);
 			JSON_Node *child = &children->pages[slot.page_index][slot.page_local_index];
 
-			bool has_key = child->key.length;
-
-			str8_pushf(arena, s("%*s"), (*depth) * 4, "");
-			if (has_key)
+			json_indent(arena, *depth, indent);
+			if (keyed)
 				str8_pushf(arena, s("\"%.*s\": "), str_spread(child->key));
 
-			switch (child->type) {
+			switch (child->value.type) {
 				case JSON_TYPE_NULL:
 					str8_pushf(arena, s("%s"), "null");
 					break;
 				case JSON_TYPE_BOOLEAN:
-					str8_pushf(arena, s("%s"), child->value.boolean ? "true" : "false");
+					str8_pushf(arena, s("%s"), child->value.as.boolean ? "true" : "false");
 					break;
 				case JSON_TYPE_STRING:
-					str8_pushf(arena, s("\"%.*s\""), str_spread(child->value.string));
+					str8_pushf(arena, s("\"%.*s\""), str_spread(child->value.as.string));
 					break;
 				case JSON_TYPE_NUMBER:
-					str8_pushf(arena, s("%g"), child->value.number);
+					str8_pushf(arena, s("%g"), child->value.as.number);
 					break;
 				case JSON_TYPE_OBJECT: {
 					*depth += 1;
-					str8_pushf(arena, s("{\n"));
-					json_write_children(arena, child->value.children, depth);
+					str8_pushf(arena, s("{"));
+					if (indent.length)
+						str8_pushf(arena, s("\n"));
+					json_write_children(arena, child->value.as.children, indent, true, depth);
 					*depth -= 1;
-					str8_pushf(arena, s("%*s"), (*depth) * 4, "");
+					json_indent(arena, *depth, indent);
 					str8_pushf(arena, s("}"));
 				} break;
 				case JSON_TYPE_ARRAY: {
 					*depth += 1;
-					str8_pushf(arena, s("[\n"));
-					json_write_children(arena, child->value.children, depth);
+					str8_pushf(arena, s("["));
+					if (indent.length)
+						str8_pushf(arena, s("\n"));
+					json_write_children(arena, child->value.as.children, indent, false, depth);
 					*depth -= 1;
-					str8_pushf(arena, s("%*s"), (*depth) * 4, "");
+					json_indent(arena, *depth, indent);
 					str8_pushf(arena, s("]"));
 				} break;
+
 				case JSON_TYPE_MAX:
 					break;
 			}
@@ -292,29 +345,32 @@ void json_write_children(Arena *arena, JSON_Container *children, uint32_t *depth
 			if (index != children->count - 1)
 				str8_pushf(arena, s(","));
 
-			str8_pushf(arena, s("\n"));
+			if (indent.length)
+				str8_pushf(arena, s("\n"));
 		}
 	}
 }
 
-String8 json_stringify(Arena *arena, JSON *json) {
+String8 json_stringify(Arena *arena, JSON_Node *root, String8 indent) {
 	String8 result = { 0 };
 
-	bool ok = arena && json;
+	bool ok = arena && json_valid(root) && root->value.as.children;
 	if (ok) {
 		uint32_t depth = 1;
-		JSON_Node *node = &json->root;
 
-		JSON_Container *container = node->value.children;
 		result.text = (uint8_t *)arena->base + arena->offset;
 
-		str8_pushf(arena, s("{\n"));
-		json_write_children(arena, container, &depth);
-		str8_pushf(arena, s("}\n"));
+		bool keyed = root->value.type == JSON_TYPE_OBJECT;
+
+		str8_pushf(arena, s("%s"), keyed ? "{" : "[");
+		if (indent.length)
+			str8_pushf(arena, s("\n"));
+		json_write_children(arena, root->value.as.children, indent, keyed, &depth);
+		str8_pushf(arena, s("%s"), keyed ? "}" : "]");
 
 		result.length = ((uint8_t *)arena->base + arena->offset) - result.text;
-		arena_push_count(arena, uint8_t, 1);
 
+		arena_push_count(arena, uint8_t, 1);
 		result.text[result.length] = '\0';
 	}
 

@@ -4,6 +4,7 @@
 #include "cmath.h"
 #include "common.h"
 #include "core/arena.h"
+#include "core/strings.h"
 
 typedef struct {
 	bool hit;
@@ -130,7 +131,18 @@ typedef enum {
 	/* SHAPE_KIND_CYLINDER, */
 	/* SHAPE_KIND_CONCAVE_POLYGON, */
 	/* SHAPE_KIND_HEIGHTMAP, */
+
+	SHAPE_KIND_MAX,
 } ShapeKind;
+
+static String8 shape_kind_to_string[SHAPE_KIND_MAX] = {
+	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, AABB3),
+	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, SPHERE),
+	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, CAPSULE3),
+	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, PLANE),
+	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, CONVEX_POLYGON),
+
+};
 
 typedef struct {
 	ShapeKind kind;

@@ -79,6 +79,7 @@
 
 #define STRINGIFY(v) #v
 #define STATIC_ASSERT(COND) typedef char STATIC_ASSERT_PASTE(static_assertion_failed_at_line_, __LINE__)[(COND) ? 1 : -1]
+#define ENUM_STRING_TABLE_ENTRY(prefix, value) [prefix##_##value] = str_comp(#value)
 
 #define KB(bytes) ((uint64_t)(bytes) * 1000ULL)
 #define MB(bytes) ((KB(bytes)) * 1000ULL)

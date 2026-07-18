@@ -29,12 +29,14 @@ String8 str8_concat(Arena *arena, String8 a, String8 b) {
 
 	String8 result = { 0 };
 
-	result.length = a.length + b.length + 1;
-	result.text = arena_push(arena, result.length, 1, false);
+	uint32_t size = a.length + b.length + 1;
+	result.length = size - 1;
+
+	result.text = arena_push(arena, size, 1, false);
 	memory_copy(result.text, a.text, a.length);
 	memory_copy(result.text + a.length, b.text, b.length);
-	result.text[result.length] = '\0';
 
+	result.text[result.length] = '\0';
 	return result;
 }
 
@@ -149,4 +151,8 @@ String8 str8_directory(String8 path) {
 
 double str8_to_f64(String8 s) {
 	return strtod((char *)s.text, 0);
+}
+
+uint64_t str8_to_u64(String8 s) {
+	return strtoull((char *)s.text, 0, 10);
 }

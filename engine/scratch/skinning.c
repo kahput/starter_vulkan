@@ -87,8 +87,13 @@ typedef enum {
 	DRAW_PASS_OPAQUE,
 	DRAW_PASS_TRANSPARENT,
 
-	DRAW_PASS_COUNT,
+	DRAW_PASS_MAX,
 } DrawPass;
+
+static String8 draw_pass_to_string[DRAW_PASS_MAX] = {
+	ENUM_STRING_TABLE_ENTRY(DRAW_PASS, OPAQUE),
+	ENUM_STRING_TABLE_ENTRY(DRAW_PASS, TRANSPARENT),
+};
 
 typedef struct {
 	Image2D textures[TEXTURE_SLOT_COUNT];
@@ -148,8 +153,24 @@ typedef enum {
 	MESH_SPHERE,
 	MESH_GIZMOS_ARROW,
 
-	MESH_COUNT,
+	MESH_MAX,
 } MeshID;
+
+static const String8 meshid_to_string[MESH_MAX] = {
+	ENUM_STRING_TABLE_ENTRY(MESH, HERO_MALE),
+	ENUM_STRING_TABLE_ENTRY(MESH, GDBOT),
+	ENUM_STRING_TABLE_ENTRY(MESH, MAGE),
+	ENUM_STRING_TABLE_ENTRY(MESH, BARREL),
+	ENUM_STRING_TABLE_ENTRY(MESH, ROOM),
+	ENUM_STRING_TABLE_ENTRY(MESH, TEST_LEVEL),
+	ENUM_STRING_TABLE_ENTRY(MESH, ROOM_LARGE),
+	ENUM_STRING_TABLE_ENTRY(MESH, TERRAIN_FLAT),
+	ENUM_STRING_TABLE_ENTRY(MESH, TERRAIN_HEIGHTMAP),
+	ENUM_STRING_TABLE_ENTRY(MESH, GRASS_BILLBOARD),
+	ENUM_STRING_TABLE_ENTRY(MESH, CYLINDER),
+	ENUM_STRING_TABLE_ENTRY(MESH, SPHERE),
+	ENUM_STRING_TABLE_ENTRY(MESH, GIZMOS_ARROW),
+};
 
 typedef struct {
 	MeshID id;
@@ -161,7 +182,7 @@ typedef struct {
 	float4x4 *skin_matrices;
 } MeshInstance;
 
-String8 meshid_to_metadata[MESH_COUNT] = {
+String8 meshid_to_metadata[MESH_MAX] = {
 	[MESH_HERO_MALE] = str_comp("assets/models/hero_male.glb"),
 	[MESH_GDBOT] = str_comp("assets/models/gdbot.glb"),
 	[MESH_MAGE] = str_comp("assets/models/mage.glb"),
@@ -186,6 +207,16 @@ typedef enum {
 
 	ENTITY_FEATURE_MAX,
 } EntityFeature;
+
+static const String8 entity_feature_to_string[ENTITY_FEATURE_MAX] = {
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, DRAW_MESH),
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, CAST_SHADOW),
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, PLAYER_CONTROLLED),
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, INTERACTABLE),
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, COLLIDABLE),
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, FOLLOW_TARGET),
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, ANIMATE),
+};
 
 #define ENTITY_BITSET_WIDTH 64
 #define ENTITY_BITSET_SIZE (ENTITY_FEATURE_MAX + 63) / 64
@@ -350,6 +381,63 @@ int32_t cmp_mesh_sort(const void *p1, const void *p2) {
 	if (m2->distance < m1->distance)
 		return -1;
 	return 0;
+}
+
+JSON_Node *world_to_json(Arena *arena, World *world) {
+	ArenaTemp scratch = arena_scratch_begin(arena);
+	JSON_Node *result = &JSON_NIL;
+
+	bool ok = arena && world;
+
+	if (ok) {
+		result = arena_push_count(arena, JSON_Node, 1);
+		result->value = json_object();
+
+		json_append_field(arena, result, s("magic"))->value = json_number(0x5102);
+		json_append_field(arena, result, s("entity_count"))->value = json_number(world->entity_count - 1);
+		JSON_Node *arr = json_append_field(arena, result, s("entities"));
+		arr->value = json_array();
+
+		for (uint32_t index = 1; index < world->entity_count; ++index) {
+			Entity *entity = &world->entities[index];
+
+			JSON_Node *entity_node = json_append_item(arena, arr);
+			entity_node->value = json_object();
+
+			String8 feature_flags = { 0 };
+			for (EntityFeature feature = 0; feature < ENTITY_FEATURE_MAX; ++feature) {
+				if (entity_has(entity, feature)) {
+					if (feature_flags.length != 0 && feature_flags.text[feature_flags.length - 1] != ' ') {
+						feature_flags = str8_concat(scratch.arena, feature_flags, s(" | "));
+					}
+
+					feature_flags = str8_concat(scratch.arena, feature_flags, entity_feature_to_string[feature]);
+				}
+			}
+			json_append_field(arena, entity_node, s("features"))->value = json_string(arena, feature_flags);
+
+			json_append_transform3(arena, entity_node, &entity->transform);
+			json_append_field(arena, entity_node, s("meshid"))->value = json_string(arena, meshid_to_string[entity->meshid]);
+
+			if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE))
+				json_append_shape3(arena, entity_node, &entity->shape);
+			json_append_field(arena, entity_node, s("pass"))->value = json_string(arena, draw_pass_to_string[entity->pass]);
+
+			if (entity->target)
+				json_append_field(arena, entity_node, s("target"))->value = json_number(indexof(world->entities, entity->target) - 1);
+			if (entity_has(entity, ENTITY_FEATURE_INTERACTABLE))
+				json_append_field(arena, entity_node, s("interact_radius"))->value = json_number(entity->interact_radius);
+		}
+	}
+
+	arena_scratch_end(scratch);
+	return result;
+}
+
+World json_to_world(Arena *arena, JSON_Node *node) {
+	World result = { 0 };
+
+	return result;
 }
 
 int main(void) {
@@ -605,7 +693,7 @@ int main(void) {
 	const uint32_t map_width = 32;
 	const uint32_t map_depth = 32;
 
-	Mesh meshes[MESH_COUNT] = { 0 };
+	Mesh meshes[MESH_MAX] = { 0 };
 	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, plane_from_side(SIDE_UP), map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
@@ -646,11 +734,11 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	uint32_t animation_counts[MESH_COUNT] = { 0 };
-	AnimationClip *animations[MESH_COUNT] = { 0 };
+	uint32_t animation_counts[MESH_MAX] = { 0 };
+	AnimationClip *animations[MESH_MAX] = { 0 };
 	(void)animations;
 
-	for (uint32_t meshid = 0; meshid < MESH_COUNT; ++meshid) {
+	for (uint32_t meshid = 0; meshid < MESH_MAX; ++meshid) {
 		if (meshid_to_metadata[meshid].length == 0)
 			continue;
 		meshes[meshid] = load_gltf(permanent, meshid_to_metadata[meshid]);
@@ -824,27 +912,6 @@ int main(void) {
 	{ // 3D Test
 		World *world = scenes + 0;
 
-		{ // :json
-			JSON json = { .arena = arena_make(MiB(32)) };
-			json_parse_string(&json, s("{ \"hi\": 32, \"bye\": \"String\" }"));
-			ArenaTemp scratch = arena_scratch_begin(0);
-			String8 string = json_stringify(scratch.arena, &json);
-			os_file_write_entire(s("assets/data/test.json"), string.text, string.length);
-
-			json_parse_file(&json, s("assets/data/world.json"));
-			string = json_stringify((Arena[]){ arena_make(MiB(1024)) }, &json);
-			os_file_write_entire(s("assets/data/test.json"), string.text, string.length);
-			arena_scratch_end(scratch);
-
-			JSON_Node *root = &json.root;
-
-			JSON_Node *layers = json_find(root, s("layers"));
-			JSON_Node *layer = json_child_at(json_find(root, s("layers")), 0);
-
-			LOG_INFO("%s", layers->key);
-			LOG_INFO("LAYER[%d] - count = %d", 0, layer->value.children->count);
-		}
-
 		Entity *player = entity_spawn(world);
 		player->meshid = MESH_HERO_MALE;
 		/* player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
@@ -891,6 +958,13 @@ int main(void) {
 			entity_enable(cylinder, ENTITY_FEATURE_DRAW_MESH);
 			entity_enable(cylinder, ENTITY_FEATURE_COLLIDABLE);
 		}
+	}
+
+	{ //: serialize
+		ArenaTemp scratch = arena_scratch_begin(0);
+		String8 output = json_stringify(scratch.arena, world_to_json(scratch.arena, scene), s("  "));
+		os_file_write_entire(s("assets/data/test.scene"), output.text, output.length);
+		arena_scratch_end(scratch);
 	}
 
 	bool is_open = true;
@@ -5421,6 +5495,8 @@ void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 		case SHAPE_KIND_PLANE:
 			break;
 		case SHAPE_KIND_CONVEX_POLYGON:
+			break;
+		case SHAPE_KIND_MAX:
 			break;
 	}
 }

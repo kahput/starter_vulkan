@@ -1,0 +1,221 @@
+{
+  "magic": 20738,
+  "entity_count": 6,
+  "entities": [
+    {
+      "features": "DRAW_MESH | PLAYER_CONTROLLED | COLLIDABLE | ANIMATE",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshid": "HERO_MALE",
+      "shape": {
+        "kind": "AABB3",
+        "value": {
+          "min": [
+            -0.807913,
+            -0.000293093,
+            -0.206683
+          ],
+          "max": [
+            0.807913,
+            2.08004,
+            0.259661
+          ]
+        }
+      },
+      "pass": "OPAQUE"
+    },
+    {
+      "features": "DRAW_MESH | CAST_SHADOW | INTERACTABLE | COLLIDABLE",
+      "transform": {
+        "translation": [
+          10,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshid": "BARREL",
+      "shape": {
+        "kind": "AABB3",
+        "value": {
+          "min": [
+            -0.666676,
+            0,
+            -0.666676
+          ],
+          "max": [
+            0.666676,
+            1.20624,
+            0.666676
+          ]
+        }
+      },
+      "pass": "OPAQUE",
+      "target": 0,
+      "interact_radius": 3
+    },
+    {
+      "features": "DRAW_MESH",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "meshid": "TEST_LEVEL",
+      "pass": "OPAQUE"
+    },
+    {
+      "features": "DRAW_MESH | COLLIDABLE",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          -0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2,
+          1,
+          2
+        ]
+      },
+      "meshid": "CYLINDER",
+      "shape": {
+        "kind": "AABB3",
+        "value": {
+          "min": [
+            -0.5,
+            0,
+            -0.5
+          ],
+          "max": [
+            0.5,
+            2,
+            0.5
+          ]
+        }
+      },
+      "pass": "TRANSPARENT"
+    },
+    {
+      "features": "DRAW_MESH | COLLIDABLE",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          -3
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2,
+          1,
+          2
+        ]
+      },
+      "meshid": "CYLINDER",
+      "shape": {
+        "kind": "AABB3",
+        "value": {
+          "min": [
+            -0.5,
+            0,
+            -0.5
+          ],
+          "max": [
+            0.5,
+            2,
+            0.5
+          ]
+        }
+      },
+      "pass": "TRANSPARENT"
+    },
+    {
+      "features": "DRAW_MESH | COLLIDABLE",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          -6
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          2,
+          1,
+          2
+        ]
+      },
+      "meshid": "CYLINDER",
+      "shape": {
+        "kind": "AABB3",
+        "value": {
+          "min": [
+            -0.5,
+            0,
+            -0.5
+          ],
+          "max": [
+            0.5,
+            2,
+            0.5
+          ]
+        }
+      },
+      "pass": "TRANSPARENT"
+    }
+  ]
+}

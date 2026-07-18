@@ -30,3 +30,4 @@ String8 str8_filename(String8 path);
 String8 str8_directory(String8 path);
 
 double str8_to_f64(String8 s);
+uint64_t str8_to_u64(String8 s);

@@ -25,6 +25,8 @@ Shape3 shape3_move(Shape3 s, float3 displacement) {
 			for (uint32_t index = 0; index < s.as.convex.vertex_count; ++index)
 				s.as.convex.vertices[index] = add3(s.as.convex.vertices[index], displacement);
 		} break;
+		case SHAPE_KIND_MAX:
+			break;
 	}
 
 	return result;
