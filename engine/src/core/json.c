@@ -158,9 +158,10 @@ JSON_Value json_parse_array(Arena *arena, Lexer *lexer) {
 	if (ok) {
 		lexer_expect(lexer, TOKEN_OPEN_BRACKET);
 
-		do {
-			json_append(arena, &result.as.children)->value = json_parse_value(arena, lexer);
-		} while (lexer_match(lexer, TOKEN_COMMA, 0));
+		if (lexer_peek(lexer).type != TOKEN_CLOSE_BRACKET)
+			do {
+				json_append(arena, &result.as.children)->value = json_parse_value(arena, lexer);
+			} while (lexer_match(lexer, TOKEN_COMMA, 0));
 		Token close_brace = lexer_expect(lexer, TOKEN_CLOSE_BRACKET);
 	}
 
@@ -174,15 +175,16 @@ JSON_Value json_parse_object(Arena *arena, Lexer *lexer) {
 	if (ok) {
 		Token open_brace = lexer_expect(lexer, TOKEN_OPEN_BRACE);
 
-		do {
-			Token key = lexer_expect(lexer, TOKEN_STRING);
-			lexer_expect(lexer, TOKEN_COLON);
+		if (lexer_peek(lexer).type != TOKEN_CLOSE_BRACE)
+			do {
+				Token key = lexer_expect(lexer, TOKEN_STRING);
+				lexer_expect(lexer, TOKEN_COLON);
 
-			JSON_Node *node = json_append(arena, &result.as.children);
-			node->key = str8_copy(arena, key.lexeme);
-			node->value = json_parse_value(arena, lexer);
+				JSON_Node *node = json_append(arena, &result.as.children);
+				node->key = str8_copy(arena, key.lexeme);
+				node->value = json_parse_value(arena, lexer);
 
-		} while (lexer_match(lexer, TOKEN_COMMA, 0));
+			} while (lexer_match(lexer, TOKEN_COMMA, 0));
 
 		Token close_brace = lexer_expect(lexer, TOKEN_CLOSE_BRACE);
 	}

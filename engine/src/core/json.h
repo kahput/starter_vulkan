@@ -65,53 +65,41 @@ static inline uint32_t json_count(JSON_Node *node) {
 	return json_is_container(node) && node->value.as.children ? node->value.as.children->count : 0;
 }
 
-static inline float64 json_num_or(JSON_Node *obj, String8 key, float64 fallback) {
-	JSON_Node *n = json_find(obj, key);
+static inline float64 json_num_or(JSON_Node *n, float64 fallback) {
 	return json_valid(n) && n->value.type == JSON_TYPE_NUMBER ? n->value.as.number : fallback;
 }
-static inline String8 json_str_or(JSON_Node *obj, String8 key, String8 fallback) {
-	JSON_Node *n = json_find(obj, key);
+static inline String8 json_str_or(JSON_Node *n, String8 fallback) {
 	return json_valid(n) && n->value.type == JSON_TYPE_STRING ? n->value.as.string : fallback;
 }
-static inline bool json_bool_or(JSON_Node *obj, String8 key, bool fallback) {
-	JSON_Node *n = json_find(obj, key);
+static inline bool json_bool_or(JSON_Node *n, bool fallback) {
 	return json_valid(n) && n->value.type == JSON_TYPE_BOOLEAN ? n->value.as.boolean : fallback;
 }
 
 String8 json_stringify(Arena *arena, JSON_Node *root, String8 indent);
 
 // TEMPORARY
-static inline bool json_append_float4(Arena *arena, JSON_Node *target, float4 v) {
+static inline bool json_append_float4(Arena *arena, JSON_Node *target, String8 key, float4 v) {
 	bool ok = arena && target && json_is_container(target);
 	if (ok) {
-		if (target->value.type == JSON_TYPE_ARRAY) {
-			json_append_item(arena, target)->value = json_number(v.x);
-			json_append_item(arena, target)->value = json_number(v.y);
-			json_append_item(arena, target)->value = json_number(v.z);
-			json_append_item(arena, target)->value = json_number(v.w);
-		} else {
-			json_append_field(arena, target, s("x"))->value = json_number(v.x);
-			json_append_field(arena, target, s("y"))->value = json_number(v.y);
-			json_append_field(arena, target, s("z"))->value = json_number(v.z);
-			json_append_field(arena, target, s("w"))->value = json_number(v.w);
-		}
+		JSON_Node *f4 = json_append_field(arena, target, key);
+		f4->value = json_array();
+		json_append_item(arena, f4)->value = json_number(v.x);
+		json_append_item(arena, f4)->value = json_number(v.y);
+		json_append_item(arena, f4)->value = json_number(v.z);
+		json_append_item(arena, f4)->value = json_number(v.w);
 	}
 
 	return ok;
 }
 
-static inline bool json_append_float3(Arena *arena, JSON_Node *target, float3 v) {
+static inline bool json_append_float3(Arena *arena, JSON_Node *target, String8 key, float3 v) {
 	bool ok = arena && target && json_is_container(target);
 	if (ok) {
-		if (target->value.type == JSON_TYPE_ARRAY) {
-			json_append_item(arena, target)->value = json_number(v.x);
-			json_append_item(arena, target)->value = json_number(v.y);
-			json_append_item(arena, target)->value = json_number(v.z);
-		} else {
-			json_append_field(arena, target, s("x"))->value = json_number(v.x);
-			json_append_field(arena, target, s("y"))->value = json_number(v.y);
-			json_append_field(arena, target, s("z"))->value = json_number(v.z);
-		}
+		JSON_Node *f3 = json_append_field(arena, target, key);
+		f3->value = json_array();
+		json_append_item(arena, f3)->value = json_number(v.x);
+		json_append_item(arena, f3)->value = json_number(v.y);
+		json_append_item(arena, f3)->value = json_number(v.z);
 	}
 
 	return ok;
@@ -119,28 +107,13 @@ static inline bool json_append_float3(Arena *arena, JSON_Node *target, float3 v)
 
 static inline bool json_append_transform3(Arena *arena, JSON_Node *target, Transform3 *t) {
 	bool ok = arena && target && json_is_container(target) && t;
-
 	if (ok) { // transform
 		JSON_Node *transform = json_append_field(arena, target, s("transform"));
 		transform->value = json_object();
 
-		{
-			JSON_Node *translation = json_append_field(arena, transform, s("translation"));
-			translation->value = json_array();
-			json_append_float3(arena, translation, t->translation);
-		}
-
-		{
-			JSON_Node *rotation = json_append_field(arena, transform, s("rotation"));
-			rotation->value = json_array();
-			json_append_float4(arena, rotation, t->rotation);
-		}
-
-		{
-			JSON_Node *scale = json_append_field(arena, transform, s("scale"));
-			scale->value = json_array();
-			json_append_float3(arena, scale, t->scale);
-		}
+		json_append_float3(arena, transform, s("translation"), t->translation);
+		json_append_float4(arena, transform, s("rotation"), t->rotation);
+		json_append_float3(arena, transform, s("scale"), t->scale);
 	}
 
 	return ok;
@@ -158,36 +131,20 @@ static inline bool json_append_shape3(Arena *arena, JSON_Node *target, Shape3 *s
 
 		switch (s->kind) {
 			case SHAPE_KIND_AABB3: {
-				JSON_Node *min = json_append_field(arena, value_node, s("min"));
-				min->value = json_array();
-				json_append_float3(arena, min, s->as.aabb3.min);
-
-				JSON_Node *max = json_append_field(arena, value_node, s("max"));
-				max->value = json_array();
-				json_append_float3(arena, max, s->as.aabb3.max);
+				json_append_float3(arena, value_node, s("min"), s->as.aabb3.min);
+				json_append_float3(arena, value_node, s("max"), s->as.aabb3.max);
 			} break;
 			case SHAPE_KIND_SPHERE: {
-				JSON_Node *center = json_append_field(arena, value_node, s("center"));
-				center->value = json_array();
-				json_append_float3(arena, center, s->as.sphere.center);
+				json_append_float3(arena, value_node, s("center"), s->as.sphere.center);
 				json_append_field(arena, value_node, s("radius"))->value = json_number(s->as.sphere.radius);
 			} break;
 			case SHAPE_KIND_CAPSULE3: {
-				JSON_Node *a = json_append_field(arena, value_node, s("a"));
-				a->value = json_array();
-				json_append_float3(arena, a, s->as.capsule.a);
-
-				JSON_Node *b = json_append_field(arena, value_node, s("b"));
-				b->value = json_array();
-				json_append_float3(arena, b, s->as.capsule.b);
-
+				json_append_float3(arena, value_node, s("a"), s->as.capsule.a);
+				json_append_float3(arena, value_node, s("b"), s->as.capsule.b);
 				json_append_field(arena, value_node, s("radius"))->value = json_number(s->as.capsule.radius);
 			} break;
 			case SHAPE_KIND_PLANE: {
-				JSON_Node *normal = json_append_field(arena, value_node, s("normal"));
-				normal->value = json_array();
-				json_append_float3(arena, normal, s->as.plane.normal);
-
+				json_append_float3(arena, value_node, s("normal"), s->as.plane.normal);
 				json_append_field(arena, value_node, s("distance"))->value = json_number(s->as.plane.distance);
 			} break;
 			default:

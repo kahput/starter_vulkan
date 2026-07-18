@@ -2,6 +2,7 @@
 #include "core/json.h"
 #include "core/arena.h"
 #include "core/cmath.h"
+#include "core/lexer.h"
 #include "core/shape3.h"
 #include "core/shape2.h"
 #include "core/input_types.h"
@@ -383,6 +384,7 @@ int32_t cmp_mesh_sort(const void *p1, const void *p2) {
 	return 0;
 }
 
+#define WORLD_MAGIC_NUMBER 0x5102
 JSON_Node *world_to_json(Arena *arena, World *world) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	JSON_Node *result = &JSON_NIL;
@@ -393,7 +395,7 @@ JSON_Node *world_to_json(Arena *arena, World *world) {
 		result = arena_push_count(arena, JSON_Node, 1);
 		result->value = json_object();
 
-		json_append_field(arena, result, s("magic"))->value = json_number(0x5102);
+		json_append_field(arena, result, s("magic"))->value = json_number(WORLD_MAGIC_NUMBER);
 		json_append_field(arena, result, s("entity_count"))->value = json_number(world->entity_count - 1);
 		JSON_Node *arr = json_append_field(arena, result, s("entities"));
 		arr->value = json_array();
@@ -434,10 +436,142 @@ JSON_Node *world_to_json(Arena *arena, World *world) {
 	return result;
 }
 
-World json_to_world(Arena *arena, JSON_Node *node) {
-	World result = { 0 };
+bool json_to_world(JSON_Node *root, World *world) {
+	bool ok = root && json_num_or(json_find(root, s("magic")), 0) == WORLD_MAGIC_NUMBER;
+	if (ok) {
+		JSON_Node *entities = json_find(root, s("entities"));
+		world->entity_count = json_count(entities) + 1;
 
-	return result;
+		for (uint32_t node_index = 0; node_index < json_count(entities); ++node_index) {
+			JSON_Node *entity_node = json_child_at(entities, node_index);
+			Entity *entity = &world->entities[node_index + 1];
+
+			JSON_Node *transform = json_find(entity_node, s("transform"));
+			if (json_valid(transform)) { // transform
+				JSON_Node *translation = json_find(transform, s("translation"));
+				entity->transform.translation.x = json_num_or(json_child_at(translation, 0), 0.0f);
+				entity->transform.translation.y = json_num_or(json_child_at(translation, 1), 0.0f);
+				entity->transform.translation.z = json_num_or(json_child_at(translation, 2), 0.0f);
+
+				JSON_Node *rotation = json_find(transform, s("rotation"));
+				entity->transform.rotation.x = json_num_or(json_child_at(rotation, 0), 0.0f);
+				entity->transform.rotation.y = json_num_or(json_child_at(rotation, 1), 0.0f);
+				entity->transform.rotation.z = json_num_or(json_child_at(rotation, 2), 0.0f);
+				entity->transform.rotation.w = json_num_or(json_child_at(rotation, 3), 0.0f);
+
+				JSON_Node *scale = json_find(transform, s("scale"));
+				entity->transform.scale.x = json_num_or(json_child_at(scale, 0), 1.0f);
+				entity->transform.scale.y = json_num_or(json_child_at(scale, 1), 1.0f);
+				entity->transform.scale.z = json_num_or(json_child_at(scale, 2), 1.0f);
+			}
+
+			{ // features
+				String8 features = json_str_or(json_find(entity_node, s("features")), s(""));
+				Lexer lexer = lexer_make(features, 0, 0);
+				Token t = { 0 };
+				while ((t = lexer_next(&lexer)).type != TOKEN_EOF) {
+					if (t.type == TOKEN_IDENTIFIER)
+						for (EntityFeature feature = 0; feature < ENTITY_FEATURE_MAX; ++feature) {
+							if (str8_equals(t.lexeme, entity_feature_to_string[feature])) {
+								entity_enable(entity, feature);
+								break;
+							}
+						}
+				}
+			}
+
+			String8 meshid = json_str_or(json_find(entity_node, s("meshid")), s(""));
+			if (meshid.length)
+				for (uint32_t index = 0; index < MESH_MAX; ++index) {
+					if (str8_equals(meshid, meshid_to_string[index])) {
+						entity->meshid = index;
+						break;
+					}
+				}
+
+			JSON_Node *shape = json_find(entity_node, s("shape"));
+			if (json_valid(shape)) {
+				String8 kind = json_str_or(json_find(shape, s("kind")), s(""));
+
+				if (kind.length)
+					for (uint32_t index = 0; index < SHAPE_KIND_MAX; ++index) {
+						if (str8_equals(kind, shape_kind_to_string[index])) {
+							entity->shape.kind = index;
+							break;
+						}
+					}
+
+				JSON_Node *shape_value = json_find(shape, s("value"));
+				if (json_valid(shape_value))
+					switch (entity->shape.kind) {
+						case SHAPE_KIND_AABB3: {
+							JSON_Node *min = json_find(shape_value, s("min"));
+							entity->shape.as.aabb3.min.x = json_num_or(json_child_at(min, 0), -0.5f);
+							entity->shape.as.aabb3.min.y = json_num_or(json_child_at(min, 1), -0.5f);
+							entity->shape.as.aabb3.min.z = json_num_or(json_child_at(min, 2), -0.5f);
+
+							JSON_Node *max = json_find(shape_value, s("max"));
+							entity->shape.as.aabb3.max.x = json_num_or(json_child_at(max, 0), 0.5f);
+							entity->shape.as.aabb3.max.y = json_num_or(json_child_at(max, 1), 0.5f);
+							entity->shape.as.aabb3.max.z = json_num_or(json_child_at(max, 2), 0.5f);
+						} break;
+
+						case SHAPE_KIND_SPHERE: {
+							JSON_Node *center = json_find(shape_value, s("center"));
+							entity->shape.as.sphere.center.x = json_num_or(json_child_at(center, 0), 0.0f);
+							entity->shape.as.sphere.center.y = json_num_or(json_child_at(center, 1), 0.0f);
+							entity->shape.as.sphere.center.z = json_num_or(json_child_at(center, 2), 0.0f);
+
+							entity->shape.as.sphere.radius = json_num_or(json_find(shape_value, s("radius")), 1.0f);
+
+						} break;
+						case SHAPE_KIND_CAPSULE3: {
+							JSON_Node *a = json_find(shape_value, s("a"));
+							entity->shape.as.capsule.a.x = json_num_or(json_child_at(a, 0), -0.5f);
+							entity->shape.as.capsule.a.y = json_num_or(json_child_at(a, 1), -0.5f);
+							entity->shape.as.capsule.a.z = json_num_or(json_child_at(a, 2), -0.5f);
+
+							JSON_Node *b = json_find(shape_value, s("b"));
+							entity->shape.as.capsule.b.x = json_num_or(json_child_at(b, 0), 0.5f);
+							entity->shape.as.capsule.b.y = json_num_or(json_child_at(b, 1), 0.5f);
+							entity->shape.as.capsule.b.z = json_num_or(json_child_at(b, 2), 0.5f);
+
+							entity->shape.as.capsule.radius = json_num_or(json_find(shape_value, s("radius")), 1.0f);
+						} break;
+						case SHAPE_KIND_PLANE: {
+							JSON_Node *normal = json_find(shape_value, s("normal"));
+							entity->shape.as.plane.normal.x = json_num_or(json_child_at(normal, 0), 0.0f);
+							entity->shape.as.plane.normal.y = json_num_or(json_child_at(normal, 1), 1.0f);
+							entity->shape.as.plane.normal.z = json_num_or(json_child_at(normal, 2), 0.0f);
+
+							entity->shape.as.plane.distance = json_num_or(json_find(shape_value, s("distance")), 0.0f);
+						} break;
+						default:
+							break;
+					}
+			}
+
+			{
+				String8 draw_pass = json_str_or(json_find(entity_node, s("pass")), s(""));
+				if (draw_pass.length)
+					for (DrawPass pass = 0; pass < DRAW_PASS_MAX; ++pass) {
+						if (str8_equals(draw_pass, draw_pass_to_string[pass])) {
+							entity->pass = pass;
+							break;
+						}
+					}
+			}
+			entity->interact_radius = json_num_or(json_find(entity_node, s("interact_radius")), 0.0f);
+			JSON_Node *target_node = json_find(entity_node, s("target"));
+			if (json_valid(target_node)) {
+				int32_t target_index = (int32_t)json_num_or(json_find(entity_node, s("target")), 0);
+				entity->target = &world->entities[target_index + 1];
+			} else
+				entity->target = &world->entities[0];
+		}
+	}
+
+	return ok;
 }
 
 int main(void) {
@@ -908,62 +1042,11 @@ int main(void) {
 	};
 
 	World *scene = scenes + 0;
-
-	{ // 3D Test
-		World *world = scenes + 0;
-
-		Entity *player = entity_spawn(world);
-		player->meshid = MESH_HERO_MALE;
-		/* player->shape = shape3_capsule((float3){ 0.0f, 1.0f, 0.0f }, 2.0f, 0.34f); */
-		/* player->shape = shape3_sphere((float3){ 0.0f, 1.0f, 0.0f }, 1.0f); */
-		player->shape.as.aabb3 = meshes[player->meshid].bounds;
-
-		entity_enable(player, ENTITY_FEATURE_DRAW_MESH);
-		/* entity_enable(player, ENTITY_FEATURE_CAST_SHADOW); */
-		entity_enable(player, ENTITY_FEATURE_PLAYER_CONTROLLED);
-		entity_enable(player, ENTITY_FEATURE_COLLIDABLE);
-		entity_enable(player, ENTITY_FEATURE_ANIMATE);
-
-		Entity *barrel = entity_spawn(world);
-		barrel->meshid = MESH_BARREL;
-		barrel->transform.translation = (float3){ 10.0f, 0.0f, 0.0f };
-		barrel->interact_radius = 3.0f;
-		barrel->shape = shape3_from_aabb3(meshes[barrel->meshid].bounds);
-		barrel->target = player;
-
-		entity_enable(barrel, ENTITY_FEATURE_DRAW_MESH);
-		entity_enable(barrel, ENTITY_FEATURE_CAST_SHADOW);
-		entity_enable(barrel, ENTITY_FEATURE_INTERACTABLE);
-		entity_enable(barrel, ENTITY_FEATURE_COLLIDABLE);
-		/* entity_enable(barrel, ENTITY_FEATURE_FOLLOW_TARGET); */
-		/* entity_enable(barrel, ENTITY_FEATURE_ANIMATE); */
-
-		/* Entity *terrain = entity_spawn(&world); */
-		/* terrain->meshid = MESH_TERRAIN_FLAT; */
-		/* entity_enable(terrain, ENTITY_FEATURE_DRAW_MESH); */
-
-		Entity *level = entity_spawn(world);
-		level->meshid = MESH_TEST_LEVEL;
-		entity_enable(level, ENTITY_FEATURE_DRAW_MESH);
-
-		for (uint32_t index = 0; index < 3; ++index) {
-			Entity *cylinder = entity_spawn(world);
-
-			cylinder->transform.translation = make3(0.0f, 0.0f, index * -3.0f);
-			cylinder->transform.scale = make3(2.0f, 1.0f, 2.0f);
-			cylinder->meshid = MESH_CYLINDER;
-			cylinder->pass = DRAW_PASS_TRANSPARENT;
-
-			cylinder->shape = shape3_from_aabb3(meshes[cylinder->meshid].bounds);
-			entity_enable(cylinder, ENTITY_FEATURE_DRAW_MESH);
-			entity_enable(cylinder, ENTITY_FEATURE_COLLIDABLE);
-		}
-	}
-
-	{ //: serialize
+	{
 		ArenaTemp scratch = arena_scratch_begin(0);
-		String8 output = json_stringify(scratch.arena, world_to_json(scratch.arena, scene), s("  "));
-		os_file_write_entire(s("assets/data/test.scene"), output.text, output.length);
+		JSON_Node *root = json_parse_file(scratch.arena, s("assets/data/test.scene"));
+		json_to_world(root, scene);
+		json_to_world(root, scenes + 1);
 		arena_scratch_end(scratch);
 	}
 
@@ -1275,12 +1358,14 @@ int main(void) {
 
 							// Collision resolution
 							float t_min = maxf(minf(nearest.t, 1.0f), 0.0f);
+							if (t_min <= EPSILON)
+								break;
 
 							entity->transform.translation = add3(entity->transform.translation, scale3(velocity, t_min));
 							entity->transform.translation = add3(entity->transform.translation, scale3(nearest.normal, 0.001f));
 
-							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
 							velocity = scale3(velocity, 1.0f - t_min);
+							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
 
 							push_arrow3(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
 						}

@@ -80,24 +80,23 @@ float3 shape3_support(Shape3 s, float3 direction) {
 }
 
 CastResult3 raycast_plane(Ray3 r, Plane p) {
+	CastResult3 result = CAST3_NO_HIT;
+
 	float denominator = dot3(r.direction, p.normal);
-	if (fabsf(denominator) < EPSILON)
-		return CAST3_NO_HIT;
+	float t = 0.0f;
 
-	float3 po = scale3(p.normal, p.distance);
-	float t = (dot3(po, p.normal) - dot3(r.origin, p.normal)) / denominator;
+	bool ok = fabsf(denominator) >= EPSILON;
+	if (ok) {
+		float3 po = scale3(p.normal, p.distance);
+		t = (dot3(po, p.normal) - dot3(r.origin, p.normal)) / denominator;
 
-	if (t < 0.0f)
-		return CAST3_NO_HIT;
+		ok = t >= 0.0f;
+	}
 
-	float3 point = add3(r.origin, scale3(r.direction, t));
-
-	CastResult3 result = {
-		.hit = true,
-		.t = t,
-		.normal = p.normal,
-		.point = point,
-	};
+	if (ok) {
+		float3 hit_point = add3(r.origin, scale3(r.direction, t));
+		result = (CastResult3){ .hit = true, .t = t, .normal = p.normal, .point = hit_point };
+	}
 
 	return result;
 }
