@@ -9,9 +9,8 @@ struct Vertex3 {
 };
 
 struct Vertex2 {
-    vec2 position; 
-    vec2 uv;
-    vec4 color;
+    vec2 position, uv; 
+    uint color, imageid;
 };
 
 struct Light {

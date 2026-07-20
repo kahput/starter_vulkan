@@ -42,6 +42,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         "${CMAKE_SOURCE_DIR}/engine/src/*.h"
         "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
         "${CMAKE_SOURCE_DIR}/engine/src/input.c"
+        "${CMAKE_SOURCE_DIR}/engine/vendor/stb.c"
     )
 
     foreach(NAME ${WEB_SCRATCHES})
@@ -51,7 +52,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             ${SRC}
             ${PROJECT_SOURCES}
         )
-        target_include_directories(${NAME} PUBLIC "${CMAKE_SOURCE_DIR}/engine/src")
+        target_include_directories(${NAME} 
+            PUBLIC
+            "${CMAKE_SOURCE_DIR}/engine/src" 
+            "${CMAKE_SOURCE_DIR}/engine/vendor" 
+        )
         target_compile_definitions(${NAME} PRIVATE WEB_BUILD)
         target_link_options(${NAME} PRIVATE
             "-sALLOW_MEMORY_GROWTH"
@@ -66,7 +71,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         set_target_properties(${NAME} PROPERTIES SUFFIX ".html")
 
         target_link_options(${NAME} PRIVATE 
-            "--preload-file" "${CMAKE_SOURCE_DIR}/game/src@/src"
+            "--preload-file" "${CMAKE_SOURCE_DIR}/assets@/assets"
         )
     endforeach()
 else()

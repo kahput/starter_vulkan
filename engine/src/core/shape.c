@@ -102,8 +102,6 @@ CastResult3 raycast_plane(Ray3 r, Plane p) {
 }
 
 CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
-	float3 c = aabb3_center(a);
-	float3 he = aabb3_half_extent(a);
 	float3 min = a.min;
 	float3 max = a.max;
 
@@ -111,7 +109,7 @@ CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
 	if (lensq3(r.direction)) {
 		for (uint32_t side = 0; side < SIDE_COUNT3; ++side) {
 			float3 pn = side_to_float3[side];
-			float3 po = add3(c, mul3(pn, he));
+			float3 po = add3(aabb3_center(a), mul3(pn, aabb3_half_extent(a)));
 
 			temp = raycast_plane(r, plane_from_point_normal(po, pn));
 			if ((temp.point.x < min.x || temp.point.x > max.x) ||

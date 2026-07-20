@@ -19,7 +19,6 @@
 #include "gfx/vulkan/tables.h"
 #include "scene.h"
 #include "spirv_reflect/spirv_reflect.h"
-#include <ccd/ccd.h>
 
 #include <math.h>
 
@@ -30,7 +29,7 @@
 
 typedef struct {
 	float2 position, uv;
-	float4 color;
+	uint32_t color, imageid;
 } DrawVertex2;
 
 typedef struct {
@@ -83,6 +82,8 @@ typedef struct {
 	PixelFormat format;
 	uint32_t width, height;
 } Image2D;
+
+Rectangle image_rect(Image2D *image) { return (Rectangle){ 0, 0, image->width, image->height }; }
 
 typedef enum {
 	DRAW_PASS_OPAQUE,
@@ -267,21 +268,23 @@ Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
 
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
-void push_rect2(Arena *arena, Rectangle rect, Color color);
-void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color);
-void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color color);
-void push_rect2_outline(Arena *arena, Rectangle rect, float thickness, Color color);
-void push_triangle2(Arena *arena, Triangle2 triangle, float thickness, Color color);
+void draw2_quad(Arena *arena, Rectangle rect, Color color);
+void draw2_sprite(Arena *arena, float2 position, Image2D *image, uint32_t imageid, Color tint);
+void draw2_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, uint32_t imageid, Color tint);
+void draw2_line(Arena *arena, float2 start, float2 end, float thickness, Color color);
+void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color);
+void draw2_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color);
+void draw2_triangle(Arena *arena, Triangle2 triangle, float thickness, Color color);
 
-void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color);
-void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color,
+void draw3_line(Arena *arena, float3 start, float3 end, float thickness, Color color);
+void draw3_arrow(Arena *arena, float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width);
-void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color);
-void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color);
-void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
-void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color color);
-void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
-void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness);
+void draw3_arc(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color);
+void draw3_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color);
+void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
+void draw3_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color);
+void draw3_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
+void draw3_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness);
 
 typedef struct {
 	Arena *batch_arena;
@@ -467,16 +470,11 @@ bool json_to_world(JSON_Node *root, World *world) {
 
 			{ // features
 				String8 features = json_str_or(json_find(entity_node, s("features")), s(""));
-				Lexer lexer = lexer_make(features, 0, 0);
+				Lexer lexer = lexer_make(features, (String8 *)entity_feature_to_string, countof(entity_feature_to_string));
 				Token t = { 0 };
 				while ((t = lexer_next(&lexer)).type != TOKEN_EOF) {
-					if (t.type == TOKEN_IDENTIFIER)
-						for (EntityFeature feature = 0; feature < ENTITY_FEATURE_MAX; ++feature) {
-							if (str8_equals(t.lexeme, entity_feature_to_string[feature])) {
-								entity_enable(entity, feature);
-								break;
-							}
-						}
+					if (t.type >= TOKEN_KEYWORD_0 && t.type < TOKEN_KEYWORD_0 + ENTITY_FEATURE_MAX)
+						entity_enable(entity, t.type - TOKEN_KEYWORD_0);
 				}
 			}
 
@@ -574,6 +572,31 @@ bool json_to_world(JSON_Node *root, World *world) {
 	return ok;
 }
 
+bool check_for_overlap(Entity *entity, Entity *entities, uint32_t entity_count) {
+	bool result = false;
+
+	for (uint32_t entity_index = 0; entity_index < entity_count; ++entity_index) {
+		Entity *other = &entities[entity_index];
+		if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false || other->shape.kind != SHAPE_KIND_AABB3)
+			continue;
+
+		AABB3 other_aabb = aabb3_from_center(
+			add3(aabb3_center(other->shape.as.aabb3), other->transform.translation),
+			mul3(aabb3_half_extent(other->shape.as.aabb3), entity->transform.scale) //
+		);
+
+		AABB3 entity_aabb = aabb3_from_center(
+			add3(aabb3_center(entity->shape.as.aabb3), entity->transform.translation),
+			mul3(aabb3_half_extent(entity->shape.as.aabb3), entity->transform.scale) //
+		);
+
+		if (aabb3_overlap(other_aabb, entity_aabb))
+			result = true;
+	}
+
+	return result;
+}
+
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
 
@@ -651,12 +674,12 @@ int main(void) {
 		  .pixels = window_texture.pixels,
 		});
 
-	Image2D heightmap = load_image(permanent, s("assets/textures/heightmap.png"));
-	heightmap.handle = gfx_image_make(context, heightmap.width, heightmap.height,
+	Image2D noise_image = load_image(permanent, s("assets/textures/heightmap.png"));
+	noise_image.handle = gfx_image_make(context, noise_image.width, noise_image.height,
 		(ImageOptions){
 		  .debug_name = "heightmap",
 		  .format = PIXEL_FORMAT_RGBA8_UNORM,
-		  .pixels = heightmap.pixels,
+		  .pixels = noise_image.pixels,
 		});
 
 	GFX_Sampler *linear_sampler[WRAP_MODE_COUNT] = {
@@ -831,7 +854,7 @@ int main(void) {
 	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, plane_from_side(SIDE_UP), map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, SIDE_TOP, 256.f, 256.f, heightmap);
+	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, SIDE_TOP, 256.f, 256.f, noise_image);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
 	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, unit3(UP), 1.0f, 0.5f, 0.5f, 32, 0, true, true);
@@ -1175,7 +1198,7 @@ int main(void) {
 
 					Rectangle panel = rect(panel_x, panel_y, panel_w, fence_h + total_element_h + pad * 2);
 
-					push_rect2(batch_2d, panel, rgb(25, 25, 25));
+					draw2_quad(batch_2d, panel, rgb(25, 25, 25));
 					fog_density = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.001f, 0.05f, fog_density);
 					panel_y += element_h + pad;
 					fog_gradient = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 15.0f, fog_gradient);
@@ -1230,14 +1253,14 @@ int main(void) {
 							int32_t x0 = (int32_t)px;
 							int32_t z0 = (int32_t)pz;
 
-							int32_t x1 = MIN(x0 + 1, (int32_t)heightmap.width - 1);
-							int32_t z1 = MIN(z0 + 1, (int32_t)heightmap.height - 1);
+							int32_t x1 = MIN(x0 + 1, (int32_t)noise_image.width - 1);
+							int32_t z1 = MIN(z0 + 1, (int32_t)noise_image.height - 1);
 
 							float hs[4] = {
-								[0] = (heightmap.pixels[(x0 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-								[1] = (heightmap.pixels[(x1 + z0 * heightmap.width) * 4] / 255.f) - 0.5f,
-								[2] = (heightmap.pixels[(x0 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
-								[3] = (heightmap.pixels[(x1 + z1 * heightmap.width) * 4] / 255.f) - 0.5f,
+								[0] = (noise_image.pixels[(x0 + z0 * noise_image.width) * 4] / 255.f) - 0.5f,
+								[1] = (noise_image.pixels[(x1 + z0 * noise_image.width) * 4] / 255.f) - 0.5f,
+								[2] = (noise_image.pixels[(x0 + z1 * noise_image.width) * 4] / 255.f) - 0.5f,
+								[3] = (noise_image.pixels[(x1 + z1 * noise_image.width) * 4] / 255.f) - 0.5f,
 							};
 							float u = px - (float)x0;
 							float v = pz - (float)z0;
@@ -1330,8 +1353,9 @@ int main(void) {
 							if (lensq3(velocity) <= EPSILON)
 								break;
 							CastResult3 nearest = CAST3_NO_HIT;
+							Entity *nearest_entity = 0;
 
-							Ray3 r = { entity->transform.translation, velocity };
+							Ray3 r = { add3(aabb3_center(entity->shape.as.aabb3), entity->transform.translation), velocity };
 							for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
 								Entity *other = &scene->entities[entity_index];
 								if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false || other->shape.kind != SHAPE_KIND_AABB3)
@@ -1339,19 +1363,24 @@ int main(void) {
 
 								float3 center = add3(aabb3_center(other->shape.as.aabb3), other->transform.translation);
 								// NOTE: Minkowski sum
-								float3 half_extent =
-									float4x4_transform(
-										float4x4_scaling(other->transform.scale),
-										xyz0(aabb3_half_extent(other->shape.as.aabb3)) //
-									);
-								float3 swept_extent = add3(half_extent, aabb3_half_extent(entity->shape.as.aabb3));
+								float3 half_extent = mul3(other->transform.scale, aabb3_half_extent(other->shape.as.aabb3));
+								float3 swept_extent = add3(
+									mul3(other->transform.scale, aabb3_half_extent(other->shape.as.aabb3)),
+									mul3(entity->transform.scale, aabb3_half_extent(entity->shape.as.aabb3)));
 
 								CastResult3 result = raycast_aabb3(r, aabb3_from_center(center, swept_extent));
-								if (result.t < nearest.t)
+								if (result.t < nearest.t) {
 									nearest = result;
+									nearest_entity = other;
+								}
 							}
 
+							bool overlap_before_move = check_for_overlap(entity, scene->entities, scene->entity_count);
 							if (nearest.hit == false) {
+								if (overlap_before_move == false)
+									if (check_for_overlap(entity, scene->entities, scene->entity_count))
+										LOG_ERROR("error in hit detection.");
+
 								entity->transform.translation = add3(entity->transform.translation, velocity);
 								break;
 							}
@@ -1361,13 +1390,49 @@ int main(void) {
 							if (t_min <= EPSILON)
 								break;
 
+							float3 position_before_move = entity->transform.translation;
+
 							entity->transform.translation = add3(entity->transform.translation, scale3(velocity, t_min));
 							entity->transform.translation = add3(entity->transform.translation, scale3(nearest.normal, 0.001f));
 
-							velocity = scale3(velocity, 1.0f - t_min);
-							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
+							if (overlap_before_move == false)
+								if (check_for_overlap(entity, scene->entities, scene->entity_count)) {
+									LOG_ERROR("error in t. from { %.2f, %.2f, %2f } to { %.2f, %.2f, %.2f }", spread3(position_before_move), spread3(entity->transform.translation));
+									if (nearest_entity) {
+										LOG_DEBUG(
+											"\nsafe_margin = %.2f\n"
+											"final_t = %.2f\n"
+											"contact_point= { %.2f, %.2f, %2f }\n"
+											"contact_normal = { %.2f, %.2f, %.2f }\n"
+											"entity[%d] = {\n"
+											"  velocity = { %.2f, %.2f, %.2f }\n"
+											"  translation = { %.2f, %.2f, %.2f }\n"
+											"  aabb = {\n    center = { %.2f, %.2f, %.2f },\n    half_extent = { %.2f, %.2f, %.2f }\n  }\n"
+											"}\n"
+											"other[%d] = {\n"
+											"  translation = { %.2f, %.2f, %.2f }\n"
+											"  aabb = {\n    center = { %.2f, %.2f, %.2f },\n    half_extent = { %.2f, %.2f, %.2f }\n  }\n"
+											"}\n",
+											nearest.t,
+											t_min,
+											spread3(nearest.point),
+											spread3(nearest.normal),
+											indexof(scene->entities, entity),
+											spread3(velocity),
+											spread3(entity->transform.translation),
+											spread3(aabb3_center(entity->shape.as.aabb3)),
+											spread3(aabb3_half_extent(entity->shape.as.aabb3)),
+											indexof(scene->entities, nearest_entity),
+											spread3(nearest_entity->transform.translation),
+											spread3(aabb3_center(nearest_entity->shape.as.aabb3)),
+											spread3(aabb3_half_extent(nearest_entity->shape.as.aabb3)));
+									}
+								}
 
-							push_arrow3(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
+							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
+							velocity = scale3(velocity, 1.0f - t_min);
+
+							draw3_arrow(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
 						}
 					}
 
@@ -1512,7 +1577,7 @@ int main(void) {
 				if (entity->shape.kind == SHAPE_KIND_AABB3)
 					a = shape3_from_aabb3(aabb3_from_center(aabb3_center(entity->shape.as.aabb3), mul3(aabb3_half_extent(entity->shape.as.aabb3), entity->transform.scale)));
 
-				push_shape3_outline(batch_line3, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
+				draw3_shape_outline(batch_line3, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
 			}
 		}
 
@@ -1891,7 +1956,7 @@ int main(void) {
 							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), nearest_sampler),
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
-							sampler_with_textures(3, (GFX_Image *[]){ heightmap.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
+							sampler_with_textures(3, (GFX_Image *[]){ noise_image.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
 						gfx_bind(context, &pipeline_grass, 1, uniforms, countof(uniforms));
 
@@ -2011,11 +2076,41 @@ int main(void) {
 				};
 				if (batch_2d->offset) { // :canvas
 
-					gfx_cmd_pipeline_bind(cmd, &pipeline_2d);
+					uint32_t vertex_count = batch_2d->offset / sizeof(DrawVertex2);
+					uint32_t quad_count = vertex_count / 6;
 
 					GFX_Image *images[32] = { 0 };
+					uint32_t image_count = 1;
 					for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
 						images[texture_id] = white_texture;
+
+					for (uint32_t quad_index = 0; quad_index < quad_count; ++quad_index) {
+						DrawVertex2 *quad_first_vertex = (DrawVertex2 *)batch_2d->base + (quad_index * 6);
+
+						if (quad_first_vertex->imageid && quad_first_vertex->imageid != indexof(context->image_pool, white_texture)) {
+							int32_t found_index = -1;
+							for (uint32_t image_index = 1; image_index < image_count; ++image_index) {
+								if (indexof(context->image_pool, images[image_index]) == quad_first_vertex->imageid) {
+									found_index = image_index;
+									break;
+								}
+							}
+
+							if (found_index == -1) {
+								ASSERT(image_count < countof(images) || "Extend sprite batching to support beyond 32 distinct images");
+								found_index = image_count++;
+								images[found_index] = &context->image_pool[quad_first_vertex->imageid];
+							}
+
+							for (uint32_t vertex_index = 0; vertex_index < 6; ++vertex_index) {
+								DrawVertex2 *vertex = quad_first_vertex + vertex_index;
+
+								vertex->imageid = found_index;
+							}
+						}
+					}
+
+					gfx_cmd_pipeline_bind(cmd, &pipeline_2d);
 
 					Uniform uniforms0[] = {
 						uniform_data(0, &frame_2d, sizeof(frame_2d)),
@@ -2026,7 +2121,7 @@ int main(void) {
 					gfx_bind(context, &pipeline_2d, 0, uniforms0, countof(uniforms0));
 					gfx_bind(context, &pipeline_2d, 1, uniforms1, countof(uniforms1));
 
-					vkCmdDraw(cmd->handle, batch_2d->offset / sizeof(DrawVertex2), 1, 0, 0);
+					vkCmdDraw(cmd->handle, vertex_count, 1, 0, 0);
 				}
 
 				if (batch_line2d->offset) {
@@ -2302,7 +2397,6 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 	VkFormat vk_format = pixel_format_to_vulkan_format[options.format];
 
 	if (ok) { // make vulkan image handle
-
 		VkImageUsageFlags vk_usage = image_options_to_vulkan_image_usage_flags(options);
 		VkSampleCountFlags vk_sample = image_options_to_vulkan_sample_count(context->device.limits, options);
 		VkImageCreateFlags vk_flags = image_options_to_vulkan_image_flags(options);
@@ -3387,6 +3481,13 @@ bool gfx_startup(GFX_Context *context) {
 		context->sampler_pool = arena_push_count(context->arena, GFX_Sampler, MAX_SAMPLERS);
 		context->shader_pool = arena_push_count(context->arena, GFX_Pipeline, MAX_SHADERS);
 		context->swapchain_pool = arena_push_count(context->arena, GFX_Swapchain, MAX_SWAPCHAINS);
+
+		// 0 == invalid
+		context->buffer_count += 1;
+		context->image_count += 1;
+		context->sampler_count += 1;
+		context->shader_count += 1;
+		context->swapchain_count += 1;
 	}
 
 	if (ok) {
@@ -5233,7 +5334,7 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 	return result;
 }
 
-void push_rect2(Arena *arena, Rectangle rect, Color color) {
+void draw2_quad(Arena *arena, Rectangle rect, Color color) {
 	float x0 = rect.x;
 	float y0 = rect.y;
 	float x1 = rect.x + rect.width;
@@ -5247,48 +5348,79 @@ void push_rect2(Arena *arena, Rectangle rect, Color color) {
 	// clang-format off
     DrawVertex2 quad[] = {
         // pos      // tex
-        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x0, y0 }, .uv = { 0.0f, 0.0f }, .color = color_to_float4(color) }, // , .image_id = image_index}, 
+        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x0, y0 }, .uv = { 0.0f, 0.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index}, 
 
-        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x1, y1 }, .uv = { 1.0f, 1.0f }, .color = color_to_float4(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_to_float4(color) }, // , .image_id = image_index}
+        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x1, y1 }, .uv = { 1.0f, 1.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
+        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index}
     };
 	// clang-format on
 
 	memory_copy(arena_push_count(arena, DrawVertex2, 6), quad, sizeof(quad));
 }
 
-void push_rect2_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
-	push_rect2(arena, rect(rect.x, rect.y, rect.width, thickness), color);
-	push_rect2(arena, rect(rect.x, rect.y, thickness, rect.height), color);
-	push_rect2(arena, rect(rect.x + rect.width, rect.y, thickness, rect.height + thickness), color);
-	push_rect2(arena, rect(rect.x, rect.y + rect.height, rect.width + thickness, thickness), color);
+void draw2_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, uint32_t imageid, Color tint) {
+	float x0 = dst.x;
+	float y0 = dst.y;
+	float x1 = dst.x + dst.width;
+	float y1 = dst.y + dst.height;
+
+	float u0 = src.x / image->width;
+	float v0 = src.y / image->height;
+	float u1 = (src.x + src.width) / image->width;
+	float v1 = (src.y + src.height) / image->height;
+
+	// clang-format off
+    DrawVertex2 quad[] = {
+        // pos      // tex
+        (DrawVertex2){ .position = { x0, y1 }, .uv = { u0, v1}, .color = color_pack_uint32(tint) , .imageid = imageid },
+        (DrawVertex2){ .position = { x1, y0 }, .uv = { u1, v0 }, .color = color_pack_uint32(tint) , .imageid = imageid },
+        (DrawVertex2){ .position = { x0, y0 }, .uv = { u0, v0 }, .color = color_pack_uint32(tint) , .imageid = imageid }, 
+
+        (DrawVertex2){ .position = { x0, y1 }, .uv = { u0, v1 }, .color = color_pack_uint32(tint) , .imageid = imageid },
+        (DrawVertex2){ .position = { x1, y1 }, .uv = { u1, v1 }, .color = color_pack_uint32(tint) , .imageid = imageid },
+        (DrawVertex2){ .position = { x1, y0 }, .uv = { u1, v0 }, .color = color_pack_uint32(tint) , .imageid = imageid }
+    };
+	// clang-format on
+
+	memory_copy(arena_push_count(arena, DrawVertex2, 6), quad, sizeof(quad));
 }
 
-void push_triangle2(Arena *arena, Triangle2 t, float thickness, Color color) {
-	push_line2(arena, t.a, t.b, thickness, color);
-	push_line2(arena, t.b, t.c, thickness, color);
-	push_line2(arena, t.c, t.a, thickness, color);
+void draw2_sprite(Arena *arena, float2 position, Image2D *image, uint32_t imageid, Color tint) {
+	draw2_sprite_ex(arena, rect(0, 0, image->width, image->height), rect(position.x, position.y, image->width, image->height), image, imageid, tint);
 }
 
-void push_line2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
+void draw2_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
+	draw2_quad(arena, rect(rect.x, rect.y, rect.width, thickness), color);
+	draw2_quad(arena, rect(rect.x, rect.y, thickness, rect.height), color);
+	draw2_quad(arena, rect(rect.x + rect.width, rect.y, thickness, rect.height + thickness), color);
+	draw2_quad(arena, rect(rect.x, rect.y + rect.height, rect.width + thickness, thickness), color);
+}
+
+void draw2_triangle(Arena *arena, Triangle2 t, float thickness, Color color) {
+	draw2_line(arena, t.a, t.b, thickness, color);
+	draw2_line(arena, t.b, t.c, thickness, color);
+	draw2_line(arena, t.c, t.a, thickness, color);
+}
+
+void draw2_line(Arena *arena, float2 start, float2 end, float thickness, Color color) {
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xy0s(start, thickness),
 		.b = xy0s(end, thickness),
-		.color = color_pack(color),
+		.color = color_pack_uint32(color),
 	};
 }
 
-void push_arrow2(Arena *arena, float2 start, float2 end, float thickness, Color color) {
+void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color) {
 	float2 shaft_end = add2(start, scale2(sub2(end, start), 0.75f));
-	push_line2(arena, start, shaft_end, thickness, color);
+	draw2_line(arena, start, shaft_end, thickness, color);
 
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xy0s(shaft_end, thickness * 4.0f),
 		.b = xy0s(end, 0.0f),
-		.color = color_pack(color),
+		.color = color_pack_uint32(color),
 	};
 }
 
@@ -5339,7 +5471,7 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 	if (ok) {
 		y = result.held ? y + 1 : y;
 
-		push_rect2(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
+		draw2_quad(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
 	}
 
 	return result;
@@ -5347,7 +5479,7 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 
 float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float t) {
 	const float pad = bounds.width * 0.8f;
-	push_rect2(imgui_state.batch_arena, bounds, WHITE);
+	draw2_quad(imgui_state.batch_arena, bounds, WHITE);
 
 	t = clampf(t, min, max);
 
@@ -5370,7 +5502,7 @@ float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float 
 		t = min + (mouse_ratio * (max - min));
 	}
 
-	push_rect2(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+	draw2_quad(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
 																					  : DARK_GRAY);
 
 	return t;
@@ -5378,7 +5510,7 @@ float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float 
 
 float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float t) {
 	const float pad = bounds.height * 0.8f;
-	push_rect2(imgui_state.batch_arena, bounds, WHITE);
+	draw2_quad(imgui_state.batch_arena, bounds, WHITE);
 
 	t = clampf(t, min, max);
 
@@ -5401,13 +5533,13 @@ float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float 
 		t = min + (mouse_ratio * (max - min));
 	}
 
-	push_rect2(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+	draw2_quad(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
 																					  : DARK_GRAY);
 
 	return t;
 }
 
-void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color) {
+void draw3_arc(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color) {
 	for (uint32_t i = 0; i < segments; ++i) {
 		float a = ((float)i / segments) * angle_span;
 		float an = ((float)(i + 1) / segments) * angle_span;
@@ -5437,49 +5569,49 @@ void push_arc3(Arena *arena, float3 center, float radius, uint8_t segments, Side
 				break;
 		}
 
-		push_line3(arena, p0, p1, thickness, color);
+		draw3_line(arena, p0, p1, thickness, color);
 	}
 }
 
-void push_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
-	push_arc3(arena, center, radius, segments, SIDE_TOP, TAU, thickness, color);
-	push_arc3(arena, center, radius, segments, SIDE_RIGHT, TAU, thickness, color);
-	push_arc3(arena, center, radius, segments, SIDE_FRONT, TAU, thickness, color);
+void draw3_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
+	draw3_arc(arena, center, radius, segments, SIDE_TOP, TAU, thickness, color);
+	draw3_arc(arena, center, radius, segments, SIDE_RIGHT, TAU, thickness, color);
+	draw3_arc(arena, center, radius, segments, SIDE_FRONT, TAU, thickness, color);
 }
 
-void push_aabb3_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
+void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
 	float3 min = aabb3.min;
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
 	DrawLine outline[] = {
-		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack(color), zero3 },
-		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
-		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, color_pack(color), zero3 },
-		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack(color), zero3 },
-		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack(color), zero3 },
-		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
-		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack(color), zero3 },
-		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack(color), zero3 },
-		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack(color), zero3 },
+		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
 	};
 
 	DrawLine *points = arena_push_count(arena, DrawLine, countof(outline));
 	memory_copy_array(points, outline);
 }
 
-void push_line3(Arena *arena, float3 start, float3 end, float thickness, Color color) {
+void draw3_line(Arena *arena, float3 start, float3 end, float thickness, Color color) {
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xyzs(start, thickness),
 		.b = xyzs(end, thickness),
-		.color = color_pack(color),
+		.color = color_pack_uint32(color),
 	};
 }
 
-void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color color,
+void draw3_arrow(Arena *arena, float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width) {
 	float3 direction = sub3(end, start);
 	float total_world_length = len3(direction);
@@ -5498,21 +5630,21 @@ void push_arrow3(Arena *arena, float3 start, float3 end, float thickness, Color 
 
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
-	push_line3(arena, start, shaft_end, thickness, color);
+	draw3_line(arena, start, shaft_end, thickness, color);
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
 		.a = xyzs(shaft_end, thickness * 4.0f),
 		.b = xyz0(end),
-		.color = color_pack(color),
+		.color = color_pack_uint32(color),
 	};
 }
 
-void push_triangle3_outline(Arena *arena, Triangle3 t, float thickness, Color color) {
-	push_line3(arena, t.a, t.b, thickness, color);
-	push_line3(arena, t.b, t.c, thickness, color);
-	push_line3(arena, t.c, t.a, thickness, color);
+void draw3_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color) {
+	draw3_line(arena, t.a, t.b, thickness, color);
+	draw3_line(arena, t.b, t.c, thickness, color);
+	draw3_line(arena, t.c, t.a, thickness, color);
 }
 
-void push_rect3_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
+void draw3_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
 	float3 right = { 0 }, up = { 0 };
 	float dot = dot3(plane.normal, unit3(UP));
 	if (fabsf(dot) >= 0.99f) {
@@ -5535,20 +5667,20 @@ void push_rect3_outline(Arena *arena, Plane plane, float width, float height, fl
 	};
 
 	for (uint32_t index = 0; index < countof(corners); ++index)
-		push_line3(arena, corners[index], corners[(index + 1) % countof(corners)], thickness, color);
+		draw3_line(arena, corners[index], corners[(index + 1) % countof(corners)], thickness, color);
 }
 
-void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness) {
+void draw3_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness) {
 	switch (shape->kind) {
 		case SHAPE_KIND_AABB3:
-			push_aabb3_outline(arena, aabb3_move(shape->as.aabb3, offset), thickness, WHITE);
+			draw3_aabb_outline(arena, aabb3_move(shape->as.aabb3, offset), thickness, WHITE);
 			break;
 		case SHAPE_KIND_SPHERE: {
 			float3 c = add3(shape->as.sphere.center, offset);
 			float r = shape->as.sphere.radius;
 			uint8_t segments = 32;
 
-			push_sphere_outline(arena, c, r, segments, thickness, WHITE);
+			draw3_sphere_outline(arena, c, r, segments, thickness, WHITE);
 		} break;
 		case SHAPE_KIND_CAPSULE3: {
 			float r = shape->as.capsule.radius;
@@ -5560,10 +5692,10 @@ void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 			uint8_t segments = 32;
 			DrawLine *spine_points = arena_push_count(arena, DrawLine, 8);
 			DrawLine spine[] = {
-				{ { centers[0].x - r, centers[0].y, centers[0].z, thickness }, { centers[0].x - r, centers[1].y, centers[0].z, thickness }, color_pack(WHITE), zero3 },
-				{ { centers[0].x + r, centers[0].y, centers[0].z, thickness }, { centers[0].x + r, centers[1].y, centers[0].z, thickness }, color_pack(WHITE), zero3 },
-				{ { centers[0].x, centers[0].y, centers[0].z - r, thickness }, { centers[0].x, centers[1].y, centers[0].z - r, thickness }, color_pack(WHITE), zero3 },
-				{ { centers[0].x, centers[0].y, centers[0].z + r, thickness }, { centers[0].x, centers[1].y, centers[0].z + r, thickness }, color_pack(WHITE), zero3 },
+				{ { centers[0].x - r, centers[0].y, centers[0].z, thickness }, { centers[0].x - r, centers[1].y, centers[0].z, thickness }, color_pack_uint32(WHITE), zero3 },
+				{ { centers[0].x + r, centers[0].y, centers[0].z, thickness }, { centers[0].x + r, centers[1].y, centers[0].z, thickness }, color_pack_uint32(WHITE), zero3 },
+				{ { centers[0].x, centers[0].y, centers[0].z - r, thickness }, { centers[0].x, centers[1].y, centers[0].z - r, thickness }, color_pack_uint32(WHITE), zero3 },
+				{ { centers[0].x, centers[0].y, centers[0].z + r, thickness }, { centers[0].x, centers[1].y, centers[0].z + r, thickness }, color_pack_uint32(WHITE), zero3 },
 			};
 			memory_copy_array(spine_points, spine);
 
@@ -5571,9 +5703,9 @@ void push_shape3_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 				float3 c = centers[end];
 				float signed_r = (end == 0) ? -r : r;
 
-				push_arc3(arena, centers[end], r, segments, SIDE_TOP, TAU, thickness, WHITE);
-				push_arc3(arena, centers[end], signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
-				push_arc3(arena, centers[end], signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
+				draw3_arc(arena, centers[end], r, segments, SIDE_TOP, TAU, thickness, WHITE);
+				draw3_arc(arena, centers[end], signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
+				draw3_arc(arena, centers[end], signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
 			}
 		} break;
 			break;

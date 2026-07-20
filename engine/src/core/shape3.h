@@ -169,6 +169,12 @@ static inline Shape3 shape3_from_plane(Plane p) { return (Shape3){ .kind = SHAPE
 Shape3 shape3_move(Shape3 s, float3 displacement);
 float3 shape3_support(Shape3 s, float3 direction);
 
+static inline bool aabb3_contains_point(AABB3 a, float3 p) {
+	return (p.x > a.min.x && p.x < a.max.x) &&
+		(p.y > a.min.y && p.y < a.max.x) &&
+		(p.z > a.min.z && p.z < a.max.z);
+}
+
 CastResult3 raycast_plane(Ray3 r, Plane p);
 CastResult3 raycast_aabb3(Ray3 r, AABB3 a);
 

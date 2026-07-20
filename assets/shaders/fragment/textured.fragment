@@ -14,6 +14,6 @@ in ShaderInput {
 } fs_input;
 
 void main() {
-    vec4 sampled = texture(u_textures[fs_input.texture_id], fs_input.tex_coords) * fs_input.color;
-    out_color = sampled; 
+    vec4 sampled = texture(u_textures[fs_input.texture_id], fs_input.tex_coords);
+    out_color = sampled * fs_input.color; 
 }

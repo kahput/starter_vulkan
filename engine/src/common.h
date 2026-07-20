@@ -212,7 +212,7 @@ typedef struct { uint8_t r, g, b, a; } Color;
 #define DARK_GRAY rgb(64, 64, 64)
 #define BLACK rgb(0, 0, 0)
 
-static inline uint32_t color_pack(Color c) {
+static inline uint32_t color_pack_uint32(Color c) {
 	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);
 }
 

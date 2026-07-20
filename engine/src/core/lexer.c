@@ -36,12 +36,12 @@ const String8 token_type_to_string[TOKEN_MAX] = {
 
 /* static bool is_whitespace(char *at) { return at[0] == ' ' || at[0] == '\t' || at[0] == '\r' || at[0] == '\n'; } */
 static bool is_newline(char c) { return c == '\r' || c == '\n'; }
-static bool is_at_end(char c) { return c == 0; }
 static bool is_digit(char c) { return c >= '0' && c <= '9'; }
 static bool is_aplha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
 static bool is_alnum(char c) { return is_aplha(c) || is_digit(c); }
 
-static void advance_newline(Lexer *lexer) {
+static bool lexer___at_end(Lexer *lexer) { return lexer->at[0] == 0 || (uint32_t)(lexer->at - lexer->source.text) >= lexer->source.length; }
+static void lexer__advance_newline(Lexer *lexer) {
 	if (lexer->at[0] == '\r' && lexer->at[1] == '\n')
 		++lexer->at;
 	++lexer->at;
@@ -49,12 +49,12 @@ static void advance_newline(Lexer *lexer) {
 	lexer->column = 1;
 }
 
-void skip_whitespace_and_comments(Lexer *lexer) {
-	while (lexer->at) {
+void lexer__skip_whitespace_and_comments(Lexer *lexer) {
+	while (lexer___at_end(lexer) == false) {
 		char c = lexer->at[0];
 
 		if (c == '\r' || c == '\n')
-			advance_newline(lexer);
+			lexer__advance_newline(lexer);
 
 		else if (c == ' ' || c == '\t') {
 			++lexer->at;
@@ -62,20 +62,20 @@ void skip_whitespace_and_comments(Lexer *lexer) {
 		}
 
 		else if (c == '/' && lexer->at[1] == '/')
-			while (!is_at_end(lexer->at[0]) && !is_newline(lexer->at[0]))
+			while (lexer___at_end(lexer) == false && is_newline(lexer->at[0]) == false)
 				++lexer->at;
 
 		else if (c == '/' && lexer->at[1] == '*') {
 			lexer->at += 2;
 			lexer->column += 2;
-			while (!is_at_end(lexer->at[0])) {
+			while (lexer___at_end(lexer) == false) {
 				if (lexer->at[0] == '*' && lexer->at[1] == '/') {
 					lexer->at += 2;
 					lexer->column += 2;
 					break;
 				}
 				if (is_newline(lexer->at[0]))
-					advance_newline(lexer);
+					lexer__advance_newline(lexer);
 				else {
 					++lexer->at;
 					++lexer->column;
@@ -86,7 +86,7 @@ void skip_whitespace_and_comments(Lexer *lexer) {
 	}
 }
 
-TokenType match_keyword(Lexer *lexer, Token *token) {
+TokenType lexer__match_keyword(Lexer *lexer, Token *token) {
 	for (uint32_t index = 0; index < lexer->keyword_count; ++index)
 		if (str8_equals(lexer->keywords[index], token->lexeme))
 			return TOKEN_KEYWORD_0 + index;
@@ -134,11 +134,10 @@ TokenType match_keyword(Lexer *lexer, Token *token) {
 	return TOKEN_IDENTIFIER;
 }
 
-Token scan_token(Lexer *lexer) {
-restart:
-	skip_whitespace_and_comments(lexer);
+Token lexer__scan_token(Lexer *lexer) {
+	lexer__skip_whitespace_and_comments(lexer);
 
-	if (lexer->at == NULL || is_at_end(lexer->at[0]))
+	if (lexer->at == NULL || lexer___at_end(lexer))
 		return (Token){ .type = TOKEN_EOF, .line = lexer->line, .column = lexer->column };
 
 	Token token = {
@@ -250,7 +249,7 @@ restart:
 			if (memory_equals(lexer->at, "define WRAPPER", sizeof("define WRAPPER") - 1)) {
 				uint32_t y = 0;
 			}
-			while (is_at_end(lexer->at[0]) == false) {
+			while (lexer___at_end(lexer) == false) {
 				++lexer->at;
 				if (lexer->at[0] == '\\')
 					newline_break = true;
@@ -260,13 +259,13 @@ restart:
 				if (lexer->at[0] == '\n' && newline_break)
 					newline_break = false;
 			}
-			goto restart;
+			break;
 		} break;
 
 		case '"': {
 			token.type = TOKEN_STRING;
 			token.lexeme.text = lexer->at;
-			while (!is_at_end(lexer->at[0]) && lexer->at[0] != '"') {
+			while (lexer___at_end(lexer) == false && lexer->at[0] != '"') {
 				if (lexer->at[0] == '\\' && lexer->at[1] != '\0') {
 					++lexer->at;
 					++lexer->column;
@@ -321,10 +320,9 @@ restart:
 				while (is_alnum(lexer->at[0]))
 					++lexer->at;
 				token.lexeme.length = lexer->at - token.lexeme.text;
-				token.type = match_keyword(lexer, &token);
-			} else {
-				ASSERT(0);
-			}
+				token.type = lexer__match_keyword(lexer, &token);
+			} else
+				break;
 		}
 	}
 
@@ -336,11 +334,11 @@ Token lexer_next(Lexer *lexer) {
 		lexer->has_peeked = false;
 		return lexer->peeked;
 	}
-	return scan_token(lexer);
+	return lexer__scan_token(lexer);
 }
 Token lexer_peek(Lexer *lexer) {
 	if (!lexer->has_peeked) {
-		lexer->peeked = scan_token(lexer);
+		lexer->peeked = lexer__scan_token(lexer);
 		lexer->has_peeked = true;
 	}
 
