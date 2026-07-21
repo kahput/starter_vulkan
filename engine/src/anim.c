@@ -95,7 +95,7 @@ float4x4 *anim_pose_local_to_model(Arena *arena, Pose *pose, Skeleton *skeleton)
 		if (skeleton->bones[bone_index].parent == -1)
 			result[bone_index] = local;
 		else
-			result[bone_index] = float4x4_mul(result[skeleton->bones[bone_index].parent], local);
+			result[bone_index] = mul4x4(result[skeleton->bones[bone_index].parent], local);
 	}
 
 	return result;
@@ -105,7 +105,7 @@ float4x4 *anim_pose_skinning_matrices(Arena *arena, float4x4 *model_matrices, Sk
 	float4x4 *result = arena_push_count(arena, float4x4, skeleton->bone_count);
 
 	for (uint32_t bone_index = 0; bone_index < skeleton->bone_count; ++bone_index)
-		result[bone_index] = float4x4_mul(model_matrices[bone_index], skeleton->inverse_rest_matrices[bone_index]);
+		result[bone_index] = mul4x4(model_matrices[bone_index], skeleton->inverse_rest_matrices[bone_index]);
 
 	return result;
 }

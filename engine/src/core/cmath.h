@@ -26,6 +26,9 @@
 #define one4 (float4){ 1.0f, 1.0f, 1.0f, 1.0f }
 
 typedef struct {
+	float elements[2 * 2];
+} float2x2;
+typedef struct {
 	float elements[4 * 4];
 } float4x4;
 typedef float4 quat4;
@@ -98,6 +101,7 @@ static inline float2 norm2(float2 v) {
 
 static inline float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t) }; }
 static inline float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
+static inline float2 abs2(float2 v) { return (float2){ fabsf(v.x), fabsf(v.y) }; }
 
 // --- float3 ---
 static inline float3 wrap3(float v[3]) { return (float3){ v[0], v[1], v[2] }; }
@@ -152,10 +156,15 @@ float3 quat4_to_euler(quat4 quat);
 quat4 quat4_from_axis_angle(float3 axis, float angle);
 quat4 quat4_slerp(quat4 q, quat4 p, float t);
 
+// --- float2x2 ---
+float2x2 rot2x2(float rad);
+static inline float2 mul2x2v(float2x2 m, float2 v) { return (float2){ m.elements[0] * v.x + m.elements[2] * v.y, m.elements[1] * v.x + m.elements[3] * v.y }; }
+
 // --- float4x4 ---
 bool float4x4_equal(float4x4 lhs, float4x4 rhs);
 float4x4 float4x4_identity(void);
-float4x4 float4x4_mul(float4x4 lhs, float4x4 rhs);
+float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
+float4 mul4x4v(float4x4 m, float4 v);
 
 float4x4 float4x4_translate(float4x4 matrix, float3 translation);
 float4x4 float4x4_rotate(float4x4 matrix, float angle_radians, float3 axis);
@@ -166,7 +175,7 @@ float4x4 float4x4_rotation(float3 axis, float angle);
 float4x4 float4x4_scaling(float3 scale);
 float4x4 float4x4_from_quat(quat4 q);
 
-float4x4 float4x4_transpose(float4x4 m);
+float4x4 transpose4x4(float4x4 m);
 
 float4x4 float4x4_compose(float3 position, float3 rotation_rad, float3 scale);
 float4x4 float4x4_compose_quat(float3 position, float4 rotation, float3 scale);

@@ -22,14 +22,20 @@
 
 #include <math.h>
 
+#include <stdarg.h>
 #include <vulkan/vulkan.h>
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
+#include <stb/stb_truetype.h>
 #include <vulkan/vulkan_core.h>
 
 typedef struct {
 	float2 position, uv;
-	uint32_t color, imageid;
+	float4 radii;
+	float2 size;
+	uint32_t fill_color, border_color;
+	float border_width;
+	uint32_t imageid;
 } DrawVertex2;
 
 typedef struct {
@@ -83,7 +89,8 @@ typedef struct {
 	uint32_t width, height;
 } Image2D;
 
-Rectangle image_rect(Image2D *image) { return (Rectangle){ 0, 0, image->width, image->height }; }
+inline Rectangle image_rect(Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
+inline float2 image_size(Image2D image) { return (float2){ image.width, image.height }; }
 
 typedef enum {
 	DRAW_PASS_OPAQUE,
@@ -252,8 +259,23 @@ typedef struct {
 	uint32_t entity_count;
 } World;
 
+typedef struct {
+	Rectangle src;
+	float2 bearing;
+	float advance_x;
+} Glyph;
+
+typedef struct {
+	Image2D atlas;
+	uint32_t line_height;
+
+	Glyph *glyphs;
+	uint32_t glyph_count;
+} Font;
+
 // :functions
 Image2D load_image(Arena *arena, String8 path);
+Font load_font(Arena *arena, String8 path, uint32_t font_size);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
@@ -268,12 +290,23 @@ Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
 
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
 
-void draw2_quad(Arena *arena, Rectangle rect, Color color);
-void draw2_sprite(Arena *arena, float2 position, Image2D *image, uint32_t imageid, Color tint);
+// corners[] = { top-left, top-right, bottom-left, bottom-right }
+void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, uint32_t imageid, float2 origin, float rotation, float border_width, Color border_color, float4 radii, Color fill_color);
+void draw2d_rect(Arena *arena, Rectangle rect, Color color);
+void draw2d_rect_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, Color color);
+void draw2d_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color);
+
+void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color);
+void draw2d_rect_rounded_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, float4 radii, Color color);
+
 void draw2_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, uint32_t imageid, Color tint);
+void draw2_sprite(Arena *arena, float2 position, Image2D *image, uint32_t imageid, Color tint);
+
+void draw2d_point(Arena *arena, float2 position, float radius, Color color);
+void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 position, String8 format, ...);
+
 void draw2_line(Arena *arena, float2 start, float2 end, float thickness, Color color);
 void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color);
-void draw2_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color);
 void draw2_triangle(Arena *arena, Triangle2 triangle, float thickness, Color color);
 
 void draw3_line(Arena *arena, float3 start, float3 end, float thickness, Color color);
@@ -664,8 +697,34 @@ int main(void) {
 		  .pixels = skybox.pixels,
 		});
 
+	Font fonts[5] = { 0 };
+	(void)fonts;
+	{ // load fonts
+		ArenaTemp scratch = arena_scratch_begin(0);
+		uint32_t font_cursor = 0;
+
+		uint32_t sizings[5] = { 8, 16, 24, 32, 64 };
+		for (uint32_t sizing_index = 0; sizing_index < countof(fonts); ++sizing_index) {
+			fonts[sizing_index] = load_font(scratch.arena, s("assets/fonts/PixeloidSans.ttf"), sizings[sizing_index]);
+			Image2D *atlas = &fonts[sizing_index].atlas;
+			atlas->handle = gfx_image_make(context, atlas->width, atlas->height,
+				(ImageOptions){
+				  .debug_name = (char *)str8_pushf(scratch.arena, s("font:%d"), sizings[sizing_index]).text,
+				  .format = PIXEL_FORMAT_RGBA8_UNORM,
+				  .pixels = atlas->pixels,
+				});
+		}
+
+		arena_scratch_end(scratch);
+	}
 	Image2D terrain_texture = load_image(permanent, s("assets/textures/base_grass.png"));
 	Image2D grid_texture = load_image(permanent, s("assets/textures/prototype/texture_09.png"));
+	grid_texture.handle = gfx_image_make(context, grid_texture.width, grid_texture.height,
+		(ImageOptions){
+		  .debug_name = "grid",
+		  .format = PIXEL_FORMAT_RGBA8_SRGB,
+		  .pixels = grid_texture.pixels,
+		});
 	Image2D window_texture = load_image(permanent, s("assets/textures/blending_transparent_window.png"));
 	window_texture.handle = gfx_image_make(context, window_texture.width, window_texture.height,
 		(ImageOptions){
@@ -677,7 +736,7 @@ int main(void) {
 	Image2D noise_image = load_image(permanent, s("assets/textures/heightmap.png"));
 	noise_image.handle = gfx_image_make(context, noise_image.width, noise_image.height,
 		(ImageOptions){
-		  .debug_name = "heightmap",
+		  .debug_name = "noise",
 		  .format = PIXEL_FORMAT_RGBA8_UNORM,
 		  .pixels = noise_image.pixels,
 		});
@@ -805,7 +864,7 @@ int main(void) {
 		ArenaTemp scratch = arena_scratch_begin(0);
 
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
-		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/textured.fragment.spv"));
+		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/quad.fragment.spv"));
 
 		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
@@ -966,7 +1025,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = float4x4_mul(float4x4_rotation(unit3(UP), randf_range(0, TAU)), float4x4_translation(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(float4x4_rotation(unit3(UP), randf_range(0, TAU)), float4x4_translation(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -1198,7 +1257,7 @@ int main(void) {
 
 					Rectangle panel = rect(panel_x, panel_y, panel_w, fence_h + total_element_h + pad * 2);
 
-					draw2_quad(batch_2d, panel, rgb(25, 25, 25));
+					draw2d_rect(batch_2d, panel, rgb(25, 25, 25));
 					fog_density = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.001f, 0.05f, fog_density);
 					panel_y += element_h + pad;
 					fog_gradient = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 15.0f, fog_gradient);
@@ -1232,6 +1291,37 @@ int main(void) {
 					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
 						scene = &scenes[(indexof(scenes, scene) + 1) % countof(scenes)];
 					button_x += button_w + pad;
+
+					static float rot = 0.0f;
+					rot = wrapf(rot + dt * 180.0f, 0.0f, 360.0f);
+					/* draw2d_rect_rounded_ex(batch_2d, rect(250, 250, 200, 200), make2(100.0f, 100.0f), rot, splat4(50.0f), WHITE); */
+
+					Font *font = &fonts[4];
+					Image2D *font_atlas = &font->atlas;
+					draw2d_quad(
+						batch_2d,
+						rect(250, 250, 256, 256),
+						(Rectangle){ 0 }, 0, 0,
+						make2(128.0f, 128.0f), rot, 8.0f, RED,
+						splat4(0.0), TRANSPARENT);
+
+					float frame_pad = 8 + 16;
+
+					draw2d_quad(batch_2d,
+						rect(250, 250, 256 - frame_pad * 2, 256 - frame_pad * 2),
+						rect(0, 0, font_atlas->width, font_atlas->height),
+						font_atlas, indexof(context->image_pool, font_atlas->handle),
+						/* 0, 0, */
+						make2((256 - frame_pad * 2) * 0.5f, (256 - frame_pad * 2) * 0.5f),
+						rot,
+						0.0f,
+						TRANSPARENT,
+						splat4(0.0),
+						WHITE);
+					draw2d_point(batch_2d, make2(250, 250), 4.0f, GREEN);
+
+					draw2d_textf(batch_2d, font, indexof(context->image_pool, font_atlas->handle), make2(100.0f, 500.0f), s("Hello world %.2f"), 32.0f);
+					draw2d_point(batch_2d, make2(100.0f, 500.0f), 3.0f, GREEN);
 
 					imgui_frame_end();
 				}
@@ -1681,7 +1771,7 @@ int main(void) {
 			} Frame3D;
 
 			float ortho_size = 10.0f;
-			lights[light_index].matrix = float4x4_mul(
+			lights[light_index].matrix = mul4x4(
 				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
 				float4x4_lookat(xyz(lights[light_index].position), zero3, unit3(UP)));
 
@@ -4477,6 +4567,7 @@ void gfx_cmd_dispatch(GFX_CommandContext *cmd, uint32_t x, uint32_t y, uint32_t 
 }
 
 Image2D load_image(Arena *arena, String8 path) {
+	ArenaTemp scratch = arena_scratch_begin(arena);
 	Image2D result = { .format = PIXEL_FORMAT_RGBA8_UNORM };
 
 	bool ok = arena && path.length;
@@ -4484,7 +4575,8 @@ Image2D load_image(Arena *arena, String8 path) {
 	uint8_t *pixels = 0;
 	int32_t channels = 0;
 	if (ok) {
-		pixels = stbi_load((char *)path.text, (int32_t *)&result.width, (int32_t *)&result.height, &channels, 4);
+		String8 file_content = os_file_read_entire(scratch.arena, path);
+		pixels = stbi_load_from_memory(file_content.text, file_content.length, (int32_t *)&result.width, (int32_t *)&result.height, &channels, 4);
 
 		ok = pixels != 0;
 		if (ok == false) {
@@ -4496,7 +4588,7 @@ Image2D load_image(Arena *arena, String8 path) {
 	}
 
 	if (ok) {
-		uint32_t pixel_buffer_size = result.width * result.height * channels;
+		uint32_t pixel_buffer_size = result.width * result.height * 4;
 		result.pixels = arena_push_count(arena, uint8_t, pixel_buffer_size);
 		memory_copy(result.pixels, pixels, pixel_buffer_size);
 		stbi_image_free(pixels);
@@ -4507,6 +4599,98 @@ Image2D load_image(Arena *arena, String8 path) {
 		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.text, result.width, result.height, channels == 4 ? "RGBA8" : "RGB8");
 	}
 
+	arena_scratch_end(scratch);
+	return result;
+}
+
+Font load_font(Arena *arena, String8 path, uint32_t font_size) {
+	ArenaTemp scratch = arena_scratch_begin(arena);
+	Font result = { 0 };
+
+	String8 file_content = os_file_read_entire(scratch.arena, path);
+	stbtt_fontinfo font_info = { 0 };
+
+	bool ok = arena && file_content.length;
+	if (ok) {
+		ok = stbtt_InitFont(&font_info, file_content.text, 0);
+
+		if (ok == false)
+			LOG_WARN("%s - failed to process font data", __func__);
+	}
+
+	if (ok) {
+		float scale_factor = stbtt_ScaleForPixelHeight(&font_info, (float)font_size);
+
+		int32_t ascent = 0, descent = 0, line_gap = 0;
+		if (!stbtt_GetFontVMetricsOS2(&font_info, &ascent, &descent, &line_gap)) {
+			stbtt_GetFontVMetrics(&font_info, &ascent, &descent, &line_gap);
+		}
+
+		result.line_height = (ascent - descent + line_gap) * scale_factor;
+
+		uint32_t codepoint_count = 96;
+		int32_t *codepoints = arena_push_count(arena, int32_t, codepoint_count);
+		for (uint32_t index = 0; index < 96; ++index)
+			codepoints[index] = index + KEY_CODE_SPACE;
+
+		uint32_t atlas_size = 512;
+
+		result.glyphs = arena_push_count(arena, Glyph, 128);
+		result.atlas = (Image2D){
+			.pixels = arena_push_count(arena, uint8_t, atlas_size * atlas_size * 4),
+			.width = atlas_size,
+			.height = atlas_size,
+		};
+
+		uint32_t padding = 2;
+		uint32_t row = 0;
+		uint32_t col = padding;
+
+		uint8_t *temp_bitmap = arena_push_count(scratch.arena, uint8_t, atlas_size *atlas_size);
+
+		int32_t min_y = 0;
+		for (uint32_t index = 0; index < codepoint_count; ++index) {
+			int32_t codepoint_width = 0, codepoint_height = 0;
+			int32_t codepoint = codepoints[index];
+
+			int glyph_index = stbtt_FindGlyphIndex(&font_info, codepoint);
+
+			if (glyph_index) {
+				int32_t x0, y0, x1, y1, advance;
+				stbtt_GetGlyphBitmapBox(&font_info, glyph_index, scale_factor, scale_factor, &x0, &y0, &x1, &y1);
+				stbtt_GetGlyphHMetrics(&font_info, glyph_index, &advance, NULL);
+
+				uint32_t width = x1 - x0, height = y1 - y0;
+
+				if (col + width + padding >= atlas_size) {
+					col = padding;
+					row += (uint32_t)(font_size + 0.5f);
+					ASSERT(row + y1 - y0 < atlas_size);
+				}
+				stbtt_MakeGlyphBitmap(&font_info, (uint8_t *)temp_bitmap + col + (row * atlas_size), width, height, atlas_size, scale_factor, scale_factor, glyph_index);
+
+				min_y = MIN(min_y, y0);
+				result.glyphs[codepoint] = (Glyph){
+					.src = { .x = col, .y = row, .width = width, .height = height },
+					.bearing = { x0, y0 },
+					.advance_x = (int32_t)(advance * scale_factor),
+				};
+
+				col += width + padding;
+			}
+		}
+
+		uint8_t *src = temp_bitmap;
+		uint8_t *dst = result.atlas.pixels;
+		for (uint32_t i = 0; i < atlas_size * atlas_size; i++) {
+			*dst++ = 255;
+			*dst++ = 255;
+			*dst++ = 255;
+			*dst++ = *src++;
+		}
+	}
+
+	arena_temp_end(scratch);
 	return result;
 }
 
@@ -5334,69 +5518,111 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 	return result;
 }
 
-void draw2_quad(Arena *arena, Rectangle rect, Color color) {
-	float x0 = rect.x;
-	float y0 = rect.y;
-	float x1 = rect.x + rect.width;
-	float y1 = rect.y + rect.height;
+void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, uint32_t imageid, float2 origin, float rotation, float border_width, Color border_color, float4 radii, Color fill_color) {
+	bool ok = arena;
+	if (ok) {
+		float2 size = { dst.width, dst.height };
+		float2 min = sub2(make2(dst.x, dst.y), origin), max = add2(min, make2(dst.width, dst.height));
+		float2 corners[] = { min, { max.x, min.y }, { min.x, max.y }, max };
 
-	/* float u0 = src.x / image.width; */
-	/* float v0 = src.y / image.height; */
-	/* float u1 = (src.x + src.width) / image.width; */
-	/* float v1 = (src.y + src.height) / image.height; */
+		float2 uv0 = zero2;
+		float2 uv1 = one2;
+		if (image) {
+			uv0 = make2(src.x / image->width, src.y / image->height);
+			uv1 = make2((src.x + src.width) / image->width, (src.y + src.height) / image->height);
+		}
+		float2 uvs[] = { uv0, { uv1.x, uv0.y }, { uv0.x, uv1.y }, uv1 };
 
-	// clang-format off
-    DrawVertex2 quad[] = {
-        // pos      // tex
-        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x0, y0 }, .uv = { 0.0f, 0.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index}, 
+		if (rotation != 0.0f) {
+			float2x2 rot = rot2x2(DEG2RAD * rotation);
+			min = negate2(origin);
+			max = add2(min, make2(dst.width, dst.height));
 
-        (DrawVertex2){ .position = { x0, y1 }, .uv = { 0.0f, 1.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x1, y1 }, .uv = { 1.0f, 1.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index},
-        (DrawVertex2){ .position = { x1, y0 }, .uv = { 1.0f, 0.0f }, .color = color_pack_uint32(color) }, // , .image_id = image_index}
-    };
-	// clang-format on
+			corners[0] = add2(xy(dst), mul2x2v(rot, min));
+			corners[1] = add2(xy(dst), mul2x2v(rot, make2(max.x, min.y)));
+			corners[2] = add2(xy(dst), mul2x2v(rot, make2(min.x, max.y)));
+			corners[3] = add2(xy(dst), mul2x2v(rot, max));
+		}
 
-	memory_copy(arena_push_count(arena, DrawVertex2, 6), quad, sizeof(quad));
+		// clang-format off
+        DrawVertex2 quad[] = {
+            // pos      // tex
+            (DrawVertex2){ .position = corners[0], .uv = uvs[0] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
+            (DrawVertex2){ .position = corners[2], .uv = uvs[2] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
+            (DrawVertex2){ .position = corners[3], .uv = uvs[3] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width },  
+
+            (DrawVertex2){ .position = corners[0], .uv = uvs[0] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
+            (DrawVertex2){ .position = corners[3], .uv = uvs[3] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
+            (DrawVertex2){ .position = corners[1], .uv = uvs[1] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
+        };
+		// clang-format on
+
+		memory_copy(arena_push_count(arena, DrawVertex2, 6), quad, sizeof(quad));
+	}
+}
+
+void draw2d_rect_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, Color color) {
+	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, 0, origin, rotation, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), color);
+}
+
+void draw2d_rect(Arena *arena, Rectangle rect, Color color) {
+	draw2d_rect_ex(arena, rect, zero2, 0.0f, color);
+}
+
+void draw2d_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
+	draw2d_quad(arena, rect, (Rectangle){ 0 }, 0, 0, zero2, 0, thickness, color, splat4(0.0f), TRANSPARENT);
+}
+
+void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color) {
+	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, 0, zero2, 0.0f, 0.0f, rgba(0, 0, 0, 0), radii, color);
+}
+
+void draw2d_rect_rounded_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, float4 radii, Color color) {
+	draw2d_quad(arena, rect, rect(0.0f, 0.0f, rect.width, rect.height), 0, 0, origin, rotation, 0.0f, rgba(0, 0, 0, 0), radii, color);
 }
 
 void draw2_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, uint32_t imageid, Color tint) {
-	float x0 = dst.x;
-	float y0 = dst.y;
-	float x1 = dst.x + dst.width;
-	float y1 = dst.y + dst.height;
-
-	float u0 = src.x / image->width;
-	float v0 = src.y / image->height;
-	float u1 = (src.x + src.width) / image->width;
-	float v1 = (src.y + src.height) / image->height;
-
-	// clang-format off
-    DrawVertex2 quad[] = {
-        // pos      // tex
-        (DrawVertex2){ .position = { x0, y1 }, .uv = { u0, v1}, .color = color_pack_uint32(tint) , .imageid = imageid },
-        (DrawVertex2){ .position = { x1, y0 }, .uv = { u1, v0 }, .color = color_pack_uint32(tint) , .imageid = imageid },
-        (DrawVertex2){ .position = { x0, y0 }, .uv = { u0, v0 }, .color = color_pack_uint32(tint) , .imageid = imageid }, 
-
-        (DrawVertex2){ .position = { x0, y1 }, .uv = { u0, v1 }, .color = color_pack_uint32(tint) , .imageid = imageid },
-        (DrawVertex2){ .position = { x1, y1 }, .uv = { u1, v1 }, .color = color_pack_uint32(tint) , .imageid = imageid },
-        (DrawVertex2){ .position = { x1, y0 }, .uv = { u1, v0 }, .color = color_pack_uint32(tint) , .imageid = imageid }
-    };
-	// clang-format on
-
-	memory_copy(arena_push_count(arena, DrawVertex2, 6), quad, sizeof(quad));
+	draw2d_quad(arena, dst, src, image, imageid, zero2, 0.0f, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), tint);
 }
 
 void draw2_sprite(Arena *arena, float2 position, Image2D *image, uint32_t imageid, Color tint) {
 	draw2_sprite_ex(arena, rect(0, 0, image->width, image->height), rect(position.x, position.y, image->width, image->height), image, imageid, tint);
 }
 
-void draw2_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
-	draw2_quad(arena, rect(rect.x, rect.y, rect.width, thickness), color);
-	draw2_quad(arena, rect(rect.x, rect.y, thickness, rect.height), color);
-	draw2_quad(arena, rect(rect.x + rect.width, rect.y, thickness, rect.height + thickness), color);
-	draw2_quad(arena, rect(rect.x, rect.y + rect.height, rect.width + thickness, thickness), color);
+void draw2d_point(Arena *arena, float2 position, float radius, Color color) {
+	draw2d_quad(arena, rect(position.x, position.y, radius * 2.0, radius * 2.0), (Rectangle){ 0 }, 0, 0, splat2(radius), 0.0, 0.0, TRANSPARENT, splat4(radius), color);
+}
+
+void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 position, String8 format, ...) {
+	ArenaTemp scratch = arena_scratch_begin(arena);
+
+	bool ok = arena && font;
+	if (ok) {
+		va_list args;
+		va_start(args, format);
+		String8 text = str8_push_format_list(scratch.arena, format, args);
+		va_end(args);
+
+		float x_offset = 0.0f;
+		for (uint32_t index = 0; index < text.length; ++index) {
+			uint8_t c = text.text[index];
+
+			Glyph *glyph = &font->glyphs[c];
+
+			Rectangle dst = {
+				.x = position.x + x_offset + glyph->bearing.x,
+				.y = position.y + glyph->bearing.y,
+				.width = glyph->src.width,
+				.height = glyph->src.height,
+			};
+
+			draw2d_quad(arena, dst, glyph->src, &font->atlas, font_imageid, splat2(0.0f), 0.0f, 0.0f, TRANSPARENT, splat4(0.0f), WHITE);
+
+			x_offset += glyph->advance_x;
+		}
+	}
+
+	arena_scratch_end(scratch);
 }
 
 void draw2_triangle(Arena *arena, Triangle2 t, float thickness, Color color) {
@@ -5471,7 +5697,7 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 	if (ok) {
 		y = result.held ? y + 1 : y;
 
-		draw2_quad(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
+		draw2d_rect(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
 	}
 
 	return result;
@@ -5479,7 +5705,7 @@ ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
 
 float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float t) {
 	const float pad = bounds.width * 0.8f;
-	draw2_quad(imgui_state.batch_arena, bounds, WHITE);
+	draw2d_rect(imgui_state.batch_arena, bounds, WHITE);
 
 	t = clampf(t, min, max);
 
@@ -5502,15 +5728,15 @@ float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float 
 		t = min + (mouse_ratio * (max - min));
 	}
 
-	draw2_quad(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
-																					  : DARK_GRAY);
+	draw2d_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+																					   : DARK_GRAY);
 
 	return t;
 }
 
 float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float t) {
 	const float pad = bounds.height * 0.8f;
-	draw2_quad(imgui_state.batch_arena, bounds, WHITE);
+	draw2d_rect(imgui_state.batch_arena, bounds, WHITE);
 
 	t = clampf(t, min, max);
 
@@ -5533,8 +5759,8 @@ float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float 
 		t = min + (mouse_ratio * (max - min));
 	}
 
-	draw2_quad(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
-																					  : DARK_GRAY);
+	draw2d_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
+																					   : DARK_GRAY);
 
 	return t;
 }
@@ -5620,7 +5846,7 @@ void draw3_arrow(Arena *arena, float3 start, float3 end, float thickness, Color 
 
 	float3 dir_norm = scale3(direction, 1.0f / total_world_length);
 
-	float4x4 vp = float4x4_mul(projeciton, view);
+	float4x4 vp = mul4x4(projeciton, view);
 	float w = vp.elements[3] * end.x + vp.elements[7] * end.y + vp.elements[11] * end.z + vp.elements[15] * 1.0f;
 	float desired_pixel_length = thickness * 5.0f;
 

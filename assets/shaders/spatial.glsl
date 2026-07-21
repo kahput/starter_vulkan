@@ -10,7 +10,12 @@ struct Vertex3 {
 
 struct Vertex2 {
     vec2 position, uv; 
-    uint color, imageid;
+    vec4 radii;
+    vec2 size;
+    uint fill_color;
+    uint border_color;
+    float border_width;
+    uint imageid;
 };
 
 struct Light {

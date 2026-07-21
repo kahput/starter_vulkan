@@ -151,6 +151,7 @@ static inline float4 splat4(float v) { return (float4) {v, v, v, v }; }
 #define xyz(v) make3((v).x, (v).y, (v).z)
 #define xyzs(v, s) make4((v).x, (v).y, (v).z, (s))
 #define xyz0(v) make4((v).x, (v).y, (v).z, 0.0f)
+#define xyz1(v) make4((v).x, (v).y, (v).z, 1.0f)
 
 #define yz(v) make2((v).y, (v).z)
 #define xz(v) make2((v).x, (v).z)
@@ -200,6 +201,7 @@ typedef struct { float32x3 min, max; } Interval3;
 typedef struct { uint8_t r, g, b, a; } Color;
 
 // clang-format on
+#define TRANSPARENT rgba(0, 0, 0, 0)
 
 #define RED rgb(255, 0, 0)
 #define GREEN rgb(0, 255, 0)

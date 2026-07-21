@@ -146,6 +146,19 @@ quat4 quat4_slerp(quat4 q, quat4 p, float t) {
 	return result;
 }
 
+float2x2 rot2x2(float rad) {
+	float2x2 result = { 0 };
+	float c = cosf(rad);
+	float s = sinf(rad);
+
+	result.elements[0] = c;
+	result.elements[1] = s;
+	result.elements[2] = -s;
+	result.elements[3] = c;
+
+	return result;
+}
+
 bool float4x4_equal(float4x4 lhs, float4x4 rhs) {
 	return equalf(lhs.elements[0], rhs.elements[0]) &&
 		equalf(lhs.elements[1], rhs.elements[1]) &&
@@ -174,7 +187,7 @@ float4x4 float4x4_identity(void) {
 	return result;
 }
 
-float4x4 float4x4_mul(float4x4 lhs, float4x4 rhs) {
+float4x4 mul4x4(float4x4 lhs, float4x4 rhs) {
 	float4x4 result = { 0 };
 
 #define DOT(row, col)                                       \
@@ -204,6 +217,17 @@ float4x4 float4x4_mul(float4x4 lhs, float4x4 rhs) {
 	result.elements[15] = DOT(3, 3);
 
 #undef DOT
+
+	return result;
+}
+
+float4 mul4x4v(float4x4 m, float4 v) {
+	float4 result = { 0 };
+
+	result.x = m.elements[0] * v.x + m.elements[4] * v.y + m.elements[8] * v.z + m.elements[12] * v.w;
+	result.y = m.elements[1] * v.x + m.elements[5] * v.y + m.elements[9] * v.z + m.elements[13] * v.w;
+	result.z = m.elements[2] * v.x + m.elements[6] * v.y + m.elements[10] * v.z + m.elements[14] * v.w;
+	result.w = m.elements[3] * v.x + m.elements[7] * v.y + m.elements[11] * v.z + m.elements[15] * v.w;
 
 	return result;
 }
@@ -351,7 +375,7 @@ float4x4 float4x4_from_quat(quat4 q) {
 	return result;
 }
 
-float4x4 float4x4_transpose(float4x4 m) {
+float4x4 transpose4x4(float4x4 m) {
 	float4x4 result = { 0 };
 
 	result.elements[0] = m.elements[0];
@@ -385,9 +409,9 @@ float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
 	float4x4 rotation_x = float4x4_rotation(unit3(RIGHT), rotation.x);
 	float4x4 rotation_y = float4x4_rotation(unit3(UP), rotation.y);
 	float4x4 rotation_z = float4x4_rotation(unit3(FORWARD), rotation.z);
-	float4x4 R = float4x4_mul(rotation_z, float4x4_mul(rotation_y, rotation_x));
+	float4x4 R = mul4x4(rotation_z, mul4x4(rotation_y, rotation_x));
 
-	result = float4x4_mul(T, float4x4_mul(R, S));
+	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }
 
@@ -396,7 +420,7 @@ float4x4 float4x4_compose_quat(float3 position, quat4 rotation, float3 scale) {
 	float4x4 T = float4x4_translation(position);
 	float4x4 S = float4x4_scaling(scale);
 	float4x4 R = float4x4_from_quat(rotation);
-	result = float4x4_mul(T, float4x4_mul(R, S));
+	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }
 
