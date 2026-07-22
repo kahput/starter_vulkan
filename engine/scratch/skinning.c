@@ -28,6 +28,7 @@
 #include <stb/stb_image.h>
 #include <stb/stb_truetype.h>
 #include <vulkan/vulkan_core.h>
+#include <cglm/cglm.h>
 
 typedef struct {
 	float2 position, uv;
@@ -267,7 +268,7 @@ typedef struct {
 
 typedef struct {
 	Image2D atlas;
-	uint32_t line_height;
+	uint32_t line_height, bake_size;
 
 	Glyph *glyphs;
 	uint32_t glyph_count;
@@ -303,7 +304,7 @@ void draw2_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image,
 void draw2_sprite(Arena *arena, float2 position, Image2D *image, uint32_t imageid, Color tint);
 
 void draw2d_point(Arena *arena, float2 position, float radius, Color color);
-void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 position, String8 format, ...);
+void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 position, Color color, String8 format, ...);
 
 void draw2_line(Arena *arena, float2 start, float2 end, float thickness, Color color);
 void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color);
@@ -314,6 +315,7 @@ void draw3_arrow(Arena *arena, float3 start, float3 end, float thickness, Color 
 	float4x4 view, float4x4 projeciton, float viewport_width);
 void draw3_arc(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color);
 void draw3_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color);
+void draw3_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color);
 void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
 void draw3_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color);
 void draw3_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
@@ -657,12 +659,28 @@ int main(void) {
 		  .format = PIXEL_FORMAT_RGBA16_FLOAT,
 		  .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER,
 		});
-	GFX_Image *offscreen_render = gfx_image_make(context, 1280, 720,
+
+	GFX_Image *msaa_target = gfx_image_make(context, 1280, 720,
 		(ImageOptions){
-		  .debug_name = "target:main_color",
-		  .format = PIXEL_FORMAT_BACKBUFFER,
+		  .debug_name = "target:scratch_msaa",
+		  .format = PIXEL_FORMAT_RGBA8_SRGB,
 		  .usage = IMAGE_USAGE_RENDER,
 		  .sample = SAMPLE_COUNT_8,
+		});
+	GFX_Image *spatial_target = gfx_image_make(context, 1280, 720,
+		(ImageOptions){
+		  .debug_name = "target:main_color",
+		  .format = PIXEL_FORMAT_RGBA8_SRGB,
+		  .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE,
+		  .sample = SAMPLE_COUNT_1,
+		});
+
+	GFX_Image *ui_target = gfx_image_make(context, 1280, 720,
+		(ImageOptions){
+		  .debug_name = "target:ui",
+		  .format = PIXEL_FORMAT_RGBA8_UNORM,
+		  .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE,
+		  .sample = SAMPLE_COUNT_1,
 		});
 	GFX_Image *depthbuffer = gfx_image_make(context, 1280, 720,
 		(ImageOptions){
@@ -697,19 +715,34 @@ int main(void) {
 		  .pixels = skybox.pixels,
 		});
 
-	Font fonts[5] = { 0 };
-	(void)fonts;
+	typedef enum {
+		FONT_BAKE_SIZE_8,
+		FONT_BAKE_SIZE_16,
+		FONT_BAKE_SIZE_24,
+		FONT_BAKE_SIZE_32,
+		FONT_BAKE_SIZE_64,
+
+		FONT_BAKE_SIZE_MAX,
+	} FONT_BakeSize;
+	uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX] = { 8, 16, 24, 32, 64 };
+
+	Font fonts[FONT_BAKE_SIZE_MAX] = { 0 };
 	{ // load fonts
 		ArenaTemp scratch = arena_scratch_begin(0);
 		uint32_t font_cursor = 0;
 
-		uint32_t sizings[5] = { 8, 16, 24, 32, 64 };
-		for (uint32_t sizing_index = 0; sizing_index < countof(fonts); ++sizing_index) {
-			fonts[sizing_index] = load_font(scratch.arena, s("assets/fonts/PixeloidSans.ttf"), sizings[sizing_index]);
-			Image2D *atlas = &fonts[sizing_index].atlas;
+		for (FONT_BakeSize bake_size_index = 0; bake_size_index < FONT_BAKE_SIZE_MAX; ++bake_size_index) {
+			Font *font = &fonts[bake_size_index];
+			*font = load_font(scratch.arena, s("assets/fonts/PixeloidSans.ttf"), font_bake_size_to_value[bake_size_index]);
+			Glyph *glyphs = font->glyphs;
+			font->glyphs = arena_push_count(permanent, Glyph, font->glyph_count);
+
+			memory_copy(font->glyphs, glyphs, sizeof(Glyph) * font->glyph_count);
+
+			Image2D *atlas = &fonts[bake_size_index].atlas;
 			atlas->handle = gfx_image_make(context, atlas->width, atlas->height,
 				(ImageOptions){
-				  .debug_name = (char *)str8_pushf(scratch.arena, s("font:%d"), sizings[sizing_index]).text,
+				  .debug_name = (char *)str8_pushf(scratch.arena, s("font:%d"), font_bake_size_to_value[bake_size_index]).text,
 				  .format = PIXEL_FORMAT_RGBA8_UNORM,
 				  .pixels = atlas->pixels,
 				});
@@ -745,7 +778,10 @@ int main(void) {
 		[WRAP_MODE_REPEAT] = gfx_sampler_make(context, sampler_opt("default:linear_repeat", FILTER_LINEAR, WRAP_MODE_REPEAT)),
 		[WRAP_MODE_CLAMP] = gfx_sampler_make(context, sampler_opt("default:linear_clamp", FILTER_LINEAR, WRAP_MODE_CLAMP))
 	};
-	GFX_Sampler *nearest_sampler = gfx_sampler_make(context, sampler_opt("default:nearest_clamp", FILTER_NEAREST, WRAP_MODE_CLAMP));
+	GFX_Sampler *nearest_sampler[WRAP_MODE_COUNT] = {
+		[WRAP_MODE_CLAMP] = gfx_sampler_make(context, sampler_opt("default:nearest_clamp", FILTER_NEAREST, WRAP_MODE_CLAMP)),
+		[WRAP_MODE_CLAMP_BORDER] = gfx_sampler_make(context, sampler_opt("default:nearest_clamp_border", FILTER_NEAREST, WRAP_MODE_CLAMP_BORDER))
+	};
 	SamplerOptions shadow_opt = sampler_opt("default:shadow", FILTER_LINEAR, WRAP_MODE_CLAMP_BORDER);
 	/* shadow_opt.compare_enable = true; */
 	GFX_Sampler *shadow_sampler = gfx_sampler_make(context, shadow_opt);
@@ -799,7 +835,7 @@ int main(void) {
 		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "spatial",
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
 			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
 			  .cull_mode = CULL_MODE_BACK,
@@ -812,7 +848,7 @@ int main(void) {
 			(PipelineOptions){
 			  .debug_name = "pipeline_grass",
 			  .color_attachment_count = 1,
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
 			  .sample_count = SAMPLE_COUNT_8,
 			});
 
@@ -822,7 +858,7 @@ int main(void) {
 			(PipelineOptions){
 			  .debug_name = "pipeline_skybox",
 			  .color_attachment_count = 1,
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
 			  .sample_count = SAMPLE_COUNT_8,
 			});
 
@@ -832,7 +868,7 @@ int main(void) {
 			(PipelineOptions){
 			  .debug_name = "line3d",
 			  .color_attachment_count = 1,
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
 			  .sample_count = SAMPLE_COUNT_8,
 			});
 
@@ -849,7 +885,7 @@ int main(void) {
 		transparent = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "transparent",
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
 			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
 			  .cull_mode = CULL_MODE_NONE,
@@ -860,6 +896,7 @@ int main(void) {
 
 	GFX_Pipeline pipeline_2d = { 0 };
 	GFX_Pipeline pipeline_line2d = { 0 };
+	GFX_Pipeline pipeline_composite = { 0 };
 	{
 		ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -869,12 +906,18 @@ int main(void) {
 		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "canvas",
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXEL_FORMAT_RGBA8_UNORM },
 			  .color_attachment_count = 1,
-			  .sample_count = SAMPLE_COUNT_8,
+			  .sample_count = SAMPLE_COUNT_1,
 			  .cull_mode = CULL_MODE_BACK,
 			  .disable_depth_test = true,
 			  .disable_depth_write = true,
+
+			  .enable_blend = true,
+			  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
+			  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+			  .src_alpha_factor = BLEND_FACTOR_ONE,
+			  .dst_alpha_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
 			});
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line2d.vertex.spv"));
@@ -882,9 +925,23 @@ int main(void) {
 		pipeline_line2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "line2d",
-			  .color_attachments = { PIXEL_FORMAT_BACKBUFFER },
+			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
 			  .color_attachment_count = 1,
 			  .sample_count = SAMPLE_COUNT_8,
+			  .cull_mode = CULL_MODE_BACK,
+			  .disable_depth_test = true,
+			  .disable_depth_write = true,
+
+			});
+
+		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/fullscreen_quad.vertex.spv"));
+		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/composite.fragment.spv"));
+		pipeline_composite = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+			(PipelineOptions){
+			  .debug_name = "composite",
+			  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
+			  .color_attachment_count = 1,
+			  .sample_count = SAMPLE_COUNT_1,
 			  .cull_mode = CULL_MODE_BACK,
 			  .disable_depth_test = true,
 			  .disable_depth_write = true,
@@ -1025,7 +1082,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(float4x4_rotation(unit3(UP), randf_range(0, TAU)), float4x4_translation(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(make4x4_from_rotation(unit3(UP), randf_range(0, TAU)), make4x4_from_translation(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -1107,9 +1164,9 @@ int main(void) {
 	} Light;
 
 	Light lights[] = {
-		{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, float4x4_identity() }, // day
-		{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 0.5f, 0.2f, 1.0f }, float4x4_identity() }, // sunset
-		{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.05f, 0.15f, 0.6f, 1.0f }, float4x4_identity() }, // night
+		{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 1.0f, 1.0f, 1.0f }, identity4x4() }, // day
+		{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 1.0f, 0.5f, 0.2f, 1.0f }, identity4x4() }, // sunset
+		{ .position = { 0.0f, 20.0f, -30.0f, 1.0f }, (float4){ 0.05f, 0.15f, 0.6f, 1.0f }, identity4x4() }, // night
 	};
 
 	bool use_heightmap = false;
@@ -1154,7 +1211,9 @@ int main(void) {
 					if (event.surface == main_render) {
 						gfx_swapchain_resize(context, main_swapchain, dims.x, dims.y);
 						gfx_image_resize(context, depthbuffer, dims.x, dims.y);
-						gfx_image_resize(context, offscreen_render, dims.x, dims.y);
+						gfx_image_resize(context, msaa_target, dims.x, dims.y);
+						gfx_image_resize(context, spatial_target, dims.x, dims.y);
+						gfx_image_resize(context, ui_target, dims.x, dims.y);
 
 					} else {
 						gfx_swapchain_resize(context, popup_swapchain, dims.x, dims.y);
@@ -1203,7 +1262,7 @@ int main(void) {
 		};
 
 		uint2 dims = os_surface_size(main_render);
-		float2 mouse_delta = cast2df(input_mouse_delta());
+		float2 mouse_delta = cast2(input_mouse_delta(), float2);
 		mouse_delta.x /= dims.x;
 		mouse_delta.y /= dims.y;
 
@@ -1215,8 +1274,8 @@ int main(void) {
 		if (input_key_pressed(KEY_CODE_N))
 			triangle_step = (triangle_step + 1) % (meshes[MESH_CYLINDER].total_index_count / 3);
 
-		float4x4 view = float4x4_lookat(camera->position, camera->target, camera->up);
-		float4x4 proj = float4x4_perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+		float4x4 view = lookat(camera->position, camera->target, camera->up);
+		float4x4 proj = perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
 
 		switch (state) {
 			case VIEWPORT_STATE_EDITOR: {
@@ -1233,7 +1292,7 @@ int main(void) {
 						uint32_t bone_count = meshes[entity->meshid].skeleton.bone_count;
 						entity->skin_matrices = arena_push_count(frame_arena, float4x4, bone_count);
 						for (uint32_t bone_index = 0; bone_index < bone_count; ++bone_index) {
-							entity->skin_matrices[bone_index] = float4x4_identity();
+							entity->skin_matrices[bone_index] = identity4x4();
 						}
 					}
 				}
@@ -1250,15 +1309,22 @@ int main(void) {
 					uint32_t element_count = 5;
 					float panel_w = 200.f;
 
-					/* slider_t = imgui_slidervf(__LINE__, rect(100, 100, 50, 300), min, max, slider_t); */
-
 					float fence_h = (element_count - 1) * pad;
 					float total_element_h = element_count * element_h;
 
 					Rectangle panel = rect(panel_x, panel_y, panel_w, fence_h + total_element_h + pad * 2);
 
 					draw2d_rect(batch_2d, panel, rgb(25, 25, 25));
+
 					fog_density = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.001f, 0.05f, fog_density);
+					draw2d_point(batch_2d, make2(panel_x + pad, panel_y + pad), 3.0f, GREEN);
+					draw2d_textf(batch_2d,
+						fonts + FONT_BAKE_SIZE_16,
+						indexof(context->image_pool, fonts[FONT_BAKE_SIZE_16].atlas.handle),
+						make2(panel_x + pad, panel_y + pad + element_h),
+                        WHITE,
+						s("Fog_density"));
+
 					panel_y += element_h + pad;
 					fog_gradient = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 15.0f, fog_gradient);
 					panel_y += element_h + pad;
@@ -1292,36 +1358,26 @@ int main(void) {
 						scene = &scenes[(indexof(scenes, scene) + 1) % countof(scenes)];
 					button_x += button_w + pad;
 
-					static float rot = 0.0f;
-					rot = wrapf(rot + dt * 180.0f, 0.0f, 360.0f);
-					/* draw2d_rect_rounded_ex(batch_2d, rect(250, 250, 200, 200), make2(100.0f, 100.0f), rot, splat4(50.0f), WHITE); */
-
-					Font *font = &fonts[4];
-					Image2D *font_atlas = &font->atlas;
-					draw2d_quad(
+					panel_y += 128.0f;
+					Font *font32 = &fonts[FONT_BAKE_SIZE_32];
+					draw2d_textf(
 						batch_2d,
-						rect(250, 250, 256, 256),
-						(Rectangle){ 0 }, 0, 0,
-						make2(128.0f, 128.0f), rot, 8.0f, RED,
-						splat4(0.0), TRANSPARENT);
+						font32,
+						indexof(context->image_pool, font32->atlas.handle),
+						make2(panel_x + pad, panel_y),
+                        BLACK,
+						s("The quick brown fox jumps over"
+						  "\nthe lazy dog in %u*%.2f"),
+						font_bake_size_to_value[FONT_BAKE_SIZE_32], 1.0f);
 
-					float frame_pad = 8 + 16;
-
-					draw2d_quad(batch_2d,
-						rect(250, 250, 256 - frame_pad * 2, 256 - frame_pad * 2),
-						rect(0, 0, font_atlas->width, font_atlas->height),
-						font_atlas, indexof(context->image_pool, font_atlas->handle),
-						/* 0, 0, */
-						make2((256 - frame_pad * 2) * 0.5f, (256 - frame_pad * 2) * 0.5f),
-						rot,
-						0.0f,
-						TRANSPARENT,
-						splat4(0.0),
-						WHITE);
-					draw2d_point(batch_2d, make2(250, 250), 4.0f, GREEN);
-
-					draw2d_textf(batch_2d, font, indexof(context->image_pool, font_atlas->handle), make2(100.0f, 500.0f), s("Hello world %.2f"), 32.0f);
-					draw2d_point(batch_2d, make2(100.0f, 500.0f), 3.0f, GREEN);
+					Font *font16 = &fonts[FONT_BAKE_SIZE_16];
+					draw2d_textf(
+						batch_2d,
+						font16,
+						indexof(context->image_pool, font16->atlas.handle),
+						make2(100.0f, 100.0f),
+                        BLACK,
+						s("x6"));
 
 					imgui_frame_end();
 				}
@@ -1657,6 +1713,10 @@ int main(void) {
 				break;
 		}
 
+		Font *font = &fonts[FONT_BAKE_SIZE_16];
+		draw2d_textf(batch_2d, font, gfx_image_id(context, font->atlas.handle), make2(dims.x - 60.0f, 20.0f), WHITE,
+			s("FPS %d"), (uint32_t)(1.0 / dt));
+
 		if (draw_collision_shapes) {
 			for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 				Entity *entity = &scene->entities[instance_index];
@@ -1714,7 +1774,9 @@ int main(void) {
 		if (main_target) {
 			// transition swapchain & offscren targets for drawing
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, main_target);
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, offscreen_render);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, msaa_target);
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, spatial_target);
+
 			static float blink_timer = 0.0f;
 
 			blink_timer += dt;
@@ -1772,8 +1834,8 @@ int main(void) {
 
 			float ortho_size = 10.0f;
 			lights[light_index].matrix = mul4x4(
-				float4x4_orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				float4x4_lookat(xyz(lights[light_index].position), zero3, unit3(UP)));
+				orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
+				lookat(make3_from4(lights[light_index].position), zero3, unit3(UP)));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },
@@ -1805,6 +1867,13 @@ int main(void) {
 					.colorAttachmentCount = 0,
 					.pDepthAttachment = &depth_attachment,
 				};
+
+				VkDebugUtilsLabelEXT label_info = {
+					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+					.pLabelName = "SHADOW_PASS",
+					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+				};
+				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
 				vkCmdBeginRendering(cmd->handle, &shadowpass_info);
 
 				VkViewport viewport = {
@@ -1817,7 +1886,7 @@ int main(void) {
 				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
 
 				frame_data.view = lights[light_index].matrix;
-				frame_data.proj = float4x4_identity();
+				frame_data.proj = identity4x4();
 				frame_data.camera_position = lights[light_index].position;
 				frame_data.proj.elements[5] *= -1;
 
@@ -1839,7 +1908,7 @@ int main(void) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
 
-						float4x4 transform = float4x4_compose_quat(
+						float4x4 transform = compose4x4_from_quat(
 							entity->transform.translation,
 							entity->transform.rotation,
 							entity->transform.scale //
@@ -1866,18 +1935,19 @@ int main(void) {
 				}
 
 				vkCmdEndRendering(cmd->handle);
+				vkCmdEndDebugUtilsLabel(cmd->handle);
 			}
 
-			{ // :main
+			{ // :spatial
 				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, shadow_depthbuffer);
 
 				VkRenderingAttachmentInfo color_attachments[] = {
 					{
 					  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-					  .imageView = offscreen_render->view,
+					  .imageView = msaa_target->view,
 					  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					  .resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-					  .resolveImageView = main_target->view,
+					  .resolveImageView = spatial_target->view,
 					  .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
 					  .clearValue.color = { { 1.00f, 1.00f, 0.00f, 1.0f } },
 					  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -1908,6 +1978,13 @@ int main(void) {
 					.pColorAttachments = color_attachments,
 					.pDepthAttachment = &depth_attachment,
 				};
+
+				VkDebugUtilsLabelEXT label_info = {
+					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+					.pLabelName = "SPATIAL_PASS",
+					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+				};
+				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
 				vkCmdBeginRendering(cmd->handle, &renderpass_info);
 
 				VkViewport viewport = {
@@ -1919,9 +1996,9 @@ int main(void) {
 				vkCmdSetViewport(cmd->handle, 0, 1, &viewport);
 				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
 
-				frame_data.view = float4x4_lookat(camera->position, camera->target, camera->up);
-				frame_data.proj = float4x4_perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
-				frame_data.camera_position = xyzs(camera->position, 0.0f);
+				frame_data.view = lookat(camera->position, camera->target, camera->up);
+				frame_data.proj = perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+				frame_data.camera_position = make4_from3(camera->position, 0.0f);
 
 				Uniform uniforms[] = {
 					uniform_data(0, &frame_data, sizeof(frame_data)),
@@ -1931,7 +2008,7 @@ int main(void) {
 				};
 				gfx_bind(context, &pipeline_3d, 0, uniforms, countof(uniforms));
 
-				// :draw
+				// :scene
 				gfx_cmd_pipeline_bind(cmd, &pipeline_3d);
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 					Entity *entity = &scene->entities[instance_index];
@@ -1945,7 +2022,7 @@ int main(void) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
 
-						float4x4 transform = float4x4_compose_quat(
+						float4x4 transform = compose4x4_from_quat(
 							entity->transform.translation,
 							entity->transform.rotation,
 							entity->transform.scale //
@@ -2044,7 +2121,7 @@ int main(void) {
 
 						Uniform uniforms[] = {
 							storage_buffers(0, buffer, offset, size),
-							sampler_with_textures(1, images, countof(images), nearest_sampler),
+							sampler_with_textures(1, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]),
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
 							sampler_with_textures(3, (GFX_Image *[]){ noise_image.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
@@ -2127,11 +2204,11 @@ int main(void) {
 								float2 metallic_roughness;
 								float4 uv_st;
 							} pc = {
-								.model = float4x4_compose_quat(e->transform.translation, e->transform.rotation, e->transform.scale),
+								.model = compose4x4_from_quat(e->transform.translation, e->transform.rotation, e->transform.scale),
 								.tint = mesh->materials[part->material_id].tint,
 								.emissive = mesh->materials[part->material_id].tint,
 							};
-							float4x4 world_from_object = float4x4_compose_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
+							float4x4 world_from_object = compose4x4_from_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
 
 							vkCmdPushConstants(cmd->handle, transparent.layout, VK_SHADER_STAGE_ALL, 0, sizeof(world_from_object), world_from_object.elements);
 							vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
@@ -2148,7 +2225,64 @@ int main(void) {
 						gfx_bind(context, &pipeline_line3d, 1, uniforms, countof(uniforms));
 						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(DrawLine)) * 6, 1, 0, 0);
 					}
+
+					typedef struct {
+						float4x4 view;
+						float4x4 projection;
+						float2 camera_position;
+						float2 viewport;
+						float time;
+					} Frame2D;
+
+					Frame2D frame_2d = {
+						.view = identity4x4(),
+						.projection = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
+						.viewport = cast2(dims, float2),
+						.time = time,
+					};
+					if (batch_line2d->offset) {
+						gfx_cmd_pipeline_bind(cmd, &pipeline_line2d);
+						Uniform uniforms[] = {
+							storage_data(0, batch_line2d->base, batch_line2d->offset),
+						};
+						gfx_bind(context, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
+						gfx_bind(context, &pipeline_line2d, 1, uniforms, countof(uniforms));
+						vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(DrawLine)) * 6, 1, 0, 0);
+					}
 				}
+
+				vkCmdEndRendering(cmd->handle);
+				vkCmdEndDebugUtilsLabel(cmd->handle);
+			}
+
+			if (batch_2d->offset) { // :canvas
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, ui_target);
+				VkRenderingAttachmentInfo color_attachments[] = { {
+				  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+				  .imageView = ui_target->view,
+				  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				  .clearValue.color = { { 0.0f, 0.0f, 0.0f, 0.0f } },
+				  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+				  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				} };
+
+				VkExtent2D extent = { ui_target->width, ui_target->height };
+				VkRenderingInfo renderpass_info = {
+					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+					.renderArea.extent = extent,
+					.layerCount = 1,
+					.colorAttachmentCount = countof(color_attachments),
+					.pColorAttachments = color_attachments,
+					.pDepthAttachment = 0,
+				};
+
+				VkDebugUtilsLabelEXT label_info = {
+					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+					.pLabelName = "UI_PASS",
+					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+				};
+				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
+				vkCmdBeginRendering(cmd->handle, &renderpass_info);
 
 				typedef struct {
 					float4x4 view;
@@ -2159,80 +2293,112 @@ int main(void) {
 				} Frame2D;
 
 				Frame2D frame_2d = {
-					.view = float4x4_identity(),
-					.projection = float4x4_orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
-					.viewport = cast2uf(dims),
+					.view = identity4x4(),
+					.projection = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
+					.viewport = cast2(dims, float2),
 					.time = time,
 				};
-				if (batch_2d->offset) { // :canvas
+				uint32_t vertex_count = batch_2d->offset / sizeof(DrawVertex2);
+				uint32_t quad_count = vertex_count / 6;
 
-					uint32_t vertex_count = batch_2d->offset / sizeof(DrawVertex2);
-					uint32_t quad_count = vertex_count / 6;
+				GFX_Image *images[32] = { 0 };
+				uint32_t image_count = 1;
+				for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
+					images[texture_id] = white_texture;
 
-					GFX_Image *images[32] = { 0 };
-					uint32_t image_count = 1;
-					for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
-						images[texture_id] = white_texture;
+				for (uint32_t quad_index = 0; quad_index < quad_count; ++quad_index) {
+					DrawVertex2 *quad_first_vertex = (DrawVertex2 *)batch_2d->base + (quad_index * 6);
 
-					for (uint32_t quad_index = 0; quad_index < quad_count; ++quad_index) {
-						DrawVertex2 *quad_first_vertex = (DrawVertex2 *)batch_2d->base + (quad_index * 6);
-
-						if (quad_first_vertex->imageid && quad_first_vertex->imageid != indexof(context->image_pool, white_texture)) {
-							int32_t found_index = -1;
-							for (uint32_t image_index = 1; image_index < image_count; ++image_index) {
-								if (indexof(context->image_pool, images[image_index]) == quad_first_vertex->imageid) {
-									found_index = image_index;
-									break;
-								}
-							}
-
-							if (found_index == -1) {
-								ASSERT(image_count < countof(images) || "Extend sprite batching to support beyond 32 distinct images");
-								found_index = image_count++;
-								images[found_index] = &context->image_pool[quad_first_vertex->imageid];
-							}
-
-							for (uint32_t vertex_index = 0; vertex_index < 6; ++vertex_index) {
-								DrawVertex2 *vertex = quad_first_vertex + vertex_index;
-
-								vertex->imageid = found_index;
+					if (quad_first_vertex->imageid && quad_first_vertex->imageid != indexof(context->image_pool, white_texture)) {
+						int32_t found_index = -1;
+						for (uint32_t image_index = 1; image_index < image_count; ++image_index) {
+							if (indexof(context->image_pool, images[image_index]) == quad_first_vertex->imageid) {
+								found_index = image_index;
+								break;
 							}
 						}
+
+						if (found_index == -1) {
+							ASSERT(image_count < countof(images) || "Extend sprite batching to support beyond 32 distinct images");
+							found_index = image_count++;
+							images[found_index] = &context->image_pool[quad_first_vertex->imageid];
+						}
+
+						for (uint32_t vertex_index = 0; vertex_index < 6; ++vertex_index) {
+							DrawVertex2 *vertex = quad_first_vertex + vertex_index;
+
+							vertex->imageid = found_index;
+						}
 					}
-
-					gfx_cmd_pipeline_bind(cmd, &pipeline_2d);
-
-					Uniform uniforms0[] = {
-						uniform_data(0, &frame_2d, sizeof(frame_2d)),
-						storage_data(1, batch_2d->base, batch_2d->offset),
-					};
-					Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]) };
-
-					gfx_bind(context, &pipeline_2d, 0, uniforms0, countof(uniforms0));
-					gfx_bind(context, &pipeline_2d, 1, uniforms1, countof(uniforms1));
-
-					vkCmdDraw(cmd->handle, vertex_count, 1, 0, 0);
 				}
 
-				if (batch_line2d->offset) {
-					gfx_cmd_pipeline_bind(cmd, &pipeline_line2d);
-					Uniform uniforms[] = {
-						storage_data(0, batch_line2d->base, batch_line2d->offset),
-					};
-					gfx_bind(context, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
-					gfx_bind(context, &pipeline_line2d, 1, uniforms, countof(uniforms));
-					vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(DrawLine)) * 6, 1, 0, 0);
-				}
+				gfx_cmd_pipeline_bind(cmd, &pipeline_2d);
+
+				Uniform uniforms0[] = {
+					uniform_data(0, &frame_2d, sizeof(frame_2d)),
+					storage_data(1, batch_2d->base, batch_2d->offset),
+				};
+				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
+
+				gfx_bind(context, &pipeline_2d, 0, uniforms0, countof(uniforms0));
+				gfx_bind(context, &pipeline_2d, 1, uniforms1, countof(uniforms1));
+
+				vkCmdDraw(cmd->handle, vertex_count, 1, 0, 0);
 
 				vkCmdEndRendering(cmd->handle);
+				vkCmdEndDebugUtilsLabel(cmd->handle);
 			}
+
+			{ // :composite
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, spatial_target);
+				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, ui_target);
+
+				VkRenderingAttachmentInfo color_attachments[] = { {
+				  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+				  .imageView = main_target->view,
+				  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				  .clearValue.color = { { 1.00f, 1.00f, 0.00f, 1.0f } },
+				  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+				  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				} };
+
+				VkExtent2D extent = { main_target->width, main_target->height };
+				VkRenderingInfo renderpass_info = {
+					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+					.renderArea.extent = extent,
+					.layerCount = 1,
+					.colorAttachmentCount = countof(color_attachments),
+					.pColorAttachments = color_attachments,
+					.pDepthAttachment = 0,
+				};
+
+				VkDebugUtilsLabelEXT label_info = {
+					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+					.pLabelName = "BLIT_PASS",
+					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+				};
+				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
+				vkCmdBeginRendering(cmd->handle, &renderpass_info);
+
+				gfx_cmd_pipeline_bind(cmd, &pipeline_composite);
+
+				GFX_Image *images[] = {
+					spatial_target,
+					ui_target,
+				};
+
+				Uniform uniforms[] = {
+					sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
+				};
+
+				gfx_bind(context, &pipeline_composite, 0, uniforms, countof(uniforms));
+
+				vkCmdDraw(cmd->handle, 6, 1, 0, 0);
+				vkCmdEndRendering(cmd->handle);
+				vkCmdEndDebugUtilsLabel(cmd->handle);
+			}
+
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, main_target);
-		} else {
-			gfx_swapchain_resize(context, main_swapchain, dims.x, dims.y);
-			if (depthbuffer->width != dims.x || depthbuffer->height != dims.y)
-				gfx_image_resize(context, depthbuffer, dims.x, dims.y);
-			if (offscreen_render->width != dims.x || offscreen_render->height != dims.y)
-				gfx_image_resize(context, offscreen_render, dims.x, dims.y);
 		}
 
 		if (vkEndCommandBuffer(cmd->handle) != VK_SUCCESS) {
@@ -2334,6 +2500,7 @@ int main(void) {
 		pipeline_destroy(context, &pipeline_grass);
 		pipeline_destroy(context, &pipeline_line3d);
 		pipeline_destroy(context, &pipeline_line2d);
+		pipeline_destroy(context, &pipeline_composite);
 	}
 
 	gfx_shutdown(context);
@@ -2787,7 +2954,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 
 		VkSurfaceFormatKHR selected_format = surface_formats[0];
 		for (uint32_t format_index = 0; format_index < surface_format_count; ++format_index) {
-			if (surface_formats[format_index].format == VK_FORMAT_B8G8R8A8_SRGB &&
+			if (surface_formats[format_index].format == VK_FORMAT_B8G8R8A8_UNORM &&
 				surface_formats[format_index].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { // ideal format
 				selected_format = surface_formats[format_index];
 				break;
@@ -2884,7 +3051,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 
 		wrapper->options = (ImageOptions){
 			.debug_name = name,
-			.format = PIXEL_FORMAT_BACKBUFFER,
+			.format = PIXEL_FORMAT_BGRA8_UNORM,
 			.sample = SAMPLE_COUNT_1,
 			.type = IMAGE_TYPE_2D,
 			.usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_TRANSFER,
@@ -3220,7 +3387,7 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 			.sampleShadingEnable = VK_FALSE,
 			.rasterizationSamples = options.sample_count ? (VkSampleCountFlags)options.sample_count : VK_SAMPLE_COUNT_1_BIT,
-			.alphaToCoverageEnable = options.color_attachment_count ? VK_TRUE : VK_FALSE,
+			.alphaToCoverageEnable = options.color_attachment_count && options.sample_count > 1 ? VK_TRUE : VK_FALSE,
 			.minSampleShading = 1.0f,
 		};
 
@@ -3244,20 +3411,15 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			VkColorComponentFlags rgba_write_mask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 			VkPipelineColorBlendAttachmentState color_attachment_blend_default = {
 				.colorWriteMask = rgba_write_mask,
-				.blendEnable = VK_TRUE,
+				.blendEnable = options.enable_blend,
 
-				// Color: result = src.rgb + dst.rgb
-				/* .srcColorBlendFactor = VK_BLEND_FACTOR_ONE, */
-				/* .dstColorBlendFactor = VK_BLEND_FACTOR_ONE, */
-
-				// Color: result = src.rgb * src.a + dst.rgb * (1 - src.a)
-				.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-				.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+				// Color: result = src.rgb + (0.0 * dst.rgb)
+				.srcColorBlendFactor = (VkBlendFactor)options.src_color_factor,
+				.dstColorBlendFactor = (VkBlendFactor)options.dst_color_factor,
 				.colorBlendOp = VK_BLEND_OP_ADD,
 
-				// Alpha: result = src.a * 1 + dst.a * (1 - src.a)
-				.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-				.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+				.srcAlphaBlendFactor = (VkBlendFactor)options.src_alpha_factor,
+				.dstAlphaBlendFactor = (VkBlendFactor)options.dst_alpha_factor,
 				.alphaBlendOp = VK_BLEND_OP_ADD,
 			};
 			for (uint32_t index = 0; index < options.color_attachment_count; ++index)
@@ -3277,7 +3439,10 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
 				.colorAttachmentCount = options.color_attachment_count,
 				.pColorAttachmentFormats = color_attachment_formats,
-				.depthAttachmentFormat = pixel_format_is_depth_stencil(options.depth_attachment) ? pixel_format_to_vulkan_format[options.depth_attachment] : VK_FORMAT_D32_SFLOAT,
+				.depthAttachmentFormat =
+					pixel_format_is_depth(options.depth_attachment)
+					? pixel_format_to_vulkan_format[options.depth_attachment]
+					: pixel_format_to_vulkan_format[PIXEL_FORMAT_DEPTH],
 			};
 		}
 
@@ -4409,9 +4574,8 @@ void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buff
 void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	bool ok = cmd && cmd->handle && dst && dst->handle;
-	if (ok == false) {
+	if (ok == false)
 		LOG_WARN("%s - invalid parameter '%s' passed", __func__, cmd == 0 || cmd->handle == 0 ? "GFX_CommandContext" : "GFX_Image");
-	}
 
 	if (ok) {
 		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
@@ -4511,6 +4675,9 @@ bool gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceU
 }
 
 bool gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target) {
+	if (target->res_usage == dst)
+		return true;
+
 	return gfx_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
 }
 
@@ -4622,11 +4789,11 @@ Font load_font(Arena *arena, String8 path, uint32_t font_size) {
 		float scale_factor = stbtt_ScaleForPixelHeight(&font_info, (float)font_size);
 
 		int32_t ascent = 0, descent = 0, line_gap = 0;
-		if (!stbtt_GetFontVMetricsOS2(&font_info, &ascent, &descent, &line_gap)) {
+		if (!stbtt_GetFontVMetricsOS2(&font_info, &ascent, &descent, &line_gap))
 			stbtt_GetFontVMetrics(&font_info, &ascent, &descent, &line_gap);
-		}
 
 		result.line_height = (ascent - descent + line_gap) * scale_factor;
+		result.bake_size = font_size;
 
 		uint32_t codepoint_count = 96;
 		int32_t *codepoints = arena_push_count(arena, int32_t, codepoint_count);
@@ -4635,7 +4802,9 @@ Font load_font(Arena *arena, String8 path, uint32_t font_size) {
 
 		uint32_t atlas_size = 512;
 
-		result.glyphs = arena_push_count(arena, Glyph, 128);
+		result.glyph_count = 128;
+		result.glyphs = arena_push_count(arena, Glyph, result.glyph_count);
+
 		result.atlas = (Image2D){
 			.pixels = arena_push_count(arena, uint8_t, atlas_size * atlas_size * 4),
 			.width = atlas_size,
@@ -4827,10 +4996,10 @@ Mesh load_gltf(Arena *arena, String8 path) {
 			if (node->mesh == 0)
 				continue;
 
-			float4x4 transform = float4x4_identity();
+			float4x4 transform = identity4x4();
 			if (node->skin == 0)
 				cgltf_node_transform_world(node, transform.elements);
-			bool has_transform = float4x4_equal(float4x4_identity(), transform) == false;
+			bool has_transform = equal4x4(identity4x4(), transform) == false;
 
 			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
 				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
@@ -4896,7 +5065,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 
 							if (attribute->type == cgltf_attribute_type_position) {
 								float3 *pos = (float3 *)dst;
-								float3 new_pos = float4x4_transform(transform, xyzs(*pos, 1.0f));
+								float3 new_pos = make3_from4(mul4x4v(transform, make4_from3(*pos, 1.0f)));
 								pos->x = new_pos.x;
 								pos->y = new_pos.y;
 								pos->z = new_pos.z;
@@ -4904,11 +5073,11 @@ Mesh load_gltf(Arena *arena, String8 path) {
 								aabb3_expand(&part->bounds, new_pos);
 							} else if (attribute->type == cgltf_attribute_type_normal) {
 								float3 *norm = (float3 *)dst;
-								float3 new_norm = float4x4_transform(transform, xyzs(*norm, 0.0f));
+								float3 new_norm = make3_from4(mul4x4v(transform, make4_from3(*norm, 0.0f)));
 								*norm = norm3(new_norm);
 							} else if (attribute->type == cgltf_attribute_type_tangent) {
 								float4 *tan = (float4 *)dst;
-								float3 new_tan = float4x4_transform(transform, (float4){ tan->x, tan->y, tan->z, 0.0f });
+								float3 new_tan = make3_from4(mul4x4v(transform, (float4){ tan->x, tan->y, tan->z, 0.0f }));
 								float3 norm_tan = norm3(new_tan);
 								tan->x = norm_tan.x;
 								tan->y = norm_tan.y;
@@ -5534,14 +5703,14 @@ void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, uin
 		float2 uvs[] = { uv0, { uv1.x, uv0.y }, { uv0.x, uv1.y }, uv1 };
 
 		if (rotation != 0.0f) {
-			float2x2 rot = rot2x2(DEG2RAD * rotation);
+			float2x2 rot = make2x2_from_rotation(DEG2RAD * rotation);
 			min = negate2(origin);
 			max = add2(min, make2(dst.width, dst.height));
 
-			corners[0] = add2(xy(dst), mul2x2v(rot, min));
-			corners[1] = add2(xy(dst), mul2x2v(rot, make2(max.x, min.y)));
-			corners[2] = add2(xy(dst), mul2x2v(rot, make2(min.x, max.y)));
-			corners[3] = add2(xy(dst), mul2x2v(rot, max));
+			corners[0] = add2(make2(dst.x, dst.y), mul2x2v(rot, min));
+			corners[1] = add2(make2(dst.x, dst.y), mul2x2v(rot, make2(max.x, min.y)));
+			corners[2] = add2(make2(dst.x, dst.y), mul2x2v(rot, make2(min.x, max.y)));
+			corners[3] = add2(make2(dst.x, dst.y), mul2x2v(rot, max));
 		}
 
 		// clang-format off
@@ -5593,7 +5762,7 @@ void draw2d_point(Arena *arena, float2 position, float radius, Color color) {
 	draw2d_quad(arena, rect(position.x, position.y, radius * 2.0, radius * 2.0), (Rectangle){ 0 }, 0, 0, splat2(radius), 0.0, 0.0, TRANSPARENT, splat4(radius), color);
 }
 
-void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 position, String8 format, ...) {
+void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 position, Color color, String8 format, ...) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 
 	bool ok = arena && font;
@@ -5603,20 +5772,25 @@ void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 positi
 		String8 text = str8_push_format_list(scratch.arena, format, args);
 		va_end(args);
 
+		float y_offset = 0.0f;
 		float x_offset = 0.0f;
 		for (uint32_t index = 0; index < text.length; ++index) {
 			uint8_t c = text.text[index];
+			if (c == '\n') {
+				x_offset = 0.0f;
+				y_offset += font->bake_size;
+			}
 
 			Glyph *glyph = &font->glyphs[c];
 
 			Rectangle dst = {
-				.x = position.x + x_offset + glyph->bearing.x,
-				.y = position.y + glyph->bearing.y,
+				.x = position.x + x_offset + (glyph->bearing.x),
+				.y = position.y + y_offset + (glyph->bearing.y),
 				.width = glyph->src.width,
 				.height = glyph->src.height,
 			};
 
-			draw2d_quad(arena, dst, glyph->src, &font->atlas, font_imageid, splat2(0.0f), 0.0f, 0.0f, TRANSPARENT, splat4(0.0f), WHITE);
+			draw2d_quad(arena, dst, glyph->src, &font->atlas, font_imageid, splat2(0.0f), 0.0f, 0.0f, TRANSPARENT, splat4(0.0f), color);
 
 			x_offset += glyph->advance_x;
 		}
@@ -5633,8 +5807,8 @@ void draw2_triangle(Arena *arena, Triangle2 t, float thickness, Color color) {
 
 void draw2_line(Arena *arena, float2 start, float2 end, float thickness, Color color) {
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
-		.a = xy0s(start, thickness),
-		.b = xy0s(end, thickness),
+		.a = make4(start.x, start.y, 0.0f, thickness),
+		.b = make4(end.x, end.y, 0.0f, thickness),
 		.color = color_pack_uint32(color),
 	};
 }
@@ -5644,15 +5818,15 @@ void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color 
 	draw2_line(arena, start, shaft_end, thickness, color);
 
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
-		.a = xy0s(shaft_end, thickness * 4.0f),
-		.b = xy0s(end, 0.0f),
+		.a = make4(shaft_end.x, shaft_end.y, 0.0f, thickness * 4.0f),
+		.b = make4(end.x, end.y, 0.0f, 0.0f),
 		.color = color_pack_uint32(color),
 	};
 }
 
 void imgui_frame_begin(Arena *arena) {
 	imgui_state.batch_arena = arena;
-	imgui_state.mouse_position = cast2df(input_mouse_position());
+	imgui_state.mouse_position = cast2(input_mouse_position(), float2);
 	imgui_state.mouse_pressed = input_mouse_pressed(MOUSE_BUTTON_LEFT);
 	imgui_state.mouse_released = input_mouse_released(MOUSE_BUTTON_LEFT);
 }
@@ -5805,6 +5979,26 @@ void draw3_sphere_outline(Arena *arena, float3 center, float radius, uint8_t seg
 	draw3_arc(arena, center, radius, segments, SIDE_FRONT, TAU, thickness, color);
 }
 
+void draw3_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
+	DrawLine *spine_points = arena_push_count(arena, DrawLine, 8);
+	DrawLine spine[] = {
+		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), zero3 },
+		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), zero3 },
+		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(WHITE), zero3 },
+		{ { a.x, a.y, a.z + radius, thickness }, { a.x, b.y, a.z + radius, thickness }, color_pack_uint32(WHITE), zero3 },
+	};
+	memory_copy_array(spine_points, spine);
+
+	for (uint32_t end = 0; end < 2; ++end) {
+		float3 c = end == 0 ? a : b;
+		float signed_r = (end == 0) ? -radius : radius;
+
+		draw3_arc(arena, c, radius, segments, SIDE_TOP, TAU, thickness, WHITE);
+		draw3_arc(arena, c, signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
+		draw3_arc(arena, c, signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
+	}
+}
+
 void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
 	float3 min = aabb3.min;
 	float3 max = aabb3.max;
@@ -5831,8 +6025,8 @@ void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 
 void draw3_line(Arena *arena, float3 start, float3 end, float thickness, Color color) {
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
-		.a = xyzs(start, thickness),
-		.b = xyzs(end, thickness),
+		.a = make4_from3(start, thickness),
+		.b = make4_from3(end, thickness),
 		.color = color_pack_uint32(color),
 	};
 }
@@ -5858,8 +6052,8 @@ void draw3_arrow(Arena *arena, float3 start, float3 end, float thickness, Color 
 
 	draw3_line(arena, start, shaft_end, thickness, color);
 	*arena_push_count(arena, DrawLine, 1) = (DrawLine){
-		.a = xyzs(shaft_end, thickness * 4.0f),
-		.b = xyz0(end),
+		.a = make4_from3(shaft_end, thickness * 4.0f),
+		.b = make4_from3(end, 0.0f),
 		.color = color_pack_uint32(color),
 	};
 }
@@ -5914,25 +6108,7 @@ void draw3_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thick
 				add3(shape->as.capsule.a, offset),
 				add3(shape->as.capsule.b, offset),
 			};
-
-			uint8_t segments = 32;
-			DrawLine *spine_points = arena_push_count(arena, DrawLine, 8);
-			DrawLine spine[] = {
-				{ { centers[0].x - r, centers[0].y, centers[0].z, thickness }, { centers[0].x - r, centers[1].y, centers[0].z, thickness }, color_pack_uint32(WHITE), zero3 },
-				{ { centers[0].x + r, centers[0].y, centers[0].z, thickness }, { centers[0].x + r, centers[1].y, centers[0].z, thickness }, color_pack_uint32(WHITE), zero3 },
-				{ { centers[0].x, centers[0].y, centers[0].z - r, thickness }, { centers[0].x, centers[1].y, centers[0].z - r, thickness }, color_pack_uint32(WHITE), zero3 },
-				{ { centers[0].x, centers[0].y, centers[0].z + r, thickness }, { centers[0].x, centers[1].y, centers[0].z + r, thickness }, color_pack_uint32(WHITE), zero3 },
-			};
-			memory_copy_array(spine_points, spine);
-
-			for (uint32_t end = 0; end < countof(centers); ++end) {
-				float3 c = centers[end];
-				float signed_r = (end == 0) ? -r : r;
-
-				draw3_arc(arena, centers[end], r, segments, SIDE_TOP, TAU, thickness, WHITE);
-				draw3_arc(arena, centers[end], signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
-				draw3_arc(arena, centers[end], signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
-			}
+			draw3_capsule_outline(arena, centers[0], centers[1], r, 32, thickness, WHITE);
 		} break;
 			break;
 		case SHAPE_KIND_PLANE:

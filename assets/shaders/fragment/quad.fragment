@@ -37,21 +37,21 @@ void main() {
     vec2 p = (fs_in.local - 0.5) * fs_in.size;
     vec2 e = fs_in.size * 0.5;
 
-    float dist = sd_rect_rounded(p, e, fs_in.radii);
-    float aa = max(fwidth(dist), 1e-4);
-    float outer = 1.0 - smoothstep(-aa, aa, dist);
+    float outer = 1.0, ring = 0.0;
+    if (any(greaterThan(fs_in.radii, vec4(0.0)))) { 
+        float dist = sd_rect_rounded(p, e, fs_in.radii);
+        float aa = max(fwidth(dist), 1e-4);
+        outer = 1.0 - smoothstep(-aa, aa, dist);
 
-    float ba = 0.0, ring = 0.0;
-    vec3 brgb = vec3(0.0);
-    if (fs_in.border_width > 0.0) {
-        float inner = 1.0 - smoothstep(-aa, aa, dist+fs_in.border_width);
-        ring = clamp(outer - inner, 0.0, 1.0);
-        ba = border.a * ring;
-        brgb = border.rgb;
+        vec3 brgb = vec3(0.0);
+        if (fs_in.border_width > 0.0) {
+            float inner = 1.0 - smoothstep(-aa, aa, dist+fs_in.border_width);
+            ring = clamp(outer - inner, 0.0, 1.0);
+            brgb = border.rgb;
+        }
     }
 
-
     out_color.rgb = mix(fill.rgb, border.rgb, ring) * outer;
-    float fa = fill.a * outer;
+    float fa = fill.a * outer, ba = border.a * ring;
     out_color.a = ba + fa * (1.0 - ba);
 }

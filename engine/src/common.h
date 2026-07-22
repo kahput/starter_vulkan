@@ -35,6 +35,12 @@
 	#define alignas(X) __attribute((aligned(X)))
 #endif
 
+#if defined(_MSC_VER)
+	#define INLINE static __forceinline
+#else
+	#define INLINE static inline __attribute((always_inline))
+#endif
+
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
@@ -140,25 +146,12 @@ static inline float3 splat3(float v) { return (float3){ v, v, v }; }
 static inline float4 make4(float x, float y, float z, float w) { return (float4){ x, y, z, w } ; } 
 static inline float4 splat4(float v) { return (float4) {v, v, v, v }; }
 
-#define xy(v) make2((v).x, (v).y)
-#define xys(v, s) make3((v).x, (v).y, (s))
-#define xy0(v) make3((v).x, (v).y, 0.0f)
-#define xy00(v) make4((v).x, (v).y, 0.0f, 0.0f)
-#define xy0s(v, s) make4((v).x, (v).y, 0.0f, (s))
-#define xy1(v) make3((v).x, (v).y, 1.0f)
-#define xyss(v, s0, s1) make4((v).x, (v).y, (s0), (s1))
+static inline float3 make3_from4(float4 v) { return (float3){v.x, v.y, v.z }; } 
+static inline float4 make4_from3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w } ; }
 
-#define xyz(v) make3((v).x, (v).y, (v).z)
-#define xyzs(v, s) make4((v).x, (v).y, (v).z, (s))
-#define xyz0(v) make4((v).x, (v).y, (v).z, 0.0f)
-#define xyz1(v) make4((v).x, (v).y, (v).z, 1.0f)
-
-#define yz(v) make2((v).y, (v).z)
-#define xz(v) make2((v).x, (v).z)
 #define xxx(v) splat3((v).x)
 #define yyy(v) splat3((v).y)
 #define zzz(v) splat3((v).z)
-#define zyx(v) make3((v).z, (v).y, (v).x)
 
 typedef double float64;
 typedef struct { float64 x, y; } float64x2;

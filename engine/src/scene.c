@@ -46,7 +46,7 @@ void scene_camera_orbit(Camera3 *camera, float2 mouse_delta) {
 		float3 camera_position = sub3(camera->position, camera->target);
 		float r = MAX(len3(camera_position), EPSILON);
 
-		float camera_xz = len((float2){ camera_position.x, camera_position.z });
+		float camera_xz = len2((float2){ camera_position.x, camera_position.z });
 		float current_theta = atan2f(camera_xz, camera_position.y);
 		// tan(theta) = o / a = y / x;
 		float current_azimuth = atan2f(camera_position.z, camera_position.x);

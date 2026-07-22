@@ -2,9 +2,6 @@
 #include "core/logger.h"
 #include <stdlib.h>
 
-const float DEG2RAD = (PIf / 180.f);
-const float RAD2DEG = 180.0f / PIf;
-
 float randf_range(float min, float max) {
 	return min + ((float)rand() / RAND_MAX) * (max - min);
 }
@@ -15,52 +12,19 @@ int32_t randi_range(int32_t min, int32_t max) {
 	return min + (rand() % (max - min + 1));
 }
 
-float len(float2 v) {
-	float result = sqrt(dot2(v, v));
-
-	return result;
-}
-
-float len3(float3 v) {
-	float result = sqrtf(dot3(v, v));
-
-	return result;
-}
-
-float3 normalize3_safe(float3 v, float epsilon) {
-	float length = len3(v);
-	if (length < epsilon)
-		return (float3){ 0 };
-
-	return scale3(v, 1.0f / length);
-}
-
-float angle3(float3 a, float3 b) {
-	float dot = dot3(normalize3_safe(a, EPSILON), normalize3_safe(b, EPSILON));
-	dot = clampf(dot, -1.0f, 1.0f);
-
-	return acosf(dot);
-}
-
 /* Right Hand, Rodrigues' rotation formula:
 	v = v*cos(t) + (kxv)sin(t) + k*(k.v)(1 - cos(t))
 */
 float3 rotate3(float3 v, float angle, float3 axis) {
 	float c = cosf(angle);
 	float s = sinf(angle);
-	float3 k = normalize3_safe(axis, EPSILON);
+	float3 k = norm3(axis);
 
 	return add3(
 		scale3(v, c),
 		add3(
 			scale3(cross3(k, v), s),
 			scale3(k, dot3(k, v) * (1.0f - c))));
-}
-
-float len4(float4 v) {
-	float result = sqrtf(dot4(v, v));
-
-	return result;
 }
 
 float3 quat4_to_euler(quat4 q) {
@@ -146,7 +110,7 @@ quat4 quat4_slerp(quat4 q, quat4 p, float t) {
 	return result;
 }
 
-float2x2 rot2x2(float rad) {
+float2x2 make2x2_from_rotation(float rad) {
 	float2x2 result = { 0 };
 	float c = cosf(rad);
 	float s = sinf(rad);
@@ -159,7 +123,7 @@ float2x2 rot2x2(float rad) {
 	return result;
 }
 
-bool float4x4_equal(float4x4 lhs, float4x4 rhs) {
+bool equal4x4(float4x4 lhs, float4x4 rhs) {
 	return equalf(lhs.elements[0], rhs.elements[0]) &&
 		equalf(lhs.elements[1], rhs.elements[1]) &&
 		equalf(lhs.elements[2], rhs.elements[2]) &&
@@ -178,7 +142,7 @@ bool float4x4_equal(float4x4 lhs, float4x4 rhs) {
 		equalf(lhs.elements[15], rhs.elements[15]);
 }
 
-float4x4 float4x4_identity(void) {
+float4x4 identity4x4(void) {
 	float4x4 result = { { 1.0f, 0.0f, 0.0f, 0.0f,
 	  0.0f, 1.0f, 0.0f, 0.0f,
 	  0.0f, 0.0f, 1.0f, 0.0f,
@@ -232,7 +196,7 @@ float4 mul4x4v(float4x4 m, float4 v) {
 	return result;
 }
 
-float4x4 float4x4_translate(float4x4 m, float3 t) {
+float4x4 translate4x4(float4x4 m, float3 t) {
 	float4x4 result = m;
 
 	result.elements[12] = m.elements[0] * t.x + m.elements[4] * t.y + m.elements[8] * t.z + m.elements[12];
@@ -243,7 +207,7 @@ float4x4 float4x4_translate(float4x4 m, float3 t) {
 	return result;
 }
 
-float4x4 float4x4_scale(float4x4 m, float3 s) {
+float4x4 scale4x4(float4x4 m, float3 s) {
 	float4x4 result = m;
 
 	// Post-multiply by scale: result = m * S
@@ -272,10 +236,10 @@ float4x4 float4x4_scale(float4x4 m, float3 s) {
 	return result;
 }
 
-float4x4 float4x4_rotate(float4x4 m, float angle, float3 axis) {
+float4x4 rotate4x4(float4x4 m, float angle, float3 axis) {
 	// Post-multiply by rotation: result = m * R
 	// Means: each of the first 3 columns of m gets mixed by R.
-	float4x4 r = float4x4_rotation(axis, angle);
+	float4x4 r = make4x4_from_rotation(axis, angle);
 	float4x4 result = m;
 
 	// Cache m's basis columns (col 0,1,2). Translation col stays as-is.
@@ -310,7 +274,7 @@ float4x4 float4x4_rotate(float4x4 m, float angle, float3 axis) {
 	return result;
 }
 
-float4x4 float4x4_translation(float3 v) {
+float4x4 make4x4_from_translation(float3 v) {
 	// clang-format off
 	float4x4 result = {{
 	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = v.x,
@@ -323,12 +287,12 @@ float4x4 float4x4_translation(float3 v) {
 	return result;
 }
 
-float4x4 float4x4_rotation(float3 axis, float angle) {
+float4x4 make4x4_from_rotation(float3 axis, float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
 
-	float3 normalized_axis = normalize3_safe(axis, EPSILON);
+	float3 normalized_axis = norm3(axis);
 	float x = normalized_axis.x;
 	float y = normalized_axis.y;
 	float z = normalized_axis.z;
@@ -345,7 +309,7 @@ float4x4 float4x4_rotation(float3 axis, float angle) {
 	return result;
 }
 
-float4x4 float4x4_scaling(float3 scale) {
+float4x4 make4x4_from_scale(float3 scale) {
 	// clang-format off
 	float4x4 result = {{
 	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
@@ -358,7 +322,7 @@ float4x4 float4x4_scaling(float3 scale) {
 	return result;
 }
 
-float4x4 float4x4_from_quat(quat4 q) {
+float4x4 make4x4_from_quat(quat4 q) {
 	float x = q.x, y = q.y, z = q.z, w = q.w;
 	float xx = x * x, yy = y * y, zz = z * z;
 	float xy = x * y, xz = x * z, yz = y * z;
@@ -401,40 +365,30 @@ float4x4 transpose4x4(float4x4 m) {
 	return result;
 }
 
-float4x4 float4x4_compose(float3 position, float3 rotation, float3 scale) {
+float4x4 compose4x4_from_euler(float3 position, float3 rotation, float3 scale) {
 	float4x4 result = { 0 };
 
-	float4x4 T = float4x4_translation(position);
-	float4x4 S = float4x4_scaling(scale);
-	float4x4 rotation_x = float4x4_rotation(unit3(RIGHT), rotation.x);
-	float4x4 rotation_y = float4x4_rotation(unit3(UP), rotation.y);
-	float4x4 rotation_z = float4x4_rotation(unit3(FORWARD), rotation.z);
+	float4x4 T = make4x4_from_translation(position);
+	float4x4 S = make4x4_from_scale(scale);
+	float4x4 rotation_x = make4x4_from_rotation(unit3(RIGHT), rotation.x);
+	float4x4 rotation_y = make4x4_from_rotation(unit3(UP), rotation.y);
+	float4x4 rotation_z = make4x4_from_rotation(unit3(FORWARD), rotation.z);
 	float4x4 R = mul4x4(rotation_z, mul4x4(rotation_y, rotation_x));
 
 	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }
 
-float4x4 float4x4_compose_quat(float3 position, quat4 rotation, float3 scale) {
+float4x4 compose4x4_from_quat(float3 position, quat4 rotation, float3 scale) {
 	float4x4 result = { 0 };
-	float4x4 T = float4x4_translation(position);
-	float4x4 S = float4x4_scaling(scale);
-	float4x4 R = float4x4_from_quat(rotation);
+	float4x4 T = make4x4_from_translation(position);
+	float4x4 S = make4x4_from_scale(scale);
+	float4x4 R = make4x4_from_quat(rotation);
 	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }
 
-float3 float4x4_transform(float4x4 m, float4 v) {
-	float3 result = {
-		m.elements[0] * v.x + m.elements[4] * v.y + m.elements[8] * v.z + m.elements[12] * v.w,
-		m.elements[1] * v.x + m.elements[5] * v.y + m.elements[9] * v.z + m.elements[13] * v.w,
-		m.elements[2] * v.x + m.elements[6] * v.y + m.elements[10] * v.z + m.elements[14] * v.w,
-	};
-
-	return result;
-}
-
-float4x4 float4x4_perspective(float fovy_radians, float aspect, float near_z, float far_z) {
+float4x4 perspective(float fovy_radians, float aspect, float near_z, float far_z) {
 	float4x4 result = { 0 };
 
 	float f = 1.0f / tanf(fovy_radians * 0.5f);
@@ -450,8 +404,8 @@ float4x4 float4x4_perspective(float fovy_radians, float aspect, float near_z, fl
 	return result;
 }
 
-float4x4 float4x4_orthographic(float left, float right, float bottom, float top, float near, float far) {
-	float4x4 result = float4x4_identity();
+float4x4 orthographic(float left, float right, float bottom, float top, float near, float far) {
+	float4x4 result = identity4x4();
 
 	result.elements[0] = 2.0f / (right - left);
 	result.elements[5] = 2.0f / (top - bottom);
@@ -465,11 +419,11 @@ float4x4 float4x4_orthographic(float left, float right, float bottom, float top,
 	return result;
 }
 
-float4x4 float4x4_lookat(float3 eye, float3 center, float3 up) {
-	float4x4 result = float4x4_identity();
+float4x4 lookat(float3 eye, float3 center, float3 up) {
+	float4x4 result = identity4x4();
 
-	float3 f = normalize3_safe(sub3(center, eye), EPSILON);
-	float3 r = normalize3_safe(cross3(f, up), EPSILON);
+	float3 f = norm3(sub3(center, eye));
+	float3 r = norm3(cross3(f, up));
 	float3 u = cross3(r, f);
 
 	// Row 0: Right Vector (s)

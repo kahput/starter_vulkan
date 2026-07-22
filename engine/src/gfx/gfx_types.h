@@ -46,12 +46,15 @@ typedef struct {
 typedef enum {
 	PIXEL_FORMAT_RGBA8_UNORM,
 	PIXEL_FORMAT_RGBA8_SRGB,
+
+	PIXEL_FORMAT_BGRA8_SRGB,
+	PIXEL_FORMAT_BGRA8_UNORM,
+
 	PIXEL_FORMAT_RGBA16_FLOAT,
 	PIXEL_FORMAT_R32_FLOAT,
 
 	PIXEL_FORMAT_DEPTH,
 	PIXEL_FORMAT_DEPTHSTENCIL,
-	PIXEL_FORMAT_BACKBUFFER,
 
 	PIXEL_FORMAT_COUNT,
 } PixelFormat;
@@ -62,21 +65,25 @@ static inline bool pixel_format_is_depth(PixelFormat format) { return format == 
 static uint32_t pixel_format_to_stride[PIXEL_FORMAT_COUNT] = {
 	[PIXEL_FORMAT_RGBA8_UNORM] = 4,
 	[PIXEL_FORMAT_RGBA8_SRGB] = 4,
+
+	[PIXEL_FORMAT_BGRA8_UNORM] = 4,
+	[PIXEL_FORMAT_BGRA8_SRGB] = 4,
+
 	[PIXEL_FORMAT_RGBA16_FLOAT] = 2 * 4,
 	[PIXEL_FORMAT_R32_FLOAT] = 4,
 	[PIXEL_FORMAT_DEPTH] = 4,
 	[PIXEL_FORMAT_DEPTHSTENCIL] = 4,
-	[PIXEL_FORMAT_BACKBUFFER] = 4,
 };
 
 static const String8 pixel_format_to_string[PIXEL_FORMAT_COUNT] = {
-	[PIXEL_FORMAT_RGBA8_UNORM] = str_comp("RGBA8_UNORM"),
-	[PIXEL_FORMAT_RGBA8_SRGB] = str_comp("RGBA8_SRGB"),
-	[PIXEL_FORMAT_RGBA16_FLOAT] = str_comp("RGBA16_FLOAT"),
-	[PIXEL_FORMAT_R32_FLOAT] = str_comp("R32_FLOAT"),
-	[PIXEL_FORMAT_DEPTH] = str_comp("DEPTH"),
-	[PIXEL_FORMAT_DEPTHSTENCIL] = str_comp("DEPTH_STENCIL"),
-	[PIXEL_FORMAT_BACKBUFFER] = str_comp("BACKBUFFER"),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, RGBA8_UNORM),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, RGBA8_SRGB),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, BGRA8_SRGB),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, BGRA8_UNORM),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, RGBA16_FLOAT),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, R32_FLOAT),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, DEPTH),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, DEPTHSTENCIL),
 };
 
 typedef enum {
@@ -147,7 +154,22 @@ typedef enum cull_mode {
 	CULL_MODE_FRONT = 1,
 	CULL_MODE_BACK = 2,
 	CULL_MODE_FRONT_AND_BACK = 3
-} PipelineCullMode;
+} CullMode;
+
+typedef enum blend_factor {
+	BLEND_FACTOR_ZERO = 0,
+	BLEND_FACTOR_ONE = 1,
+
+	BLEND_FACTOR_SRC_COLOR = 2,
+	BLEND_FACTOR_ONE_MINUS_SRC_COLOR = 3,
+	BLEND_FACTOR_DST_COLOR = 4,
+	BLEND_FACTOR_ONE_MINUS_DST_COLOR = 5,
+
+	BLEND_FACTOR_SRC_ALPHA = 6,
+	BLEND_FACTOR_ONE_MINUS_SRC_ALPHA = 7,
+	BLEND_FACTOR_DST_ALPHA = 8,
+	BLEND_FACTOR_ONE_MINUS_DST_ALPHA = 9,
+} BlendFactor;
 
 typedef struct {
 	const char *debug_name;
@@ -200,13 +222,18 @@ typedef struct {
 	const char *debug_name;
 
 	ImageSampleCount sample_count;
-	PipelineCullMode cull_mode;
+	CullMode cull_mode;
 
 	PixelFormat color_attachments[GFX_LIMIT_COLOR_ATTACHMENTS];
 	uint32_t color_attachment_count;
 
 	PixelFormat depth_attachment;
 	bool disable_depth_test, disable_depth_write;
+
+	bool enable_blend;
+	BlendFactor src_color_factor, dst_color_factor;
+	BlendFactor src_alpha_factor, dst_alpha_factor;
+
 } PipelineOptions;
 
 typedef enum {

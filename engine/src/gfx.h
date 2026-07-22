@@ -7,6 +7,10 @@
 	#include "core/shape2.h"
 #endif
 
+static inline bool gfx_image_valid(GFX_Context *context, GFX_Image *image) {
+	return context && image && image >= context->image_pool && image < context->image_pool + MAX_IMAGES;
+}
+
 bool gfx_startup(GFX_Context *context);
 void gfx_shutdown(GFX_Context *context);
 
@@ -51,3 +55,10 @@ void gfx_cmd_buffer_upload(GFX_CommandContext *cmd, GFX_Buffer *buffer, uint64_t
 
 void gfx_cmd_pipeline_bind(GFX_CommandContext *cmd, GFX_Pipeline *pipeline);
 void gfx_cmd_dispatch(GFX_CommandContext *context, uint32_t x, uint32_t y, uint32_t z);
+
+static inline uint32_t gfx_image_id(GFX_Context *context, GFX_Image *image) {
+	if (gfx_image_valid(context, image) == false)
+		return 0;
+
+	return indexof(context->image_pool, image);
+}
