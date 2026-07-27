@@ -11,6 +11,8 @@
 
 #include "core/strings.h"
 
+#include "font.h"
+#include "imgui.h"
 #include "input.h"
 #include "os.h"
 #include "gfx.h"
@@ -26,9 +28,28 @@
 #include <vulkan/vulkan.h>
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
-#include <stb/stb_truetype.h>
 #include <vulkan/vulkan_core.h>
 #include <cglm/cglm.h>
+
+typedef enum {
+	ICON_PLAY,
+	ICON_PAUSE,
+	ICON_STOP,
+
+	ICON_MAX,
+} IconID;
+
+String8 icon_to_filepath[ICON_MAX] = {
+	[ICON_PLAY] = str_comp("assets/icons/PNG/White/1x/forward.png"),
+	[ICON_PAUSE] = str_comp("assets/icons/PNG/White/1x/pause.png"),
+	[ICON_STOP] = str_comp("assets/icons/PNG/White/1x/stop.png")
+};
+
+String8 icon_to_string[ICON_MAX] = {
+	ENUM_STRING_TABLE_ENTRY(ICON, PLAY),
+	ENUM_STRING_TABLE_ENTRY(ICON, PAUSE),
+	ENUM_STRING_TABLE_ENTRY(ICON, STOP),
+};
 
 typedef struct {
 	float2 position, uv;
@@ -77,21 +98,8 @@ String8 texture_slot_to_string[TEXTURE_SLOT_COUNT] = {
 	[TEXTURE_SLOT_EMISSIVE] = str_comp("emissive"),
 };
 
-typedef struct {
-	// GPU
-	GFX_Image *handle;
-
-	// CPU
-	uint8_t *pixels;
-
-	// METADATA
-	ImageType type;
-	PixelFormat format;
-	uint32_t width, height;
-} Image2D;
-
-inline Rectangle image_rect(Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
-inline float2 image_size(Image2D image) { return (float2){ image.width, image.height }; }
+Rectangle image_rect(Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
+float2 image_size(Image2D image) { return (float2){ image.width, image.height }; }
 
 typedef enum {
 	DRAW_PASS_OPAQUE,
@@ -260,23 +268,8 @@ typedef struct {
 	uint32_t entity_count;
 } World;
 
-typedef struct {
-	Rectangle src;
-	float2 bearing;
-	float advance_x;
-} Glyph;
-
-typedef struct {
-	Image2D atlas;
-	uint32_t line_height, bake_size;
-
-	Glyph *glyphs;
-	uint32_t glyph_count;
-} Font;
-
 // :functions
 Image2D load_image(Arena *arena, String8 path);
-Font load_font(Arena *arena, String8 path, uint32_t font_size);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
@@ -320,30 +313,6 @@ void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color)
 void draw3_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color);
 void draw3_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
 void draw3_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness);
-
-typedef struct {
-	Arena *batch_arena;
-
-	float2 mouse_position;
-	bool mouse_pressed, mouse_released;
-
-	uint64_t hovered_id, active_id;
-} ImguiState;
-static ImguiState imgui_state = { 0 };
-
-void imgui_frame_begin(Arena *arena);
-void imgui_frame_end(void);
-
-typedef struct {
-	bool pressed, clicked;
-
-	bool held, hovering;
-} ImguiInteraction;
-
-ImguiInteraction imgui_interact(uint64_t id, Rectangle rect);
-ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h);
-float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float t);
-float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float t);
 
 uint32_t find_animation(AnimationClip *clips, uint32_t count, String8 target) {
 	for (uint32_t anim_index = 0; anim_index < count; ++anim_index)
@@ -651,6 +620,7 @@ int main(void) {
 		return 0;
 	GFX_Swapchain *main_swapchain = gfx_swapchain_make(context, main_render, "main");
 	GFX_Swapchain *popup_swapchain = gfx_swapchain_make(context, popup_compute, "popup");
+	os_surface_close(popup_compute);
 
 	// :targets
 	GFX_Image *compute_image = gfx_image_make(context, 640, 360,
@@ -717,6 +687,7 @@ int main(void) {
 
 	typedef enum {
 		FONT_BAKE_SIZE_8,
+		FONT_BAKE_SIZE_12,
 		FONT_BAKE_SIZE_16,
 		FONT_BAKE_SIZE_24,
 		FONT_BAKE_SIZE_32,
@@ -724,10 +695,10 @@ int main(void) {
 
 		FONT_BAKE_SIZE_MAX,
 	} FONT_BakeSize;
-	uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX] = { 8, 16, 24, 32, 64 };
+	uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX] = { 8, 12, 16, 24, 32, 64 };
 
 	Font fonts[FONT_BAKE_SIZE_MAX] = { 0 };
-	{ // load fonts
+	{ // :fonts
 		ArenaTemp scratch = arena_scratch_begin(0);
 		uint32_t font_cursor = 0;
 
@@ -748,6 +719,23 @@ int main(void) {
 				});
 		}
 
+		arena_scratch_end(scratch);
+	}
+
+	Image2D icons[ICON_MAX] = { 0 };
+	{ // :icons
+		ArenaTemp scratch = arena_scratch_begin(0);
+		for (uint32_t index = 0; index < ICON_MAX; ++index) {
+			icons[index] = load_image(scratch.arena, icon_to_filepath[index]);
+
+			Image2D *icon = &icons[index];
+			icon->handle = gfx_image_make(context, icon->width, icon->height,
+				(ImageOptions){
+				  .debug_name = (char *)icon_to_string[index].text,
+				  .format = PIXEL_FORMAT_RGBA8_UNORM,
+				  .pixels = icon->pixels,
+				});
+		}
 		arena_scratch_end(scratch);
 	}
 	Image2D terrain_texture = load_image(permanent, s("assets/textures/base_grass.png"));
@@ -1127,6 +1115,7 @@ int main(void) {
 	float last_frame = 0.0f;
 
 	Arena frame_arena[] = { arena_make(MiB(4)) };
+	IMGUI_Context imgui = { 0 };
 
 	// :init
 	float2 compute_mouse = { 0 };
@@ -1263,6 +1252,8 @@ int main(void) {
 
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = cast2(input_mouse_delta(), float2);
+		float2 mouse = cast2(input_mouse_position(), float2);
+		Rectangle viewport = { 0.0f, 0.0f, dims.x, dims.y };
 		mouse_delta.x /= dims.x;
 		mouse_delta.y /= dims.y;
 
@@ -1276,6 +1267,15 @@ int main(void) {
 
 		float4x4 view = lookat(camera->position, camera->target, camera->up);
 		float4x4 proj = perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+
+		imgui_frame_begin(&imgui);
+		imgui.mouse.last = imgui.mouse.position;
+		imgui.mouse.position = mouse;
+		imgui.defalut_font = fonts + FONT_BAKE_SIZE_16;
+		for (uint32_t index = 0; index < 3; ++index) {
+			imgui.mouse.pressed[index] = input_mouse_pressed(index);
+			imgui.mouse.released[index] = input_mouse_released(index);
+		}
 
 		switch (state) {
 			case VIEWPORT_STATE_EDITOR: {
@@ -1298,88 +1298,150 @@ int main(void) {
 				}
 
 				// :editor
-				imgui_frame_begin(batch_2d);
 				{
-					static float slider_t = 0.0f;
+					static float2 panel_offset = { 0 };
+					static float2 mouse_grab_offset = { 0 };
+					static bool panel_docked = false;
+					IMGUI_Widget *panel = imgui_widget_ex(__LINE__,
+						(IMGUI_Style){
+						  .flow = IMGUI_VERTICAL,
+						  .mode = { panel_docked ? IMGUI_MODE_GROW : 0, panel_docked ? IMGUI_MODE_GROW : 0 },
+						  .bg = RED,
+						});
+					panel->offset[0] = panel_offset.x, panel->offset[1] = panel_offset.y;
+					panel->size[0] = 350.f, panel->size[1] = 500.f;
 
-					float pad = 8.0f;
-					float panel_x = 10.f, panel_y = 10.0f;
+					IMGUI_Widget *root = imgui_widget_ex(__LINE__,
+						(IMGUI_Style){
+						  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+						});
+					root->size[0] = viewport.width, root->size[1] = viewport.height;
 
-					float element_h = 15.f;
-					uint32_t element_count = 5;
-					float panel_w = 200.f;
+					if (panel_docked)
+						imgui_parent(panel, root);
 
-					float fence_h = (element_count - 1) * pad;
-					float total_element_h = element_count * element_h;
+					imgui_push_parent(root);
+					IMGUI_Widget *topbar = imgui_widget_ex(__LINE__,
+						(IMGUI_Style){
+						  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+						  .p = 4.0f,
+						  .gap = 1.0f,
+						  .bg = hex(0x151b23),
+						});
 
-					Rectangle panel = rect(panel_x, panel_y, panel_w, fence_h + total_element_h + pad * 2);
+					imgui_push_parent(topbar);
+					{ // topbar
+						IMGUI_Style topbar_btn = {
+							.mode = { 0, IMGUI_MODE_GROW },
+							.align = { 0, IMGUI_ALIGN_CENTER },
+							.ph = 8.0f,
+							.pv = 0.0f,
+							.bg = hex(0x262c36),
+							.fg = WHITE,
+							.border_radius = 4.0f
+						};
 
-					draw2d_rect(batch_2d, panel, rgb(25, 25, 25));
+						imgui_push_style(topbar_btn);
+						static bool toggle_file_menu = false;
+						if (imgui_button_label(s("File")).pressed) { toggle_file_menu = !toggle_file_menu; }
+						if (imgui_button_label(s("Edit")).pressed) { LOG_INFO("Edit"); }
+						if (imgui_button_label(s("Help")).pressed) { LOG_INFO("Help"); }
+						imgui_spacer();
+						if (imgui_button_image(&icons[ICON_PLAY], 0.5f).released) { LOG_INFO("Play"); }
+						if (imgui_button_image(&icons[ICON_PAUSE], 0.5f).released) { LOG_INFO("Pause"); }
+						if (imgui_button_image(&icons[ICON_STOP], 0.5f).released) { LOG_INFO("Stop"); }
+						imgui_pop_style();
 
-					fog_density = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.001f, 0.05f, fog_density);
-					draw2d_point(batch_2d, make2(panel_x + pad, panel_y + pad), 3.0f, GREEN);
-					draw2d_textf(batch_2d,
-						fonts + FONT_BAKE_SIZE_16,
-						indexof(context->image_pool, fonts[FONT_BAKE_SIZE_16].atlas.handle),
-						make2(panel_x + pad, panel_y + pad + element_h),
-                        WHITE,
-						s("Fog_density"));
+						imgui_pop_parent();
+					}
 
-					panel_y += element_h + pad;
-					fog_gradient = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 15.0f, fog_gradient);
-					panel_y += element_h + pad;
-					ambient_strength = imgui_sliderhf(__LINE__, rect(panel_x + pad, panel_y + pad, panel_w - 2 * pad, element_h), 0.0f, 1.0f, ambient_strength);
-					panel_y += element_h + pad;
+					IMGUI_Widget *body = imgui_widget_ex(__LINE__,
+						(IMGUI_Style){
+						  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW },
+						  .bg = hex(0x0d1117),
+						});
 
-					float button_w = (panel_w - (2 * pad + pad * 3)) / 4.f;
-					float button_x = panel_x + pad;
-					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked) {
-						use_heightmap = !use_heightmap;
-						for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
-							Entity *entity = &scene->entities[entity_index];
+					imgui_push_parent(body);
+					{ // body
 
-							if (entity->meshid == MESH_TERRAIN_FLAT || entity->meshid == MESH_TERRAIN_HEIGHTMAP)
-								entity->meshid = use_heightmap ? MESH_TERRAIN_HEIGHTMAP : MESH_TERRAIN_FLAT;
+						IMGUI_Widget *track = imgui_widget_ex(__LINE__,
+							(IMGUI_Style){
+							  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIXED },
+							  .bg = RED,
+							});
+						track->size[1] = imgui.defalut_font->bake_size;
+
+						IMGUI_Widget *thumb = imgui_widget_ex(__LINE__,
+							(IMGUI_Style){
+							  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_GROW },
+							  .bg = BLUE,
+							});
+						imgui_parent(thumb, track);
+						thumb->size[0] = imgui.defalut_font->bake_size;
+
+						Rectangle track_rect = imgui_rect_cached(track);
+						Rectangle thumb_rect = imgui_rect_cached(thumb);
+						float travel = track_rect.width - thumb_rect.width;
+
+						float min = 0.0f, max = 10.0f;
+						static float t = 0.0f;
+
+						IMGUI_Interact interct = imgui_interact(track->id, track_rect);
+						if (interct.held) {
+							float travel = track_rect.width - (4.0f * 2 + thumb_rect.width);
+							float2 mouse = imgui.mouse.position;
+							mouse.x -= track_rect.x + thumb_rect.width * 0.5f;
+							mouse.x = clampf(mouse.x, 0.0f, travel);
+
+							float mouse_ratio = (travel != 0.0f) ? (mouse.x / travel) : 0.0f;
+							t = min + (mouse_ratio * (max - min));
+						}
+
+						float t_norm = max - min != 0.0f ? (t - min) / (max - min) : 0.0f;
+						thumb->offset[0] = t_norm * travel;
+
+						imgui_pop_parent();
+					}
+
+					imgui_pop_parent();
+
+					imgui_parent(topbar, panel);
+					imgui_parent(body, panel);
+
+					if (panel_docked == false) {
+						imgui_fit_tree(panel);
+						imgui_grow_tree(panel);
+						imgui_position_tree(panel);
+						IMGUI_Interact topbar_interact = imgui_interact(topbar->id, imgui_rect_live(topbar));
+						if (topbar_interact.pressed)
+							mouse_grab_offset = sub2(mouse, panel_offset);
+						if (topbar_interact.held)
+							panel_offset = sub2(mouse, mouse_grab_offset);
+
+						Rectangle dock_rect = rect_from_center(scale2(cast2(dims, float2), 0.5f), make2(40.0f, 40.0f));
+						if (topbar_interact.held && rect_contains_point(dock_rect, mouse)) {
+							root->settings.align[0] = IMGUI_ALIGN_CENTER, root->settings.align[1] = IMGUI_ALIGN_CENTER;
+							IMGUI_Widget *dock = imgui_child(__LINE__, root);
+							dock->size[0] = dock_rect.width, dock->size[1] = dock_rect.height;
+							dock->settings.bg = TEAL;
+							dock->settings.bg.a = 48;
+
+							if (imgui.mouse.released[0]) {
+								panel_offset.x = 0.0f, panel_offset.y = 0.0f;
+								panel_docked = true;
+							}
 						}
 					}
-					button_x += button_w + pad;
-					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
-						draw_grass = !draw_grass;
-					button_x += button_w + pad;
-					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
-						light_index = (light_index + 1) % countof(lights);
-					button_x += button_w + pad;
-					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
-						draw_collision_shapes = !draw_collision_shapes;
 
-					panel_y += element_h + pad;
-					button_x = panel_x + pad;
-					if (imgui_button(__LINE__, button_x, panel_y + pad, button_w, element_h).clicked)
-						scene = &scenes[(indexof(scenes, scene) + 1) % countof(scenes)];
-					button_x += button_w + pad;
+					imgui_fit_tree(root);
+					imgui_grow_tree(root);
+					imgui_position_tree(root);
 
-					panel_y += 128.0f;
-					Font *font32 = &fonts[FONT_BAKE_SIZE_32];
-					draw2d_textf(
-						batch_2d,
-						font32,
-						indexof(context->image_pool, font32->atlas.handle),
-						make2(panel_x + pad, panel_y),
-                        BLACK,
-						s("The quick brown fox jumps over"
-						  "\nthe lazy dog in %u*%.2f"),
-						font_bake_size_to_value[FONT_BAKE_SIZE_32], 1.0f);
-
-					Font *font16 = &fonts[FONT_BAKE_SIZE_16];
-					draw2d_textf(
-						batch_2d,
-						font16,
-						indexof(context->image_pool, font16->atlas.handle),
-						make2(100.0f, 100.0f),
-                        BLACK,
-						s("x6"));
-
-					imgui_frame_end();
+					if (panel_docked) {
+						IMGUI_Interact topbar_interact = imgui_interact(topbar->id, imgui_rect_live(topbar));
+						if (topbar_interact.pressed)
+							panel_docked = false;
+					}
 				}
 
 			} break;
@@ -1713,9 +1775,39 @@ int main(void) {
 				break;
 		}
 
-		Font *font = &fonts[FONT_BAKE_SIZE_16];
-		draw2d_textf(batch_2d, font, gfx_image_id(context, font->atlas.handle), make2(dims.x - 60.0f, 20.0f), WHITE,
-			s("FPS %d"), (uint32_t)(1.0 / dt));
+		for (uint32_t index = 0; index < imgui.widget_count; ++index) {
+			IMGUI_Widget *widget = &imgui.widgets[index];
+			if (imgui_valid(widget)) {
+				IMGUI_Widget *parent = &imgui.widgets[widget->parent];
+				// TODO: Scissor
+				/* if (imgui_valid(parent)) */
+				/* 	BeginScissorMode(parent->offset[0], parent->offset[1], parent->size[0], parent->size[1]); */
+
+				if (widget->settings.image) {
+					draw2d_quad(
+						batch_2d,
+						imgui_rect_live(widget),
+						image_rect(*widget->settings.image),
+						widget->settings.image,
+						indexof(context->image_pool, widget->settings.image->handle),
+						(float2){ 0 },
+						0.0f,
+						0.0f, TRANSPARENT, splat4(widget->settings.border_radius), widget->settings.fg);
+				} else if (widget->settings.text.length) {
+					/* draw2d_rect(batch_2d, imgui_widget_rect(widget), ORANGE); */
+					draw2d_textf(batch_2d, fonts + FONT_BAKE_SIZE_16, indexof(context->image_pool, fonts[FONT_BAKE_SIZE_16].atlas.handle), wrap2(widget->offset), widget->settings.fg, widget->settings.text);
+				} else {
+					draw2d_rect_rounded(batch_2d, imgui_rect_live(widget), splat4(widget->settings.border_radius), widget->settings.bg);
+				}
+				/* if (imgui_valid(parent)) */
+				/* 	EndScissorMode(); */
+			}
+		}
+		imgui_frame_end();
+
+		/* Font *font = &fonts[FONT_BAKE_SIZE_16]; */
+		/* draw2d_textf(batch_2d, font, gfx_image_id(context, font->atlas.handle), make2(dims.x - 60.0f, 20.0f), WHITE, */
+		/* 	s("FPS %d"), (uint32_t)(1.0 / dt)); */
 
 		if (draw_collision_shapes) {
 			for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
@@ -4770,99 +4862,6 @@ Image2D load_image(Arena *arena, String8 path) {
 	return result;
 }
 
-Font load_font(Arena *arena, String8 path, uint32_t font_size) {
-	ArenaTemp scratch = arena_scratch_begin(arena);
-	Font result = { 0 };
-
-	String8 file_content = os_file_read_entire(scratch.arena, path);
-	stbtt_fontinfo font_info = { 0 };
-
-	bool ok = arena && file_content.length;
-	if (ok) {
-		ok = stbtt_InitFont(&font_info, file_content.text, 0);
-
-		if (ok == false)
-			LOG_WARN("%s - failed to process font data", __func__);
-	}
-
-	if (ok) {
-		float scale_factor = stbtt_ScaleForPixelHeight(&font_info, (float)font_size);
-
-		int32_t ascent = 0, descent = 0, line_gap = 0;
-		if (!stbtt_GetFontVMetricsOS2(&font_info, &ascent, &descent, &line_gap))
-			stbtt_GetFontVMetrics(&font_info, &ascent, &descent, &line_gap);
-
-		result.line_height = (ascent - descent + line_gap) * scale_factor;
-		result.bake_size = font_size;
-
-		uint32_t codepoint_count = 96;
-		int32_t *codepoints = arena_push_count(arena, int32_t, codepoint_count);
-		for (uint32_t index = 0; index < 96; ++index)
-			codepoints[index] = index + KEY_CODE_SPACE;
-
-		uint32_t atlas_size = 512;
-
-		result.glyph_count = 128;
-		result.glyphs = arena_push_count(arena, Glyph, result.glyph_count);
-
-		result.atlas = (Image2D){
-			.pixels = arena_push_count(arena, uint8_t, atlas_size * atlas_size * 4),
-			.width = atlas_size,
-			.height = atlas_size,
-		};
-
-		uint32_t padding = 2;
-		uint32_t row = 0;
-		uint32_t col = padding;
-
-		uint8_t *temp_bitmap = arena_push_count(scratch.arena, uint8_t, atlas_size *atlas_size);
-
-		int32_t min_y = 0;
-		for (uint32_t index = 0; index < codepoint_count; ++index) {
-			int32_t codepoint_width = 0, codepoint_height = 0;
-			int32_t codepoint = codepoints[index];
-
-			int glyph_index = stbtt_FindGlyphIndex(&font_info, codepoint);
-
-			if (glyph_index) {
-				int32_t x0, y0, x1, y1, advance;
-				stbtt_GetGlyphBitmapBox(&font_info, glyph_index, scale_factor, scale_factor, &x0, &y0, &x1, &y1);
-				stbtt_GetGlyphHMetrics(&font_info, glyph_index, &advance, NULL);
-
-				uint32_t width = x1 - x0, height = y1 - y0;
-
-				if (col + width + padding >= atlas_size) {
-					col = padding;
-					row += (uint32_t)(font_size + 0.5f);
-					ASSERT(row + y1 - y0 < atlas_size);
-				}
-				stbtt_MakeGlyphBitmap(&font_info, (uint8_t *)temp_bitmap + col + (row * atlas_size), width, height, atlas_size, scale_factor, scale_factor, glyph_index);
-
-				min_y = MIN(min_y, y0);
-				result.glyphs[codepoint] = (Glyph){
-					.src = { .x = col, .y = row, .width = width, .height = height },
-					.bearing = { x0, y0 },
-					.advance_x = (int32_t)(advance * scale_factor),
-				};
-
-				col += width + padding;
-			}
-		}
-
-		uint8_t *src = temp_bitmap;
-		uint8_t *dst = result.atlas.pixels;
-		for (uint32_t i = 0; i < atlas_size * atlas_size; i++) {
-			*dst++ = 255;
-			*dst++ = 255;
-			*dst++ = 255;
-			*dst++ = *src++;
-		}
-	}
-
-	arena_temp_end(scratch);
-	return result;
-}
-
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count) {
 	Image2D result = { 0 };
 
@@ -5773,6 +5772,12 @@ void draw2d_textf(Arena *arena, Font *font, uint32_t font_imageid, float2 positi
 		va_end(args);
 
 		float y_offset = 0.0f;
+		for (uint32_t index = 0; index < text.length; ++index) {
+			uint8_t c = text.text[index];
+			Glyph *glyph = &font->glyphs[c];
+			y_offset = maxf(y_offset, glyph->src.height);
+		}
+
 		float x_offset = 0.0f;
 		for (uint32_t index = 0; index < text.length; ++index) {
 			uint8_t c = text.text[index];
@@ -5822,121 +5827,6 @@ void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color 
 		.b = make4(end.x, end.y, 0.0f, 0.0f),
 		.color = color_pack_uint32(color),
 	};
-}
-
-void imgui_frame_begin(Arena *arena) {
-	imgui_state.batch_arena = arena;
-	imgui_state.mouse_position = cast2(input_mouse_position(), float2);
-	imgui_state.mouse_pressed = input_mouse_pressed(MOUSE_BUTTON_LEFT);
-	imgui_state.mouse_released = input_mouse_released(MOUSE_BUTTON_LEFT);
-}
-
-void imgui_frame_end(void) {
-	if (imgui_state.mouse_pressed && imgui_state.active_id == 0)
-		imgui_state.active_id = -1;
-	if (imgui_state.mouse_released)
-		imgui_state.active_id = 0;
-
-	imgui_state.batch_arena = 0;
-	imgui_state.hovered_id = 0;
-	imgui_state.mouse_position = (float2){ 0 };
-	imgui_state.mouse_pressed = 0;
-	imgui_state.mouse_released = 0;
-}
-
-ImguiInteraction imgui_interact(uint64_t id, Rectangle rect) {
-	ImguiInteraction result = { 0 };
-
-	float2 mouse = imgui_state.mouse_position;
-	result.hovering = rect_contains(rect, mouse.x, mouse.y);
-
-	if (result.hovering) {
-		imgui_state.hovered_id = id;
-
-		if (imgui_state.active_id == 0 && imgui_state.mouse_pressed)
-			imgui_state.active_id = id;
-	}
-
-	result.held = imgui_state.active_id == id;
-	result.clicked = result.hovering && result.held && imgui_state.mouse_released;
-
-	return result;
-}
-
-ImguiInteraction imgui_button(uint64_t id, float x, float y, float w, float h) {
-	Rectangle rect = rect(x, y, w, h);
-	ImguiInteraction result = imgui_interact(id, rect);
-
-	bool ok = imgui_state.batch_arena;
-	if (ok) {
-		y = result.held ? y + 1 : y;
-
-		draw2d_rect(imgui_state.batch_arena, rect(x, y, w, h), result.hovering ? rgb(100, 100, 100) : rgb(50, 50, 50));
-	}
-
-	return result;
-}
-
-float imgui_slidervf(uint64_t id, Rectangle bounds, float min, float max, float t) {
-	const float pad = bounds.width * 0.8f;
-	draw2d_rect(imgui_state.batch_arena, bounds, WHITE);
-
-	t = clampf(t, min, max);
-
-	float thumb_w = bounds.width - pad * 2.0f;
-	float thumb_h = thumb_w;
-
-	float start = bounds.y + pad;
-	float travel = bounds.height - (pad * 2 + thumb_h);
-
-	float t_norm = max - min != 0.0f ? (t - min) / (max - min) : 0.0f;
-	Rectangle thumb = rect(bounds.x + pad, start + t_norm * travel, thumb_w, thumb_h);
-
-	ImguiInteraction interct = imgui_interact(id, bounds);
-	if (interct.held) {
-		float2 mouse = imgui_state.mouse_position;
-		mouse.y -= start + thumb.height * 0.5f;
-		mouse.y = clampf(mouse.y, 0.0f, travel);
-
-		float mouse_ratio = (travel != 0.0f) ? (mouse.y / travel) : 0.0f;
-		t = min + (mouse_ratio * (max - min));
-	}
-
-	draw2d_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
-																					   : DARK_GRAY);
-
-	return t;
-}
-
-float imgui_sliderhf(uint64_t id, Rectangle bounds, float min, float max, float t) {
-	const float pad = bounds.height * 0.8f;
-	draw2d_rect(imgui_state.batch_arena, bounds, WHITE);
-
-	t = clampf(t, min, max);
-
-	float thumb_h = bounds.height - pad * 2.0f;
-	float thumb_w = thumb_h;
-
-	float start = bounds.x + pad;
-	float travel = bounds.width - (pad * 2 + thumb_w);
-
-	float t_norm = max - min != 0.0f ? (t - min) / (max - min) : 0.0f;
-	Rectangle thumb = rect(start + t_norm * travel, bounds.y + pad, thumb_w, thumb_h);
-
-	ImguiInteraction interct = imgui_interact(id, bounds);
-	if (interct.held) {
-		float2 mouse = imgui_state.mouse_position;
-		mouse.x -= start + thumb.width * 0.5f;
-		mouse.x = clampf(mouse.x, 0.0f, travel);
-
-		float mouse_ratio = (travel != 0.0f) ? (mouse.x / travel) : 0.0f;
-		t = min + (mouse_ratio * (max - min));
-	}
-
-	draw2d_rect(imgui_state.batch_arena, thumb, interct.held ? BLUE : interct.hovering ? GRAY
-																					   : DARK_GRAY);
-
-	return t;
 }
 
 void draw3_arc(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color) {

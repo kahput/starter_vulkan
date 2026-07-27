@@ -69,6 +69,8 @@ INLINE float minf(float a, float b) { return a < b ? a : b; }
 INLINE float maxf(float a, float b) { return a > b ? a : b; }
 
 // --- float2 ---
+INLINE void write2(float2 src, float dst[2]) { dst[0] = src.x, dst[1] = src.y; }
+INLINE float2 wrap2(float v[2]) { return (float2){ v[0], v[1] }; }
 #define spread2(v) v.x, v.y
 #define cast2(v, T) ((T){ v.x, v.y })
 
@@ -97,6 +99,7 @@ INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v
 INLINE float2 abs2(float2 v) { return (float2){ fabsf(v.x), fabsf(v.y) }; }
 
 // --- float3 ---
+INLINE void write3(float3 src, float dst[3]) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z; }
 INLINE float3 wrap3(float v[3]) { return (float3){ v[0], v[1], v[2] }; }
 #define spread3(v) v.x, v.y, v.z
 #define cast3(v, T) ((T){ v.x, v.y, v.z })
@@ -133,6 +136,7 @@ INLINE float angle3(float3 a, float3 b) { return acosf(clampf(dot3(norm3(a), nor
 float3 rotate3(float3 v, float angle, float3 axis);
 
 // --- float4 & quaternions ---
+INLINE void write4(float4 src, float dst[4]) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z, dst[3] = src.w; }
 INLINE float4 wrap4(float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
 #define spread4(v) v.x, v.y, v.z, v.w
 #define cast4(v, T) ((T){ v.x, v.y, v.z, v.w })

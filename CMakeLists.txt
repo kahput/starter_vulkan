@@ -138,6 +138,8 @@ else()
             "${CMAKE_SOURCE_DIR}/engine/src/scene.c"
             "${CMAKE_SOURCE_DIR}/engine/src/input.c"
             "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/font.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/imgui.c"
         )
         add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
         target_include_directories(

@@ -71,7 +71,7 @@
 
 #define BIT(b) 1 << b
 
-#define has_flag(flags, flag) ((flags & flag) == flag)
+#define has_flag(flags, flag) (((flags) & (flag)) == (flag))
 #define HEADER(ptr, T) ((T *)ptr - 1)
 #define HEADER_SET(ptr, x, T) (*((T *)ptr - 1) = x)
 
@@ -191,6 +191,8 @@ typedef struct { float32x3 min, max; } Interval3;
 
 #define rgba(r, g, b, a) (Color){ r, g, b, a }
 #define rgb(r, g, b) (Color){ r, g, b, 255 }
+#define hex(u) (Color){ ((u) >> 16) & 0xFF, ((u) >> 8) & 0xFF, ((u) >> 0) & 0xFF, 0xFF } 
+
 typedef struct { uint8_t r, g, b, a; } Color;
 
 // clang-format on
@@ -201,6 +203,8 @@ typedef struct { uint8_t r, g, b, a; } Color;
 #define BLUE rgb(0, 0, 255)
 
 #define YELLOW rgb(255, 255, 0)
+#define ORANGE hex(0xFFA500)
+#define TEAL hex(0x008080)
 
 #define WHITE rgb(255, 255, 255)
 #define GRAY rgb(128, 128, 128)
@@ -272,9 +276,9 @@ static const float3 side_to_float3[SIDE_COUNT3] = {
 typedef enum {
 	AXIS_X,
 	AXIS_Y,
-	AXIS_COUNT2,
-	AXIS_Z = AXIS_COUNT2,
-	AXIS_COUNT3,
+	AXIS_MAX2D,
+	AXIS_Z = AXIS_MAX2D,
+	AXIS_MAX3D,
 } Axis;
 
 typedef enum {

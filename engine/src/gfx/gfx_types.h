@@ -233,7 +233,6 @@ typedef struct {
 	bool enable_blend;
 	BlendFactor src_color_factor, dst_color_factor;
 	BlendFactor src_alpha_factor, dst_alpha_factor;
-
 } PipelineOptions;
 
 typedef enum {
@@ -528,4 +527,14 @@ typedef struct {
 	VkDebugUtilsMessengerEXT debug_messenger;
 	#endif
 } GFX_Context;
+
+typedef struct Image2D {
+	GFX_Image *handle;
+	uint8_t *pixels;
+
+	// METADATA
+	ImageType type;
+	PixelFormat format;
+	uint32_t width, height;
+} Image2D;
 #endif
