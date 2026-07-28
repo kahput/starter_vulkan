@@ -657,31 +657,31 @@ int main(void) {
 	input_set_context(&input_state);
 
 	Arena permanent[] = { arena_make(MiB(256)) };
-	GFX_Context context[] = { 0 };
+	GFX_Device device[] = { 0 };
 
-	if (gfx_startup(context) == false)
+	if (gfx_device_make(device) == false)
 		return 0;
 
-	GFX_Swapchain *main_swapchain = gfx_swapchain_make(context, main_render, "main");
-	GFX_Swapchain *popup_swapchain = gfx_swapchain_make(context, popup_compute, "popup");
+	GFX_Swapchain *main_swapchain = gfx_swapchain_make(device, main_render, "main");
+	GFX_Swapchain *popup_swapchain = gfx_swapchain_make(device, popup_compute, "popup");
 	os_surface_close(popup_compute);
 
 	// :targets
-	GFX_Image *compute_image = gfx_image_make(context, 640, 360,
+	GFX_Image *compute_image = gfx_image_make(device, 640, 360,
 		(ImageOptions){
 		  .debug_name = "target:compute",
 		  .format = PIXEL_FORMAT_RGBA16_FLOAT,
 		  .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER,
 		});
 
-	GFX_Image *msaa_target = gfx_image_make(context, 1280, 720,
+	GFX_Image *msaa_target = gfx_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:scratch_msaa",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
 		  .usage = IMAGE_USAGE_RENDER,
 		  .sample = SAMPLE_COUNT_8,
 		});
-	GFX_Image *spatial_target = gfx_image_make(context, 1280, 720,
+	GFX_Image *spatial_target = gfx_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:main_color",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -689,21 +689,21 @@ int main(void) {
 		  .sample = SAMPLE_COUNT_1,
 		});
 
-	GFX_Image *ui_target = gfx_image_make(context, 1280, 720,
+	GFX_Image *ui_target = gfx_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:ui",
 		  .format = PIXEL_FORMAT_RGBA8_UNORM,
 		  .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE,
 		  .sample = SAMPLE_COUNT_1,
 		});
-	GFX_Image *depthbuffer = gfx_image_make(context, 1280, 720,
+	GFX_Image *depthbuffer = gfx_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:main_depth",
 		  .format = PIXEL_FORMAT_DEPTH,
 		  .usage = IMAGE_USAGE_RENDER,
 		  .sample = SAMPLE_COUNT_8,
 		});
-	GFX_Image *shadow_depthbuffer = gfx_image_make(context, 2048, 2048,
+	GFX_Image *shadow_depthbuffer = gfx_image_make(device, 2048, 2048,
 		(ImageOptions){
 		  .debug_name = "target:shadow",
 		  .format = PIXEL_FORMAT_DEPTH,
@@ -721,7 +721,7 @@ int main(void) {
 			s("assets/textures/skybox_mc/dayBack.png") //
 			) //
 	);
-	skybox.handle = gfx_image_make(context, skybox.width, skybox.height,
+	skybox.handle = gfx_image_make(device, skybox.width, skybox.height,
 		(ImageOptions){
 		  .debug_name = "skybox",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -755,7 +755,7 @@ int main(void) {
 			memory_copy(font->glyphs, glyphs, sizeof(Glyph) * font->glyph_count);
 
 			Image2D *atlas = &fonts[bake_size_index].atlas;
-			atlas->handle = gfx_image_make(context, atlas->width, atlas->height,
+			atlas->handle = gfx_image_make(device, atlas->width, atlas->height,
 				(ImageOptions){
 				  .debug_name = (char *)str8_pushf(scratch.arena, s("font:%d"), font_bake_size_to_value[bake_size_index]).text,
 				  .format = PIXEL_FORMAT_RGBA8_UNORM,
@@ -773,7 +773,7 @@ int main(void) {
 			icons[index] = load_image(scratch.arena, icon_to_filepath[index]);
 
 			Image2D *icon = &icons[index];
-			icon->handle = gfx_image_make(context, icon->width, icon->height,
+			icon->handle = gfx_image_make(device, icon->width, icon->height,
 				(ImageOptions){
 				  .debug_name = (char *)icon_to_string[index].text,
 				  .format = PIXEL_FORMAT_RGBA8_UNORM,
@@ -784,14 +784,14 @@ int main(void) {
 	}
 	Image2D terrain_texture = load_image(permanent, s("assets/textures/base_grass.png"));
 	Image2D grid_texture = load_image(permanent, s("assets/textures/prototype/texture_09.png"));
-	grid_texture.handle = gfx_image_make(context, grid_texture.width, grid_texture.height,
+	grid_texture.handle = gfx_image_make(device, grid_texture.width, grid_texture.height,
 		(ImageOptions){
 		  .debug_name = "grid",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
 		  .pixels = grid_texture.pixels,
 		});
 	Image2D window_texture = load_image(permanent, s("assets/textures/blending_transparent_window.png"));
-	window_texture.handle = gfx_image_make(context, window_texture.width, window_texture.height,
+	window_texture.handle = gfx_image_make(device, window_texture.width, window_texture.height,
 		(ImageOptions){
 		  .debug_name = "window",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -799,7 +799,7 @@ int main(void) {
 		});
 
 	Image2D noise_image = load_image(permanent, s("assets/textures/heightmap.png"));
-	noise_image.handle = gfx_image_make(context, noise_image.width, noise_image.height,
+	noise_image.handle = gfx_image_make(device, noise_image.width, noise_image.height,
 		(ImageOptions){
 		  .debug_name = "noise",
 		  .format = PIXEL_FORMAT_RGBA8_UNORM,
@@ -807,17 +807,17 @@ int main(void) {
 		});
 
 	GFX_Sampler *linear_sampler[WRAP_MODE_COUNT] = {
-		[WRAP_MODE_REPEAT] = gfx_sampler_make(context, sampler_opt("default:linear_repeat", FILTER_LINEAR, WRAP_MODE_REPEAT)),
-		[WRAP_MODE_CLAMP] = gfx_sampler_make(context, sampler_opt("default:linear_clamp", FILTER_LINEAR, WRAP_MODE_CLAMP))
+		[WRAP_MODE_REPEAT] = gfx_sampler_make(device, sampler_opt("default:linear_repeat", FILTER_LINEAR, WRAP_MODE_REPEAT)),
+		[WRAP_MODE_CLAMP] = gfx_sampler_make(device, sampler_opt("default:linear_clamp", FILTER_LINEAR, WRAP_MODE_CLAMP))
 	};
 	GFX_Sampler *nearest_sampler[WRAP_MODE_COUNT] = {
-		[WRAP_MODE_CLAMP] = gfx_sampler_make(context, sampler_opt("default:nearest_clamp", FILTER_NEAREST, WRAP_MODE_CLAMP)),
-		[WRAP_MODE_CLAMP_BORDER] = gfx_sampler_make(context, sampler_opt("default:nearest_clamp_border", FILTER_NEAREST, WRAP_MODE_CLAMP_BORDER))
+		[WRAP_MODE_CLAMP] = gfx_sampler_make(device, sampler_opt("default:nearest_clamp", FILTER_NEAREST, WRAP_MODE_CLAMP)),
+		[WRAP_MODE_CLAMP_BORDER] = gfx_sampler_make(device, sampler_opt("default:nearest_clamp_border", FILTER_NEAREST, WRAP_MODE_CLAMP_BORDER))
 	};
 	SamplerOptions shadow_opt = sampler_opt("default:shadow", FILTER_LINEAR, WRAP_MODE_CLAMP_BORDER);
 	/* shadow_opt.compare_enable = true; */
-	GFX_Sampler *shadow_sampler = gfx_sampler_make(context, shadow_opt);
-	GFX_Image *white_texture = gfx_image_make(context, 1, 1,
+	GFX_Sampler *shadow_sampler = gfx_sampler_make(device, shadow_opt);
+	GFX_Image *white_texture = gfx_image_make(device, 1, 1,
 		(ImageOptions){
 		  .debug_name = "default:white",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -830,7 +830,7 @@ int main(void) {
 	{
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-		c_pipeline = compute_pipeline_make(context, compute_bytecode);
+		c_pipeline = compute_pipeline_make(device, compute_bytecode);
 		arena_scratch_end(scratch);
 	}
 
@@ -838,7 +838,7 @@ int main(void) {
 	{ // :skinning
 		ArenaTemp scratch = arena_scratch_begin(NULL);
 		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/skinning.compute.spv"));
-		pipeline_skinning = compute_pipeline_make(context, compute_bytecode);
+		pipeline_skinning = compute_pipeline_make(device, compute_bytecode);
 		arena_scratch_end(scratch);
 	}
 
@@ -848,7 +848,7 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/shadow.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/blank.fragment.spv"));
 
-		pipeline_shadow = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_shadow = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "pipeline_shadow",
 			});
@@ -864,7 +864,7 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/phong.fragment.spv"));
 
-		pipeline_3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_3d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "spatial",
 			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
@@ -876,7 +876,7 @@ int main(void) {
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/grass.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/grass.fragment.spv"));
 
-		pipeline_grass = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_grass = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "pipeline_grass",
 			  .color_attachment_count = 1,
@@ -886,7 +886,7 @@ int main(void) {
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/skybox.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/skybox.fragment.spv"));
-		pipeline_skybox = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_skybox = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "pipeline_skybox",
 			  .color_attachment_count = 1,
@@ -896,7 +896,7 @@ int main(void) {
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-		pipeline_line3d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_line3d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "line3d",
 			  .color_attachment_count = 1,
@@ -914,7 +914,7 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
 
-		transparent = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		transparent = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "transparent",
 			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
@@ -935,7 +935,7 @@ int main(void) {
 		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
 		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/quad.fragment.spv"));
 
-		pipeline_2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_2d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "canvas",
 			  .color_attachments = { PIXEL_FORMAT_RGBA8_UNORM },
@@ -954,7 +954,7 @@ int main(void) {
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line2d.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-		pipeline_line2d = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_line2d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "line2d",
 			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
@@ -968,7 +968,7 @@ int main(void) {
 
 		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/fullscreen_quad.vertex.spv"));
 		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/composite.fragment.spv"));
-		pipeline_composite = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode,
+		pipeline_composite = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
 			(PipelineOptions){
 			  .debug_name = "composite",
 			  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
@@ -982,13 +982,13 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	GFX_Buffer *geometry = gfx_buffer_make(context, MiB(256),
+	GFX_Buffer *geometry = gfx_buffer_make(device, MiB(256),
 		(BufferOptions){
 		  .debug_name = "geometry",
 		  .memory = MEMORY_TYPE_GPU,
 		  .usage = BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER,
 		});
-	GFX_Buffer *grass_instancing_buffer = gfx_buffer_make(context, MiB(128),
+	GFX_Buffer *grass_instancing_buffer = gfx_buffer_make(device, MiB(128),
 		(BufferOptions){
 		  .debug_name = "grass_instancing",
 		  .memory = MEMORY_TYPE_GPU,
@@ -1053,7 +1053,7 @@ int main(void) {
 		animations[meshid] = load_gltf_animations(permanent, meshid_to_metadata[meshid], &animation_counts[meshid]);
 	}
 
-	GFX_CommandContext *cmd = gfx_transfer_cmd(context);
+	GFX_Command *cmd = gfx_transfer_cmd(device);
 	if (cmd->handle) { // :upload
 		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, geometry->size, geometry);
 		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, grass_instancing_buffer->size, grass_instancing_buffer);
@@ -1088,7 +1088,7 @@ int main(void) {
 						memory_copy(name.text + cursor, tail.text, tail.length);
 						cursor += tail.length;
 
-						img->handle = gfx_image_make(context, img->width, img->height,
+						img->handle = gfx_image_make(device, img->width, img->height,
 							(ImageOptions){
 							  .debug_name = (char *)name.text,
 							  .pixels = img->pixels,
@@ -1242,15 +1242,15 @@ int main(void) {
 				case OS_EVENT_TYPE_SURFACE_RESIZE: {
 					uint2 dims = { event.as.resize.width, event.as.resize.height };
 					if (event.surface == main_render) {
-						gfx_swapchain_resize(context, main_swapchain, dims.x, dims.y);
-						gfx_image_resize(context, depthbuffer, dims.x, dims.y);
-						gfx_image_resize(context, msaa_target, dims.x, dims.y);
-						gfx_image_resize(context, spatial_target, dims.x, dims.y);
-						gfx_image_resize(context, ui_target, dims.x, dims.y);
+						gfx_swapchain_resize(device, main_swapchain, dims.x, dims.y);
+						gfx_image_resize(device, depthbuffer, dims.x, dims.y);
+						gfx_image_resize(device, msaa_target, dims.x, dims.y);
+						gfx_image_resize(device, spatial_target, dims.x, dims.y);
+						gfx_image_resize(device, ui_target, dims.x, dims.y);
 
 					} else {
-						gfx_swapchain_resize(context, popup_swapchain, dims.x, dims.y);
-						gfx_image_resize(context, compute_image, dims.x, dims.y);
+						gfx_swapchain_resize(device, popup_swapchain, dims.x, dims.y);
+						gfx_image_resize(device, compute_image, dims.x, dims.y);
 					}
 				} break;
 
@@ -1460,7 +1460,6 @@ int main(void) {
 
 						IMGUI_Interact interct = imgui_interact(track->id, track_rect);
 						if (interct.held) {
-							float travel = track_rect.width - (4.0f * 2 + thumb_rect.width);
 							float2 mouse = imgui.mouse.position;
 							mouse.x -= track_rect.x + thumb_rect.width * 0.5f;
 							mouse.x = clampf(mouse.x, 0.0f, travel);
@@ -1502,10 +1501,10 @@ int main(void) {
 
 						Rectangle dock_rect = rect_from_center(scale2(cast2(dims, float2), 0.5f), make2(40.0f, 40.0f));
 
-						float dock_edge_buffer = 10.0f;
+						float EDGE_MARGIN = 10.0f;
 						int2 dock_dir = {
-							(topbar_interact.held && imgui.mouse.position.x >= viewport.width - dock_edge_buffer) - (topbar_interact.held && imgui.mouse.position.x <= dock_edge_buffer),
-							(topbar_interact.held && imgui.mouse.position.y >= viewport.height - dock_edge_buffer) - (topbar_interact.held && imgui.mouse.position.y <= dock_edge_buffer)
+							(topbar_interact.held && imgui.mouse.position.x >= viewport.width - EDGE_MARGIN) - (topbar_interact.held && imgui.mouse.position.x <= EDGE_MARGIN),
+							(topbar_interact.held && imgui.mouse.position.y >= viewport.height - EDGE_MARGIN) - (topbar_interact.held && imgui.mouse.position.y <= EDGE_MARGIN)
 						};
 
 						bool dock =
@@ -1515,6 +1514,7 @@ int main(void) {
 
 						if (dock) {
 							IMGUI_Dock dock_orientation = 0;
+
 							if (dock_dir.x == 0 && dock_dir.y == 0) {
 								dock_orientation = IMGUI_DOCK_CENTER;
 
@@ -1946,12 +1946,12 @@ int main(void) {
 		}
 
 		// Frame resources
-		GFX_CommandContext *cmd = gfx_frame_begin(context);
+		GFX_Command *cmd = gfx_frame_begin(device);
 		if (cmd == 0)
 			continue;
 
 		// Swapchain image acquisition
-		GFX_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gfx_backbuffer(context, cmd, popup_swapchain) : 0;
+		GFX_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gfx_backbuffer(device, cmd, popup_swapchain) : 0;
 		if (compute_blit_target) {
 			ASSERT(compute_blit_target->width == compute_image->width && compute_blit_target->height == compute_image->height);
 			// transition swapchain target & blit src compute image
@@ -1959,7 +1959,7 @@ int main(void) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
 			gfx_cmd_pipeline_bind(cmd, &c_pipeline);
-			gfx_bind(context, &c_pipeline, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
+			gfx_bind(device, &c_pipeline, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
 			struct {
@@ -1975,16 +1975,13 @@ int main(void) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
 			Rectangle area = rect(0, 0, compute_blit_target->width, compute_blit_target->height);
 			gfx_cmd_image_blit(cmd, area, compute_image, area, compute_blit_target);
-
-			// transition swapchain images for presenting
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, compute_blit_target);
 		} else if (os_surface_drawable(popup_compute)) {
 			uint2 dims = os_surface_size(popup_compute);
-			gfx_swapchain_resize(context, popup_swapchain, dims.x, dims.y);
-			gfx_image_resize(context, compute_image, dims.x, dims.y);
+			gfx_swapchain_resize(device, popup_swapchain, dims.x, dims.y);
+			gfx_image_resize(device, compute_image, dims.x, dims.y);
 		}
 
-		GFX_Image *main_target = gfx_backbuffer(context, cmd, main_swapchain);
+		GFX_Image *main_target = gfx_backbuffer(device, cmd, main_swapchain);
 		if (main_target) {
 			// transition swapchain & offscren targets for drawing
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, main_target);
@@ -2105,7 +2102,7 @@ int main(void) {
 				frame_data.proj.elements[5] *= -1;
 
 				gfx_cmd_pipeline_bind(cmd, &pipeline_shadow);
-				gfx_bind(context, &pipeline_shadow, 0,
+				gfx_bind(device, &pipeline_shadow, 0,
 					array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))) //
 				);
 
@@ -2139,7 +2136,7 @@ int main(void) {
 							offset = entity->skinned_vertices_offset;
 						}
 
-						gfx_bind(context, &pipeline_shadow, 1,
+						gfx_bind(device, &pipeline_shadow, 1,
 							array_arg(Uniform, storage_buffers(0, buffer, offset, size)) //
 						);
 
@@ -2220,7 +2217,7 @@ int main(void) {
 					sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
 					sampler_with_textures(3, (GFX_Image *[]){ skybox.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 				};
-				gfx_bind(context, &pipeline_3d, 0, uniforms, countof(uniforms));
+				gfx_bind(device, &pipeline_3d, 0, uniforms, countof(uniforms));
 
 				// :scene
 				gfx_cmd_pipeline_bind(cmd, &pipeline_3d);
@@ -2290,7 +2287,7 @@ int main(void) {
 							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
-						gfx_bind(context, &pipeline_3d, 1, uniforms, countof(uniforms));
+						gfx_bind(device, &pipeline_3d, 1, uniforms, countof(uniforms));
 
 						vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
@@ -2339,7 +2336,7 @@ int main(void) {
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
 							sampler_with_textures(3, (GFX_Image *[]){ noise_image.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
-						gfx_bind(context, &pipeline_grass, 1, uniforms, countof(uniforms));
+						gfx_bind(device, &pipeline_grass, 1, uniforms, countof(uniforms));
 
 						vkCmdPushConstants(cmd->handle, pipeline_grass.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, map_width * map_depth, part->index_offset, part->vertex_offset, 0);
@@ -2405,7 +2402,7 @@ int main(void) {
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
 
-						gfx_bind(context, &transparent, 1, uniforms, countof(uniforms));
+						gfx_bind(device, &transparent, 1, uniforms, countof(uniforms));
 
 						vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -2436,7 +2433,7 @@ int main(void) {
 						Uniform uniforms[] = {
 							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
-						gfx_bind(context, &pipeline_line3d, 1, uniforms, countof(uniforms));
+						gfx_bind(device, &pipeline_line3d, 1, uniforms, countof(uniforms));
 						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
 					}
 
@@ -2459,8 +2456,8 @@ int main(void) {
 						Uniform uniforms[] = {
 							storage_data(0, batch_line2d->base, batch_line2d->offset),
 						};
-						gfx_bind(context, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
-						gfx_bind(context, &pipeline_line2d, 1, uniforms, countof(uniforms));
+						gfx_bind(device, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
+						gfx_bind(device, &pipeline_line2d, 1, uniforms, countof(uniforms));
 						vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
 					}
 				}
@@ -2523,10 +2520,10 @@ int main(void) {
 				for (uint32_t quad_index = 0; quad_index < quad_count; ++quad_index) {
 					QuadVertex2D *quad_first_vertex = (QuadVertex2D *)batch_2d->base + (quad_index * 6);
 
-					if (quad_first_vertex->imageid && quad_first_vertex->imageid != indexof(context->image_pool, white_texture)) {
+					if (quad_first_vertex->imageid && quad_first_vertex->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;
 						for (uint32_t image_index = 1; image_index < image_count; ++image_index) {
-							if (indexof(context->image_pool, images[image_index]) == quad_first_vertex->imageid) {
+							if (indexof(device->image_pool, images[image_index]) == quad_first_vertex->imageid) {
 								found_index = image_index;
 								break;
 							}
@@ -2535,7 +2532,7 @@ int main(void) {
 						if (found_index == -1) {
 							ASSERT(image_count < countof(images) || "Extend sprite batching to support beyond 32 distinct images");
 							found_index = image_count++;
-							images[found_index] = &context->image_pool[quad_first_vertex->imageid];
+							images[found_index] = &device->image_pool[quad_first_vertex->imageid];
 						}
 
 						for (uint32_t vertex_index = 0; vertex_index < 6; ++vertex_index) {
@@ -2554,8 +2551,8 @@ int main(void) {
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 
-				gfx_bind(context, &pipeline_2d, 0, uniforms0, countof(uniforms0));
-				gfx_bind(context, &pipeline_2d, 1, uniforms1, countof(uniforms1));
+				gfx_bind(device, &pipeline_2d, 0, uniforms0, countof(uniforms0));
+				gfx_bind(device, &pipeline_2d, 1, uniforms1, countof(uniforms1));
 
 				vkCmdDraw(cmd->handle, vertex_count, 1, 0, 0);
 
@@ -2605,74 +2602,24 @@ int main(void) {
 					sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
 				};
 
-				gfx_bind(context, &pipeline_composite, 0, uniforms, countof(uniforms));
+				gfx_bind(device, &pipeline_composite, 0, uniforms, countof(uniforms));
 
 				vkCmdDraw(cmd->handle, 6, 1, 0, 0);
 				vkCmdEndRendering(cmd->handle);
 				vkCmdEndDebugUtilsLabel(cmd->handle);
 			}
-
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, main_target);
 		}
-
-		if (vkEndCommandBuffer(cmd->handle) != VK_SUCCESS) {
-			LOG_INFO("failed to record command buffer.");
-			break;
-		}
-
-		{ // :submit
-			VkSwapchainKHR handles[MAX_SWAPCHAINS] = { 0 };
-			VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 };
-			VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 };
-			VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = {
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			};
-
-			for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
-				handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle;
-				wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index];
-				signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]];
-			}
-
-			VkSubmitInfo submit_info = {
-				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-				.waitSemaphoreCount = cmd->swapchain_count,
-				.pWaitSemaphores = wait_semaphores,
-				.pWaitDstStageMask = wait_stages,
-				.commandBufferCount = 1,
-				.pCommandBuffers = &cmd->handle,
-				.signalSemaphoreCount = cmd->swapchain_count,
-				.pSignalSemaphores = signal_semaphores,
-			};
-
-			if (vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->frame_commands[context->current_frame_index].in_flight_fence) != VK_SUCCESS) {
-				LOG_ERROR("failed to submit command buffer to queue.");
-				break;
-			}
-
-			if (cmd->swapchain_count) {
-				VkPresentInfoKHR present_info = {
-					.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-					.waitSemaphoreCount = cmd->swapchain_count,
-					.pWaitSemaphores = signal_semaphores,
-					.swapchainCount = cmd->swapchain_count,
-					.pSwapchains = handles,
-					.pImageIndices = cmd->swapchain_image_indices,
-				};
-				vkQueuePresentKHR(context->present_queue, &present_info);
-			}
-		}
+		gfx_frame_end(device, cmd);
 
 		OS_Timestamp current_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
 		if (compute_ts != current_ts) {
 			LOG_INFO("hot-reloading %s...", c_pipeline.options.debug_name);
-			vkDeviceWaitIdle(context->device.logical); // TODO: Proper synchronization for hot-reload
-			gfx_pipeline_destroy(context, &c_pipeline);
+			vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
+			gfx_pipeline_destroy(device, &c_pipeline);
 
 			ArenaTemp scratch = arena_scratch_begin(NULL);
 			String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-			c_pipeline = compute_pipeline_make(context, compute_bytecode);
+			c_pipeline = compute_pipeline_make(device, compute_bytecode);
 			arena_scratch_end(scratch);
 
 			compute_ts = current_ts;
@@ -2681,43 +2628,43 @@ int main(void) {
 		current_ts = os_file_last_modified(s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
 		if (transparent_ts != current_ts) {
 			LOG_INFO("hot-reloading %s...", transparent.options.debug_name);
-			vkDeviceWaitIdle(context->device.logical); // TODO: Proper synchronization for hot-reload
+			vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
 			PipelineOptions options = transparent.options;
 			memory_copy_array(options.color_attachments, transparent.options.color_attachments);
 
-			gfx_pipeline_destroy(context, &transparent);
+			gfx_pipeline_destroy(device, &transparent);
 
 			ArenaTemp scratch = arena_scratch_begin(NULL);
 			String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
 			String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
-			transparent = graphics_pipeline_make(context, vertex_bytecode, fragment_bytecode, options);
+			transparent = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode, options);
 
 			arena_scratch_end(scratch);
 
 			transparent_ts = current_ts;
 		}
 
-		context->current_frame_index = (context->current_frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
+		device->current_frame_index = (device->current_frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
 		arena_reset(frame_arena);
 	}
 
 	// :destroy
-	vkDeviceWaitIdle(context->device.logical);
+	vkDeviceWaitIdle(device->handle);
 	{
-		gfx_pipeline_destroy(context, &c_pipeline);
-		gfx_pipeline_destroy(context, &pipeline_skinning);
-		gfx_pipeline_destroy(context, &pipeline_shadow);
-		gfx_pipeline_destroy(context, &pipeline_3d);
-		gfx_pipeline_destroy(context, &pipeline_2d);
-		gfx_pipeline_destroy(context, &transparent);
-		gfx_pipeline_destroy(context, &pipeline_skybox);
-		gfx_pipeline_destroy(context, &pipeline_grass);
-		gfx_pipeline_destroy(context, &pipeline_line3d);
-		gfx_pipeline_destroy(context, &pipeline_line2d);
-		gfx_pipeline_destroy(context, &pipeline_composite);
+		gfx_pipeline_destroy(device, &c_pipeline);
+		gfx_pipeline_destroy(device, &pipeline_skinning);
+		gfx_pipeline_destroy(device, &pipeline_shadow);
+		gfx_pipeline_destroy(device, &pipeline_3d);
+		gfx_pipeline_destroy(device, &pipeline_2d);
+		gfx_pipeline_destroy(device, &transparent);
+		gfx_pipeline_destroy(device, &pipeline_skybox);
+		gfx_pipeline_destroy(device, &pipeline_grass);
+		gfx_pipeline_destroy(device, &pipeline_line3d);
+		gfx_pipeline_destroy(device, &pipeline_line2d);
+		gfx_pipeline_destroy(device, &pipeline_composite);
 	}
 
-	gfx_shutdown(context);
+	gfx_device_destroy(device);
 
 	os_surface_close(main_render);
 	os_surface_close(popup_compute);

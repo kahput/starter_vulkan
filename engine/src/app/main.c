@@ -20,8 +20,8 @@ int main(void) {
 	OS_Timestamp ts = 0;
 
 	os_display_startup();
-	GFX_Context gfx = { 0 };
-	gfx_startup(&gfx);
+	GFX_Device gfx = { 0 };
+	gfx_device_make(&gfx);
 
 	InputState input_state = { 0 };
 	input_set_context(&input_state);
@@ -70,7 +70,7 @@ int main(void) {
 			is_open &= tick(&arena, &input_state);
 	}
 
-	gfx_shutdown(&gfx);
+	gfx_device_destroy(&gfx);
 
 	os_library_unload(lib);
 	os_display_shutdown();

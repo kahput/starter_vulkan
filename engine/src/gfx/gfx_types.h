@@ -171,6 +171,29 @@ typedef enum blend_factor {
 	BLEND_FACTOR_ONE_MINUS_DST_ALPHA = 9,
 } BlendFactor;
 
+typedef enum {
+	RESOURCE_USAGE_UNDEFINED,
+
+	RESOURCE_USAGE_TRANSFER_SRC,
+	RESOURCE_USAGE_SHADER_READ,
+	RESOURCE_USAGE_VERTEX_SHADER_READ,
+	RESOURCE_USAGE_FRAGMENT_SHADER_READ,
+	RESOURCE_USAGE_COMPUTE_SHADER_READ,
+	RESOURCE_USAGE_VERTEX_BUFFER,
+	RESOURCE_USAGE_INDEX_BUFFER,
+	RESOURCE_USAGE_PRESENT,
+
+	RESOURCE_USAGE_TRANSFER_DST,
+	RESOURCE_USAGE_SHADER_WRITE,
+	RESOURCE_USAGE_VERTEX_SHADER_WRITE,
+	RESOURCE_USAGE_FRAGMENT_SHADER_WRITE,
+	RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
+	RESOURCE_USAGE_COLOR_ATTACHMENT,
+	RESOURCE_USAGE_DEPTH_ATTACHMENT,
+
+	RESOURCE_USAGE_COUNT,
+} ResourceUsage;
+
 typedef struct {
 	const char *debug_name;
 
@@ -235,29 +258,6 @@ typedef struct {
 	BlendFactor src_alpha_factor, dst_alpha_factor;
 } PipelineOptions;
 
-typedef enum {
-	RESOURCE_USAGE_UNDEFINED,
-
-	RESOURCE_USAGE_TRANSFER_SRC,
-	RESOURCE_USAGE_SHADER_READ,
-	RESOURCE_USAGE_VERTEX_SHADER_READ,
-	RESOURCE_USAGE_FRAGMENT_SHADER_READ,
-	RESOURCE_USAGE_COMPUTE_SHADER_READ,
-	RESOURCE_USAGE_VERTEX_BUFFER,
-	RESOURCE_USAGE_INDEX_BUFFER,
-	RESOURCE_USAGE_PRESENT,
-
-	RESOURCE_USAGE_TRANSFER_DST,
-	RESOURCE_USAGE_SHADER_WRITE,
-	RESOURCE_USAGE_VERTEX_SHADER_WRITE,
-	RESOURCE_USAGE_FRAGMENT_SHADER_WRITE,
-	RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
-	RESOURCE_USAGE_COLOR_ATTACHMENT,
-	RESOURCE_USAGE_DEPTH_ATTACHMENT,
-
-	RESOURCE_USAGE_COUNT,
-} ResourceUsage;
-
 // ============================================================
 // ========================= TEMPORARY =========================
 // ============================================================
@@ -287,9 +287,10 @@ struct GFX_Buffer {
 typedef struct GFX_Image GFX_Image;
 struct GFX_Image {
 	GFX_Image *next;
-    // TEMP_START
-    uint32_t imageid;
-    // TEMP_END
+
+	// TEMP_START
+	uint32_t imageid;
+	// TEMP_END
 
 	VkImage handle;
 	VkImageView view;
@@ -449,14 +450,6 @@ struct Swapchain {
 /* #define MAX_BINDSETS 4096 */
 
 typedef struct {
-	VkPhysicalDevice physical;
-	VkDevice logical;
-
-	VkPhysicalDeviceLimits limits;
-	VkPhysicalDeviceProperties properties;
-} VulkanDevice;
-
-typedef struct {
 	VkCommandBuffer handle;
 	VkFence in_flight_fence;
 
@@ -471,13 +464,18 @@ typedef struct {
 	Arena transient_arena[1];
 
 	uint32_t frame_index, recording;
-} GFX_CommandContext;
+} GFX_Command;
 
 typedef struct {
 	Arena arena[1];
 
 	VkInstance instance;
-	VulkanDevice device;
+	VkDevice handle;
+	struct {
+		VkPhysicalDevice gpu;
+		VkPhysicalDeviceLimits limits;
+		VkPhysicalDeviceProperties properties;
+	} info;
 
 	// Engine globals
 	VkCommandPool graphics_command_pool;
@@ -496,11 +494,11 @@ typedef struct {
 	int32_t transfer_index, compute_index;
 
 	// Transfer
-	GFX_CommandContext transfer_commands[2];
+	GFX_Command transfer_commands[2];
 	uint32_t current_transfer_index;
 
 	// Frame
-	GFX_CommandContext frame_commands[MAX_FRAMES_IN_FLIGHT];
+	GFX_Command frame_commands[MAX_FRAMES_IN_FLIGHT];
 	uint32_t current_frame_index;
 
 	// Resources
@@ -529,7 +527,7 @@ typedef struct {
 	#ifdef DEV_BUILD
 	VkDebugUtilsMessengerEXT debug_messenger;
 	#endif
-} GFX_Context;
+} GFX_Device;
 
 typedef struct Image2D {
 	GFX_Image *handle;

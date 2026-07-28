@@ -15,10 +15,10 @@
 // :helper
 static bool gfx__validate_extensions(const char *required[], uint32_t required_count, VkExtensionProperties *available, uint32_t available_count);
 
-static bool gfx__instance_make(GFX_Context *context);
-static bool gfx__device_make(GFX_Context *context);
-static bool gfx__frame_resources_make(GFX_Context *context);
-static void gfx__load_debug_extensions(GFX_Context *device);
+static bool gfx__instance_make(GFX_Device *device);
+static bool gfx__device_make(GFX_Device *device);
+static bool gfx__frame_resources_make(GFX_Device *device);
+static void gfx__load_debug_extensions(GFX_Device *device);
 
 static inline uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 static inline VKAPI_ATTR VkBool32 VKAPI_CALL gfx__debug_callback(
@@ -115,24 +115,25 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 
 	return ok;
 }
-GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions options) {
+GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions options) {
 	GFX_Buffer *result = 0;
 
-	bool ok = context && (context->buffer_count < MAX_BUFFERS || context->first_free_buffer);
+	bool ok = gfx_device_valid(device) && (device->buffer_count < MAX_BUFFERS || device->first_free_buffer);
 	const char *name = options.debug_name ? options.debug_name : "<unnamed_buffer>";
 
 	LOG_DEBUG("creating '%s' buffer.", name);
 	if (ok) { // acquire new buffer
-		if (context->first_free_buffer) {
-			result = context->first_free_buffer;
-			context->first_free_buffer = result->next;
+		if (device->first_free_buffer) {
+			result = device->first_free_buffer;
+			device->first_free_buffer = result->next;
 			result->next = 0;
 
 			memory_zero(result, sizeof(*result));
 		} else
-			result = &context->buffer_pool[context->buffer_count];
+			result = &device->buffer_pool[device->buffer_count];
 
-		context->buffer_count++;
+		result->next = device->buffer_pool;
+		device->buffer_count++;
 	}
 
 	VkBufferUsageFlags vk_usage = 0;
@@ -151,7 +152,7 @@ GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions o
 
 	if (ok) { // create buffer handle
 		result->size = size;
-		uint32_t family_indices[] = { context->graphics_index, context->transfer_index };
+		uint32_t family_indices[] = { device->graphics_index, device->transfer_index };
 		result->info = (VkBufferCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 			.size = result->size,
@@ -159,14 +160,14 @@ GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions o
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		};
 
-		ok = vkCreateBuffer(context->device.logical, &result->info, 0, &result->handle) == VK_SUCCESS;
+		ok = vkCreateBuffer(device->handle, &result->info, 0, &result->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // allocate buffer memory
 		VkMemoryRequirements memory_requirements;
-		vkGetBufferMemoryRequirements(context->device.logical, result->handle, &memory_requirements);
+		vkGetBufferMemoryRequirements(device->handle, result->handle, &memory_requirements);
 
-		uint32_t memory_type_index = gfx__find_memory_type(context->device.physical, memory_requirements.memoryTypeBits, memory_flags);
+		uint32_t memory_type_index = gfx__find_memory_type(device->info.gpu, memory_requirements.memoryTypeBits, memory_flags);
 		size_t allocation_size = memory_requirements.size;
 
 		VkMemoryAllocateFlagsInfo allocate_flag_info = {
@@ -181,24 +182,23 @@ GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions o
 			.memoryTypeIndex = memory_type_index,
 		};
 
-		ok = vkAllocateMemory(context->device.logical, &allocate_info, 0, &result->memory) == VK_SUCCESS;
+		ok = vkAllocateMemory(device->handle, &allocate_info, 0, &result->memory) == VK_SUCCESS;
 	}
 
 	if (ok) { // bind memory & get buffer device address
-		ok = vkBindBufferMemory(context->device.logical, result->handle, result->memory, 0) == VK_SUCCESS;
+		ok = vkBindBufferMemory(device->handle, result->handle, result->memory, 0) == VK_SUCCESS;
 
 		if (vk_usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 			VkBufferDeviceAddressInfo bda_info = {
 				.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
 				.buffer = result->handle,
 			};
-			result->address = vkGetBufferDeviceAddress(context->device.logical, &bda_info);
+			result->address = vkGetBufferDeviceAddress(device->handle, &bda_info);
 		}
 	}
 
 	if (ok && options.data) { // upload
-		GFX_CommandContext *cmd = gfx_transfer_cmd(context);
-
+		GFX_Command *cmd = gfx_transfer_cmd(device);
 		gfx_cmd_buffer_upload(cmd, result, 0, size, options.data);
 	}
 
@@ -211,35 +211,36 @@ GFX_Buffer *gfx_buffer_make(GFX_Context *context, uint64_t size, BufferOptions o
 			.objectHandle = (uint64_t)result->handle,
 
 		};
-		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+		vkSetDebugUtilsObjectName(device->handle, &name_info);
 	}
 #endif
 
 	if (ok == false) // remove half-made resources on error
-		gfx_buffer_destroy(context, result);
+		gfx_buffer_destroy(device, result);
 
 	return result;
 }
 
-GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height, ImageOptions options) {
+GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, ImageOptions options) {
 	GFX_Image *result = 0;
 
-	bool ok = context && context->image_count < MAX_IMAGES;
+	bool ok = gfx_device_valid(device) && device->image_count < MAX_IMAGES;
 	const char *name = options.debug_name ? options.debug_name : "<unnamed_image>";
 
 	LOG_DEBUG("creating '%s' image.", name);
 	if (ok) { // acquire new image
-		if (context->first_free_image) {
-			result = context->first_free_image;
-			context->first_free_image = result->next;
+		if (device->first_free_image) {
+			result = device->first_free_image;
+			device->first_free_image = result->next;
 			result->next = 0;
 
 			memory_zero(result, sizeof(*result));
 		} else
-			result = &context->image_pool[context->image_count];
+			result = &device->image_pool[device->image_count];
 
-		result->imageid = indexof(context->image_pool, result);
-		context->image_count++;
+		result->next = device->image_pool;
+		result->imageid = indexof(device->image_pool, result);
+		device->image_count++;
 	}
 
 	uint32_t layer_count = image_options_to_vulkan_layer_count(options);
@@ -247,7 +248,7 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 
 	if (ok) { // make vulkan image handle
 		VkImageUsageFlags vk_usage = image_options_to_vulkan_image_usage_flags(options);
-		VkSampleCountFlags vk_sample = image_options_to_vulkan_sample_count(context->device.limits, options);
+		VkSampleCountFlags vk_sample = image_options_to_vulkan_sample_count(device->info.limits, options);
 		VkImageCreateFlags vk_flags = image_options_to_vulkan_image_flags(options);
 
 		result->width = width, result->height = height;
@@ -275,24 +276,24 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 			.initialLayout = resource_usage_to_vulkan_image_layout[result->res_usage],
 		};
 
-		ok = vkCreateImage(context->device.logical, &image_info, 0, &result->handle) == VK_SUCCESS;
+		ok = vkCreateImage(device->handle, &image_info, 0, &result->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // allocate memory
 		VkMemoryRequirements memory_requirements;
-		vkGetImageMemoryRequirements(context->device.logical, result->handle, &memory_requirements);
+		vkGetImageMemoryRequirements(device->handle, result->handle, &memory_requirements);
 
 		VkMemoryAllocateInfo allocate_info = {
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 			.allocationSize = memory_requirements.size,
-			.memoryTypeIndex = gfx__find_memory_type(context->device.physical, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+			.memoryTypeIndex = gfx__find_memory_type(device->info.gpu, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
 		};
 
-		ok = vkAllocateMemory(context->device.logical, &allocate_info, 0, &result->memory) == VK_SUCCESS;
+		ok = vkAllocateMemory(device->handle, &allocate_info, 0, &result->memory) == VK_SUCCESS;
 	}
 
 	if (ok) // bind memory to handle
-		vkBindImageMemory(context->device.logical, result->handle, result->memory, 0);
+		vkBindImageMemory(device->handle, result->handle, result->memory, 0);
 
 	if (ok) { // create image view
 		VkImageViewType vk_type = image_type_to_vulkan_image_view_type[options.type];
@@ -318,16 +319,16 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 			}
 		};
 
-		ok = vkCreateImageView(context->device.logical, &view_info, 0, &result->view) == VK_SUCCESS;
+		ok = vkCreateImageView(device->handle, &view_info, 0, &result->view) == VK_SUCCESS;
 	}
 
 	if (ok && options.pixels) { // upload
-		GFX_CommandContext *cmd = gfx_transfer_cmd(context);
+		GFX_Command *cmd = gfx_transfer_cmd(device);
 
 		gfx_cmd_image_upload(cmd, result, result->width, result->height, options.pixels);
 
 		VkFormatProperties format_properties;
-		vkGetPhysicalDeviceFormatProperties(context->device.physical, vk_format, &format_properties);
+		vkGetPhysicalDeviceFormatProperties(device->info.gpu, vk_format, &format_properties);
 		bool blit_support = format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 		if (blit_support == false) {
 			LOG_WARN("pixel format (%s) does not support linear blitting.", pixel_format_to_string[options.format]);
@@ -379,7 +380,6 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 			}
 		}
 		gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_TRANSFER_SRC, result->miplevels - 1, 1, result);
-
 		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, result);
 	}
 
@@ -392,35 +392,36 @@ GFX_Image *gfx_image_make(GFX_Context *context, uint32_t width, uint32_t height,
 			.objectHandle = (uint64_t)result->handle,
 
 		};
-		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+		vkSetDebugUtilsObjectName(device->handle, &name_info);
 	}
 #endif
 
 	if (ok == false) // remove half-made resources on error
-		gfx_image_destroy(context, result);
+		gfx_image_destroy(device, result);
 
-	/* LOG_INFO("image loaded successfuly (%ux%u | %s)", indexof(context->image_pool, image), width, height, image_format_to_string[format]); */
+	/* LOG_INFO("image loaded successfuly (%ux%u | %s)", indexof(device->image_pool, image), width, height, image_format_to_string[format]); */
 	return result;
 }
 
-GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions options) {
+GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 	GFX_Sampler *result = 0;
 
-	bool ok = context && (context->sampler_count < MAX_SAMPLERS || context->first_free_sampler);
+	bool ok = gfx_device_valid(device) && (device->sampler_count < MAX_SAMPLERS || device->first_free_sampler);
 	const char *name = options.debug_name ? options.debug_name : "<unnamed_sampler>";
 
 	LOG_DEBUG("creating '%s' sampler.", name);
 	if (ok) { // acquire new sampler
-		if (context->first_free_sampler) {
-			result = context->first_free_sampler;
-			context->first_free_sampler = result->next;
+		if (device->first_free_sampler) {
+			result = device->first_free_sampler;
+			device->first_free_sampler = result->next;
 			result->next = 0;
 
 			memory_zero(result, sizeof(*result));
 		} else
-			result = &context->sampler_pool[context->sampler_count];
+			result = &device->sampler_pool[device->sampler_count];
 
-		context->sampler_count++;
+		result->next = device->sampler_pool;
+		device->sampler_count++;
 	}
 
 	if (ok) {
@@ -434,13 +435,13 @@ GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions options) {
 			.addressModeW = (VkSamplerAddressMode)options.address_mode_w,
 			.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
 			.anisotropyEnable = VK_TRUE,
-			.maxAnisotropy = context->device.limits.maxSamplerAnisotropy,
+			.maxAnisotropy = device->info.limits.maxSamplerAnisotropy,
 			.compareEnable = options.compare_enable,
 			.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 			.maxLod = VK_LOD_CLAMP_NONE
 		};
 
-		ok = vkCreateSampler(context->device.logical, &result->info, NULL, &result->handle) == VK_SUCCESS;
+		ok = vkCreateSampler(device->handle, &result->info, NULL, &result->handle) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create vulkan sampler.");
 		}
@@ -455,36 +456,37 @@ GFX_Sampler *gfx_sampler_make(GFX_Context *context, SamplerOptions options) {
 			.objectHandle = (uint64_t)result->handle,
 
 		};
-		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+		vkSetDebugUtilsObjectName(device->handle, &name_info);
 	}
 #endif
 
 	if (ok == false) // remove half-made resources on error
-		gfx_sampler_destroy(context, result);
+		gfx_sampler_destroy(device, result);
 
 	return result;
 }
 
-GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, const char *debug_name) {
+GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const char *debug_name) {
 	GFX_Swapchain *result = 0;
 	ArenaTemp scratch = arena_scratch_begin(0);
 
-	bool ok = context && (context->swapchain_count < MAX_SWAPCHAINS || context->first_free_swapchain);
+	bool ok = gfx_device_valid(device) && (device->swapchain_count < MAX_SWAPCHAINS || device->first_free_swapchain);
 	const char *name = debug_name ? debug_name : "<unnamed_swapchain>";
 
 	LOG_DEBUG("creating '%s' swapchain.", name);
 	if (ok) { // acquire new swapchain
-		if (context->first_free_swapchain) {
-			result = context->first_free_swapchain;
-			context->first_free_swapchain = result->next;
+		if (device->first_free_swapchain) {
+			result = device->first_free_swapchain;
+			device->first_free_swapchain = result->next;
 			result->next = 0;
 
 			memory_zero(result, sizeof(*result));
 		} else
-			result = &context->swapchain_pool[context->swapchain_count];
+			result = &device->swapchain_pool[device->swapchain_count];
 
+		result->next = device->swapchain_pool;
 		result->native = surface;
-		context->swapchain_count++;
+		device->swapchain_count++;
 	}
 
 	if (ok) { // create surface
@@ -494,7 +496,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 			.window = (uint32_t)(uint64_t)os_native_surface_handle(surface),
 		}; // TODO: Have os decide this
 
-		ok = vkCreateXcbSurfaceKHR(context->instance, &surface_create_info, 0, &result->surface) == VK_SUCCESS;
+		ok = vkCreateXcbSurfaceKHR(device->instance, &surface_create_info, 0, &result->surface) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create vulkan surface.");
 		}
@@ -509,40 +511,40 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 	VkPresentModeKHR *present_modes;
 
 	if (ok) { // query surface suitability
-		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context->device.physical, result->surface, &capabilities);
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->info.gpu, result->surface, &capabilities);
 
-		vkGetPhysicalDeviceSurfaceFormatsKHR(context->device.physical, result->surface, &surface_format_count, 0);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device->info.gpu, result->surface, &surface_format_count, 0);
 		surface_formats = arena_push_count(scratch.arena, VkSurfaceFormatKHR, surface_format_count);
-		vkGetPhysicalDeviceSurfaceFormatsKHR(context->device.physical, result->surface, &surface_format_count, surface_formats);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device->info.gpu, result->surface, &surface_format_count, surface_formats);
 
-		vkGetPhysicalDeviceSurfacePresentModesKHR(context->device.physical, result->surface, &present_mode_count, 0);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(device->info.gpu, result->surface, &present_mode_count, 0);
 		present_modes = arena_push_count(scratch.arena, VkPresentModeKHR, present_mode_count);
-		vkGetPhysicalDeviceSurfacePresentModesKHR(context->device.physical, result->surface, &present_mode_count, present_modes);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(device->info.gpu, result->surface, &present_mode_count, present_modes);
 
 		uint32_t queue_family_count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(context->device.physical, &queue_family_count, 0);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, 0);
 		VkQueueFamilyProperties *queue_family_properties = arena_push_count(scratch.arena, VkQueueFamilyProperties, queue_family_count);
-		vkGetPhysicalDeviceQueueFamilyProperties(context->device.physical, &queue_family_count, queue_family_properties);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, queue_family_properties);
 
-		if (context->present_index == -1)
+		if (device->present_index == -1)
 			for (uint32_t index = 0; index < queue_family_count; ++index) {
 				VkQueueFlags flags = queue_family_properties[index].queueFlags;
 
 				VkBool32 present_support = false;
-				vkGetPhysicalDeviceSurfaceSupportKHR(context->device.physical, index, result->surface, &present_support);
-				if (present_support && context->present_index == -1) {
-					context->present_index = index;
+				vkGetPhysicalDeviceSurfaceSupportKHR(device->info.gpu, index, result->surface, &present_support);
+				if (present_support && device->present_index == -1) {
+					device->present_index = index;
 					break;
 				}
 			}
 
 		ok &= surface_format_count > 0; // valid surface formats available
 		ok &= present_mode_count > 0; // valid present mode available
-		ok &= context->present_index != -1; // supports present queue
+		ok &= device->present_index != -1; // supports present queue
 	}
 
 	if (ok) { // create swapchain
-		vkGetDeviceQueue(context->device.logical, context->present_index, 0, &context->present_queue);
+		vkGetDeviceQueue(device->handle, device->present_index, 0, &device->present_queue);
 
 		VkSurfaceFormatKHR selected_format = surface_formats[0];
 		for (uint32_t format_index = 0; format_index < surface_format_count; ++format_index) {
@@ -576,7 +578,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 			? capabilities.currentExtent
 			: (VkExtent2D){ .width = (uint32_t)(surface_size.x * dpi), .height = (uint32_t)((float)surface_size.y * dpi) };
 
-		uint32_t queue_family_indices[] = { (uint32_t)context->graphics_index, (uint32_t)context->present_index };
+		uint32_t queue_family_indices[] = { (uint32_t)device->graphics_index, (uint32_t)device->present_index };
 
 		uint32_t image_count = capabilities.minImageCount + 1;
 		if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount)
@@ -606,12 +608,12 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 		} else
 			result->info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-		ok = vkCreateSwapchainKHR(context->device.logical, &result->info, NULL, &result->handle) == VK_SUCCESS;
+		ok = vkCreateSwapchainKHR(device->handle, &result->info, NULL, &result->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // get the swapchain images & create image views
-		vkGetSwapchainImagesKHR(context->device.logical, result->handle, &result->image_count, NULL);
-		vkGetSwapchainImagesKHR(context->device.logical, result->handle, &result->image_count, result->images);
+		vkGetSwapchainImagesKHR(device->handle, result->handle, &result->image_count, NULL);
+		vkGetSwapchainImagesKHR(device->handle, result->handle, &result->image_count, result->images);
 
 		for (uint32_t image_index = 0; image_index < result->image_count; ++image_index) {
 			result->view_infos[image_index] = (VkImageViewCreateInfo){
@@ -634,7 +636,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 				}
 			};
 
-			ok &= vkCreateImageView(context->device.logical, result->view_infos + image_index, NULL, &result->views[image_index]) == VK_SUCCESS;
+			ok &= vkCreateImageView(device->handle, result->view_infos + image_index, NULL, &result->views[image_index]) == VK_SUCCESS;
 		}
 	}
 
@@ -659,9 +661,9 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 		};
 
 		for (uint32_t index = 0; index < countof(result->image_available_semaphores); ++index)
-			ok &= vkCreateSemaphore(context->device.logical, &s_create_info, 0, result->image_available_semaphores + index) == VK_SUCCESS;
+			ok &= vkCreateSemaphore(device->handle, &s_create_info, 0, result->image_available_semaphores + index) == VK_SUCCESS;
 		for (uint32_t index = 0; index < countof(result->render_done_semaphores); ++index)
-			ok &= vkCreateSemaphore(context->device.logical, &s_create_info, 0, result->render_done_semaphores + index) == VK_SUCCESS;
+			ok &= vkCreateSemaphore(device->handle, &s_create_info, 0, result->render_done_semaphores + index) == VK_SUCCESS;
 	}
 
 #if DEV_BUILD
@@ -673,12 +675,12 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 			.objectHandle = (uint64_t)result->handle,
 
 		};
-		vkSetDebugUtilsObjectName(context->device.logical, &name_info);
+		vkSetDebugUtilsObjectName(device->handle, &name_info);
 	}
 #endif
 
 	if (ok == false) { // remove half-made resources on error
-		gfx_swapchain_destroy(context, result);
+		gfx_swapchain_destroy(device, result);
 		LOG_ERROR("failed to create graphics surface.");
 	}
 
@@ -686,13 +688,13 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Context *context, OS_Surface *surface, con
 	return result;
 }
 
-GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecode) {
-	GFX_Pipeline result = { 0 };
+GFX_Pipeline compute_pipeline_make(GFX_Device *device, String8 compute_bytecode) {
+	GFX_Pipeline result = { .next = device->shader_pool };
+	uint32_t set_count = 0;
+	const char *name = result.options.debug_name = "<unnamed_compute>";
+	LOG_DEBUG("creating '%s' pipeline.", name);
 
 	bool ok = compute_bytecode.text && compute_bytecode.length > 0;
-	const char *name = result.options.debug_name = "<unnamed_compute>";
-
-	LOG_DEBUG("creating '%s' pipeline.", name);
 	if (ok == false)
 		LOG_WARN("%s - invalid shader bytecode passed.", __func__);
 
@@ -703,13 +705,12 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 			.codeSize = compute_bytecode.length,
 		};
 
-		ok = vkCreateShaderModule(context->device.logical, &csm_create_info, NULL, &result.shaders[SHADER_STAGE_COMPUTE]) == VK_SUCCESS;
+		ok = vkCreateShaderModule(device->handle, &csm_create_info, NULL, &result.shaders[SHADER_STAGE_COMPUTE]) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create '%s' pipeline shader module.");
 		}
 	}
 
-	uint32_t set_count = 0;
 	if (ok) { // create descriptor set layouts
 		ok = gfx_reflect_shader_uniforms(compute_bytecode, result.set_infos);
 
@@ -725,7 +726,7 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 				.bindingCount = set->uniform_count,
 				.pBindings = bindings,
 			};
-			ok &= vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
+			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
 
 			set_count = ok ? set_count + 1 : set_count;
 		}
@@ -737,10 +738,10 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 			.setLayoutCount = set_count,
 			.pSetLayouts = result.set_layouts,
 			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &context->global_range,
+			.pPushConstantRanges = &device->global_range,
 		};
 
-		ok = vkCreatePipelineLayout(context->device.logical, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
+		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create compute pipeline layout.");
 		}
@@ -760,25 +761,25 @@ GFX_Pipeline compute_pipeline_make(GFX_Context *context, String8 compute_bytecod
 			.layout = result.layout,
 		};
 
-		ok = vkCreateComputePipelines(context->device.logical, 0, 1, &cp_create_info, NULL, &result.handle) == VK_SUCCESS;
+		ok = vkCreateComputePipelines(device->handle, 0, 1, &cp_create_info, NULL, &result.handle) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create compute pipeline.");
 		}
 	}
 
 	if (ok == false) // remove half-made resources on error
-		gfx_pipeline_destroy(context, &result);
+		gfx_pipeline_destroy(device, &result);
 
 	return result;
 }
 
-GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecode, String8 fragment_bytecode, PipelineOptions options) {
-	GFX_Pipeline result = { 0 };
-
-	bool ok = context;
+GFX_Pipeline graphics_pipeline_make(GFX_Device *device, String8 vertex_bytecode, String8 fragment_bytecode, PipelineOptions options) {
+	GFX_Pipeline result = { .next = device->shader_pool };
 	const char *name = options.debug_name ? options.debug_name : "<unnamed_raster>";
-
+	uint32_t set_count = 0;
 	LOG_DEBUG("creating '%s' pipeline.", name);
+
+	bool ok = gfx_device_valid(device);
 	if (ok) {
 		result.options = options;
 		result.options.debug_name = name;
@@ -806,14 +807,13 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			.codeSize = fragment_bytecode.length,
 		};
 
-		ok &= vkCreateShaderModule(context->device.logical, &vsm_create_info, NULL, &result.shaders[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
-		ok &= vkCreateShaderModule(context->device.logical, &fsm_create_info, NULL, &result.shaders[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
+		ok &= vkCreateShaderModule(device->handle, &vsm_create_info, NULL, &result.shaders[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
+		ok &= vkCreateShaderModule(device->handle, &fsm_create_info, NULL, &result.shaders[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create vertex/fragment shader module.");
 		}
 	}
 
-	uint32_t set_count = 0;
 	if (ok) { // create descriptor set layouts
 		gfx_reflect_shader_uniforms(fragment_bytecode, result.set_infos);
 		gfx_reflect_shader_uniforms(vertex_bytecode, result.set_infos);
@@ -830,7 +830,7 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 				.bindingCount = set->uniform_count,
 				.pBindings = bindings,
 			};
-			ok &= vkCreateDescriptorSetLayout(context->device.logical, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
+			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
 
 			set_count = ok ? set_count + 1 : set_count;
 		}
@@ -842,10 +842,10 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			.setLayoutCount = set_count,
 			.pSetLayouts = result.set_layouts,
 			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &context->global_range,
+			.pPushConstantRanges = &device->global_range,
 		};
 
-		ok = vkCreatePipelineLayout(context->device.logical, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
+		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create pipeline layout.");
 		}
@@ -983,156 +983,143 @@ GFX_Pipeline graphics_pipeline_make(GFX_Context *context, String8 vertex_bytecod
 			.layout = result.layout,
 		};
 
-		ok = vkCreateGraphicsPipelines(context->device.logical, 0, 1, &gp_create_info, NULL, &result.handle) == VK_SUCCESS;
+		ok = vkCreateGraphicsPipelines(device->handle, 0, 1, &gp_create_info, NULL, &result.handle) == VK_SUCCESS;
 		if (ok == false) {
 			LOG_WARN("failed to create compute pipeline.");
 		}
 	}
 
 	if (ok == false) // remove half-made resources on error
-		gfx_pipeline_destroy(context, &result);
+		gfx_pipeline_destroy(device, &result);
 
 	return result;
 }
 
-bool gfx_buffer_destroy(GFX_Context *context, GFX_Buffer *buffer) {
-	bool ok = context && buffer;
-	ok &= buffer >= context->buffer_pool && buffer < context->buffer_pool + MAX_BUFFERS; // valid pool member
-
+bool gfx_buffer_destroy(GFX_Device *device, GFX_Buffer *buffer) {
+	bool ok = gfx_buffer_valid(device, buffer);
 	if (ok) {
 		if (buffer->memory) {
 			if (buffer->mapped)
-				vkUnmapMemory(context->device.logical, buffer->memory);
-			vkFreeMemory(context->device.logical, buffer->memory, 0);
+				vkUnmapMemory(device->handle, buffer->memory);
+			vkFreeMemory(device->handle, buffer->memory, 0);
 		}
 		if (buffer->handle)
-			vkDestroyBuffer(context->device.logical, buffer->handle, 0);
+			vkDestroyBuffer(device->handle, buffer->handle, 0);
 	}
 
-	ok &= buffer->next == 0 && context->first_free_buffer != buffer; // not free currently
 	if (ok) {
-		context->buffer_count--;
-		buffer->next = context->first_free_buffer;
-		context->first_free_buffer = buffer;
-
+		device->buffer_count--;
 		memory_zero(buffer, sizeof(*buffer));
+
+		buffer->next = device->first_free_buffer;
+		device->first_free_buffer = buffer;
 	}
 
 	return ok;
 }
 
-bool gfx_image_destroy(GFX_Context *context, GFX_Image *image) {
-	bool ok = context && image;
-	ok &= image >= context->image_pool && image < context->image_pool + MAX_IMAGES; // valid pool member
-
+bool gfx_image_destroy(GFX_Device *device, GFX_Image *image) {
+	bool ok = gfx_image_valid(device, image);
 	if (ok) {
 		if (image->view)
-			vkDestroyImageView(context->device.logical, image->view, 0);
+			vkDestroyImageView(device->handle, image->view, 0);
 		if (image->memory)
-			vkFreeMemory(context->device.logical, image->memory, 0);
+			vkFreeMemory(device->handle, image->memory, 0);
 		if (image->handle)
-			vkDestroyImage(context->device.logical, image->handle, 0);
+			vkDestroyImage(device->handle, image->handle, 0);
 	}
 
-	ok &= image->next == 0 && context->first_free_image != image; // not free currently
 	if (ok) {
-		context->image_count--;
-		image->next = context->first_free_image;
-		context->first_free_image = image;
-
+		device->image_count--;
 		memory_zero(image, sizeof(*image));
+
+		image->next = device->first_free_image;
+		device->first_free_image = image;
 	}
 
 	return ok;
 }
 
-bool gfx_sampler_destroy(GFX_Context *context, GFX_Sampler *sampler) {
-	bool ok = context && sampler;
-	ok &= sampler >= context->sampler_pool && sampler < context->sampler_pool + MAX_SAMPLERS; // valid pool member
-
-	if (ok) {
+bool gfx_sampler_destroy(GFX_Device *device, GFX_Sampler *sampler) {
+	bool ok = gfx_sampler_valid(device, sampler);
+	if (ok)
 		if (sampler->handle)
-			vkDestroySampler(context->device.logical, sampler->handle, NULL);
-	}
+			vkDestroySampler(device->handle, sampler->handle, NULL);
 
-	ok &= sampler->next == 0 && context->first_free_sampler != sampler; // not free currently
 	if (ok) {
-		context->sampler_count--;
-		sampler->next = context->first_free_sampler;
-		context->first_free_sampler = sampler;
-
+		device->sampler_count--;
 		memory_zero(sampler, sizeof(*sampler));
+
+		sampler->next = device->first_free_sampler;
+		device->first_free_sampler = sampler;
 	}
 
 	return ok;
 }
 
-bool gfx_swapchain_destroy(GFX_Context *context, GFX_Swapchain *swapchain) {
-	bool ok = context && swapchain;
-	ok &= swapchain >= context->swapchain_pool && swapchain < context->swapchain_pool + MAX_SWAPCHAINS; // valid pool member
-
+bool gfx_swapchain_destroy(GFX_Device *device, GFX_Swapchain *swapchain) {
+	bool ok = gfx_swapchain_valid(device, swapchain);
 	if (ok) {
 		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->image_available_semaphores); ++semaphore_index)
 			if (swapchain->image_available_semaphores[semaphore_index])
-				vkDestroySemaphore(context->device.logical, swapchain->image_available_semaphores[semaphore_index], NULL);
+				vkDestroySemaphore(device->handle, swapchain->image_available_semaphores[semaphore_index], NULL);
 		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->render_done_semaphores); ++semaphore_index)
 			if (swapchain->render_done_semaphores[semaphore_index])
-				vkDestroySemaphore(context->device.logical, swapchain->render_done_semaphores[semaphore_index], NULL);
+				vkDestroySemaphore(device->handle, swapchain->render_done_semaphores[semaphore_index], NULL);
 
 		for (uint32_t image_index = 0; image_index < swapchain->image_count; ++image_index)
 			if (swapchain->views[image_index])
-				vkDestroyImageView(context->device.logical, swapchain->views[image_index], NULL);
+				vkDestroyImageView(device->handle, swapchain->views[image_index], NULL);
 
 		if (swapchain->handle)
-			vkDestroySwapchainKHR(context->device.logical, swapchain->handle, NULL);
+			vkDestroySwapchainKHR(device->handle, swapchain->handle, NULL);
 		if (swapchain->surface)
-			vkDestroySurfaceKHR(context->instance, swapchain->surface, NULL);
+			vkDestroySurfaceKHR(device->instance, swapchain->surface, NULL);
 	}
 
-	ok &= swapchain->next == 0 && context->first_free_swapchain != swapchain; // not free currently
 	if (ok) {
-		context->swapchain_count--;
-		swapchain->next = context->first_free_swapchain;
-		context->first_free_swapchain = swapchain;
-
+		device->swapchain_count--;
 		memory_zero(swapchain, sizeof(*swapchain));
+
+		swapchain->next = device->first_free_swapchain;
+		device->first_free_swapchain = swapchain;
 	}
 
 	return ok;
 }
 
-void gfx_pipeline_destroy(GFX_Context *context, GFX_Pipeline *pipeline) {
-	bool ok = context && pipeline;
+void gfx_pipeline_destroy(GFX_Device *device, GFX_Pipeline *pipeline) {
+	bool ok = gfx_pipeline_valid(device, pipeline);
 
 	if (ok) {
 		for (uint32_t index = 0; index < countof(pipeline->shaders); ++index)
 			if (pipeline->shaders[index])
-				vkDestroyShaderModule(context->device.logical, pipeline->shaders[index], NULL);
+				vkDestroyShaderModule(device->handle, pipeline->shaders[index], NULL);
 		for (uint32_t set_index = 0; set_index < countof(pipeline->set_layouts); ++set_index)
 			if (pipeline->set_layouts[set_index])
-				vkDestroyDescriptorSetLayout(context->device.logical, pipeline->set_layouts[set_index], NULL);
+				vkDestroyDescriptorSetLayout(device->handle, pipeline->set_layouts[set_index], NULL);
 
 		if (pipeline->layout)
-			vkDestroyPipelineLayout(context->device.logical, pipeline->layout, NULL);
+			vkDestroyPipelineLayout(device->handle, pipeline->layout, NULL);
 		if (pipeline->handle)
-			vkDestroyPipeline(context->device.logical, pipeline->handle, NULL);
+			vkDestroyPipeline(device->handle, pipeline->handle, NULL);
 
 		memory_zero(pipeline, sizeof(*pipeline));
 	}
 }
 
-GFX_Image *gfx_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *swapchain) {
+GFX_Image *gfx_backbuffer(GFX_Device *device, GFX_Command *cmd, GFX_Swapchain *swapchain) {
 	GFX_Image *result = 0;
-	bool ok = true;
-
 	uint32_t swapchain_index = cmd->swapchain_count;
 	uint32_t image_index = -1;
+
+	bool ok = cmd && cmd->handle && gfx_swapchain_valid(device, swapchain);
 	if (ok) { // acquire swapchain image
 		VkResult result = vkAcquireNextImageKHR(
-			context->device.logical,
+			device->handle,
 			swapchain->handle,
 			UINT64_MAX,
-			swapchain->image_available_semaphores[context->current_frame_index],
+			swapchain->image_available_semaphores[device->current_frame_index],
 			VK_NULL_HANDLE, &cmd->swapchain_image_indices[swapchain_index]);
 		image_index = cmd->swapchain_image_indices[swapchain_index];
 
@@ -1158,33 +1145,33 @@ GFX_Image *gfx_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swa
 	return result;
 }
 
-bool gfx_swapchain_resize(GFX_Context *context, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height) {
-	bool ok = context && swapchain;
-
+bool gfx_swapchain_resize(GFX_Device *device, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height) {
+	bool ok = gfx_swapchain_valid(device, swapchain);
 	if (ok) {
-		vkDeviceWaitIdle(context->device.logical); // TODO: Queue free instead
+		vkDeviceWaitIdle(device->handle); // TODO: Queue free instead
 		OS_Surface *native = swapchain->native;
 		const char *name = swapchain->wrapper.options.debug_name;
 
-		gfx_swapchain_destroy(context, swapchain);
-		gfx_swapchain_make(context, native, name);
+		gfx_swapchain_destroy(device, swapchain);
+		gfx_swapchain_make(device, native, name);
 	}
 
 	return ok;
 }
 
-bool gfx_image_resize(GFX_Context *context, GFX_Image *image, uint32_t new_width, uint32_t new_height) {
-	bool ok = context && image;
+bool gfx_image_resize(GFX_Device *device, GFX_Image *image, uint32_t new_width, uint32_t new_height) {
+	ImageOptions options = { 0 };
 
-	ImageOptions options = image->options;
+	bool ok = gfx_image_valid(device, image);
 	if (ok) {
-		ok = gfx_image_destroy(context, image);
+		options = image->options;
+		ok = gfx_image_destroy(device, image);
 		if (ok == false)
 			LOG_ERROR("failed to destroy image for resizing.");
 	}
 
 	if (ok) {
-		ok = gfx_image_make(context, new_width, new_height, options);
+		ok = gfx_image_make(device, new_width, new_height, options);
 		if (ok == false)
 			LOG_ERROR("failed to recreate image for resizing.");
 	}
@@ -1193,178 +1180,180 @@ bool gfx_image_resize(GFX_Context *context, GFX_Image *image, uint32_t new_width
 }
 
 // :device
-bool gfx_startup(GFX_Context *context) {
-	bool ok = true;
+bool gfx_device_make(GFX_Device *device) {
+	bool ok = device;
+	if (ok)
+		ok = gfx__instance_make(device);
 
 	if (ok)
-		ok = gfx__instance_make(context);
+		ok = gfx__device_make(device);
 
 	if (ok)
-		ok = gfx__device_make(context);
+		ok = gfx__frame_resources_make(device);
 
 	if (ok)
-		ok = gfx__frame_resources_make(context);
-
-	if (ok)
-		context->global_range = (VkPushConstantRange){
+		device->global_range = (VkPushConstantRange){
 			.stageFlags = VK_SHADER_STAGE_ALL,
 			.offset = 0,
 			.size = 128
 		};
 
 	if (ok) {
-		context->arena[0] = arena_make(MiB(32));
-		context->buffer_pool = arena_push_count(context->arena, GFX_Buffer, MAX_BUFFERS);
-		context->image_pool = arena_push_count(context->arena, GFX_Image, MAX_IMAGES);
-		context->sampler_pool = arena_push_count(context->arena, GFX_Sampler, MAX_SAMPLERS);
-		context->shader_pool = arena_push_count(context->arena, GFX_Pipeline, MAX_SHADERS);
-		context->swapchain_pool = arena_push_count(context->arena, GFX_Swapchain, MAX_SWAPCHAINS);
+		device->arena[0] = arena_make(MiB(32));
+		device->buffer_pool = arena_push_count(device->arena, GFX_Buffer, MAX_BUFFERS);
+		device->image_pool = arena_push_count(device->arena, GFX_Image, MAX_IMAGES);
+		device->sampler_pool = arena_push_count(device->arena, GFX_Sampler, MAX_SAMPLERS);
+		device->shader_pool = arena_push_count(device->arena, GFX_Pipeline, MAX_SHADERS);
+		device->swapchain_pool = arena_push_count(device->arena, GFX_Swapchain, MAX_SWAPCHAINS);
 
 		// 0 == invalid
-		context->buffer_count += 1;
-		context->image_count += 1;
-		context->sampler_count += 1;
-		context->shader_count += 1;
-		context->swapchain_count += 1;
+		device->buffer_count += 1;
+		device->image_count += 1;
+		device->sampler_count += 1;
+		device->shader_count += 1;
+		device->swapchain_count += 1;
 	}
 
 	if (ok) {
-		context->frame_staging_buffer_slice_size = MiB(64);
-		context->frame_staging_buffer =
+		device->frame_staging_buffer_slice_size = MiB(64);
+		device->frame_staging_buffer =
 			gfx_buffer_make(
-				context,
-				context->frame_staging_buffer_slice_size * MAX_FRAMES_IN_FLIGHT,
+				device,
+				device->frame_staging_buffer_slice_size * MAX_FRAMES_IN_FLIGHT,
 				(BufferOptions){
 				  .debug_name = "engine:frame_staging_buffer",
 				  .memory = MEMORY_TYPE_CPU,
 				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
 
-		ok = context->frame_staging_buffer;
+		ok = device->frame_staging_buffer;
 
-		context->transfer_staging_buffer_slice_size = MiB(256);
-		context->transfer_staging_buffer =
+		device->transfer_staging_buffer_slice_size = MiB(256);
+		device->transfer_staging_buffer =
 			gfx_buffer_make(
-				context,
-				context->transfer_staging_buffer_slice_size * MAX_TRANSFERS_IN_FLIGHT,
+				device,
+				device->transfer_staging_buffer_slice_size * MAX_TRANSFERS_IN_FLIGHT,
 				(BufferOptions){
 				  .debug_name = "engine:transfer_staging_buffer",
 				  .memory = MEMORY_TYPE_CPU,
 				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
-		ok = context->transfer_staging_buffer;
+		ok = device->transfer_staging_buffer;
 
 		if (ok == false) {
-			LOG_ERROR("failed to create context staging buffers.");
+			LOG_ERROR("failed to create device staging buffers.");
 		}
 	}
 	if (ok) {
-		vkMapMemory(context->device.logical, context->frame_staging_buffer->memory, 0, context->frame_staging_buffer->size, 0, (void **)&context->frame_staging_buffer->mapped);
-		vkMapMemory(context->device.logical, context->transfer_staging_buffer->memory, 0, context->transfer_staging_buffer->size, 0, (void **)&context->transfer_staging_buffer->mapped);
+		vkMapMemory(device->handle, device->frame_staging_buffer->memory, 0, device->frame_staging_buffer->size, 0, (void **)&device->frame_staging_buffer->mapped);
+		vkMapMemory(device->handle, device->transfer_staging_buffer->memory, 0, device->transfer_staging_buffer->size, 0, (void **)&device->transfer_staging_buffer->mapped);
 	}
 
 	if (ok) {
-		context->initialized = true;
+		device->initialized = true;
 	} else {
-		LOG_WARN("failed to initialize vulkan context.");
+		LOG_WARN("failed to initialize vulkan device.");
 	}
 
 	return ok;
 }
 
-void gfx_shutdown(GFX_Context *context) {
-	for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
-		GFX_Buffer *buffer = &context->buffer_pool[index];
-		gfx_buffer_destroy(context, buffer);
+void gfx_device_destroy(GFX_Device *device) {
+	bool ok = gfx_device_valid(device);
+	if (ok) {
+		vkDeviceWaitIdle(device->handle);
+		for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
+			GFX_Buffer *buffer = &device->buffer_pool[index];
+			gfx_buffer_destroy(device, buffer);
 
-		if (context->buffer_count == 0)
-			break;
-	}
+			if (device->buffer_count == 0)
+				break;
+		}
 
-	for (uint32_t index = 0; index < MAX_IMAGES; ++index) {
-		GFX_Image *image = &context->image_pool[index];
-		gfx_image_destroy(context, image);
+		for (uint32_t index = 0; index < MAX_IMAGES; ++index) {
+			GFX_Image *image = &device->image_pool[index];
+			gfx_image_destroy(device, image);
 
-		if (context->image_count == 0)
-			break;
-	}
+			if (device->image_count == 0)
+				break;
+		}
 
-	for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
-		GFX_Sampler *sampler = &context->sampler_pool[index];
-		gfx_sampler_destroy(context, sampler);
+		for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
+			GFX_Sampler *sampler = &device->sampler_pool[index];
+			gfx_sampler_destroy(device, sampler);
 
-		if (context->sampler_count == 0)
-			break;
-	}
+			if (device->sampler_count == 0)
+				break;
+		}
 
-	for (uint32_t index = 0; index < MAX_SWAPCHAINS; ++index) {
-		GFX_Swapchain *swapchain = &context->swapchain_pool[index];
-		gfx_swapchain_destroy(context, swapchain);
+		for (uint32_t index = 0; index < MAX_SWAPCHAINS; ++index) {
+			GFX_Swapchain *swapchain = &device->swapchain_pool[index];
+			gfx_swapchain_destroy(device, swapchain);
 
-		if (context->swapchain_count == 0)
-			break;
-	}
+			if (device->swapchain_count == 0)
+				break;
+		}
 
-	for (uint32_t index = 0; index < countof(context->frame_commands); ++index) {
-		GFX_CommandContext *cmd_buffer = &context->frame_commands[index];
+		for (uint32_t index = 0; index < countof(device->frame_commands); ++index) {
+			GFX_Command *cmd_buffer = &device->frame_commands[index];
 
-		if (cmd_buffer->descriptor_pool)
-			vkDestroyDescriptorPool(context->device.logical, cmd_buffer->descriptor_pool, 0);
-		if (cmd_buffer->in_flight_fence)
-			vkDestroyFence(context->device.logical, cmd_buffer->in_flight_fence, 0);
-	}
+			if (cmd_buffer->descriptor_pool)
+				vkDestroyDescriptorPool(device->handle, cmd_buffer->descriptor_pool, 0);
+			if (cmd_buffer->in_flight_fence)
+				vkDestroyFence(device->handle, cmd_buffer->in_flight_fence, 0);
+		}
 
-	for (uint32_t index = 0; index < countof(context->transfer_commands); ++index) {
-		GFX_CommandContext *cmd_buffer = &context->transfer_commands[index];
+		for (uint32_t index = 0; index < countof(device->transfer_commands); ++index) {
+			GFX_Command *cmd_buffer = &device->transfer_commands[index];
 
-		if (cmd_buffer->in_flight_fence)
-			vkDestroyFence(context->device.logical, cmd_buffer->in_flight_fence, 0);
-	}
+			if (cmd_buffer->in_flight_fence)
+				vkDestroyFence(device->handle, cmd_buffer->in_flight_fence, 0);
+		}
 
-	if (context->graphics_command_pool)
-		vkDestroyCommandPool(context->device.logical, context->graphics_command_pool, 0);
+		if (device->graphics_command_pool)
+			vkDestroyCommandPool(device->handle, device->graphics_command_pool, 0);
 
-	/* if (context->transfer_command_pool) */
-	/* 	vkDestroyCommandPool(context->device.logical, context->transfer_command_pool, 0); */
+		/* if (device->transfer_command_pool) */
+		/* 	vkDestroyCommandPool(device->handle, device->transfer_command_pool, 0); */
 
 #ifdef DEV_BUILD
-	if (context->debug_messenger)
-		vkDestroyDebugUtilsMessenger(context->instance, context->debug_messenger, 0);
+		if (device->debug_messenger)
+			vkDestroyDebugUtilsMessenger(device->instance, device->debug_messenger, 0);
 #endif
-	if (context->device.logical)
-		vkDestroyDevice(context->device.logical, 0);
-	if (context->instance)
-		vkDestroyInstance(context->instance, 0);
+		if (device->handle)
+			vkDestroyDevice(device->handle, 0);
+		if (device->instance)
+			vkDestroyInstance(device->instance, 0);
 
-	memory_zero(context, sizeof(GFX_Context));
+		memory_zero(device, sizeof(GFX_Device));
+	}
 }
 
 // :cmd
-GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
-	GFX_CommandContext *result = 0;
+GFX_Command *gfx_frame_begin(GFX_Device *device) {
+	GFX_Command *result = 0;
 
-	bool ok = context;
-
+	bool ok = gfx_device_valid(device);
 	if (ok) {
-		result = &context->frame_commands[context->current_frame_index];
-		result->frame_index = context->current_frame_index;
+		result = &device->frame_commands[device->current_frame_index];
+		result->frame_index = device->current_frame_index;
 		memory_zero_array(result->swapchains);
 		memory_zero_array(result->swapchain_image_indices);
 		result->swapchain_count = 0;
 
 		// Wait for frame resource availability
-		ok = vkWaitForFences(context->device.logical, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+		ok = vkWaitForFences(device->handle, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
 	}
 
 	if (ok) {
 		// reset frame resources
 		vkResetCommandBuffer(result->handle, 0);
-		vkResetFences(context->device.logical, 1, &result->in_flight_fence);
-		vkResetDescriptorPool(context->device.logical, result->descriptor_pool, 0);
+		vkResetFences(device->handle, 1, &result->in_flight_fence);
+		vkResetDescriptorPool(device->handle, result->descriptor_pool, 0);
 
-		result->transient_buffer = context->frame_staging_buffer;
-		result->transient_arena[0] = arena_wrap(context->frame_staging_buffer->mapped, context->frame_staging_buffer->size);
-		result->transient_arena->offset = context->current_frame_index * context->frame_staging_buffer_slice_size;
+		result->transient_buffer = device->frame_staging_buffer;
+		result->transient_arena[0] = arena_wrap(device->frame_staging_buffer->mapped, device->frame_staging_buffer->size);
+		result->transient_arena->offset = device->current_frame_index * device->frame_staging_buffer_slice_size;
 
 		// Begin command recording
 		VkCommandBufferBeginInfo cb_begin_info = {
@@ -1372,14 +1361,12 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 		};
 
 		ok = vkBeginCommandBuffer(result->handle, &cb_begin_info) == VK_SUCCESS;
-
-		if (ok == false) {
+		if (ok == false)
 			LOG_WARN("failed to begin command buffer recording.");
-		}
 	}
 
 	if (ok) // submit transfer batch
-		gfx_transfer_flush(context);
+		gfx_transfer_flush(device);
 
 	if (ok == false)
 		result = 0;
@@ -1387,25 +1374,82 @@ GFX_CommandContext *gfx_frame_begin(GFX_Context *context) {
 	return result;
 }
 
-GFX_CommandContext *gfx_transfer_cmd(GFX_Context *context) {
-	GFX_CommandContext *result = 0;
-
-	bool ok = context;
+bool gfx_frame_end(GFX_Device *device, GFX_Command *cmd) {
+	bool ok = gfx_device_valid(device) && cmd && cmd->handle;
 	if (ok) {
-		result = &context->transfer_commands[context->current_transfer_index];
+		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
+			// transition swapchain images if it hasn't already been done
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &cmd->swapchains[swapchain_index]->wrapper);
+		}
+
+		ok = vkEndCommandBuffer(cmd->handle) == VK_SUCCESS;
+	}
+
+	if (ok) {
+		VkSwapchainKHR handles[MAX_SWAPCHAINS] = { 0 };
+		VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 };
+		VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 };
+		VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = {
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		};
+
+		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
+			handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle;
+			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index];
+			signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]];
+		}
+
+		VkSubmitInfo submit_info = {
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+			.waitSemaphoreCount = cmd->swapchain_count,
+			.pWaitSemaphores = wait_semaphores,
+			.pWaitDstStageMask = wait_stages,
+			.commandBufferCount = 1,
+			.pCommandBuffers = &cmd->handle,
+			.signalSemaphoreCount = cmd->swapchain_count,
+			.pSignalSemaphores = signal_semaphores,
+		};
+
+		ok = vkQueueSubmit(device->graphics_queue, 1, &submit_info, device->frame_commands[device->current_frame_index].in_flight_fence) == VK_SUCCESS;
+		if (ok == false)
+			LOG_ERROR("failed to submit command buffer to queue.");
+
+		if (cmd->swapchain_count) {
+			VkPresentInfoKHR present_info = {
+				.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+				.waitSemaphoreCount = cmd->swapchain_count,
+				.pWaitSemaphores = signal_semaphores,
+				.swapchainCount = cmd->swapchain_count,
+				.pSwapchains = handles,
+				.pImageIndices = cmd->swapchain_image_indices,
+			};
+			vkQueuePresentKHR(device->present_queue, &present_info);
+		}
+	}
+
+	return ok;
+}
+
+GFX_Command *gfx_transfer_cmd(GFX_Device *device) {
+	GFX_Command *result = 0;
+
+	bool ok = gfx_device_valid(device);
+	if (ok) {
+		result = &device->transfer_commands[device->current_transfer_index];
 
 		if (result->recording == 0)
-			ok = vkWaitForFences(context->device.logical, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+			ok = vkWaitForFences(device->handle, 1, &result->in_flight_fence, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
 	}
 
 	if (ok && result->recording == 0) {
 		// reset resources
 		vkResetCommandBuffer(result->handle, 0);
-		vkResetFences(context->device.logical, 1, &result->in_flight_fence);
+		vkResetFences(device->handle, 1, &result->in_flight_fence);
 
-		result->transient_buffer = context->transfer_staging_buffer;
-		result->transient_arena[0] = arena_wrap(context->transfer_staging_buffer->mapped, context->transfer_staging_buffer->size);
-		result->transient_arena->offset = context->current_transfer_index * context->transfer_staging_buffer_slice_size;
+		result->transient_buffer = device->transfer_staging_buffer;
+		result->transient_arena[0] = arena_wrap(device->transfer_staging_buffer->mapped, device->transfer_staging_buffer->size);
+		result->transient_arena->offset = device->current_transfer_index * device->transfer_staging_buffer_slice_size;
 
 		// Begin command recording
 		VkCommandBufferBeginInfo cb_begin_info = {
@@ -1427,12 +1471,12 @@ GFX_CommandContext *gfx_transfer_cmd(GFX_Context *context) {
 	return result;
 }
 
-bool gfx_transfer_flush(GFX_Context *context) {
-	bool ok = context;
+bool gfx_transfer_flush(GFX_Device *device) {
+	bool ok = gfx_device_valid(device);
 
-	GFX_CommandContext *cmd = 0;
+	GFX_Command *cmd = 0;
 	if (ok) { // check if recording
-		cmd = &context->transfer_commands[context->current_transfer_index];
+		cmd = &device->transfer_commands[device->current_transfer_index];
 
 		ok = cmd->recording;
 	}
@@ -1453,27 +1497,27 @@ bool gfx_transfer_flush(GFX_Context *context) {
 			.pCommandBuffers = &cmd->handle,
 		};
 
-		ok = vkQueueSubmit(context->graphics_queue, 1, &submit_info, cmd->in_flight_fence) == VK_SUCCESS;
+		ok = vkQueueSubmit(device->graphics_queue, 1, &submit_info, cmd->in_flight_fence) == VK_SUCCESS;
 		if (ok == false)
 			LOG_ERROR("failed to submit transfer command buffer to queue.");
 
-		context->current_transfer_index = (context->current_transfer_index + 1) % MAX_TRANSFERS_IN_FLIGHT;
+		device->current_transfer_index = (device->current_transfer_index + 1) % MAX_TRANSFERS_IN_FLIGHT;
 	}
 
 	return ok;
 }
 
-bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
-	bool ok = context && pipeline && uniforms && uniform_count > 0;
+bool gfx_bind(GFX_Device *device, GFX_Pipeline *pipeline, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
+	bool ok = gfx_pipeline_valid(device, pipeline) && uniforms && uniform_count > 0;
 	if (ok == false)
 		LOG_ERROR("%s - invalid parameters.", __func__);
 
-	GFX_CommandContext *cmd = 0;
+	GFX_Command *cmd = 0;
 	VkDescriptorSet set = 0;
 
 	// TODO: cache descriptor sets instead?
 	if (ok) { // allocate descriptor set
-		cmd = &context->frame_commands[context->current_frame_index];
+		cmd = &device->frame_commands[device->current_frame_index];
 
 		VkDescriptorSetAllocateInfo alloc_info = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1481,7 +1525,7 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 			.descriptorSetCount = 1,
 			.pSetLayouts = &pipeline->set_layouts[set_index],
 		};
-		ok = vkAllocateDescriptorSets(context->device.logical, &alloc_info, &set) == VK_SUCCESS;
+		ok = vkAllocateDescriptorSets(device->handle, &alloc_info, &set) == VK_SUCCESS;
 	}
 
 	if (ok) { // write uniforms
@@ -1540,7 +1584,7 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 						.descriptorType = uniform_type_to_vulkan_descriptor_type[uniform->type],
 						.pImageInfo = image_infos,
 					};
-					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					vkUpdateDescriptorSets(device->handle, 1, &write, 0, 0);
 				} break;
 
 				case UNIFORM_TYPE_STORAGE_BUFFER:
@@ -1577,7 +1621,7 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 						.descriptorType = uniform_type_to_vulkan_descriptor_type[uniform->type],
 						.pBufferInfo = &buffer_info,
 					};
-					vkUpdateDescriptorSets(context->device.logical, 1, &write, 0, 0);
+					vkUpdateDescriptorSets(device->handle, 1, &write, 0, 0);
 				} break;
 
 				default:
@@ -1597,22 +1641,30 @@ bool gfx_bind(GFX_Context *context, GFX_Pipeline *pipeline, uint32_t set_index, 
 	return ok;
 }
 
-uint64_t gfx_cmd_put(GFX_CommandContext *cmd, uint64_t size, void *src) {
-	uint64_t result = alignup(cmd->transient_arena->offset, 256);
-	void *dst = arena_push(cmd->transient_arena, alignup(size, 256), 256, 0);
-	if (src)
-		memory_copy(dst, src, size);
+uint64_t gfx_cmd_put(GFX_Command *cmd, uint64_t size, void *src) {
+	uint64_t result = 0;
+
+	bool ok = cmd && cmd->handle;
+	if (ok) {
+		result = alignup(cmd->transient_arena->offset, 256);
+		void *dst = arena_push(cmd->transient_arena, alignup(size, 256), 256, 0);
+		if (src)
+			memory_copy(dst, src, size);
+	}
 
 	return result;
 }
 
-void gfx_cmd_buffer_to_buffer(GFX_CommandContext *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
-	LOG_TRACE("Copying region of %llu from %p to %p", size, src, dst);
-	VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
-	vkCmdCopyBuffer(cmd->handle, src->handle, dst->handle, 1, &copy_region);
+void gfx_cmd_buffer_to_buffer(GFX_Command *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
+	bool ok = cmd && cmd->handle;
+	if (ok) {
+		LOG_TRACE("Copying region of %llu from %p to %p", size, src, dst);
+		VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
+		vkCmdCopyBuffer(cmd->handle, src->handle, dst->handle, 1, &copy_region);
+	}
 }
 
-void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
+void gfx_cmd_buffer_to_image(GFX_Command *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	bool ok = cmd && cmd->handle && dst && dst->handle;
 	if (ok == false)
@@ -1645,9 +1697,8 @@ void gfx_cmd_buffer_to_image(GFX_CommandContext *cmd, GFX_Image *dst, GFX_Buffer
 	arena_scratch_end(scratch);
 }
 
-void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target) {
+void gfx_cmd_buffer_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target) {
 	bool ok = cmd && target;
-
 	if (ok) {
 		VkPipelineStageFlags src_stage = resource_usage_to_vulkan_pipeline_stage[src];
 		VkPipelineStageFlags dst_stage = resource_usage_to_vulkan_pipeline_stage[dst];
@@ -1668,9 +1719,8 @@ void gfx_cmd_buffer_barrier(GFX_CommandContext *cmd, ResourceUsage src, Resource
 	}
 }
 
-bool gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
+bool gfx_cmd_image_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
 	bool ok = cmd && target;
-
 	if (ok) {
 		target->res_usage = dst;
 
@@ -1715,63 +1765,95 @@ bool gfx_cmd_image_barrier(GFX_CommandContext *cmd, ResourceUsage src, ResourceU
 	return ok;
 }
 
-bool gfx_cmd_image_transition(GFX_CommandContext *cmd, ResourceUsage dst, GFX_Image *target) {
-	if (target->res_usage == dst)
-		return true;
+bool gfx_cmd_image_transition(GFX_Command *cmd, ResourceUsage dst, GFX_Image *target) {
+	bool ok = cmd && cmd->handle && target && target->handle;
+	if (ok) {
+		if (target->res_usage == dst)
+			return true;
 
-	return gfx_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
+		return gfx_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
+	}
+
+	return ok;
 }
 
-void gfx_cmd_image_blit(GFX_CommandContext *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
-	VkImageBlit blit_info = {
-		.srcOffsets[1] = {
-		  .x = source_rect.width,
-		  .y = source_rect.height,
-		  .z = 1,
-		},
-		.srcSubresource = {
-		  .aspectMask = image_options_to_vulkan_aspect_flags(source->options),
-		  .baseArrayLayer = 0,
-		  .layerCount = image_options_to_vulkan_layer_count(source->options),
-		  .mipLevel = 0,
-		},
-		.dstOffsets[1] = {
-		  .x = target_rect.width,
-		  .y = target_rect.height,
-		  .z = 1,
-		},
-		.dstSubresource = {
-		  .aspectMask = image_options_to_vulkan_aspect_flags(target->options),
-		  .baseArrayLayer = 0,
-		  .layerCount = image_options_to_vulkan_layer_count(target->options),
-		  .mipLevel = 0,
-		},
-	};
-	vkCmdBlitImage(cmd->handle,
-		source->handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		target->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		1, &blit_info, 0);
+void gfx_cmd_image_blit(GFX_Command *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
+	bool ok = cmd && source && target;
+	if (ok) {
+		if (source->res_usage != RESOURCE_USAGE_TRANSFER_SRC)
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, source);
+		if (target->res_usage != RESOURCE_USAGE_TRANSFER_DST)
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, target);
+		if (source_rect.width == 0.0f)
+			source_rect.width = source->width;
+		if (source_rect.height == 0.0f)
+			source_rect.height = source->height;
+		if (target_rect.width == 0.0f)
+			target_rect.width = target->width;
+		if (target_rect.height == 0.0f)
+			target_rect.height = target->height;
+
+		VkImageBlit blit_info = {
+			.srcOffsets[1] = {
+			  .x = source_rect.width,
+			  .y = source_rect.height,
+			  .z = 1,
+			},
+			.srcSubresource = {
+			  .aspectMask = image_options_to_vulkan_aspect_flags(source->options),
+			  .baseArrayLayer = 0,
+			  .layerCount = image_options_to_vulkan_layer_count(source->options),
+			  .mipLevel = 0,
+			},
+			.dstOffsets[1] = {
+			  .x = target_rect.width,
+			  .y = target_rect.height,
+			  .z = 1,
+			},
+			.dstSubresource = {
+			  .aspectMask = image_options_to_vulkan_aspect_flags(target->options),
+			  .baseArrayLayer = 0,
+			  .layerCount = image_options_to_vulkan_layer_count(target->options),
+			  .mipLevel = 0,
+			},
+		};
+		vkCmdBlitImage(cmd->handle,
+			source->handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			target->handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1, &blit_info, 0);
+	}
 }
 
-void gfx_cmd_image_upload(GFX_CommandContext *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
-	uint32_t stride = pixel_format_to_stride[image->options.format];
-	uint64_t size = width * height * stride * image_options_to_vulkan_layer_count(image->options);
-	uint64_t start_offset = gfx_cmd_put(cmd, size, pixels);
-	gfx_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
+void gfx_cmd_image_upload(GFX_Command *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
+	bool ok = cmd && cmd->handle && image && image->handle;
+	if (ok) {
+		uint32_t stride = pixel_format_to_stride[image->options.format];
+		uint64_t size = width * height * stride * image_options_to_vulkan_layer_count(image->options);
+		uint64_t start_offset = gfx_cmd_put(cmd, size, pixels);
+		gfx_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
+	}
 }
 
-void gfx_cmd_buffer_upload(GFX_CommandContext *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data) {
-	uint64_t staging_offset = gfx_cmd_put(cmd, size, data);
-	gfx_cmd_buffer_to_buffer(cmd, buffer, cmd->transient_buffer, offset, staging_offset, size);
+void gfx_cmd_buffer_upload(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data) {
+	bool ok = cmd && cmd->handle && buffer && buffer->handle;
+	if (ok) {
+		uint64_t staging_offset = gfx_cmd_put(cmd, size, data);
+		gfx_cmd_buffer_to_buffer(cmd, buffer, cmd->transient_buffer, offset, staging_offset, size);
+	}
 }
 
-void gfx_cmd_pipeline_bind(GFX_CommandContext *cmd, GFX_Pipeline *pipeline) {
-	VkPipelineBindPoint bind_point = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
-	vkCmdBindPipeline(cmd->handle, bind_point, pipeline->handle);
+void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline) {
+	bool ok = cmd && cmd->handle && pipeline && pipeline->handle;
+	if (ok) {
+		VkPipelineBindPoint bind_point = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+		vkCmdBindPipeline(cmd->handle, bind_point, pipeline->handle);
+	}
 }
 
-void gfx_cmd_dispatch(GFX_CommandContext *cmd, uint32_t x, uint32_t y, uint32_t z) {
-	vkCmdDispatch(cmd->handle, x, y, z);
+void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z) {
+	bool ok = cmd && cmd->handle;
+	if (ok)
+		vkCmdDispatch(cmd->handle, x, y, z);
 }
 
 // :body
@@ -1788,7 +1870,7 @@ uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_f
 	return 0;
 }
 
-bool gfx__instance_make(GFX_Context *context) {
+bool gfx__instance_make(GFX_Device *device) {
 	LOG_DEBUG("initializing vulkan instance.");
 	ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -1864,13 +1946,13 @@ bool gfx__instance_make(GFX_Context *context) {
 #endif
 		};
 
-		ok = vkCreateInstance(&instance_info, 0, &context->instance) == VK_SUCCESS;
+		ok = vkCreateInstance(&instance_info, 0, &device->instance) == VK_SUCCESS;
 	}
 
 	if (ok) { // load debug extension pointers & craete debug util
 #ifdef DEV_BUILD
-		gfx__load_debug_extensions(context);
-		vkCreateDebugUtilsMessenger(context->instance, &debug_utils_create_info, 0, &context->debug_messenger);
+		gfx__load_debug_extensions(device);
+		vkCreateDebugUtilsMessenger(device->instance, &debug_utils_create_info, 0, &device->debug_messenger);
 #endif
 	}
 
@@ -1878,18 +1960,15 @@ bool gfx__instance_make(GFX_Context *context) {
 	return ok;
 }
 
-bool gfx__device_suitable(GFX_Context *context, VkPhysicalDevice device) {
+bool gfx__device_suitable(GFX_Device *device, VkPhysicalDevice gpu) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	bool ok = true;
 	if (ok) { // check if vulkan 1.3 is supported
-		vkGetPhysicalDeviceProperties(device, &context->device.properties);
-		context->device.limits = context->device.properties.limits;
+		vkGetPhysicalDeviceProperties(gpu, &device->info.properties);
+		device->info.limits = device->info.properties.limits;
 
-		ok = context->device.properties.apiVersion >= VK_API_VERSION_1_3;
-	}
-
-	if (ok) {
+		ok = device->info.properties.apiVersion >= VK_API_VERSION_1_3;
 	}
 
 	/* if (ok) { // check for present support  */
@@ -1901,7 +1980,7 @@ bool gfx__device_suitable(GFX_Context *context, VkPhysicalDevice device) {
 
 	/* 	VkBool32 supports_present = VK_FALSE; */
 	/* 	for (uint32_t queue_family_index = 0; queue_family_index < queue_family_count; ++queue_family_index) { */
-	/* 		vkGetPhysicalDeviceSurfaceSupportKHR(device, queue_family_index, context->surface.handle, &supports_present); */
+	/* 		vkGetPhysicalDeviceSurfaceSupportKHR(device, queue_family_index, device->surface.handle, &supports_present); */
 
 	/* 		if ((queue_family_properties[queue_family_index].queueFlags & VK_QUEUE_GRAPHICS_BIT) && supports_present) */
 	/* 			break; */
@@ -1913,10 +1992,10 @@ bool gfx__device_suitable(GFX_Context *context, VkPhysicalDevice device) {
 
 	if (ok) { // validate if required device extensions are present
 		uint32_t available_extension_count = 0;
-		vkEnumerateDeviceExtensionProperties(device, 0, &available_extension_count, 0);
+		vkEnumerateDeviceExtensionProperties(gpu, 0, &available_extension_count, 0);
 
 		VkExtensionProperties *available_extensions = arena_push_count(scratch.arena, VkExtensionProperties, available_extension_count);
-		vkEnumerateDeviceExtensionProperties(device, 0, &available_extension_count, available_extensions);
+		vkEnumerateDeviceExtensionProperties(gpu, 0, &available_extension_count, available_extensions);
 
 		ok = gfx__validate_extensions(required_device_extensions, countof(required_device_extensions), available_extensions, available_extension_count);
 	}
@@ -1933,7 +2012,7 @@ bool gfx__device_suitable(GFX_Context *context, VkPhysicalDevice device) {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
 			.pNext = &vk12_features,
 		};
-		vkGetPhysicalDeviceFeatures2(device, &query_features);
+		vkGetPhysicalDeviceFeatures2(gpu, &query_features);
 
 		if (vk13_features.dynamicRendering == false || vk12_features.bufferDeviceAddress == false)
 			ok = false;
@@ -1943,76 +2022,75 @@ bool gfx__device_suitable(GFX_Context *context, VkPhysicalDevice device) {
 	return ok;
 }
 
-bool gfx__device_make(GFX_Context *context) {
+bool gfx__device_make(GFX_Device *device) {
 	LOG_DEBUG("initializing vulkan device.");
 	ArenaTemp scratch = arena_scratch_begin(0);
 
-	bool ok = true;
+	bool ok = device;
 	if (ok) { // select physical device
 		LOG_DEBUG("finding suitable device...");
 		uint32_t physical_device_count = 0;
-		vkEnumeratePhysicalDevices(context->instance, &physical_device_count, 0);
+		vkEnumeratePhysicalDevices(device->instance, &physical_device_count, 0);
 
 		VkPhysicalDevice *physical_devices = arena_push_count(scratch.arena, VkPhysicalDevice, physical_device_count);
-		vkEnumeratePhysicalDevices(context->instance, &physical_device_count, physical_devices);
+		vkEnumeratePhysicalDevices(device->instance, &physical_device_count, physical_devices);
 
 		for (uint32_t physical_device_index = 0; physical_device_index < physical_device_count; ++physical_device_index) {
-			if (gfx__device_suitable(context, physical_devices[physical_device_index])) {
-				context->device.physical = physical_devices[physical_device_index];
+			if (gfx__device_suitable(device, physical_devices[physical_device_index])) {
+				device->info.gpu = physical_devices[physical_device_index];
 				break;
 			}
 		}
 
-		ok = context->device.physical != 0;
-
+		ok = device->info.gpu != 0;
 		if (ok == false)
 			LOG_ERROR("failed to find suitable graphics card with Vulkan 1.3 support.");
 	}
 
 	if (ok) { // find queue indices
-		LOG_INFO("Device: %s", context->device.properties.deviceName);
+		LOG_INFO("Device: %s", device->info.properties.deviceName);
 
 		uint32_t queue_family_count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(context->device.physical, &queue_family_count, 0);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, 0);
 
 		VkQueueFamilyProperties *queue_family_properties = arena_push_count(scratch.arena, VkQueueFamilyProperties, queue_family_count);
-		vkGetPhysicalDeviceQueueFamilyProperties(context->device.physical, &queue_family_count, queue_family_properties);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, queue_family_properties);
 
-		context->graphics_index = -1, context->present_index = -1,
-		context->transfer_index = -1, context->compute_index = -1;
+		device->graphics_index = -1, device->present_index = -1,
+		device->transfer_index = -1, device->compute_index = -1;
 
 		for (uint32_t index = 0; index < queue_family_count; ++index) {
 			VkQueueFlags flags = queue_family_properties[index].queueFlags;
 
 			/* VkBool32 present_support = false; */
-			/* vkGetPhysicalDeviceSurfaceSupportKHR(context->device.physical, index, context->surface.handle, &present_support); */
+			/* vkGetPhysicalDeviceSurfaceSupportKHR(device->info.gpu, index, device->surface.handle, &present_support); */
 
-			if ((flags & VK_QUEUE_GRAPHICS_BIT) && context->graphics_index == -1) {
-				context->graphics_index = index;
+			if ((flags & VK_QUEUE_GRAPHICS_BIT) && device->graphics_index == -1) {
+				device->graphics_index = index;
 				/* ASSERT(present_support && "grahpics index does not support presenting"); */
 			}
 
-			/* if (present_support && context->present_index == -1) */
-			/* 	context->present_index = index; */
+			/* if (present_support && device->present_index == -1) */
+			/* 	device->present_index = index; */
 
-			if ((flags & VK_QUEUE_GRAPHICS_BIT) == false && (flags & VK_QUEUE_TRANSFER_BIT) && context->transfer_index == -1) // dedicated transfer
-				context->transfer_index = index;
+			if ((flags & VK_QUEUE_GRAPHICS_BIT) == false && (flags & VK_QUEUE_TRANSFER_BIT) && device->transfer_index == -1) // dedicated transfer
+				device->transfer_index = index;
 
-			if ((flags & VK_QUEUE_GRAPHICS_BIT) == false && (flags & VK_QUEUE_COMPUTE_BIT) && context->compute_index == -1) // dedicated compute
-				context->compute_index = index;
+			if ((flags & VK_QUEUE_GRAPHICS_BIT) == false && (flags & VK_QUEUE_COMPUTE_BIT) && device->compute_index == -1) // dedicated compute
+				device->compute_index = index;
 		}
 
-		if (context->graphics_index == -1) {
+		if (device->graphics_index == -1) {
 			LOG_ERROR("failed to find graphics queue.");
 			ok = false;
 		}
 	}
 
 	if (ok) { // default to grahpics if compute/transfer queues aren't available
-		if (context->transfer_index == -1)
-			context->transfer_index = context->graphics_index;
-		if (context->compute_index == -1)
-			context->compute_index = context->graphics_index;
+		if (device->transfer_index == -1)
+			device->transfer_index = device->graphics_index;
+		if (device->compute_index == -1)
+			device->compute_index = device->graphics_index;
 	}
 
 	if (ok) { // create vulkan device
@@ -2022,21 +2100,21 @@ bool gfx__device_make(GFX_Context *context) {
 			{
 			  // grahpics queue
 			  .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-			  .queueFamilyIndex = context->graphics_index,
+			  .queueFamilyIndex = device->graphics_index,
 			  .queueCount = 1,
 			  .pQueuePriorities = &queue_priortiy,
 			},
 			{
 			  // transfer queue
 			  .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-			  .queueFamilyIndex = context->transfer_index,
+			  .queueFamilyIndex = device->transfer_index,
 			  .queueCount = 1,
 			  .pQueuePriorities = &queue_priortiy,
 			},
 			{
 			  // compute queue
 			  .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-			  .queueFamilyIndex = context->compute_index,
+			  .queueFamilyIndex = device->compute_index,
 			  .queueCount = 1,
 			  .pQueuePriorities = &queue_priortiy,
 			}
@@ -2070,58 +2148,58 @@ bool gfx__device_make(GFX_Context *context) {
 			.ppEnabledExtensionNames = required_device_extensions,
 		};
 
-		ok = vkCreateDevice(context->device.physical, &device_info, 0, &context->device.logical) == VK_SUCCESS;
+		ok = vkCreateDevice(device->info.gpu, &device_info, 0, &device->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // get the queue handles from indices
-		vkGetDeviceQueue(context->device.logical, context->graphics_index, 0, &context->graphics_queue);
-		vkGetDeviceQueue(context->device.logical, context->transfer_index, 0, &context->transfer_queue);
-		vkGetDeviceQueue(context->device.logical, context->compute_index, 0, &context->compute_queue);
+		vkGetDeviceQueue(device->handle, device->graphics_index, 0, &device->graphics_queue);
+		vkGetDeviceQueue(device->handle, device->transfer_index, 0, &device->transfer_queue);
+		vkGetDeviceQueue(device->handle, device->compute_index, 0, &device->compute_queue);
 	}
 
 	arena_scratch_end(scratch);
 	return ok;
 }
 
-bool gfx__frame_resources_make(GFX_Context *context) {
+bool gfx__frame_resources_make(GFX_Device *device) {
 	LOG_DEBUG("initializing vulkan frame resources.");
 
-	bool ok = true;
+	bool ok = gfx_device_valid(device);
 	if (ok) { // make graphics command pool
 		VkCommandPoolCreateInfo cp_create_info = {
 			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-			.queueFamilyIndex = context->graphics_index
+			.queueFamilyIndex = device->graphics_index
 		};
-		ok = vkCreateCommandPool(context->device.logical, &cp_create_info, 0, &context->graphics_command_pool) == VK_SUCCESS;
+		ok = vkCreateCommandPool(device->handle, &cp_create_info, 0, &device->graphics_command_pool) == VK_SUCCESS;
 	}
 
 	if (ok) { // allocate frame command buffers
 		VkCommandBuffer buffers[MAX_FRAMES_IN_FLIGHT];
 		VkCommandBufferAllocateInfo cb_allocate_info = {
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.commandPool = context->graphics_command_pool,
+			.commandPool = device->graphics_command_pool,
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = countof(buffers)
 		};
-		ok = vkAllocateCommandBuffers(context->device.logical, &cb_allocate_info, buffers) == VK_SUCCESS;
+		ok = vkAllocateCommandBuffers(device->handle, &cb_allocate_info, buffers) == VK_SUCCESS;
 
 		for (uint32_t frame_index = 0; frame_index < countof(buffers); ++frame_index)
-			context->frame_commands[frame_index].handle = buffers[frame_index];
+			device->frame_commands[frame_index].handle = buffers[frame_index];
 	}
 
 	if (ok) { // allocate transfer command buffers
 		VkCommandBuffer buffers[MAX_TRANSFERS_IN_FLIGHT];
 		VkCommandBufferAllocateInfo cb_allocate_info = {
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.commandPool = context->graphics_command_pool,
+			.commandPool = device->graphics_command_pool,
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = countof(buffers)
 		};
-		ok = vkAllocateCommandBuffers(context->device.logical, &cb_allocate_info, buffers) == VK_SUCCESS;
+		ok = vkAllocateCommandBuffers(device->handle, &cb_allocate_info, buffers) == VK_SUCCESS;
 
 		for (uint32_t transfer_index = 0; transfer_index < countof(buffers); ++transfer_index)
-			context->transfer_commands[transfer_index].handle = buffers[transfer_index];
+			device->transfer_commands[transfer_index].handle = buffers[transfer_index];
 	}
 
 	if (ok) { // allocate fences
@@ -2130,10 +2208,10 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 			.flags = VK_FENCE_CREATE_SIGNALED_BIT
 		};
 
-		for (uint32_t frame_index = 0; frame_index < countof(context->frame_commands); ++frame_index)
-			ok &= vkCreateFence(context->device.logical, &f_create_info, 0, &context->frame_commands[frame_index].in_flight_fence) == VK_SUCCESS;
-		for (uint32_t transfer_index = 0; transfer_index < countof(context->transfer_commands); ++transfer_index)
-			ok &= vkCreateFence(context->device.logical, &f_create_info, 0, &context->transfer_commands[transfer_index].in_flight_fence) == VK_SUCCESS;
+		for (uint32_t frame_index = 0; frame_index < countof(device->frame_commands); ++frame_index)
+			ok &= vkCreateFence(device->handle, &f_create_info, 0, &device->frame_commands[frame_index].in_flight_fence) == VK_SUCCESS;
+		for (uint32_t transfer_index = 0; transfer_index < countof(device->transfer_commands); ++transfer_index)
+			ok &= vkCreateFence(device->handle, &f_create_info, 0, &device->transfer_commands[transfer_index].in_flight_fence) == VK_SUCCESS;
 	}
 
 	if (ok) { // allocate frame descriptor pools
@@ -2172,7 +2250,7 @@ bool gfx__frame_resources_make(GFX_Context *context) {
 		};
 
 		for (uint32_t frame_index = 0; frame_index < MAX_FRAMES_IN_FLIGHT; ++frame_index)
-			ok &= vkCreateDescriptorPool(context->device.logical, &dp_create_info, 0, &context->frame_commands[frame_index].descriptor_pool) == VK_SUCCESS;
+			ok &= vkCreateDescriptorPool(device->handle, &dp_create_info, 0, &device->frame_commands[frame_index].descriptor_pool) == VK_SUCCESS;
 	}
 	return ok;
 }
@@ -2198,7 +2276,7 @@ bool gfx__validate_extensions(const char *required[], uint32_t required_count, V
 	return result;
 }
 
-void gfx__load_debug_extensions(GFX_Context *device) {
+void gfx__load_debug_extensions(GFX_Device *device) {
 #define LOAD_EXTENSION(instance, name)                                    \
 	name = (PFN_##name##EXT)vkGetInstanceProcAddr(instance, #name "EXT"); \
 	if (!name) {                                                          \

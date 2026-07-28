@@ -172,9 +172,9 @@ OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint
 			XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE |
 			XCB_EVENT_MASK_VISIBILITY_CHANGE;
 
-		uint32_t value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
+		uint32_t value_mask = XCB_CW_EVENT_MASK; // XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
 		uint32_t values[] = {
-			0x00aade87,
+			/* 0x00aade87, */
 			event_mask
 		};
 
