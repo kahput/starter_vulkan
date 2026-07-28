@@ -1,4 +1,4 @@
-#include "shape3.h"
+#include "geom.h"
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
@@ -39,9 +39,6 @@ float3 shape3_support(Shape3 s, float3 direction) {
 	ASSERT(equalf(lensq3(direction), 0.0f) == false);
 
 	ArenaTemp scratch = arena_scratch_begin(0);
-
-	if (s.kind == SHAPE_KIND_AABB3)
-		s = shape3_from_convex3(convex3_from_aabb3(scratch.arena, s.as.aabb3));
 
 	switch (s.kind) {
 		case SHAPE_KIND_CAPSULE3: {

@@ -287,6 +287,9 @@ struct GFX_Buffer {
 typedef struct GFX_Image GFX_Image;
 struct GFX_Image {
 	GFX_Image *next;
+    // TEMP_START
+    uint32_t imageid;
+    // TEMP_END
 
 	VkImage handle;
 	VkImageView view;

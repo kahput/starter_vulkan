@@ -12,7 +12,7 @@ typedef struct {
 	CameraProjeciton projection;
 	float3 position, target, up;
 	float fovy;
-} Camera3;
+} Camera3D;
 
-void scene_camera_orbit(Camera3 *camera, float2 mouse_delta);
-void scene_camera_follow(Camera3 *camera, float2 mouse_delta, float3 target);
+void scene_camera_orbit(Camera3D *camera, float2 mouse_delta);
+void scene_camera_follow(Camera3D *camera, float2 mouse_delta, float3 target);

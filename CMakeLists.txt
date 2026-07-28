@@ -35,22 +35,11 @@ set(NATIVE_SCRATCHES scratch xcb_scratch skinning material_scratch spriv)
 
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    file(GLOB_RECURSE 
-        PROJECT_SOURCES 
-        "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/os/web/*.c" 
-        "${CMAKE_SOURCE_DIR}/engine/src/*.h"
-        "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/input.c"
-        "${CMAKE_SOURCE_DIR}/engine/vendor/stb.c"
-    )
-
     foreach(NAME ${WEB_SCRATCHES})
         set(SRC "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")
         add_executable(
             ${NAME} 
             ${SRC}
-            ${PROJECT_SOURCES}
         )
         target_include_directories(${NAME} 
             PUBLIC
@@ -75,14 +64,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         )
     endforeach()
 else()
-    file(GLOB_RECURSE 
-        PROJECT_SOURCES 
-        "${CMAKE_SOURCE_DIR}/engine/src/core/*.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/*.c" 
-        "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/*.h"
-    )
-
     if(MSVC)
         set(CONFIG $<CONFIG>)
         set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -96,7 +77,49 @@ else()
     endif()
 
     file(GLOB_RECURSE VENDOR_SOURCES  "engine/vendor/*/*.c" "engine/vendor/*/*.h")
-    add_executable(${PROJECT_NAME} "engine/src/main.c" ${PROJECT_SOURCES} ${VENDOR_SOURCES})
+    add_executable(${PROJECT_NAME} 
+        "${CMAKE_SOURCE_DIR}/engine/src/app/main.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
+
+        "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
+
+        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_xcb.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_file.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_time.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_memory.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_dynlib.c"
+
+        "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
+
+        "${CMAKE_SOURCE_DIR}/engine/src/input/input.c"
+
+        "${CMAKE_SOURCE_DIR}/engine/src/gfx/font.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/gfx/imgui.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
+        ${VENDOR_SOURCES}
+    )
+    target_link_options(${PROJECT_NAME} PUBLIC
+        -Wl,--export-dynamic
+    )
+
+    add_library(game SHARED
+        "game/src/game.c"
+    )
+    target_include_directories(game PRIVATE 
+        "src" 
+        "${CMAKE_SOURCE_DIR}/engine/src"
+    )
+    target_compile_options(game PRIVATE 
+        -Wall -pedantic -Wextra -Werror
+        -Wno-unused-parameter -Wno-unused-variable -Wno-override-init
+    )
 
     find_package(Vulkan REQUIRED)
 
@@ -122,9 +145,10 @@ else()
             -Wextra
             -Wno-unused-parameter
             -Wno-unused-variable
-            -Wno-override-init)
+            -Wno-override-init
+            -fvisibility=default
+        )
 
-        target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-dynamic)
         target_link_libraries(${PROJECT_NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
         target_compile_definitions(${PROJECT_NAME} PRIVATE LINUX_BUILD)
     else()
@@ -134,14 +158,32 @@ else()
     foreach(NAME ${NATIVE_SCRATCHES})
         set(SRC 
             "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/anim.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/scene.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/input.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_xcb.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_file.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_time.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_memory.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_dynlib.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/input/input.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/gfx/font.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/gfx/imgui.c"
             "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/font.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/imgui.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
         )
-        add_executable(${NAME} ${SRC} ${PROJECT_SOURCES} ${VENDOR_SOURCES})
+        add_executable(${NAME} ${SRC} ${VENDOR_SOURCES})
         target_include_directories(
             ${NAME}
             PUBLIC 
@@ -153,7 +195,7 @@ else()
         set_target_properties(${NAME} PROPERTIES SUFFIX ".exe")
         target_compile_options(
             ${NAME}
-            PRIVATE -fvisibility=hidden
+            PRIVATE
             -Wall
             $<$<CONFIG:Debug>:-O0>
             $<$<CONFIG:Debug>:-pedantic>
@@ -161,6 +203,8 @@ else()
             -Wextra
             -Wno-unused-parameter
             -Wno-unused-variable
-            -Wno-override-init)
+            -Wno-override-init
+            -fvisibility=hidden
+        )
     endforeach()
 endif()

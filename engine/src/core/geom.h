@@ -1,35 +1,18 @@
 #ifndef GEOM_H_
 #define GEOM_H_
 
-#include "cmath.h"
 #include "common.h"
-#include "core/arena.h"
 #include "core/strings.h"
+#include "core/geom_types.h"
 
-typedef struct {
-	bool hit;
-	float t;
-	float3 normal, point;
-} CastResult3;
-static CastResult3 CAST3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
+static inline bool rect_contains(Rectangle rect, float x, float y) { return x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height; }
+static inline bool rect_contains_point(Rectangle rect, float2 position) { return rect_contains(rect, position.x, position.y); }
+static inline Rectangle rect_from_center(float2 center, float2 half_extent) { return (Rectangle){ center.x - half_extent.x, center.y - half_extent.y, half_extent.x * 2.0f, half_extent.y * 2.0f }; }
+// :2d
 
-typedef struct {
-	float3 origin, direction;
-} Ray3;
 static inline float3 ray_at(Ray3 r, float t) { return add3(r.origin, scale3(r.direction, t)); }
 
-typedef struct {
-	float3 a, b;
-} Segment3;
-
-typedef struct {
-	float3 a, b, c;
-} Triangle3;
 static inline Triangle3 triangle3_move(Triangle3 t, float3 offset) { return (Triangle3){ add3(offset, t.a), add3(offset, t.b), add3(offset, t.c) }; }
-
-typedef struct {
-	float3 min, max;
-} AABB3;
 
 static inline AABB3 aabb3_from_center(float3 center, float3 half_extent) { return (AABB3){ .min = sub3(center, half_extent), .max = add3(center, half_extent) }; }
 static inline float3 aabb3_center(AABB3 a) { return scale3(add3(a.min, a.max), 0.5f); }
@@ -47,18 +30,8 @@ static inline bool aabb3_overlap(AABB3 a, AABB3 b) {
 		(a.min.y <= b.max.y && a.max.y >= b.min.y) &&
 		(a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
-
-typedef struct {
-	float3 center;
-	float radius;
-} Sphere;
 static inline Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), len3(aabb3_half_extent(a)) }; }
 static inline bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.center)) <= s.radius * s.radius; }
-
-typedef struct {
-	float3 normal;
-	float distance;
-} Plane;
 
 static inline Plane plane_from_side(Side s) { return (Plane){ side_to_float3[s], 0.0f }; }
 static inline Plane plane_from_point_normal(float3 point, float3 normal) { return (Plane){ normal, dot3(point, normal) }; }
@@ -74,10 +47,6 @@ static inline Plane plane_from_triangle(Triangle3 t) {
 	return result;
 }
 
-typedef struct {
-	float3 a, b;
-	float radius;
-} Capsule3;
 static inline Capsule3 capsule3_move(Capsule3 c, float3 displacement) { return (Capsule3){ add3(c.a, displacement), add3(c.b, displacement), c.radius }; }
 
 static inline Capsule3 capsule_from_center(float3 center, float3 up, float height, float radius) {
@@ -87,11 +56,6 @@ static inline Capsule3 capsule_from_center(float3 center, float3 up, float heigh
 	return (Capsule3){ sub3(center, offset), add3(center, offset), radius };
 }
 
-typedef struct {
-	float3 *vertices;
-	uint32_t vertex_count;
-} ConvexPolygon3;
-
 static inline ConvexPolygon3 convex3_from_triangle3(Triangle3 *triangle) {
 	ConvexPolygon3 result = {
 		.vertices = &triangle->a,
@@ -100,61 +64,6 @@ static inline ConvexPolygon3 convex3_from_triangle3(Triangle3 *triangle) {
 
 	return result;
 }
-
-static inline ConvexPolygon3 convex3_from_aabb3(Arena *arena, AABB3 aabb) {
-	ConvexPolygon3 result = {
-		.vertices = arena_push_count(arena, float3, 8),
-		.vertex_count = 8,
-	};
-	float3 min = aabb.min;
-	float3 max = aabb.max;
-
-	result.vertices[0] = (float3){ min.x, min.y, min.z };
-	result.vertices[1] = (float3){ max.x, min.y, min.z };
-	result.vertices[2] = (float3){ min.x, min.y, max.z };
-	result.vertices[3] = (float3){ max.x, min.y, max.z };
-
-	result.vertices[4] = (float3){ min.x, max.y, min.z };
-	result.vertices[5] = (float3){ max.x, max.y, min.z };
-	result.vertices[6] = (float3){ min.x, max.y, max.z };
-	result.vertices[7] = (float3){ max.x, max.y, max.z };
-
-	return result;
-}
-
-typedef enum {
-	SHAPE_KIND_AABB3,
-	SHAPE_KIND_SPHERE,
-	SHAPE_KIND_CAPSULE3,
-	SHAPE_KIND_PLANE,
-	SHAPE_KIND_CONVEX_POLYGON,
-	/* SHAPE_KIND_CYLINDER, */
-	/* SHAPE_KIND_CONCAVE_POLYGON, */
-	/* SHAPE_KIND_HEIGHTMAP, */
-
-	SHAPE_KIND_MAX,
-} ShapeKind;
-
-static String8 shape_kind_to_string[SHAPE_KIND_MAX] = {
-	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, AABB3),
-	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, SPHERE),
-	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, CAPSULE3),
-	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, PLANE),
-	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, CONVEX_POLYGON),
-
-};
-
-typedef struct {
-	ShapeKind kind;
-
-	union {
-		AABB3 aabb3;
-		Sphere sphere;
-		Capsule3 capsule;
-		Plane plane;
-		ConvexPolygon3 convex;
-	} as;
-} Shape3;
 
 static inline Shape3 shape3_sphere(float3 center, float radius) { return (Shape3){ .kind = SHAPE_KIND_SPHERE, .as.sphere = { .center = center, .radius = radius } }; }
 static inline Shape3 shape3_capsule(float3 center, float height, float radius) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = capsule_from_center(center, unit3(UP), height, radius) }; }
@@ -177,5 +86,6 @@ static inline bool aabb3_contains_point(AABB3 a, float3 p) {
 
 CastResult3 raycast_plane(Ray3 r, Plane p);
 CastResult3 raycast_aabb3(Ray3 r, AABB3 a);
+// :3d
 
 #endif

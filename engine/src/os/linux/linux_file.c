@@ -107,20 +107,25 @@ uint64_t os_file_write(OS_File file, const void *buffer, uint64_t size) {
 }
 
 bool os_file_copy(String8 src, String8 dst) {
-	OS_File input = os_file_open(src, OS_FILE_MODE_READ);
-	if (os_file_valid(input) == false)
-		return false;
+	OS_File input = 0, output = 0;
 
-	OS_File output = os_file_open(src, OS_FILE_MODE_READWRITE);
-	if (os_file_valid(output) == false) {
-		os_file_close(input);
-		return false;
+	bool ok = true;
+	if (ok) {
+		input = os_file_open(src, OS_FILE_MODE_READ);
+		ok = os_file_valid(input);
 	}
 
-	char buffer[4096];
-	int64_t read_write_bytes;
-	while ((read_write_bytes = read(input, buffer, sizeof(buffer))) > 0)
-		write(output, buffer, read_write_bytes);
+	if (ok) {
+		output = os_file_open(dst, OS_FILE_MODE_READWRITE);
+		ok = os_file_valid(output);
+	}
+
+	if (ok) {
+		char buffer[4096] = { 0 };
+		int64_t read_write_bytes = 0;
+		while ((read_write_bytes = read(input, buffer, sizeof(buffer))) > 0)
+			write(output, buffer, read_write_bytes);
+	}
 
 	os_file_close(input);
 	os_file_close(output);

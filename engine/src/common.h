@@ -189,6 +189,11 @@ typedef struct { float min, max; } Interval;
 typedef struct { float32x2 min, max; } Interval2;
 typedef struct { float32x3 min, max; } Interval3;
 
+typedef struct {
+	float x, y, width, height;
+} Rectangle;
+#define rect(x, y, w, h) ((Rectangle){ x, y, w, h })
+
 #define rgba(r, g, b, a) (Color){ r, g, b, a }
 #define rgb(r, g, b) (Color){ r, g, b, 255 }
 #define hex(u) (Color){ ((u) >> 16) & 0xFF, ((u) >> 8) & 0xFF, ((u) >> 0) & 0xFF, 0xFF } 
@@ -204,7 +209,7 @@ typedef struct { uint8_t r, g, b, a; } Color;
 
 #define YELLOW rgb(255, 255, 0)
 #define ORANGE hex(0xFFA500)
-#define TEAL hex(0x008080)
+#define TEAL rgb(0, 128, 128)
 
 #define WHITE rgb(255, 255, 255)
 #define GRAY rgb(128, 128, 128)

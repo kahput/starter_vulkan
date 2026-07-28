@@ -1,6 +1,7 @@
-#include "imgui.h"
+#include "gfx/font.h"
+#include "gfx/imgui.h"
+
 #include "core/debug.h"
-#include "font.h"
 
 static IMGUI_Context *context = 0;
 IMGUI_Widget IMGUI_NIL = { 0 };
@@ -64,9 +65,10 @@ bool imgui__remove_child(IMGUI_Widget *parent, uint32_t target_index) {
 	return ok;
 }
 
-void imgui_frame_begin(IMGUI_Context *ctx) {
+void imgui_frame_begin(IMGUI_Context *ctx, float dt) {
 	context = ctx;
 	context->widget_count = 1;
+	context->time += dt;
 	memory_zero_array(context->widgets);
 }
 
@@ -91,7 +93,7 @@ void imgui_frame_end(void) {
 IMGUI_Interact imgui_interact(uint64_t id, Rectangle rect) {
 	IMGUI_Interact result = { 0 };
 
-	bool ok = context;
+	bool ok = context && id;
 	if (ok) {
 		if (context->mouse.released[0]) {
 			uint32_t x = 0;
@@ -109,6 +111,15 @@ IMGUI_Interact imgui_interact(uint64_t id, Rectangle rect) {
 		result.held = context->held == id;
 		result.hovered = context->hovered == id;
 		result.released = result.held && result.hovered && context->mouse.released[0];
+
+		if (result.released && context->last_release_id == id && context->time - context->last_release_time <= 0.5f) {
+			result.double_release = true;
+			context->last_release_time = 0.0f;
+			context->last_release_id = 0;
+		} else if (result.released) {
+			context->last_release_id = id;
+			context->last_release_time = context->time;
+		}
 	}
 
 	return result;
@@ -285,13 +296,13 @@ void imgui_grow_tree_along_axis(IMGUI_Widget *root, IMGUI_Axis mask) {
 			growable[cross][growable_count[cross]++] = child;
 	}
 
-	if (has_flag(mask, IMGUI_AXIS_VERTICAL))
+	if (has_flag(mask, cross + 1))
 		for (uint32_t index = 0; index < growable_count[cross]; ++index) {
 			IMGUI_Widget *child = growable[cross][index];
 			child->size[cross] = maxf(child->size[cross], remaining[cross]);
 		}
 
-	if (has_flag(mask, IMGUI_AXIS_HORIZONTAL) && growable_count[main]) {
+	if (has_flag(mask, main + 1) && growable_count[main]) {
 		float sign = signf(remaining[main]);
 		remaining[main] = fabsf(remaining[main]);
 		while (remaining[main] > 0.01f) {
@@ -375,7 +386,7 @@ IMGUI_Interact imgui_button_label(String8 label) {
 	text->settings.text = label;
 	text->settings.mode[0] = IMGUI_MODE_FIXED, text->settings.mode[1] = IMGUI_MODE_FIXED;
 
-	Font *font = text->settings.font ? text->settings.font : context->defalut_font;
+	Font *font = text->settings.font ? text->settings.font : context->default_font;
 	if (font) {
 		float2 text_size = measure_text(font, label);
 		text->size[0] = text_size.x, text->size[1] = text_size.y;

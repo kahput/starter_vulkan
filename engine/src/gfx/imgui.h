@@ -1,11 +1,10 @@
 #pragma once
 
 #include "common.h"
+#include "core/geom.h"
 #include "core/strings.h"
-#include "core/shape2.h"
-#include "font.h"
 
-struct Image2D;
+#include "gfx/font.h"
 
 #define IMGUI_MAX_CHILDREN 32
 
@@ -16,6 +15,18 @@ typedef enum {
 
 	IMGUI_MODE_MAX,
 } IMGUI_SizingMode;
+
+typedef enum {
+	IMGUI_DOCK_NONE,
+
+	IMGUI_DOCK_LEFT,
+	IMGUI_DOCK_TOP,
+	IMGUI_DOCK_CENTER,
+	IMGUI_DOCK_RIGHT,
+	IMGUI_DOCK_BOTTOM,
+
+	IMGUI_DOCK_MAX,
+} IMGUI_Dock;
 
 typedef enum {
 	IMGUI_ALIGN_LEFT,
@@ -83,13 +94,13 @@ typedef struct {
 #define IMGUI_MAX_WIDGETS 256
 #define IMGUI_MAX_STYLE_DEPTH 4
 typedef struct {
-	Font *defalut_font;
+	Font *default_font;
 
 	IMGUI_Widget widgets[IMGUI_MAX_WIDGETS];
 	uint32_t widget_count;
 
 	struct {
-		float2 position, last;
+		float2 position, last_position;
 		bool pressed[3];
 		bool released[3];
 	} mouse;
@@ -106,14 +117,17 @@ typedef struct {
 	IMGUI_Settings settings_stack[IMGUI_MAX_STYLE_DEPTH];
 	uint32_t setting_stack_cursor;
 
+	float time, last_release_time;
+	uint64_t last_release_id;
 	uint64_t hovered, held;
 } IMGUI_Context;
 
-void imgui_frame_begin(IMGUI_Context *context);
+void imgui_frame_begin(IMGUI_Context *context, float dt);
 void imgui_frame_end(void);
 
 typedef struct {
 	bool hovered, pressed, held, released;
+	bool double_release;
 } IMGUI_Interact;
 
 IMGUI_Interact imgui_interact(uint64_t id, Rectangle rect);

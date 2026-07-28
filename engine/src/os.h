@@ -113,7 +113,7 @@ static inline bool os_library_valid(OS_Library lib) { return lib != OS_LIBRARY_I
 
 OS_Library os_library_load(String8 path);
 void os_library_unload(OS_Library lib);
-void os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol);
+bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol);
 
 // ----------------------
 // - Draw surfaces/windows

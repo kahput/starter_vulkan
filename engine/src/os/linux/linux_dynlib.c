@@ -24,27 +24,30 @@ void os_library_unload(OS_Library lib) {
 
 	if (dlclose(lib) != 0) {
 		LOG_WARN("os_library_unload - %s", dlerror());
-    }
+	}
 }
 
-void os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
-	bool error = false;
-	if (out_symbol == NULL) {
+bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
+	void *result = 0;
+
+	bool ok = out_symbol;
+	if (ok == false)
 		LOG_WARN("os_library_symbol - invalid out parameter passed.");
-		error = true;
-	}
-	if (os_library_valid(lib) == false) {
+
+	ok &= os_library_valid(lib);
+	if (ok == false)
 		LOG_WARN("os_library_symbol - invalid library handle passed.");
-		return;
-	}
 
-	if (error == false) {
-		void *result = dlsym(lib, (char *)symbol.text);
+	if (ok) {
+		result = dlsym(lib, (char *)symbol.text);
 
-		if (result == NULL) {
+		ok = result;
+		if (ok == false)
 			LOG_WARN("os_library_symbol - %s", dlerror());
-        }
-
-		*(void **)out_symbol = result;
 	}
+
+	if (ok)
+		*(void **)out_symbol = result;
+
+	return ok;
 }

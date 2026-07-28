@@ -6,7 +6,7 @@ static float turn_rate = 2.0f;
 static float pan_speed = 5.0f;
 static float zoom_speed = 5.0f;
 
-void scene_camera_orbit(Camera3 *camera, float2 mouse_delta) {
+void scene_camera_orbit(Camera3D *camera, float2 mouse_delta) {
 	float3 camera_target_offset = sub3(camera->target, camera->position);
 
 	float3 camera_forward = norm3(camera_target_offset);

@@ -3,9 +3,6 @@
 #include "core/arena.h"
 
 #include "gfx/gfx_types.h"
-#if 1
-	#include "core/shape2.h"
-#endif
 
 static inline bool gfx_image_valid(GFX_Context *context, GFX_Image *image) {
 	return context && image && image >= context->image_pool && image < context->image_pool + MAX_IMAGES;
@@ -33,7 +30,7 @@ bool gfx_buffer_destroy(GFX_Context *context, GFX_Buffer *buffer);
 bool gfx_image_destroy(GFX_Context *context, GFX_Image *image);
 bool gfx_sampler_destroy(GFX_Context *context, GFX_Sampler *sampler);
 bool gfx_swapchain_destroy(GFX_Context *context, GFX_Swapchain *surface);
-void pipeline_destroy(GFX_Context *context, GFX_Pipeline *pipeline);
+void gfx_pipeline_destroy(GFX_Context *context, GFX_Pipeline *pipeline);
 
 GFX_Image *gfx_backbuffer(GFX_Context *context, GFX_CommandContext *cmd, GFX_Swapchain *swapchain);
 void gfx_present(GFX_Context *context, GFX_Swapchain *swapchain, GFX_Image *image);

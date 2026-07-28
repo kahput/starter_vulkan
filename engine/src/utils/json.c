@@ -1,10 +1,10 @@
 #include "json.h"
-#include "common.h"
-#include "core/arena.h"
+
 #include "core/debug.h"
-#include "core/lexer.h"
 #include "core/logger.h"
-#include "core/strings.h"
+
+#include "utils/lexer.h"
+
 #include "os.h"
 
 JSON_Node JSON_NIL = { 0 };

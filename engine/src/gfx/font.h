@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gfx/gfx_types.h"
-#include "core/shape2.h"
+#include "core/geom.h"
 
 typedef struct {
 	Rectangle src;

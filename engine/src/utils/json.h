@@ -1,10 +1,8 @@
 #pragma once
 
-#include "anim.h"
-#include "arena.h"
 #include "common.h"
-#include "shape3.h"
-#include "strings.h"
+#include "core/arena.h"
+#include "core/strings.h"
 
 typedef enum {
 	JSON_TYPE_NULL,
@@ -100,56 +98,6 @@ static inline bool json_append_float3(Arena *arena, JSON_Node *target, String8 k
 		json_append_item(arena, f3)->value = json_number(v.x);
 		json_append_item(arena, f3)->value = json_number(v.y);
 		json_append_item(arena, f3)->value = json_number(v.z);
-	}
-
-	return ok;
-}
-
-static inline bool json_append_transform3(Arena *arena, JSON_Node *target, Transform3 *t) {
-	bool ok = arena && target && json_is_container(target) && t;
-	if (ok) { // transform
-		JSON_Node *transform = json_append_field(arena, target, s("transform"));
-		transform->value = json_object();
-
-		json_append_float3(arena, transform, s("translation"), t->translation);
-		json_append_float4(arena, transform, s("rotation"), t->rotation);
-		json_append_float3(arena, transform, s("scale"), t->scale);
-	}
-
-	return ok;
-}
-
-static inline bool json_append_shape3(Arena *arena, JSON_Node *target, Shape3 *s) {
-	bool ok = arena && target && json_is_container(target) && s;
-	if (ok) {
-		JSON_Node *shape_node = json_append_field(arena, target, s("shape"));
-		shape_node->value = json_object();
-
-		json_append_field(arena, shape_node, s("kind"))->value = json_string(arena, shape_kind_to_string[s->kind]);
-		JSON_Node *value_node = json_append_field(arena, shape_node, s("value"));
-		value_node->value = json_object();
-
-		switch (s->kind) {
-			case SHAPE_KIND_AABB3: {
-				json_append_float3(arena, value_node, s("min"), s->as.aabb3.min);
-				json_append_float3(arena, value_node, s("max"), s->as.aabb3.max);
-			} break;
-			case SHAPE_KIND_SPHERE: {
-				json_append_float3(arena, value_node, s("center"), s->as.sphere.center);
-				json_append_field(arena, value_node, s("radius"))->value = json_number(s->as.sphere.radius);
-			} break;
-			case SHAPE_KIND_CAPSULE3: {
-				json_append_float3(arena, value_node, s("a"), s->as.capsule.a);
-				json_append_float3(arena, value_node, s("b"), s->as.capsule.b);
-				json_append_field(arena, value_node, s("radius"))->value = json_number(s->as.capsule.radius);
-			} break;
-			case SHAPE_KIND_PLANE: {
-				json_append_float3(arena, value_node, s("normal"), s->as.plane.normal);
-				json_append_field(arena, value_node, s("distance"))->value = json_number(s->as.plane.distance);
-			} break;
-			default:
-				break;
-		}
 	}
 
 	return ok;
