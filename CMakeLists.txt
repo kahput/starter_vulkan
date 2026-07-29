@@ -96,8 +96,7 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
         "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
         "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
-
-        "${CMAKE_SOURCE_DIR}/engine/src/input/input.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/font.c"
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/imgui.c"
@@ -111,6 +110,7 @@ else()
 
     add_library(game SHARED
         "game/src/game.c"
+        "game/src/tables.c"
     )
     target_include_directories(game PRIVATE 
         "src" 
@@ -119,6 +119,9 @@ else()
     target_compile_options(game PRIVATE 
         -Wall -pedantic -Wextra -Werror
         -Wno-unused-parameter -Wno-unused-variable -Wno-override-init
+    )
+    target_compile_definitions(game PRIVATE
+        -DLINUX_BUILD
     )
 
     find_package(Vulkan REQUIRED)
@@ -175,8 +178,7 @@ else()
             "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
             "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
             "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
-
-            "${CMAKE_SOURCE_DIR}/engine/src/input/input.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
 
             "${CMAKE_SOURCE_DIR}/engine/src/gfx/font.c"
             "${CMAKE_SOURCE_DIR}/engine/src/gfx/imgui.c"

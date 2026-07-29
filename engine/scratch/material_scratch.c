@@ -172,8 +172,8 @@ int main(void) {
 			Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest) };
 
 			gfx_cmd_shader_bind(cmd, quad2d);
-			gfx_bind(device, 0, uniforms0, countof(uniforms0));
-			gfx_bind(device, 1, uniforms1, countof(uniforms1));
+			gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
+			gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 
 			vkCmdDraw(cmd->handle, 6, 1, 0, 0);
 

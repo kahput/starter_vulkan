@@ -1,14 +1,23 @@
-#include <input.h>
+#include "types.h"
 
 #include <common.h>
 #include <core/arena.h>
 #include <core/logger.h>
 
-#define LINUX_BUILD
 #include <os.h>
+
+#include <gfx.h>
+#include <gfx/font.h>
+#include <gfx/imgui.h>
+
+#include <utils/input.h>
+#include <utils/anim.h>
 
 typedef struct {
 	OS_Surface *surface;
+
+	GFX_Shader *shaders[SHADER_MAX];
+	Mesh meshes[MESH_MAX];
 
 	bool initialized;
 } State;
@@ -21,6 +30,7 @@ bool tick(Arena *memory, InputState *input) {
 
 	if (state->initialized == false) {
 		state->surface = os_surface_open(1280, 720, s("game"), 0);
+
 		state->initialized = true;
 	}
 

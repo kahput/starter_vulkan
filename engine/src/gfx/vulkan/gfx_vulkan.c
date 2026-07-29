@@ -1638,7 +1638,7 @@ bool gfx_transfer_flush(GFX_Device *device) {
 	return ok;
 }
 
-bool gfx_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
+bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
 	GFX_Shader *shader = 0;
 	GFX_Command *cmd = 0;
 	VkDescriptorSet set = 0;
@@ -1958,6 +1958,31 @@ void gfx_cmd_image_blit(GFX_Command *cmd, Rectangle source_rect, GFX_Image *sour
 	}
 }
 
+void gfx_cmd_image_clear(GFX_Command *cmd, Rectangle rect, Color color, GFX_Image *image) {
+	bool ok = cmd && cmd->handle && image && image->handle;
+	if (ok) {
+		if (image->res_usage != RESOURCE_USAGE_TRANSFER_DST)
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, image);
+		if (rect.width == 0.0f)
+			rect.width = image->width;
+		if (rect.height == 0.0f)
+			rect.height = image->height;
+
+		VkClearColorValue clear_color = { .float32 = { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f } };
+		VkImageSubresourceRange range = {
+			.aspectMask = image_options_to_vulkan_aspect_flags(image->options),
+			.baseArrayLayer = 0,
+			.baseMipLevel = 0,
+			.levelCount = image->miplevels,
+			.layerCount = image_options_to_vulkan_layer_count(image->options),
+		};
+		vkCmdClearColorImage(
+			cmd->handle, image->handle,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			&clear_color, 1, &range);
+	}
+}
+
 void gfx_cmd_image_upload(GFX_Command *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
 	bool ok = cmd && cmd->handle && image && image->handle;
 	if (ok) {
@@ -2007,8 +2032,10 @@ void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader) {
 	GFX_Pipeline *target = 0;
 
 	bool ok = cmd && cmd->handle && shader && shader->first_pipeline;
-	if (ok)
+	if (ok) {
+		ASSERT(shader->first_pipeline && "No shader pipeline created.");
 		gfx_cmd_pipeline_bind(cmd, shader->first_pipeline);
+	}
 }
 
 void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline) {

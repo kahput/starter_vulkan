@@ -1,9 +1,10 @@
 #include "core/arena.h"
-#include "input.h"
 #include "os.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
+
+#include "utils/input.h"
 
 typedef bool (*TickFn)(Arena *arena, InputState *input);
 

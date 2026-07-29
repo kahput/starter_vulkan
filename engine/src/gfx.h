@@ -68,7 +68,7 @@ void gfx_present(GFX_Device *device, GFX_Swapchain *swapchain, GFX_Image *image)
 bool gfx_swapchain_resize(GFX_Device *device, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height);
 bool gfx_image_resize(GFX_Device *device, GFX_Image *image, uint32_t new_width, uint32_t new_height);
 
-bool gfx_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count);
+bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count);
 
 // pushes data to command context staging ring buffer, aligned to 256
 uint64_t gfx_cmd_put(GFX_Command *cmd, uint64_t size, void *src);
@@ -78,13 +78,14 @@ void gfx_cmd_buffer_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage d
 bool gfx_cmd_image_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target);
 bool gfx_cmd_image_transition(GFX_Command *cmd, ResourceUsage dst, GFX_Image *target);
 void gfx_cmd_image_blit(GFX_Command *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target);
+void gfx_cmd_image_clear(GFX_Command *cmd, Rectangle rect, Color color, GFX_Image *image);
 void gfx_cmd_image_upload(GFX_Command *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels);
 void gfx_cmd_buffer_upload(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data);
 
 void gfx_cmd_viewport(GFX_Command *cmd, Rectangle area);
 void gfx_cmd_scissor(GFX_Command *cmd, Rectangle area);
 
-void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader);
+void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader); // binds first pipeline
 void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline);
 
 void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z);

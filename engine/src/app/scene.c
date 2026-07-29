@@ -1,6 +1,6 @@
 #include "scene.h"
 #include "core/cmath.h"
-#include "input.h"
+#include "utils/input.h"
 
 static float turn_rate = 2.0f;
 static float pan_speed = 5.0f;

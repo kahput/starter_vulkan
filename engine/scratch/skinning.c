@@ -12,8 +12,8 @@
 #include "utils/anim.h"
 #include "utils/json.h"
 #include "utils/lexer.h"
+#include "utils/input.h"
 
-#include "input.h"
 #include "os.h"
 
 #include "gfx.h"
@@ -206,39 +206,37 @@ typedef struct {
 	uint32_t permutation_count;
 } ShaderMetadata;
 
-typedef enum {
-	SHADER_TEST_COMPUTE,
-	SHADER_SKINNING_COMPUTE,
-	SHADER_SHADOW,
-	SHADER_SPATIAL,
-	SHADER_GRASS,
-	SHADER_SKYBOX,
-	SHADER_LINE3D,
-	SHADER_TRANSPARENT,
-	SHADER_QUAD2D,
-	SHADER_LINE2D,
-	SHADER_COMPOSITE,
+#define SHADER_LIST(X)  \
+	X(TEST_COMPUTE)     \
+	X(SKINNING_COMPUTE) \
+	X(SHADOW)           \
+	X(SPATIAL)          \
+	X(GRASS)            \
+	X(SKYBOX)           \
+	X(LINE3D)           \
+	X(TRANSPARENT)      \
+	X(QUAD2D)           \
+	X(LINE2D)           \
+	X(COMPOSITE)
 
-	SHADER_MAX,
+// clang-format off
+typedef enum {
+#define SHADER_ENUM(name) SHADER_##name,
+	SHADER_LIST(SHADER_ENUM)
+#undef SHADER_ENUM
+
+    SHADER_MAX,
 } ShaderID;
+// clang-format on
 
 String8 shader_to_string[SHADER_MAX] = {
-	ENUM_STRING_TABLE_ENTRY(SHADER, TEST_COMPUTE),
-	ENUM_STRING_TABLE_ENTRY(SHADER, SKINNING_COMPUTE),
-	ENUM_STRING_TABLE_ENTRY(SHADER, SHADOW),
-	ENUM_STRING_TABLE_ENTRY(SHADER, SPATIAL),
-	ENUM_STRING_TABLE_ENTRY(SHADER, GRASS),
-	ENUM_STRING_TABLE_ENTRY(SHADER, SKYBOX),
-	ENUM_STRING_TABLE_ENTRY(SHADER, LINE3D),
-	ENUM_STRING_TABLE_ENTRY(SHADER, TRANSPARENT),
-	ENUM_STRING_TABLE_ENTRY(SHADER, QUAD2D),
-	ENUM_STRING_TABLE_ENTRY(SHADER, LINE2D),
-	ENUM_STRING_TABLE_ENTRY(SHADER, COMPOSITE),
+#define SHADER_NAME(name) [SHADER_##name] = str_comp(#name),
+	SHADER_LIST(SHADER_NAME)
+#undef SHADER_NAME
 };
 
 ShaderMetadata shader_to_metadata[SHADER_MAX] = {
-	[SHADER_TEST_COMPUTE] = {
-	  .filepaths[SHADER_STAGE_COMPUTE] = str_comp("assets/shaders/compute/bin/test.compute.spv") },
+	[SHADER_TEST_COMPUTE] = { .filepaths[SHADER_STAGE_COMPUTE] = str_comp("assets/shaders/compute/bin/test.compute.spv") },
 	[SHADER_SKINNING_COMPUTE] = { .filepaths[SHADER_STAGE_COMPUTE] = str_comp("assets/shaders/compute/bin/skinning.compute.spv") },
 	[SHADER_SHADOW] = {
 	  .filepaths = {
@@ -862,7 +860,7 @@ int main(void) {
 		(ImageOptions){
 		  .debug_name = "target:ui",
 		  .format = PIXEL_FORMAT_RGBA8_UNORM,
-		  .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE,
+		  .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER,
 		  .sample = SAMPLE_COUNT_1,
 		});
 	GFX_Image *depthbuffer = gfx_image_make(device, 1280, 720,
@@ -993,7 +991,6 @@ int main(void) {
 		  .pixels = &(uint32_t){ 0xFFFFFFFF },
 		});
 
-	// create compute pipeline
 	OS_Timestamp shader_ts[SHADER_MAX] = { 0 };
 	GFX_Shader *shaders[SHADER_MAX] = { 0 };
 	for (ShaderID ID = 0; ID < SHADER_MAX; ++ID) { // :shaders
@@ -1012,7 +1009,11 @@ int main(void) {
 		} else {
 			String8 vs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 			String8 fs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-			shader_ts[ID] = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+
+			OS_Timestamp fs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+			OS_Timestamp vs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_VERTEX]);
+
+			shader_ts[ID] = MAX(fs_ts, vs_ts);
 			shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shader_to_string[ID].text);
 			for (uint32_t permutation = 0; permutation < metadata->permutation_count; ++permutation)
 				gfx_pipeline_ensure(device, shaders[ID], metadata->permutations[permutation]);
@@ -1080,7 +1081,6 @@ int main(void) {
 
 	uint32_t animation_counts[MESH_MAX] = { 0 };
 	AnimationClip *animations[MESH_MAX] = { 0 };
-	(void)animations;
 
 	for (uint32_t meshid = 0; meshid < MESH_MAX; ++meshid) {
 		if (meshid_to_metadata[meshid].length == 0)
@@ -1988,10 +1988,6 @@ int main(void) {
 		}
 		imgui_frame_end();
 
-		/* Font *font = &fonts[FONT_BAKE_SIZE_16]; */
-		/* draw2d_textf(batch_2d, font, gfx_image_id(context, font->atlas.handle), make2(dims.x - 60.0f, 20.0f), WHITE, */
-		/* 	s("FPS %d"), (uint32_t)(1.0 / dt)); */
-
 		if (draw_collision_shapes) {
 			for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 				Entity *entity = &scene->entities[instance_index];
@@ -2006,7 +2002,6 @@ int main(void) {
 			}
 		}
 
-		// Frame resources
 		GFX_Command *cmd = gfx_frame_begin(device);
 		if (cmd == 0)
 			continue;
@@ -2020,7 +2015,7 @@ int main(void) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
 			gfx_cmd_shader_bind(cmd, shaders[SHADER_TEST_COMPUTE]);
-			gfx_bind(device, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
+			gfx_cmd_bind(device, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
 			struct {
@@ -2159,7 +2154,7 @@ int main(void) {
 				frame_data.proj.elements[5] *= -1;
 
 				gfx_cmd_shader_bind(cmd, shaders[SHADER_SHADOW]);
-				gfx_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
+				gfx_cmd_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
 
 				// :shadow
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
@@ -2191,7 +2186,7 @@ int main(void) {
 							offset = entity->skinned_vertices_offset;
 						}
 
-						gfx_bind(device, 1, array_arg(Uniform, storage_buffers(0, buffer, offset, size)));
+						gfx_cmd_bind(device, 1, array_arg(Uniform, storage_buffers(0, buffer, offset, size)));
 
 						vkCmdPushConstants(cmd->handle, shaders[SHADER_SHADOW]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
@@ -2270,7 +2265,7 @@ int main(void) {
 					sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
 					sampler_with_textures(3, (GFX_Image *[]){ skybox.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 				};
-				gfx_bind(device, 0, uniforms, countof(uniforms));
+				gfx_cmd_bind(device, 0, uniforms, countof(uniforms));
 
 				// :scene
 				gfx_cmd_shader_bind(cmd, shaders[SHADER_SPATIAL]);
@@ -2340,7 +2335,7 @@ int main(void) {
 							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
-						gfx_bind(device, 1, uniforms, countof(uniforms));
+						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
 						vkCmdPushConstants(cmd->handle, shaders[SHADER_SPATIAL]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
@@ -2389,7 +2384,7 @@ int main(void) {
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
 							sampler_with_textures(3, (GFX_Image *[]){ noise_image.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
-						gfx_bind(device, 1, uniforms, countof(uniforms));
+						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
 						vkCmdPushConstants(cmd->handle, shaders[SHADER_GRASS]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, map_width * map_depth, part->index_offset, part->vertex_offset, 0);
@@ -2455,7 +2450,7 @@ int main(void) {
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
 
-						gfx_bind(device, 1, uniforms, countof(uniforms));
+						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
 						vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -2486,7 +2481,7 @@ int main(void) {
 						Uniform uniforms[] = {
 							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
-						gfx_bind(device, 1, uniforms, countof(uniforms));
+						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
 					}
 
@@ -2509,8 +2504,8 @@ int main(void) {
 						Uniform uniforms[] = {
 							storage_data(0, batch_line2d->base, batch_line2d->offset),
 						};
-						gfx_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
-						gfx_bind(device, 1, uniforms, countof(uniforms));
+						gfx_cmd_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
+						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 						vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
 					}
 				}
@@ -2604,14 +2599,16 @@ int main(void) {
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 
-				gfx_bind(device, 0, uniforms0, countof(uniforms0));
-				gfx_bind(device, 1, uniforms1, countof(uniforms1));
+				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
+				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 
 				vkCmdDraw(cmd->handle, vertex_count, 1, 0, 0);
 
 				vkCmdEndRendering(cmd->handle);
+
 				vkCmdEndDebugUtilsLabel(cmd->handle);
-			}
+			} else
+				gfx_cmd_image_clear(cmd, (Rectangle){ 0 }, TRANSPARENT, ui_target);
 
 			{ // :composite
 				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, spatial_target);
@@ -2655,7 +2652,7 @@ int main(void) {
 					sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
 				};
 
-				gfx_bind(device, 0, uniforms, countof(uniforms));
+				gfx_cmd_bind(device, 0, uniforms, countof(uniforms));
 
 				vkCmdDraw(cmd->handle, 6, 1, 0, 0);
 				vkCmdEndRendering(cmd->handle);
@@ -2683,13 +2680,16 @@ int main(void) {
 
 					gfx_shader_destroy(device, shaders[ID]);
 					String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-					shaders[SHADER_TEST_COMPUTE] = gfx_compute_make(device, bytecode, (char *)shader_to_string[ID].text);
+					shaders[ID] = gfx_compute_make(device, bytecode, (char *)shader_to_string[ID].text);
 
 					shader_ts[ID] = now;
 					arena_scratch_end(scratch);
 				}
 			} else {
-				OS_Timestamp now = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]); // TODO: Handle vertex & fragment shaders
+				OS_Timestamp fs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+				OS_Timestamp vs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_VERTEX]);
+
+				OS_Timestamp now = MAX(fs_ts, vs_ts);
 				if (now != shader_ts[ID]) {
 					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
 					vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
@@ -3311,11 +3311,9 @@ Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t
 
 Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdivision_x, uint32_t subdivision_z) {
 	Mesh result = { 0 };
-	result.bounds.min = (float3){ .x = -width * 0.5f, .y = 0.0f, .y = -height * 0.5f };
-	result.bounds.max = (float3){ .x = width * 0.5f, .y = 0.0f, .y = height * 0.5f };
+	result.bounds = aabb3_empty();
 
 	bool ok = arena;
-
 	if (ok) {
 		subdivision_x += 2;
 		subdivision_z += 2;
@@ -3340,6 +3338,8 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 					.normal = p.normal,
 					.uv = { (float)x / (subdivision_x - 1), (float)z / (subdivision_z - 1) },
 				};
+
+				aabb3_expand(&result.bounds, vertex_cursor->position);
 				vertex_cursor++;
 			}
 		}
@@ -3383,8 +3383,7 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 
 Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D heightmap) {
 	Mesh result = { 0 };
-	result.bounds.min = (float3){ .x = -w * 0.5f, .y = 0.0f, .y = -h * 0.5f };
-	result.bounds.max = (float3){ .x = w * 0.5f, .y = 0.0f, .y = h * 0.5f };
+	result.bounds = aabb3_empty();
 
 	bool ok = arena;
 
@@ -3406,6 +3405,8 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 					.normal = { 0.0f, 1.0f, 0.0f },
 					.uv = { (float)x / (heightmap.width - 1), (float)z / (heightmap.height - 1) },
 				};
+
+				aabb3_expand(&result.bounds, result.vertices[index].position);
 			}
 		}
 

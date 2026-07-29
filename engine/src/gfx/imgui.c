@@ -88,6 +88,7 @@ void imgui_frame_end(void) {
 		context->cache[context->cache_count++].rect = imgui_rect_live(widget);
 	}
 
+	context->widget_count = 1;
 	context = 0;
 }
 
