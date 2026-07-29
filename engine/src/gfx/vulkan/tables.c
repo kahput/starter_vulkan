@@ -1,7 +1,7 @@
 #include "tables.h"
 #include "gfx/gfx_types.h"
 
-const VkDescriptorType uniform_type_to_vulkan_descriptor_type[UNIFORM_TYPE_COUNT] = {
+const VkDescriptorType uniform_type_to_vulkan_descriptor_type[UNIFORM_TYPE_MAX] = {
 	[UNIFORM_TYPE_IMAGE] = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
 	[UNIFORM_TYPE_STORAGE_IMAGE] = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 	[UNIFORM_TYPE_SAMPLER] = VK_DESCRIPTOR_TYPE_SAMPLER,
@@ -25,7 +25,7 @@ const UniformType uniform_type_from_vulkan_descriptor_type[VK_DESCRIPTOR_TYPE_IN
 	[VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC] = UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC,
 };
 
-const VkPipelineStageFlags resource_usage_to_vulkan_pipeline_stage[RESOURCE_USAGE_COUNT] = {
+const VkPipelineStageFlags resource_usage_to_vulkan_pipeline_stage[RESOURCE_USAGE_MAX] = {
 	[RESOURCE_USAGE_UNDEFINED] = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 
 	[RESOURCE_USAGE_TRANSFER_DST] = VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -53,7 +53,7 @@ const VkPipelineStageFlags resource_usage_to_vulkan_pipeline_stage[RESOURCE_USAG
 	[RESOURCE_USAGE_PRESENT] = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 };
 
-const VkAccessFlags resource_usage_to_vulkan_access_flags[RESOURCE_USAGE_COUNT] = {
+const VkAccessFlags resource_usage_to_vulkan_access_flags[RESOURCE_USAGE_MAX] = {
 	[RESOURCE_USAGE_UNDEFINED] = 0,
 
 	[RESOURCE_USAGE_TRANSFER_SRC] = VK_ACCESS_TRANSFER_READ_BIT,
@@ -78,7 +78,7 @@ const VkAccessFlags resource_usage_to_vulkan_access_flags[RESOURCE_USAGE_COUNT] 
 
 	[RESOURCE_USAGE_PRESENT] = 0,
 };
-const VkImageLayout resource_usage_to_vulkan_image_layout[RESOURCE_USAGE_COUNT] = {
+const VkImageLayout resource_usage_to_vulkan_image_layout[RESOURCE_USAGE_MAX] = {
 	[RESOURCE_USAGE_UNDEFINED] = VK_IMAGE_LAYOUT_UNDEFINED,
 
 	[RESOURCE_USAGE_TRANSFER_SRC] = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -99,12 +99,12 @@ const VkImageLayout resource_usage_to_vulkan_image_layout[RESOURCE_USAGE_COUNT] 
 	[RESOURCE_USAGE_DEPTH_ATTACHMENT] = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 };
 
-const VkMemoryPropertyFlags memory_type_to_vulkan_memory_flags[MEMORY_TYPE_COUNT] = {
+const VkMemoryPropertyFlags memory_type_to_vulkan_memory_flags[MEMORY_TYPE_MAX] = {
 	[MEMORY_TYPE_GPU] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 	[MEMORY_TYPE_CPU] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 };
 
-const VkFormat pixel_format_to_vulkan_format[PIXEL_FORMAT_COUNT] = {
+const VkFormat pixel_format_to_vulkan_format[PIXEL_FORMAT_MAX] = {
 	[PIXEL_FORMAT_RGBA8_UNORM] = VK_FORMAT_R8G8B8A8_UNORM,
 	[PIXEL_FORMAT_RGBA8_SRGB] = VK_FORMAT_R8G8B8A8_SRGB,
 
@@ -117,7 +117,7 @@ const VkFormat pixel_format_to_vulkan_format[PIXEL_FORMAT_COUNT] = {
 	[PIXEL_FORMAT_DEPTHSTENCIL] = VK_FORMAT_D24_UNORM_S8_UINT,
 };
 
-const VkImageViewType image_type_to_vulkan_image_view_type[IMAGE_TYPE_COUNT] = {
+const VkImageViewType image_type_to_vulkan_image_view_type[IMAGE_TYPE_MAX] = {
 	[IMAGE_TYPE_2D] = VK_IMAGE_VIEW_TYPE_2D,
 	[IMAGE_TYPE_3D] = VK_IMAGE_VIEW_TYPE_3D,
 	[IMAGE_TYPE_CUBE] = VK_IMAGE_VIEW_TYPE_CUBE,

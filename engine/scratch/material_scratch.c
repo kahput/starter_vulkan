@@ -26,11 +26,12 @@ int main(void) {
 		sampler_opt("default:nearest", FILTER_NEAREST, WRAP_MODE_CLAMP));
 
 	ArenaTemp scratch = arena_scratch_begin(0);
-	GFX_Pipeline pipeline = graphics_pipeline_make(device,
+	GFX_Shader *quad2d = gfx_shader_make(device,
 		os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv")),
 		os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/quad.fragment.spv")),
+		"shader:quad2d");
+	gfx_pipeline_ensure(device, quad2d,
 		(PipelineOptions){
-		  .debug_name = "shader:quad",
 		  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
 		  .color_attachment_count = 1,
 		  .enable_blend = true,
@@ -170,10 +171,9 @@ int main(void) {
 
 			Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest) };
 
-			gfx_cmd_pipeline_bind(cmd, &pipeline);
-
-			gfx_bind(device, &pipeline, 0, uniforms0, countof(uniforms0));
-			gfx_bind(device, &pipeline, 1, uniforms1, countof(uniforms1));
+			gfx_cmd_shader_bind(cmd, quad2d);
+			gfx_bind(device, 0, uniforms0, countof(uniforms0));
+			gfx_bind(device, 1, uniforms1, countof(uniforms1));
 
 			vkCmdDraw(cmd->handle, 6, 1, 0, 0);
 
@@ -182,8 +182,6 @@ int main(void) {
 
 		gfx_frame_end(device, cmd);
 	}
-	vkDeviceWaitIdle(device->handle);
-	gfx_pipeline_destroy(device, &pipeline);
 	gfx_device_destroy(device);
 	os_display_shutdown();
 

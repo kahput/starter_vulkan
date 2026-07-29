@@ -8,7 +8,7 @@ typedef enum {
 	GFX_LIMIT_UNIFORMS_PER_SET = 32,
 	GFX_LIMIT_COLOR_ATTACHMENTS = 4,
 
-	GFX_LIMIT_COUNT,
+	GFX_LIMIT_MAX,
 } GfxLimits;
 
 typedef enum {
@@ -23,10 +23,10 @@ typedef enum {
 	UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC,
 	UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC,
 
-	UNIFORM_TYPE_COUNT,
+	UNIFORM_TYPE_MAX,
 } UniformType;
 
-static String8 uniform_type_to_string[UNIFORM_TYPE_COUNT] = {
+static String8 uniform_type_to_string[UNIFORM_TYPE_MAX] = {
 	[UNIFORM_TYPE_IMAGE] = str_comp("UNIFORM_TYPE_IMAGE"),
 	[UNIFORM_TYPE_STORAGE_IMAGE] = str_comp("UNIFORM_TYPE_STORAGE_IMAGE"),
 	[UNIFORM_TYPE_SAMPLER] = str_comp("UNIFORM_TYPE_SAMPLER"),
@@ -56,13 +56,13 @@ typedef enum {
 	PIXEL_FORMAT_DEPTH,
 	PIXEL_FORMAT_DEPTHSTENCIL,
 
-	PIXEL_FORMAT_COUNT,
+	PIXEL_FORMAT_MAX,
 } PixelFormat;
 
 static inline bool pixel_format_is_depth_stencil(PixelFormat format) { return format == PIXEL_FORMAT_DEPTHSTENCIL; }
 static inline bool pixel_format_is_depth(PixelFormat format) { return format == PIXEL_FORMAT_DEPTH || pixel_format_is_depth_stencil(format); }
 
-static uint32_t pixel_format_to_stride[PIXEL_FORMAT_COUNT] = {
+static uint32_t pixel_format_to_stride[PIXEL_FORMAT_MAX] = {
 	[PIXEL_FORMAT_RGBA8_UNORM] = 4,
 	[PIXEL_FORMAT_RGBA8_SRGB] = 4,
 
@@ -75,7 +75,7 @@ static uint32_t pixel_format_to_stride[PIXEL_FORMAT_COUNT] = {
 	[PIXEL_FORMAT_DEPTHSTENCIL] = 4,
 };
 
-static const String8 pixel_format_to_string[PIXEL_FORMAT_COUNT] = {
+static const String8 pixel_format_to_string[PIXEL_FORMAT_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, RGBA8_UNORM),
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, RGBA8_SRGB),
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, BGRA8_SRGB),
@@ -91,7 +91,7 @@ typedef enum {
 	IMAGE_TYPE_3D,
 	IMAGE_TYPE_CUBE,
 
-	IMAGE_TYPE_COUNT,
+	IMAGE_TYPE_MAX,
 } ImageType;
 
 typedef enum {
@@ -124,7 +124,7 @@ typedef enum {
 	MEMORY_TYPE_GPU,
 	MEMORY_TYPE_CPU,
 
-	MEMORY_TYPE_COUNT,
+	MEMORY_TYPE_MAX,
 } MemoryType;
 
 typedef enum {
@@ -132,8 +132,15 @@ typedef enum {
 	SHADER_STAGE_FRAGMENT,
 	SHADER_STAGE_COMPUTE,
 
-	SHADER_STAGE_COUNT,
+	SHADER_STAGE_MAX,
 } ShaderStage;
+
+typedef enum {
+	SADER_TYPE_GRAPHICS,
+	SADER_TYPE_COMPUTE,
+
+	SHADER_TYPE_MAX,
+} ShaderType;
 
 typedef enum sampler_filter {
 	FILTER_NEAREST = 0,
@@ -146,7 +153,7 @@ typedef enum sampler_address_mode {
 	WRAP_MODE_CLAMP = 2,
 	WRAP_MODE_CLAMP_BORDER = 3,
 
-	WRAP_MODE_COUNT,
+	WRAP_MODE_MAX,
 } WrapMode;
 
 typedef enum cull_mode {
@@ -191,7 +198,7 @@ typedef enum {
 	RESOURCE_USAGE_COLOR_ATTACHMENT,
 	RESOURCE_USAGE_DEPTH_ATTACHMENT,
 
-	RESOURCE_USAGE_COUNT,
+	RESOURCE_USAGE_MAX,
 } ResourceUsage;
 
 typedef struct {
@@ -242,8 +249,6 @@ typedef struct {
 	}
 
 typedef struct {
-	const char *debug_name;
-
 	ImageSampleCount sample_count;
 	CullMode cull_mode;
 
@@ -252,8 +257,9 @@ typedef struct {
 
 	PixelFormat depth_attachment;
 	bool disable_depth_test, disable_depth_write;
-
 	bool enable_blend;
+	uint8_t _pad0;
+
 	BlendFactor src_color_factor, dst_color_factor;
 	BlendFactor src_alpha_factor, dst_alpha_factor;
 } PipelineOptions;
@@ -404,18 +410,30 @@ static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images
 	return result;
 }
 
-typedef struct Shader GFX_Pipeline;
-struct Shader {
+typedef struct GFX_Pipeline GFX_Pipeline;
+typedef struct GFX_Shader GFX_Shader;
+
+struct GFX_Pipeline {
 	GFX_Pipeline *next;
+	GFX_Shader *shader;
 
 	VkPipeline handle;
-	VkPipelineLayout layout;
-	VkShaderModule shaders[SHADER_STAGE_COUNT];
-
-	VkDescriptorSetLayout set_layouts[GFX_LIMIT_UNIFORM_SETS];
-	UniformSet set_infos[GFX_LIMIT_UNIFORM_SETS];
-
 	PipelineOptions options;
+};
+
+struct GFX_Shader {
+	GFX_Shader *next;
+	const char *debug_name;
+
+	VkShaderModule modules[SHADER_STAGE_MAX];
+
+	VkPipelineLayout layout;
+	VkDescriptorSetLayout layouts[GFX_LIMIT_UNIFORM_SETS];
+	struct {
+		UniformSet sets[GFX_LIMIT_UNIFORM_SETS];
+	} reflection;
+
+	GFX_Pipeline *first_pipeline;
 };
 
 	#define SWAPCHAIN_IMAGE_COUNT 3
@@ -445,9 +463,8 @@ struct Swapchain {
 	#define MAX_IMAGES 512
 	#define MAX_SAMPLERS 32
 	#define MAX_SHADERS 32
+	#define MAX_PIPELINES 1024
 	#define MAX_SWAPCHAINS 8
-/* #define MAX_SAMPLERS 32 */
-/* #define MAX_BINDSETS 4096 */
 
 typedef struct {
 	VkCommandBuffer handle;
@@ -459,6 +476,8 @@ typedef struct {
 	GFX_Swapchain *swapchains[MAX_SWAPCHAINS];
 	uint32_t swapchain_image_indices[MAX_SWAPCHAINS];
 	uint32_t swapchain_count;
+
+	GFX_Shader *active_shader;
 
 	GFX_Buffer *transient_buffer;
 	Arena transient_arena[1];
@@ -511,8 +530,11 @@ typedef struct {
 	GFX_Sampler *sampler_pool;
 	uint32_t sampler_count;
 
-	GFX_Pipeline *shader_pool;
+	GFX_Shader *shader_pool;
 	uint32_t shader_count;
+
+	GFX_Pipeline *pipeline_pool;
+	uint32_t pipeline_count;
 
 	GFX_Swapchain *swapchain_pool;
 	uint32_t swapchain_count;
@@ -520,7 +542,8 @@ typedef struct {
 	GFX_Buffer *first_free_buffer;
 	GFX_Image *first_free_image;
 	GFX_Sampler *first_free_sampler;
-	GFX_Pipeline *first_free_shader;
+	GFX_Shader *first_free_shader;
+	GFX_Pipeline *first_free_pipeline;
 	GFX_Swapchain *first_free_swapchain;
 
 	bool initialized;

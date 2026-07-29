@@ -12,6 +12,28 @@
 
 #include <spirv_reflect/spirv_reflect.h>
 
+static inline GFX_Pipeline *gfx__pipeline_alloc(GFX_Device *device) {
+	GFX_Pipeline *result = 0;
+
+	bool ok = gfx_device_valid(device) && (device->pipeline_count < MAX_PIPELINES || device->first_free_pipeline);
+	ASSERT(ok);
+
+	if (ok) { // acquire new shader
+		if (device->first_free_pipeline) {
+			result = device->first_free_pipeline;
+			device->first_free_pipeline = result->next;
+			result->next = 0;
+
+			memory_zero(result, sizeof(*result));
+		} else
+			result = &device->pipeline_pool[device->pipeline_count];
+
+		device->pipeline_count++;
+	}
+
+	return result;
+}
+
 // :helper
 static bool gfx__validate_extensions(const char *required[], uint32_t required_count, VkExtensionProperties *available, uint32_t available_count);
 
@@ -69,6 +91,9 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 		}
 	}
 
+	if (ok) {
+	}
+
 	if (ok) { // populate uniform metadata
 		ASSERT(set_count <= GFX_LIMIT_UNIFORM_SETS);
 
@@ -115,6 +140,7 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 
 	return ok;
 }
+
 GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions options) {
 	GFX_Buffer *result = 0;
 
@@ -132,7 +158,6 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 		} else
 			result = &device->buffer_pool[device->buffer_count];
 
-		result->next = device->buffer_pool;
 		device->buffer_count++;
 	}
 
@@ -238,7 +263,6 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 		} else
 			result = &device->image_pool[device->image_count];
 
-		result->next = device->image_pool;
 		result->imageid = indexof(device->image_pool, result);
 		device->image_count++;
 	}
@@ -420,7 +444,6 @@ GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 		} else
 			result = &device->sampler_pool[device->sampler_count];
 
-		result->next = device->sampler_pool;
 		device->sampler_count++;
 	}
 
@@ -466,6 +489,398 @@ GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 	return result;
 }
 
+GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *debug_name) {
+	GFX_Shader *result = 0;
+	GFX_Pipeline *pipeline = 0;
+	uint32_t set_count = 0;
+
+	bool ok = gfx_device_valid(device) && (device->shader_count < MAX_SHADERS || device->first_free_shader);
+	const char *name = debug_name ? debug_name : "<unnamed_compute>";
+
+	LOG_DEBUG("creating '%s' compute shader.", name);
+	if (ok) { // acquire new shader
+		if (device->first_free_shader) {
+			result = device->first_free_shader;
+			device->first_free_shader = result->next;
+			result->next = 0;
+
+			memory_zero(result, sizeof(*result));
+		} else
+			result = &device->shader_pool[device->shader_count];
+
+		result->debug_name = name;
+		device->shader_count++;
+
+		ok = bytecode.text && bytecode.length > 0;
+		if (ok == false)
+			LOG_WARN("%s - invalid shader bytecode passed.", __func__);
+	}
+
+	if (ok) { // create shader module
+		VkShaderModuleCreateInfo csm_create_info = {
+			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+			.pCode = (void *)bytecode.text,
+			.codeSize = bytecode.length,
+		};
+
+		ok = vkCreateShaderModule(device->handle, &csm_create_info, NULL, &result->modules[SHADER_STAGE_COMPUTE]) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create '%s' module.", name);
+	}
+
+	if (ok) { // create descriptor set layouts
+		ok = gfx_reflect_shader_uniforms(bytecode, result->reflection.sets);
+
+		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
+		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS && ok; ++set_index) {
+			UniformSet *set = &result->reflection.sets[set_index];
+			if (set->uniform_count == 0)
+				continue;
+			uniforms_to_vulkan_descriptor_bindings(set->uniforms, set->uniform_count, bindings, VK_SHADER_STAGE_COMPUTE_BIT);
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = set->uniform_count,
+				.pBindings = bindings,
+			};
+			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[set_count]) == VK_SUCCESS;
+
+			set_count = ok ? set_count + 1 : set_count;
+		}
+	}
+
+	if (ok) { // create pipeline layout
+		VkPipelineLayoutCreateInfo pl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = set_count,
+			.pSetLayouts = result->layouts,
+			.pushConstantRangeCount = 1,
+			.pPushConstantRanges = &device->global_range,
+		};
+
+		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result->layout) == VK_SUCCESS;
+		if (ok == false) {
+			LOG_WARN("failed to create compute pipeline layout.");
+		}
+	}
+
+	if (ok) { // create compute pipeline
+		pipeline = gfx__pipeline_alloc(device);
+		ok = pipeline != 0;
+	}
+
+	if (ok) { // create default pipeline for compute shader
+		pipeline->next = result->first_pipeline;
+		result->first_pipeline = pipeline;
+
+		pipeline->shader = result;
+
+		VkPipelineShaderStageCreateInfo compute_stage = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
+			.module = result->modules[SHADER_STAGE_COMPUTE],
+			.pName = "main",
+		};
+
+		VkComputePipelineCreateInfo cp_create_info = {
+			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+			.stage = compute_stage,
+			.layout = result->layout,
+		};
+
+		ok = vkCreateComputePipelines(device->handle, 0, 1, &cp_create_info, NULL, &pipeline->handle) == VK_SUCCESS;
+		if (ok == false) {
+			LOG_WARN("failed to create compute pipeline.");
+		}
+	}
+
+	if (ok == false) // remove half-made resources on error
+		gfx_shader_destroy(device, result);
+
+	return result;
+}
+
+GFX_Shader *gfx_shader_make(GFX_Device *device, String8 vs_bytecode, String8 fs_bytecode, const char *debug_name) {
+	GFX_Shader *result = 0;
+	const char *name = debug_name ? debug_name : "<unnamed_raster>";
+	uint32_t set_count = 0;
+
+	bool ok = gfx_device_valid(device);
+	if (ok) { // check validitiy of shader code
+		ok &= vs_bytecode.text && vs_bytecode.length > 0;
+		ok &= fs_bytecode.text && fs_bytecode.length > 0;
+
+		if (ok == false) {
+			LOG_WARN("invalid shader bytecode passed.");
+		}
+	}
+
+	if (ok) { // acquire new shader
+		LOG_DEBUG("creating '%s' grahpics shader.", name);
+
+		if (device->first_free_shader) {
+			result = device->first_free_shader;
+			device->first_free_shader = result->next;
+			result->next = 0;
+
+			memory_zero(result, sizeof(*result));
+		} else
+			result = &device->shader_pool[device->shader_count];
+
+		result->debug_name = name;
+		device->shader_count++;
+	}
+
+	if (ok) { // create shader module
+		VkShaderModuleCreateInfo vsm_create_info = {
+			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+			.pCode = (void *)vs_bytecode.text,
+			.codeSize = vs_bytecode.length,
+		};
+
+		VkShaderModuleCreateInfo fsm_create_info = {
+			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+			.pCode = (void *)fs_bytecode.text,
+			.codeSize = fs_bytecode.length,
+		};
+
+		ok &= vkCreateShaderModule(device->handle, &vsm_create_info, NULL, &result->modules[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
+		ok &= vkCreateShaderModule(device->handle, &fsm_create_info, NULL, &result->modules[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
+		if (ok == false) {
+			LOG_WARN("failed to create vertex/fragment shader module.");
+		}
+	}
+
+	if (ok) { // create descriptor set layouts
+		gfx_reflect_shader_uniforms(fs_bytecode, result->reflection.sets);
+		gfx_reflect_shader_uniforms(vs_bytecode, result->reflection.sets);
+
+		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
+		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS; ++set_index) {
+			UniformSet *set = &result->reflection.sets[set_index];
+			if (set->uniform_count == 0)
+				continue;
+			uniforms_to_vulkan_descriptor_bindings(set->uniforms, set->uniform_count, bindings, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT);
+
+			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = set->uniform_count,
+				.pBindings = bindings,
+			};
+			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[set_count]) == VK_SUCCESS;
+
+			set_count = ok ? set_count + 1 : set_count;
+		}
+	}
+
+	if (ok) { // create pipeline layout
+		VkPipelineLayoutCreateInfo pl_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = set_count,
+			.pSetLayouts = result->layouts,
+			.pushConstantRangeCount = 1,
+			.pPushConstantRanges = &device->global_range,
+		};
+
+		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result->layout) == VK_SUCCESS;
+		if (ok == false) {
+			LOG_WARN("failed to create shader '%s' pipeline layout.", name);
+		}
+	}
+
+	if (ok == false) // remove half-made resources on error
+		gfx_shader_destroy(device, result);
+
+	return result;
+}
+
+GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, PipelineOptions options) {
+	GFX_Pipeline *result = 0;
+	const char *name = 0;
+	uint32_t set_count = 0;
+	bool match_found = false;
+
+	bool ok = gfx_shader_valid(device, shader);
+	if (ok) {
+		name = shader->debug_name ? shader->debug_name : "<unnamed_raster>";
+
+		for (GFX_Pipeline *pipeline = shader->first_pipeline; pipeline && pipeline != device->pipeline_pool; pipeline = pipeline->next) {
+			if (memory_equals(&options, &pipeline->options, sizeof(PipelineOptions))) {
+				result = pipeline;
+				match_found = true;
+				break;
+			}
+		}
+	}
+
+	if (ok && match_found == false) { // acquire new shader
+		result = gfx__pipeline_alloc(device);
+	}
+
+	if (ok && match_found == false) { // create graphics pipeline
+		VkPipelineShaderStageCreateInfo shader_stages[] = {
+			{
+			  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			  .stage = VK_SHADER_STAGE_VERTEX_BIT,
+			  .module = shader->modules[SHADER_STAGE_VERTEX],
+			  .pName = "main",
+			},
+			{
+			  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			  .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+			  .module = shader->modules[SHADER_STAGE_FRAGMENT],
+			  .pName = "main",
+			}
+		};
+
+		VkDynamicState dynamic_states[] = {
+			VK_DYNAMIC_STATE_VIEWPORT,
+			VK_DYNAMIC_STATE_SCISSOR
+		};
+		VkPipelineDynamicStateCreateInfo ds_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+			.dynamicStateCount = countof(dynamic_states),
+			.pDynamicStates = dynamic_states
+		};
+
+		VkPipelineVertexInputStateCreateInfo vis_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		};
+
+		VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+			.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+			.primitiveRestartEnable = VK_FALSE
+		};
+
+		VkPipelineViewportStateCreateInfo vps_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+			.viewportCount = 1,
+			.scissorCount = 1,
+		};
+
+		VkPipelineRasterizationStateCreateInfo rs_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+			.depthClampEnable = VK_FALSE,
+			.rasterizerDiscardEnable = VK_FALSE,
+			.polygonMode = VK_POLYGON_MODE_FILL,
+			.lineWidth = 1.0f,
+			.cullMode = options.cull_mode,
+			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+			.depthBiasEnable = VK_FALSE,
+		};
+
+		VkPipelineMultisampleStateCreateInfo mss_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+			.sampleShadingEnable = VK_FALSE,
+			.rasterizationSamples = options.sample_count ? (VkSampleCountFlags)options.sample_count : VK_SAMPLE_COUNT_1_BIT,
+			.alphaToCoverageEnable = options.color_attachment_count && options.sample_count > 1 ? VK_TRUE : VK_FALSE,
+			.minSampleShading = 1.0f,
+		};
+
+		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+			.depthTestEnable = options.disable_depth_test == false,
+			.depthWriteEnable = options.disable_depth_write == false,
+			.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+			.depthBoundsTestEnable = VK_FALSE,
+			.minDepthBounds = 0.0f,
+			.maxDepthBounds = 1.0f
+		};
+
+		VkPipelineColorBlendAttachmentState color_attachment_blends[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
+		VkPipelineColorBlendStateCreateInfo cbs_create_info = { 0 };
+
+		VkFormat color_attachment_formats[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
+		VkPipelineRenderingCreateInfo r_create_info = { 0 };
+
+		{ // attachment state
+			VkColorComponentFlags rgba_write_mask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+			VkPipelineColorBlendAttachmentState color_attachment_blend_default = {
+				.colorWriteMask = rgba_write_mask,
+				.blendEnable = options.enable_blend,
+
+				// Color: result = src.rgb + (0.0 * dst.rgb)
+				.srcColorBlendFactor = (VkBlendFactor)options.src_color_factor,
+				.dstColorBlendFactor = (VkBlendFactor)options.dst_color_factor,
+				.colorBlendOp = VK_BLEND_OP_ADD,
+
+				.srcAlphaBlendFactor = (VkBlendFactor)options.src_alpha_factor,
+				.dstAlphaBlendFactor = (VkBlendFactor)options.dst_alpha_factor,
+				.alphaBlendOp = VK_BLEND_OP_ADD,
+			};
+			for (uint32_t index = 0; index < options.color_attachment_count; ++index)
+				color_attachment_blends[index] = color_attachment_blend_default;
+
+			cbs_create_info = (VkPipelineColorBlendStateCreateInfo){
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+				.logicOpEnable = VK_FALSE,
+				.attachmentCount = options.color_attachment_count,
+				.pAttachments = color_attachment_blends,
+			};
+
+			for (uint32_t attachment_index = 0; attachment_index < options.color_attachment_count; ++attachment_index)
+				color_attachment_formats[attachment_index] = pixel_format_to_vulkan_format[options.color_attachments[attachment_index]];
+
+			r_create_info = (VkPipelineRenderingCreateInfo){
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+				.colorAttachmentCount = options.color_attachment_count,
+				.pColorAttachmentFormats = color_attachment_formats,
+				.depthAttachmentFormat =
+					pixel_format_is_depth(options.depth_attachment)
+					? pixel_format_to_vulkan_format[options.depth_attachment]
+					: pixel_format_to_vulkan_format[PIXEL_FORMAT_DEPTH],
+			};
+		}
+
+		VkGraphicsPipelineCreateInfo gp_create_info = {
+			.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+			.pNext = &r_create_info,
+			.stageCount = countof(shader_stages),
+			.pStages = shader_stages,
+			.pVertexInputState = &vis_create_info,
+			.pInputAssemblyState = &ias_create_info,
+			.pViewportState = &vps_create_info,
+			.pRasterizationState = &rs_create_info,
+			.pMultisampleState = &mss_create_info,
+			.pDepthStencilState = &depth_stencil_create_info,
+			.pColorBlendState = &cbs_create_info,
+			.pDynamicState = &ds_create_info,
+			.layout = shader->layout,
+		};
+
+		ok = vkCreateGraphicsPipelines(device->handle, 0, 1, &gp_create_info, NULL, &result->handle) == VK_SUCCESS;
+		if (ok == false)
+			LOG_WARN("failed to create compute pipeline.");
+	}
+
+	if (ok && match_found == false) { // attach to shader
+		result->next = shader->first_pipeline;
+		shader->first_pipeline = result;
+
+		result->shader = shader;
+	}
+
+#if DEV_BUILD
+	if (ok && match_found == false) { // assign debug name
+		VkDebugUtilsObjectNameInfoEXT name_info = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+			.pObjectName = name,
+			.objectType = VK_OBJECT_TYPE_PIPELINE,
+			.objectHandle = (uint64_t)result->handle,
+
+		};
+		vkSetDebugUtilsObjectName(device->handle, &name_info);
+	}
+#endif
+
+	if (ok == false) { // remove half-made resources on error
+		gfx_pipeline_destroy(device, result);
+	}
+
+	return result;
+}
+
 GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const char *debug_name) {
 	GFX_Swapchain *result = 0;
 	ArenaTemp scratch = arena_scratch_begin(0);
@@ -484,7 +899,6 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const
 		} else
 			result = &device->swapchain_pool[device->swapchain_count];
 
-		result->next = device->swapchain_pool;
 		result->native = surface;
 		device->swapchain_count++;
 	}
@@ -688,326 +1102,16 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const
 	return result;
 }
 
-GFX_Pipeline compute_pipeline_make(GFX_Device *device, String8 compute_bytecode) {
-	GFX_Pipeline result = { .next = device->shader_pool };
-	uint32_t set_count = 0;
-	const char *name = result.options.debug_name = "<unnamed_compute>";
-	LOG_DEBUG("creating '%s' pipeline.", name);
-
-	bool ok = compute_bytecode.text && compute_bytecode.length > 0;
-	if (ok == false)
-		LOG_WARN("%s - invalid shader bytecode passed.", __func__);
-
-	if (ok) { // create shader module
-		VkShaderModuleCreateInfo csm_create_info = {
-			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-			.pCode = (void *)compute_bytecode.text,
-			.codeSize = compute_bytecode.length,
-		};
-
-		ok = vkCreateShaderModule(device->handle, &csm_create_info, NULL, &result.shaders[SHADER_STAGE_COMPUTE]) == VK_SUCCESS;
-		if (ok == false) {
-			LOG_WARN("failed to create '%s' pipeline shader module.");
-		}
-	}
-
-	if (ok) { // create descriptor set layouts
-		ok = gfx_reflect_shader_uniforms(compute_bytecode, result.set_infos);
-
-		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
-		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS && ok; ++set_index) {
-			UniformSet *set = &result.set_infos[set_index];
-			if (set->uniform_count == 0)
-				continue;
-			uniforms_to_vulkan_descriptor_bindings(set->uniforms, set->uniform_count, bindings, VK_SHADER_STAGE_COMPUTE_BIT);
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = set->uniform_count,
-				.pBindings = bindings,
-			};
-			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
-
-			set_count = ok ? set_count + 1 : set_count;
-		}
-	}
-
-	if (ok) { // create pipeline layout
-		VkPipelineLayoutCreateInfo pl_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = set_count,
-			.pSetLayouts = result.set_layouts,
-			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &device->global_range,
-		};
-
-		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
-		if (ok == false) {
-			LOG_WARN("failed to create compute pipeline layout.");
-		}
-	}
-
-	if (ok) { // create compute pipeline
-		VkPipelineShaderStageCreateInfo compute_stage = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
-			.module = result.shaders[SHADER_STAGE_COMPUTE],
-			.pName = "main",
-		};
-
-		VkComputePipelineCreateInfo cp_create_info = {
-			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-			.stage = compute_stage,
-			.layout = result.layout,
-		};
-
-		ok = vkCreateComputePipelines(device->handle, 0, 1, &cp_create_info, NULL, &result.handle) == VK_SUCCESS;
-		if (ok == false) {
-			LOG_WARN("failed to create compute pipeline.");
-		}
-	}
-
-	if (ok == false) // remove half-made resources on error
-		gfx_pipeline_destroy(device, &result);
-
-	return result;
-}
-
-GFX_Pipeline graphics_pipeline_make(GFX_Device *device, String8 vertex_bytecode, String8 fragment_bytecode, PipelineOptions options) {
-	GFX_Pipeline result = { .next = device->shader_pool };
-	const char *name = options.debug_name ? options.debug_name : "<unnamed_raster>";
-	uint32_t set_count = 0;
-	LOG_DEBUG("creating '%s' pipeline.", name);
-
-	bool ok = gfx_device_valid(device);
-	if (ok) {
-		result.options = options;
-		result.options.debug_name = name;
-	}
-
-	if (ok) { // check validitiy of shader code
-		ok &= vertex_bytecode.text && vertex_bytecode.length > 0;
-		ok &= fragment_bytecode.text && fragment_bytecode.length > 0;
-
-		if (ok == false) {
-			LOG_WARN("invalid shader bytecode passed.");
-		}
-	}
-
-	if (ok) { // create shader module
-		VkShaderModuleCreateInfo vsm_create_info = {
-			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-			.pCode = (void *)vertex_bytecode.text,
-			.codeSize = vertex_bytecode.length,
-		};
-
-		VkShaderModuleCreateInfo fsm_create_info = {
-			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-			.pCode = (void *)fragment_bytecode.text,
-			.codeSize = fragment_bytecode.length,
-		};
-
-		ok &= vkCreateShaderModule(device->handle, &vsm_create_info, NULL, &result.shaders[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
-		ok &= vkCreateShaderModule(device->handle, &fsm_create_info, NULL, &result.shaders[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
-		if (ok == false) {
-			LOG_WARN("failed to create vertex/fragment shader module.");
-		}
-	}
-
-	if (ok) { // create descriptor set layouts
-		gfx_reflect_shader_uniforms(fragment_bytecode, result.set_infos);
-		gfx_reflect_shader_uniforms(vertex_bytecode, result.set_infos);
-
-		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
-		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS; ++set_index) {
-			UniformSet *set = &result.set_infos[set_index];
-			if (set->uniform_count == 0)
-				continue;
-			uniforms_to_vulkan_descriptor_bindings(set->uniforms, set->uniform_count, bindings, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT);
-
-			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = set->uniform_count,
-				.pBindings = bindings,
-			};
-			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result.set_layouts[set_count]) == VK_SUCCESS;
-
-			set_count = ok ? set_count + 1 : set_count;
-		}
-	}
-
-	if (ok) { // create pipeline layout
-		VkPipelineLayoutCreateInfo pl_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = set_count,
-			.pSetLayouts = result.set_layouts,
-			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &device->global_range,
-		};
-
-		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result.layout) == VK_SUCCESS;
-		if (ok == false) {
-			LOG_WARN("failed to create pipeline layout.");
-		}
-	}
-
-	if (ok) { // create graphics pipeline
-		VkPipelineShaderStageCreateInfo shader_stages[] = {
-			{
-			  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			  .stage = VK_SHADER_STAGE_VERTEX_BIT,
-			  .module = result.shaders[SHADER_STAGE_VERTEX],
-			  .pName = "main",
-			},
-			{
-			  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			  .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-			  .module = result.shaders[SHADER_STAGE_FRAGMENT],
-			  .pName = "main",
-			}
-		};
-
-		VkDynamicState dynamic_states[] = {
-			VK_DYNAMIC_STATE_VIEWPORT,
-			VK_DYNAMIC_STATE_SCISSOR
-		};
-		VkPipelineDynamicStateCreateInfo ds_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-			.dynamicStateCount = countof(dynamic_states),
-			.pDynamicStates = dynamic_states
-		};
-
-		VkPipelineVertexInputStateCreateInfo vis_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		};
-
-		VkPipelineInputAssemblyStateCreateInfo ias_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-			.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-			.primitiveRestartEnable = VK_FALSE
-		};
-
-		VkPipelineViewportStateCreateInfo vps_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-			.viewportCount = 1,
-			.scissorCount = 1,
-		};
-
-		VkPipelineRasterizationStateCreateInfo rs_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-			.depthClampEnable = VK_FALSE,
-			.rasterizerDiscardEnable = VK_FALSE,
-			.polygonMode = VK_POLYGON_MODE_FILL,
-			.lineWidth = 1.0f,
-			.cullMode = options.cull_mode,
-			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-			.depthBiasEnable = VK_FALSE,
-		};
-
-		VkPipelineMultisampleStateCreateInfo mss_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-			.sampleShadingEnable = VK_FALSE,
-			.rasterizationSamples = options.sample_count ? (VkSampleCountFlags)options.sample_count : VK_SAMPLE_COUNT_1_BIT,
-			.alphaToCoverageEnable = options.color_attachment_count && options.sample_count > 1 ? VK_TRUE : VK_FALSE,
-			.minSampleShading = 1.0f,
-		};
-
-		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-			.depthTestEnable = options.disable_depth_test == false,
-			.depthWriteEnable = options.disable_depth_write == false,
-			.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
-			.depthBoundsTestEnable = VK_FALSE,
-			.minDepthBounds = 0.0f,
-			.maxDepthBounds = 1.0f
-		};
-
-		VkPipelineColorBlendAttachmentState color_attachment_blends[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
-		VkPipelineColorBlendStateCreateInfo cbs_create_info = { 0 };
-
-		VkFormat color_attachment_formats[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
-		VkPipelineRenderingCreateInfo r_create_info = { 0 };
-
-		{ // attachment state
-			VkColorComponentFlags rgba_write_mask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-			VkPipelineColorBlendAttachmentState color_attachment_blend_default = {
-				.colorWriteMask = rgba_write_mask,
-				.blendEnable = options.enable_blend,
-
-				// Color: result = src.rgb + (0.0 * dst.rgb)
-				.srcColorBlendFactor = (VkBlendFactor)options.src_color_factor,
-				.dstColorBlendFactor = (VkBlendFactor)options.dst_color_factor,
-				.colorBlendOp = VK_BLEND_OP_ADD,
-
-				.srcAlphaBlendFactor = (VkBlendFactor)options.src_alpha_factor,
-				.dstAlphaBlendFactor = (VkBlendFactor)options.dst_alpha_factor,
-				.alphaBlendOp = VK_BLEND_OP_ADD,
-			};
-			for (uint32_t index = 0; index < options.color_attachment_count; ++index)
-				color_attachment_blends[index] = color_attachment_blend_default;
-
-			cbs_create_info = (VkPipelineColorBlendStateCreateInfo){
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-				.logicOpEnable = VK_FALSE,
-				.attachmentCount = options.color_attachment_count,
-				.pAttachments = color_attachment_blends,
-			};
-
-			for (uint32_t attachment_index = 0; attachment_index < options.color_attachment_count; ++attachment_index)
-				color_attachment_formats[attachment_index] = pixel_format_to_vulkan_format[options.color_attachments[attachment_index]];
-
-			r_create_info = (VkPipelineRenderingCreateInfo){
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-				.colorAttachmentCount = options.color_attachment_count,
-				.pColorAttachmentFormats = color_attachment_formats,
-				.depthAttachmentFormat =
-					pixel_format_is_depth(options.depth_attachment)
-					? pixel_format_to_vulkan_format[options.depth_attachment]
-					: pixel_format_to_vulkan_format[PIXEL_FORMAT_DEPTH],
-			};
-		}
-
-		VkGraphicsPipelineCreateInfo gp_create_info = {
-			.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-			.pNext = &r_create_info,
-			.stageCount = countof(shader_stages),
-			.pStages = shader_stages,
-			.pVertexInputState = &vis_create_info,
-			.pInputAssemblyState = &ias_create_info,
-			.pViewportState = &vps_create_info,
-			.pRasterizationState = &rs_create_info,
-			.pMultisampleState = &mss_create_info,
-			.pDepthStencilState = &depth_stencil_create_info,
-			.pColorBlendState = &cbs_create_info,
-			.pDynamicState = &ds_create_info,
-			.layout = result.layout,
-		};
-
-		ok = vkCreateGraphicsPipelines(device->handle, 0, 1, &gp_create_info, NULL, &result.handle) == VK_SUCCESS;
-		if (ok == false) {
-			LOG_WARN("failed to create compute pipeline.");
-		}
-	}
-
-	if (ok == false) // remove half-made resources on error
-		gfx_pipeline_destroy(device, &result);
-
-	return result;
-}
-
 bool gfx_buffer_destroy(GFX_Device *device, GFX_Buffer *buffer) {
-	bool ok = gfx_buffer_valid(device, buffer);
+	bool ok = gfx_buffer_valid(device, buffer) && buffer->handle;
 	if (ok) {
 		if (buffer->memory) {
 			if (buffer->mapped)
 				vkUnmapMemory(device->handle, buffer->memory);
 			vkFreeMemory(device->handle, buffer->memory, 0);
 		}
-		if (buffer->handle)
-			vkDestroyBuffer(device->handle, buffer->handle, 0);
-	}
+		vkDestroyBuffer(device->handle, buffer->handle, 0);
 
-	if (ok) {
 		device->buffer_count--;
 		memory_zero(buffer, sizeof(*buffer));
 
@@ -1019,7 +1123,7 @@ bool gfx_buffer_destroy(GFX_Device *device, GFX_Buffer *buffer) {
 }
 
 bool gfx_image_destroy(GFX_Device *device, GFX_Image *image) {
-	bool ok = gfx_image_valid(device, image);
+	bool ok = gfx_image_valid(device, image) && image->handle;
 	if (ok) {
 		if (image->view)
 			vkDestroyImageView(device->handle, image->view, 0);
@@ -1027,9 +1131,7 @@ bool gfx_image_destroy(GFX_Device *device, GFX_Image *image) {
 			vkFreeMemory(device->handle, image->memory, 0);
 		if (image->handle)
 			vkDestroyImage(device->handle, image->handle, 0);
-	}
 
-	if (ok) {
 		device->image_count--;
 		memory_zero(image, sizeof(*image));
 
@@ -1041,12 +1143,10 @@ bool gfx_image_destroy(GFX_Device *device, GFX_Image *image) {
 }
 
 bool gfx_sampler_destroy(GFX_Device *device, GFX_Sampler *sampler) {
-	bool ok = gfx_sampler_valid(device, sampler);
-	if (ok)
+	bool ok = gfx_sampler_valid(device, sampler) && sampler->handle;
+	if (ok) {
 		if (sampler->handle)
 			vkDestroySampler(device->handle, sampler->handle, NULL);
-
-	if (ok) {
 		device->sampler_count--;
 		memory_zero(sampler, sizeof(*sampler));
 
@@ -1057,8 +1157,54 @@ bool gfx_sampler_destroy(GFX_Device *device, GFX_Sampler *sampler) {
 	return ok;
 }
 
+bool gfx_shader_destroy(GFX_Device *device, GFX_Shader *shader) {
+	bool ok = gfx_shader_valid(device, shader) && (shader->modules[0] || shader->modules[1] || shader->modules[2]);
+	if (ok) {
+		for (uint32_t index = 0; index < countof(shader->modules); ++index)
+			if (shader->modules[index])
+				vkDestroyShaderModule(device->handle, shader->modules[index], NULL);
+		for (uint32_t set_index = 0; set_index < countof(shader->layouts); ++set_index)
+			if (shader->layouts[set_index])
+				vkDestroyDescriptorSetLayout(device->handle, shader->layouts[set_index], NULL);
+
+		if (shader->layout)
+			vkDestroyPipelineLayout(device->handle, shader->layout, NULL);
+
+		for (GFX_Pipeline *pipeline = shader->first_pipeline; pipeline && pipeline != device->pipeline_pool;) {
+			GFX_Pipeline *curr = pipeline;
+			pipeline = curr->next;
+
+			gfx_pipeline_destroy(device, curr);
+		}
+
+		device->shader_count--;
+		memory_zero(shader, sizeof(*shader));
+
+		shader->next = device->first_free_shader;
+		device->first_free_shader = shader;
+	}
+
+	return ok;
+}
+
+bool gfx_pipeline_destroy(GFX_Device *device, GFX_Pipeline *pipeline) {
+	bool ok = gfx_pipeline_valid(device, pipeline) && pipeline->handle;
+	if (ok) {
+		if (pipeline->handle)
+			vkDestroyPipeline(device->handle, pipeline->handle, NULL);
+
+		device->pipeline_count--;
+		memory_zero(pipeline, sizeof(*pipeline));
+
+		pipeline->next = device->first_free_pipeline;
+		device->first_free_pipeline = pipeline;
+	}
+
+	return ok;
+}
+
 bool gfx_swapchain_destroy(GFX_Device *device, GFX_Swapchain *swapchain) {
-	bool ok = gfx_swapchain_valid(device, swapchain);
+	bool ok = gfx_swapchain_valid(device, swapchain) && swapchain->handle;
 	if (ok) {
 		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->image_available_semaphores); ++semaphore_index)
 			if (swapchain->image_available_semaphores[semaphore_index])
@@ -1075,9 +1221,7 @@ bool gfx_swapchain_destroy(GFX_Device *device, GFX_Swapchain *swapchain) {
 			vkDestroySwapchainKHR(device->handle, swapchain->handle, NULL);
 		if (swapchain->surface)
 			vkDestroySurfaceKHR(device->instance, swapchain->surface, NULL);
-	}
 
-	if (ok) {
 		device->swapchain_count--;
 		memory_zero(swapchain, sizeof(*swapchain));
 
@@ -1086,26 +1230,6 @@ bool gfx_swapchain_destroy(GFX_Device *device, GFX_Swapchain *swapchain) {
 	}
 
 	return ok;
-}
-
-void gfx_pipeline_destroy(GFX_Device *device, GFX_Pipeline *pipeline) {
-	bool ok = gfx_pipeline_valid(device, pipeline);
-
-	if (ok) {
-		for (uint32_t index = 0; index < countof(pipeline->shaders); ++index)
-			if (pipeline->shaders[index])
-				vkDestroyShaderModule(device->handle, pipeline->shaders[index], NULL);
-		for (uint32_t set_index = 0; set_index < countof(pipeline->set_layouts); ++set_index)
-			if (pipeline->set_layouts[set_index])
-				vkDestroyDescriptorSetLayout(device->handle, pipeline->set_layouts[set_index], NULL);
-
-		if (pipeline->layout)
-			vkDestroyPipelineLayout(device->handle, pipeline->layout, NULL);
-		if (pipeline->handle)
-			vkDestroyPipeline(device->handle, pipeline->handle, NULL);
-
-		memory_zero(pipeline, sizeof(*pipeline));
-	}
 }
 
 GFX_Image *gfx_backbuffer(GFX_Device *device, GFX_Command *cmd, GFX_Swapchain *swapchain) {
@@ -1203,7 +1327,8 @@ bool gfx_device_make(GFX_Device *device) {
 		device->buffer_pool = arena_push_count(device->arena, GFX_Buffer, MAX_BUFFERS);
 		device->image_pool = arena_push_count(device->arena, GFX_Image, MAX_IMAGES);
 		device->sampler_pool = arena_push_count(device->arena, GFX_Sampler, MAX_SAMPLERS);
-		device->shader_pool = arena_push_count(device->arena, GFX_Pipeline, MAX_SHADERS);
+		device->shader_pool = arena_push_count(device->arena, GFX_Shader, MAX_SHADERS);
+		device->pipeline_pool = arena_push_count(device->arena, GFX_Pipeline, MAX_PIPELINES);
 		device->swapchain_pool = arena_push_count(device->arena, GFX_Swapchain, MAX_SWAPCHAINS);
 
 		// 0 == invalid
@@ -1211,6 +1336,7 @@ bool gfx_device_make(GFX_Device *device) {
 		device->image_count += 1;
 		device->sampler_count += 1;
 		device->shader_count += 1;
+		device->pipeline_count += 1;
 		device->swapchain_count += 1;
 	}
 
@@ -1263,33 +1389,37 @@ void gfx_device_destroy(GFX_Device *device) {
 	if (ok) {
 		vkDeviceWaitIdle(device->handle);
 		for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
-			GFX_Buffer *buffer = &device->buffer_pool[index];
-			gfx_buffer_destroy(device, buffer);
-
+			gfx_buffer_destroy(device, &device->buffer_pool[index]);
 			if (device->buffer_count == 0)
 				break;
 		}
 
 		for (uint32_t index = 0; index < MAX_IMAGES; ++index) {
-			GFX_Image *image = &device->image_pool[index];
-			gfx_image_destroy(device, image);
-
+			gfx_image_destroy(device, &device->image_pool[index]);
 			if (device->image_count == 0)
 				break;
 		}
 
 		for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
-			GFX_Sampler *sampler = &device->sampler_pool[index];
-			gfx_sampler_destroy(device, sampler);
-
+			gfx_sampler_destroy(device, &device->sampler_pool[index]);
 			if (device->sampler_count == 0)
 				break;
 		}
 
-		for (uint32_t index = 0; index < MAX_SWAPCHAINS; ++index) {
-			GFX_Swapchain *swapchain = &device->swapchain_pool[index];
-			gfx_swapchain_destroy(device, swapchain);
+		for (uint32_t index = 0; index < MAX_PIPELINES; ++index) {
+			gfx_pipeline_destroy(device, &device->pipeline_pool[index]);
+			if (device->pipeline_count == 0)
+				break;
+		}
 
+		for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
+			gfx_shader_destroy(device, &device->shader_pool[index]);
+			if (device->shader_count == 0)
+				break;
+		}
+
+		for (uint32_t index = 0; index < MAX_SWAPCHAINS; ++index) {
+			gfx_swapchain_destroy(device, &device->swapchain_pool[index]);
 			if (device->swapchain_count == 0)
 				break;
 		}
@@ -1339,6 +1469,7 @@ GFX_Command *gfx_frame_begin(GFX_Device *device) {
 		result->frame_index = device->current_frame_index;
 		memory_zero_array(result->swapchains);
 		memory_zero_array(result->swapchain_image_indices);
+		result->active_shader = 0;
 		result->swapchain_count = 0;
 
 		// Wait for frame resource availability
@@ -1507,23 +1638,28 @@ bool gfx_transfer_flush(GFX_Device *device) {
 	return ok;
 }
 
-bool gfx_bind(GFX_Device *device, GFX_Pipeline *pipeline, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
-	bool ok = gfx_pipeline_valid(device, pipeline) && uniforms && uniform_count > 0;
-	if (ok == false)
-		LOG_ERROR("%s - invalid parameters.", __func__);
-
+bool gfx_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
+	GFX_Shader *shader = 0;
 	GFX_Command *cmd = 0;
 	VkDescriptorSet set = 0;
 
-	// TODO: cache descriptor sets instead?
-	if (ok) { // allocate descriptor set
-		cmd = &device->frame_commands[device->current_frame_index];
+	bool ok = gfx_device_valid(device) && uniforms && uniform_count > 0;
+	if (ok == false)
+		LOG_ERROR("%s - invalid parameters.", __func__);
 
+	if (ok) {
+		cmd = &device->frame_commands[device->current_frame_index];
+		shader = cmd->active_shader;
+
+		ok = gfx_shader_valid(device, shader);
+	}
+
+	if (ok) { // TODO: cache descriptor sets instead?
 		VkDescriptorSetAllocateInfo alloc_info = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 			.descriptorPool = cmd->descriptor_pool,
 			.descriptorSetCount = 1,
-			.pSetLayouts = &pipeline->set_layouts[set_index],
+			.pSetLayouts = &shader->layouts[set_index],
 		};
 		ok = vkAllocateDescriptorSets(device->handle, &alloc_info, &set) == VK_SUCCESS;
 	}
@@ -1532,27 +1668,25 @@ bool gfx_bind(GFX_Device *device, GFX_Pipeline *pipeline, uint32_t set_index, Un
 		ArenaTemp scratch = arena_scratch_begin(0);
 		for (uint32_t uniform_index = 0; uniform_index < uniform_count; ++uniform_index) {
 			Uniform *uniform = &uniforms[uniform_index];
-
-			UniformSet *pipeline_set = &pipeline->set_infos[set_index];
+			UniformSet *reflected_sets = &shader->reflection.sets[set_index];
 
 			int32_t found_index = -1;
-			for (uint32_t search_index = 0; search_index < pipeline_set->uniform_count; ++search_index) {
-				if (pipeline_set->uniforms[search_index].binding == uniform->binding) {
+			for (uint32_t search_index = 0; search_index < reflected_sets->uniform_count; ++search_index) {
+				if (reflected_sets->uniforms[search_index].binding == uniform->binding) {
 					found_index = search_index;
 					break;
 				}
 			}
 
 			if (found_index == -1) {
-				LOG_ERROR("shader '%s' has no uniform at set = %u, binding = %u.", pipeline->options.debug_name, set_index, uniform->binding);
+				LOG_ERROR("shader '%s' has no uniform at set = %u, binding = %u.", shader->debug_name, set_index, uniform->binding);
 				ASSERT(false);
 			}
-
-			Uniform *reflected_uniform = &pipeline->set_infos[set_index].uniforms[found_index];
+			Uniform *reflected_uniform = &reflected_sets->uniforms[found_index];
 
 			ASSERT_FORMAT(uniform->type == reflected_uniform->type,
 				"uniform binding '%s' (set = %u, binding = %u) of shader '%s' supplied as: %s, expected: %s.",
-				reflected_uniform->name, set_index, reflected_uniform->binding, pipeline->options.debug_name, uniform_type_to_string[uniform->type], uniform_type_to_string[pipeline_set->uniforms[found_index].type]);
+				reflected_uniform->name, set_index, reflected_uniform->binding, shader->debug_name, uniform_type_to_string[uniform->type], uniform_type_to_string[reflected_sets->uniforms[found_index].type]);
 
 			switch (uniform->type) {
 				case UNIFORM_TYPE_STORAGE_IMAGE:
@@ -1634,8 +1768,8 @@ bool gfx_bind(GFX_Device *device, GFX_Pipeline *pipeline, uint32_t set_index, Un
 	}
 
 	if (ok) {
-		VkPipelineBindPoint bind_point = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
-		vkCmdBindDescriptorSets(cmd->handle, bind_point, pipeline->layout, set_index, 1, &set, 0, 0);
+		VkPipelineBindPoint bind_point = shader->modules[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+		vkCmdBindDescriptorSets(cmd->handle, bind_point, shader->layout, set_index, 1, &set, 0, 0);
 	}
 
 	return ok;
@@ -1842,11 +1976,48 @@ void gfx_cmd_buffer_upload(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset
 	}
 }
 
+void gfx_cmd_viewport(GFX_Command *cmd, Rectangle area) {
+	bool ok = cmd && cmd->handle;
+	if (ok) {
+		VkViewport viewports[] = {
+			[0] = {
+			  .x = area.x,
+			  .y = area.y,
+			  .width = area.width,
+			  .height = area.height,
+			}
+		};
+		vkCmdSetViewport(cmd->handle, 0, 1, viewports);
+	}
+}
+void gfx_cmd_scissor(GFX_Command *cmd, Rectangle area) {
+	bool ok = cmd && cmd->handle;
+	if (ok) {
+		VkRect2D scissors[] = {
+			[0] = {
+			  { .x = area.x, .y = area.y },
+			  { .width = area.width, .height = area.height } //
+			}
+		};
+		vkCmdSetScissor(cmd->handle, 0, 1, scissors);
+	}
+}
+
+void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader) {
+	GFX_Pipeline *target = 0;
+
+	bool ok = cmd && cmd->handle && shader && shader->first_pipeline;
+	if (ok)
+		gfx_cmd_pipeline_bind(cmd, shader->first_pipeline);
+}
+
 void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline) {
 	bool ok = cmd && cmd->handle && pipeline && pipeline->handle;
 	if (ok) {
-		VkPipelineBindPoint bind_point = pipeline->shaders[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+		VkPipelineBindPoint bind_point = pipeline->shader->modules[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
 		vkCmdBindPipeline(cmd->handle, bind_point, pipeline->handle);
+
+		cmd->active_shader = pipeline->shader;
 	}
 }
 

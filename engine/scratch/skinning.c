@@ -189,16 +189,6 @@ static const String8 meshid_to_string[MESH_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(MESH, GIZMOS_ARROW),
 };
 
-typedef struct {
-	MeshID id;
-	Transform3 transform;
-	bool cast_shadow;
-
-	// anim
-	uint64_t skinned_vertices_offset;
-	float4x4 *skin_matrices;
-} MeshInstance;
-
 String8 meshid_to_metadata[MESH_MAX] = {
 	[MESH_HERO_MALE] = str_comp("assets/models/hero_male.glb"),
 	[MESH_GDBOT] = str_comp("assets/models/gdbot.glb"),
@@ -208,6 +198,185 @@ String8 meshid_to_metadata[MESH_MAX] = {
 	[MESH_ROOM_LARGE] = str_comp("assets/models/room-large.glb"),
 	[MESH_TEST_LEVEL] = str_comp("assets/models/test_level.glb"),
 	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
+};
+
+typedef struct {
+	String8 filepaths[SHADER_STAGE_MAX];
+	PipelineOptions permutations[8];
+	uint32_t permutation_count;
+} ShaderMetadata;
+
+typedef enum {
+	SHADER_TEST_COMPUTE,
+	SHADER_SKINNING_COMPUTE,
+	SHADER_SHADOW,
+	SHADER_SPATIAL,
+	SHADER_GRASS,
+	SHADER_SKYBOX,
+	SHADER_LINE3D,
+	SHADER_TRANSPARENT,
+	SHADER_QUAD2D,
+	SHADER_LINE2D,
+	SHADER_COMPOSITE,
+
+	SHADER_MAX,
+} ShaderID;
+
+String8 shader_to_string[SHADER_MAX] = {
+	ENUM_STRING_TABLE_ENTRY(SHADER, TEST_COMPUTE),
+	ENUM_STRING_TABLE_ENTRY(SHADER, SKINNING_COMPUTE),
+	ENUM_STRING_TABLE_ENTRY(SHADER, SHADOW),
+	ENUM_STRING_TABLE_ENTRY(SHADER, SPATIAL),
+	ENUM_STRING_TABLE_ENTRY(SHADER, GRASS),
+	ENUM_STRING_TABLE_ENTRY(SHADER, SKYBOX),
+	ENUM_STRING_TABLE_ENTRY(SHADER, LINE3D),
+	ENUM_STRING_TABLE_ENTRY(SHADER, TRANSPARENT),
+	ENUM_STRING_TABLE_ENTRY(SHADER, QUAD2D),
+	ENUM_STRING_TABLE_ENTRY(SHADER, LINE2D),
+	ENUM_STRING_TABLE_ENTRY(SHADER, COMPOSITE),
+};
+
+ShaderMetadata shader_to_metadata[SHADER_MAX] = {
+	[SHADER_TEST_COMPUTE] = {
+	  .filepaths[SHADER_STAGE_COMPUTE] = str_comp("assets/shaders/compute/bin/test.compute.spv") },
+	[SHADER_SKINNING_COMPUTE] = { .filepaths[SHADER_STAGE_COMPUTE] = str_comp("assets/shaders/compute/bin/skinning.compute.spv") },
+	[SHADER_SHADOW] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/shadow.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/blank.fragment.spv"),
+	  },
+	  .permutations = { { 0 } },
+	  .permutation_count = 1,
+	},
+	[SHADER_SPATIAL] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/base.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/phong.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_8,
+		  .cull_mode = CULL_MODE_BACK,
+		},
+	  },
+	  .permutation_count = 1,
+	},
+	[SHADER_GRASS] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/grass.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/grass.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_8,
+		},
+	  },
+	  .permutation_count = 1,
+	},
+	[SHADER_SKYBOX] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/skybox.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/skybox.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_8,
+		},
+	  },
+	  .permutation_count = 1,
+	},
+	[SHADER_LINE3D] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/line.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/flat.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_8,
+		},
+	  },
+	  .permutation_count = 1,
+	},
+	[SHADER_TRANSPARENT] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/base.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/energyfield.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_8,
+		  .cull_mode = CULL_MODE_NONE,
+		},
+	  },
+	  .permutation_count = 1,
+	},
+	[SHADER_QUAD2D] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/batch2d.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/quad.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_UNORM },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_1,
+		  .cull_mode = CULL_MODE_BACK,
+		  .disable_depth_test = true,
+		  .disable_depth_write = true,
+
+		  .enable_blend = true,
+		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
+		  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+		  .src_alpha_factor = BLEND_FACTOR_ONE,
+		  .dst_alpha_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+		},
+	  },
+	  .permutation_count = 1,
+	},
+	[SHADER_LINE2D] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/line2d.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/flat.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_8,
+		  .cull_mode = CULL_MODE_BACK,
+		  .disable_depth_test = true,
+		  .disable_depth_write = true,
+		},
+	  },
+	  .permutation_count = 1,
+	},
+	[SHADER_COMPOSITE] = {
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/fullscreen_quad.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/composite.fragment.spv"),
+	  },
+	  .permutations = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_1,
+		  .cull_mode = CULL_MODE_BACK,
+		  .disable_depth_test = true,
+		  .disable_depth_write = true,
+		},
+	  },
+	  .permutation_count = 1,
+	},
 };
 
 typedef enum {
@@ -806,11 +975,11 @@ int main(void) {
 		  .pixels = noise_image.pixels,
 		});
 
-	GFX_Sampler *linear_sampler[WRAP_MODE_COUNT] = {
+	GFX_Sampler *linear_sampler[WRAP_MODE_MAX] = {
 		[WRAP_MODE_REPEAT] = gfx_sampler_make(device, sampler_opt("default:linear_repeat", FILTER_LINEAR, WRAP_MODE_REPEAT)),
 		[WRAP_MODE_CLAMP] = gfx_sampler_make(device, sampler_opt("default:linear_clamp", FILTER_LINEAR, WRAP_MODE_CLAMP))
 	};
-	GFX_Sampler *nearest_sampler[WRAP_MODE_COUNT] = {
+	GFX_Sampler *nearest_sampler[WRAP_MODE_MAX] = {
 		[WRAP_MODE_CLAMP] = gfx_sampler_make(device, sampler_opt("default:nearest_clamp", FILTER_NEAREST, WRAP_MODE_CLAMP)),
 		[WRAP_MODE_CLAMP_BORDER] = gfx_sampler_make(device, sampler_opt("default:nearest_clamp_border", FILTER_NEAREST, WRAP_MODE_CLAMP_BORDER))
 	};
@@ -825,159 +994,29 @@ int main(void) {
 		});
 
 	// create compute pipeline
-	OS_Timestamp compute_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
-	GFX_Pipeline c_pipeline = { 0 };
-	{
+	OS_Timestamp shader_ts[SHADER_MAX] = { 0 };
+	GFX_Shader *shaders[SHADER_MAX] = { 0 };
+	for (ShaderID ID = 0; ID < SHADER_MAX; ++ID) { // :shaders
+		ShaderMetadata *metadata = &shader_to_metadata[ID];
+		if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
+			metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
+			metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
+			continue;
+
 		ArenaTemp scratch = arena_scratch_begin(NULL);
-		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-		c_pipeline = compute_pipeline_make(device, compute_bytecode);
-		arena_scratch_end(scratch);
-	}
-
-	GFX_Pipeline pipeline_skinning = { 0 };
-	{ // :skinning
-		ArenaTemp scratch = arena_scratch_begin(NULL);
-		String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/skinning.compute.spv"));
-		pipeline_skinning = compute_pipeline_make(device, compute_bytecode);
-		arena_scratch_end(scratch);
-	}
-
-	GFX_Pipeline pipeline_shadow = { 0 };
-	{
-		ArenaTemp scratch = arena_scratch_begin(NULL);
-		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/shadow.vertex.spv"));
-		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/blank.fragment.spv"));
-
-		pipeline_shadow = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "pipeline_shadow",
-			});
-		arena_scratch_end(scratch);
-	}
-
-	GFX_Pipeline pipeline_3d = { 0 };
-	GFX_Pipeline pipeline_skybox = { 0 };
-	GFX_Pipeline pipeline_grass = { 0 };
-	GFX_Pipeline pipeline_line3d = { 0 };
-	{ // create 3d opaque graphics pipelines
-		ArenaTemp scratch = arena_scratch_begin(NULL);
-		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
-		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/phong.fragment.spv"));
-
-		pipeline_3d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "spatial",
-			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-			  .color_attachment_count = 1,
-			  .sample_count = SAMPLE_COUNT_8,
-			  .cull_mode = CULL_MODE_BACK,
-			});
-
-		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/grass.vertex.spv"));
-		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/grass.fragment.spv"));
-
-		pipeline_grass = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "pipeline_grass",
-			  .color_attachment_count = 1,
-			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-			  .sample_count = SAMPLE_COUNT_8,
-			});
-
-		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/skybox.vertex.spv"));
-		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/skybox.fragment.spv"));
-		pipeline_skybox = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "pipeline_skybox",
-			  .color_attachment_count = 1,
-			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-			  .sample_count = SAMPLE_COUNT_8,
-			});
-
-		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line.vertex.spv"));
-		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-		pipeline_line3d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "line3d",
-			  .color_attachment_count = 1,
-			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-			  .sample_count = SAMPLE_COUNT_8,
-			});
-
-		arena_scratch_end(scratch);
-	}
-
-	OS_Timestamp transparent_ts = os_file_last_modified(s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
-	GFX_Pipeline transparent = { 0 };
-	{ // create 3d transparent pipelines
-		ArenaTemp scratch = arena_scratch_begin(0);
-		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
-		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
-
-		transparent = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "transparent",
-			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-			  .color_attachment_count = 1,
-			  .sample_count = SAMPLE_COUNT_8,
-			  .cull_mode = CULL_MODE_NONE,
-			});
-
-		arena_scratch_end(scratch);
-	}
-
-	GFX_Pipeline pipeline_2d = { 0 };
-	GFX_Pipeline pipeline_line2d = { 0 };
-	GFX_Pipeline pipeline_composite = { 0 };
-	{
-		ArenaTemp scratch = arena_scratch_begin(0);
-
-		String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv"));
-		String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/quad.fragment.spv"));
-
-		pipeline_2d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "canvas",
-			  .color_attachments = { PIXEL_FORMAT_RGBA8_UNORM },
-			  .color_attachment_count = 1,
-			  .sample_count = SAMPLE_COUNT_1,
-			  .cull_mode = CULL_MODE_BACK,
-			  .disable_depth_test = true,
-			  .disable_depth_write = true,
-
-			  .enable_blend = true,
-			  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
-			  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-			  .src_alpha_factor = BLEND_FACTOR_ONE,
-			  .dst_alpha_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-			});
-
-		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/line2d.vertex.spv"));
-		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/flat.fragment.spv"));
-		pipeline_line2d = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "line2d",
-			  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-			  .color_attachment_count = 1,
-			  .sample_count = SAMPLE_COUNT_8,
-			  .cull_mode = CULL_MODE_BACK,
-			  .disable_depth_test = true,
-			  .disable_depth_write = true,
-
-			});
-
-		vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/fullscreen_quad.vertex.spv"));
-		fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/composite.fragment.spv"));
-		pipeline_composite = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode,
-			(PipelineOptions){
-			  .debug_name = "composite",
-			  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
-			  .color_attachment_count = 1,
-			  .sample_count = SAMPLE_COUNT_1,
-			  .cull_mode = CULL_MODE_BACK,
-			  .disable_depth_test = true,
-			  .disable_depth_write = true,
-			});
+		bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length > 0;
+		if (is_compute) {
+			shader_ts[ID] = os_file_last_modified(metadata->filepaths[SHADER_STAGE_COMPUTE]);
+			String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+			shaders[ID] = gfx_compute_make(device, bytecode, (char *)shader_to_string[ID].text);
+		} else {
+			String8 vs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
+			String8 fs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+			shader_ts[ID] = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+			shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shader_to_string[ID].text);
+			for (uint32_t permutation = 0; permutation < metadata->permutation_count; ++permutation)
+				gfx_pipeline_ensure(device, shaders[ID], metadata->permutations[permutation]);
+		}
 
 		arena_scratch_end(scratch);
 	}
@@ -1980,8 +2019,8 @@ int main(void) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, compute_blit_target);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
-			gfx_cmd_pipeline_bind(cmd, &c_pipeline);
-			gfx_bind(device, &c_pipeline, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
+			gfx_cmd_shader_bind(cmd, shaders[SHADER_TEST_COMPUTE]);
+			gfx_bind(device, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
 			struct {
@@ -1992,7 +2031,7 @@ int main(void) {
 				.time = (float)time,
 			};
 
-			vkCmdPushConstants(cmd->handle, c_pipeline.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+			vkCmdPushConstants(cmd->handle, shaders[SHADER_TEST_COMPUTE]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 			gfx_cmd_dispatch(cmd, (compute_blit_target->width / 16) + 1, (compute_blit_target->height / 16) + 1, 1);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
 			Rectangle area = rect(0, 0, compute_blit_target->width, compute_blit_target->height);
@@ -2024,7 +2063,7 @@ int main(void) {
 				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3D), 256);
 				instance->skinned_vertices_offset = gfx_cmd_put(cmd, skinned_vertices_size, 0);
 
-				gfx_cmd_pipeline_bind(cmd, &pipeline_skinning);
+				gfx_cmd_shader_bind(cmd, shaders[SHADER_SKINNING_COMPUTE]);
 				struct {
 					uint32_t vertex_count;
 					uint32_t _pad0;
@@ -2039,7 +2078,7 @@ int main(void) {
 					.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
 					.output_address = cmd->transient_buffer->address + instance->skinned_vertices_offset,
 				};
-				vkCmdPushConstants(cmd->handle, pipeline_skinning.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+				vkCmdPushConstants(cmd->handle, shaders[SHADER_SKINNING_COMPUTE]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 
 				gfx_cmd_dispatch(cmd, (mesh->total_vertex_count + 255) / 256, 1, 1);
 				gfx_cmd_buffer_barrier(
@@ -2119,10 +2158,8 @@ int main(void) {
 				frame_data.camera_position = lights[light_index].position;
 				frame_data.proj.elements[5] *= -1;
 
-				gfx_cmd_pipeline_bind(cmd, &pipeline_shadow);
-				gfx_bind(device, &pipeline_shadow, 0,
-					array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))) //
-				);
+				gfx_cmd_shader_bind(cmd, shaders[SHADER_SHADOW]);
+				gfx_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
 
 				// :shadow
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
@@ -2154,11 +2191,9 @@ int main(void) {
 							offset = entity->skinned_vertices_offset;
 						}
 
-						gfx_bind(device, &pipeline_shadow, 1,
-							array_arg(Uniform, storage_buffers(0, buffer, offset, size)) //
-						);
+						gfx_bind(device, 1, array_arg(Uniform, storage_buffers(0, buffer, offset, size)));
 
-						vkCmdPushConstants(cmd->handle, pipeline_shadow.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdPushConstants(cmd->handle, shaders[SHADER_SHADOW]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
 				}
@@ -2235,10 +2270,10 @@ int main(void) {
 					sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
 					sampler_with_textures(3, (GFX_Image *[]){ skybox.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 				};
-				gfx_bind(device, &pipeline_3d, 0, uniforms, countof(uniforms));
+				gfx_bind(device, 0, uniforms, countof(uniforms));
 
 				// :scene
-				gfx_cmd_pipeline_bind(cmd, &pipeline_3d);
+				gfx_cmd_shader_bind(cmd, shaders[SHADER_SPATIAL]);
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 					Entity *entity = &scene->entities[instance_index];
 					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity->pass != DRAW_PASS_OPAQUE)
@@ -2305,9 +2340,9 @@ int main(void) {
 							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
-						gfx_bind(device, &pipeline_3d, 1, uniforms, countof(uniforms));
+						gfx_bind(device, 1, uniforms, countof(uniforms));
 
-						vkCmdPushConstants(cmd->handle, pipeline_3d.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdPushConstants(cmd->handle, shaders[SHADER_SPATIAL]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
 				}
@@ -2318,7 +2353,7 @@ int main(void) {
 
 					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 
-					gfx_cmd_pipeline_bind(cmd, &pipeline_grass);
+					gfx_cmd_shader_bind(cmd, shaders[SHADER_GRASS]);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
@@ -2354,15 +2389,15 @@ int main(void) {
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
 							sampler_with_textures(3, (GFX_Image *[]){ noise_image.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
-						gfx_bind(device, &pipeline_grass, 1, uniforms, countof(uniforms));
+						gfx_bind(device, 1, uniforms, countof(uniforms));
 
-						vkCmdPushConstants(cmd->handle, pipeline_grass.layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						vkCmdPushConstants(cmd->handle, shaders[SHADER_GRASS]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, map_width * map_depth, part->index_offset, part->vertex_offset, 0);
 					}
 				}
 
 				if (draw_skybox) { // :skybox
-					gfx_cmd_pipeline_bind(cmd, &pipeline_skybox);
+					gfx_cmd_shader_bind(cmd, shaders[SHADER_SKYBOX]);
 					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
 				}
 
@@ -2393,7 +2428,7 @@ int main(void) {
 					qsort(transparent_meshes, transparent_mesh_count, sizeof(MeshSort), cmp_mesh_sort);
 
 					if (transparent_mesh_count)
-						gfx_cmd_pipeline_bind(cmd, &transparent);
+						gfx_cmd_shader_bind(cmd, shaders[SHADER_TRANSPARENT]);
 
 					for (uint32_t index = 0; index < transparent_mesh_count; ++index) {
 						Entity *e = transparent_meshes[index].entity;
@@ -2420,7 +2455,7 @@ int main(void) {
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
 
-						gfx_bind(device, &transparent, 1, uniforms, countof(uniforms));
+						gfx_bind(device, 1, uniforms, countof(uniforms));
 
 						vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
 						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -2439,7 +2474,7 @@ int main(void) {
 							};
 							float4x4 world_from_object = compose4x4_from_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
 
-							vkCmdPushConstants(cmd->handle, transparent.layout, VK_SHADER_STAGE_ALL, 0, sizeof(world_from_object), world_from_object.elements);
+							vkCmdPushConstants(cmd->handle, shaders[SHADER_TRANSPARENT]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(world_from_object), world_from_object.elements);
 							vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 						}
 					}
@@ -2447,11 +2482,11 @@ int main(void) {
 
 				{ // :overlay
 					if (batch_line3->offset) {
-						gfx_cmd_pipeline_bind(cmd, &pipeline_line3d);
+						gfx_cmd_shader_bind(cmd, shaders[SHADER_LINE3D]);
 						Uniform uniforms[] = {
 							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
-						gfx_bind(device, &pipeline_line3d, 1, uniforms, countof(uniforms));
+						gfx_bind(device, 1, uniforms, countof(uniforms));
 						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
 					}
 
@@ -2470,12 +2505,12 @@ int main(void) {
 						.time = time,
 					};
 					if (batch_line2d->offset) {
-						gfx_cmd_pipeline_bind(cmd, &pipeline_line2d);
+						gfx_cmd_shader_bind(cmd, shaders[SHADER_LINE2D]);
 						Uniform uniforms[] = {
 							storage_data(0, batch_line2d->base, batch_line2d->offset),
 						};
-						gfx_bind(device, &pipeline_line2d, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
-						gfx_bind(device, &pipeline_line2d, 1, uniforms, countof(uniforms));
+						gfx_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
+						gfx_bind(device, 1, uniforms, countof(uniforms));
 						vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
 					}
 				}
@@ -2561,7 +2596,7 @@ int main(void) {
 					}
 				}
 
-				gfx_cmd_pipeline_bind(cmd, &pipeline_2d);
+				gfx_cmd_shader_bind(cmd, shaders[SHADER_QUAD2D]);
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &frame_2d, sizeof(frame_2d)),
@@ -2569,8 +2604,8 @@ int main(void) {
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 
-				gfx_bind(device, &pipeline_2d, 0, uniforms0, countof(uniforms0));
-				gfx_bind(device, &pipeline_2d, 1, uniforms1, countof(uniforms1));
+				gfx_bind(device, 0, uniforms0, countof(uniforms0));
+				gfx_bind(device, 1, uniforms1, countof(uniforms1));
 
 				vkCmdDraw(cmd->handle, vertex_count, 1, 0, 0);
 
@@ -2609,7 +2644,7 @@ int main(void) {
 				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
 				vkCmdBeginRendering(cmd->handle, &renderpass_info);
 
-				gfx_cmd_pipeline_bind(cmd, &pipeline_composite);
+				gfx_cmd_shader_bind(cmd, shaders[SHADER_COMPOSITE]);
 
 				GFX_Image *images[] = {
 					spatial_target,
@@ -2620,7 +2655,7 @@ int main(void) {
 					sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
 				};
 
-				gfx_bind(device, &pipeline_composite, 0, uniforms, countof(uniforms));
+				gfx_bind(device, 0, uniforms, countof(uniforms));
 
 				vkCmdDraw(cmd->handle, 6, 1, 0, 0);
 				vkCmdEndRendering(cmd->handle);
@@ -2629,37 +2664,51 @@ int main(void) {
 		}
 		gfx_frame_end(device, cmd);
 
-		OS_Timestamp current_ts = os_file_last_modified(s("assets/shaders/compute/bin/test.compute.spv"));
-		if (compute_ts != current_ts) {
-			LOG_INFO("hot-reloading %s...", c_pipeline.options.debug_name);
-			vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
-			gfx_pipeline_destroy(device, &c_pipeline);
+		for (ShaderID ID = 0; ID < SHADER_MAX; ++ID) { // :hot-reload
+			ShaderMetadata *metadata = &shader_to_metadata[ID];
+			if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
+				metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
+				metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
+				continue;
 
-			ArenaTemp scratch = arena_scratch_begin(NULL);
-			String8 compute_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/compute/bin/test.compute.spv"));
-			c_pipeline = compute_pipeline_make(device, compute_bytecode);
-			arena_scratch_end(scratch);
+			bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length > 0;
+			if (is_compute) {
+				OS_Timestamp now = os_file_last_modified(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 
-			compute_ts = current_ts;
-		}
+				if (now != shader_ts[ID]) {
+					ArenaTemp scratch = arena_scratch_begin(NULL);
 
-		current_ts = os_file_last_modified(s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
-		if (transparent_ts != current_ts) {
-			LOG_INFO("hot-reloading %s...", transparent.options.debug_name);
-			vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
-			PipelineOptions options = transparent.options;
-			memory_copy_array(options.color_attachments, transparent.options.color_attachments);
+					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
+					vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
 
-			gfx_pipeline_destroy(device, &transparent);
+					gfx_shader_destroy(device, shaders[ID]);
+					String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+					shaders[SHADER_TEST_COMPUTE] = gfx_compute_make(device, bytecode, (char *)shader_to_string[ID].text);
 
-			ArenaTemp scratch = arena_scratch_begin(NULL);
-			String8 vertex_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/base.vertex.spv"));
-			String8 fragment_bytecode = os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/energyfield.fragment.spv"));
-			transparent = graphics_pipeline_make(device, vertex_bytecode, fragment_bytecode, options);
+					shader_ts[ID] = now;
+					arena_scratch_end(scratch);
+				}
+			} else {
+				OS_Timestamp now = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]); // TODO: Handle vertex & fragment shaders
+				if (now != shader_ts[ID]) {
+					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
+					vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
+					ShaderMetadata *metadata = &shader_to_metadata[ID];
 
-			arena_scratch_end(scratch);
+					gfx_shader_destroy(device, shaders[ID]);
+					ArenaTemp scratch = arena_scratch_begin(NULL);
 
-			transparent_ts = current_ts;
+					String8 vs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
+					String8 fs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+					shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shader_to_string[ID].text);
+
+					for (uint32_t permutation = 0; permutation < metadata->permutation_count; ++permutation)
+						gfx_pipeline_ensure(device, shaders[ID], metadata->permutations[permutation]);
+
+					shader_ts[ID] = now;
+					arena_scratch_end(scratch);
+				}
+			}
 		}
 
 		device->current_frame_index = (device->current_frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -2667,21 +2716,6 @@ int main(void) {
 	}
 
 	// :destroy
-	vkDeviceWaitIdle(device->handle);
-	{
-		gfx_pipeline_destroy(device, &c_pipeline);
-		gfx_pipeline_destroy(device, &pipeline_skinning);
-		gfx_pipeline_destroy(device, &pipeline_shadow);
-		gfx_pipeline_destroy(device, &pipeline_3d);
-		gfx_pipeline_destroy(device, &pipeline_2d);
-		gfx_pipeline_destroy(device, &transparent);
-		gfx_pipeline_destroy(device, &pipeline_skybox);
-		gfx_pipeline_destroy(device, &pipeline_grass);
-		gfx_pipeline_destroy(device, &pipeline_line3d);
-		gfx_pipeline_destroy(device, &pipeline_line2d);
-		gfx_pipeline_destroy(device, &pipeline_composite);
-	}
-
 	gfx_device_destroy(device);
 
 	os_surface_close(main_render);
