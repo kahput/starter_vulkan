@@ -18,4 +18,11 @@ typedef struct {
 } Font;
 
 Font load_font(Arena *arena, String8 path, uint32_t font_size);
+
 float2 measure_text(Font *font, String8 text);
+static inline float text_height(Font *font, String8 text) {
+	return measure_text(font, text).y;
+}
+static inline float text_width(Font *font, String8 text) {
+	return measure_text(font, text).x;
+}

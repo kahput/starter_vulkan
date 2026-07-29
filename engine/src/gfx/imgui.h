@@ -79,6 +79,7 @@ typedef struct {
 
 	IMGUI_Direction flow;
 	IMGUI_SizingMode mode[2];
+
 	IMGUI_Align align[2];
 
 	Color bg, fg;
@@ -141,7 +142,9 @@ void imgui_push_parent(IMGUI_Widget *widget);
 void imgui_pop_parent(void);
 
 void imgui_push_style(IMGUI_Style style);
-void imgui_pop_style(void);
+void imgui_pop_style(uint32_t count);
+
+IMGUI_Style imgui_peek_style(void);
 
 static inline void imgui_pad(IMGUI_Widget *widget, float4 padding) {
 	if (imgui_valid(widget))
@@ -165,7 +168,9 @@ void imgui_grow_tree(IMGUI_Widget *root);
 void imgui_position_tree(IMGUI_Widget *root);
 
 // Common widget helpers
+IMGUI_Widget *imgui_label(String8 label);
 IMGUI_Interact imgui_button_label(String8 label);
 IMGUI_Interact imgui_button_image(Image2D *image, float scale);
+IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max);
 
 IMGUI_Widget *imgui_spacer(void);

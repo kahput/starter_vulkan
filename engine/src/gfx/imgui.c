@@ -1,3 +1,4 @@
+#include "common.h"
 #include "gfx/font.h"
 #include "gfx/imgui.h"
 
@@ -142,7 +143,7 @@ IMGUI_Widget *imgui_widget_ex(uint64_t id, IMGUI_Style style) {
 
 	imgui_push_style(style);
 	result = imgui_widget(id);
-	imgui_pop_style();
+	imgui_pop_style(1);
 
 	return result;
 }
@@ -212,6 +213,38 @@ void imgui__parse_style_confg(IMGUI_Style *cfg, IMGUI_Settings *style) {
 	style->child_gap = cfg->gap;
 }
 
+IMGUI_Style imgui_peek_style(void) {
+	IMGUI_Style result = { 0 };
+
+	bool ok = context && context->setting_stack_cursor;
+	if (ok) {
+		IMGUI_Settings settings = context->settings_stack[context->setting_stack_cursor - 1];
+
+		result.flow = settings.flow;
+		result.mode[0] = settings.mode[0], result.mode[1] = settings.mode[1];
+		result.align[0] = settings.align[0], result.align[1] = settings.align[1];
+		result.bg = settings.bg, result.fg = settings.fg;
+		result.border_radius = settings.border_radius;
+		result.gap = settings.child_gap;
+
+		result.pl = settings.padding[AXIS_X][0];
+		result.pr = settings.padding[AXIS_X][1];
+		result.pt = settings.padding[AXIS_X][0];
+		result.pb = settings.padding[AXIS_X][1];
+
+		if (result.pl == result.pr)
+			result.ph = result.pl;
+		if (result.pt == result.pb)
+			result.pv = result.pt;
+		if (result.ph == result.pv)
+			result.p = result.ph;
+
+		result.font = settings.font ? settings.font : context->default_font;
+	}
+
+	return result;
+}
+
 void imgui_push_style(IMGUI_Style style) {
 	bool ok = context;
 	if (ok) {
@@ -219,10 +252,10 @@ void imgui_push_style(IMGUI_Style style) {
 		imgui__parse_style_confg(&style, context->settings_stack + context->setting_stack_cursor++);
 	}
 }
-void imgui_pop_style(void) {
+void imgui_pop_style(uint32_t count) {
 	bool ok = context && context->setting_stack_cursor;
 	if (ok)
-		context->setting_stack_cursor--;
+		context->setting_stack_cursor = count > context->setting_stack_cursor ? 0 : context->setting_stack_cursor - count;
 }
 
 Rectangle imgui_rect_cached(IMGUI_Widget *widget) {
@@ -380,6 +413,20 @@ void imgui_position_tree(IMGUI_Widget *root) {
 	}
 }
 
+IMGUI_Widget *imgui_label(String8 label) {
+	IMGUI_Widget *text = imgui_widget(hash64(label.text, label.length));
+	text->settings.text = label;
+	text->settings.mode[0] = IMGUI_MODE_FIXED, text->settings.mode[1] = IMGUI_MODE_FIXED;
+
+	Font *font = text->settings.font ? text->settings.font : context->default_font;
+	if (font) {
+		float2 text_size = measure_text(font, label);
+		text->size[0] = text_size.x, text->size[1] = text_size.y;
+	}
+
+	return text;
+}
+
 IMGUI_Interact imgui_button_label(String8 label) {
 	IMGUI_Widget *box = imgui_widget(hash64(label.text, label.length));
 	IMGUI_Widget *text = imgui_child(0, box);
@@ -405,6 +452,50 @@ IMGUI_Interact imgui_button_image(Image2D *image, float scale) {
 		icon->size[0] = image->width * scale, icon->size[1] = image->height * scale;
 
 	return imgui_interact(box->id, imgui_rect_cached(box));
+}
+
+IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max) {
+	IMGUI_Widget *track = imgui_widget(id);
+	IMGUI_Widget *thumb = imgui_child(hash64_combine(id, __LINE__), track);
+
+	uint32_t flow = track->parent ? context->widgets[track->parent].settings.flow : 0;
+
+	track->settings.mode[flow] = IMGUI_MODE_GROW;
+	track->settings.mode[!flow] = IMGUI_MODE_FIXED;
+
+	thumb->settings.bg = imgui_peek_style().fg; // colors will also be decided by theme
+
+	thumb->settings.mode[0] = track->settings.mode[1];
+	thumb->settings.mode[1] = track->settings.mode[0];
+
+	track->size[!flow] = context->default_font->bake_size; // will be decided by theme
+	thumb->size[flow] = context->default_font->bake_size; // will be decided by theme
+
+	Rectangle track_rect = imgui_rect_cached(track);
+	Rectangle thumb_rect = imgui_rect_cached(thumb);
+
+	float track_offset[] = { track_rect.x, track_rect.y };
+	float thumb_offset[] = { thumb_rect.x, thumb_rect.y };
+
+	float track_size[] = { track_rect.width, track_rect.height };
+	float thumb_size[] = { thumb_rect.width, thumb_rect.height };
+
+	float travel = track_size[flow] - thumb_size[flow];
+
+	IMGUI_Interact interact = imgui_interact(track->id, track_rect);
+	if (interact.held) {
+		float mouse[] = { context->mouse.position.x, context->mouse.position.y };
+		mouse[flow] -= track_offset[flow] + thumb_size[flow] * 0.5f;
+		mouse[flow] = clampf(mouse[flow], 0.0f, travel);
+
+		float mouse_ratio = (travel != 0.0f) ? (mouse[flow] / travel) : 0.0f;
+		*t = min + (mouse_ratio * (max - min));
+	}
+
+	float t_norm = max - min != 0.0f ? (*t - min) / (max - min) : 0.0f;
+	thumb->offset[flow] = t_norm * travel;
+
+	return interact;
 }
 
 IMGUI_Widget *imgui_spacer(void) {

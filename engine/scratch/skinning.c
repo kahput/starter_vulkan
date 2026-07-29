@@ -1354,6 +1354,7 @@ int main(void) {
 							panel_dock == IMGUI_DOCK_CENTER || panel_dock == IMGUI_DOCK_TOP || panel_dock == IMGUI_DOCK_BOTTOM ? IMGUI_MODE_GROW : IMGUI_MODE_FIXED,
 							panel_dock == IMGUI_DOCK_CENTER || panel_dock == IMGUI_DOCK_LEFT || panel_dock == IMGUI_DOCK_RIGHT ? IMGUI_MODE_GROW : IMGUI_MODE_FIXED,
 						  },
+						  .border_radius = 4.0f,
 						  .bg = RED,
 						});
 					panel->offset[0] = panel_offset.x, panel->offset[1] = panel_offset.y;
@@ -1403,7 +1404,7 @@ int main(void) {
 					imgui_push_parent(topbar);
 					{ // topbar
 						IMGUI_Style topbar_btn = {
-							.mode = { 0, IMGUI_MODE_GROW },
+							.mode[1] = IMGUI_MODE_GROW,
 							.align = { 0, IMGUI_ALIGN_CENTER },
 							.ph = 8.0f,
 							.pv = 0.0f,
@@ -1418,61 +1419,81 @@ int main(void) {
 						if (imgui_button_label(s("Edit")).pressed) { LOG_INFO("Edit"); }
 						if (imgui_button_label(s("Help")).pressed) { LOG_INFO("Help"); }
 						imgui_spacer();
-						if (imgui_button_image(&icons[ICON_PLAY], 0.5f).released) { LOG_INFO("Play"); }
+						if (imgui_button_image(&icons[ICON_PLAY], 0.5f).released) { state = (state + 1) % VIEWPORT_STATE_COUNT; }
 						if (imgui_button_image(&icons[ICON_PAUSE], 0.5f).released) { LOG_INFO("Pause"); }
 						if (imgui_button_image(&icons[ICON_STOP], 0.5f).released) { LOG_INFO("Stop"); }
-						imgui_pop_style();
+						imgui_pop_style(1);
 
 						imgui_pop_parent();
 					}
 
 					IMGUI_Widget *body = imgui_widget_ex(__LINE__,
 						(IMGUI_Style){
+						  .flow = IMGUI_VERTICAL,
 						  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW },
 						  .p = 12.0f,
 						  .gap = 12.0f,
 						  .bg = hex(0x0d1117),
 						});
-
 					imgui_push_parent(body);
-					{ // body
-						IMGUI_Widget *track = imgui_widget_ex(__LINE__,
+					{
+						IMGUI_Style slider = {
+							.bg = hex(0x262c36),
+							.fg = WHITE,
+							.gap = 0.0f,
+							.font = fonts + FONT_BAKE_SIZE_12,
+							.border_radius = 4.0f
+						};
+						imgui_push_style(slider);
+
+						imgui_push_parent(imgui_widget_ex(__LINE__,
 							(IMGUI_Style){
-							  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIXED },
-							  .bg = RED,
-							});
-						track->size[1] = imgui.default_font->bake_size;
+							  .flow = IMGUI_HORIZONTAL,
+							  .mode[0] = IMGUI_MODE_GROW,
+							  .gap = 16.0f,
+							}));
+						{
+							imgui_push_parent(imgui_widget_ex(__LINE__,
+								(IMGUI_Style){
+								  .flow = IMGUI_VERTICAL,
+								  .gap = 18.0f,
+								}));
+							{
+								imgui_label(s("Fog Density"));
+								imgui_label(s("Fog Gradient"));
+								imgui_label(s("Ambient Strength"));
+							}
+							imgui_pop_parent();
 
-						IMGUI_Widget *thumb = imgui_widget_ex(__LINE__,
-							(IMGUI_Style){
-							  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_GROW },
-							  .bg = BLUE,
-							});
-						imgui_parent(thumb, track);
-						thumb->size[0] = imgui.default_font->bake_size;
+							imgui_push_parent(imgui_widget_ex(__LINE__,
+								(IMGUI_Style){
+								  .flow = IMGUI_VERTICAL,
+								  .mode[0] = IMGUI_MODE_GROW,
+								  .gap = 12.0f,
+								}));
+							{
+								imgui_push_parent(imgui_widget_ex(__LINE__,
+									(IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+								imgui_sliderf(__LINE__, &fog_density, 0.001f, 0.05f);
+								imgui_pop_parent();
 
-						Rectangle track_rect = imgui_rect_cached(track);
-						Rectangle thumb_rect = imgui_rect_cached(thumb);
-						float travel = track_rect.width - thumb_rect.width;
+								imgui_push_parent(imgui_widget_ex(__LINE__,
+									(IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+								imgui_sliderf(__LINE__, &fog_gradient, 0.0f, 15.0f);
+								imgui_pop_parent();
 
-						float min = 0.0f, max = 10.0f;
-						static float t = 0.0f;
-
-						IMGUI_Interact interct = imgui_interact(track->id, track_rect);
-						if (interct.held) {
-							float2 mouse = imgui.mouse.position;
-							mouse.x -= track_rect.x + thumb_rect.width * 0.5f;
-							mouse.x = clampf(mouse.x, 0.0f, travel);
-
-							float mouse_ratio = (travel != 0.0f) ? (mouse.x / travel) : 0.0f;
-							t = min + (mouse_ratio * (max - min));
+								imgui_push_parent(imgui_widget_ex(__LINE__,
+									(IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+								imgui_sliderf(__LINE__, &ambient_strength, 0.0f, 1.0f);
+								imgui_pop_parent();
+							}
+							imgui_pop_parent();
 						}
-
-						float t_norm = max - min != 0.0f ? (t - min) / (max - min) : 0.0f;
-						thumb->offset[0] = t_norm * travel;
-
 						imgui_pop_parent();
+
+						imgui_pop_style(1);
 					}
+					imgui_pop_parent();
 
 					imgui_pop_parent();
 
@@ -1916,8 +1937,9 @@ int main(void) {
 						0.0f,
 						0.0f, TRANSPARENT, splat4(widget->settings.border_radius), widget->settings.fg);
 				} else if (widget->settings.text.length) {
-					/* draw2d_rect(batch_2d, imgui_widget_rect(widget), ORANGE); */
-					draw2d_textf(batch_2d, fonts + FONT_BAKE_SIZE_16, wrap2(widget->offset), widget->settings.fg, widget->settings.text);
+					/* draw2d_rect(batch_2d, imgui_rect_live(widget), ORANGE); */
+					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
+					draw2d_textf(batch_2d, font, wrap2(widget->offset), widget->settings.fg, widget->settings.text);
 				} else {
 					draw2d_rect_rounded(batch_2d, imgui_rect_live(widget), splat4(widget->settings.border_radius), widget->settings.bg);
 				}
@@ -1975,10 +1997,6 @@ int main(void) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
 			Rectangle area = rect(0, 0, compute_blit_target->width, compute_blit_target->height);
 			gfx_cmd_image_blit(cmd, area, compute_image, area, compute_blit_target);
-		} else if (os_surface_drawable(popup_compute)) {
-			uint2 dims = os_surface_size(popup_compute);
-			gfx_swapchain_resize(device, popup_swapchain, dims.x, dims.y);
-			gfx_image_resize(device, compute_image, dims.x, dims.y);
 		}
 
 		GFX_Image *main_target = gfx_backbuffer(device, cmd, main_swapchain);
