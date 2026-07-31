@@ -1,5 +1,8 @@
 #include "app/scene.h"
 
+#include "res/tables.h"
+#include "draw.h"
+
 #include "common.h"
 #include "core/geom.h"
 #include "core/debug.h"
@@ -50,35 +53,6 @@ String8 icon_to_string[ICON_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(ICON, STOP),
 };
 
-typedef struct {
-	float2 position, uv;
-	float4 radii;
-	float2 size;
-	uint32_t fill_color, border_color;
-	float border_width;
-	uint32_t imageid;
-} QuadVertex2D;
-
-typedef struct {
-	float4 a, b; // xyz + thickness
-	uint32_t color;
-	float3 _pad0;
-} LineVertex3D;
-
-typedef struct {
-	float3 position;
-	float _pad0;
-	float3 normal;
-	float _pad1;
-	float2 uv;
-	float4 tangent;
-} Vertex3D;
-
-typedef struct {
-	uint4 bone_ids;
-	float4 weights;
-} SkinningVertex3D;
-
 typedef enum {
 	TEXTURE_SLOT_ALBEDO,
 	TEXTURE_SLOT_METAL_ROUGHNESS,
@@ -96,9 +70,6 @@ String8 texture_slot_to_string[TEXTURE_SLOT_COUNT] = {
 	[TEXTURE_SLOT_OCCLUSION] = str_comp("occlusion"),
 	[TEXTURE_SLOT_EMISSIVE] = str_comp("emissive"),
 };
-
-Rectangle image_rect(Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
-float2 image_size(Image2D image) { return (float2){ image.width, image.height }; }
 
 typedef enum {
 	DRAW_PASS_OPAQUE,
@@ -200,183 +171,6 @@ String8 meshid_to_metadata[MESH_MAX] = {
 	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
 };
 
-typedef struct {
-	String8 filepaths[SHADER_STAGE_MAX];
-	PipelineOptions permutations[8];
-	uint32_t permutation_count;
-} ShaderMetadata;
-
-#define SHADER_LIST(X)  \
-	X(TEST_COMPUTE)     \
-	X(SKINNING_COMPUTE) \
-	X(SHADOW)           \
-	X(SPATIAL)          \
-	X(GRASS)            \
-	X(SKYBOX)           \
-	X(LINE3D)           \
-	X(TRANSPARENT)      \
-	X(QUAD2D)           \
-	X(LINE2D)           \
-	X(COMPOSITE)
-
-// clang-format off
-typedef enum {
-#define SHADER_ENUM(name) SHADER_##name,
-	SHADER_LIST(SHADER_ENUM)
-#undef SHADER_ENUM
-
-    SHADER_MAX,
-} ShaderID;
-// clang-format on
-
-String8 shader_to_string[SHADER_MAX] = {
-#define SHADER_NAME(name) [SHADER_##name] = str_comp(#name),
-	SHADER_LIST(SHADER_NAME)
-#undef SHADER_NAME
-};
-
-ShaderMetadata shader_to_metadata[SHADER_MAX] = {
-	[SHADER_TEST_COMPUTE] = { .filepaths[SHADER_STAGE_COMPUTE] = str_comp("assets/shaders/compute/bin/test.compute.spv") },
-	[SHADER_SKINNING_COMPUTE] = { .filepaths[SHADER_STAGE_COMPUTE] = str_comp("assets/shaders/compute/bin/skinning.compute.spv") },
-	[SHADER_SHADOW] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/shadow.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/blank.fragment.spv"),
-	  },
-	  .permutations = { { 0 } },
-	  .permutation_count = 1,
-	},
-	[SHADER_SPATIAL] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/base.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/phong.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		  .cull_mode = CULL_MODE_BACK,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-	[SHADER_GRASS] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/grass.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/grass.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-	[SHADER_SKYBOX] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/skybox.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/skybox.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-	[SHADER_LINE3D] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/line.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/flat.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-	[SHADER_TRANSPARENT] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/base.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/energyfield.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		  .cull_mode = CULL_MODE_NONE,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-	[SHADER_QUAD2D] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/batch2d.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/quad.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_UNORM },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_1,
-		  .cull_mode = CULL_MODE_BACK,
-		  .disable_depth_test = true,
-		  .disable_depth_write = true,
-
-		  .enable_blend = true,
-		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
-		  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-		  .src_alpha_factor = BLEND_FACTOR_ONE,
-		  .dst_alpha_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-	[SHADER_LINE2D] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/line2d.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/flat.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		  .cull_mode = CULL_MODE_BACK,
-		  .disable_depth_test = true,
-		  .disable_depth_write = true,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-	[SHADER_COMPOSITE] = {
-	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = str_comp("assets/shaders/vertex/bin/fullscreen_quad.vertex.spv"),
-		[SHADER_STAGE_FRAGMENT] = str_comp("assets/shaders/fragment/bin/composite.fragment.spv"),
-	  },
-	  .permutations = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_1,
-		  .cull_mode = CULL_MODE_BACK,
-		  .disable_depth_test = true,
-		  .disable_depth_write = true,
-		},
-	  },
-	  .permutation_count = 1,
-	},
-};
-
 typedef enum {
 	ENTITY_FEATURE_DRAW_MESH,
 	ENTITY_FEATURE_CAST_SHADOW,
@@ -449,36 +243,6 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
 
 AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
-
-// corners[] = { top-left, top-right, bottom-left, bottom-right }
-void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, float2 origin, float rotation, float border_width, Color border_color, float4 radii, Color fill_color);
-void draw2d_rect(Arena *arena, Rectangle rect, Color color);
-void draw2d_rect_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, Color color);
-void draw2d_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color);
-
-void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color);
-void draw2d_rect_rounded_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, float4 radii, Color color);
-
-void draw2_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, Color tint);
-void draw2_sprite(Arena *arena, float2 position, Image2D *image, Color tint);
-
-void draw2d_point(Arena *arena, float2 position, float radius, Color color);
-void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String8 format, ...);
-
-void draw2_line(Arena *arena, float2 start, float2 end, float thickness, Color color);
-void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color);
-void draw2_triangle(Arena *arena, Triangle2 triangle, float thickness, Color color);
-
-void draw3_line(Arena *arena, float3 start, float3 end, float thickness, Color color);
-void draw3_arrow(Arena *arena, float3 start, float3 end, float thickness, Color color,
-	float4x4 view, float4x4 projeciton, float viewport_width);
-void draw3_arc(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color);
-void draw3_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color);
-void draw3_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color);
-void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color);
-void draw3_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color);
-void draw3_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
-void draw3_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness);
 
 uint32_t find_animation(AnimationClip *clips, uint32_t count, String8 target) {
 	for (uint32_t anim_index = 0; anim_index < count; ++anim_index)
@@ -973,6 +737,14 @@ int main(void) {
 		  .pixels = noise_image.pixels,
 		});
 
+	Image2D heart_image = load_image(permanent, s("assets/textures/heart.png"));
+	heart_image.handle = gfx_image_make(device, heart_image.width, heart_image.height,
+		(ImageOptions){
+		  .debug_name = "heart",
+		  .format = PIXEL_FORMAT_RGBA8_SRGB,
+		  .pixels = heart_image.pixels,
+		});
+
 	GFX_Sampler *linear_sampler[WRAP_MODE_MAX] = {
 		[WRAP_MODE_REPEAT] = gfx_sampler_make(device, sampler_opt("default:linear_repeat", FILTER_LINEAR, WRAP_MODE_REPEAT)),
 		[WRAP_MODE_CLAMP] = gfx_sampler_make(device, sampler_opt("default:linear_clamp", FILTER_LINEAR, WRAP_MODE_CLAMP))
@@ -1015,8 +787,8 @@ int main(void) {
 
 			shader_ts[ID] = MAX(fs_ts, vs_ts);
 			shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shader_to_string[ID].text);
-			for (uint32_t permutation = 0; permutation < metadata->permutation_count; ++permutation)
-				gfx_pipeline_ensure(device, shaders[ID], metadata->permutations[permutation]);
+			for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation)
+				gfx_pipeline_ensure(device, shaders[ID], metadata->pipelines[permutation]);
 		}
 
 		arena_scratch_end(scratch);
@@ -1380,9 +1152,7 @@ int main(void) {
 					}
 				}
 
-				// :editor
-				{
-					static float2 panel_offset = { 0 };
+				{ // :editor
 					static float2 mouse_grab_offset = { 0 };
 					static IMGUI_Dock panel_dock = IMGUI_DOCK_NONE;
 
@@ -1396,6 +1166,9 @@ int main(void) {
 						  .border_radius = 4.0f,
 						  .bg = RED,
 						});
+
+					Rectangle c = imgui_rect_cached(panel);
+					float2 panel_offset = panel_dock == 0 ? (float2){ c.x, c.y } : (float2){ 0 };
 					panel->offset[0] = panel_offset.x, panel->offset[1] = panel_offset.y;
 					panel->size[0] = 350.f, panel->size[1] = 500.f;
 
@@ -1476,61 +1249,176 @@ int main(void) {
 						});
 					imgui_push_parent(body);
 					{
-						IMGUI_Style slider = {
-							.bg = hex(0x262c36),
-							.fg = WHITE,
-							.gap = 0.0f,
-							.font = fonts + FONT_BAKE_SIZE_12,
-							.border_radius = 4.0f
-						};
-						imgui_push_style(slider);
-
 						imgui_push_parent(imgui_widget_ex(__LINE__,
 							(IMGUI_Style){
-							  .flow = IMGUI_HORIZONTAL,
+							  .flow = IMGUI_VERTICAL,
+							  .gap = 8.0f,
 							  .mode[0] = IMGUI_MODE_GROW,
-							  .gap = 16.0f,
 							}));
 						{
-							imgui_push_parent(imgui_widget_ex(__LINE__,
-								(IMGUI_Style){
-								  .flow = IMGUI_VERTICAL,
-								  .gap = 18.0f,
-								}));
-							{
-								imgui_label(s("Fog Density"));
-								imgui_label(s("Fog Gradient"));
-								imgui_label(s("Ambient Strength"));
-							}
-							imgui_pop_parent();
+							IMGUI_Style slider = {
+								.bg = hex(0x262c36),
+								.fg = WHITE,
+								.gap = 0.0f,
+								.font = fonts + FONT_BAKE_SIZE_12,
+								.border_radius = 4.0f
+							};
+							imgui_push_style(slider);
 
-							imgui_push_parent(imgui_widget_ex(__LINE__,
-								(IMGUI_Style){
-								  .flow = IMGUI_VERTICAL,
-								  .mode[0] = IMGUI_MODE_GROW,
-								  .gap = 12.0f,
-								}));
+							imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
 							{
-								imgui_push_parent(imgui_widget_ex(__LINE__,
-									(IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_label(__LINE__, s("Fog Density"));
+								imgui_pop_parent();
+
+								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
 								imgui_sliderf(__LINE__, &fog_density, 0.001f, 0.05f);
 								imgui_pop_parent();
 
-								imgui_push_parent(imgui_widget_ex(__LINE__,
-									(IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+								imgui_pop_parent();
+							}
+
+							imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+							{
+								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_label(__LINE__, s("Fog Gradient"));
+								imgui_pop_parent();
+
+								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
 								imgui_sliderf(__LINE__, &fog_gradient, 0.0f, 15.0f);
 								imgui_pop_parent();
 
-								imgui_push_parent(imgui_widget_ex(__LINE__,
-									(IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
-								imgui_sliderf(__LINE__, &ambient_strength, 0.0f, 1.0f);
 								imgui_pop_parent();
 							}
+
+							imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+							{
+								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_label(__LINE__, s("Ambient Strength"));
+								imgui_pop_parent();
+
+								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_sliderf(__LINE__, &ambient_strength, 0.0f, 1.0f);
+								imgui_pop_parent();
+
+								imgui_pop_parent();
+							}
+
+							Color selected = hex(0x3178c6);
+
+							imgui_push_parent(imgui_widget_ex(__LINE__,
+								(IMGUI_Style){
+								  .flow = IMGUI_HORIZONTAL,
+								  .mode[0] = IMGUI_MODE_GROW,
+								  .gap = 8.0f,
+								  .align[1] = IMGUI_ALIGN_CENTER,
+								}));
+							{
+								{
+									uint64_t radio_bar_id = __LINE__;
+									IMGUI_Widget *radio = imgui_widget_ex(radio_bar_id,
+										(IMGUI_Style){
+										  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+										  .p = 8.0f,
+										  .gap = 8.0f,
+										  .border_radius = 4.0f,
+										  .gap = 8.0f,
+										});
+
+									IMGUI_Interact interact = imgui_interact(radio_bar_id, imgui_rect_cached(radio));
+									if (interact.pressed)
+										light_index = 0;
+									if (interact.hovered)
+										radio->settings.bg = hex(0x262c36);
+
+									imgui_push_parent(radio);
+									{
+										IMGUI_Widget *label = imgui_label(__LINE__, s("Day"));
+
+										imgui_spacer();
+										IMGUI_Widget *btn = imgui_widget_ex(0,
+											(IMGUI_Style){
+											  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+											  .bg = light_index == 0 ? selected : WHITE,
+											  .border_radius = imgui.default_font->bake_size * 0.5f, // circle
+											});
+										btn->size[0] = imgui.default_font->bake_size, btn->size[1] = imgui.default_font->bake_size;
+
+										imgui_pop_parent();
+									}
+								}
+
+								{
+									IMGUI_Widget *radio = imgui_widget_ex(__LINE__,
+										(IMGUI_Style){
+										  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+										  .p = 8.0f,
+										  .gap = 8.0f,
+										  .border_radius = 4.0f,
+										  .gap = 8.0f,
+										});
+
+									IMGUI_Interact interact = imgui_interact(radio->id, imgui_rect_cached(radio));
+									if (interact.pressed)
+										light_index = 1;
+									if (interact.hovered)
+										radio->settings.bg = hex(0x262c36);
+
+									imgui_push_parent(radio);
+									{
+										IMGUI_Widget *label = imgui_label(__LINE__, s("Dawn"));
+
+										imgui_spacer();
+										IMGUI_Widget *btn = imgui_widget_ex(0,
+											(IMGUI_Style){
+											  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+											  .bg = light_index == 1 ? selected : WHITE,
+											  .border_radius = imgui.default_font->bake_size * 0.5f, // circle
+											});
+										btn->size[0] = imgui.default_font->bake_size, btn->size[1] = imgui.default_font->bake_size;
+
+										imgui_pop_parent();
+									}
+								}
+
+								{
+									uint64_t radio_bar_id = __LINE__;
+									IMGUI_Widget *radio = imgui_widget_ex(radio_bar_id,
+										(IMGUI_Style){
+										  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+										  .p = 8.0f,
+										  .gap = 8.0f,
+										  .border_radius = 4.0f,
+										  .gap = 8.0f,
+										});
+
+									IMGUI_Interact interact = imgui_interact(radio_bar_id, imgui_rect_cached(radio));
+									if (interact.pressed)
+										light_index = 2;
+									if (interact.hovered)
+										radio->settings.bg = hex(0x262c36);
+
+									imgui_push_parent(radio);
+									{
+										IMGUI_Widget *label = imgui_label(__LINE__, s("Night"));
+										imgui_spacer();
+										IMGUI_Widget *btn = imgui_widget_ex(0,
+											(IMGUI_Style){
+											  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+											  .bg = light_index == 2 ? selected : WHITE,
+											  .border_radius = imgui.default_font->bake_size * 0.5f, // circle
+											});
+										btn->size[0] = imgui.default_font->bake_size, btn->size[1] = imgui.default_font->bake_size;
+
+										imgui_pop_parent();
+									}
+								}
+							}
+
+							imgui_pop_style(1);
 							imgui_pop_parent();
 						}
 						imgui_pop_parent();
-
-						imgui_pop_style(1);
 					}
 					imgui_pop_parent();
 
@@ -1546,10 +1434,6 @@ int main(void) {
 							topbar_interact.double_release = false;
 							topbar_interact.released = false;
 							topbar_interact.held = false;
-
-							Rectangle rect = imgui_rect_cached(topbar);
-							float2 offset = sub2(mouse, make2(rect.x, rect.y));
-							panel_offset = sub2(mouse, mouse_grab_offset);
 						}
 					}
 
@@ -1628,8 +1512,68 @@ int main(void) {
 					imgui_position_tree(root);
 				}
 			} break;
-			case VIEWPORT_STATE_GAME: {
+			case VIEWPORT_STATE_GAME: { // :game
 				os_cursor_capture(main_render, input_key_pressed(KEY_CODE_E) ? !os_cursor_captured(main_render) : os_cursor_captured(main_render));
+
+				static uint32_t heart_count = 8;
+				// :ui
+				{
+					IMGUI_Widget *heal_hurt_container = imgui_widget_ex(shash("heal_hurt_container"),
+						(IMGUI_Style){
+						  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIT },
+						  .align = { IMGUI_ALIGN_RIGHT, IMGUI_ALIGN_CENTER },
+						  .p = 12.0f,
+						  .gap = 8.0f,
+						});
+					heal_hurt_container->size[0] = viewport.width;
+
+					imgui_push_parent(heal_hurt_container);
+					{
+						IMGUI_Style btn_style = {
+							.p = 12.0f,
+							.bg = hex(0x3b383d),
+							.fg = WHITE,
+						};
+
+						imgui_push_style(btn_style);
+
+						if (imgui_button_label(s("Heal VFX")).pressed) {
+							LOG_INFO("Heal");
+						}
+						if (imgui_button_label(s("Hurt VFX")).pressed) {
+							LOG_INFO("Hurt");
+						}
+
+						imgui_pop_style(1);
+					}
+					imgui_pop_parent();
+					imgui_layout(heal_hurt_container);
+
+					IMGUI_Widget *heart_container = imgui_widget_ex(__LINE__,
+						(IMGUI_Style){
+						  .flow = IMGUI_HORIZONTAL,
+						  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+						  .p = 12.0f,
+						  .gap = 2.0f,
+						});
+					{
+						IMGUI_Style style = {
+							.fg = WHITE,
+						};
+						imgui_push_style(style);
+
+						imgui_push_parent(heart_container);
+						for (uint32_t index = 0; index < heart_count; ++index)
+							imgui_image(hash64_combine(__LINE__, index), &heart_image, 0.13f);
+
+						imgui_pop_style(1);
+						imgui_pop_parent();
+					}
+					imgui_layout(heart_container);
+
+					uint32_t x = 0;
+					(void)x;
+				}
 
 				if (0)
 					for (uint32_t index = 0; index < scene->entity_count; ++index) { // :heightmap
@@ -1823,7 +1767,7 @@ int main(void) {
 							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
 							velocity = scale3(velocity, 1.0f - t_min);
 
-							draw3_arrow(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
+							draw3d_arrow(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
 						}
 					}
 
@@ -1974,19 +1918,31 @@ int main(void) {
 						widget->settings.image,
 						(float2){ 0 },
 						0.0f,
-						0.0f, TRANSPARENT, splat4(widget->settings.border_radius), widget->settings.fg);
+						widget->settings.border_width, widget->settings.border, splat4(widget->settings.border_radius), widget->settings.fg);
 				} else if (widget->settings.text.length) {
 					/* draw2d_rect(batch_2d, imgui_rect_live(widget), ORANGE); */
 					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
 					draw2d_textf(batch_2d, font, wrap2(widget->offset), widget->settings.fg, widget->settings.text);
 				} else {
-					draw2d_rect_rounded(batch_2d, imgui_rect_live(widget), splat4(widget->settings.border_radius), widget->settings.bg);
+					draw2d_quad(
+						batch_2d,
+						imgui_rect_live(widget),
+						(Rectangle){ 0 },
+						0, (float2){ 0 }, 0.0f,
+						widget->settings.border_width, widget->settings.border,
+						splat4(widget->settings.border_radius), widget->settings.bg);
 				}
 				/* if (imgui_valid(parent)) */
 				/* 	EndScissorMode(); */
 			}
 		}
 		imgui_frame_end();
+
+		/* draw2d_quad( */
+		/* 	batch_2d, */
+		/* 	rect(24.0f, 24.0f, 200.0f, 200.0f), */
+		/* 	(Rectangle){ 0 }, 0, (float2){ 0 }, */
+		/* 	0.0f, 4.0f, RED, (float4){ 0.0f, 32.0f, 32.0f, 0.0f }, WHITE); */
 
 		if (draw_collision_shapes) {
 			for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
@@ -1998,7 +1954,7 @@ int main(void) {
 				if (entity->shape.kind == SHAPE_KIND_AABB3)
 					a = shape3_from_aabb3(aabb3_from_center(aabb3_center(entity->shape.as.aabb3), mul3(aabb3_half_extent(entity->shape.as.aabb3), entity->transform.scale)));
 
-				draw3_shape_outline(batch_line3, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
+				draw3d_shape_outline(batch_line3, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
 			}
 		}
 
@@ -2676,7 +2632,7 @@ int main(void) {
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
 					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
-					vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
+					vkDeviceWaitIdle(device->handle);
 
 					gfx_shader_destroy(device, shaders[ID]);
 					String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
@@ -2692,7 +2648,7 @@ int main(void) {
 				OS_Timestamp now = MAX(fs_ts, vs_ts);
 				if (now != shader_ts[ID]) {
 					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
-					vkDeviceWaitIdle(device->handle); // TODO: Proper synchronization for hot-reload
+					vkDeviceWaitIdle(device->handle);
 					ShaderMetadata *metadata = &shader_to_metadata[ID];
 
 					gfx_shader_destroy(device, shaders[ID]);
@@ -2702,8 +2658,8 @@ int main(void) {
 					String8 fs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 					shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shader_to_string[ID].text);
 
-					for (uint32_t permutation = 0; permutation < metadata->permutation_count; ++permutation)
-						gfx_pipeline_ensure(device, shaders[ID], metadata->permutations[permutation]);
+					for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation)
+						gfx_pipeline_ensure(device, shaders[ID], metadata->pipelines[permutation]);
 
 					shader_ts[ID] = now;
 					arena_scratch_end(scratch);
@@ -3584,329 +3540,4 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 	cgltf_free(data);
 
 	return result;
-}
-
-void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, float2 origin, float rotation, float border_width, Color border_color, float4 radii, Color fill_color) {
-	bool ok = arena;
-	if (ok) {
-		float2 size = { dst.width, dst.height };
-		float2 min = sub2(make2(dst.x, dst.y), origin), max = add2(min, make2(dst.width, dst.height));
-		float2 corners[] = { min, { max.x, min.y }, { min.x, max.y }, max };
-
-		float2 uv0 = zero2;
-		float2 uv1 = one2;
-		if (image) {
-			uv0 = make2(src.x / image->width, src.y / image->height);
-			uv1 = make2((src.x + src.width) / image->width, (src.y + src.height) / image->height);
-		}
-		float2 uvs[] = { uv0, { uv1.x, uv0.y }, { uv0.x, uv1.y }, uv1 };
-
-		if (rotation != 0.0f) {
-			float2x2 rot = make2x2_from_rotation(DEG2RAD * rotation);
-			min = negate2(origin);
-			max = add2(min, make2(dst.width, dst.height));
-
-			corners[0] = add2(make2(dst.x, dst.y), mul2x2v(rot, min));
-			corners[1] = add2(make2(dst.x, dst.y), mul2x2v(rot, make2(max.x, min.y)));
-			corners[2] = add2(make2(dst.x, dst.y), mul2x2v(rot, make2(min.x, max.y)));
-			corners[3] = add2(make2(dst.x, dst.y), mul2x2v(rot, max));
-		}
-
-		uint32_t imageid = image ? image->handle->imageid : 0;
-		// clang-format off
-        QuadVertex2D quad[] = {
-            // pos      // tex
-            (QuadVertex2D){ .position = corners[0], .uv = uvs[0] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[2], .uv = uvs[2] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[3], .uv = uvs[3] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width },  
-
-            (QuadVertex2D){ .position = corners[0], .uv = uvs[0] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[3], .uv = uvs[3] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[1], .uv = uvs[1] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-        };
-		// clang-format on
-
-		memory_copy(arena_push_count(arena, QuadVertex2D, 6), quad, sizeof(quad));
-	}
-}
-
-void draw2d_rect_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, Color color) {
-	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, origin, rotation, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), color);
-}
-
-void draw2d_rect(Arena *arena, Rectangle rect, Color color) {
-	draw2d_rect_ex(arena, rect, zero2, 0.0f, color);
-}
-
-void draw2d_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
-	draw2d_quad(arena, rect, (Rectangle){ 0 }, 0, zero2, 0, thickness, color, splat4(0.0f), TRANSPARENT);
-}
-
-void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color) {
-	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, zero2, 0.0f, 0.0f, rgba(0, 0, 0, 0), radii, color);
-}
-
-void draw2d_rect_rounded_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, float4 radii, Color color) {
-	draw2d_quad(arena, rect, rect(0.0f, 0.0f, rect.width, rect.height), 0, origin, rotation, 0.0f, rgba(0, 0, 0, 0), radii, color);
-}
-
-void draw2_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, Color tint) {
-	draw2d_quad(arena, dst, src, image, zero2, 0.0f, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), tint);
-}
-
-void draw2_sprite(Arena *arena, float2 position, Image2D *image, Color tint) {
-	draw2_sprite_ex(arena, rect(0, 0, image->width, image->height), rect(position.x, position.y, image->width, image->height), image, tint);
-}
-
-void draw2d_point(Arena *arena, float2 position, float radius, Color color) {
-	draw2d_quad(arena, rect(position.x, position.y, radius * 2.0, radius * 2.0), (Rectangle){ 0 }, 0, splat2(radius), 0.0, 0.0, TRANSPARENT, splat4(radius), color);
-}
-
-void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String8 format, ...) {
-	ArenaTemp scratch = arena_scratch_begin(arena);
-
-	bool ok = arena && font;
-	if (ok) {
-		va_list args;
-		va_start(args, format);
-		String8 text = str8_push_format_list(scratch.arena, format, args);
-		va_end(args);
-
-		float y_offset = 0.0f;
-		for (uint32_t index = 0; index < text.length; ++index) {
-			uint8_t c = text.text[index];
-			Glyph *glyph = &font->glyphs[c];
-			y_offset = maxf(y_offset, glyph->src.height);
-		}
-
-		float x_offset = 0.0f;
-		for (uint32_t index = 0; index < text.length; ++index) {
-			uint8_t c = text.text[index];
-			if (c == '\n') {
-				x_offset = 0.0f;
-				y_offset += font->bake_size;
-			}
-
-			Glyph *glyph = &font->glyphs[c];
-
-			Rectangle dst = {
-				.x = position.x + x_offset + (glyph->bearing.x),
-				.y = position.y + y_offset + (glyph->bearing.y),
-				.width = glyph->src.width,
-				.height = glyph->src.height,
-			};
-
-			draw2d_quad(arena, dst, glyph->src, &font->atlas, splat2(0.0f), 0.0f, 0.0f, TRANSPARENT, splat4(0.0f), color);
-
-			x_offset += glyph->advance_x;
-		}
-	}
-
-	arena_scratch_end(scratch);
-}
-
-void draw2_triangle(Arena *arena, Triangle2 t, float thickness, Color color) {
-	draw2_line(arena, t.a, t.b, thickness, color);
-	draw2_line(arena, t.b, t.c, thickness, color);
-	draw2_line(arena, t.c, t.a, thickness, color);
-}
-
-void draw2_line(Arena *arena, float2 start, float2 end, float thickness, Color color) {
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
-		.a = make4(start.x, start.y, 0.0f, thickness),
-		.b = make4(end.x, end.y, 0.0f, thickness),
-		.color = color_pack_uint32(color),
-	};
-}
-
-void draw2_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color) {
-	float2 shaft_end = add2(start, scale2(sub2(end, start), 0.75f));
-	draw2_line(arena, start, shaft_end, thickness, color);
-
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
-		.a = make4(shaft_end.x, shaft_end.y, 0.0f, thickness * 4.0f),
-		.b = make4(end.x, end.y, 0.0f, 0.0f),
-		.color = color_pack_uint32(color),
-	};
-}
-
-void draw3_arc(Arena *arena, float3 center, float radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color) {
-	for (uint32_t i = 0; i < segments; ++i) {
-		float a = ((float)i / segments) * angle_span;
-		float an = ((float)(i + 1) / segments) * angle_span;
-		float ca = cosf(a), sa = sinf(a);
-		float can = cosf(an), san = sinf(an);
-
-		float3 p0, p1;
-		switch (plane) {
-			case SIDE_BOTTOM:
-			case SIDE_TOP:
-				p0 = (float3){ center.x + ca * radius, center.y, center.z + sa * radius };
-				p1 = (float3){ center.x + can * radius, center.y, center.z + san * radius };
-				break;
-			case SIDE_LEFT:
-			case SIDE_RIGHT:
-				p0 = (float3){ center.x, center.y + sa * radius, center.z + ca * radius };
-				p1 = (float3){ center.x, center.y + san * radius, center.z + can * radius };
-				break;
-			case SIDE_BACK:
-			case SIDE_FRONT:
-				p0 = (float3){ center.x + ca * radius, center.y + sa * radius, center.z };
-				p1 = (float3){ center.x + can * radius, center.y + san * radius, center.z };
-				break;
-
-			default:
-				ASSERT(false);
-				break;
-		}
-
-		draw3_line(arena, p0, p1, thickness, color);
-	}
-}
-
-void draw3_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
-	draw3_arc(arena, center, radius, segments, SIDE_TOP, TAU, thickness, color);
-	draw3_arc(arena, center, radius, segments, SIDE_RIGHT, TAU, thickness, color);
-	draw3_arc(arena, center, radius, segments, SIDE_FRONT, TAU, thickness, color);
-}
-
-void draw3_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
-	LineVertex3D *spine_points = arena_push_count(arena, LineVertex3D, 8);
-	LineVertex3D spine[] = {
-		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), zero3 },
-		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), zero3 },
-		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(WHITE), zero3 },
-		{ { a.x, a.y, a.z + radius, thickness }, { a.x, b.y, a.z + radius, thickness }, color_pack_uint32(WHITE), zero3 },
-	};
-	memory_copy_array(spine_points, spine);
-
-	for (uint32_t end = 0; end < 2; ++end) {
-		float3 c = end == 0 ? a : b;
-		float signed_r = (end == 0) ? -radius : radius;
-
-		draw3_arc(arena, c, radius, segments, SIDE_TOP, TAU, thickness, WHITE);
-		draw3_arc(arena, c, signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
-		draw3_arc(arena, c, signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
-	}
-}
-
-void draw3_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
-	float3 min = aabb3.min;
-	float3 max = aabb3.max;
-	float3 bounding_box_size = sub3(max, min);
-
-	LineVertex3D outline[] = {
-		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-	};
-
-	LineVertex3D *points = arena_push_count(arena, LineVertex3D, countof(outline));
-	memory_copy_array(points, outline);
-}
-
-void draw3_line(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
-		.a = make4_from3(start, thickness),
-		.b = make4_from3(end, thickness),
-		.color = color_pack_uint32(color),
-	};
-}
-
-void draw3_arrow(Arena *arena, float3 start, float3 end, float thickness, Color color,
-	float4x4 view, float4x4 projeciton, float viewport_width) {
-	float3 direction = sub3(end, start);
-	float total_world_length = len3(direction);
-	if (total_world_length < EPSILON)
-		return;
-
-	float3 dir_norm = scale3(direction, 1.0f / total_world_length);
-
-	float4x4 vp = mul4x4(projeciton, view);
-	float w = vp.elements[3] * end.x + vp.elements[7] * end.y + vp.elements[11] * end.z + vp.elements[15] * 1.0f;
-	float desired_pixel_length = thickness * 5.0f;
-
-	float world_head_length = (2.0f * w * desired_pixel_length) / (projeciton.elements[0] * viewport_width);
-	if (world_head_length > total_world_length * 0.5f)
-		world_head_length = total_world_length * 0.5f;
-
-	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
-
-	draw3_line(arena, start, shaft_end, thickness, color);
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
-		.a = make4_from3(shaft_end, thickness * 4.0f),
-		.b = make4_from3(end, 0.0f),
-		.color = color_pack_uint32(color),
-	};
-}
-
-void draw3_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color) {
-	draw3_line(arena, t.a, t.b, thickness, color);
-	draw3_line(arena, t.b, t.c, thickness, color);
-	draw3_line(arena, t.c, t.a, thickness, color);
-}
-
-void draw3_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
-	float3 right = { 0 }, up = { 0 };
-	float dot = dot3(plane.normal, unit3(UP));
-	if (fabsf(dot) >= 0.99f) {
-		right.x = dot > 0 ? 1.0f : -1.0f;
-		up.z = -1.0f;
-	} else {
-		right = norm3(cross3(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }));
-		up = norm3(cross3(plane.normal, right));
-	}
-
-	float3 center = scale3(plane.normal, plane.distance);
-	float3 h = scale3(right, width * 0.5f);
-	float3 v = scale3(up, height * 0.5f);
-
-	float3 corners[] = {
-		add3(sub3(center, h), v),
-		add3(add3(center, h), v),
-		sub3(add3(center, h), v),
-		sub3(sub3(center, h), v),
-	};
-
-	for (uint32_t index = 0; index < countof(corners); ++index)
-		draw3_line(arena, corners[index], corners[(index + 1) % countof(corners)], thickness, color);
-}
-
-void draw3_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness) {
-	switch (shape->kind) {
-		case SHAPE_KIND_AABB3:
-			draw3_aabb_outline(arena, aabb3_move(shape->as.aabb3, offset), thickness, WHITE);
-			break;
-		case SHAPE_KIND_SPHERE: {
-			float3 c = add3(shape->as.sphere.center, offset);
-			float r = shape->as.sphere.radius;
-			uint8_t segments = 32;
-
-			draw3_sphere_outline(arena, c, r, segments, thickness, WHITE);
-		} break;
-		case SHAPE_KIND_CAPSULE3: {
-			float r = shape->as.capsule.radius;
-			float3 centers[] = {
-				add3(shape->as.capsule.a, offset),
-				add3(shape->as.capsule.b, offset),
-			};
-			draw3_capsule_outline(arena, centers[0], centers[1], r, 32, thickness, WHITE);
-		} break;
-			break;
-		case SHAPE_KIND_PLANE:
-			break;
-		case SHAPE_KIND_CONVEX_POLYGON:
-			break;
-		case SHAPE_KIND_MAX:
-			break;
-	}
 }

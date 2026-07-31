@@ -41,7 +41,7 @@
       "pass": "OPAQUE"
     },
     {
-      "features": "DRAW_MESH | CAST_SHADOW | INTERACTABLE | COLLIDABLE | FOLLOW_TARGET",
+      "features": "DRAW_MESH | CAST_SHADOW | INTERACTABLE | COLLIDABLE",
       "transform": {
         "translation": [
           10,

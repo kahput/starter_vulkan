@@ -9,8 +9,8 @@
 
 typedef struct {
 	String8 filepaths[SHADER_STAGE_MAX];
-	PipelineOptions permutations[8];
-	uint32_t permutation_count;
+	PipelineOptions pipelines[8];
+	uint32_t pipeline_count;
 } ShaderMetadata;
 
 typedef enum {

@@ -37,6 +37,7 @@ String8 str8_concat(Arena *arena, String8 a, String8 b) {
 	memory_copy(result.text + a.length, b.text, b.length);
 
 	result.text[result.length] = '\0';
+
 	return result;
 }
 

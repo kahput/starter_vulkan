@@ -176,6 +176,8 @@ typedef enum blend_factor {
 	BLEND_FACTOR_ONE_MINUS_SRC_ALPHA = 7,
 	BLEND_FACTOR_DST_ALPHA = 8,
 	BLEND_FACTOR_ONE_MINUS_DST_ALPHA = 9,
+
+	BLEND_FACTOR_MAX,
 } BlendFactor;
 
 typedef enum {
@@ -489,9 +491,9 @@ typedef struct {
 	Arena arena[1];
 
 	VkInstance instance;
+	VkPhysicalDevice gpu;
 	VkDevice handle;
 	struct {
-		VkPhysicalDevice gpu;
 		VkPhysicalDeviceLimits limits;
 		VkPhysicalDeviceProperties properties;
 	} info;
@@ -561,4 +563,7 @@ typedef struct Image2D {
 	PixelFormat format;
 	uint32_t width, height;
 } Image2D;
+INLINE Rectangle image_rect(Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
+INLINE float2 image_size(Image2D image) { return (float2){ image.width, image.height }; }
+
 #endif

@@ -31,7 +31,7 @@ endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
-set(NATIVE_SCRATCHES scratch xcb_scratch skinning material_scratch spriv)
+set(NATIVE_SCRATCHES scratch xcb_scratch skinning material_scratch spriv enum_parser)
 
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -162,6 +162,9 @@ else()
         set(SRC 
             "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c"
             "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/res/tables.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
 
             "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"

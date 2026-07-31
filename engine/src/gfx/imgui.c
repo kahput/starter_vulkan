@@ -172,15 +172,18 @@ IMGUI_Widget *imgui_child(uint64_t id, IMGUI_Widget *parent) {
 }
 
 void imgui_parent(IMGUI_Widget *child, IMGUI_Widget *parent) {
-	bool ok = context && imgui_valid(parent) && imgui_valid(child) && child->parent != indexof(context->widgets, parent);
+	bool ok = context && imgui_valid(child);
 	if (ok) {
 		uint32_t child_index = indexof(context->widgets, child);
 		imgui__remove_child(&context->widgets[child->parent], child_index);
+		child->parent = 0;
 
-		ASSERT(parent->children_count < countof(parent->children));
+		if (parent) {
+			ASSERT(parent->children_count < countof(parent->children));
 
-		child->parent = indexof(context->widgets, parent);
-		parent->children[parent->children_count++] = child_index;
+			child->parent = indexof(context->widgets, parent);
+			parent->children[parent->children_count++] = child_index;
+		}
 	}
 }
 
@@ -200,8 +203,8 @@ void imgui__parse_style_confg(IMGUI_Style *cfg, IMGUI_Settings *style) {
 	style->mode[0] = cfg->mode[0], style->mode[1] = cfg->mode[1];
 	style->align[0] = cfg->align[0], style->align[1] = cfg->align[1];
 
-	style->bg = cfg->bg, style->fg = cfg->fg;
-	style->border_radius = cfg->border_radius;
+	style->bg = cfg->bg, style->fg = cfg->fg, style->border = cfg->border;
+	style->border_radius = cfg->border_radius, style->border_width = cfg->border_width;
 
 	// clang-format off
 	style->padding[AXIS_X][0] = cfg->pl ? cfg->pl : cfg->ph ? cfg->ph : cfg->p;
@@ -414,37 +417,42 @@ void imgui_position_tree(IMGUI_Widget *root) {
 	}
 }
 
-IMGUI_Widget *imgui_label(String8 label) {
-	IMGUI_Widget *text = imgui_widget(hash64(label.text, label.length));
-	text->settings.text = label;
-	text->settings.mode[0] = IMGUI_MODE_FIXED, text->settings.mode[1] = IMGUI_MODE_FIXED;
+IMGUI_Widget *imgui_label(uint64_t id, String8 label) {
+	IMGUI_Widget *result = imgui_widget(id);
+	result->settings.text = label;
+	result->settings.mode[0] = IMGUI_MODE_FIXED, result->settings.mode[1] = IMGUI_MODE_FIXED;
 
-	Font *font = text->settings.font ? text->settings.font : context->default_font;
+	Font *font = result->settings.font ? result->settings.font : context->default_font;
 	if (font) {
 		float2 text_size = measure_text(font, label);
-		text->size[0] = text_size.x, text->size[1] = text_size.y;
+		result->size[0] = text_size.x, result->size[1] = text_size.y;
 	}
 
-	return text;
+	return result;
+}
+
+IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale) {
+	IMGUI_Widget *result = imgui_widget(id);
+
+	result->settings.image = image;
+	result->settings.mode[0] = IMGUI_MODE_FIXED, result->settings.mode[1] = IMGUI_MODE_FIXED;
+
+	if (image) {
+		result->size[0] = image->width * scale, result->size[1] = image->height * scale;
+	}
+
+	return result;
 }
 
 IMGUI_Interact imgui_button_label(String8 label) {
 	IMGUI_Widget *box = imgui_widget(hash64(label.text, label.length));
-	IMGUI_Widget *text = imgui_child(0, box);
-	text->settings.text = label;
-	text->settings.mode[0] = IMGUI_MODE_FIXED, text->settings.mode[1] = IMGUI_MODE_FIXED;
-
-	Font *font = text->settings.font ? text->settings.font : context->default_font;
-	if (font) {
-		float2 text_size = measure_text(font, label);
-		text->size[0] = text_size.x, text->size[1] = text_size.y;
-	}
-
+	imgui_parent(imgui_label(hash64_combine(box->id, __LINE__), label), box);
 	return imgui_interact(box->id, imgui_rect_cached(box));
 }
 
 IMGUI_Interact imgui_button_image(Image2D *image, float scale) {
 	IMGUI_Widget *box = imgui_widget(hash64(image, 8));
+
 	IMGUI_Widget *icon = imgui_child(0, box);
 	icon->settings.image = image;
 	icon->settings.mode[0] = IMGUI_MODE_FIXED, icon->settings.mode[1] = IMGUI_MODE_FIXED;
@@ -459,7 +467,7 @@ IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max) {
 	IMGUI_Widget *track = imgui_widget(id);
 	IMGUI_Widget *thumb = imgui_child(hash64_combine(id, __LINE__), track);
 
-	uint32_t flow = track->parent ? context->widgets[track->parent].settings.flow : 0;
+	uint32_t flow = IMGUI_HORIZONTAL;
 
 	track->settings.mode[flow] = IMGUI_MODE_GROW;
 	track->settings.mode[!flow] = IMGUI_MODE_FIXED;

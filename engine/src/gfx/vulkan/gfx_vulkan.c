@@ -192,7 +192,7 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 		VkMemoryRequirements memory_requirements;
 		vkGetBufferMemoryRequirements(device->handle, result->handle, &memory_requirements);
 
-		uint32_t memory_type_index = gfx__find_memory_type(device->info.gpu, memory_requirements.memoryTypeBits, memory_flags);
+		uint32_t memory_type_index = gfx__find_memory_type(device->gpu, memory_requirements.memoryTypeBits, memory_flags);
 		size_t allocation_size = memory_requirements.size;
 
 		VkMemoryAllocateFlagsInfo allocate_flag_info = {
@@ -310,7 +310,7 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 		VkMemoryAllocateInfo allocate_info = {
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 			.allocationSize = memory_requirements.size,
-			.memoryTypeIndex = gfx__find_memory_type(device->info.gpu, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+			.memoryTypeIndex = gfx__find_memory_type(device->gpu, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
 		};
 
 		ok = vkAllocateMemory(device->handle, &allocate_info, 0, &result->memory) == VK_SUCCESS;
@@ -352,7 +352,7 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 		gfx_cmd_image_upload(cmd, result, result->width, result->height, options.pixels);
 
 		VkFormatProperties format_properties;
-		vkGetPhysicalDeviceFormatProperties(device->info.gpu, vk_format, &format_properties);
+		vkGetPhysicalDeviceFormatProperties(device->gpu, vk_format, &format_properties);
 		bool blit_support = format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 		if (blit_support == false) {
 			LOG_WARN("pixel format (%s) does not support linear blitting.", pixel_format_to_string[options.format]);
@@ -925,27 +925,27 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const
 	VkPresentModeKHR *present_modes;
 
 	if (ok) { // query surface suitability
-		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->info.gpu, result->surface, &capabilities);
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->gpu, result->surface, &capabilities);
 
-		vkGetPhysicalDeviceSurfaceFormatsKHR(device->info.gpu, result->surface, &surface_format_count, 0);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device->gpu, result->surface, &surface_format_count, 0);
 		surface_formats = arena_push_count(scratch.arena, VkSurfaceFormatKHR, surface_format_count);
-		vkGetPhysicalDeviceSurfaceFormatsKHR(device->info.gpu, result->surface, &surface_format_count, surface_formats);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device->gpu, result->surface, &surface_format_count, surface_formats);
 
-		vkGetPhysicalDeviceSurfacePresentModesKHR(device->info.gpu, result->surface, &present_mode_count, 0);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(device->gpu, result->surface, &present_mode_count, 0);
 		present_modes = arena_push_count(scratch.arena, VkPresentModeKHR, present_mode_count);
-		vkGetPhysicalDeviceSurfacePresentModesKHR(device->info.gpu, result->surface, &present_mode_count, present_modes);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(device->gpu, result->surface, &present_mode_count, present_modes);
 
 		uint32_t queue_family_count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, 0);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->gpu, &queue_family_count, 0);
 		VkQueueFamilyProperties *queue_family_properties = arena_push_count(scratch.arena, VkQueueFamilyProperties, queue_family_count);
-		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, queue_family_properties);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->gpu, &queue_family_count, queue_family_properties);
 
 		if (device->present_index == -1)
 			for (uint32_t index = 0; index < queue_family_count; ++index) {
 				VkQueueFlags flags = queue_family_properties[index].queueFlags;
 
 				VkBool32 present_support = false;
-				vkGetPhysicalDeviceSurfaceSupportKHR(device->info.gpu, index, result->surface, &present_support);
+				vkGetPhysicalDeviceSurfaceSupportKHR(device->gpu, index, result->surface, &present_support);
 				if (present_support && device->present_index == -1) {
 					device->present_index = index;
 					break;
@@ -1315,13 +1315,6 @@ bool gfx_device_make(GFX_Device *device) {
 	if (ok)
 		ok = gfx__frame_resources_make(device);
 
-	if (ok)
-		device->global_range = (VkPushConstantRange){
-			.stageFlags = VK_SHADER_STAGE_ALL,
-			.offset = 0,
-			.size = 128
-		};
-
 	if (ok) {
 		device->arena[0] = arena_make(MiB(32));
 		device->buffer_pool = arena_push_count(device->arena, GFX_Buffer, MAX_BUFFERS);
@@ -1339,6 +1332,13 @@ bool gfx_device_make(GFX_Device *device) {
 		device->pipeline_count += 1;
 		device->swapchain_count += 1;
 	}
+
+	if (ok)
+		device->global_range = (VkPushConstantRange){
+			.stageFlags = VK_SHADER_STAGE_ALL,
+			.offset = 0,
+			.size = 128
+		};
 
 	if (ok) {
 		device->frame_staging_buffer_slice_size = MiB(64);
@@ -2048,6 +2048,10 @@ void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline) {
 	}
 }
 
+void gfx_cmd_push_constant(GFX_Command *cmd, uint64_t size, void *data) {
+	vkCmdPushConstants(cmd->handle, cmd->active_shader->layout, VK_SHADER_STAGE_ALL, 0, size, data);
+}
+
 void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
@@ -2235,12 +2239,12 @@ bool gfx__device_make(GFX_Device *device) {
 
 		for (uint32_t physical_device_index = 0; physical_device_index < physical_device_count; ++physical_device_index) {
 			if (gfx__device_suitable(device, physical_devices[physical_device_index])) {
-				device->info.gpu = physical_devices[physical_device_index];
+				device->gpu = physical_devices[physical_device_index];
 				break;
 			}
 		}
 
-		ok = device->info.gpu != 0;
+		ok = device->gpu != 0;
 		if (ok == false)
 			LOG_ERROR("failed to find suitable graphics card with Vulkan 1.3 support.");
 	}
@@ -2249,10 +2253,10 @@ bool gfx__device_make(GFX_Device *device) {
 		LOG_INFO("Device: %s", device->info.properties.deviceName);
 
 		uint32_t queue_family_count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, 0);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->gpu, &queue_family_count, 0);
 
 		VkQueueFamilyProperties *queue_family_properties = arena_push_count(scratch.arena, VkQueueFamilyProperties, queue_family_count);
-		vkGetPhysicalDeviceQueueFamilyProperties(device->info.gpu, &queue_family_count, queue_family_properties);
+		vkGetPhysicalDeviceQueueFamilyProperties(device->gpu, &queue_family_count, queue_family_properties);
 
 		device->graphics_index = -1, device->present_index = -1,
 		device->transfer_index = -1, device->compute_index = -1;
@@ -2261,7 +2265,7 @@ bool gfx__device_make(GFX_Device *device) {
 			VkQueueFlags flags = queue_family_properties[index].queueFlags;
 
 			/* VkBool32 present_support = false; */
-			/* vkGetPhysicalDeviceSurfaceSupportKHR(device->info.gpu, index, device->surface.handle, &present_support); */
+			/* vkGetPhysicalDeviceSurfaceSupportKHR(device->gpu, index, device->surface.handle, &present_support); */
 
 			if ((flags & VK_QUEUE_GRAPHICS_BIT) && device->graphics_index == -1) {
 				device->graphics_index = index;
@@ -2346,7 +2350,7 @@ bool gfx__device_make(GFX_Device *device) {
 			.ppEnabledExtensionNames = required_device_extensions,
 		};
 
-		ok = vkCreateDevice(device->info.gpu, &device_info, 0, &device->handle) == VK_SUCCESS;
+		ok = vkCreateDevice(device->gpu, &device_info, 0, &device->handle) == VK_SUCCESS;
 	}
 
 	if (ok) { // get the queue handles from indices

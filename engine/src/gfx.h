@@ -88,6 +88,7 @@ void gfx_cmd_scissor(GFX_Command *cmd, Rectangle area);
 void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader); // binds first pipeline
 void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline);
 
+void gfx_cmd_push_constant(GFX_Command *cmd, uint64_t size, void *data);
 void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z);
 
 static inline uint32_t gfx_image_id(GFX_Device *device, GFX_Image *image) {

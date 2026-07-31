@@ -9,7 +9,7 @@
 
 #include "utils/input.h"
 
-typedef bool (*TickFn)(Arena *arena, InputState *input);
+typedef bool (*TickFn)(Arena *permanent, Arena *frame);
 
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
@@ -24,10 +24,8 @@ int main(void) {
 	GFX_Device gfx = { 0 };
 	gfx_device_make(&gfx);
 
-	InputState input_state = { 0 };
-	input_set_context(&input_state);
-
-	Arena arena = arena_make(MiB(16));
+	Arena permanenet = arena_make(MiB(128));
+	Arena frame = arena_make(MiB(16));
 
 	for (bool is_open = true; is_open;) {
 		OS_Timestamp now = os_file_last_modified(src);
@@ -42,33 +40,8 @@ int main(void) {
 			os_library_symbol(lib, s("tick"), &tick);
 		}
 
-		input_update();
-		for (OS_Event event; os_event_poll(&event);) {
-			switch (event.type) {
-				case OS_EVENT_TYPE_SURFACE_CLOSE:
-					is_open = false;
-					break;
-
-				case OS_EVENT_TYPE_KEY_PRESS:
-				case OS_EVENT_TYPE_KEY_RELEASE:
-					input_feed_key(event.as.key.key_code, event.type == OS_EVENT_TYPE_KEY_PRESS);
-					break;
-
-				case OS_EVENT_TYPE_MOUSE_PRESS:
-				case OS_EVENT_TYPE_MOUSE_RELEASE:
-					input_feed_mouse_button(event.as.mouse_button.button, event.type == OS_EVENT_TYPE_MOUSE_PRESS);
-					break;
-
-				case OS_EVENT_TYPE_MOUSE_MOVE:
-					input_feed_mouse_motion((double)event.as.mouse_move.x, (double)event.as.mouse_move.y);
-					break;
-				default:
-					break;
-			}
-		}
-
 		if (tick)
-			is_open &= tick(&arena, &input_state);
+			is_open &= tick(&permanenet, &frame);
 	}
 
 	gfx_device_destroy(&gfx);
@@ -76,6 +49,7 @@ int main(void) {
 	os_library_unload(lib);
 	os_display_shutdown();
 
-	arena_destroy(&arena);
+	arena_destroy(&permanenet);
+	arena_destroy(&frame);
 	return 0;
 }

@@ -40,44 +40,44 @@ static bool is_digit(char c) { return c >= '0' && c <= '9'; }
 static bool is_aplha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
 static bool is_alnum(char c) { return is_aplha(c) || is_digit(c); }
 
-static bool lexer___at_end(Lexer *lexer) { return lexer->at[0] == 0 || (uint32_t)(lexer->at - lexer->source.text) >= lexer->source.length; }
+static bool lexer___at_end(Lexer *lexer) { return lexer->cursor[0] == 0 || (uint32_t)(lexer->cursor - lexer->source.text) >= lexer->source.length; }
 static void lexer__advance_newline(Lexer *lexer) {
-	if (lexer->at[0] == '\r' && lexer->at[1] == '\n')
-		++lexer->at;
-	++lexer->at;
+	if (lexer->cursor[0] == '\r' && lexer->cursor[1] == '\n')
+		++lexer->cursor;
+	++lexer->cursor;
 	++lexer->line;
 	lexer->column = 1;
 }
 
 void lexer__skip_whitespace_and_comments(Lexer *lexer) {
 	while (lexer___at_end(lexer) == false) {
-		char c = lexer->at[0];
+		char c = lexer->cursor[0];
 
 		if (c == '\r' || c == '\n')
 			lexer__advance_newline(lexer);
 
 		else if (c == ' ' || c == '\t') {
-			++lexer->at;
+			++lexer->cursor;
 			++lexer->column;
 		}
 
-		else if (c == '/' && lexer->at[1] == '/')
-			while (lexer___at_end(lexer) == false && is_newline(lexer->at[0]) == false)
-				++lexer->at;
+		else if (c == '/' && lexer->cursor[1] == '/')
+			while (lexer___at_end(lexer) == false && is_newline(lexer->cursor[0]) == false)
+				++lexer->cursor;
 
-		else if (c == '/' && lexer->at[1] == '*') {
-			lexer->at += 2;
+		else if (c == '/' && lexer->cursor[1] == '*') {
+			lexer->cursor += 2;
 			lexer->column += 2;
 			while (lexer___at_end(lexer) == false) {
-				if (lexer->at[0] == '*' && lexer->at[1] == '/') {
-					lexer->at += 2;
+				if (lexer->cursor[0] == '*' && lexer->cursor[1] == '/') {
+					lexer->cursor += 2;
 					lexer->column += 2;
 					break;
 				}
-				if (is_newline(lexer->at[0]))
+				if (is_newline(lexer->cursor[0]))
 					lexer__advance_newline(lexer);
 				else {
-					++lexer->at;
+					++lexer->cursor;
 					++lexer->column;
 				}
 			}
@@ -137,18 +137,18 @@ TokenType lexer__match_keyword(Lexer *lexer, Token *token) {
 Token lexer__scan_token(Lexer *lexer) {
 	lexer__skip_whitespace_and_comments(lexer);
 
-	if (lexer->at == NULL || lexer___at_end(lexer))
+	if (lexer->cursor == NULL || lexer___at_end(lexer))
 		return (Token){ .type = TOKEN_EOF, .line = lexer->line, .column = lexer->column };
 
 	Token token = {
 		.type = TOKEN_UNKNOWN,
-		.lexeme = { .text = lexer->at, .length = 1 },
+		.lexeme = { .text = lexer->cursor, .length = 1 },
 		.line = lexer->line,
 		.column = lexer->column,
 	};
 
-	char c = lexer->at[0];
-	++lexer->at;
+	char c = lexer->cursor[0];
+	++lexer->cursor;
 	++lexer->column;
 
 	switch (c) {
@@ -172,8 +172,8 @@ Token lexer__scan_token(Lexer *lexer) {
 			// clang-format on
 
 		case '-': {
-			if (lexer->at[0] == '-') {
-				++lexer->at;
+			if (lexer->cursor[0] == '-') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_MINUS_MINUS;
 				token.lexeme.length = 2;
@@ -181,8 +181,8 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = TOKEN_MINUS;
 		} break;
 		case '+': {
-			if (lexer->at[0] == '+') {
-				++lexer->at;
+			if (lexer->cursor[0] == '+') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_PLUS_PLUS;
 				token.lexeme.length = 2;
@@ -190,8 +190,8 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = TOKEN_PLUS;
 		} break;
 		case '!': {
-			if (lexer->at[0] == '=') {
-				++lexer->at;
+			if (lexer->cursor[0] == '=') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_BANG_EQUAL;
 				token.lexeme.length = 2;
@@ -199,8 +199,8 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = TOKEN_BANG;
 		} break;
 		case '=': {
-			if (lexer->at[0] == '=') {
-				++lexer->at;
+			if (lexer->cursor[0] == '=') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_EQUAL_EQUAL;
 				token.lexeme.length = 2;
@@ -208,8 +208,8 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = TOKEN_EQUAL;
 		} break;
 		case '>': {
-			if (lexer->at[0] == '=') {
-				++lexer->at;
+			if (lexer->cursor[0] == '=') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_GREATER_EQUAL;
 				token.lexeme.length = 2;
@@ -217,8 +217,8 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = TOKEN_GREATER;
 		} break;
 		case '<': {
-			if (lexer->at[0] == '=') {
-				++lexer->at;
+			if (lexer->cursor[0] == '=') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_LESS_EQUAL;
 				token.lexeme.length = 2;
@@ -226,8 +226,8 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = TOKEN_LESS;
 		} break;
 		case '&': {
-			if (lexer->at[0] == '&') {
-				++lexer->at;
+			if (lexer->cursor[0] == '&') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_AMP_AMP;
 				token.lexeme.length = 2;
@@ -235,8 +235,8 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = TOKEN_AMP;
 		} break;
 		case '|': {
-			if (lexer->at[0] == '|') {
-				++lexer->at;
+			if (lexer->cursor[0] == '|') {
+				++lexer->cursor;
 				++lexer->column;
 				token.type = TOKEN_PIPE_PIPE;
 				token.lexeme.length = 2;
@@ -246,17 +246,17 @@ Token lexer__scan_token(Lexer *lexer) {
 		case '#': {
 			// TODO: Handle macros
 			bool newline_break = false;
-			if (memory_equals(lexer->at, "define WRAPPER", sizeof("define WRAPPER") - 1)) {
+			if (memory_equals(lexer->cursor, "define WRAPPER", sizeof("define WRAPPER") - 1)) {
 				uint32_t y = 0;
 			}
 			while (lexer___at_end(lexer) == false) {
-				++lexer->at;
-				if (lexer->at[0] == '\\')
+				++lexer->cursor;
+				if (lexer->cursor[0] == '\\')
 					newline_break = true;
 
-				if (lexer->at[0] == '\n' && newline_break == false)
+				if (lexer->cursor[0] == '\n' && newline_break == false)
 					break;
-				if (lexer->at[0] == '\n' && newline_break)
+				if (lexer->cursor[0] == '\n' && newline_break)
 					newline_break = false;
 			}
 			break;
@@ -264,19 +264,19 @@ Token lexer__scan_token(Lexer *lexer) {
 
 		case '"': {
 			token.type = TOKEN_STRING;
-			token.lexeme.text = lexer->at;
-			while (lexer___at_end(lexer) == false && lexer->at[0] != '"') {
-				if (lexer->at[0] == '\\' && lexer->at[1] != '\0') {
-					++lexer->at;
+			token.lexeme.text = lexer->cursor;
+			while (lexer___at_end(lexer) == false && lexer->cursor[0] != '"') {
+				if (lexer->cursor[0] == '\\' && lexer->cursor[1] != '\0') {
+					++lexer->cursor;
 					++lexer->column;
 				}
-				++lexer->at;
+				++lexer->cursor;
 				++lexer->column;
 			}
 
-			token.lexeme.length = (int)(lexer->at - token.lexeme.text);
-			if (lexer->at[0] == '"') {
-				++lexer->at;
+			token.lexeme.length = (int)(lexer->cursor - token.lexeme.text);
+			if (lexer->cursor[0] == '"') {
+				++lexer->cursor;
 				++lexer->column;
 			}
 		} break;
@@ -287,39 +287,39 @@ Token lexer__scan_token(Lexer *lexer) {
 			if (is_digit(c)) {
 				bool is_float = false;
 
-				while (is_digit(lexer->at[0])) {
-					++lexer->at;
+				while (is_digit(lexer->cursor[0])) {
+					++lexer->cursor;
 					++lexer->column;
 				}
-				if (lexer->at[0] == '.' && is_digit(lexer->at[1])) {
+				if (lexer->cursor[0] == '.' && is_digit(lexer->cursor[1])) {
 					is_float = true;
-					++lexer->at;
+					++lexer->cursor;
 					++lexer->column;
-					while (is_digit(lexer->at[0])) {
-						++lexer->at;
+					while (is_digit(lexer->cursor[0])) {
+						++lexer->cursor;
 						++lexer->column;
 					}
 				}
-				if (lexer->at[0] == 'e' || lexer->at[0] == 'E') {
+				if (lexer->cursor[0] == 'e' || lexer->cursor[0] == 'E') {
 					is_float = true;
-					++lexer->at;
+					++lexer->cursor;
 					++lexer->column;
-					if (lexer->at[0] == '+' || lexer->at[0] == '-') {
-						++lexer->at;
+					if (lexer->cursor[0] == '+' || lexer->cursor[0] == '-') {
+						++lexer->cursor;
 						++lexer->column;
 					}
-					while (is_digit(lexer->at[0])) {
-						++lexer->at;
+					while (is_digit(lexer->cursor[0])) {
+						++lexer->cursor;
 						++lexer->column;
 					}
 				}
-				token.lexeme.length = (int)(lexer->at - token.lexeme.text);
+				token.lexeme.length = (int)(lexer->cursor - token.lexeme.text);
 				token.type = is_float ? TOKEN_FLOAT : TOKEN_INTEGER;
 
 			} else if (is_aplha(c)) {
-				while (is_alnum(lexer->at[0]))
-					++lexer->at;
-				token.lexeme.length = lexer->at - token.lexeme.text;
+				while (is_alnum(lexer->cursor[0]))
+					++lexer->cursor;
+				token.lexeme.length = lexer->cursor - token.lexeme.text;
 				token.type = lexer__match_keyword(lexer, &token);
 			} else
 				break;
@@ -343,6 +343,15 @@ Token lexer_peek(Lexer *lexer) {
 	}
 
 	return lexer->peeked;
+}
+
+uint8_t *lexer_skip_to_end_of_line(Lexer *lexer) {
+	while (lexer___at_end(lexer) == false && is_newline(lexer->cursor[0]) == false)
+		++lexer->cursor;
+	uint8_t *tail = lexer->cursor - 1;
+	lexer__advance_newline(lexer);
+
+	return tail;
 }
 
 bool lexer_match(Lexer *lexer, TokenType type, Token *out) {

@@ -13,8 +13,13 @@ typedef struct {
 #define str_lit(s) (String8){ .text = (uint8_t *)s, .length = sizeof(s) - 1 }
 #define str_comp(s) { .text = (uint8_t *)s, .length = sizeof(s) - 1 }
 #define str_spread(s) (int32_t)s.length, s.text
+#define shash(s) hash64((s), sizeof((s)) - 1)
 
 String8 str8_wrap(const char *cstring);
+INLINE String8 str8_range(const char *start, const char *end) {
+	if (end <= start) return (String8){ 0 };
+	return (String8){ .text = (uint8_t *)start, .length = end - start };
+}
 
 bool str8_equals(String8 a, String8 b);
 

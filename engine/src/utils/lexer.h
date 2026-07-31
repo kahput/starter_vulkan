@@ -136,8 +136,8 @@ typedef struct {
 	String8 *keywords;
 	uint32_t keyword_count;
 
-	uint8_t *at;
-	int line;
+	uint8_t *cursor;
+	uint32_t line;
 	int column;
 
 	Token peeked;
@@ -147,11 +147,13 @@ typedef struct {
 extern const String8 token_type_to_string[TOKEN_MAX];
 
 static inline Lexer lexer_make(String8 source, String8 *keywords, uint32_t keyword_count) {
-	return (Lexer){ .source = source, .at = source.text, .line = 0, .keyword_count = keyword_count, .keywords = keywords };
+	return (Lexer){ .source = source, .cursor = source.text, .line = 1, .keyword_count = keyword_count, .keywords = keywords };
 }
 
 Token lexer_next(Lexer *lexer);
 Token lexer_peek(Lexer *lexer);
+
+uint8_t* lexer_skip_to_end_of_line(Lexer* lexer);
 
 // If the next token matches `type`, consume and return it (ok=true).
 // Otherwise leave it unconsumed and return a zeroed token (ok=false).

@@ -38,16 +38,14 @@ void main() {
     vec2 e = fs_in.size * 0.5;
 
     float outer = 1.0, ring = 0.0;
-    if (any(greaterThan(fs_in.radii, vec4(0.0)))) { 
+    if (fs_in.border_width > 0.0 || any(greaterThan(fs_in.radii, vec4(0.0)))) { 
         float dist = sd_rect_rounded(p, e, fs_in.radii);
         float aa = max(fwidth(dist), 1e-4);
         outer = 1.0 - smoothstep(-aa, aa, dist);
 
-        vec3 brgb = vec3(0.0);
         if (fs_in.border_width > 0.0) {
             float inner = 1.0 - smoothstep(-aa, aa, dist+fs_in.border_width);
             ring = clamp(outer - inner, 0.0, 1.0);
-            brgb = border.rgb;
         }
     }
 

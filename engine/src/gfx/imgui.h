@@ -5,6 +5,7 @@
 #include "core/strings.h"
 
 #include "gfx/font.h"
+#include "gfx/gfx_types.h"
 
 #define IMGUI_MAX_CHILDREN 32
 
@@ -48,8 +49,9 @@ typedef struct {
 	IMGUI_Align align[AXIS_MAX2D];
 	IMGUI_SizingMode mode[AXIS_MAX2D];
 	float child_gap, padding[AXIS_MAX2D][2];
-	float border_radius;
-	Color bg, fg;
+
+	Color bg, fg, border;
+	float border_radius, border_width;
 
 	Font *font;
 	String8 text;
@@ -82,8 +84,8 @@ typedef struct {
 
 	IMGUI_Align align[2];
 
-	Color bg, fg;
-	float border_radius;
+	Color bg, fg, border;
+	float border_radius, border_width;
 
 	float p;
 	float ph, pv;
@@ -167,10 +169,19 @@ void imgui_fit_tree(IMGUI_Widget *root);
 void imgui_grow_tree(IMGUI_Widget *root);
 void imgui_position_tree(IMGUI_Widget *root);
 
+static inline void imgui_layout(IMGUI_Widget *root) {
+	imgui_fit_tree(root);
+	imgui_grow_tree(root);
+	imgui_position_tree(root);
+}
+
 // Common widget helpers
-IMGUI_Widget *imgui_label(String8 label);
+IMGUI_Widget *imgui_label(uint64_t id, String8 label);
+IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale);
+
 IMGUI_Interact imgui_button_label(String8 label);
 IMGUI_Interact imgui_button_image(Image2D *image, float scale);
+
 IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max);
 
 IMGUI_Widget *imgui_spacer(void);
