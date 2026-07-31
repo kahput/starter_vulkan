@@ -2,6 +2,8 @@
 #include "core/debug.h"
 #include <stb/stb_truetype.h>
 
+uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX] = { 8, 12, 16, 24, 32, 64 };
+
 Font load_font(Arena *arena, String8 path, uint32_t font_size) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Font result = { 0 };

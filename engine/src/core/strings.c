@@ -157,3 +157,7 @@ double str8_to_f64(String8 s) {
 uint64_t str8_to_u64(String8 s) {
 	return strtoull((char *)s.text, 0, 10);
 }
+
+int64_t str8_to_s64(String8 s) {
+    return strtoll((char*)s.text, 0, 10);
+}

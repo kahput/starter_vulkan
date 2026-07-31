@@ -110,6 +110,7 @@ typedef enum {
 	SAMPLE_COUNT_16 = BIT(4),
 	SAMPLE_COUNT_32 = BIT(5),
 	SAMPLE_COUNT_64 = BIT(6),
+
 } ImageSampleCount;
 
 typedef enum {
@@ -160,7 +161,9 @@ typedef enum cull_mode {
 	CULL_MODE_NONE = 0,
 	CULL_MODE_FRONT = 1,
 	CULL_MODE_BACK = 2,
-	CULL_MODE_FRONT_AND_BACK = 3
+	CULL_MODE_FRONT_AND_BACK = 3,
+
+	CULL_MODE_MAX,
 } CullMode;
 
 typedef enum blend_factor {

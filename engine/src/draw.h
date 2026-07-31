@@ -1,9 +1,10 @@
 #pragma once
 
-#include "core/arena.h"
-
-#include "gfx/font.h"
+#include "draw/font.h"
 #include "gfx/gfx_types.h"
+
+#include "core/geom.h"
+#include "core/arena.h"
 
 typedef struct {
 	float2 position, uv;

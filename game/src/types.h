@@ -4,6 +4,8 @@
 #include <core/strings.h>
 #include <core/geom_types.h>
 
+#include <draw.h>
+
 #include <gfx/gfx_types.h>
 #include <utils/anim.h>
 
@@ -46,35 +48,6 @@ typedef enum {
 
 	ICON_MAX,
 } IconID;
-
-typedef struct {
-	float2 position, uv;
-	float4 radii;
-	float2 size;
-	uint32_t fill_color, border_color;
-	float border_width;
-	uint32_t imageid;
-} QuadVertex2D;
-
-typedef struct {
-	float4 a, b; // xyz + thickness
-	uint32_t color;
-	float3 _pad0;
-} LineVertex3D;
-
-typedef struct {
-	float3 position;
-	float _pad0;
-	float3 normal;
-	float _pad1;
-	float2 uv;
-	float4 tangent;
-} Vertex3D;
-
-typedef struct {
-	uint4 bone_ids;
-	float4 weights;
-} SkinningVertex3D;
 
 typedef struct {
 	Image2D textures[TEXTURE_SLOT_COUNT];

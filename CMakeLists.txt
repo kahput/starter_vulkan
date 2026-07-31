@@ -31,7 +31,15 @@ endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
-set(NATIVE_SCRATCHES scratch xcb_scratch skinning material_scratch spriv enum_parser)
+set(NATIVE_SCRATCHES 
+    scratch 
+    xcb_scratch 
+    skinning 
+    material_scratch 
+    spriv 
+    enum_parser 
+    table_generator
+)
 
 # Web build
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -98,10 +106,13 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
         "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
 
-        "${CMAKE_SOURCE_DIR}/engine/src/gfx/font.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/gfx/imgui.c"
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
+
+        "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
+
         ${VENDOR_SOURCES}
     )
     target_link_options(${PROJECT_NAME} PUBLIC
@@ -164,7 +175,6 @@ else()
             "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
 
             "${CMAKE_SOURCE_DIR}/engine/src/res/tables.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
 
             "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
@@ -183,10 +193,12 @@ else()
             "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
             "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
 
-            "${CMAKE_SOURCE_DIR}/engine/src/gfx/font.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/gfx/imgui.c"
             "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
             "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
         )
         add_executable(${NAME} ${SRC} ${VENDOR_SOURCES})
         target_include_directories(

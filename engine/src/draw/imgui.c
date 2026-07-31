@@ -1,6 +1,6 @@
 #include "common.h"
-#include "gfx/font.h"
-#include "gfx/imgui.h"
+#include "draw/font.h"
+#include "draw/imgui.h"
 
 #include "core/debug.h"
 

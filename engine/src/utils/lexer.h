@@ -153,7 +153,7 @@ static inline Lexer lexer_make(String8 source, String8 *keywords, uint32_t keywo
 Token lexer_next(Lexer *lexer);
 Token lexer_peek(Lexer *lexer);
 
-uint8_t* lexer_skip_to_end_of_line(Lexer* lexer);
+uint8_t *lexer_skip_to_end_of_line(Lexer *lexer);
 
 // If the next token matches `type`, consume and return it (ok=true).
 // Otherwise leave it unconsumed and return a zeroed token (ok=false).

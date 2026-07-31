@@ -4,7 +4,7 @@
 #include "core/geom.h"
 #include "core/strings.h"
 
-#include "gfx/font.h"
+#include "draw/font.h"
 #include "gfx/gfx_types.h"
 
 #define IMGUI_MAX_CHILDREN 32

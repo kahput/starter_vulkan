@@ -70,12 +70,15 @@ AST_Node *parse_enumarator(Arena *arena, Lexer *lexer) {
 		lexer_next(lexer); // consume equals
 		uint8_t *head = lexer->cursor, *tail = lexer->cursor;
 		while (lexer_at_end(lexer) == false) {
-			tail = lexer->cursor;
+			tail = lexer->cursor - 1;
 
 			Token look_ahead = lexer_peek(lexer);
 			if (look_ahead.type == TOKEN_COMMA || look_ahead.type == TOKEN_CLOSE_BRACE) break;
 			lexer_next(lexer);
 		}
+		while (tail[-1] == '\n' || tail[-1] == ' ' || tail[-1] == '\t')
+			tail--;
+
 		result->as.enumerator.expr = str8_range((char *)head, (char *)tail);
 	}
 
@@ -204,7 +207,7 @@ AST_Node *parse_typedef(Arena *arena, Lexer *lexer) {
 int main(void) {
 	Arena arena[] = { arena_make(MiB(8)) };
 
-    String8 source_file = os_file_read_entire(arena, s("engine/src/gfx/gfx_types.h"));
+	String8 source_file = os_file_read_entire(arena, s("engine/src/gfx/gfx_types.h"));
 	Lexer lexer = lexer_make(source_file, keywords, TOKEN_KEYWORD_MAX - TOKEN_KEYWORD_0);
 
 	AST_Node *tree = parse_typedef(arena, &lexer);
@@ -235,6 +238,9 @@ int main(void) {
 			for (uint32_t index = 0; index < depth; ++index)
 				printf("%.*s", str_spread(indent_string));
 			LOG_INFO("#%.*s -> %.*s", str_spread(child->as.enumerator.id), str_spread(child->as.enumerator.expr));
+			/* if (child->as.enumerator.expr.length) { */
+			/*     ASSERT(child->as.enumerator.expr.text[child->as.enumerator.expr.length - 1] != '\n'); */
+			/* } */
 		}
 		depth--;
 

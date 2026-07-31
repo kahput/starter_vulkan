@@ -8,8 +8,10 @@
 #include <os.h>
 
 #include <gfx.h>
-#include <gfx/font.h>
-#include <gfx/imgui.h>
+
+#include <draw.h>
+#include <draw/font.h>
+#include <draw/imgui.h>
 
 #include <utils/input.h>
 #include <utils/anim.h>

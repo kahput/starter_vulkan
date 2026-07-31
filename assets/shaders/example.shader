@@ -12,14 +12,120 @@ Shader "Spatial" {
 
         layout(push_constant) uniform ConstantBlock {
             mat4 model;
+            vec4 tint;
+            vec4 emissive;
+            vec2 metallic_roughness;
+            vec4 uv_st;
         } pc;
+
+        out ShaderOutput {
+            layout (location = 0) vec3 worldspace;
+            layout (location = 1) vec3 normal;
+            layout (location = 2) vec2 uv;
+            layout (location = 3) vec4 lightspace;
+            layout (location = 4) float fog_strength;
+        } vs_output;
 
         void main() {
             Vertex3 vertex = vertex_buffer[gl_VertexIndex];
-            gl_Position = frame.view * pc.model * vec4(vertex.position.xyz, 1.0);
+
+            vs_output.worldspace = vec3(pc.model * vec4(vertex.position.xyz, 1.0));
+            vs_output.lightspace = lights[0].matrix * vec4(vs_output.worldspace, 1.0f);
+
+            vs_output.normal = mat3(transpose(inverse(pc.model))) * vertex.normal.xyz;
+            vs_output.uv = transform_uv(vertex.uv, pc.uv_st);
+
+            float dist = length(vec3(frame.view * vec4(vs_output.worldspace, 1.0)));
+            vs_output.fog_strength = exp(-pow(dist * frame.fog_density, frame.fog_gradient));
+            vs_output.fog_strength = clamp(vs_output.fog_strength, 0.0, 1.0);
+
+            gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0);
         }
     }
-    Fragment { }
+    Fragment { 
+        #define TEXTURE_ALBEDO 0
+        #define TEXTURE_METAL_ROUGHNESS 1
+        #define TEXTURE_NORMAL 2
+        #define TEXTURE_OCCLUSION 3
+        #define TEXTURE_EMISSIVE 4
+        #define TEXTURE_COUNT 5
+        layout(set = 1, binding = 1) uniform sampler2D u_textures[TEXTURE_COUNT];
+
+        layout(push_constant) uniform ConstantBlock {
+            mat4 model;
+            vec4 tint;
+            vec4 emissive;
+            vec2 metallic_roughness;
+            vec4 uv_st;
+        } pc;
+
+        in ShaderInput {
+            layout (location = 0) vec3 worldspace;
+            layout (location = 1) vec3 normal;
+            layout (location = 2) vec2 uv;
+            layout (location = 3) vec4 lightspace;
+            layout (location = 4) float fog_strength;
+        } fs_input;
+
+        layout(location = 0) out vec4 out_color;
+        float shadow_calculation(vec4 lightspace, float bias); 
+
+        void main() {
+            vec4 albedo = texture(u_textures[TEXTURE_ALBEDO], fs_input.uv) * pc.tint;
+
+            vec3 normal = normalize(fs_input.normal);
+            vec3 fragment_to_light = normalize(lights[0].position.xyz - fs_input.worldspace);
+            vec3 reflection = reflect(-fragment_to_light, normal);
+
+            vec3 fragment_to_camera = normalize(frame.camera_position.xyz - fs_input.worldspace);
+
+            float specular_strength = pc.metallic_roughness.x;
+
+            vec3 light_color = lights[0].color.rgb;
+            vec3 ambient = vec3(frame.ambient) * light_color;
+
+            float diffuse_factor = max(dot(normal, fragment_to_light), 0.0) ;
+            vec3 diffuse = vec3(diffuse_factor) * light_color;
+
+            float specular_factor = pow(max(dot(fragment_to_camera, reflection), 0.0), 32);
+            vec3 specular = specular_strength * specular_factor * light_color;
+
+            float bias = max(0.001 * (1.0 - dot(normal, fragment_to_light)), 0.0005);
+            float visibility = shadow_calculation(fs_input.lightspace, bias); 
+
+            vec3 lighting = (ambient + visibility * (diffuse + specular));    
+
+            vec3 view_ray = normalize(fs_input.worldspace - frame.camera_position.xyz);
+            vec4 skybox_color = texture(u_skybox, view_ray);
+
+            vec3 c = mix(skybox_color.rgb, vec3(lighting * albedo.xyz), fs_input.fog_strength);
+            out_color = vec4(c, 1.0);
+        }
+
+        float shadow_calculation(vec4 lightspace, float bias) {
+            vec2 poissonDisk[4] = vec2[](
+                    vec2( -0.94201624, -0.39906216 ),
+                    vec2( 0.94558609, -0.76890725 ),
+                    vec2( -0.094184101, -0.92938870 ),
+                    vec2( 0.34495938, 0.29387760 )
+                    );
+
+            vec3 ndc = lightspace.xyz / lightspace.w;
+            vec2 uv = ndc.xy * 0.5 + 0.5;
+
+            float visibility  = 1.0f;
+            for (int i=0;i<4;i++){
+                if (texture(u_shadow, vec3(uv + poissonDisk[i]/700.0, ndc.z)).r < ndc.z-bias) {
+                    visibility-=0.2;
+                }
+            }
+
+            if (ndc.z > 1.0)
+                visibility = 1.0;
+
+            return visibility;
+        }
+    }
 }
 
 Shader "Transparent" { // could be separate file

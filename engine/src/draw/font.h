@@ -1,7 +1,6 @@
 #pragma once
 
 #include "gfx/gfx_types.h"
-#include "core/geom.h"
 
 typedef struct {
 	Rectangle src;
@@ -16,6 +15,18 @@ typedef struct {
 	Glyph *glyphs;
 	uint32_t glyph_count;
 } Font;
+
+typedef enum {
+	FONT_BAKE_SIZE_8,
+	FONT_BAKE_SIZE_12,
+	FONT_BAKE_SIZE_16,
+	FONT_BAKE_SIZE_24,
+	FONT_BAKE_SIZE_32,
+	FONT_BAKE_SIZE_64,
+
+	FONT_BAKE_SIZE_MAX,
+} FONT_BakeSize;
+extern uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX];
 
 Font load_font(Arena *arena, String8 path, uint32_t font_size);
 

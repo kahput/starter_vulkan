@@ -20,10 +20,12 @@
 #include "os.h"
 
 #include "gfx.h"
-#include "gfx/font.h"
-#include "gfx/imgui.h"
 #include "gfx/gfx_types.h"
 #include "gfx/vulkan/tables.h"
+
+#include <draw.h>
+#include "draw/font.h"
+#include "draw/imgui.h"
 
 #include <math.h>
 
@@ -169,6 +171,23 @@ String8 meshid_to_metadata[MESH_MAX] = {
 	[MESH_ROOM_LARGE] = str_comp("assets/models/room-large.glb"),
 	[MESH_TEST_LEVEL] = str_comp("assets/models/test_level.glb"),
 	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
+};
+
+typedef enum {
+	FONT_PIXELOID_SANS,
+	FONT_IBM_PLEX_MONO,
+
+	FONT_MAX,
+} FontID;
+
+String8 font_to_string[FONT_MAX] = {
+	ENUM_STRING_TABLE_ENTRY(FONT, PIXELOID_SANS),
+	ENUM_STRING_TABLE_ENTRY(FONT, IBM_PLEX_MONO),
+};
+
+String8 font_to_filepath[FONT_MAX] = {
+	[FONT_PIXELOID_SANS] = str_comp("assets/fonts/PixeloidSans.ttf"),
+	[FONT_IBM_PLEX_MONO] = str_comp("/usr/share/fonts/TTF/IBMPlexMono-Regular.ttf"),
 };
 
 typedef enum {
@@ -660,38 +679,30 @@ int main(void) {
 		  .pixels = skybox.pixels,
 		});
 
-	typedef enum {
-		FONT_BAKE_SIZE_8,
-		FONT_BAKE_SIZE_12,
-		FONT_BAKE_SIZE_16,
-		FONT_BAKE_SIZE_24,
-		FONT_BAKE_SIZE_32,
-		FONT_BAKE_SIZE_64,
-
-		FONT_BAKE_SIZE_MAX,
-	} FONT_BakeSize;
-	uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX] = { 8, 12, 16, 24, 32, 64 };
-
-	Font fonts[FONT_BAKE_SIZE_MAX] = { 0 };
+	Font fonts[FONT_MAX][FONT_BAKE_SIZE_MAX] = { 0 };
 	{ // :fonts
 		ArenaTemp scratch = arena_scratch_begin(0);
 		uint32_t font_cursor = 0;
 
-		for (FONT_BakeSize bake_size_index = 0; bake_size_index < FONT_BAKE_SIZE_MAX; ++bake_size_index) {
-			Font *font = &fonts[bake_size_index];
-			*font = load_font(scratch.arena, s("assets/fonts/PixeloidSans.ttf"), font_bake_size_to_value[bake_size_index]);
-			Glyph *glyphs = font->glyphs;
-			font->glyphs = arena_push_count(permanent, Glyph, font->glyph_count);
+		for (FontID id = 0; id < FONT_MAX; ++id) {
+			Font *font = fonts[id];
 
-			memory_copy(font->glyphs, glyphs, sizeof(Glyph) * font->glyph_count);
+			for (FONT_BakeSize bake_size_index = 0; bake_size_index < FONT_BAKE_SIZE_MAX; ++bake_size_index) {
+				Font *font_size = &font[bake_size_index];
+				*font_size = load_font(scratch.arena, font_to_filepath[id], font_bake_size_to_value[bake_size_index]);
+				Glyph *glyphs = font_size->glyphs;
+				font_size->glyphs = arena_push_count(permanent, Glyph, font_size->glyph_count);
 
-			Image2D *atlas = &fonts[bake_size_index].atlas;
-			atlas->handle = gfx_image_make(device, atlas->width, atlas->height,
-				(ImageOptions){
-				  .debug_name = (char *)str8_pushf(scratch.arena, s("font:%d"), font_bake_size_to_value[bake_size_index]).text,
-				  .format = PIXEL_FORMAT_RGBA8_UNORM,
-				  .pixels = atlas->pixels,
-				});
+				memory_copy(font_size->glyphs, glyphs, sizeof(Glyph) * font_size->glyph_count);
+
+				Image2D *atlas = &font_size->atlas;
+				atlas->handle = gfx_image_make(device, atlas->width, atlas->height,
+					(ImageOptions){
+					  .debug_name = (char *)str8_pushf(scratch.arena, s("%.*s:%d"), str_spread(font_to_string[id]), font_bake_size_to_value[bake_size_index]).text,
+					  .format = PIXEL_FORMAT_RGBA8_UNORM,
+					  .pixels = atlas->pixels,
+					});
+			}
 		}
 
 		arena_scratch_end(scratch);
@@ -1126,7 +1137,7 @@ int main(void) {
 		imgui_frame_begin(&imgui, dt);
 		imgui.mouse.last_position = imgui.mouse.position;
 		imgui.mouse.position = mouse;
-		imgui.default_font = fonts + FONT_BAKE_SIZE_16;
+		imgui.default_font = fonts[FONT_IBM_PLEX_MONO] + FONT_BAKE_SIZE_16;
 		for (uint32_t index = 0; index < 3; ++index) {
 			imgui.mouse.pressed[index] = input_mouse_pressed(index);
 			imgui.mouse.released[index] = input_mouse_released(index);
@@ -1260,7 +1271,7 @@ int main(void) {
 								.bg = hex(0x262c36),
 								.fg = WHITE,
 								.gap = 0.0f,
-								.font = fonts + FONT_BAKE_SIZE_12,
+								.font = fonts[FONT_IBM_PLEX_MONO] + FONT_BAKE_SIZE_12,
 								.border_radius = 4.0f
 							};
 							imgui_push_style(slider);
@@ -1517,7 +1528,7 @@ int main(void) {
 
 				static uint32_t heart_count = 8;
 				// :ui
-				{
+				if (os_cursor_captured(main_render)) {
 					IMGUI_Widget *heal_hurt_container = imgui_widget_ex(shash("heal_hurt_container"),
 						(IMGUI_Style){
 						  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIT },
@@ -1573,6 +1584,7 @@ int main(void) {
 
 					uint32_t x = 0;
 					(void)x;
+				} else {
 				}
 
 				if (0)
