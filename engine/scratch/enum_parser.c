@@ -53,7 +53,7 @@ struct AST_Node {
 		} enumerator;
 
 		String8 id;
-	} as;
+	} value;
 };
 
 AST_Node *parse_enumarator(Arena *arena, Lexer *lexer) {
@@ -63,7 +63,7 @@ AST_Node *parse_enumarator(Arena *arena, Lexer *lexer) {
 
 	result = arena_push_count(arena, AST_Node, 1);
 	result->kind = AST_NODE_ENUMERATOR;
-	result->as.enumerator.id = id.lexeme;
+	result->value.enumerator.id = id.lexeme;
 
 	Token peek = lexer_peek(lexer);
 	if (peek.type == TOKEN_EQUAL) {
@@ -79,7 +79,7 @@ AST_Node *parse_enumarator(Arena *arena, Lexer *lexer) {
 		while (tail[-1] == '\n' || tail[-1] == ' ' || tail[-1] == '\t')
 			tail--;
 
-		result->as.enumerator.expr = str8_range((char *)head, (char *)tail);
+		result->value.enumerator.expr = str8_range((char *)head, (char *)tail);
 	}
 
 	return result;
@@ -125,10 +125,10 @@ AST_Node *parse_enum_declaration(Arena *arena, Lexer *lexer) {
 	Token peek = lexer_peek(lexer);
 	if (peek.type == TOKEN_IDENTIFIER) {
 		lexer_next(lexer); // consume id
-		result->as.named_decl.id = peek.lexeme;
+		result->value.named_decl.id = peek.lexeme;
 	}
 
-	result->as.named_decl.body = parse_enumerator_body(arena, lexer);
+	result->value.named_decl.body = parse_enumerator_body(arena, lexer);
 
 	return result;
 }
@@ -145,21 +145,21 @@ AST_Node *parse_enum_specifier(Arena *arena, Lexer *lexer) {
 
 		peek = lexer_peek(lexer);
 		if (peek.type == TOKEN_OPEN_BRACE) {
-			result->as.named_decl.body = parse_enumerator_body(arena, lexer);
+			result->value.named_decl.body = parse_enumerator_body(arena, lexer);
 		} else if (peek.type == TOKEN_IDENTIFIER) {
 			Token identifier = lexer_next(lexer); // consume id
-			result->as.named_decl.id = identifier.lexeme;
+			result->value.named_decl.id = identifier.lexeme;
 
 			peek = lexer_peek(lexer);
 			if (peek.type == TOKEN_OPEN_BRACE)
-				result->as.named_decl.body = parse_enumerator_body(arena, lexer);
+				result->value.named_decl.body = parse_enumerator_body(arena, lexer);
 		}
 	} else if (peek.type == TOKEN_IDENTIFIER) {
 		lexer_next(lexer); // consume id
 
 		result = arena_push_count(arena, AST_Node, 1);
 		result->kind = AST_NODE_IDENTIFIER;
-		result->as.id = peek.lexeme;
+		result->value.id = peek.lexeme;
 	}
 
 	return result;
@@ -180,11 +180,11 @@ AST_Node *parse_typedef(Arena *arena, Lexer *lexer) {
 			if ((int32_t)peek.type == TOKEN_ENUM) {
 				node = arena_push_count(arena, AST_Node, 1);
 				node->kind = AST_NODE_TYPEDEF;
-				node->as.named_decl.body = parse_enum_specifier(arena, lexer);
+				node->value.named_decl.body = parse_enum_specifier(arena, lexer);
 
 				// NOTE: This might be more than one. I never use this feature, so doesn't really matter,
 				// but maybe handle that later.
-				node->as.named_decl.id = lexer_expect(lexer, TOKEN_IDENTIFIER).lexeme;
+				node->value.named_decl.id = lexer_expect(lexer, TOKEN_IDENTIFIER).lexeme;
 			}
 		} else if ((int32_t)peek.type == TOKEN_ENUM) { // ignore qualifiers
 			node = parse_enum_declaration(arena, lexer);
@@ -221,23 +221,23 @@ int main(void) {
 		uint32_t depth = 0;
 
 		if (node->kind == AST_NODE_TYPEDEF) {
-			LOG_INFO("#typedef [%.*s] {", str_spread(node->as.id));
-			e = node->as.named_decl.body;
+			LOG_INFO("#typedef [%.*s] {", str_spread(node->value.id));
+			e = node->value.named_decl.body;
 
 			depth++;
 		}
 
 		for (uint32_t index = 0; index < depth; ++index)
 			printf("%.*s", str_spread(indent_string));
-		LOG_INFO("#enum [%.*s] {", str_spread(e->as.id));
+		LOG_INFO("#enum [%.*s] {", str_spread(e->value.id));
 
 		depth++;
-		for (AST_Node *child = e->as.named_decl.body; child; child = child->next) {
+		for (AST_Node *child = e->value.named_decl.body; child; child = child->next) {
 			ASSERT(child->kind = AST_NODE_ENUMERATOR);
 
 			for (uint32_t index = 0; index < depth; ++index)
 				printf("%.*s", str_spread(indent_string));
-			LOG_INFO("#%.*s -> %.*s", str_spread(child->as.enumerator.id), str_spread(child->as.enumerator.expr));
+			LOG_INFO("#%.*s -> %.*s", str_spread(child->value.enumerator.id), str_spread(child->value.enumerator.expr));
 			/* if (child->as.enumerator.expr.length) { */
 			/*     ASSERT(child->as.enumerator.expr.text[child->as.enumerator.expr.length - 1] != '\n'); */
 			/* } */

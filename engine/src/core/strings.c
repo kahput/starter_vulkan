@@ -41,6 +41,23 @@ String8 str8_concat(Arena *arena, String8 a, String8 b) {
 	return result;
 }
 
+String8 str8_indent(Arena *arena, String8 indent, uint32_t depth) {
+	String8 result = { 0 };
+
+	bool ok = arena && indent.length;
+	if (ok) {
+		result.text = (uint8_t *)arena->base + arena->offset;
+		result.length = arena->offset;
+
+		for (uint32_t index = 0; index < depth; ++index)
+			str8_pushf(arena, s("%.*s"), str_spread(indent));
+
+		result.length = arena->offset - result.length;
+	}
+
+	return result;
+}
+
 String8 str8_filepath_join(Arena *arena, String8 head, String8 tail) {
 	if (head.length == 0)
 		return tail;
@@ -159,5 +176,5 @@ uint64_t str8_to_u64(String8 s) {
 }
 
 int64_t str8_to_s64(String8 s) {
-    return strtoll((char*)s.text, 0, 10);
+	return strtol((char *)s.text, 0, 10);
 }

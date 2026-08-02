@@ -33,7 +33,7 @@ typedef enum {
 	AST_NODE_TYPE_ROW,
 	AST_NODE_TYPE_LITERAL,
 
-	AST_NODE_TYPE_MAX,
+	AST_NODE_MAX,
 } AST_NodeType;
 
 typedef enum {

@@ -137,17 +137,23 @@ typedef struct {
 	uint32_t keyword_count;
 
 	uint8_t *cursor;
-	uint32_t line;
-	int column;
+	uint32_t line, column;
 
-	Token peeked;
-	bool has_peeked;
+	Token current, peeked;
+	bool has_peeked, had_error;
 } Lexer;
 
 extern const String8 token_type_to_string[TOKEN_MAX];
 
 static inline Lexer lexer_make(String8 source, String8 *keywords, uint32_t keyword_count) {
-	return (Lexer){ .source = source, .cursor = source.text, .line = 1, .keyword_count = keyword_count, .keywords = keywords };
+	return (Lexer){
+		.source = source,
+		.cursor = source.text,
+		.line = 1,
+		.column = 1,
+		.keyword_count = keyword_count,
+		.keywords = keywords,
+	};
 }
 
 Token lexer_next(Lexer *lexer);
@@ -163,6 +169,9 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out);
 // Returns the token. On mismatch you get TOKEN_UNKNOWN and can check .type.
 Token lexer_expect(Lexer *lexer, TokenType type);
 Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count);
+
+Token lexer_consume(Lexer *lexer, TokenType type, String8 message);
+String8 lexer_error_location_string(Arena *arena, Token error);
 
 // True if the next token is EOF.
 bool lexer_at_end(Lexer *lexer);

@@ -39,6 +39,7 @@ set(NATIVE_SCRATCHES
     spriv 
     enum_parser 
     table_generator
+    lox
 )
 
 # Web build

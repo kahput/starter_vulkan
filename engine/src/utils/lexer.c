@@ -8,7 +8,7 @@
 
 // clang-format off
 const String8 token_type_to_string[TOKEN_MAX] = {
-    [TOKEN_UNKNOWN]       = str_comp("UNKNOWN"),
+    [TOKEN_UNKNOWN]       = str_comp("unkown"),
     [TOKEN_OPEN_PAREN]    = str_comp("("),   [TOKEN_CLOSE_PAREN]   = str_comp(")"),
     [TOKEN_OPEN_BRACE]    = str_comp("{"),   [TOKEN_CLOSE_BRACE]   = str_comp("}"),
     [TOKEN_OPEN_BRACKET]  = str_comp("["),   [TOKEN_CLOSE_BRACKET] = str_comp("]"),
@@ -25,12 +25,12 @@ const String8 token_type_to_string[TOKEN_MAX] = {
     [TOKEN_LESS]          = str_comp("<"),   [TOKEN_LESS_EQUAL]    = str_comp("<="),
     [TOKEN_AMP]           = str_comp("&"),   [TOKEN_AMP_AMP]       = str_comp("&&"),
     [TOKEN_PIPE]          = str_comp("|"),   [TOKEN_PIPE_PIPE]     = str_comp("||"),
-    [TOKEN_IDENTIFIER]    = str_comp("IDENTIFIER"),
-    [TOKEN_STRING]        = str_comp("STRING"),
-    [TOKEN_INTEGER]       = str_comp("INTEGER"),
-    [TOKEN_FLOAT]         = str_comp("FLOAT"),
+    [TOKEN_IDENTIFIER]    = str_comp("identifier"),
+    [TOKEN_STRING]        = str_comp("string"),
+    [TOKEN_INTEGER]       = str_comp("integer"),
+    [TOKEN_FLOAT]         = str_comp("float"),
 
-    [TOKEN_EOF]           = str_comp("EOF"),
+    [TOKEN_EOF]           = str_comp("end of file"),
 };
 // clang-format on
 
@@ -282,7 +282,8 @@ Token lexer__scan_token(Lexer *lexer) {
 		} break;
 
 		case '\0':
-			return (Token){ .type = TOKEN_EOF };
+			token = (Token){ .type = TOKEN_EOF };
+			break;
 		default: {
 			if (is_digit(c)) {
 				bool is_float = false;
@@ -317,8 +318,10 @@ Token lexer__scan_token(Lexer *lexer) {
 				token.type = is_float ? TOKEN_FLOAT : TOKEN_INTEGER;
 
 			} else if (is_aplha(c)) {
-				while (is_alnum(lexer->cursor[0]))
+				while (is_alnum(lexer->cursor[0])) {
 					++lexer->cursor;
+					++lexer->column;
+				}
 				token.lexeme.length = lexer->cursor - token.lexeme.text;
 				token.type = lexer__match_keyword(lexer, &token);
 			} else
@@ -330,11 +333,15 @@ Token lexer__scan_token(Lexer *lexer) {
 }
 
 Token lexer_next(Lexer *lexer) {
+	Token result = { .type = TOKEN_UNKNOWN };
 	if (lexer->has_peeked) {
 		lexer->has_peeked = false;
-		return lexer->peeked;
-	}
-	return lexer__scan_token(lexer);
+		result = lexer->peeked;
+	} else
+		result = lexer__scan_token(lexer);
+
+	lexer->current = result;
+	return result;
 }
 Token lexer_peek(Lexer *lexer) {
 	if (!lexer->has_peeked) {
@@ -366,14 +373,61 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out) {
 Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_next(lexer);
 	if (t.type != type) {
-		ASSERT(false);
-		LOG_WARN("Lexer: expected '%.*s' got '%.*s' (%.*s) at %d:%d",
+		LOG_WARN("expected '%.*s' got '%.*s' (%.*s) at %d:%d",
 			str_spread(token_type_to_string[type]),
 			str_spread(token_type_to_string[t.type]),
 			str_spread(t.lexeme),
 			t.line, t.column);
+		ASSERT(false);
 	}
 	return t;
+}
+
+String8 lexer_error_location_string(Arena *arena, Token token) {
+	String8 result = { 0 };
+
+	bool ok = arena && token.lexeme.text;
+	if (ok) {
+		uint32_t col = token.type == TOKEN_STRING ? token.column : (token.column - 1);
+		String8 line = { .text = token.lexeme.text - col, .length = token.lexeme.length };
+		while (line.text[line.length] != '\n' && line.text[line.length] != '\0')
+			line.length++;
+
+		String8 error_top = str8_pushf(arena, s("    %d | %.*s\n"), token.line, str_spread(line));
+		uint32_t error_offset = 0;
+		while (error_top.text[error_offset] != '|')
+			error_offset++;
+		error_offset++;
+
+		error_offset += col;
+		String8 indent = str8_indent(arena, s(" "), error_offset);
+
+		result = str8_concat(arena, error_top, str8_concat(arena, indent, s("^-- here")));
+	}
+
+	return result;
+}
+
+void report(uint64_t line, uint64_t column, String8 where, String8 message) {
+	LOG_ERROR("#error[%d:%d]: %.*s\n%.*s", line, column, str_spread(message), str_spread(where));
+}
+
+Token lexer_consume(Lexer *lexer, TokenType type, String8 message) {
+	Token token = lexer_peek(lexer);
+
+	bool had_error = false;
+	if (token.type != type) {
+		if (message.length && lexer->had_error == false) {
+			had_error = lexer->had_error = true;
+
+			ArenaTemp scratch = arena_scratch_begin(0);
+
+			report(lexer->current.line, lexer->current.column, lexer_error_location_string(scratch.arena, lexer->current), message);
+			arena_scratch_end(scratch);
+		}
+	}
+
+	return had_error ? token : lexer_next(lexer);
 }
 
 Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count) {

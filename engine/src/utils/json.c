@@ -3,6 +3,7 @@
 #include "core/debug.h"
 #include "core/logger.h"
 
+#include "core/strings.h"
 #include "utils/lexer.h"
 
 #include "os.h"
@@ -289,12 +290,6 @@ JSON_Node *json_child_at(JSON_Node *node, uint32_t index) {
 	return result;
 }
 
-static inline void json_indent(Arena *arena, uint32_t indent_level, String8 indent_string) {
-	if (indent_string.length)
-		for (uint32_t index = 0; index < indent_level; ++index)
-			str8_pushf(arena, s("%.*s"), str_spread(indent_string));
-}
-
 void json_write_children(Arena *arena, JSON_Container *children, String8 indent, bool keyed, uint32_t *depth) {
 	bool ok = children;
 	if (ok) {
@@ -302,7 +297,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 			JSON_ContainerSlot slot = json__locate(index);
 			JSON_Node *child = &children->pages[slot.page_index][slot.page_local_index];
 
-			json_indent(arena, *depth, indent);
+			str8_indent(arena, indent, *depth);
 			if (keyed)
 				str8_pushf(arena, s("\"%.*s\": "), str_spread(child->key));
 
@@ -326,7 +321,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 						str8_pushf(arena, s("\n"));
 					json_write_children(arena, child->value.as.children, indent, true, depth);
 					*depth -= 1;
-					json_indent(arena, *depth, indent);
+					str8_indent(arena, indent, *depth);
 					str8_pushf(arena, s("}"));
 				} break;
 				case JSON_TYPE_ARRAY: {
@@ -336,7 +331,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 						str8_pushf(arena, s("\n"));
 					json_write_children(arena, child->value.as.children, indent, false, depth);
 					*depth -= 1;
-					json_indent(arena, *depth, indent);
+					str8_indent(arena, indent, *depth);
 					str8_pushf(arena, s("]"));
 				} break;
 

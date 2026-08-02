@@ -24,7 +24,7 @@ INLINE String8 str8_range(const char *start, const char *end) {
 bool str8_equals(String8 a, String8 b);
 
 String8 str8_concat(Arena *arena, String8 a, String8 b);
-String8 str8_filepath_join(Arena *arena, String8 head, String8 tail);
+String8 str8_indent(Arena *arena, String8 indent, uint32_t depth);
 
 String8 str8_copy(Arena *arena, String8 src);
 
@@ -32,6 +32,7 @@ String8 str8_push_format_list(Arena *arena, String8 format, va_list list);
 String8 str8_pushf(Arena *arena, String8 format, ...);
 
 String8 str8_filename(String8 path);
+String8 str8_filepath_join(Arena *arena, String8 head, String8 tail);
 String8 str8_directory(String8 path);
 
 double str8_to_f64(String8 s);
