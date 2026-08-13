@@ -36,9 +36,13 @@
 #endif
 
 #if defined(_MSC_VER)
-	#define INLINE static __forceinline
+	#define ENSURE_INLINE static __forceinline
+	#define PACK_BEGIN(gran) __pragma(pack(push, (gran)))
+	#define PACK_END __pragma(pack(pop))
 #else
-	#define INLINE static inline __attribute((always_inline))
+	#define ENSURE_INLINE static inline __attribute((always_inline))
+	#define PACK_BEGIN(gran) __attribute__((__packed__))
+	#define PACK_END
 #endif
 
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
@@ -69,7 +73,7 @@
 
 #define CLAMP(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
 
-#define BIT(b) 1 << b
+#define BIT(b) (1 << (b))
 
 #define has_flag(flags, flag) (((flags) & (flag)) == (flag))
 #define HEADER(ptr, T) ((T *)ptr - 1)
@@ -77,11 +81,6 @@
 
 #define STATIC_ASSERT_PASTE_(a, b) a##b
 #define STATIC_ASSERT_PASTE(a, b) STATIC_ASSERT_PASTE_(a, b)
-
-#define WRAPPER_STRUCT(T) \
-	struct {              \
-		T wrapped;        \
-	}
 
 #define STRINGIFY(v) #v
 #define STATIC_ASSERT(COND) typedef char STATIC_ASSERT_PASTE(static_assertion_failed_at_line_, __LINE__)[(COND) ? 1 : -1]
@@ -105,16 +104,6 @@ static inline uint64_t hash64(void *memory, size_t size) {
 		h *= 1111111111111111111;
 	}
 	return h;
-}
-
-static inline uint32_t largest_active_bit32u(uint32_t value) {
-	for (int32_t index = 31; index >= 0; --index) {
-		if (value >> index) {
-			return index;
-		}
-	}
-
-	return 0;
 }
 
 // From https://stackoverflow.com/a/5889254

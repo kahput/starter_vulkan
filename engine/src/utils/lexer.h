@@ -45,7 +45,7 @@ typedef enum {
 	// Literals.
 	TOKEN_IDENTIFIER,
 	TOKEN_STRING,
-	TOKEN_FLOAT,
+	TOKEN_REAL,
 	TOKEN_INTEGER,
 
 	TOKEN_EOF,
@@ -156,7 +156,7 @@ static inline Lexer lexer_make(String8 source, String8 *keywords, uint32_t keywo
 	};
 }
 
-Token lexer_next(Lexer *lexer);
+Token lexer_advance(Lexer *lexer);
 Token lexer_peek(Lexer *lexer);
 
 uint8_t *lexer_skip_to_end_of_line(Lexer *lexer);
@@ -175,5 +175,7 @@ String8 lexer_error_location_string(Arena *arena, Token error);
 
 // True if the next token is EOF.
 bool lexer_at_end(Lexer *lexer);
+
+void report(uint64_t line, uint64_t column, String8 where, String8 message);
 
 #endif /* LEXER_H_ */

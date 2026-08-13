@@ -1,9 +1,12 @@
+#include "common.h"
 #include "gfx.h"
 #include "gfx/gfx_types.h"
 #include "gfx/vulkan/tables.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
+#include "os.h"
+#include <vulkan/vulkan_core.h>
 
 #ifndef VK_USE_PLATFORM_XCB_KHR
 	#define VK_USE_PLATFORM_XCB_KHR
@@ -1775,6 +1778,18 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 	return ok;
 }
 
+void gfx_cmd_bind_index_buffer16(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset) {
+	bool ok = cmd && buffer && cmd->handle && buffer->handle;
+	if (ok)
+		vkCmdBindIndexBuffer(cmd->handle, buffer->handle, offset, VK_INDEX_TYPE_UINT16);
+}
+
+void gfx_cmd_bind_index_buffer32(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset) {
+	bool ok = cmd && buffer && cmd->handle && buffer->handle;
+	if (ok)
+		vkCmdBindIndexBuffer(cmd->handle, buffer->handle, offset, VK_INDEX_TYPE_UINT32);
+}
+
 uint64_t gfx_cmd_put(GFX_Command *cmd, uint64_t size, void *src) {
 	uint64_t result = 0;
 
@@ -2001,6 +2016,84 @@ void gfx_cmd_buffer_upload(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset
 	}
 }
 
+void gfx_cmd_draw_begin(GFX_Command *cmd, GFX_DrawPassInfo info) {
+	VkRenderingAttachmentInfo color_attachments[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
+
+	uint32_t color_count = 0;
+	for (uint32_t index = 0; index < countof(color_attachments); ++index) {
+		if (info.colors[index].target == 0) break;
+
+		color_attachments[index] = (VkRenderingAttachmentInfo){
+			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+			.imageView = info.colors[index].target->view,
+			.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.loadOp = (VkAttachmentLoadOp)info.colors[index].load,
+			.storeOp = (VkAttachmentStoreOp)info.colors[index].store,
+		};
+		store4(color_to_float4(info.colors[index].clear), color_attachments[index].clearValue.color.float32);
+		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, info.colors[index].target);
+
+		if (info.colors[index].resolve) {
+			color_attachments[index].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			color_attachments[index].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+			color_attachments[index].resolveImageView = info.colors[index].resolve->view;
+			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, info.colors[index].resolve);
+		}
+
+		color_count++;
+	}
+
+	VkRenderingAttachmentInfo depth_attachment = { 0 };
+	if (info.depth.target) {
+		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, info.depth.target);
+		depth_attachment = (VkRenderingAttachmentInfo){
+			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+			.imageView = info.depth.target->view,
+			.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+			.clearValue.depthStencil.depth = info.depth.clear,
+			.loadOp = (VkAttachmentLoadOp)info.depth.load,
+			.storeOp = (VkAttachmentStoreOp)info.depth.store,
+		};
+	}
+
+	if (info.area.width == 0.0f && info.colors[0].target)
+		info.area.width = clampf(info.colors[0].target->width - info.area.x, 0.0f, info.colors[0].target->width);
+	if (info.area.height == 0.0f && info.colors[0].target)
+		info.area.height = clampf(info.colors[0].target->height - info.area.y, 0.0f, info.colors[0].target->height);
+
+	VkRect2D area = { { info.area.x, info.area.y }, { info.area.width, info.area.height } };
+	VkRenderingInfo renderpass_info = {
+		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+		.renderArea = area,
+		.layerCount = 1,
+		.colorAttachmentCount = color_count,
+		.pColorAttachments = color_attachments,
+		.pDepthAttachment = info.depth.target ? &depth_attachment : 0,
+	};
+
+	VkDebugUtilsLabelEXT label_info = {
+		.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+		.pLabelName = info.debug_name ? info.debug_name : "UNNAMED",
+		.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+	};
+	vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
+	vkCmdBeginRendering(cmd->handle, &renderpass_info);
+
+	VkViewport viewport = {
+		.width = info.area.width,
+		.height = info.area.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	};
+	vkCmdSetViewport(cmd->handle, 0, 1, &viewport);
+	vkCmdSetScissor(cmd->handle, 0, 1, &area);
+}
+
+void gfx_cmd_draw_end(GFX_Command *cmd) {
+	vkCmdEndRendering(cmd->handle);
+	vkCmdEndDebugUtilsLabel(cmd->handle);
+}
+
 void gfx_cmd_viewport(GFX_Command *cmd, Rectangle area) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
@@ -2056,6 +2149,12 @@ void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
 		vkCmdDispatch(cmd->handle, x, y, z);
+}
+
+void gfx_cmd_draw(GFX_Command *cmd, uint32_t vertex_count, uint32_t vertex_offset) {
+	bool ok = cmd && cmd->handle;
+	if (ok)
+		vkCmdDraw(cmd->handle, vertex_count, 1, vertex_offset, 0);
 }
 
 // :body
@@ -2485,7 +2584,6 @@ void gfx__load_debug_extensions(GFX_Device *device) {
 		LOG_ERROR("Failed to load extension: " #name "EXT");              \
 		name = STUB_##name;                                               \
 	}
-
 	LOAD_EXTENSION(device->instance, vkCreateDebugUtilsMessenger);
 	LOAD_EXTENSION(device->instance, vkDestroyDebugUtilsMessenger);
 	LOAD_EXTENSION(device->instance, vkSetDebugUtilsObjectName);

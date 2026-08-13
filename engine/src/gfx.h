@@ -68,8 +68,6 @@ void gfx_present(GFX_Device *device, GFX_Swapchain *swapchain, GFX_Image *image)
 bool gfx_swapchain_resize(GFX_Device *device, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height);
 bool gfx_image_resize(GFX_Device *device, GFX_Image *image, uint32_t new_width, uint32_t new_height);
 
-bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count);
-
 // pushes data to command context staging ring buffer, aligned to 256
 uint64_t gfx_cmd_put(GFX_Command *cmd, uint64_t size, void *src);
 void gfx_cmd_buffer_to_buffer(GFX_Command *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size);
@@ -82,14 +80,23 @@ void gfx_cmd_image_clear(GFX_Command *cmd, Rectangle rect, Color color, GFX_Imag
 void gfx_cmd_image_upload(GFX_Command *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels);
 void gfx_cmd_buffer_upload(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data);
 
+void gfx_cmd_draw_begin(GFX_Command *cmd, GFX_DrawPassInfo info);
+void gfx_cmd_draw_end(GFX_Command *cmd);
+
 void gfx_cmd_viewport(GFX_Command *cmd, Rectangle area);
 void gfx_cmd_scissor(GFX_Command *cmd, Rectangle area);
 
 void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader); // binds first pipeline
 void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline);
+bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count);
+
+void gfx_cmd_bind_index_buffer16(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset);
+void gfx_cmd_bind_index_buffer32(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset);
 
 void gfx_cmd_push_constant(GFX_Command *cmd, uint64_t size, void *data);
 void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z);
+
+void gfx_cmd_draw(GFX_Command *cmd, uint32_t vertex_count, uint32_t vertex_offset);
 
 static inline uint32_t gfx_image_id(GFX_Device *device, GFX_Image *image) {
 	if (gfx_image_valid(device, image) == false)

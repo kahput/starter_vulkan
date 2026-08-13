@@ -31,7 +31,7 @@ int main(void) {
 		OS_Timestamp now = os_file_last_modified(src);
 		if (now > ts) {
 			if (ts)
-				os_sleep_ms(10);
+				os_sleep_ms(100);
 
 			ts = now;
 			os_library_unload(lib);
@@ -42,6 +42,8 @@ int main(void) {
 
 		if (tick)
 			is_open &= tick(&permanenet, &frame);
+
+		arena_reset(&frame);
 	}
 
 	gfx_device_destroy(&gfx);

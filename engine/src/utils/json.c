@@ -94,33 +94,33 @@ static inline JSON_Value json_parse_value(Arena *arena, Lexer *lexer) {
 
 			case TOKEN_PLUS:
 			case TOKEN_MINUS:
-				lexer_next(lexer);
+				lexer_advance(lexer);
 				double mul = 1.0f - (value.type == TOKEN_MINUS) * 2.0f;
 
-				value = lexer_expect_multiple(lexer, array_arg(TokenType, TOKEN_INTEGER, TOKEN_FLOAT));
+				value = lexer_expect_multiple(lexer, array_arg(TokenType, TOKEN_INTEGER, TOKEN_REAL));
 				result = json_number(mul * str8_to_f64(value.lexeme));
 				break;
 
-			case TOKEN_FLOAT: // NUMBER
+			case TOKEN_REAL: // NUMBER
 			case TOKEN_INTEGER:
 				result = json_number(str8_to_f64(value.lexeme));
-				lexer_next(lexer);
+				lexer_advance(lexer);
 				break;
 
 			case TOKEN_STRING: {
 				result = json_string(arena, value.lexeme);
-				lexer_next(lexer);
+				lexer_advance(lexer);
 			} break;
 
 			case JSON_KEYWORD_TRUE: // BOOL
 			case JSON_KEYWORD_FALSE:
 				result = json_bool((uint32_t)value.type == JSON_KEYWORD_TRUE);
-				lexer_next(lexer);
+				lexer_advance(lexer);
 				break;
 
 			case JSON_KEYWORD_NULL: // NULL
 				result.type = JSON_TYPE_NULL;
-				lexer_next(lexer);
+				lexer_advance(lexer);
 			default:
 
 				break;
@@ -251,7 +251,7 @@ JSON_Node *json_find_path(JSON_Node *node, String8 path) {
 		Token token = { 0 };
 
 		JSON_Node *cur = node;
-		while ((token = lexer_next(&lexer)).type != TOKEN_EOF) {
+		while ((token = lexer_advance(&lexer)).type != TOKEN_EOF) {
 			if (token.type == TOKEN_OPEN_BRACKET) {
 				Token num = lexer_expect(&lexer, TOKEN_INTEGER);
 				cur = json_child_at(cur, str8_to_u64(num.lexeme));
@@ -290,6 +290,16 @@ JSON_Node *json_child_at(JSON_Node *node, uint32_t index) {
 	return result;
 }
 
+void push_text(Arena *arena, const char *fmt, ...) {
+	if (fmt && fmt[0] != '\0') {
+		va_list args;
+		va_start(args, fmt);
+		String8 result = str8_push_format_list(arena, str8_wrap(fmt), args);
+		arena->offset -= 1; // remove null-terminator
+		va_end(args);
+	}
+}
+
 void json_write_children(Arena *arena, JSON_Container *children, String8 indent, bool keyed, uint32_t *depth) {
 	bool ok = children;
 	if (ok) {
@@ -299,40 +309,40 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 
 			str8_indent(arena, indent, *depth);
 			if (keyed)
-				str8_pushf(arena, s("\"%.*s\": "), str_spread(child->key));
+				push_text(arena, "\"%.*s\": ", str_spread(child->key));
 
 			switch (child->value.type) {
 				case JSON_TYPE_NULL:
-					str8_pushf(arena, s("%s"), "null");
+					push_text(arena, "%s", "null");
 					break;
 				case JSON_TYPE_BOOLEAN:
-					str8_pushf(arena, s("%s"), child->value.as.boolean ? "true" : "false");
+					push_text(arena, "%s", child->value.as.boolean ? "true" : "false");
 					break;
 				case JSON_TYPE_STRING:
-					str8_pushf(arena, s("\"%.*s\""), str_spread(child->value.as.string));
+					push_text(arena, "\"%.*s\"", str_spread(child->value.as.string));
 					break;
 				case JSON_TYPE_NUMBER:
-					str8_pushf(arena, s("%g"), child->value.as.number);
+					push_text(arena, "%g", child->value.as.number);
 					break;
 				case JSON_TYPE_OBJECT: {
 					*depth += 1;
-					str8_pushf(arena, s("{"));
+					push_text(arena, "{");
 					if (indent.length)
-						str8_pushf(arena, s("\n"));
+						push_text(arena, "\n");
 					json_write_children(arena, child->value.as.children, indent, true, depth);
 					*depth -= 1;
 					str8_indent(arena, indent, *depth);
-					str8_pushf(arena, s("}"));
+					push_text(arena, "}");
 				} break;
 				case JSON_TYPE_ARRAY: {
 					*depth += 1;
-					str8_pushf(arena, s("["));
+					push_text(arena, "[");
 					if (indent.length)
-						str8_pushf(arena, s("\n"));
+						push_text(arena, "\n");
 					json_write_children(arena, child->value.as.children, indent, false, depth);
 					*depth -= 1;
 					str8_indent(arena, indent, *depth);
-					str8_pushf(arena, s("]"));
+					push_text(arena, "]");
 				} break;
 
 				case JSON_TYPE_MAX:
@@ -340,10 +350,10 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 			}
 
 			if (index != children->count - 1)
-				str8_pushf(arena, s(","));
+				push_text(arena, ",");
 
 			if (indent.length)
-				str8_pushf(arena, s("\n"));
+				push_text(arena, "\n");
 		}
 	}
 }
@@ -359,11 +369,11 @@ String8 json_stringify(Arena *arena, JSON_Node *root, String8 indent) {
 
 		bool keyed = root->value.type == JSON_TYPE_OBJECT;
 
-		str8_pushf(arena, s("%s"), keyed ? "{" : "[");
+		push_text(arena, "%s", keyed ? "{" : "[");
 		if (indent.length)
-			str8_pushf(arena, s("\n"));
+			push_text(arena, "\n");
 		json_write_children(arena, root->value.as.children, indent, keyed, &depth);
-		str8_pushf(arena, s("%s"), keyed ? "}" : "]");
+		push_text(arena, "%s", keyed ? "}" : "]");
 
 		result.length = ((uint8_t *)arena->base + arena->offset) - result.text;
 

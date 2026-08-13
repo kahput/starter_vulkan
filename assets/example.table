@@ -1,8 +1,8 @@
 table CullModeTable(name, display, num) {
-    (NONE            "None"  0)
-    (FRONT           "Front" 1)
-    (BACK            "Back"  2)
-    (FRONT_AND_BACK  "Both"  3)
+    (NONE            None  0)
+    (FRONT           Front 1)
+    (BACK            Back  2)
+    (FRONT_AND_BACK  Both  3)
 }
 
 enum "CullMode": {

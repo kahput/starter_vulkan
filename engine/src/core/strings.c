@@ -130,7 +130,6 @@ String8 str8_pushf(Arena *arena, String8 format, ...) {
 	va_list args;
 	va_start(args, format);
 	String8 result = str8_push_format_list(arena, format, args);
-	arena->offset -= 1;
 	va_end(args);
 
 	return result;

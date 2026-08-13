@@ -87,7 +87,7 @@ float4x4 *anim_pose_local_to_model(Arena *arena, Pose *pose, Skeleton *skeleton)
 	float4x4 *result = arena_push_count(arena, float4x4, skeleton->bone_count);
 
 	for (uint32_t bone_index = 0; bone_index < skeleton->bone_count; ++bone_index) {
-		float4x4 local = compose4x4_from_quat(
+		float4x4 local = compose4x4_quat(
 			pose->transforms[bone_index].translation,
 			pose->transforms[bone_index].rotation,
 			pose->transforms[bone_index].scale);

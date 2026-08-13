@@ -51,7 +51,6 @@ Font load_font(Arena *arena, String8 path, uint32_t font_size) {
 
 		uint8_t *temp_bitmap = arena_push_count(scratch.arena, uint8_t, atlas_size *atlas_size);
 
-		int32_t min_y = 0;
 		for (uint32_t index = 0; index < codepoint_count; ++index) {
 			int32_t codepoint_width = 0, codepoint_height = 0;
 			int32_t codepoint = codepoints[index];
@@ -72,12 +71,14 @@ Font load_font(Arena *arena, String8 path, uint32_t font_size) {
 				}
 				stbtt_MakeGlyphBitmap(&font_info, (uint8_t *)temp_bitmap + col + (row * atlas_size), width, height, atlas_size, scale_factor, scale_factor, glyph_index);
 
-				min_y = MIN(min_y, y0);
 				result.glyphs[codepoint] = (Glyph){
 					.src = { .x = col, .y = row, .width = width, .height = height },
 					.bearing = { x0, y0 },
 					.advance_x = (int32_t)(advance * scale_factor),
 				};
+
+				result.greatest_top_y = max1s(result.greatest_top_y, abs(y0));
+				result.greatest_bottom_y = max1s(result.greatest_bottom_y, height - abs(y0));
 
 				col += width + padding;
 			}
@@ -110,9 +111,10 @@ float2 measure_text(Font *font, String8 text) {
 
 		Glyph *glyph = &font->glyphs[c];
 		x_offset += glyph->advance_x;
-		result.y = maxf(result.y, glyph->src.height);
+
 	}
 
+	result.y = font->greatest_top_y + font->greatest_bottom_y;
 	result.x = maxf(result.x, x_offset);
 	return result;
 }

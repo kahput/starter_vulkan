@@ -3,12 +3,17 @@
 #include "common.h"
 #include "core/strings.h"
 
+typedef struct GFX_Buffer GFX_Buffer;
+typedef struct GFX_Image GFX_Image;
+typedef struct GFX_Sampler GFX_Sampler;
+typedef struct GFX_Pipeline GFX_Pipeline;
+typedef struct GFX_Shader GFX_Shader;
+typedef struct Swapchain GFX_Swapchain;
+
 typedef enum {
 	GFX_LIMIT_UNIFORM_SETS = 4,
 	GFX_LIMIT_UNIFORMS_PER_SET = 32,
 	GFX_LIMIT_COLOR_ATTACHMENTS = 4,
-
-	GFX_LIMIT_MAX,
 } GfxLimits;
 
 typedef enum {
@@ -52,6 +57,8 @@ typedef enum {
 
 	PIXEL_FORMAT_RGBA16_FLOAT,
 	PIXEL_FORMAT_R32_FLOAT,
+
+	PIXEL_FORMAT_R32_UNORM,
 
 	PIXEL_FORMAT_DEPTH,
 	PIXEL_FORMAT_DEPTHSTENCIL,
@@ -184,6 +191,17 @@ typedef enum blend_factor {
 } BlendFactor;
 
 typedef enum {
+	LOAD_OP_LOAD = 0,
+	LOAD_OP_CLEAR = 1,
+	LOAD_OP_DONT_CARE = 2,
+} LoadOp;
+
+typedef enum {
+	STORE_OP_STORE = 0,
+	STORE_OP_DONT_CARE = 1,
+} StoreOp;
+
+typedef enum {
 	RESOURCE_USAGE_UNDEFINED,
 
 	RESOURCE_USAGE_TRANSFER_SRC,
@@ -269,6 +287,26 @@ typedef struct {
 	BlendFactor src_alpha_factor, dst_alpha_factor;
 } PipelineOptions;
 
+typedef struct {
+	const char *debug_name;
+
+	struct {
+		GFX_Image *target;
+		GFX_Image *resolve;
+		LoadOp load;
+		StoreOp store;
+		Color clear;
+	} colors[GFX_LIMIT_COLOR_ATTACHMENTS];
+	struct {
+		GFX_Image *target;
+		LoadOp load;
+		StoreOp store;
+		float clear;
+	} depth;
+
+	Rectangle area;
+} GFX_DrawPassInfo;
+
 // ============================================================
 // ========================= TEMPORARY =========================
 // ============================================================
@@ -280,7 +318,6 @@ typedef struct {
 	#include <vulkan/vulkan_core.h>
 	#include "os.h"
 
-typedef struct GFX_Buffer GFX_Buffer;
 struct GFX_Buffer {
 	GFX_Buffer *next;
 
@@ -295,7 +332,6 @@ struct GFX_Buffer {
 	BufferOptions options;
 };
 
-typedef struct GFX_Image GFX_Image;
 struct GFX_Image {
 	GFX_Image *next;
 
@@ -313,7 +349,6 @@ struct GFX_Image {
 	ResourceUsage res_usage;
 };
 
-typedef struct GFX_Sampler GFX_Sampler;
 struct GFX_Sampler {
 	GFX_Sampler *next;
 
@@ -415,9 +450,6 @@ static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images
 	return result;
 }
 
-typedef struct GFX_Pipeline GFX_Pipeline;
-typedef struct GFX_Shader GFX_Shader;
-
 struct GFX_Pipeline {
 	GFX_Pipeline *next;
 	GFX_Shader *shader;
@@ -442,7 +474,6 @@ struct GFX_Shader {
 };
 
 	#define SWAPCHAIN_IMAGE_COUNT 3
-typedef struct Swapchain GFX_Swapchain;
 struct Swapchain {
 	GFX_Swapchain *next;
 
@@ -463,6 +494,13 @@ struct Swapchain {
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
 	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
 };
+
+typedef struct {
+	GFX_Image *colors[GFX_LIMIT_COLOR_ATTACHMENTS];
+	uint32_t color_count;
+
+	GFX_Image *depth;
+} GFX_Framebuffer;
 
 	#define MAX_BUFFERS 1024
 	#define MAX_IMAGES 512
@@ -566,7 +604,7 @@ typedef struct Image2D {
 	PixelFormat format;
 	uint32_t width, height;
 } Image2D;
-INLINE Rectangle image_rect(Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
-INLINE float2 image_size(Image2D image) { return (float2){ image.width, image.height }; }
+ENSURE_INLINE Rectangle image_rect(Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
+ENSURE_INLINE float2 image_size(Image2D image) { return (float2){ image.width, image.height }; }
 
 #endif

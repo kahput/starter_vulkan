@@ -1,4 +1,5 @@
 #include "draw.h"
+#include "core/arena.h"
 #include "core/debug.h"
 
 void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, float2 origin, float rotation, float border_width, Color border_color, float4 radii, Color fill_color) {
@@ -8,8 +9,8 @@ void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, flo
 		float2 min = sub2(make2(dst.x, dst.y), origin), max = add2(min, make2(dst.width, dst.height));
 		float2 corners[] = { min, { max.x, min.y }, { min.x, max.y }, max };
 
-		float2 uv0 = zero2;
-		float2 uv1 = one2;
+		float2 uv0 = splat2(0.0f);
+		float2 uv1 = splat2(1.0f);
 		if (image) {
 			uv0 = make2(src.x / image->width, src.y / image->height);
 			uv1 = make2((src.x + src.width) / image->width, (src.y + src.height) / image->height);
@@ -50,15 +51,15 @@ void draw2d_rect_ex(Arena *arena, Rectangle rect, float2 origin, float rotation,
 }
 
 void draw2d_rect(Arena *arena, Rectangle rect, Color color) {
-	draw2d_rect_ex(arena, rect, zero2, 0.0f, color);
+	draw2d_rect_ex(arena, rect, splat2(0.0f), 0.0f, color);
 }
 
 void draw2d_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
-	draw2d_quad(arena, rect, (Rectangle){ 0 }, 0, zero2, 0, thickness, color, splat4(0.0f), TRANSPARENT);
+	draw2d_quad(arena, rect, (Rectangle){ 0 }, 0, splat2(0.0f), 0, thickness, color, splat4(0.0f), TRANSPARENT);
 }
 
 void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color) {
-	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, zero2, 0.0f, 0.0f, rgba(0, 0, 0, 0), radii, color);
+	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, splat2(0.0f), 0.0f, 0.0f, rgba(0, 0, 0, 0), radii, color);
 }
 
 void draw2d_rect_rounded_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, float4 radii, Color color) {
@@ -66,7 +67,7 @@ void draw2d_rect_rounded_ex(Arena *arena, Rectangle rect, float2 origin, float r
 }
 
 void draw2d_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, Color tint) {
-	draw2d_quad(arena, dst, src, image, zero2, 0.0f, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), tint);
+	draw2d_quad(arena, dst, src, image, splat2(0.0f), 0.0f, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), tint);
 }
 
 void draw2d_sprite(Arena *arena, float2 position, Image2D *image, Color tint) {
@@ -87,19 +88,13 @@ void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String
 		String8 text = str8_push_format_list(scratch.arena, format, args);
 		va_end(args);
 
-		float y_offset = 0.0f;
-		for (uint32_t index = 0; index < text.length; ++index) {
-			uint8_t c = text.text[index];
-			Glyph *glyph = &font->glyphs[c];
-			y_offset = maxf(y_offset, glyph->src.height);
-		}
-
+		float y_offset = font->greatest_top_y;
 		float x_offset = 0.0f;
 		for (uint32_t index = 0; index < text.length; ++index) {
 			uint8_t c = text.text[index];
 			if (c == '\n') {
 				x_offset = 0.0f;
-				y_offset += font->bake_size;
+				y_offset += font->greatest_bottom_y + font->greatest_top_y;
 			}
 
 			Glyph *glyph = &font->glyphs[c];
@@ -188,10 +183,10 @@ void draw3d_sphere_outline(Arena *arena, float3 center, float radius, uint8_t se
 void draw3d_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
 	LineVertex3D *spine_points = arena_push_count(arena, LineVertex3D, 8);
 	LineVertex3D spine[] = {
-		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), zero3 },
-		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), zero3 },
-		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(WHITE), zero3 },
-		{ { a.x, a.y, a.z + radius, thickness }, { a.x, b.y, a.z + radius, thickness }, color_pack_uint32(WHITE), zero3 },
+		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
+		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
+		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
+		{ { a.x, a.y, a.z + radius, thickness }, { a.x, b.y, a.z + radius, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
 	};
 	memory_copy_array(spine_points, spine);
 
@@ -211,18 +206,18 @@ void draw3d_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color
 	float3 bounding_box_size = sub3(max, min);
 
 	LineVertex3D outline[] = {
-		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), zero3 },
-		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), zero3 },
+		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 	};
 
 	LineVertex3D *points = arena_push_count(arena, LineVertex3D, countof(outline));

@@ -41,7 +41,6 @@ void main() {
     
     ivec2 quad_position = quad[gl_VertexIndex % 6];
     float current_thickness = mix(line.a.w, line.b.w, float(quad_position.x));
-
     vec4 vertex_position = mix(clip_position0, clip_position1, float(quad_position.x));
 
     vec2 offset = normal * (current_thickness / frame.viewport.x);

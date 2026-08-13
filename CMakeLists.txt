@@ -37,9 +37,10 @@ set(NATIVE_SCRATCHES
     skinning 
     material_scratch 
     spriv 
-    enum_parser 
+    c_parser 
     table_generator
     lox
+    draw_scratch
 )
 
 # Web build

@@ -24,8 +24,8 @@
 #include "gfx/vulkan/tables.h"
 
 #include <draw.h>
-#include "draw/font.h"
-#include "draw/imgui.h"
+#include <draw/font.h>
+#include <draw/imgui.h>
 
 #include <math.h>
 
@@ -285,7 +285,7 @@ Entity *entity_spawn(World *world) {
 		result = &world->entities[world->entity_count++];
 
 		result->transform.rotation = quat4_identity();
-		result->transform.scale = one3;
+		result->transform.scale = splat3(1.0f);
 	}
 
 	if (ok == false) {
@@ -469,7 +469,7 @@ bool json_to_world(JSON_Node *root, World *world) {
 				String8 features = json_str_or(json_find(entity_node, s("features")), s(""));
 				Lexer lexer = lexer_make(features, (String8 *)entity_feature_to_string, countof(entity_feature_to_string));
 				Token t = { 0 };
-				while ((t = lexer_next(&lexer)).type != TOKEN_EOF) {
+				while ((t = lexer_advance(&lexer)).type != TOKEN_EOF) {
 					if (t.type >= TOKEN_KEYWORD_0 && t.type < TOKEN_KEYWORD_0 + ENTITY_FEATURE_MAX)
 						entity_enable(entity, t.type - TOKEN_KEYWORD_0);
 				}
@@ -936,7 +936,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(make4x4_from_rotation(unit3(UP), randf_range(0, TAU)), make4x4_from_translation(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(make4x4_rotation(unit3(UP), randf_range(0, TAU)), make4x4_translation(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -1045,14 +1045,14 @@ int main(void) {
 	}
 
 	bool is_open = true;
-	while (is_open) {
+	for (bool is_open = true; is_open;) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
 		dt = time - last_frame;
 		last_frame = time;
 
 		input_update();
 		OS_Event event = { 0 };
-		while (os_event_poll(&event)) {
+		for (OS_Event event; os_event_poll(&event);) {
 			switch (event.type) {
 				case OS_EVENT_TYPE_SURFACE_CLOSE:
 					if (event.surface == main_render)
@@ -1109,12 +1109,6 @@ int main(void) {
 		  .base = arena_push_count(frame_arena, LineVertex3D, 6 * 2048),
 		  .capacity = sizeof(LineVertex3D) * 6 * 2048,
 		} };
-		Arena batch_line2d[] = {
-			{
-			  .base = arena_push_count(frame_arena, LineVertex3D, 6 * 1024),
-			  .capacity = sizeof(LineVertex3D) * 6 * 1024,
-			}
-		};
 
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = cast2(input_mouse_delta(), float2);
@@ -1127,21 +1121,19 @@ int main(void) {
 			state = (state + 1) % VIEWPORT_STATE_COUNT;
 
 		Camera3D *camera = &cameras[state];
-		static uint32_t triangle_step = 0;
-		if (input_key_pressed(KEY_CODE_N))
-			triangle_step = (triangle_step + 1) % (meshes[MESH_CYLINDER].total_index_count / 3);
 
 		float4x4 view = lookat(camera->position, camera->target, camera->up);
 		float4x4 proj = perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
 
-		imgui_frame_begin(&imgui, dt);
-		imgui.mouse.last_position = imgui.mouse.position;
-		imgui.mouse.position = mouse;
+		imgui_frame_begin(&imgui,
+			(IMGUI_Mouse){
+			  .last_position = imgui.mouse.last_position,
+			  .position = mouse,
+			  .pressed[MOUSE_BUTTON_LEFT] = input_mouse_pressed(MOUSE_BUTTON_LEFT),
+			  .released[MOUSE_BUTTON_LEFT] = input_mouse_released(MOUSE_BUTTON_LEFT),
+			},
+			dt);
 		imgui.default_font = fonts[FONT_IBM_PLEX_MONO] + FONT_BAKE_SIZE_16;
-		for (uint32_t index = 0; index < 3; ++index) {
-			imgui.mouse.pressed[index] = input_mouse_pressed(index);
-			imgui.mouse.released[index] = input_mouse_released(index);
-		}
 
 		switch (state) {
 			case VIEWPORT_STATE_EDITOR: {
@@ -1167,14 +1159,14 @@ int main(void) {
 					static float2 mouse_grab_offset = { 0 };
 					static IMGUI_Dock panel_dock = IMGUI_DOCK_NONE;
 
-					IMGUI_Widget *panel = imgui_widget_ex(__LINE__,
+					IMGUI_Widget *panel = imgui_widget_opt(__LINE__,
 						(IMGUI_Style){
 						  .flow = IMGUI_VERTICAL,
-						  .mode = {
-							panel_dock == IMGUI_DOCK_CENTER || panel_dock == IMGUI_DOCK_TOP || panel_dock == IMGUI_DOCK_BOTTOM ? IMGUI_MODE_GROW : IMGUI_MODE_FIXED,
-							panel_dock == IMGUI_DOCK_CENTER || panel_dock == IMGUI_DOCK_LEFT || panel_dock == IMGUI_DOCK_RIGHT ? IMGUI_MODE_GROW : IMGUI_MODE_FIXED,
+						  .sizing = {
+							panel_dock == IMGUI_DOCK_CENTER || panel_dock == IMGUI_DOCK_TOP || panel_dock == IMGUI_DOCK_BOTTOM ? IMGUI_SIZING_GROW : IMGUI_SIZING_FIT,
+							panel_dock == IMGUI_DOCK_CENTER || panel_dock == IMGUI_DOCK_LEFT || panel_dock == IMGUI_DOCK_RIGHT ? IMGUI_SIZING_GROW : IMGUI_SIZING_FIT,
 						  },
-						  .border_radius = 4.0f,
+						  .border_radius = splat4(0.0f),
 						  .bg = RED,
 						});
 
@@ -1183,9 +1175,9 @@ int main(void) {
 					panel->offset[0] = panel_offset.x, panel->offset[1] = panel_offset.y;
 					panel->size[0] = 350.f, panel->size[1] = 500.f;
 
-					IMGUI_Widget *root = imgui_widget_ex(__LINE__,
+					IMGUI_Widget *root = imgui_widget_opt(__LINE__,
 						(IMGUI_Style){
-						  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+						  .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIXED },
 						});
 					root->size[0] = viewport.width, root->size[1] = viewport.height;
 
@@ -1193,18 +1185,18 @@ int main(void) {
 						if (panel_dock == IMGUI_DOCK_CENTER)
 							imgui_parent(panel, root);
 						else {
-							IMGUI_Widget *container = imgui_widget_ex(__LINE__,
+							IMGUI_Widget *container = imgui_widget_opt(__LINE__,
 								(IMGUI_Style){
 								  .flow = panel_dock == IMGUI_DOCK_TOP || panel_dock == IMGUI_DOCK_BOTTOM ? IMGUI_VERTICAL : IMGUI_HORIZONTAL,
-								  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW },
+								  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_GROW },
 								});
 							imgui_parent(container, root);
 
 							uint32_t dock_index = panel_dock < IMGUI_DOCK_CENTER ? 0 : 2;
 							for (uint32_t index = 0; index < 3; ++index) {
-								IMGUI_Widget *division = imgui_widget_ex(0,
+								IMGUI_Widget *division = imgui_widget_opt(0,
 									(IMGUI_Style){
-									  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW },
+									  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_GROW },
 									  .align = { index, index },
 									});
 								imgui_parent(division, container);
@@ -1216,31 +1208,29 @@ int main(void) {
 					}
 
 					imgui_push_parent(root);
-					IMGUI_Widget *topbar = imgui_widget_ex(__LINE__,
+					IMGUI_Widget *topbar = imgui_widget_opt(__LINE__,
 						(IMGUI_Style){
-						  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+						  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_FIT },
 						  .p = 4.0f,
 						  .gap = 1.0f,
 						  .bg = hex(0x151b23),
+						  .border_radius = splat4(0.0f),
 						});
 
 					imgui_push_parent(topbar);
 					{ // topbar
 						IMGUI_Style topbar_btn = {
-							.mode[1] = IMGUI_MODE_GROW,
+							.sizing[1] = IMGUI_SIZING_GROW,
 							.align = { 0, IMGUI_ALIGN_CENTER },
 							.ph = 8.0f,
 							.pv = 0.0f,
 							.bg = hex(0x262c36),
 							.fg = WHITE,
-							.border_radius = 4.0f
+							.border_radius = splat4(4.0f),
 						};
 
 						imgui_push_style(topbar_btn);
-						static bool toggle_file_menu = false;
-						if (imgui_button_label(s("File")).pressed) { toggle_file_menu = !toggle_file_menu; }
-						if (imgui_button_label(s("Edit")).pressed) { LOG_INFO("Edit"); }
-						if (imgui_button_label(s("Help")).pressed) { LOG_INFO("Help"); }
+
 						imgui_spacer();
 						if (imgui_button_image(&icons[ICON_PLAY], 0.5f).released) { state = (state + 1) % VIEWPORT_STATE_COUNT; }
 						if (imgui_button_image(&icons[ICON_PAUSE], 0.5f).released) { LOG_INFO("Pause"); }
@@ -1250,21 +1240,31 @@ int main(void) {
 						imgui_pop_parent();
 					}
 
-					IMGUI_Widget *body = imgui_widget_ex(__LINE__,
+					IMGUI_Widget *body = imgui_widget_opt(__LINE__,
 						(IMGUI_Style){
 						  .flow = IMGUI_VERTICAL,
-						  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW },
+						  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_GROW },
 						  .p = 12.0f,
 						  .gap = 12.0f,
 						  .bg = hex(0x0d1117),
+						  .border_radius = splat4(0.0f),
 						});
+
+					static bool dropdown_active = false;
+					IMGUI_Widget *drop_down = 0;
+					String8 light_setting_name[] = {
+						s("Day"),
+						s("Dawn"),
+						s("Night"),
+					};
+
 					imgui_push_parent(body);
 					{
-						imgui_push_parent(imgui_widget_ex(__LINE__,
+						imgui_push_parent(imgui_widget_opt(__LINE__,
 							(IMGUI_Style){
 							  .flow = IMGUI_VERTICAL,
 							  .gap = 8.0f,
-							  .mode[0] = IMGUI_MODE_GROW,
+							  .sizing[0] = IMGUI_SIZING_GROW,
 							}));
 						{
 							IMGUI_Style slider = {
@@ -1272,43 +1272,43 @@ int main(void) {
 								.fg = WHITE,
 								.gap = 0.0f,
 								.font = fonts[FONT_IBM_PLEX_MONO] + FONT_BAKE_SIZE_12,
-								.border_radius = 4.0f
+								.border_radius = splat4(4.0f)
 							};
 							imgui_push_style(slider);
 
-							imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+							imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .sizing[0] = IMGUI_SIZING_GROW }));
 							{
-								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .sizing[0] = IMGUI_SIZING_GROW }));
 								imgui_label(__LINE__, s("Fog Density"));
 								imgui_pop_parent();
 
-								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .sizing[0] = IMGUI_SIZING_GROW }));
 								imgui_sliderf(__LINE__, &fog_density, 0.001f, 0.05f);
 								imgui_pop_parent();
 
 								imgui_pop_parent();
 							}
 
-							imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+							imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .sizing[0] = IMGUI_SIZING_GROW }));
 							{
-								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .sizing[0] = IMGUI_SIZING_GROW }));
 								imgui_label(__LINE__, s("Fog Gradient"));
 								imgui_pop_parent();
 
-								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .sizing[0] = IMGUI_SIZING_GROW }));
 								imgui_sliderf(__LINE__, &fog_gradient, 0.0f, 15.0f);
 								imgui_pop_parent();
 
 								imgui_pop_parent();
 							}
 
-							imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .mode[0] = IMGUI_MODE_GROW }));
+							imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .sizing[0] = IMGUI_SIZING_GROW }));
 							{
-								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .sizing[0] = IMGUI_SIZING_GROW }));
 								imgui_label(__LINE__, s("Ambient Strength"));
 								imgui_pop_parent();
 
-								imgui_push_parent(imgui_widget_ex(__LINE__, (IMGUI_Style){ .mode[0] = IMGUI_MODE_GROW }));
+								imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .sizing[0] = IMGUI_SIZING_GROW }));
 								imgui_sliderf(__LINE__, &ambient_strength, 0.0f, 1.0f);
 								imgui_pop_parent();
 
@@ -1317,26 +1317,53 @@ int main(void) {
 
 							Color selected = hex(0x3178c6);
 
-							imgui_push_parent(imgui_widget_ex(__LINE__,
+							imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .flow = IMGUI_HORIZONTAL, .sizing[0] = IMGUI_SIZING_GROW }));
+							{
+								imgui_push_parent(imgui_widget_opt(__LINE__, (IMGUI_Style){ .sizing[0] = IMGUI_SIZING_GROW }));
+								imgui_label(__LINE__, s("Light setting"));
+								imgui_pop_parent();
+
+								drop_down = imgui_widget_opt(__LINE__,
+									(IMGUI_Style){
+									  .sizing[0] = IMGUI_SIZING_GROW,
+									  .bg = hex(0x262c36),
+									  .p = 6.0f,
+									  .border_radius = splat4(4.0f),
+									});
+								imgui_push_parent(drop_down);
+								{
+									imgui_label(__LINE__, light_setting_name[light_index]);
+									imgui_spacer();
+									imgui_label(__LINE__, s("^ "));
+									IMGUI_Interact i = imgui_interact(drop_down->id, imgui_rect_cached(drop_down));
+									if (i.pressed)
+										dropdown_active = !dropdown_active;
+
+									imgui_pop_parent();
+								}
+
+								imgui_pop_parent();
+							}
+
+							imgui_push_parent(imgui_widget_opt(__LINE__,
 								(IMGUI_Style){
 								  .flow = IMGUI_HORIZONTAL,
-								  .mode[0] = IMGUI_MODE_GROW,
+								  .sizing[0] = IMGUI_SIZING_GROW,
 								  .gap = 8.0f,
 								  .align[1] = IMGUI_ALIGN_CENTER,
 								}));
 							{
 								{
-									uint64_t radio_bar_id = __LINE__;
-									IMGUI_Widget *radio = imgui_widget_ex(radio_bar_id,
+									IMGUI_Widget *radio = imgui_widget_opt(__LINE__,
 										(IMGUI_Style){
-										  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+										  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_FIT },
 										  .p = 8.0f,
 										  .gap = 8.0f,
-										  .border_radius = 4.0f,
+										  .border_radius = splat4(4.0f),
 										  .gap = 8.0f,
 										});
 
-									IMGUI_Interact interact = imgui_interact(radio_bar_id, imgui_rect_cached(radio));
+									IMGUI_Interact interact = imgui_interact(radio->id, imgui_rect_cached(radio));
 									if (interact.pressed)
 										light_index = 0;
 									if (interact.hovered)
@@ -1347,11 +1374,11 @@ int main(void) {
 										IMGUI_Widget *label = imgui_label(__LINE__, s("Day"));
 
 										imgui_spacer();
-										IMGUI_Widget *btn = imgui_widget_ex(0,
+										IMGUI_Widget *btn = imgui_widget_opt(0,
 											(IMGUI_Style){
-											  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+											  .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIXED },
 											  .bg = light_index == 0 ? selected : WHITE,
-											  .border_radius = imgui.default_font->bake_size * 0.5f, // circle
+											  .border_radius = splat4(imgui.default_font->bake_size * 0.5f), // circle
 											});
 										btn->size[0] = imgui.default_font->bake_size, btn->size[1] = imgui.default_font->bake_size;
 
@@ -1360,12 +1387,13 @@ int main(void) {
 								}
 
 								{
-									IMGUI_Widget *radio = imgui_widget_ex(__LINE__,
+									IMGUI_Widget *radio = imgui_widget_opt(__LINE__,
 										(IMGUI_Style){
-										  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+										  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_FIT },
+										  .align[1] = IMGUI_ALIGN_CENTER,
 										  .p = 8.0f,
 										  .gap = 8.0f,
-										  .border_radius = 4.0f,
+										  .border_radius = splat4(4.0f),
 										  .gap = 8.0f,
 										});
 
@@ -1380,11 +1408,11 @@ int main(void) {
 										IMGUI_Widget *label = imgui_label(__LINE__, s("Dawn"));
 
 										imgui_spacer();
-										IMGUI_Widget *btn = imgui_widget_ex(0,
+										IMGUI_Widget *btn = imgui_widget_opt(0,
 											(IMGUI_Style){
-											  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+											  .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIXED },
 											  .bg = light_index == 1 ? selected : WHITE,
-											  .border_radius = imgui.default_font->bake_size * 0.5f, // circle
+											  .border_radius = splat4(imgui.default_font->bake_size * 0.5f), // circle
 											});
 										btn->size[0] = imgui.default_font->bake_size, btn->size[1] = imgui.default_font->bake_size;
 
@@ -1393,17 +1421,16 @@ int main(void) {
 								}
 
 								{
-									uint64_t radio_bar_id = __LINE__;
-									IMGUI_Widget *radio = imgui_widget_ex(radio_bar_id,
+									IMGUI_Widget *radio = imgui_widget_opt(__LINE__,
 										(IMGUI_Style){
-										  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+										  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_FIT },
 										  .p = 8.0f,
 										  .gap = 8.0f,
-										  .border_radius = 4.0f,
+										  .border_radius = splat4(4.0f),
 										  .gap = 8.0f,
 										});
 
-									IMGUI_Interact interact = imgui_interact(radio_bar_id, imgui_rect_cached(radio));
+									IMGUI_Interact interact = imgui_interact(radio->id, imgui_rect_cached(radio));
 									if (interact.pressed)
 										light_index = 2;
 									if (interact.hovered)
@@ -1413,11 +1440,11 @@ int main(void) {
 									{
 										IMGUI_Widget *label = imgui_label(__LINE__, s("Night"));
 										imgui_spacer();
-										IMGUI_Widget *btn = imgui_widget_ex(0,
+										IMGUI_Widget *btn = imgui_widget_opt(0,
 											(IMGUI_Style){
-											  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIXED },
+											  .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIXED },
 											  .bg = light_index == 2 ? selected : WHITE,
-											  .border_radius = imgui.default_font->bake_size * 0.5f, // circle
+											  .border_radius = splat4(imgui.default_font->bake_size * 0.5f), // circle
 											});
 										btn->size[0] = imgui.default_font->bake_size, btn->size[1] = imgui.default_font->bake_size;
 
@@ -1429,8 +1456,10 @@ int main(void) {
 							imgui_pop_style(1);
 							imgui_pop_parent();
 						}
+
 						imgui_pop_parent();
 					}
+
 					imgui_pop_parent();
 
 					imgui_pop_parent();
@@ -1474,19 +1503,19 @@ int main(void) {
 								dock_orientation = IMGUI_DOCK_CENTER;
 
 								root->settings.align[0] = IMGUI_ALIGN_CENTER, root->settings.align[1] = IMGUI_ALIGN_CENTER;
-								IMGUI_Widget *dock_preview = imgui_widget_ex(__LINE__,
+								IMGUI_Widget *dock_preview = imgui_widget_opt(__LINE__,
 									(IMGUI_Style){
-									  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW },
+									  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_GROW },
 									  .bg = rgba(0, 128, 128, 48),
 									});
 								imgui_parent(dock_preview, root);
 							} else {
 								dock_orientation = dock_dir.x ? dock_dir.x < 0 ? IMGUI_DOCK_LEFT : IMGUI_DOCK_RIGHT : dock_dir.y < 0 ? IMGUI_DOCK_TOP
 																																	 : IMGUI_DOCK_BOTTOM;
-								IMGUI_Widget *container = imgui_widget_ex(__LINE__,
+								IMGUI_Widget *container = imgui_widget_opt(__LINE__,
 									(IMGUI_Style){
 									  .flow = dock_dir.x ? IMGUI_HORIZONTAL : IMGUI_VERTICAL,
-									  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW },
+									  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_GROW },
 									});
 								imgui_parent(container, root);
 
@@ -1494,7 +1523,7 @@ int main(void) {
 
 								uint32_t preview_index = dock_orientation < IMGUI_DOCK_CENTER ? 0 : 2;
 								for (uint32_t index = 0; index < 3; ++index) {
-									divisions[index] = imgui_widget_ex(0, (IMGUI_Style){ .mode = { IMGUI_MODE_GROW, IMGUI_MODE_GROW } });
+									divisions[index] = imgui_widget_opt(0, (IMGUI_Style){ .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_GROW } });
 									imgui_parent(divisions[index], container);
 
 									if (preview_index == index)
@@ -1509,7 +1538,7 @@ int main(void) {
 						}
 
 						if (panel_dock == IMGUI_DOCK_NONE)
-							write2(panel_offset, panel->offset);
+							store2(panel_offset, panel->offset);
 
 						if (panel->parent == 0) {
 							imgui_fit_tree(panel);
@@ -1521,6 +1550,44 @@ int main(void) {
 					imgui_fit_tree(root);
 					imgui_grow_tree(root);
 					imgui_position_tree(root);
+
+					if (dropdown_active) {
+						IMGUI_Widget *widget = imgui_widget_opt(0,
+							(IMGUI_Style){
+							  .flow = IMGUI_VERTICAL,
+							  .bg = hex(0x262c36),
+							  .border_radius = splat4(4.0f),
+							});
+						widget->offset[0] = drop_down->offset[0], widget->offset[1] = drop_down->offset[1] + drop_down->size[1];
+						widget->size[0] = drop_down->size[0];
+
+						imgui_push_parent(widget);
+						imgui_push_style((IMGUI_Style){ .fg = WHITE });
+						for (uint32_t index = 0; index < countof(lights); ++index) {
+							IMGUI_Widget *btn = imgui_widget_opt(hash64_combine(__LINE__, index),
+								(IMGUI_Style){
+								  .align[0] = IMGUI_ALIGN_CENTER,
+								  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_GROW },
+								  .flow = IMGUI_HORIZONTAL,
+								  .p = 8.0f,
+								});
+							imgui_push_parent(btn);
+
+							IMGUI_Interact i = imgui_interact(btn->id, imgui_rect_cached(btn));
+							if (i.hovered)
+
+								btn->settings.bg = hex(0x0d1117);
+							if (i.released)
+								light_index = index;
+
+							imgui_label(0, light_setting_name[index]);
+							imgui_pop_parent();
+						}
+						imgui_pop_style(1);
+						imgui_pop_parent();
+
+						imgui_layout(widget);
+					}
 				}
 			} break;
 			case VIEWPORT_STATE_GAME: { // :game
@@ -1529,9 +1596,9 @@ int main(void) {
 				static uint32_t heart_count = 8;
 				// :ui
 				if (os_cursor_captured(main_render)) {
-					IMGUI_Widget *heal_hurt_container = imgui_widget_ex(shash("heal_hurt_container"),
+					IMGUI_Widget *heal_hurt_container = imgui_widget_opt(shash("heal_hurt_container"),
 						(IMGUI_Style){
-						  .mode = { IMGUI_MODE_FIXED, IMGUI_MODE_FIT },
+						  .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIT },
 						  .align = { IMGUI_ALIGN_RIGHT, IMGUI_ALIGN_CENTER },
 						  .p = 12.0f,
 						  .gap = 8.0f,
@@ -1560,10 +1627,10 @@ int main(void) {
 					imgui_pop_parent();
 					imgui_layout(heal_hurt_container);
 
-					IMGUI_Widget *heart_container = imgui_widget_ex(__LINE__,
+					IMGUI_Widget *heart_container = imgui_widget_opt(__LINE__,
 						(IMGUI_Style){
 						  .flow = IMGUI_HORIZONTAL,
-						  .mode = { IMGUI_MODE_GROW, IMGUI_MODE_FIT },
+						  .sizing = { IMGUI_SIZING_GROW, IMGUI_SIZING_FIT },
 						  .p = 12.0f,
 						  .gap = 2.0f,
 						});
@@ -1697,7 +1764,7 @@ int main(void) {
 					// :collision
 					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) && entity->shape.kind == SHAPE_KIND_AABB3) {
 						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
-							if (lensq3(velocity) <= EPSILON)
+							if (len3_sq(velocity) <= EPSILON)
 								break;
 							CastResult3 nearest = CAST3_NO_HIT;
 							Entity *nearest_entity = 0;
@@ -1930,11 +1997,11 @@ int main(void) {
 						widget->settings.image,
 						(float2){ 0 },
 						0.0f,
-						widget->settings.border_width, widget->settings.border, splat4(widget->settings.border_radius), widget->settings.fg);
+						widget->settings.border_width, widget->settings.border, widget->settings.border_radius, widget->settings.fg);
 				} else if (widget->settings.text.length) {
 					/* draw2d_rect(batch_2d, imgui_rect_live(widget), ORANGE); */
 					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
-					draw2d_textf(batch_2d, font, wrap2(widget->offset), widget->settings.fg, widget->settings.text);
+					draw2d_textf(batch_2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
 				} else {
 					draw2d_quad(
 						batch_2d,
@@ -1942,7 +2009,7 @@ int main(void) {
 						(Rectangle){ 0 },
 						0, (float2){ 0 }, 0.0f,
 						widget->settings.border_width, widget->settings.border,
-						splat4(widget->settings.border_radius), widget->settings.bg);
+						widget->settings.border_radius, widget->settings.bg);
 				}
 				/* if (imgui_valid(parent)) */
 				/* 	EndScissorMode(); */
@@ -1994,7 +2061,7 @@ int main(void) {
 				.time = (float)time,
 			};
 
-			vkCmdPushConstants(cmd->handle, shaders[SHADER_TEST_COMPUTE]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+			gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
 			gfx_cmd_dispatch(cmd, (compute_blit_target->width / 16) + 1, (compute_blit_target->height / 16) + 1, 1);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
 			Rectangle area = rect(0, 0, compute_blit_target->width, compute_blit_target->height);
@@ -2041,7 +2108,7 @@ int main(void) {
 					.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
 					.output_address = cmd->transient_buffer->address + instance->skinned_vertices_offset,
 				};
-				vkCmdPushConstants(cmd->handle, shaders[SHADER_SKINNING_COMPUTE]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+				gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
 
 				gfx_cmd_dispatch(cmd, (mesh->total_vertex_count + 255) / 256, 1, 1);
 				gfx_cmd_buffer_barrier(
@@ -2066,7 +2133,7 @@ int main(void) {
 			float ortho_size = 10.0f;
 			lights[light_index].matrix = mul4x4(
 				orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				lookat(make3_from4(lights[light_index].position), zero3, unit3(UP)));
+				lookat(make3_from4(lights[light_index].position), splat3(0.0f), unit3(UP)));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },
@@ -2077,44 +2144,12 @@ int main(void) {
 			};
 
 			{ // :shadow
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, shadow_depthbuffer);
-				VkRenderingAttachmentInfo depth_attachment = {
-					.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-					.imageView = shadow_depthbuffer->view,
-					.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-					.clearValue.depthStencil.depth = 1.0f,
-					.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-					.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				};
-
-				VkExtent2D extent = {
-					.width = shadow_depthbuffer->width,
-					.height = shadow_depthbuffer->height,
-				};
-				VkRenderingInfo shadowpass_info = {
-					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-					.renderArea.extent = extent,
-					.layerCount = 1,
-					.colorAttachmentCount = 0,
-					.pDepthAttachment = &depth_attachment,
-				};
-
-				VkDebugUtilsLabelEXT label_info = {
-					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-					.pLabelName = "SHADOW_PASS",
-					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-				};
-				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
-				vkCmdBeginRendering(cmd->handle, &shadowpass_info);
-
-				VkViewport viewport = {
-					.width = extent.width,
-					.height = extent.height,
-					.minDepth = 0.0f,
-					.maxDepth = 1.0f,
-				};
-				vkCmdSetViewport(cmd->handle, 0, 1, &viewport);
-				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
+				gfx_cmd_draw_begin(cmd,
+					(GFX_DrawPassInfo){
+					  .debug_name = "SHADOW_PASS",
+					  .depth = { shadow_depthbuffer, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = 1.0f },
+					  .area = { 0.0f, 0.0f, shadow_depthbuffer->width, shadow_depthbuffer->height },
+					});
 
 				frame_data.view = lights[light_index].matrix;
 				frame_data.proj = identity4x4();
@@ -2132,12 +2167,12 @@ int main(void) {
 
 					Mesh *mesh = &meshes[entity->meshid];
 
-					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+					gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
 
-						float4x4 transform = compose4x4_from_quat(
+						float4x4 transform = compose4x4_quat(
 							entity->transform.translation,
 							entity->transform.rotation,
 							entity->transform.scale //
@@ -2156,72 +2191,22 @@ int main(void) {
 
 						gfx_cmd_bind(device, 1, array_arg(Uniform, storage_buffers(0, buffer, offset, size)));
 
-						vkCmdPushConstants(cmd->handle, shaders[SHADER_SHADOW]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
 				}
 
-				vkCmdEndRendering(cmd->handle);
-				vkCmdEndDebugUtilsLabel(cmd->handle);
+				gfx_cmd_draw_end(cmd);
 			}
 
 			{ // :spatial
 				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, shadow_depthbuffer);
-
-				VkRenderingAttachmentInfo color_attachments[] = {
-					{
-					  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-					  .imageView = msaa_target->view,
-					  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					  .resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-					  .resolveImageView = spatial_target->view,
-					  .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
-					  .clearValue.color = { { 1.00f, 1.00f, 0.00f, 1.0f } },
-					  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-					  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-					}
-				};
-
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, depthbuffer);
-				VkRenderingAttachmentInfo depth_attachment = {
-					.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-					.imageView = depthbuffer->view,
-					.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-					.clearValue.depthStencil.depth = 1.0f,
-					.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-					.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				};
-
-				VkExtent2D extent = {
-					.width = main_target->width,
-					.height = main_target->height,
-				};
-
-				VkRenderingInfo renderpass_info = {
-					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-					.renderArea.extent = extent,
-					.layerCount = 1,
-					.colorAttachmentCount = countof(color_attachments),
-					.pColorAttachments = color_attachments,
-					.pDepthAttachment = &depth_attachment,
-				};
-
-				VkDebugUtilsLabelEXT label_info = {
-					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-					.pLabelName = "SPATIAL_PASS",
-					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-				};
-				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
-				vkCmdBeginRendering(cmd->handle, &renderpass_info);
-
-				VkViewport viewport = {
-					.width = extent.width,
-					.height = extent.height,
-					.minDepth = 0.0f,
-					.maxDepth = 1.0f,
-				};
-				vkCmdSetViewport(cmd->handle, 0, 1, &viewport);
-				vkCmdSetScissor(cmd->handle, 0, 1, &(VkRect2D){ .extent = extent });
+				gfx_cmd_draw_begin(cmd,
+					(GFX_DrawPassInfo){
+					  .debug_name = "SPATIAL_PASS",
+					  .colors[0] = { msaa_target, spatial_target, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = RED },
+					  .depth = { depthbuffer, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = 1.0f },
+					});
 
 				frame_data.view = lookat(camera->position, camera->target, camera->up);
 				frame_data.proj = perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
@@ -2244,12 +2229,12 @@ int main(void) {
 
 					Mesh *mesh = &meshes[entity->meshid];
 
-					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+					gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
 
-						float4x4 transform = compose4x4_from_quat(
+						float4x4 transform = compose4x4_quat(
 							entity->transform.translation,
 							entity->transform.rotation,
 							entity->transform.scale //
@@ -2263,7 +2248,7 @@ int main(void) {
 						} pc = {
 							.model = transform,
 							.base_color = material->tint,
-							.emissive = one4,
+							.emissive = splat4(1.0f),
 							.metallic_roughness = { 0.0f, 0.5f },
 							.uv_transform = { 1.0f, 1.0f, 0.0f, 0.0f },
 						};
@@ -2305,7 +2290,7 @@ int main(void) {
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
-						vkCmdPushConstants(cmd->handle, shaders[SHADER_SPATIAL]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 					}
 				}
@@ -2313,10 +2298,9 @@ int main(void) {
 				// :grass
 				if (draw_grass) {
 					Mesh *mesh = &meshes[MESH_GRASS_BILLBOARD];
-
-					vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
-
 					gfx_cmd_shader_bind(cmd, shaders[SHADER_GRASS]);
+
+					gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
@@ -2329,7 +2313,7 @@ int main(void) {
 							uint32_t material_flags;
 						} pc = {
 							.base_color = material->tint,
-							.emissive = one4,
+							.emissive = splat4(1.0f),
 							.metallic_roughness = { 0.0f, 0.5f },
 							.uv_transform = { 1.0f, 1.0f, 0.0f, 0.0f },
 							.material_flags = use_heightmap << 0,
@@ -2354,14 +2338,14 @@ int main(void) {
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
-						vkCmdPushConstants(cmd->handle, shaders[SHADER_GRASS]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd->handle, part->index_count, map_width * map_depth, part->index_offset, part->vertex_offset, 0);
 					}
 				}
 
 				if (draw_skybox) { // :skybox
 					gfx_cmd_shader_bind(cmd, shaders[SHADER_SKYBOX]);
-					vkCmdDraw(cmd->handle, 36, 1, 0, 0);
+					gfx_cmd_draw(cmd, 36, 0);
 				}
 
 				{ // :transparent
@@ -2382,7 +2366,7 @@ int main(void) {
 						float3 center = add3(entity->transform.translation, aabb3_center(mesh->bounds));
 
 						transparent_meshes[transparent_mesh_count++] = (MeshSort){
-							.distance = lensq3(sub3(camera->position, center)),
+							.distance = len3_sq(sub3(camera->position, center)),
 							.entity = entity
 						};
 					}
@@ -2420,7 +2404,7 @@ int main(void) {
 
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
-						vkCmdBindIndexBuffer(cmd->handle, geometry->handle, mesh->buffer_index_byte_offset, VK_INDEX_TYPE_UINT32);
+						gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 							MeshPart *part = &mesh->parts[part_index];
 
@@ -2431,13 +2415,13 @@ int main(void) {
 								float2 metallic_roughness;
 								float4 uv_st;
 							} pc = {
-								.model = compose4x4_from_quat(e->transform.translation, e->transform.rotation, e->transform.scale),
+								.model = compose4x4_quat(e->transform.translation, e->transform.rotation, e->transform.scale),
 								.tint = mesh->materials[part->material_id].tint,
 								.emissive = mesh->materials[part->material_id].tint,
 							};
-							float4x4 world_from_object = compose4x4_from_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
+							float4x4 world_from_object = compose4x4_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
 
-							vkCmdPushConstants(cmd->handle, shaders[SHADER_TRANSPARENT]->layout, VK_SHADER_STAGE_ALL, 0, sizeof(world_from_object), world_from_object.elements);
+							gfx_cmd_push_constant(cmd, sizeof(world_from_object), world_from_object.elements);
 							vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
 						}
 					}
@@ -2450,67 +2434,14 @@ int main(void) {
 							storage_data(0, batch_line3->base, batch_line3->offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						vkCmdDraw(cmd->handle, (batch_line3->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
-					}
-
-					typedef struct {
-						float4x4 view;
-						float4x4 projection;
-						float2 camera_position;
-						float2 viewport;
-						float time;
-					} Frame2D;
-
-					Frame2D frame_2d = {
-						.view = identity4x4(),
-						.projection = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
-						.viewport = cast2(dims, float2),
-						.time = time,
-					};
-					if (batch_line2d->offset) {
-						gfx_cmd_shader_bind(cmd, shaders[SHADER_LINE2D]);
-						Uniform uniforms[] = {
-							storage_data(0, batch_line2d->base, batch_line2d->offset),
-						};
-						gfx_cmd_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_2d, sizeof(frame_2d))));
-						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						vkCmdDraw(cmd->handle, (batch_line2d->offset / sizeof(LineVertex3D)) * 6, 1, 0, 0);
+						gfx_cmd_draw(cmd, (batch_line3->offset / sizeof(LineVertex3D)) * 6, 0);
 					}
 				}
 
-				vkCmdEndRendering(cmd->handle);
-				vkCmdEndDebugUtilsLabel(cmd->handle);
+				gfx_cmd_draw_end(cmd);
 			}
 
 			if (batch_2d->offset) { // :canvas
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, ui_target);
-				VkRenderingAttachmentInfo color_attachments[] = { {
-				  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				  .imageView = ui_target->view,
-				  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				  .clearValue.color = { { 0.0f, 0.0f, 0.0f, 0.0f } },
-				  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				} };
-
-				VkExtent2D extent = { ui_target->width, ui_target->height };
-				VkRenderingInfo renderpass_info = {
-					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-					.renderArea.extent = extent,
-					.layerCount = 1,
-					.colorAttachmentCount = countof(color_attachments),
-					.pColorAttachments = color_attachments,
-					.pDepthAttachment = 0,
-				};
-
-				VkDebugUtilsLabelEXT label_info = {
-					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-					.pLabelName = "UI_PASS",
-					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-				};
-				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
-				vkCmdBeginRendering(cmd->handle, &renderpass_info);
-
 				typedef struct {
 					float4x4 view;
 					float4x4 projection;
@@ -2546,18 +2477,29 @@ int main(void) {
 						}
 
 						if (found_index == -1) {
-							ASSERT(image_count < countof(images) || "Extend sprite batching to support beyond 32 distinct images");
+							ASSERT(image_count < countof(images) && "Extend sprite batching to support beyond 32 distinct images");
 							found_index = image_count++;
 							images[found_index] = &device->image_pool[quad_first_vertex->imageid];
+							gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, device->image_pool + quad_first_vertex->imageid);
 						}
 
 						for (uint32_t vertex_index = 0; vertex_index < 6; ++vertex_index) {
 							QuadVertex2D *vertex = quad_first_vertex + vertex_index;
-
 							vertex->imageid = found_index;
 						}
 					}
 				}
+
+				gfx_cmd_draw_begin(cmd,
+					(GFX_DrawPassInfo){
+					  .debug_name = "UI_PASS",
+					  .colors[0] = {
+						.target = ui_target,
+						.clear = TRANSPARENT,
+						.load = LOAD_OP_CLEAR,
+						.store = STORE_OP_STORE,
+					  },
+					});
 
 				gfx_cmd_shader_bind(cmd, shaders[SHADER_QUAD2D]);
 
@@ -2570,11 +2512,8 @@ int main(void) {
 				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
 				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 
-				vkCmdDraw(cmd->handle, vertex_count, 1, 0, 0);
-
-				vkCmdEndRendering(cmd->handle);
-
-				vkCmdEndDebugUtilsLabel(cmd->handle);
+				gfx_cmd_draw(cmd, vertex_count, 0);
+				gfx_cmd_draw_end(cmd);
 			} else
 				gfx_cmd_image_clear(cmd, (Rectangle){ 0 }, TRANSPARENT, ui_target);
 
@@ -2582,33 +2521,11 @@ int main(void) {
 				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, spatial_target);
 				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, ui_target);
 
-				VkRenderingAttachmentInfo color_attachments[] = { {
-				  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				  .imageView = main_target->view,
-				  .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				  .clearValue.color = { { 1.00f, 1.00f, 0.00f, 1.0f } },
-				  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				} };
-
-				VkExtent2D extent = { main_target->width, main_target->height };
-				VkRenderingInfo renderpass_info = {
-					.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-					.renderArea.extent = extent,
-					.layerCount = 1,
-					.colorAttachmentCount = countof(color_attachments),
-					.pColorAttachments = color_attachments,
-					.pDepthAttachment = 0,
-				};
-
-				VkDebugUtilsLabelEXT label_info = {
-					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-					.pLabelName = "BLIT_PASS",
-					.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-				};
-				vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
-				vkCmdBeginRendering(cmd->handle, &renderpass_info);
-
+				gfx_cmd_draw_begin(cmd,
+					(GFX_DrawPassInfo){
+					  .debug_name = "COMPOSITE_PASS",
+					  .colors[0] = { main_target, 0, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = RED },
+					});
 				gfx_cmd_shader_bind(cmd, shaders[SHADER_COMPOSITE]);
 
 				GFX_Image *images[] = {
@@ -2622,9 +2539,8 @@ int main(void) {
 
 				gfx_cmd_bind(device, 0, uniforms, countof(uniforms));
 
-				vkCmdDraw(cmd->handle, 6, 1, 0, 0);
-				vkCmdEndRendering(cmd->handle);
-				vkCmdEndDebugUtilsLabel(cmd->handle);
+				gfx_cmd_draw(cmd, 6, 0);
+				gfx_cmd_draw_end(cmd);
 			}
 		}
 		gfx_frame_end(device, cmd);
@@ -2683,11 +2599,7 @@ int main(void) {
 		arena_reset(frame_arena);
 	}
 
-	// :destroy
 	gfx_device_destroy(device);
-
-	os_surface_close(main_render);
-	os_surface_close(popup_compute);
 	os_display_shutdown();
 	return 0;
 }
@@ -2762,7 +2674,7 @@ Image2D load_gltf_image(Arena *arena, String8 directory, cgltf_image *image) {
 			String8 image_path = str8_filepath_join(scratch.arena, directory, str8_wrap(image->uri));
 			result = load_image(arena, image_path);
 		} else if (image->buffer_view) {
-			const uint8_t *buffer_data = cgltf_buffer_view_data(image->buffer_view);
+			uint8_t *buffer_data = (uint8_t *)cgltf_buffer_view_data(image->buffer_view);
 			uint32_t channels = 0;
 			result.pixels = stbi_load_from_memory(buffer_data, image->buffer_view->size, (int32_t *)&result.width, (int32_t *)&result.height, (int32_t *)&channels, 4);
 			result.format = PIXEL_FORMAT_RGBA8_SRGB;
@@ -2774,7 +2686,7 @@ Image2D load_gltf_image(Arena *arena, String8 directory, cgltf_image *image) {
 }
 
 Mesh load_gltf(Arena *arena, String8 path) {
-	LOG_INFO("loading [%s]", path.text);
+	LOG_INFO("loading [%s] geometry.", path.text);
 
 	Mesh result = { 0 };
 	cgltf_options options = { 0 };
@@ -2795,7 +2707,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 		result.material_count = data->materials_count + 1;
 		result.materials = arena_push_count(arena, Material, result.material_count);
 		result.materials[0] = (Material){
-			.tint = one4,
+			.tint = splat4(1.0f),
 		};
 
 		for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) {
@@ -2806,7 +2718,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 			if (material->has_pbr_metallic_roughness) {
 				cgltf_pbr_metallic_roughness *pbr = &material->pbr_metallic_roughness;
 
-				out->tint = wrap4(pbr->base_color_factor);
+				out->tint = load4(pbr->base_color_factor);
 				out->metallic_roughness = (float2){
 					.x = pbr->metallic_factor,
 					.y = pbr->roughness_factor,
@@ -2890,8 +2802,8 @@ Mesh load_gltf(Arena *arena, String8 path) {
 						case cgltf_attribute_type_position:
 							offset = offsetof(Vertex3D, position);
 							if (has_transform == false) {
-								part->bounds.min = wrap3(accessor->min);
-								part->bounds.max = wrap3(accessor->max);
+								part->bounds.min = load3(accessor->min);
+								part->bounds.max = load3(accessor->max);
 							}
 							break;
 						case cgltf_attribute_type_normal:
@@ -2988,18 +2900,6 @@ Mesh load_gltf(Arena *arena, String8 path) {
 		}
 	}
 
-	/* if (ok) { // load materials */
-	/* 	for (uint32_t material_index = 0; material_index < data->materials_count; ++material_index) { */
-	/* 		cgltf_material *material = &data->materials[material_index]; */
-	/* 		if (material->has_pbr_metallic_roughness == false) { */
-	/* 			LOG_WARN("expect material to use metallic roughness."); */
-	/* 			continue; */
-	/* 		} */
-
-	/* 		cgltf_pbr_metallic_roughness *pbr = &material->pbr_metallic_roughness; */
-	/* 	} */
-	/* } */
-
 	if (ok) { // load skeleton
 		ASSERT(data->skins_count <= 1 && "expect single skinned mesh per file");
 		for (uint32_t skin_index = 0; skin_index < data->skins_count; ++skin_index) {
@@ -3037,6 +2937,91 @@ Mesh load_gltf(Arena *arena, String8 path) {
 	}
 
 	cgltf_free(data);
+	return result;
+}
+
+AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count) {
+	LOG_INFO("loading [%s] animations.", path.text);
+
+	AnimationClip *result = 0;
+	cgltf_options options = { 0 };
+	cgltf_data *data = 0;
+
+	bool ok = cgltf_parse_file(&options, (char *)path.text, &data) == cgltf_result_success;
+	if (ok == false)
+		LOG_ERROR("%s - failed to open file", path.text);
+
+	if (ok) {
+		ok &= cgltf_load_buffers(&options, data, (char *)path.text) == cgltf_result_success;
+		ok &= cgltf_validate(data) == cgltf_result_success;
+		ok &= data->animations_count > 0;
+	}
+
+	if (ok) { // load animations
+		result = arena_push_count(arena, AnimationClip, data->animations_count);
+		*count = data->animations_count;
+
+		cgltf_skin *skin = &data->skins[0];
+		for (uint32_t anim_index = 0; anim_index < data->animations_count; ++anim_index) {
+			cgltf_animation *anim = &data->animations[anim_index];
+			AnimationClip *out_anim = result + anim_index;
+
+			uint32_t max_keyframe_count = 0, min_keyframe_count = UINT32_MAX;
+			for (uint32_t sampler_index = 0; sampler_index < anim->samplers_count; ++sampler_index) {
+				cgltf_animation_sampler *sampler = &anim->samplers[sampler_index];
+
+				max_keyframe_count = MAX(sampler->input->count, max_keyframe_count);
+				min_keyframe_count = MIN(sampler->input->count, min_keyframe_count);
+				out_anim->keyframe_count = MAX(sampler->input->count, out_anim->keyframe_count);
+
+				float t = 0.0f;
+				cgltf_accessor_read_float(sampler->input, sampler->input->count - 1, &t, cgltf_component_size(sampler->input->component_type));
+
+				out_anim->duration = MAX(out_anim->duration, t);
+			}
+			ASSERT(min_keyframe_count == max_keyframe_count && "expect all sampler timings to match");
+			out_anim->keyframes = arena_push_count(arena, Transform3 *, out_anim->keyframe_count);
+			out_anim->timings = arena_push_count(arena, float, out_anim->keyframe_count);
+			out_anim->bone_count = data->skins[0].joints_count;
+			memory_copy(out_anim->name, anim->name, MIN(sizeof(out_anim->name) - 1, str8_wrap(anim->name).length));
+
+			for (uint32_t keyframe = 0; keyframe < out_anim->keyframe_count; ++keyframe) {
+				Transform3 *pose = out_anim->keyframes[keyframe];
+				out_anim->keyframes[keyframe] = arena_push_count(arena, Transform3, out_anim->bone_count);
+			}
+
+			ASSERT(out_anim->bone_count == anim->channels_count / 3 && "expect all channels to be written");
+			for (uint32_t channel_index = 0; channel_index < anim->channels_count; ++channel_index) {
+				cgltf_animation_channel *channel = &anim->channels[channel_index];
+				cgltf_animation_sampler *sampler = channel->sampler;
+				ASSERT(sampler->interpolation == cgltf_interpolation_type_linear && "expect all animations to interpolate linearly");
+
+				uint32_t bone_index = -1;
+				for (uint32_t index = 0; index < out_anim->bone_count; ++index) {
+					if (channel->target_node == skin->joints[index]) {
+						bone_index = index;
+						break;
+					}
+				}
+				if (bone_index == (uint32_t)-1)
+					continue;
+
+				for (uint32_t keyframe = 0; keyframe < sampler->input->count; ++keyframe) {
+					cgltf_accessor_read_float(sampler->input, keyframe, &out_anim->timings[keyframe], 1);
+					Transform3 *transforms = out_anim->keyframes[keyframe];
+
+					if (channel->target_path == cgltf_animation_path_type_translation)
+						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].translation, 3);
+					else if (channel->target_path == cgltf_animation_path_type_rotation)
+						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].rotation, 4);
+					else if (channel->target_path == cgltf_animation_path_type_scale)
+						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].scale, 3);
+				}
+			}
+		}
+	}
+	cgltf_free(data);
+
 	return result;
 }
 
@@ -3131,7 +3116,7 @@ Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, u
 
 		result.materials[0] = (Material){
 			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = one4,
+			.emissive = splat4(1.0f),
 			.metallic_roughness = { 0.0f, 0.5f },
 		};
 	}
@@ -3264,7 +3249,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 
 		result.materials[0] = (Material){
 			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = one4,
+			.emissive = splat4(1.0f),
 			.metallic_roughness = { 0.0f, 0.5f },
 		};
 	}
@@ -3341,7 +3326,7 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 
 		result.materials[0] = (Material){
 			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = one4,
+			.emissive = splat4(1.0f),
 			.metallic_roughness = { 0.0f, 0.5f },
 		};
 	}
@@ -3407,7 +3392,7 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 
 		result.materials[0] = (Material){
 			.tint = { 0.8f, 0.8f, 0.8f, 1.0f },
-			.emissive = one4,
+			.emissive = splat4(1.0f),
 			.metallic_roughness = { 0.0f, 0.5f },
 		};
 	}
@@ -3465,91 +3450,6 @@ Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count) {
 			result.bounds = aabb3_merge(result.bounds, mesh->bounds);
 		}
 	}
-
-	return result;
-}
-
-AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count) {
-	LOG_INFO("loading [%s]", path.text);
-
-	AnimationClip *result = 0;
-	cgltf_options options = { 0 };
-	cgltf_data *data = 0;
-
-	bool ok = cgltf_parse_file(&options, (char *)path.text, &data) == cgltf_result_success;
-	if (ok == false)
-		LOG_ERROR("%s - failed to open file", path.text);
-
-	if (ok) {
-		ok &= cgltf_load_buffers(&options, data, (char *)path.text) == cgltf_result_success;
-		ok &= cgltf_validate(data) == cgltf_result_success;
-		ok &= data->animations_count > 0;
-	}
-
-	if (ok) { // load animations
-		result = arena_push_count(arena, AnimationClip, data->animations_count);
-		*count = data->animations_count;
-
-		cgltf_skin *skin = &data->skins[0];
-		for (uint32_t anim_index = 0; anim_index < data->animations_count; ++anim_index) {
-			cgltf_animation *anim = &data->animations[anim_index];
-			AnimationClip *out_anim = result + anim_index;
-
-			uint32_t max_keyframe_count = 0, min_keyframe_count = UINT32_MAX;
-			for (uint32_t sampler_index = 0; sampler_index < anim->samplers_count; ++sampler_index) {
-				cgltf_animation_sampler *sampler = &anim->samplers[sampler_index];
-
-				max_keyframe_count = MAX(sampler->input->count, max_keyframe_count);
-				min_keyframe_count = MIN(sampler->input->count, min_keyframe_count);
-				out_anim->keyframe_count = MAX(sampler->input->count, out_anim->keyframe_count);
-
-				float t = 0.0f;
-				cgltf_accessor_read_float(sampler->input, sampler->input->count - 1, &t, cgltf_component_size(sampler->input->component_type));
-
-				out_anim->duration = MAX(out_anim->duration, t);
-			}
-			ASSERT(min_keyframe_count == max_keyframe_count && "expect all sampler timings to match");
-			out_anim->keyframes = arena_push_count(arena, Transform3 *, out_anim->keyframe_count);
-			out_anim->timings = arena_push_count(arena, float, out_anim->keyframe_count);
-			out_anim->bone_count = data->skins[0].joints_count;
-			memory_copy(out_anim->name, anim->name, MIN(sizeof(out_anim->name) - 1, str8_wrap(anim->name).length));
-
-			for (uint32_t keyframe = 0; keyframe < out_anim->keyframe_count; ++keyframe) {
-				Transform3 *pose = out_anim->keyframes[keyframe];
-				out_anim->keyframes[keyframe] = arena_push_count(arena, Transform3, out_anim->bone_count);
-			}
-
-			ASSERT(out_anim->bone_count == anim->channels_count / 3 && "expect all channels to be written");
-			for (uint32_t channel_index = 0; channel_index < anim->channels_count; ++channel_index) {
-				cgltf_animation_channel *channel = &anim->channels[channel_index];
-				cgltf_animation_sampler *sampler = channel->sampler;
-				ASSERT(sampler->interpolation == cgltf_interpolation_type_linear && "expect all animations to interpolate linearly");
-
-				uint32_t bone_index = -1;
-				for (uint32_t index = 0; index < out_anim->bone_count; ++index) {
-					if (channel->target_node == skin->joints[index]) {
-						bone_index = index;
-						break;
-					}
-				}
-				if (bone_index == (uint32_t)-1)
-					continue;
-
-				for (uint32_t keyframe = 0; keyframe < sampler->input->count; ++keyframe) {
-					cgltf_accessor_read_float(sampler->input, keyframe, &out_anim->timings[keyframe], 1);
-					Transform3 *transforms = out_anim->keyframes[keyframe];
-
-					if (channel->target_path == cgltf_animation_path_type_translation)
-						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].translation, 3);
-					else if (channel->target_path == cgltf_animation_path_type_rotation)
-						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].rotation, 4);
-					else if (channel->target_path == cgltf_animation_path_type_scale)
-						cgltf_accessor_read_float(sampler->output, keyframe, (float *)&transforms[bone_index].scale, 3);
-				}
-			}
-		}
-	}
-	cgltf_free(data);
 
 	return result;
 }

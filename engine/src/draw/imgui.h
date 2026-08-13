@@ -9,12 +9,14 @@
 
 #define IMGUI_MAX_CHILDREN 32
 
-typedef enum {
-	IMGUI_MODE_FIT,
-	IMGUI_MODE_FIXED,
-	IMGUI_MODE_GROW,
+typedef struct IMGUI_Widget IMGUI_Widget;
 
-	IMGUI_MODE_MAX,
+typedef enum {
+	IMGUI_SIZING_FIT,
+	IMGUI_SIZING_FIXED,
+	IMGUI_SIZING_GROW,
+
+	IMGUI_SIZING_MAX,
 } IMGUI_SizingMode;
 
 typedef enum {
@@ -47,18 +49,18 @@ typedef enum {
 typedef struct {
 	IMGUI_Direction flow;
 	IMGUI_Align align[AXIS_MAX2D];
-	IMGUI_SizingMode mode[AXIS_MAX2D];
+	IMGUI_SizingMode sizing[AXIS_MAX2D];
 	float child_gap, padding[AXIS_MAX2D][2];
 
 	Color bg, fg, border;
-	float border_radius, border_width;
+	float4 border_radius;
+	float border_width;
 
 	Font *font;
 	String8 text;
 	Image2D *image;
 } IMGUI_Settings;
 
-typedef struct IMGUI_Widget IMGUI_Widget;
 struct IMGUI_Widget {
 	uint64_t id;
 	IMGUI_Settings settings;
@@ -71,6 +73,10 @@ struct IMGUI_Widget {
 	// calculated
 	float offset[AXIS_MAX2D];
 	float size[AXIS_MAX2D];
+
+	struct {
+		float scale;
+	} visual;
 };
 
 extern IMGUI_Widget IMGUI_NIL;
@@ -80,12 +86,13 @@ typedef struct {
 	Font *font;
 
 	IMGUI_Direction flow;
-	IMGUI_SizingMode mode[2];
+	IMGUI_SizingMode sizing[2];
 
 	IMGUI_Align align[2];
 
 	Color bg, fg, border;
-	float border_radius, border_width;
+	float4 border_radius;
+	float border_width;
 
 	float p;
 	float ph, pv;
@@ -96,17 +103,19 @@ typedef struct {
 
 #define IMGUI_MAX_WIDGETS 256
 #define IMGUI_MAX_STYLE_DEPTH 4
+
+typedef struct {
+	float2 position, last_position;
+	bool pressed[3];
+	bool released[3];
+} IMGUI_Mouse;
+
 typedef struct {
 	Font *default_font;
+	IMGUI_Mouse mouse;
 
 	IMGUI_Widget widgets[IMGUI_MAX_WIDGETS];
 	uint32_t widget_count;
-
-	struct {
-		float2 position, last_position;
-		bool pressed[3];
-		bool released[3];
-	} mouse;
 
 	IMGUI_Widget *parent_stack[8];
 	uint32_t parent_stack_cursor;
@@ -120,25 +129,32 @@ typedef struct {
 	IMGUI_Settings settings_stack[IMGUI_MAX_STYLE_DEPTH];
 	uint32_t setting_stack_cursor;
 
-	float time, last_release_time;
-	uint64_t last_release_id;
-	uint64_t hovered, held;
+	struct {
+		float time, last_release_time;
+		float hover_t, press_t;
+		uint64_t last_release_id;
+		uint64_t hovered, active;
+		uint64_t last_hovered;
+	} status;
 } IMGUI_Context;
 
-void imgui_frame_begin(IMGUI_Context *context, float dt);
+void imgui_frame_begin(IMGUI_Context *ctx, IMGUI_Mouse mouse, float dt);
 void imgui_frame_end(void);
 
 typedef struct {
 	bool hovered, pressed, held, released;
 	bool double_release;
+
+	float hover_t, press_t;
 } IMGUI_Interact;
 
 IMGUI_Interact imgui_interact(uint64_t id, Rectangle rect);
 IMGUI_Widget *imgui_widget(uint64_t id);
 IMGUI_Widget *imgui_widget_blank(uint64_t id);
-IMGUI_Widget *imgui_widget_ex(uint64_t id, IMGUI_Style style);
+IMGUI_Widget *imgui_widget_opt(uint64_t id, IMGUI_Style style);
 IMGUI_Widget *imgui_child(uint64_t id, IMGUI_Widget *parent);
 void imgui_parent(IMGUI_Widget *child, IMGUI_Widget *parent);
+void imgui_unparent(IMGUI_Widget *child);
 
 void imgui_push_parent(IMGUI_Widget *widget);
 void imgui_pop_parent(void);

@@ -36,7 +36,7 @@ float3 shape3_support(Shape3 s, float3 direction) {
 	float3 result = { 0 };
 
 	direction = norm3(direction);
-	ASSERT(equalf(lensq3(direction), 0.0f) == false);
+	ASSERT(equalf(len3_sq(direction), 0.0f) == false);
 
 	ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -103,7 +103,7 @@ CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
 	float3 max = a.max;
 
 	CastResult3 result = CAST3_NO_HIT, temp = CAST3_NO_HIT;
-	if (lensq3(r.direction)) {
+	if (len3_sq(r.direction)) {
 		for (uint32_t side = 0; side < SIDE_COUNT3; ++side) {
 			float3 pn = side_to_float3[side];
 			float3 po = add3(aabb3_center(a), mul3(pn, aabb3_half_extent(a)));

@@ -11,6 +11,7 @@ typedef struct {
 typedef struct {
 	Image2D atlas;
 	uint32_t line_height, bake_size;
+	uint32_t greatest_bottom_y, greatest_top_y;
 
 	Glyph *glyphs;
 	uint32_t glyph_count;

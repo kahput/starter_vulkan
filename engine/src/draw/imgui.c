@@ -66,24 +66,32 @@ bool imgui__remove_child(IMGUI_Widget *parent, uint32_t target_index) {
 	return ok;
 }
 
-void imgui_frame_begin(IMGUI_Context *ctx, float dt) {
+void imgui_frame_begin(IMGUI_Context *ctx, IMGUI_Mouse mouse, float dt) {
 	context = ctx;
 	context->widget_count = 1;
-	context->time += dt;
+	context->status.time += dt;
+	context->mouse = mouse;
+	context->status.hover_t += dt, context->status.press_t += dt;
+	context->status.hover_t = clampf(context->status.hover_t, 0.0f, 1.0f);
+	context->status.press_t = clampf(context->status.press_t, 0.0f, 1.0f);
 	memory_zero_array(context->widgets);
 }
 
 void imgui_frame_end(void) {
-	if (context->held && context->mouse.released[0])
-		context->held = 0;
-	if (context->mouse.pressed[0] && context->held == 0)
-		context->held = -1;
-	context->hovered = 0;
+	if (context->status.active && context->mouse.released[0])
+		context->status.active = 0;
+	if (context->mouse.pressed[0] && context->status.active == 0)
+		context->status.active = -1;
+	if (context->status.last_hovered != context->status.hovered)
+		context->status.hover_t = 0.0f;
+	context->status.last_hovered = context->status.hovered;
+	context->status.hovered = 0;
 
 	// cache
 	context->cache_count = 1;
 	for (uint32_t index = 0; index < context->widget_count; ++index) {
 		IMGUI_Widget *widget = &context->widgets[index];
+
 		context->cache[context->cache_count].id = widget->id;
 		context->cache[context->cache_count++].rect = imgui_rect_live(widget);
 	}
@@ -103,24 +111,28 @@ IMGUI_Interact imgui_interact(uint64_t id, Rectangle rect) {
 		}
 
 		if (rect_contains_point(rect, context->mouse.position)) {
-			context->hovered = id;
-			if (context->mouse.pressed[0] && context->held == 0) {
+			context->status.hovered = id;
+
+			if (context->mouse.pressed[0] && context->status.active == 0) {
 				result.pressed = true;
-				context->held = id;
+				context->status.active = id;
+				context->status.press_t = 0.0f;
 			}
 		}
 
-		result.held = context->held == id;
-		result.hovered = context->hovered == id;
+		result.held = context->status.active == id;
+		result.hovered = context->status.hovered == id;
 		result.released = result.held && result.hovered && context->mouse.released[0];
+		result.hover_t = context->status.hover_t;
+		result.press_t = context->status.press_t;
 
-		if (result.released && context->last_release_id == id && context->time - context->last_release_time <= 0.5f) {
+		if (result.released && context->status.last_release_id == id && context->status.time - context->status.last_release_time <= 0.5f) {
 			result.double_release = true;
-			context->last_release_time = 0.0f;
-			context->last_release_id = 0;
+			context->status.last_release_time = 0.0f;
+			context->status.last_release_id = 0;
 		} else if (result.released) {
-			context->last_release_id = id;
-			context->last_release_time = context->time;
+			context->status.last_release_id = id;
+			context->status.last_release_time = context->status.time;
 		}
 	}
 
@@ -139,7 +151,7 @@ IMGUI_Widget *imgui_widget_blank(uint64_t id) {
 	return result;
 }
 
-IMGUI_Widget *imgui_widget_ex(uint64_t id, IMGUI_Style style) {
+IMGUI_Widget *imgui_widget_opt(uint64_t id, IMGUI_Style style) {
 	IMGUI_Widget *result = &IMGUI_NIL;
 
 	imgui_push_style(style);
@@ -152,10 +164,10 @@ IMGUI_Widget *imgui_widget_ex(uint64_t id, IMGUI_Style style) {
 IMGUI_Widget *imgui_widget(uint64_t id) {
 	IMGUI_Widget *result = imgui_widget_blank(id);
 	if (imgui_valid(result)) {
-		if (context->parent_stack_cursor)
-			imgui_parent(result, context->parent_stack[context->parent_stack_cursor - 1]);
 		if (context->setting_stack_cursor)
 			result->settings = context->settings_stack[context->setting_stack_cursor - 1];
+		if (context->parent_stack_cursor)
+			imgui_parent(result, context->parent_stack[context->parent_stack_cursor - 1]);
 	}
 
 	return result;
@@ -187,6 +199,14 @@ void imgui_parent(IMGUI_Widget *child, IMGUI_Widget *parent) {
 	}
 }
 
+void imgui_unparent(IMGUI_Widget *child) {
+	bool ok = context && imgui_valid(child) && child->parent > 0 && child->parent < countof(context->widgets);
+	if (ok) {
+		IMGUI_Widget *parent = &context->widgets[child->parent];
+		imgui__remove_child(parent, indexof(context->widgets, child));
+	}
+}
+
 void imgui_push_parent(IMGUI_Widget *widget) {
 	bool ok = context && imgui_valid(widget) && context->parent_stack_cursor < countof(context->parent_stack);
 	if (ok)
@@ -200,7 +220,7 @@ void imgui_pop_parent(void) {
 
 void imgui__parse_style_confg(IMGUI_Style *cfg, IMGUI_Settings *style) {
 	style->flow = cfg->flow;
-	style->mode[0] = cfg->mode[0], style->mode[1] = cfg->mode[1];
+	style->sizing[0] = cfg->sizing[0], style->sizing[1] = cfg->sizing[1];
 	style->align[0] = cfg->align[0], style->align[1] = cfg->align[1];
 
 	style->bg = cfg->bg, style->fg = cfg->fg, style->border = cfg->border;
@@ -225,7 +245,7 @@ IMGUI_Style imgui_peek_style(void) {
 		IMGUI_Settings settings = context->settings_stack[context->setting_stack_cursor - 1];
 
 		result.flow = settings.flow;
-		result.mode[0] = settings.mode[0], result.mode[1] = settings.mode[1];
+		result.sizing[0] = settings.sizing[0], result.sizing[1] = settings.sizing[1];
 		result.align[0] = settings.align[0], result.align[1] = settings.align[1];
 		result.bg = settings.bg, result.fg = settings.fg;
 		result.border_radius = settings.border_radius;
@@ -296,8 +316,8 @@ void imgui_fit_tree_along_axis(IMGUI_Widget *root, IMGUI_Axis axis) {
 	}
 
 	bool fit[] = {
-		root->settings.mode[AXIS_X] == IMGUI_MODE_FIT || root->settings.mode[AXIS_X] == IMGUI_MODE_GROW,
-		root->settings.mode[AXIS_Y] == IMGUI_MODE_FIT || root->settings.mode[AXIS_Y] == IMGUI_MODE_GROW
+		root->settings.sizing[AXIS_X] == IMGUI_SIZING_FIT || root->settings.sizing[AXIS_X] == IMGUI_SIZING_GROW,
+		root->settings.sizing[AXIS_Y] == IMGUI_SIZING_FIT || root->settings.sizing[AXIS_Y] == IMGUI_SIZING_GROW
 	};
 
 	if (fit[main] && has_flag(axis, main + 1)) {
@@ -327,9 +347,9 @@ void imgui_grow_tree_along_axis(IMGUI_Widget *root, IMGUI_Axis mask) {
 	for (uint32_t index = 0; index < root->children_count; ++index) {
 		IMGUI_Widget *child = &context->widgets[root->children[index]];
 
-		if (child->settings.mode[main] == IMGUI_MODE_GROW)
+		if (child->settings.sizing[main] == IMGUI_SIZING_GROW)
 			growable[main][growable_count[main]++] = child;
-		if (child->settings.mode[cross] == IMGUI_MODE_GROW)
+		if (child->settings.sizing[cross] == IMGUI_SIZING_GROW)
 			growable[cross][growable_count[cross]++] = child;
 	}
 
@@ -420,7 +440,7 @@ void imgui_position_tree(IMGUI_Widget *root) {
 IMGUI_Widget *imgui_label(uint64_t id, String8 label) {
 	IMGUI_Widget *result = imgui_widget(id);
 	result->settings.text = label;
-	result->settings.mode[0] = IMGUI_MODE_FIXED, result->settings.mode[1] = IMGUI_MODE_FIXED;
+	result->settings.sizing[0] = IMGUI_SIZING_FIXED, result->settings.sizing[1] = IMGUI_SIZING_FIXED;
 
 	Font *font = result->settings.font ? result->settings.font : context->default_font;
 	if (font) {
@@ -435,7 +455,7 @@ IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale) {
 	IMGUI_Widget *result = imgui_widget(id);
 
 	result->settings.image = image;
-	result->settings.mode[0] = IMGUI_MODE_FIXED, result->settings.mode[1] = IMGUI_MODE_FIXED;
+	result->settings.sizing[0] = IMGUI_SIZING_FIXED, result->settings.sizing[1] = IMGUI_SIZING_FIXED;
 
 	if (image) {
 		result->size[0] = image->width * scale, result->size[1] = image->height * scale;
@@ -455,7 +475,7 @@ IMGUI_Interact imgui_button_image(Image2D *image, float scale) {
 
 	IMGUI_Widget *icon = imgui_child(0, box);
 	icon->settings.image = image;
-	icon->settings.mode[0] = IMGUI_MODE_FIXED, icon->settings.mode[1] = IMGUI_MODE_FIXED;
+	icon->settings.sizing[0] = IMGUI_SIZING_FIXED, icon->settings.sizing[1] = IMGUI_SIZING_FIXED;
 
 	if (image)
 		icon->size[0] = image->width * scale, icon->size[1] = image->height * scale;
@@ -469,13 +489,13 @@ IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max) {
 
 	uint32_t flow = IMGUI_HORIZONTAL;
 
-	track->settings.mode[flow] = IMGUI_MODE_GROW;
-	track->settings.mode[!flow] = IMGUI_MODE_FIXED;
+	track->settings.sizing[flow] = IMGUI_SIZING_GROW;
+	track->settings.sizing[!flow] = IMGUI_SIZING_FIXED;
 
 	thumb->settings.bg = imgui_peek_style().fg; // colors will also be decided by theme
 
-	thumb->settings.mode[0] = track->settings.mode[1];
-	thumb->settings.mode[1] = track->settings.mode[0];
+	thumb->settings.sizing[0] = track->settings.sizing[1];
+	thumb->settings.sizing[1] = track->settings.sizing[0];
 
 	track->size[!flow] = context->default_font->bake_size; // will be decided by theme
 	thumb->size[flow] = context->default_font->bake_size; // will be decided by theme
@@ -516,7 +536,7 @@ IMGUI_Widget *imgui_spacer(void) {
 		imgui_parent(result, parent);
 		aligned_axis = parent->settings.flow;
 	}
-	result->settings.mode[aligned_axis] = IMGUI_MODE_GROW;
+	result->settings.sizing[aligned_axis] = IMGUI_SIZING_GROW;
 
 	return result;
 }

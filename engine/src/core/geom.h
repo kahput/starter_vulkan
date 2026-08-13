@@ -31,7 +31,7 @@ static inline bool aabb3_overlap(AABB3 a, AABB3 b) {
 		(a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 static inline Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), len3(aabb3_half_extent(a)) }; }
-static inline bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.center)) <= s.radius * s.radius; }
+static inline bool sphere_contains_point(Sphere s, float3 p) { return len3_sq(sub3(p, s.center)) <= s.radius * s.radius; }
 
 static inline Plane plane_from_side(Side s) { return (Plane){ side_to_float3[s], 0.0f }; }
 static inline Plane plane_from_point_normal(float3 point, float3 normal) { return (Plane){ normal, dot3(point, normal) }; }

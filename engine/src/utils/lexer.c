@@ -28,7 +28,7 @@ const String8 token_type_to_string[TOKEN_MAX] = {
     [TOKEN_IDENTIFIER]    = str_comp("identifier"),
     [TOKEN_STRING]        = str_comp("string"),
     [TOKEN_INTEGER]       = str_comp("integer"),
-    [TOKEN_FLOAT]         = str_comp("float"),
+    [TOKEN_REAL]         = str_comp("real"),
 
     [TOKEN_EOF]           = str_comp("end of file"),
 };
@@ -315,7 +315,7 @@ Token lexer__scan_token(Lexer *lexer) {
 					}
 				}
 				token.lexeme.length = (int)(lexer->cursor - token.lexeme.text);
-				token.type = is_float ? TOKEN_FLOAT : TOKEN_INTEGER;
+				token.type = is_float ? TOKEN_REAL : TOKEN_INTEGER;
 
 			} else if (is_aplha(c)) {
 				while (is_alnum(lexer->cursor[0])) {
@@ -332,7 +332,7 @@ Token lexer__scan_token(Lexer *lexer) {
 	return token;
 }
 
-Token lexer_next(Lexer *lexer) {
+Token lexer_advance(Lexer *lexer) {
 	Token result = { .type = TOKEN_UNKNOWN };
 	if (lexer->has_peeked) {
 		lexer->has_peeked = false;
@@ -371,7 +371,7 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out) {
 }
 
 Token lexer_expect(Lexer *lexer, TokenType type) {
-	Token t = lexer_next(lexer);
+	Token t = lexer_advance(lexer);
 	if (t.type != type) {
 		LOG_WARN("expected '%.*s' got '%.*s' (%.*s) at %d:%d",
 			str_spread(token_type_to_string[type]),
@@ -427,11 +427,11 @@ Token lexer_consume(Lexer *lexer, TokenType type, String8 message) {
 		}
 	}
 
-	return had_error ? token : lexer_next(lexer);
+	return had_error ? token : lexer_advance(lexer);
 }
 
 Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count) {
-	Token t = lexer_next(lexer);
+	Token t = lexer_advance(lexer);
 	bool found = false;
 	for (uint32_t index = 0; index < type_count; ++index) {
 		if (t.type == types[index]) {

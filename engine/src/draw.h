@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.h"
 #include "draw/font.h"
 #include "gfx/gfx_types.h"
 
@@ -63,3 +64,12 @@ void draw3d_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color
 void draw3d_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color);
 void draw3d_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color);
 void draw3d_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness);
+
+typedef struct {
+	float2 position, uv;
+	float4 radii;
+	float2 size;
+	uint32_t fill_color, border_color;
+	float border_width;
+	uint32_t imageid;
+} DRAW_CommandQuad;

@@ -142,15 +142,6 @@ bool equal4x4(float4x4 lhs, float4x4 rhs) {
 		equalf(lhs.elements[15], rhs.elements[15]);
 }
 
-float4x4 identity4x4(void) {
-	float4x4 result = { { 1.0f, 0.0f, 0.0f, 0.0f,
-	  0.0f, 1.0f, 0.0f, 0.0f,
-	  0.0f, 0.0f, 1.0f, 0.0f,
-	  0.0f, 0.0f, 0.0f, 1.0f } };
-
-	return result;
-}
-
 float4x4 mul4x4(float4x4 lhs, float4x4 rhs) {
 	float4x4 result = { 0 };
 
@@ -236,10 +227,10 @@ float4x4 scale4x4(float4x4 m, float3 s) {
 	return result;
 }
 
-float4x4 rotate4x4(float4x4 m, float angle, float3 axis) {
+float4x4 rotate4x4(float4x4 m, float3 axis, float angle) {
 	// Post-multiply by rotation: result = m * R
 	// Means: each of the first 3 columns of m gets mixed by R.
-	float4x4 r = make4x4_from_rotation(axis, angle);
+	float4x4 r = make4x4_rotation(axis, angle);
 	float4x4 result = m;
 
 	// Cache m's basis columns (col 0,1,2). Translation col stays as-is.
@@ -274,7 +265,7 @@ float4x4 rotate4x4(float4x4 m, float angle, float3 axis) {
 	return result;
 }
 
-float4x4 make4x4_from_translation(float3 v) {
+float4x4 make4x4_translation(float3 v) {
 	// clang-format off
 	float4x4 result = {{
 	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = v.x,
@@ -287,7 +278,7 @@ float4x4 make4x4_from_translation(float3 v) {
 	return result;
 }
 
-float4x4 make4x4_from_rotation(float3 axis, float angle) {
+float4x4 make4x4_rotation(float3 axis, float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
@@ -309,7 +300,7 @@ float4x4 make4x4_from_rotation(float3 axis, float angle) {
 	return result;
 }
 
-float4x4 make4x4_from_scale(float3 scale) {
+float4x4 make4x4_scale(float3 scale) {
 	// clang-format off
 	float4x4 result = {{
 	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
@@ -322,7 +313,7 @@ float4x4 make4x4_from_scale(float3 scale) {
 	return result;
 }
 
-float4x4 make4x4_from_quat(quat4 q) {
+float4x4 make4x4quat(quat4 q) {
 	float x = q.x, y = q.y, z = q.z, w = q.w;
 	float xx = x * x, yy = y * y, zz = z * z;
 	float xy = x * y, xz = x * z, yz = y * z;
@@ -365,25 +356,25 @@ float4x4 transpose4x4(float4x4 m) {
 	return result;
 }
 
-float4x4 compose4x4_from_euler(float3 position, float3 rotation, float3 scale) {
+float4x4 compose4x4_euler(float3 position, float3 rotation, float3 scale) {
 	float4x4 result = { 0 };
 
-	float4x4 T = make4x4_from_translation(position);
-	float4x4 S = make4x4_from_scale(scale);
-	float4x4 rotation_x = make4x4_from_rotation(unit3(RIGHT), rotation.x);
-	float4x4 rotation_y = make4x4_from_rotation(unit3(UP), rotation.y);
-	float4x4 rotation_z = make4x4_from_rotation(unit3(FORWARD), rotation.z);
+	float4x4 T = make4x4_translation(position);
+	float4x4 S = make4x4_scale(scale);
+	float4x4 rotation_x = make4x4_rotation(unit3(RIGHT), rotation.x);
+	float4x4 rotation_y = make4x4_rotation(unit3(UP), rotation.y);
+	float4x4 rotation_z = make4x4_rotation(unit3(FORWARD), rotation.z);
 	float4x4 R = mul4x4(rotation_z, mul4x4(rotation_y, rotation_x));
 
 	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }
 
-float4x4 compose4x4_from_quat(float3 position, quat4 rotation, float3 scale) {
+float4x4 compose4x4_quat(float3 position, quat4 rotation, float3 scale) {
 	float4x4 result = { 0 };
-	float4x4 T = make4x4_from_translation(position);
-	float4x4 S = make4x4_from_scale(scale);
-	float4x4 R = make4x4_from_quat(rotation);
+	float4x4 T = make4x4_translation(position);
+	float4x4 S = make4x4_scale(scale);
+	float4x4 R = make4x4quat(rotation);
 	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }

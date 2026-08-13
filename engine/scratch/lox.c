@@ -6,24 +6,28 @@
 #include <stdio.h>
 #include <utils/lexer.h>
 
-#define KEYWORD_LIST  \
-	X(FALSE, "false") \
-	X(TRUE, "true")   \
-	X(NIL, "nil")     \
-	X(PRINT, "print") \
-	X(VAR, "var")     \
-	X(IF, "if")       \
-	X(ELSE, "else")   \
-	X(AND, "and")     \
-	X(OR, "or")       \
-	X(FOR, "for")
+#define KEYWORD_LIST    \
+	X(FALSE, "false")   \
+	X(TRUE, "true")     \
+	X(NIL, "nil")       \
+	X(PRINT, "print")   \
+	X(VAR, "var")       \
+	X(IF, "if")         \
+	X(ELSE, "else")     \
+	X(AND, "and")       \
+	X(OR, "or")         \
+	X(FOR, "for")       \
+	X(FN, "fn")         \
+	X(RETURN, "return") \
+	X(BREAK, "break")   \
+	X(CONTINUE, "continue")
 
 typedef enum {
 #define X(name, key) TOKEN_##name,
 	KEYWORD_LIST
 #undef X
 		TOKEN_KEYWORD_MAX,
-} AST_KeywordToken;
+} TokenKeywordType;
 
 String8 keyword_to_string[TOKEN_KEYWORD_MAX] = {
 #define X(name, key) [TOKEN_##name] = str_comp(key),
@@ -40,6 +44,7 @@ TokenType keyword_to_token[TOKEN_KEYWORD_MAX] = {
 typedef enum {
 	AST_NODE_EXPR_ASSIGN,
 	AST_NODE_EXPR_BINARY,
+	AST_NODE_EXPR_CALL,
 	AST_NODE_EXPR_LOGICAL,
 	AST_NODE_EXPR_UNARY,
 	AST_NODE_EXPR_GROUPING,
@@ -50,10 +55,14 @@ typedef enum {
 	AST_NODE_STMT_IF,
 	AST_NODE_STMT_FOR,
 	AST_NODE_STMT_BLOCK,
+	AST_NODE_STMT_RETURN,
+	AST_NODE_STMT_BREAK,
+	AST_NODE_STMT_CONTINUE,
 	AST_NODE_STMT_EXPR,
 
 	AST_NODE_DECL_VAR,
 	AST_NODE_DECL_LIST,
+	AST_NODE_DECL_FN,
 
 	AST_NODE_PROGRAM,
 
@@ -66,22 +75,33 @@ typedef enum {
 	AST_LITERAL_REAL,
 	AST_LITERAL_BOOLEAN,
 	AST_LITERAL_VARIABLE,
+	AST_LITERAL_CALLABLE,
 
 	AST_LITERAL_MAX,
 } AST_LiteralType;
 
 typedef struct AST_Literal AST_Literal;
+typedef struct AST_Node AST_Node;
+typedef AST_Literal (*CallableFn)(uint32_t argc, AST_Literal *argv);
+
+typedef struct {
+	String8 name;
+	AST_Node *params;
+	uint32_t param_count;
+	AST_Node *block;
+} AST_Callable;
+
 struct AST_Literal {
 	AST_LiteralType type;
 	union {
+		Token name;
 		String8 string;
-		Token identifier;
+		AST_Callable callable;
 		double real;
 		bool boolean;
 	} as;
 };
 
-typedef struct AST_Node AST_Node;
 struct AST_Node {
 	AST_NodeType type;
 
@@ -90,11 +110,18 @@ struct AST_Node {
 	AST_Node *first_child, *last_child;
 	AST_Node *next_sibling, *prev_sibling;
 
-	Token operator, identifier;
+	Token operator, name;
 	AST_Literal literal;
 };
 
-bool ast_remove_parent(AST_Node *child) {
+AST_Node *ast_make(Arena *arena, AST_NodeType type) {
+	AST_Node *result = arena_push_count(arena, AST_Node, 1);
+	result->type = type;
+
+	return result;
+}
+
+bool ast_unparent(AST_Node *child) {
 	bool ok = child && child->parent;
 	if (ok) {
 		AST_Node *parent = child->parent;
@@ -119,7 +146,7 @@ bool ast_remove_parent(AST_Node *child) {
 bool ast_push(AST_Node *parent, AST_Node *child, bool front) {
 	bool ok = parent && child && child != parent;
 	if (ok) {
-		ast_remove_parent(child);
+		ast_unparent(child);
 
 		if (parent->first_child == 0) {
 			parent->first_child = parent->last_child = child;
@@ -163,7 +190,7 @@ bool ast_match_impl(Lexer *lexer, TokenType *token_types, uint32_t token_count) 
 	return ok;
 }
 
-bool ast_match_keyword_impl(Lexer *lexer, AST_KeywordToken *keywords, uint32_t keyword_count) {
+bool ast_match_keyword_impl(Lexer *lexer, TokenKeywordType *keywords, uint32_t keyword_count) {
 	bool ok = lexer && keywords;
 	if (ok)
 		for (uint32_t index = 0; index < keyword_count; ++index)
@@ -173,7 +200,7 @@ bool ast_match_keyword_impl(Lexer *lexer, AST_KeywordToken *keywords, uint32_t k
 }
 
 #define ast_match(l, ...) ast_match_impl((l), array_arg(TokenType, __VA_ARGS__))
-#define ast_match_keyword(l, ...) ast_match_keyword_impl((l), array_arg(AST_KeywordToken, __VA_ARGS__))
+#define ast_match_keyword(l, ...) ast_match_keyword_impl((l), array_arg(TokenKeywordType, __VA_ARGS__))
 
 #define MAX_VARIABLES 256
 typedef struct {
@@ -232,7 +259,7 @@ AST_Node *ast_parse_stmt_expr(Arena *arena, Lexer *lexer);
 AST_Node *ast_parse_stmt_block(Arena *arena, Lexer *lexer);
 
 AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer);
-AST_Node *ast_parse_decl_list(Arena *arena, Lexer *lexer);
+AST_Node *ast_parse_decl_list_struct(Arena *arena, Lexer *lexer);
 
 AST_Node *ast_parse_expr(Arena *arena, Lexer *lexer);
 AST_Node *ast_parse_expr_comma(Arena *arena, Lexer *lexer); // ","
@@ -251,8 +278,7 @@ AST_Node *ast_binary(Arena *arena, AST_Node *left, Token operator, AST_Node *rig
 
 	bool ok = arena && left && right;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_EXPR_BINARY;
+		result = ast_make(arena, AST_NODE_EXPR_BINARY);
 		result->operator = operator;
 
 		ast_pushback(result, left);
@@ -267,8 +293,7 @@ AST_Node *ast_logical(Arena *arena, AST_Node *left, Token operator, AST_Node *ri
 
 	bool ok = arena && left && right;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_EXPR_LOGICAL;
+		result = ast_make(arena, AST_NODE_EXPR_LOGICAL);
 		result->operator = operator;
 
 		ast_pushback(result, left);
@@ -283,8 +308,7 @@ AST_Node *ast_unary(Arena *arena, Token operator, AST_Node *right) {
 
 	bool ok = arena && right;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_EXPR_UNARY;
+		result = ast_make(arena, AST_NODE_EXPR_UNARY);
 		result->operator = operator;
 
 		ast_pushback(result, right);
@@ -297,8 +321,7 @@ AST_Node *ast_literal(Arena *arena, AST_Literal literal) {
 	AST_Node *result = 0;
 	bool ok = arena;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_EXPR_PRIMARY;
+		result = ast_make(arena, AST_NODE_EXPR_PRIMARY);
 
 		result->literal = literal;
 	}
@@ -311,8 +334,7 @@ AST_Node *ast_grouping(Arena *arena, AST_Node *expr) {
 
 	bool ok = arena;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_EXPR_GROUPING;
+		result = ast_make(arena, AST_NODE_EXPR_GROUPING);
 
 		ast_pushback(result, expr);
 	}
@@ -324,9 +346,8 @@ AST_Node *ast_assign(Arena *arena, Token identifier, AST_Node *value) {
 
 	bool ok = arena && value;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_EXPR_ASSIGN;
-		result->identifier = identifier;
+		result = ast_make(arena, AST_NODE_EXPR_ASSIGN);
+		result->name = identifier;
 
 		ast_pushback(result, value);
 	}
@@ -340,28 +361,57 @@ AST_Node *ast_parse_expr_primary(Arena *arena, Lexer *lexer) {
 	bool ok = arena && lexer;
 	if (ok) {
 		if (ast_match(lexer, TOKEN_OPEN_PAREN)) {
-			lexer_next(lexer);
+			lexer_advance(lexer);
 			result = ast_grouping(arena, ast_parse_expr(arena, lexer));
 			lexer_consume(lexer, TOKEN_CLOSE_PAREN, s("Expect ')' after expression"));
 		} else if (ast_match(lexer, TOKEN_STRING))
-			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_STRING, .as.string = lexer_next(lexer).lexeme });
-		else if (ast_match(lexer, TOKEN_FLOAT))
-			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_REAL, .as.real = str8_to_f64(lexer_next(lexer).lexeme) });
+			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_STRING, .as.string = lexer_advance(lexer).lexeme });
+		else if (ast_match(lexer, TOKEN_REAL))
+			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_REAL, .as.real = str8_to_f64(lexer_advance(lexer).lexeme) });
 		else if (ast_match(lexer, TOKEN_INTEGER))
-			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_REAL, .as.real = str8_to_s64(lexer_next(lexer).lexeme) });
+			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_REAL, .as.real = str8_to_s64(lexer_advance(lexer).lexeme) });
 		else if (ast_match_keyword(lexer, TOKEN_NIL)) {
-			lexer_next(lexer);
+			lexer_advance(lexer);
 			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_NIL });
 		} else if (ast_match_keyword(lexer, TOKEN_TRUE)) {
 			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_BOOLEAN, .as.boolean = true });
-			lexer_next(lexer);
+			lexer_advance(lexer);
 		} else if (ast_match_keyword(lexer, TOKEN_FALSE)) {
-			lexer_next(lexer);
+			lexer_advance(lexer);
 			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_BOOLEAN, .as.boolean = false });
 		} else if (ast_match(lexer, TOKEN_IDENTIFIER)) {
-			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_VARIABLE, .as.identifier = lexer_next(lexer) });
+			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_VARIABLE, .as.name = lexer_advance(lexer) });
 		} else
-			LOG_ERROR("#Expect expression\n%.*s", str_spread(lexer_error_location_string(arena, lexer_peek(lexer))));
+			LOG_ERROR("#Unexpected token '%.*s'.\n%.*s", str_spread(lexer_peek(lexer).lexeme), str_spread(lexer_error_location_string(arena, lexer_peek(lexer))));
+	}
+
+	return result;
+}
+
+// call -> primary ( "(" argument_list? ")" )* ;
+// argument_list -> expr ( "," expr )* ;
+AST_Node *ast_parse_expr_call(Arena *arena, Lexer *lexer) {
+	AST_Node *result = 0;
+
+	bool ok = arena && lexer;
+	if (ok) {
+		result = ast_parse_expr_primary(arena, lexer);
+
+		if (ast_match(lexer, TOKEN_OPEN_PAREN)) {
+			lexer_advance(lexer); // consume '('
+
+			AST_Node *call = ast_make(arena, AST_NODE_EXPR_CALL);
+			ast_pushback(call, result);
+
+			if (lexer_peek(lexer).type != TOKEN_CLOSE_PAREN)
+				do {
+					if (lexer_peek(lexer).type == TOKEN_COMMA) lexer_advance(lexer);
+					ast_pushback(call, ast_parse_expr_assignment(arena, lexer));
+				} while (ast_match(lexer, TOKEN_COMMA));
+
+			lexer_consume(lexer, TOKEN_CLOSE_PAREN, s("Expect ')' after arguments."));
+			result = call;
+		}
 	}
 
 	return result;
@@ -374,10 +424,10 @@ AST_Node *ast_parse_expr_unary(Arena *arena, Lexer *lexer) {
 	bool ok = arena && lexer;
 	if (ok) {
 		if (ast_match(lexer, TOKEN_BANG, TOKEN_MINUS)) {
-			Token operator = lexer_next(lexer);
+			Token operator = lexer_advance(lexer);
 			right = ast_unary(arena, operator, ast_parse_expr_unary(arena, lexer));
 		} else if (ast_match(lexer, TOKEN_STAR, TOKEN_SLASH, TOKEN_PLUS, TOKEN_GREATER, TOKEN_GREATER_EQUAL, TOKEN_LESS, TOKEN_LESS_EQUAL)) {
-			Token op = lexer_next(lexer);
+			Token op = lexer_advance(lexer);
 			LOG_ERROR("#Missing left-hand operand for binary operator '%.*s'\n%.*s",
 				str_spread(op.lexeme),
 				str_spread(lexer_error_location_string(arena, op)) //
@@ -403,7 +453,7 @@ AST_Node *ast_parse_expr_unary(Arena *arena, Lexer *lexer) {
 					break;
 			}
 		} else
-			right = ast_parse_expr_primary(arena, lexer);
+			right = ast_parse_expr_call(arena, lexer);
 	}
 
 	return right;
@@ -417,8 +467,8 @@ AST_Node *ast_parse_expr_factor(Arena *arena, Lexer *lexer) {
 	if (ok) {
 		left = ast_parse_expr_unary(arena, lexer);
 
-		while (ast_match(lexer, TOKEN_STAR, TOKEN_SLASH)) {
-			Token operator = lexer_next(lexer);
+		while (ast_match(lexer, TOKEN_STAR, TOKEN_SLASH, TOKEN_PERCENT)) {
+			Token operator = lexer_advance(lexer);
 			AST_Node *right = ast_parse_expr_unary(arena, lexer);
 
 			left = ast_binary(arena, left, operator, right);
@@ -437,7 +487,7 @@ AST_Node *ast_parse_expr_term(Arena *arena, Lexer *lexer) {
 		left = ast_parse_expr_factor(arena, lexer);
 
 		while (ast_match(lexer, TOKEN_MINUS, TOKEN_PLUS)) {
-			Token operator = lexer_next(lexer);
+			Token operator = lexer_advance(lexer);
 			AST_Node *right = ast_parse_expr_factor(arena, lexer);
 
 			left = ast_binary(arena, left, operator, right);
@@ -456,7 +506,7 @@ AST_Node *ast_parse_expr_comparison(Arena *arena, Lexer *lexer) {
 		left = ast_parse_expr_term(arena, lexer);
 
 		while (ast_match(lexer, TOKEN_GREATER, TOKEN_GREATER_EQUAL, TOKEN_LESS, TOKEN_LESS_EQUAL)) {
-			Token operator = lexer_next(lexer);
+			Token operator = lexer_advance(lexer);
 			AST_Node *right = ast_parse_expr_term(arena, lexer);
 
 			left = ast_binary(arena, left, operator, right);
@@ -475,7 +525,7 @@ AST_Node *ast_parse_expr_equality(Arena *arena, Lexer *lexer) {
 		left = ast_parse_expr_comparison(arena, lexer);
 
 		while (ast_match(lexer, TOKEN_EQUAL_EQUAL, TOKEN_BANG_EQUAL)) {
-			Token operator = lexer_next(lexer);
+			Token operator = lexer_advance(lexer);
 			AST_Node *right = ast_parse_expr_comparison(arena, lexer);
 
 			left = ast_binary(arena, left, operator, right);
@@ -494,7 +544,7 @@ AST_Node *ast_parse_expr_and(Arena *arena, Lexer *lexer) {
 		left = ast_parse_expr_equality(arena, lexer);
 
 		while (ast_match(lexer, TOKEN_EQUAL_EQUAL, TOKEN_BANG_EQUAL)) {
-			Token operator = lexer_next(lexer);
+			Token operator = lexer_advance(lexer);
 			AST_Node *right = ast_parse_expr_equality(arena, lexer);
 
 			left = ast_logical(arena, left, operator, right);
@@ -513,7 +563,7 @@ AST_Node *ast_parse_expr_or(Arena *arena, Lexer *lexer) {
 		left = ast_parse_expr_and(arena, lexer);
 
 		while (ast_match(lexer, TOKEN_PIPE_PIPE) || ast_match_keyword(lexer, TOKEN_AND)) {
-			Token operator = lexer_next(lexer);
+			Token operator = lexer_advance(lexer);
 			AST_Node *right = ast_parse_expr_and(arena, lexer);
 
 			left = ast_logical(arena, left, operator, right);
@@ -533,11 +583,11 @@ AST_Node *ast_parse_expr_assignment(Arena *arena, Lexer *lexer) {
 
 		left = ast_parse_expr_or(arena, lexer);
 		if (ast_match(lexer, TOKEN_EQUAL)) {
-			lexer_next(lexer); // consume '='
+			lexer_advance(lexer); // consume '='
 			AST_Node *value = ast_parse_expr_assignment(arena, lexer);
 
 			if (left->type == AST_NODE_EXPR_PRIMARY && left->literal.type == AST_LITERAL_VARIABLE)
-				left = ast_assign(arena, left->literal.as.identifier, value);
+				left = ast_assign(arena, left->literal.as.name, value);
 			else {
 				String8 where = lexer_error_location_string(arena, s);
 				LOG_ERROR("#Invalid l-value for assignment\n%.*s", str_spread(where));
@@ -557,7 +607,7 @@ AST_Node *ast_parse_expr_comma(Arena *arena, Lexer *lexer) {
 		left = ast_parse_expr_assignment(arena, lexer);
 
 		while (ast_match(lexer, TOKEN_COMMA)) {
-			Token operator = lexer_next(lexer);
+			Token operator = lexer_advance(lexer);
 			AST_Node *right = ast_parse_expr_assignment(arena, lexer);
 
 			left = ast_binary(arena, left, operator, right);
@@ -577,8 +627,7 @@ AST_Node *ast_parse_stmt_expr(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_STMT_EXPR;
+		result = ast_make(arena, AST_NODE_STMT_EXPR);
 		ast_pushback(result, ast_parse_expr(arena, lexer));
 		lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after value."));
 	}
@@ -591,12 +640,60 @@ AST_Node *ast_parse_stmt_print(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		lexer_next(lexer); // consume print
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_STMT_PRINT;
+		lexer_advance(lexer); // consume print
+		result = ast_make(arena, AST_NODE_STMT_PRINT);
 
 		ast_pushback(result, ast_parse_expr(arena, lexer));
 		lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after value."));
+	}
+
+	return result;
+}
+
+AST_Node *ast_parse_stmt_break(Arena *arena, Lexer *lexer) {
+	AST_Node *result = 0;
+
+	bool ok = arena && lexer;
+	if (ok) {
+		lexer_advance(lexer); // consume 'break'
+
+		result = ast_make(arena, AST_NODE_STMT_BREAK);
+
+		lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after break."));
+	}
+
+	return result;
+}
+
+AST_Node *ast_parse_stmt_continue(Arena *arena, Lexer *lexer) {
+	AST_Node *result = 0;
+
+	bool ok = arena && lexer;
+	if (ok) {
+		lexer_advance(lexer); // consume 'continue'
+
+		result = ast_make(arena, AST_NODE_STMT_CONTINUE);
+
+		lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after continue."));
+	}
+
+	return result;
+}
+
+// return_stmt -> "return" expr? ";" ;
+AST_Node *ast_parse_stmt_return(Arena *arena, Lexer *lexer) {
+	AST_Node *result = 0;
+
+	bool ok = arena && lexer;
+	if (ok) {
+		lexer_advance(lexer); // consume 'return'
+
+		result = ast_make(arena, AST_NODE_STMT_RETURN);
+
+		if (ast_match(lexer, TOKEN_SEMICOLON) == false)
+			ast_pushback(result, ast_parse_expr(arena, lexer));
+
+		lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after return value."));
 	}
 
 	return result;
@@ -607,15 +704,14 @@ AST_Node *ast_parse_stmt_if(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		lexer_next(lexer); // consume 'if'
+		lexer_advance(lexer); // consume 'if'
 
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_STMT_IF;
+		result = ast_make(arena, AST_NODE_STMT_IF);
 
 		ast_pushback(result, ast_parse_expr(arena, lexer)); // cond
 		ast_pushback(result, ast_parse_stmt_block(arena, lexer)); // then
 		if (ast_match_keyword(lexer, TOKEN_ELSE)) {
-			lexer_next(lexer); // consume 'else'
+			lexer_advance(lexer); // consume 'else'
 			ast_pushback(result, ast_parse_stmt_block(arena, lexer));
 		}
 	}
@@ -629,8 +725,7 @@ AST_Node *ast_parse_stmt_block(Arena *arena, Lexer *lexer) {
 	bool ok = arena && lexer;
 	if (ok) {
 		lexer_consume(lexer, TOKEN_OPEN_BRACE, s("Expect '{' before block.")); // consume '{'
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_STMT_BLOCK;
+		result = ast_make(arena, AST_NODE_STMT_BLOCK);
 
 		while (ast_match(lexer, TOKEN_CLOSE_BRACE) == false && lexer_at_end(lexer) == false)
 			ast_pushback(result, ast_parse_decl(arena, lexer));
@@ -647,10 +742,9 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		lexer_next(lexer); // consume 'for'
+		lexer_advance(lexer); // consume 'for'
 
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_STMT_FOR;
+		result = ast_make(arena, AST_NODE_STMT_FOR);
 
 		AST_Node *initializer = 0;
 		AST_Node *condition = 0;
@@ -658,12 +752,12 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 		AST_Node *body = 0;
 
 		if (lexer_peek(lexer).type == TOKEN_OPEN_PAREN) {
-			lexer_next(lexer); // consume '('
+			lexer_advance(lexer); // consume '('
 
 			if (ast_match(lexer, TOKEN_SEMICOLON))
-				lexer_next(lexer); // consume ';'
+				lexer_advance(lexer); // consume ';'
 			else if (ast_match_keyword(lexer, TOKEN_VAR))
-				initializer = ast_parse_decl_list(arena, lexer);
+				initializer = ast_parse_decl_list_struct(arena, lexer);
 			else
 				initializer = ast_parse_stmt_expr(arena, lexer);
 
@@ -685,20 +779,19 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 		if (condition == 0)
 			condition = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_BOOLEAN, .as.boolean = true });
 		if (increment) {
-            AST_Node *expr_stmt = arena_push_count(arena, AST_Node, 1);
-            expr_stmt->type = AST_NODE_STMT_EXPR;
-            ast_pushback(expr_stmt, increment);
+			AST_Node *expr_stmt = ast_make(arena, AST_NODE_STMT_EXPR);
+			ast_pushback(expr_stmt, increment);
 
-			ast_pushback(body, expr_stmt);
-        }
+			increment = expr_stmt;
+		}
 
 		ASSERT(body);
 		ast_pushback(result, condition);
+		ast_pushback(result, increment);
 		ast_pushback(result, body);
 
 		if (initializer) {
-			AST_Node *wrapper = arena_push_count(arena, AST_Node, 1);
-			wrapper->type = AST_NODE_STMT_BLOCK;
+			AST_Node *wrapper = ast_make(arena, AST_NODE_STMT_BLOCK);
 			ast_pushback(wrapper, initializer);
 			ast_pushback(wrapper, result);
 			result = wrapper;
@@ -709,9 +802,16 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 }
 
 AST_Node *ast_parse_stmt(Arena *arena, Lexer *lexer) {
+	if (str8_equals(lexer_peek(lexer).lexeme, s("continue"))) {
+		uint32_t x = 0;
+		(void)x;
+	}
 	if (ast_match_keyword(lexer, TOKEN_PRINT)) return ast_parse_stmt_print(arena, lexer);
 	if (ast_match(lexer, TOKEN_OPEN_BRACE)) return ast_parse_stmt_block(arena, lexer);
 	if (ast_match_keyword(lexer, TOKEN_IF)) return ast_parse_stmt_if(arena, lexer);
+	if (ast_match_keyword(lexer, TOKEN_RETURN)) return ast_parse_stmt_return(arena, lexer);
+	if (ast_match_keyword(lexer, TOKEN_CONTINUE)) return ast_parse_stmt_continue(arena, lexer);
+	if (ast_match_keyword(lexer, TOKEN_BREAK)) return ast_parse_stmt_break(arena, lexer);
 	if (ast_match_keyword(lexer, TOKEN_FOR)) return ast_parse_stmt_for(arena, lexer);
 
 	return ast_parse_stmt_expr(arena, lexer);
@@ -724,12 +824,11 @@ AST_Node *ast_parse_decl_var(Arena *arena, Lexer *lexer) {
 	if (ok) {
 		Token identifier = lexer_consume(lexer, TOKEN_IDENTIFIER, s("Expect variable name."));
 
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_DECL_VAR;
-		result->identifier = identifier;
+		result = ast_make(arena, AST_NODE_DECL_VAR);
+		result->name = identifier;
 
 		if (ast_match(lexer, TOKEN_EQUAL)) { // assignment
-			lexer_next(lexer); // consume '='
+			lexer_advance(lexer); // consume '='
 			ast_pushback(result, ast_parse_expr_assignment(arena, lexer));
 		}
 	}
@@ -737,24 +836,50 @@ AST_Node *ast_parse_decl_var(Arena *arena, Lexer *lexer) {
 	return result;
 }
 
-AST_Node *ast_parse_decl_list(Arena *arena, Lexer *lexer) {
+AST_Node *ast_parse_decl_list_struct(Arena *arena, Lexer *lexer) {
 	AST_Node *result = 0;
 
 	bool ok = arena && lexer;
 	if (ok) {
-		lexer_next(lexer); // consume 'var'
+		lexer_advance(lexer); // consume 'var'
 
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_DECL_LIST;
+		result = ast_make(arena, AST_NODE_DECL_LIST);
 
 		do {
 			if (lexer_peek(lexer).type == TOKEN_COMMA)
-				lexer_next(lexer); // consume ','
+				lexer_advance(lexer); // consume ','
 
 			ast_pushback(result, ast_parse_decl_var(arena, lexer));
 		} while (ast_match(lexer, TOKEN_COMMA));
 
 		lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after variable declaration."));
+	}
+
+	return result;
+}
+
+AST_Node *ast_parse_decl_fn(Arena *arena, Lexer *lexer) {
+	AST_Node *result = 0;
+
+	bool ok = arena && lexer;
+	if (ok) {
+		lexer_advance(lexer); // consume 'fn'
+
+		Token fn_id = lexer_consume(lexer, TOKEN_IDENTIFIER, s("Expect function name."));
+
+		result = ast_make(arena, AST_NODE_DECL_FN);
+		result->name = fn_id;
+
+		lexer_consume(lexer, TOKEN_OPEN_PAREN, s("Expect '(' after function name."));
+		if (lexer_peek(lexer).type != TOKEN_CLOSE_PAREN) {
+			do {
+				if (lexer_peek(lexer).type == TOKEN_COMMA) lexer_advance(lexer);
+				ast_pushback(result, ast_parse_decl_var(arena, lexer));
+			} while (ast_match(lexer, TOKEN_COMMA));
+		}
+		lexer_consume(lexer, TOKEN_CLOSE_PAREN, s("Expect ')' after parameters"));
+
+		ast_pushback(result, ast_parse_stmt_block(arena, lexer));
 	}
 
 	return result;
@@ -773,7 +898,7 @@ void ast_sync(Lexer *lexer) {
 				break;
 		}
 
-		lexer_next(lexer);
+		lexer_advance(lexer);
 	}
 }
 
@@ -782,10 +907,9 @@ AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		if (ast_match_keyword(lexer, TOKEN_VAR))
-			result = ast_parse_decl_list(arena, lexer);
-		else
-			result = ast_parse_stmt(arena, lexer);
+		if (ast_match_keyword(lexer, TOKEN_FN)) result = ast_parse_decl_fn(arena, lexer);
+		if (ast_match_keyword(lexer, TOKEN_VAR)) result = ast_parse_decl_list_struct(arena, lexer);
+		if (result == 0) result = ast_parse_stmt(arena, lexer);
 
 		if (result == 0) {
 			ast_sync(lexer);
@@ -801,8 +925,7 @@ AST_Node *ast_parse(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		result = arena_push_count(arena, AST_Node, 1);
-		result->type = AST_NODE_PROGRAM; // Could be just AST_NODE_STMT_BLOCK
+		result = ast_make(arena, AST_NODE_PROGRAM);
 
 		while (ast_match(lexer, TOKEN_EOF) == false)
 			ast_pushback(result, ast_parse_decl(arena, lexer));
@@ -826,7 +949,11 @@ void ast_print_literal(AST_Literal literal) {
 			printf("nil");
 			break;
 		case AST_LITERAL_VARIABLE:
-			printf("%.*s", str_spread(literal.as.identifier.lexeme));
+			printf("%.*s", str_spread(literal.as.name.lexeme));
+			break;
+		case AST_LITERAL_CALLABLE:
+			printf("<fn %.*s>", str_spread(literal.as.callable.name));
+			break;
 		default:
 			break;
 	}
@@ -839,7 +966,7 @@ void ast_print(AST_Node *node) {
 		switch (node->type) {
 			case AST_NODE_EXPR_ASSIGN: {
 				printf("(");
-				printf("%.*s ", str_spread(node->identifier.lexeme));
+				printf("%.*s ", str_spread(node->name.lexeme));
 				ast_print(node->first_child);
 				printf(")");
 			} break;
@@ -865,7 +992,7 @@ void ast_print(AST_Node *node) {
 				break;
 			case AST_NODE_DECL_VAR: {
 				printf("(");
-				printf("= %.*s", str_spread(node->identifier.lexeme));
+				printf("= %.*s", str_spread(node->name.lexeme));
 				if (node->first_child) {
 					printf(" ");
 					ast_print(node->first_child);
@@ -966,6 +1093,22 @@ double ast_lit_to_real(AST_Literal lit) {
 
 	return result;
 }
+typedef enum {
+	AST_STATUS_OK,
+	AST_STATUS_BREAK,
+	AST_STATUS_CONTINUE,
+	AST_STATUS_RETURN,
+} AST_ResultStatus;
+
+typedef struct {
+	AST_ResultStatus status;
+	AST_Literal value;
+} AST_Result;
+
+AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr);
+AST_Result ast_execute(Arena *arena, Enviroment *env, AST_Node *node);
+
+static Enviroment *globals = 0;
 
 AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr) {
 	AST_Literal result = { .type = AST_LITERAL_NIL };
@@ -974,8 +1117,30 @@ AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr) {
 	bool ok = arena && expr;
 	if (ok) {
 		switch (expr->type) {
+			case AST_NODE_EXPR_CALL: {
+				AST_Literal fn_val = ast_evaluate(arena, env, expr->first_child);
+				ASSERT(fn_val.type == AST_LITERAL_CALLABLE && "Target is not a callable function.");
+				AST_Callable fn = fn_val.as.callable;
+
+				Enviroment local_env = { 0 };
+				for (uint32_t index = 0; index < globals->var_count; ++index)
+					local_env.vars[local_env.var_count++] = globals->vars[index];
+
+				AST_Node *arg = expr->first_child->next_sibling;
+				AST_Node *param = fn.params;
+				for (uint32_t index = 0; index < fn.param_count; ++index) {
+					ASSERT(arg != expr->first_child);
+					env_define(&local_env, param->name.lexeme, ast_evaluate(arena, env, arg));
+
+					arg = arg->next_sibling, param = param->next_sibling;
+				}
+				ASSERT(arg == expr->first_child && "Too many arguments passed to fn");
+
+				AST_Result res = ast_execute(arena, &local_env, fn.block);
+				result = res.value;
+			} break;
 			case AST_NODE_EXPR_ASSIGN: {
-				result = env_assign(env, expr->identifier.lexeme, ast_evaluate(arena, env, expr->first_child));
+				result = env_assign(env, expr->name.lexeme, ast_evaluate(arena, env, expr->first_child));
 			} break;
 			case AST_NODE_EXPR_LOGICAL: {
 				AST_Literal left = ast_evaluate(arena, env, expr->first_child);
@@ -1012,6 +1177,10 @@ AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr) {
 					case TOKEN_STAR:
 						ASSERT(left.type == AST_LITERAL_REAL && right.type == AST_LITERAL_REAL);
 						result.as.real = left.as.real * right.as.real;
+						break;
+					case TOKEN_PERCENT:
+						ASSERT(left.type == AST_LITERAL_REAL && right.type == AST_LITERAL_REAL);
+						result.as.real = fmod(left.as.real, right.as.real);
 						break;
 					case TOKEN_PLUS:
 						if (left.type == AST_LITERAL_STRING || right.type == AST_LITERAL_STRING)
@@ -1079,7 +1248,7 @@ AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr) {
 				break;
 			case AST_NODE_EXPR_PRIMARY:
 				if (expr->literal.type == AST_LITERAL_VARIABLE)
-					result = env_find_val(env, expr->literal.as.identifier.lexeme);
+					result = env_find_val(env, expr->literal.as.name.lexeme);
 				else
 					result = expr->literal;
 				break;
@@ -1091,15 +1260,29 @@ AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr) {
 	return result;
 }
 
-void ast_execute(Arena *arena, Enviroment *env, AST_Node *node) {
+AST_Result ast_execute(Arena *arena, Enviroment *env, AST_Node *node) {
+	AST_Result result = (AST_Result){ .status = AST_STATUS_OK, .value = { .type = AST_LITERAL_NIL } };
 	bool ok = arena && node;
-
 	if (ok) {
 		switch (node->type) {
+			case AST_NODE_STMT_RETURN: {
+				AST_Literal lit = { .type = AST_LITERAL_NIL };
+				if (node->first_child)
+					lit = ast_evaluate(arena, env, node->first_child);
+
+				result.status = AST_STATUS_RETURN;
+				result.value = lit;
+			} break;
+			case AST_NODE_STMT_BREAK:
+				result.status = AST_STATUS_BREAK;
+				break;
+			case AST_NODE_STMT_CONTINUE:
+				result.status = AST_STATUS_CONTINUE;
+				break;
 			case AST_NODE_STMT_PRINT: {
 				AST_Literal lit = ast_evaluate(arena, env, node->first_child);
 				if (lit.type == AST_LITERAL_VARIABLE)
-					lit = env_find_val(env, lit.as.identifier.lexeme);
+					lit = env_find_val(env, lit.as.name.lexeme);
 
 				ast_print_literal(lit);
 				LOG_INFO("#");
@@ -1111,7 +1294,7 @@ void ast_execute(Arena *arena, Enviroment *env, AST_Node *node) {
 				AST_Literal lit = { .type = AST_LITERAL_NIL };
 				if (node->first_child)
 					lit = ast_evaluate(arena, env, node->first_child);
-				env_define(env, node->identifier.lexeme, lit);
+				env_define(env, node->name.lexeme, lit);
 			} break;
 			case AST_NODE_DECL_LIST: {
 				AST_Node *decl = node->first_child;
@@ -1119,21 +1302,54 @@ void ast_execute(Arena *arena, Enviroment *env, AST_Node *node) {
 						ast_execute(arena, env, decl), decl = decl->next_sibling;
 					while (decl != node->first_child);
 			} break;
+			case AST_NODE_DECL_FN: {
+				AST_Literal lit = { .type = AST_LITERAL_CALLABLE };
+				AST_Callable *fn = &lit.as.callable;
+				fn->name = node->name.lexeme;
+
+				if (node->first_child != node->last_child) { // has parameters
+					fn->params = node->first_child;
+
+					AST_Node *param = node->first_child;
+					while (param != node->last_child)
+						fn->param_count++, param = param->next_sibling;
+				}
+
+				fn->block = node->last_child;
+				env_define(env, fn->name, lit);
+			} break;
 			case AST_NODE_STMT_BLOCK: {
 				AST_Node *stmt = node->first_child;
-				if (stmt) do // TODO: scoping
-						ast_execute(arena, env, stmt), stmt = stmt->next_sibling;
-					while (stmt != node->first_child);
+				if (stmt) do { // TODO: scoping
+						AST_Result res = ast_execute(arena, env, stmt);
+						if (res.status != AST_STATUS_OK) {
+							result = res;
+							break;
+						}
+
+						stmt = stmt->next_sibling;
+					} while (stmt != node->first_child);
 			} break;
 			case AST_NODE_STMT_IF: {
 				if (ast_truthy(ast_evaluate(arena, env, node->first_child)))
-					ast_execute(arena, env, node->first_child->next_sibling);
+					result = ast_execute(arena, env, node->first_child->next_sibling);
 				else if (node->last_child != node->first_child->next_sibling)
-					ast_execute(arena, env, node->last_child);
+					result = ast_execute(arena, env, node->last_child);
 			} break;
 			case AST_NODE_STMT_FOR: {
-				while (ast_truthy(ast_evaluate(arena, env, node->first_child)))
-					ast_execute(arena, env, node->last_child);
+				while (ast_truthy(ast_evaluate(arena, env, node->first_child))) {
+					AST_Result res = ast_execute(arena, env, node->last_child);
+
+					if (node->first_child->next_sibling != node->last_child)
+						ast_execute(arena, env, node->first_child->next_sibling);
+					if (res.status == AST_STATUS_CONTINUE)
+						continue;
+
+					if (res.status != AST_STATUS_OK) {
+						result = res;
+						break;
+					}
+				}
 			} break;
 			case AST_NODE_PROGRAM: {
 				AST_Node *stmt = node->first_child;
@@ -1145,6 +1361,12 @@ void ast_execute(Arena *arena, Enviroment *env, AST_Node *node) {
 				break;
 		}
 	}
+
+	return result;
+}
+
+AST_Literal native_clock(uint32_t argc, AST_Literal *argv) {
+	return (AST_Literal){ .type = AST_LITERAL_REAL, .as.real = os_time_ns() * 1e-9 };
 }
 
 int main(void) {
@@ -1154,6 +1376,7 @@ int main(void) {
 	AST_Node *program = ast_parse(arena, (Lexer[]){ lexer_make(source, keyword_to_string, TOKEN_KEYWORD_MAX) });
 
 	Enviroment env = { 0 };
+	globals = &env;
 	ast_execute(arena, &env, program);
 
 	arena_destroy(arena);

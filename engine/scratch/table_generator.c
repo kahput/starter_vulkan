@@ -82,10 +82,10 @@ struct AST_Node {
 };
 
 Literal ast_parse_literal(Arena *arena, Lexer *lexer) {
-	Token lit_token = lexer_expect_multiple(lexer, array_arg(TokenType, TOKEN_INTEGER, TOKEN_FLOAT, TOKEN_STRING, TOKEN_IDENTIFIER));
+	Token lit_token = lexer_expect_multiple(lexer, array_arg(TokenType, TOKEN_INTEGER, TOKEN_REAL, TOKEN_STRING, TOKEN_IDENTIFIER));
 	Literal lit = { 0 };
 	switch (lit_token.type) {
-		case TOKEN_FLOAT:
+		case TOKEN_REAL:
 			lit.type = LIT_TYPE_REAL;
 			lit.as.real = str8_to_f64(lit_token.lexeme);
 			break;
@@ -200,11 +200,12 @@ int main(void) {
 
 	/*
 
-	table -> "table" IDENTIFIER column_specifier_list? "{" table_row* "}" ;
+	table -> "table" IDENTIFIER column_specifier_list? "{" table_list? "}" ;
 	column_specifier_list -> "(" IDENTIFIER ("," IDENTIFIER)* ")";
+    table_list -> table_row+
 	table_row -> "(" literal+ ")" ;
 
-	literal -> IDENTIFIER | INTEGER | FLOAT | STRING ;
+	literal -> INTEGER | FLOAT | TEXT ;
 	*/
 
 	arena_destroy(arena);
