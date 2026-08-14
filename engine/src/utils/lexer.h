@@ -7,12 +7,12 @@ typedef enum {
 	TOKEN_UNKNOWN,
 
 	// Single-character tokens.
-	TOKEN_OPEN_PAREN, // (
-	TOKEN_CLOSE_PAREN, // )
-	TOKEN_OPEN_BRACE, // {
-	TOKEN_CLOSE_BRACE, // }
-	TOKEN_OPEN_BRACKET, // [
-	TOKEN_CLOSE_BRACKET, // ]
+	TOKEN_LPAREN, // (
+	TOKEN_RPAREN, // )
+	TOKEN_LBRACE, // {
+	TOKEN_RBRACE, // }
+	TOKEN_LBRACKET, // [
+	TOKEN_RBRACKET, // ]
 	TOKEN_COMMA, // ,
 	TOKEN_DOT, // .
 	TOKEN_SEMICOLON, // ;

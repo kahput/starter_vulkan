@@ -1,5 +1,6 @@
 #include "app/scene.h"
 
+#include "meta.h"
 #include "res/tables.h"
 #include "draw.h"
 

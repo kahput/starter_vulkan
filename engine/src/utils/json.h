@@ -51,6 +51,7 @@ static inline bool json_valid(JSON_Node *node) { return node && node != &JSON_NI
 JSON_Node *json_parse_string(Arena *arena, String8 source);
 JSON_Node *json_parse_file(Arena *arena, String8 source);
 
+JSON_Node *json_append(Arena *arena, JSON_Container **container);
 JSON_Node *json_append_item(Arena *arena, JSON_Node *parent);
 JSON_Node *json_append_field(Arena *arena, JSON_Node *parent, String8 key);
 

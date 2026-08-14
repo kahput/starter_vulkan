@@ -116,15 +116,15 @@ AST_Node *ast_parse_rows(Arena *arena, Lexer *lexer, uint32_t expected_column_co
 	AST_Node *result = 0;
 
 	AST_Node **tail = 0;
-	while (lexer_at_end(lexer) == false && lexer_peek(lexer).type != TOKEN_CLOSE_BRACE) {
-		lexer_expect(lexer, TOKEN_OPEN_PAREN);
+	while (lexer_at_end(lexer) == false && lexer_peek(lexer).type != TOKEN_RBRACE) {
+		lexer_expect(lexer, TOKEN_LPAREN);
 
 		AST_Node *row = arena_push_count(arena, AST_Node, 1);
 		row->type = AST_NODE_TYPE_ROW;
 		row->as.rows = arena_push_count(arena, AST_Node, expected_column_count);
 		uint32_t column_count = 0;
 
-		while (lexer_match(lexer, TOKEN_CLOSE_PAREN, 0) == false) {
+		while (lexer_match(lexer, TOKEN_RPAREN, 0) == false) {
 			row->as.rows[column_count++] = (AST_Node){
 				.type = AST_NODE_TYPE_LITERAL,
 
@@ -150,10 +150,10 @@ AST_Node *ast_parse_rows(Arena *arena, Lexer *lexer, uint32_t expected_column_co
 
 AST_Node *ast_parse_columns(Arena *arena, Lexer *lexer, uint32_t *column_count) {
 	AST_Node *result = 0;
-	lexer_expect(lexer, TOKEN_OPEN_PAREN);
+	lexer_expect(lexer, TOKEN_LPAREN);
 
 	AST_Node **tail = 0;
-	while (lexer_match(lexer, TOKEN_CLOSE_PAREN, 0) == false) {
+	while (lexer_match(lexer, TOKEN_RPAREN, 0) == false) {
 		AST_Node *specifier = arena_push_count(arena, AST_Node, 1);
 		specifier->as.specifier.id = lexer_expect(lexer, TOKEN_IDENTIFIER).lexeme;
 
@@ -182,9 +182,9 @@ AST_Node *ast_parse_table(Arena *arena, Lexer *lexer) {
 	result->as.table.id = id.lexeme;
 	result->as.table.columns = ast_parse_columns(arena, lexer, &result->as.table.column_count);
 
-	lexer_expect(lexer, TOKEN_OPEN_BRACE);
+	lexer_expect(lexer, TOKEN_LBRACE);
 	result->as.table.rows = ast_parse_rows(arena, lexer, result->as.table.column_count, &result->as.table.row_count);
-	lexer_expect(lexer, TOKEN_CLOSE_BRACE);
+	lexer_expect(lexer, TOKEN_RBRACE);
 
 	return result;
 }

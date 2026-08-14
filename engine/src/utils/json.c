@@ -52,7 +52,7 @@ static inline JSON_ContainerSlot json__locate(uint32_t index) {
 	return result;
 }
 
-static inline JSON_Node *json_append(Arena *arena, JSON_Container **container) {
+JSON_Node *json_append(Arena *arena, JSON_Container **container) {
 	JSON_Node *result = &JSON_NIL;
 
 	bool ok = arena && container;
@@ -84,11 +84,11 @@ static inline JSON_Value json_parse_value(Arena *arena, Lexer *lexer) {
 		Token value = lexer_peek(lexer);
 
 		switch (value.type) {
-			case TOKEN_OPEN_BRACE: // OBJECT
+			case TOKEN_LBRACE: // OBJECT
 				result = json_parse_object(arena, lexer);
 				break;
 
-			case TOKEN_OPEN_BRACKET: // ARRAY
+			case TOKEN_LBRACKET: // ARRAY
 				result = json_parse_array(arena, lexer);
 				break;
 
@@ -157,13 +157,13 @@ JSON_Value json_parse_array(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		lexer_expect(lexer, TOKEN_OPEN_BRACKET);
+		lexer_expect(lexer, TOKEN_LBRACKET);
 
-		if (lexer_peek(lexer).type != TOKEN_CLOSE_BRACKET)
+		if (lexer_peek(lexer).type != TOKEN_RBRACKET)
 			do {
 				json_append(arena, &result.as.children)->value = json_parse_value(arena, lexer);
 			} while (lexer_match(lexer, TOKEN_COMMA, 0));
-		Token close_brace = lexer_expect(lexer, TOKEN_CLOSE_BRACKET);
+		Token close_brace = lexer_expect(lexer, TOKEN_RBRACKET);
 	}
 
 	return result;
@@ -174,9 +174,9 @@ JSON_Value json_parse_object(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		Token open_brace = lexer_expect(lexer, TOKEN_OPEN_BRACE);
+		Token open_brace = lexer_expect(lexer, TOKEN_LBRACE);
 
-		if (lexer_peek(lexer).type != TOKEN_CLOSE_BRACE)
+		if (lexer_peek(lexer).type != TOKEN_RBRACE)
 			do {
 				Token key = lexer_expect(lexer, TOKEN_STRING);
 				lexer_expect(lexer, TOKEN_COLON);
@@ -187,7 +187,7 @@ JSON_Value json_parse_object(Arena *arena, Lexer *lexer) {
 
 			} while (lexer_match(lexer, TOKEN_COMMA, 0));
 
-		Token close_brace = lexer_expect(lexer, TOKEN_CLOSE_BRACE);
+		Token close_brace = lexer_expect(lexer, TOKEN_RBRACE);
 	}
 
 	return result;
@@ -252,10 +252,10 @@ JSON_Node *json_find_path(JSON_Node *node, String8 path) {
 
 		JSON_Node *cur = node;
 		while ((token = lexer_advance(&lexer)).type != TOKEN_EOF) {
-			if (token.type == TOKEN_OPEN_BRACKET) {
+			if (token.type == TOKEN_LBRACKET) {
 				Token num = lexer_expect(&lexer, TOKEN_INTEGER);
 				cur = json_child_at(cur, str8_to_u64(num.lexeme));
-				lexer_expect(&lexer, TOKEN_CLOSE_BRACKET);
+				lexer_expect(&lexer, TOKEN_RBRACKET);
 			} else if (token.type == TOKEN_IDENTIFIER)
 				cur = json_find(cur, token.lexeme);
 			else if (token.type == TOKEN_DOT) {

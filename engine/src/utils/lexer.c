@@ -9,9 +9,9 @@
 // clang-format off
 const String8 token_type_to_string[TOKEN_MAX] = {
     [TOKEN_UNKNOWN]       = str_comp("unkown"),
-    [TOKEN_OPEN_PAREN]    = str_comp("("),   [TOKEN_CLOSE_PAREN]   = str_comp(")"),
-    [TOKEN_OPEN_BRACE]    = str_comp("{"),   [TOKEN_CLOSE_BRACE]   = str_comp("}"),
-    [TOKEN_OPEN_BRACKET]  = str_comp("["),   [TOKEN_CLOSE_BRACKET] = str_comp("]"),
+    [TOKEN_LPAREN]    = str_comp("("),   [TOKEN_RPAREN]   = str_comp(")"),
+    [TOKEN_LBRACE]    = str_comp("{"),   [TOKEN_RBRACE]   = str_comp("}"),
+    [TOKEN_LBRACKET]  = str_comp("["),   [TOKEN_RBRACKET] = str_comp("]"),
     [TOKEN_COMMA]         = str_comp(","),   [TOKEN_DOT]           = str_comp("."),
     [TOKEN_SEMICOLON]     = str_comp(";"),   [TOKEN_COLON]         = str_comp(":"),
     [TOKEN_SLASH]         = str_comp("/"),   [TOKEN_STAR]          = str_comp("*"),
@@ -135,6 +135,8 @@ TokenType lexer__match_keyword(Lexer *lexer, Token *token) {
 }
 
 Token lexer__scan_token(Lexer *lexer) {
+restart:
+
 	lexer__skip_whitespace_and_comments(lexer);
 
 	if (lexer->cursor == NULL || lexer___at_end(lexer))
@@ -153,12 +155,12 @@ Token lexer__scan_token(Lexer *lexer) {
 
 	switch (c) {
 			// clang-format off
-		case '(': token.type = TOKEN_OPEN_PAREN; break;
-        case ')': token.type = TOKEN_CLOSE_PAREN;   break;
-        case '{': token.type = TOKEN_OPEN_BRACE;    break;
-        case '}': token.type = TOKEN_CLOSE_BRACE;   break;
-        case '[': token.type = TOKEN_OPEN_BRACKET;  break;
-        case ']': token.type = TOKEN_CLOSE_BRACKET; break;
+		case '(': token.type = TOKEN_LPAREN; break;
+        case ')': token.type = TOKEN_RPAREN;   break;
+        case '{': token.type = TOKEN_LBRACE;    break;
+        case '}': token.type = TOKEN_RBRACE;   break;
+        case '[': token.type = TOKEN_LBRACKET;  break;
+        case ']': token.type = TOKEN_RBRACKET; break;
         case ',': token.type = TOKEN_COMMA;         break;
         case '.': token.type = TOKEN_DOT;           break;
         case ';': token.type = TOKEN_SEMICOLON;     break;
@@ -259,6 +261,7 @@ Token lexer__scan_token(Lexer *lexer) {
 				if (lexer->cursor[0] == '\n' && newline_break)
 					newline_break = false;
 			}
+			goto restart;
 			break;
 		} break;
 

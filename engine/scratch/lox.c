@@ -360,10 +360,10 @@ AST_Node *ast_parse_expr_primary(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		if (ast_match(lexer, TOKEN_OPEN_PAREN)) {
+		if (ast_match(lexer, TOKEN_LPAREN)) {
 			lexer_advance(lexer);
 			result = ast_grouping(arena, ast_parse_expr(arena, lexer));
-			lexer_consume(lexer, TOKEN_CLOSE_PAREN, s("Expect ')' after expression"));
+			lexer_consume(lexer, TOKEN_RPAREN, s("Expect ')' after expression"));
 		} else if (ast_match(lexer, TOKEN_STRING))
 			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_STRING, .as.string = lexer_advance(lexer).lexeme });
 		else if (ast_match(lexer, TOKEN_REAL))
@@ -397,19 +397,19 @@ AST_Node *ast_parse_expr_call(Arena *arena, Lexer *lexer) {
 	if (ok) {
 		result = ast_parse_expr_primary(arena, lexer);
 
-		if (ast_match(lexer, TOKEN_OPEN_PAREN)) {
+		if (ast_match(lexer, TOKEN_LPAREN)) {
 			lexer_advance(lexer); // consume '('
 
 			AST_Node *call = ast_make(arena, AST_NODE_EXPR_CALL);
 			ast_pushback(call, result);
 
-			if (lexer_peek(lexer).type != TOKEN_CLOSE_PAREN)
+			if (lexer_peek(lexer).type != TOKEN_RPAREN)
 				do {
 					if (lexer_peek(lexer).type == TOKEN_COMMA) lexer_advance(lexer);
 					ast_pushback(call, ast_parse_expr_assignment(arena, lexer));
 				} while (ast_match(lexer, TOKEN_COMMA));
 
-			lexer_consume(lexer, TOKEN_CLOSE_PAREN, s("Expect ')' after arguments."));
+			lexer_consume(lexer, TOKEN_RPAREN, s("Expect ')' after arguments."));
 			result = call;
 		}
 	}
@@ -724,13 +724,13 @@ AST_Node *ast_parse_stmt_block(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		lexer_consume(lexer, TOKEN_OPEN_BRACE, s("Expect '{' before block.")); // consume '{'
+		lexer_consume(lexer, TOKEN_LBRACE, s("Expect '{' before block.")); // consume '{'
 		result = ast_make(arena, AST_NODE_STMT_BLOCK);
 
-		while (ast_match(lexer, TOKEN_CLOSE_BRACE) == false && lexer_at_end(lexer) == false)
+		while (ast_match(lexer, TOKEN_RBRACE) == false && lexer_at_end(lexer) == false)
 			ast_pushback(result, ast_parse_decl(arena, lexer));
 
-		lexer_consume(lexer, TOKEN_CLOSE_BRACE, s("Expect '}' after block."));
+		lexer_consume(lexer, TOKEN_RBRACE, s("Expect '}' after block."));
 	}
 
 	return result;
@@ -751,7 +751,7 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 		AST_Node *increment = 0;
 		AST_Node *body = 0;
 
-		if (lexer_peek(lexer).type == TOKEN_OPEN_PAREN) {
+		if (lexer_peek(lexer).type == TOKEN_LPAREN) {
 			lexer_advance(lexer); // consume '('
 
 			if (ast_match(lexer, TOKEN_SEMICOLON))
@@ -765,13 +765,13 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 				condition = ast_parse_expr(arena, lexer);
 			lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after loop condition."));
 
-			if (ast_match(lexer, TOKEN_CLOSE_PAREN) == false)
+			if (ast_match(lexer, TOKEN_RPAREN) == false)
 				increment = ast_parse_expr(arena, lexer);
-			lexer_consume(lexer, TOKEN_CLOSE_PAREN, s("Expect ')' after for clause."));
+			lexer_consume(lexer, TOKEN_RPAREN, s("Expect ')' after for clause."));
 
 			body = ast_parse_stmt_block(arena, lexer);
 		} else { // simple for loop
-			if (lexer_peek(lexer).type != TOKEN_OPEN_BRACE)
+			if (lexer_peek(lexer).type != TOKEN_LBRACE)
 				condition = ast_parse_expr(arena, lexer);
 			body = ast_parse_stmt_block(arena, lexer);
 		}
@@ -807,7 +807,7 @@ AST_Node *ast_parse_stmt(Arena *arena, Lexer *lexer) {
 		(void)x;
 	}
 	if (ast_match_keyword(lexer, TOKEN_PRINT)) return ast_parse_stmt_print(arena, lexer);
-	if (ast_match(lexer, TOKEN_OPEN_BRACE)) return ast_parse_stmt_block(arena, lexer);
+	if (ast_match(lexer, TOKEN_LBRACE)) return ast_parse_stmt_block(arena, lexer);
 	if (ast_match_keyword(lexer, TOKEN_IF)) return ast_parse_stmt_if(arena, lexer);
 	if (ast_match_keyword(lexer, TOKEN_RETURN)) return ast_parse_stmt_return(arena, lexer);
 	if (ast_match_keyword(lexer, TOKEN_CONTINUE)) return ast_parse_stmt_continue(arena, lexer);
@@ -870,14 +870,14 @@ AST_Node *ast_parse_decl_fn(Arena *arena, Lexer *lexer) {
 		result = ast_make(arena, AST_NODE_DECL_FN);
 		result->name = fn_id;
 
-		lexer_consume(lexer, TOKEN_OPEN_PAREN, s("Expect '(' after function name."));
-		if (lexer_peek(lexer).type != TOKEN_CLOSE_PAREN) {
+		lexer_consume(lexer, TOKEN_LPAREN, s("Expect '(' after function name."));
+		if (lexer_peek(lexer).type != TOKEN_RPAREN) {
 			do {
 				if (lexer_peek(lexer).type == TOKEN_COMMA) lexer_advance(lexer);
 				ast_pushback(result, ast_parse_decl_var(arena, lexer));
 			} while (ast_match(lexer, TOKEN_COMMA));
 		}
-		lexer_consume(lexer, TOKEN_CLOSE_PAREN, s("Expect ')' after parameters"));
+		lexer_consume(lexer, TOKEN_RPAREN, s("Expect ')' after parameters"));
 
 		ast_pushback(result, ast_parse_stmt_block(arena, lexer));
 	}

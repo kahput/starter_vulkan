@@ -15,7 +15,7 @@
 	X(EXTERN, "extern")     \
 	X(STATIC, "static")     \
 	X(CONST, "const")       \
-	X(RESTRICT, "restrct")  \
+	X(RESTRICT, "restrict") \
 	X(VOLATILE, "volatile") \
 	X(VOID, "void")         \
 	X(CHAR, "char")         \
@@ -83,8 +83,6 @@ typedef enum {
 	AST_NODE_DECLARATOR,
 	AST_NODE_POINTER,
 	AST_NODE_ARRAY,
-
-	AST_NODE_CONSTANT_EXPR
 } AST_NodeType;
 
 typedef enum C_BuiltinKind {
@@ -93,7 +91,6 @@ typedef enum C_BuiltinKind {
 	C_BUILTIN_BOOL,
 
 	C_BUILTIN_CHAR,
-	C_BUILTIN_SIGNED_CHAR,
 	C_BUILTIN_UNSIGNED_CHAR,
 
 	C_BUILTIN_SHORT,
@@ -114,9 +111,8 @@ typedef enum C_BuiltinKind {
 
 String8 c_builtin_to_string[C_BUILTIN_MAX] = {
 	[C_BUILTIN_VOID] = str_comp("void"),
-	[C_BUILTIN_BOOL] = str_comp("bool"),
+	[C_BUILTIN_BOOL] = str_comp("_Bool"),
 	[C_BUILTIN_CHAR] = str_comp("char"),
-	[C_BUILTIN_SIGNED_CHAR] = str_comp("signed char"),
 	[C_BUILTIN_UNSIGNED_CHAR] = str_comp("unsigned char"),
 	[C_BUILTIN_SHORT] = str_comp("short"),
 	[C_BUILTIN_UNSIGNED_SHORT] = str_comp("unsigned short"),
@@ -149,9 +145,9 @@ typedef enum {
 static const String8 storage_class_to_string[] = {
 	[AST_STORAGE_NONE] = str_comp("None"),
 
-	[AST_STORAGE_TYPEDEF] = str_comp("Typedef"),
-	[AST_STORAGE_EXTERN] = str_comp("Extern"),
-	[AST_STORAGE_STATIC] = str_comp("Static"),
+	[AST_STORAGE_TYPEDEF] = str_comp("typedef"),
+	[AST_STORAGE_EXTERN] = str_comp("extern"),
+	[AST_STORAGE_STATIC] = str_comp("static"),
 };
 
 ENSURE_INLINE AST_StorageQualifier
@@ -178,7 +174,7 @@ typedef struct {
 	bool is_short;
 	bool is_int;
 	bool is_void;
-	int long_count;
+	uint32_t long_count;
 } AST_DeclSpecifiers;
 
 struct AST_Node {
@@ -321,11 +317,12 @@ AST_Node *ast_parse_pointer(Arena *arena, Lexer *lexer) {
 	bool ok = arena && lexer;
 	if (ok) {
 		result = ast_make(arena, AST_NODE_POINTER);
+
 		while (match_keyword_impl(lexer, type_qualifier, countof(type_qualifier))) {
 			Token t = lexer->current;
 
 			// clang-format off
-			switch (t.type) {
+			switch (t.type - TOKEN_KEYWORD_0) {
 				case TOKEN_CONST: result->qualifiers |= AST_QUAL_CONST; break;
 				case TOKEN_RESTRICT: result->qualifiers |= AST_QUAL_RESTRICT; break;
 				case TOKEN_VOLATILE: result->qualifiers |= AST_QUAL_VOLATILE; break;
@@ -351,36 +348,54 @@ AST_Node *ast_parse_declarator(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		result = ast_make(arena, AST_NODE_DECLARATOR);
+		AST_Node *leading_pointers = 0;
 		if (match(TOKEN_STAR))
-			ast_pushback(result, ast_parse_pointer(arena, lexer));
+			leading_pointers = ast_parse_pointer(arena, lexer);
 
-		if (match(TOKEN_OPEN_PAREN))
-			ast_pushback(result, ast_parse_declarator(arena, lexer));
-		else {
+		if (match(TOKEN_LPAREN)) {
+			result = ast_parse_declarator(arena, lexer);
+			lexer_consume(lexer, TOKEN_RPAREN, s("Expect ')' after enclosed declarator."));
+		} else {
+			result = ast_make(arena, AST_NODE_DECLARATOR);
 			Token name = lexer_consume(lexer, TOKEN_IDENTIFIER, s("Expect declarator name."));
 			result->name = name;
 		}
 
-		AST_Node *head = 0;
-		while (match(TOKEN_OPEN_BRACKET)) {
+		AST_Node *arrays_head = 0, *arrays_tail = 0;
+		while (match(TOKEN_LBRACKET)) { // array
 			AST_Node *arr = ast_make(arena, AST_NODE_ARRAY);
 
-			AST_Node *expr = ast_make(arena, AST_NODE_CONSTANT_EXPR);
-			expr->string.text = lexer_peek(lexer).lexeme.text;
-			while (match(TOKEN_CLOSE_BRACKET) == false)
+			arr->string.text = lexer_peek(lexer).lexeme.text;
+			while (lexer_at_end(lexer) == false && match(TOKEN_RBRACKET) == false)
 				lexer_advance(lexer);
-			expr->string = str8_range((char *)expr->string.text, (char *)lexer->current.lexeme.text);
-			ast_pushback(arr, expr);
+			arr->string = str8_range((char *)arr->string.text, (char *)lexer->current.lexeme.text);
+			ast_pushback(arr, arr);
 
-			if (head)
-				ast_pushback(head, arr);
-			else
-				ast_pushback(result, arr);
-			head = arr;
+			if (arrays_head == 0) arrays_head = arr;
+			if (arrays_tail) ast_pushback(arrays_tail, arr);
+			arrays_tail = arr;
 		}
 
-		if (match(TOKEN_EQUAL))
+		if (arrays_head) {
+			AST_Node *tail = result;
+			while (tail->first_child != 0)
+				tail = tail->first_child;
+
+			ast_pushback(tail, arrays_head);
+		}
+		if (leading_pointers)
+			ast_pushback(arrays_tail ? arrays_tail : result, leading_pointers);
+
+		if (match(TOKEN_LPAREN)) { // TODO: Handle functions
+			uint32_t depth = 1;
+			while (lexer_at_end(lexer) == false && depth) {
+				if (lexer_peek(lexer).type == TOKEN_LPAREN) depth++;
+				if (lexer_peek(lexer).type == TOKEN_RPAREN) depth--;
+				lexer_advance(lexer);
+			}
+		}
+
+		if (match(TOKEN_EQUAL)) // skip assignment
 			while (lexer_peek(lexer).type != TOKEN_SEMICOLON)
 				lexer_advance(lexer);
 	}
@@ -396,22 +411,16 @@ AST_Node *ast_parse_struct(Arena *arena, Lexer *lexer) {
 		result = ast_make(arena, (lexer->current.type - TOKEN_KEYWORD_0) == TOKEN_STRUCT ? AST_NODE_STRUCT : AST_NODE_UNION);
 
 		if (match(TOKEN_IDENTIFIER)) {
-			if (lexer_peek(lexer).type == TOKEN_OPEN_PAREN) // ignore alignas
-				while (match(TOKEN_CLOSE_PAREN) == false)
+			if (lexer_peek(lexer).type == TOKEN_LPAREN) // ignore alignas
+				while (match(TOKEN_RPAREN) == false)
 					lexer_advance(lexer);
 			else
 				result->name = lexer->current;
 		}
 
-		if (match(TOKEN_OPEN_BRACE)) {
-			while (match(TOKEN_CLOSE_BRACE) == false) {
-				if (str8_equals(lexer_peek(lexer).lexeme, s("ShapeKind"))) {
-					uint32_t x = 0;
-					(void)x;
-				}
-
+		if (match(TOKEN_LBRACE)) {
+			while (match(TOKEN_RBRACE) == false)
 				ast_pushback(result, ast_parse_decl(arena, lexer));
-			};
 		}
 	}
 
@@ -427,24 +436,23 @@ AST_Node *ast_parse_enum(Arena *arena, Lexer *lexer) {
 		if (match(TOKEN_IDENTIFIER))
 			result->name = lexer->current;
 
-		if (match(TOKEN_OPEN_BRACE)) do {
+		if (match(TOKEN_LBRACE)) do {
 				AST_Node *enumerator = ast_make(arena, AST_NODE_ENUMERATOR);
 				enumerator->name = lexer_consume(lexer, TOKEN_IDENTIFIER, s("Expect enumerator."));
 				ast_pushback(result, enumerator);
 
 				if (match(TOKEN_EQUAL)) {
-					AST_Node *expr = ast_make(arena, AST_NODE_CONSTANT_EXPR);
-					expr->string.text = lexer_peek(lexer).lexeme.text;
-					while ((lexer_peek(lexer).type == TOKEN_COMMA || lexer_peek(lexer).type == TOKEN_CLOSE_BRACE) == false)
+					enumerator->string.text = lexer_peek(lexer).lexeme.text;
+					while ((lexer_peek(lexer).type == TOKEN_COMMA || lexer_peek(lexer).type == TOKEN_RBRACE) == false)
 						lexer_advance(lexer);
 
-					expr->string = str8_range((char *)expr->string.text, (char *)lexer_peek(lexer).lexeme.text);
-					ast_pushback(enumerator, expr);
+					enumerator->string = str8_range((char *)enumerator->string.text, (char *)lexer_peek(lexer).lexeme.text);
+					ast_pushback(enumerator, enumerator);
 				}
 
 				if (lexer_peek(lexer).type == TOKEN_COMMA)
 					lexer_advance(lexer);
-			} while (match(TOKEN_CLOSE_BRACE) == false);
+			} while (match(TOKEN_RBRACE) == false);
 	}
 
 	return result;
@@ -462,6 +470,17 @@ void ast_resolve_decl_specifier(AST_DeclSpecifiers *specs, AST_Node *result) {
 	else if (specs->is_int || specs->is_signed || specs->is_unsigned) result->builtin = specs->is_unsigned ? C_BUILTIN_UNSIGNED_INT : C_BUILTIN_INT;
 	// clang-format on
 }
+bool ast_decl_specifiers_empty(AST_DeclSpecifiers *specs) {
+	bool result = false;
+
+	ArenaTemp scratch = arena_scratch_begin(0);
+	AST_Node *temp = ast_make(scratch.arena, AST_NODE_BUILTIN);
+	ast_resolve_decl_specifier(specs, temp);
+	if (temp->builtin == C_BUILTIN_VOID && specs->is_void == false) result = true;
+	arena_scratch_end(scratch);
+
+	return result;
+}
 
 AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
 	AST_Node *result = 0;
@@ -472,6 +491,7 @@ AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
 
 		AST_DeclSpecifiers specifiers = { 0 };
 		AST_Node *type = 0, *symbol = 0;
+		AST_QualifierSet type_qualifiers = 0;
 
 		while (
 			match_keyword_impl(lexer, type_specifier, countof(type_specifier)) ||
@@ -498,9 +518,9 @@ AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
 					result->storage = keyword_to_storage_class(t.type);
 					break;
 
-                case TOKEN_CONST:    result->qualifiers |= AST_QUAL_CONST; break;
-                case TOKEN_RESTRICT: result->qualifiers |= AST_QUAL_RESTRICT; break;
-                case TOKEN_VOLATILE: result->qualifiers |= AST_QUAL_VOLATILE; break;
+                case TOKEN_CONST:    type_qualifiers |= AST_QUAL_CONST; break;
+                case TOKEN_RESTRICT: type_qualifiers |= AST_QUAL_RESTRICT; break;
+                case TOKEN_VOLATILE: type_qualifiers |= AST_QUAL_VOLATILE; break;
 
 				case TOKEN_VOID: specifiers.is_void = true; break;
                 case TOKEN_BOOL: specifiers.is_bool = true; break;
@@ -520,10 +540,16 @@ AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
 			// clang-format on
 		}
 
+		if (type == 0 && symbol == 0 && ast_decl_specifiers_empty(&specifiers) && lexer_peek(lexer).type == TOKEN_IDENTIFIER) {
+			type = ast_make(arena, AST_NODE_TYPEDEF_NAME);
+			type->name = lexer_advance(lexer);
+		}
+
 		if (type == 0) {
 			type = ast_make(arena, AST_NODE_BUILTIN);
 			ast_resolve_decl_specifier(&specifiers, type);
 		}
+		type->qualifiers = type_qualifiers;
 		ast_pushback(result, type);
 
 		if (lexer_peek(lexer).type != TOKEN_SEMICOLON) do {
@@ -555,7 +581,6 @@ static const String8 synthetic_types_header = str_comp(
 	"typedef _Bool              bool;\n");
 
 void ast_visit(AST_Node *node, uint32_t indent_level) {
-	// Helper macro/loop for visual nesting
 	for (uint32_t i = 0; i < indent_level; ++i) {
 		printf("  ");
 	}
@@ -569,8 +594,10 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			} while (decl && decl != node->first_child);
 		} break;
 		case AST_NODE_DECLARATION: {
-			printf("DECLARATION ");
-			printf("storage=%.*s\n", str_spread(storage_class_to_string[node->storage]));
+			printf("DECLARATION");
+			if (node->storage != 0)
+				printf("(%.*s)", str_spread(storage_class_to_string[node->storage]));
+			printf("\n");
 			ast_visit(node->first_child, indent_level + 1);
 
 			AST_Node *declarator = node->first_child->next_sibling;
@@ -581,18 +608,43 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		} break;
 		case AST_NODE_BUILTIN: {
 			printf("BUILTIN ");
-			String8 type = c_builtin_to_string[node->builtin];
-			printf("builtin=%.*s\n", str_spread(c_builtin_to_string[node->builtin]));
+			printf("(%.*s", str_spread(c_builtin_to_string[node->builtin]));
+			if (has_flag(node->qualifiers, AST_QUAL_CONST))
+				printf("%sCONST", ", ");
+			if (has_flag(node->qualifiers, AST_QUAL_RESTRICT))
+				printf("%sRESTRICT", ", ");
+			if (has_flag(node->qualifiers, AST_QUAL_VOLATILE))
+				printf("%sVOLATILE", ", ");
+			printf(")\n");
 		} break;
 		case AST_NODE_TYPEDEF_NAME: {
-			printf("TYPEDEF_NAME ");
-			printf("name=%.*s\n", str_spread(node->name.lexeme));
+			printf("TYPEDEF_NAME");
+			printf("(%.*s)\n", str_spread(node->name.lexeme));
 		} break;
 		case AST_NODE_UNION:
 		case AST_NODE_STRUCT: {
 			printf(node->type == AST_NODE_STRUCT ? "STRUCT" : "UNION");
-			if (node->name.lexeme.length)
-				printf(" name=%.*s", str_spread(node->name.lexeme));
+			bool prev = false;
+			if (node->name.lexeme.length || node->qualifiers)
+				printf("(");
+			if (node->name.lexeme.length) {
+				printf("%.*s", str_spread(node->name.lexeme));
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_CONST)) {
+				printf("%sCONST", prev ? ", " : "");
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_RESTRICT)) {
+				printf("%sRESTRICT", prev ? ", " : "");
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_VOLATILE)) {
+				printf("%sVOLATILE", prev ? ", " : "");
+				prev = true;
+			}
+			if (node->name.lexeme.length || node->qualifiers)
+				printf(")");
 			printf("\n");
 
 			AST_Node *member = node->first_child;
@@ -603,8 +655,27 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		} break;
 		case AST_NODE_ENUM: {
 			printf("ENUM");
-			if (node->name.lexeme.length)
-				printf(" name=%.*s", str_spread(node->name.lexeme));
+			bool prev = false;
+			if (node->name.lexeme.length || node->qualifiers)
+				printf("(");
+			if (node->name.lexeme.length) {
+				printf("%.*s", str_spread(node->name.lexeme));
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_CONST)) {
+				printf("%sCONST", prev ? ", " : "");
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_RESTRICT)) {
+				printf("%sRESTRICT", prev ? ", " : "");
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_VOLATILE)) {
+				printf("%sVOLATILE", prev ? ", " : "");
+				prev = true;
+			}
+			if (node->name.lexeme.length || node->qualifiers)
+				printf(")");
 			printf("\n");
 
 			AST_Node *enumerator = node->first_child;
@@ -616,36 +687,94 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		} break;
 		case AST_NODE_ENUMERATOR: {
 			printf("ENUMERATOR ");
-			printf("name=%.*s\n", str_spread(node->name.lexeme));
+			printf("name=%.*s", str_spread(node->name.lexeme));
+			if (node->string.length)
+				printf(" tokens=%.*s", str_spread(node->string));
+			printf("\n");
 
 			AST_Node *expr = node->first_child;
 			if (expr) ast_visit(expr, indent_level + 1);
 		} break;
 		case AST_NODE_DECLARATOR: {
 			String8 name = node->name.lexeme;
-			printf("DECLARATOR ");
-			printf("name=%.*s\n", str_spread(node->name.lexeme));
+			printf("DECLARATOR");
+			printf("(%.*s)\n", str_spread(node->name.lexeme));
 
 			if (node->first_child)
 				ast_visit(node->first_child, indent_level + 1);
 		} break;
 		case AST_NODE_POINTER: {
 			printf("POINTER");
-			if (has_flag(node->qualifiers, AST_QUAL_CONST))
-				printf("qualifier=CONST");
+			if (node->qualifiers != 0)
+				printf("(");
+			bool prev = false;
+			if (has_flag(node->qualifiers, AST_QUAL_CONST)) {
+				printf("CONST");
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_RESTRICT)) {
+				printf("%sRESTRICT", prev ? " | " : "");
+				prev = true;
+			}
+			if (has_flag(node->qualifiers, AST_QUAL_VOLATILE)) {
+				printf("%sVOLATILE", prev ? " | " : "");
+				prev = true;
+			}
+			if (node->qualifiers)
+				printf(")");
 			printf("\n");
 
 			if (node->first_child)
 				ast_visit(node->first_child, indent_level + 1);
+			if (node->first_child != node->last_child)
+				ast_visit(node->last_child, indent_level + 1);
 		} break;
 		case AST_NODE_ARRAY: {
-			printf("ARRAY\n");
+			printf("ARRAY");
+			if (node->string.length)
+				printf("(%.*s)", str_spread(node->string));
+			printf("\n");
+
 			if (node->first_child)
 				ast_visit(node->first_child, indent_level + 1);
+			if (node->last_child != node->first_child)
+				ast_visit(node->last_child, indent_level + 1);
 		} break;
-		case AST_NODE_CONSTANT_EXPR: {
-			printf("CONSTANT_EXPR tokens=%.*s\n", str_spread(node->string));
+	}
+}
+
+void ast_print_typeid(AST_Node *node) {
+	switch (node->type) {
+		case AST_NODE_PROGRAM: {
+			AST_Node *decl = node->first_child;
+			do {
+				ast_print_typeid(decl);
+				decl = decl->next_sibling;
+			} while (decl && decl != node->first_child);
 		} break;
+		case AST_NODE_DECLARATION: {
+			if (node->storage == AST_STORAGE_TYPEDEF) {
+				AST_Node *declarator = node->first_child->next_sibling;
+				while (declarator && declarator != node->first_child) {
+					if (node->first_child->type != AST_NODE_STRUCT && node->first_child->type != AST_NODE_UNION && node->first_child->type != AST_NODE_ENUM) {
+						String8 type = node->first_child->type == AST_NODE_BUILTIN ? c_builtin_to_string[node->first_child->builtin] : node->first_child->name.lexeme;
+						fprintf(stderr, "#define TYPE_%.*s TYPE_%.*s\n", str_spread(declarator->name.lexeme), str_spread(type));
+					} else {
+						fprintf(stdout, "    TYPE_%.*s,\n", str_spread(declarator->name.lexeme));
+					}
+					declarator = declarator->next_sibling;
+				}
+			}
+		} break;
+		case AST_NODE_BUILTIN:
+		case AST_NODE_TYPEDEF_NAME:
+		case AST_NODE_STRUCT:
+		case AST_NODE_UNION:
+		case AST_NODE_ENUM:
+		case AST_NODE_ENUMERATOR:
+		case AST_NODE_DECLARATOR:
+		case AST_NODE_POINTER:
+		case AST_NODE_ARRAY:
 			break;
 	}
 }
@@ -662,16 +791,20 @@ int main(void) {
 		os_file_read_entire(arena, s("engine/src/core/geom_types.h")),
 		os_file_read_entire(arena, s("engine/src/utils/anim.h")),
 		os_file_read_entire(arena, s("engine/scratch/skinning.c")),
+		os_file_read_entire(arena, s("engine/src/gfx/gfx_types.h")),
+		os_file_read_entire(arena, s("engine/src/meta.h")),
+		os_file_read_entire(arena, s("engine/scratch/c_parser.c")),
 	};
+
+	AST_Node *program = ast_make(arena, AST_NODE_PROGRAM);
 	for (uint32_t index = 0; index < countof(headers); ++index) {
 		Lexer lexer[] = { lexer_make(headers[index], keyword_to_string, countof(keyword_to_string)) };
-
-		AST_Node *program = ast_make(arena, AST_NODE_PROGRAM);
 		while (lexer_at_end(lexer) == false) {
 			Token peek = lexer_peek(lexer);
 
 			switch (peek.type) {
 				case TOKEN_STRUCT + TOKEN_KEYWORD_0:
+				case TOKEN_UNION + TOKEN_KEYWORD_0:
 				case TOKEN_ENUM + TOKEN_KEYWORD_0:
 				case TOKEN_TYPEDEF + TOKEN_KEYWORD_0:
 					ast_pushback(program, ast_parse_decl(arena, lexer));
@@ -683,8 +816,10 @@ int main(void) {
 			}
 		}
 
-		ast_visit(program, 0);
+		/* ast_print_typeid(program); */
 	}
+	ast_visit(program, 0);
+
 	arena_destroy(arena);
 	return 0;
 }
