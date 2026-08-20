@@ -1,0 +1,15 @@
+#version 450
+#pragma shader_stage(vertex)
+
+out ShaderOuptut {
+    layout(location = 0) vec2 uv;
+} vs_out;
+
+const vec2 corners[4] = vec2[](vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(1.0, 1.0));
+const uint indices[6] = { 0, 2, 3, 0, 3, 1 };
+
+void main() { 
+    vec2 coord = corners[indices[gl_VertexIndex]];
+    gl_Position = vec4(coord, 0.0, 1.0);
+    vs_out.uv = (coord + 1) * 0.5;
+}

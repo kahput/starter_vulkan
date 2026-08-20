@@ -1,0 +1,12 @@
+#version 450
+#pragma shader_stage(fragment)
+
+in InBlock {
+    layout(location = 0) vec4 color;
+} fs_input;
+
+layout(location = 0) out vec4 out_color;
+
+void main() {
+    out_color = fs_input.color; 
+}

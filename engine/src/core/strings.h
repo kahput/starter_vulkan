@@ -1,85 +1,40 @@
 #pragma once
 
 #include "common.h"
-#include "arena.h"
+#include "core/arena.h"
 
-typedef struct String {
-	char *chars;
-	size_t length;
-} String;
+typedef struct {
+	uint8_t *text;
+	uint64_t length;
+} String8;
 
-#define SFMT "%.*s"
-#define sarg(s) (int)(s).length, (s).chars
-#define S(s) ((String){ (char *)(s), sizeof(s) - 1 })
-#define sc(s) { (char *)(s), sizeof(s) - 1 }
+#define s(s) str_lit(s)
+#define str_arg(s) s.length, s.text
+#define str_lit(s) (String8){ .text = (uint8_t *)s, .length = sizeof(s) - 1 }
+#define str_comp(s) { .text = (uint8_t *)s, .length = sizeof(s) - 1 }
+#define str_spread(s) (int32_t)s.length, (char *)s.text
+#define shash(s) hash64((s), sizeof((s)) - 1)
 
-#define shash(s) string_hash64(S(s))
+String8 str8_wrap(const char *cstring);
+ENSURE_INLINE String8 str8_range(const char *start, const char *end) {
+	if (end <= start) return (String8){ 0 };
+	return (String8){ .text = (uint8_t *)start, .length = end - start };
+}
 
-ENGINE_API String string_wrap(const char *s);
-static inline String string_wrap_buffer(Bytes buffer) { return (String){ .chars = (char *)buffer.memory, .length = buffer.size }; }
+bool str8_equals(String8 a, String8 b);
 
-ENGINE_API bool string_equals(String a, String b);
-ENGINE_API bool string_equals_ignore_case(String a, String b);
-ENGINE_API bool string_has_prefix(String str, String prefix);
-ENGINE_API bool string_has_suffix(String str, String suffix);
+String8 str8_concat(Arena *arena, String8 a, String8 b);
+String8 str8_indent(Arena *arena, String8 indent, uint32_t depth);
 
-int64_t string_find_first(String haystack, String needle);
-int64_t string_find_last(String haystack, String needle);
+String8 str8_copy(Arena *arena, String8 src);
 
-String string_slice(String str, uint32_t start, uint32_t length);
+String8 str8_push_format_list(Arena *arena, String8 format, va_list list);
+String8 str8_pushf(Arena *arena, String8 format, ...);
 
-String string_chop_left(String str, uint32_t n);
-String string_chop_right(String str, uint32_t n);
+String8 str8_filename(String8 path);
+String8 str8_filepath_join(Arena *arena, String8 head, String8 tail);
+String8 str8_directory(String8 path);
 
-String string_trim(String s);
-String string_trim_left(String s);
-String string_trim_right(String s);
-
-ENGINE_API uint64_t string_hash64(String s);
-
-uint32_t string_to_u32(String str);
-uint64_t string_to_u64(String s);
-
-int32_t string_to_i32(String s);
-int64_t string_to_i64(String s);
-
-float string_to_f32(String s);
-double string_to_f64(String s);
-
-ENGINE_API String stringpath_directory(String path);
-ENGINE_API String stringpath_filename(String path);
-ENGINE_API String stringpath_extension(String path);
-
-ENGINE_API String stringpath_join(Arena *arena, String head, String tail);
-ENGINE_API String stringpath_normalize(Arena *arena, String path);
-
-ENGINE_API String string_copy(Arena *arena, String s);
-ENGINE_API String string_merge(Arena *arena, String a, String b);
-
-ENGINE_API String string_format(Arena *arena, const char *format, ...);
-ENGINE_API String string_format_non_terminated(Arena *arena, const char *format, ...);
-ENGINE_API String string_formatv(Arena *arena, const char *format, va_list args);
-
-ENGINE_API String string_concat(Arena *arena, String head, String tail);
-ENGINE_API String string_replace(Arena *arena, String source, String find, String replace);
-ENGINE_API String string_upper(Arena *arena, String s);
-ENGINE_API String string_lower(Arena *arena, String s);
-
-ENGINE_API String string_terminate(Arena *arena, String s);
-ENGINE_API char *string_cstring(Arena *arena, String s);
-
-typedef struct StringNode {
-	struct StringNode *next;
-	String string;
-} StringNode;
-
-typedef struct StringList {
-	StringNode *first;
-	StringNode *last;
-	size_t count;
-	size_t total_length;
-} StringList;
-
-ENGINE_API void stringlist_push(Arena *arena, StringList *list, String s);
-ENGINE_API StringList stringlist_split(Arena *arena, String str, String separator);
-ENGINE_API String stringlist_join(Arena *arena, StringList *list, String separator);
+double str8_to_f64(String8 s);
+uint64_t str8_to_u64(String8 s);
+int64_t str8_to_s64(String8 s);

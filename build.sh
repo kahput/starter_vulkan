@@ -2,22 +2,18 @@
 
 PROJECT_ROOT="$(pwd)"
 WORKING_DIRECOTRY="$PROJECT_ROOT/game"
-BUILD_DIR="$PROJECT_ROOT/build"
+NATIVE_DIR="$PROJECT_ROOT/build"
+WEB_DIR="$PROJECT_ROOT/build_web"
 BUILD_TYPE="Debug"
 
 build() {
     echo "[INFO] Creating build files..."
-    mkdir -p "$BUILD_DIR"
-    cd "$BUILD_DIR" || exit 1
-    cmake -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_C_STANDARD=99 "$PROJECT_ROOT"
-    cmake --build .
-    cp compile_commands.json ..
-}
 
-run() {
-    echo "[INFO] running..."
-    cd ${WORKING_DIRECOTRY}
-    ./generator src/meta_generated.h src/meta_generated.c src/components.h
+    cmake -S ${PROJECT_ROOT} -B ${NATIVE_DIR} -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_C_STANDARD=99
+    bear --append -- cmake --build ${NATIVE_DIR}
+
+    # emcmake cmake -S ${PROJECT_ROOT} -B ${WEB_DIR} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_C_STANDARD=99
+    # bear --append -- cmake --build ${WEB_DIR}
 }
 
 clean() {
@@ -28,9 +24,6 @@ clean() {
 case "$1" in
     build)
         build
-        ;;
-    run)
-        run
         ;;
     clean)
         clean
