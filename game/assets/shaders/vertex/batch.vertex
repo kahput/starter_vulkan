@@ -1,0 +1,31 @@
+#version 450
+#pragma shader_stage(vertex)
+
+layout(set = 0, binding = 0) uniform GlobalParameters {
+    mat4 view_projection;
+} global;
+
+struct VertexData {
+    vec2 position; 
+    vec2 uv;
+    uint color;
+    uint texture_id;
+};
+
+layout(set = 0, binding = 1) readonly buffer VertexBlock {
+    VertexData vertex_data[];
+} batch;
+
+out OutBlock {
+    layout(location = 0) vec2 uv;
+    layout(location = 1) vec4 color;
+    flat layout(location = 2) uint texture_id;
+} vs_out;
+
+void main() {
+    VertexData vertex = batch.vertex_data[gl_VertexIndex];
+    gl_Position = global.view_projection * vec4(vertex.position, 0.0f, 1.0f);
+    vs_out.uv = vertex.uv;
+    vs_out.color = unpackUnorm4x8(vertex.color);
+    vs_out.texture_id = vertex.texture_id;
+}

@@ -1,0 +1,221 @@
+#pragma once
+
+#include "core/cmath.h"
+#include "core/r_types.h"
+
+#include "core/strings.h"
+#include "core/identifiers.h"
+
+#define MAX_COLOR_ATTACHMENTS 4
+
+typedef enum {
+	BUFFER_USAGE_VERTEX = 1 << 0,
+	BUFFER_USAGE_INDEX = 1 << 1,
+	BUFFER_USAGE_TRANSFER = 1 << 2,
+	BUFFER_USAGE_UNIFORM = 1 << 3,
+	BUFFER_USAGE_STORAGE = 1 << 4,
+} BufferUsageFlags;
+
+typedef enum {
+	BUFFER_MEMORY_DEVICE,
+	BUFFER_MEMORY_SHARED,
+} BufferMemory;
+
+typedef enum shader_attribute_format {
+	SHADER_ATTRIBUTE_TYPE_UNDEFINED,
+
+	SHADER_ATTRIBUTE_TYPE_FLOAT64,
+	SHADER_ATTRIBUTE_TYPE_INT64,
+	SHADER_ATTRIBUTE_TYPE_UINT64,
+
+	SHADER_ATTRIBUTE_TYPE_FLOAT32,
+	SHADER_ATTRIBUTE_TYPE_INT32,
+	SHADER_ATTRIBUTE_TYPE_UINT32,
+
+	SHADER_ATTRIBUTE_TYPE_INT16,
+	SHADER_ATTRIBUTE_TYPE_UINT16,
+
+	SHADER_ATTRIBUTE_TYPE_INT8,
+	SHADER_ATTRIBUTE_TYPE_UINT8,
+
+	SHADER_ATTRIBUTE_TYPE_LAST
+} ShaderAttributeType;
+
+typedef struct {
+	ShaderAttributeType type;
+	uint32_t count;
+} ShaderAttributeFormat;
+
+typedef enum TextureType {
+	IMAGE_TYPE_1D,
+	IMAGE_TYPE_2D,
+	IMAGE_TYPE_3D,
+	IMAGE_TYPE_CUBE,
+} ImageType;
+
+typedef enum {
+	IMAGE_USAGE_SAMPLED = 1u << 0,
+	IMAGE_USAGE_RENDER_TARGET = 1u << 1,
+	IMAGE_USAGE_READBACK = 1u << 2
+} ImageUsageFlags;
+
+typedef struct shader_attribute {
+	String name;
+	ShaderAttributeFormat format;
+	uint32_t binding;
+} ShaderAttribute;
+
+typedef enum cull_mode {
+	CULL_MODE_NONE = 0,
+	CULL_MODE_FRONT = 1,
+	CULL_MODE_BACK = 2,
+	CULL_MODE_FRONT_AND_BACK = 3
+} PipelineCullMode;
+
+typedef enum front_face {
+	FRONT_FACE_COUNTER_CLOCKWISE = 0,
+	FRONT_FACE_CLOCKWISE = 1
+} PipelineFrontFace;
+
+typedef enum polygon_mode {
+	POLYGON_MODE_FILL = 0,
+	POLYGON_MODE_LINE = 1,
+	POLYGON_MODE_POINT = 2,
+} PipelinePolygonMode;
+
+typedef enum compare_op {
+	COMPARE_OP_NEVER = 0,
+	COMPARE_OP_LESS = 1,
+	COMPARE_OP_EQUAL = 2,
+	COMPARE_OP_LESS_OR_EQUAL = 3,
+	COMPARE_OP_GREATER = 4,
+	COMPARE_OP_NOT_EQUAL = 5,
+	COMPARE_OP_GREATER_OR_EQUAL = 6,
+	COMPARE_OP_ALWAYS = 7
+} PipelineCompareOp;
+
+// NOTE: MUST BE EXPLICITLY PADDED FOR BINARY EQUALITY CHECK
+typedef struct pipeline_desc {
+	ShaderAttribute *override_attributes;
+	uint32_t override_count;
+
+	PipelineCullMode cull_mode;
+	PipelineFrontFace front_face;
+	PipelinePolygonMode polygon_mode;
+
+	bool depth_test_enable;
+	bool depth_write_enable;
+	bool topology_line_list;
+	bool blend_enable;
+	PipelineCompareOp depth_compare_op;
+} PipelineDesc;
+
+typedef enum sampler_filter {
+	FILTER_NEAREST = 0,
+	FILTER_LINEAR = 1
+} SamplerFilter;
+
+typedef enum sampler_address_mode {
+	SAMPLER_ADDRESS_MODE_REPEAT = 0,
+	SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT = 1,
+	SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE = 2,
+	SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER = 3
+} SamplerAddressMode;
+
+typedef enum sampler_border_color {
+	SAMPLER_BORDER_COLORF_TRANSPARENT_BLACK = 0,
+	SAMPLER_BORDER_COLORI_TRANSPARENT_BLACK = 1,
+	SAMPLER_BORDER_COLORF_OPAQUE_BLACK = 2,
+	SAMPLER_BORDER_COLORI_OPAQUE_BLACK = 3,
+	SAMPLER_BORDER_COLORF_OPAQUE_WHITE = 4,
+	SAMPLER_BORDER_COLORI_OPAQUE_WHITE = 5,
+} SamplerBorderColor;
+
+typedef struct sampler_desc {
+	SamplerFilter min_filter;
+	SamplerFilter mag_filter;
+
+	SamplerFilter mipmap_filter;
+
+	SamplerAddressMode address_mode_u;
+	SamplerAddressMode address_mode_v;
+	SamplerAddressMode address_mode_w;
+
+	SamplerBorderColor border_color;
+
+	bool anisotropy_enable;
+} SamplerDesc;
+
+typedef struct {
+	RhiImage target;
+
+	enum { LOAD,
+		CLEAR } load;
+	enum { STORE,
+		DONT_CARE } store;
+
+	union {
+		float32x4 color;
+		float depth;
+	} clear;
+} AttachmentDesc;
+
+typedef struct {
+	String name;
+	AttachmentDesc color_attachments[MAX_COLOR_ATTACHMENTS];
+	uint32_t color_attachment_count;
+
+	AttachmentDesc depth_attachment;
+	bool use_depth;
+
+	Rectangle viewport;
+	uint32_t msaa_level;
+} DrawlistDesc;
+
+// TODO: Move these
+
+#define DEFAULT_PIPELINE                            \
+	(PipelineDesc) {                                \
+		.override_attributes = NULL,                \
+		.override_count = 0,                        \
+		.cull_mode = CULL_MODE_NONE,                \
+		.front_face = FRONT_FACE_COUNTER_CLOCKWISE, \
+		.polygon_mode = POLYGON_MODE_FILL,          \
+		.depth_test_enable = true,                  \
+		.depth_write_enable = true,                 \
+		.depth_compare_op = COMPARE_OP_LESS,        \
+		.topology_line_list = false,                \
+	}
+
+#define LINEAR_SAMPLER                                      \
+	(SamplerDesc) {                                         \
+		.min_filter = FILTER_LINEAR,                        \
+		.mag_filter = FILTER_LINEAR,                        \
+		.address_mode_u = SAMPLER_ADDRESS_MODE_REPEAT,      \
+		.address_mode_v = SAMPLER_ADDRESS_MODE_REPEAT,      \
+		.address_mode_w = SAMPLER_ADDRESS_MODE_REPEAT,      \
+		.border_color = SAMPLER_BORDER_COLORF_OPAQUE_BLACK, \
+		.anisotropy_enable = true                           \
+	}
+
+#define NEAREST_SAMPLER                                       \
+	(SamplerDesc) {                                           \
+		.min_filter = FILTER_NEAREST,                         \
+		.mag_filter = FILTER_NEAREST,                         \
+		.address_mode_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
+		.address_mode_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
+		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, \
+		.border_color = SAMPLER_BORDER_COLORF_OPAQUE_BLACK,   \
+		.anisotropy_enable = false                            \
+	}
+
+#define SHADOW_SAMPLER                                          \
+	(SamplerDesc) {                                             \
+		.min_filter = FILTER_LINEAR,                            \
+		.mag_filter = FILTER_LINEAR,                            \
+		.address_mode_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
+		.address_mode_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
+		.address_mode_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, \
+		.border_color = SAMPLER_BORDER_COLORF_OPAQUE_WHITE,     \
+		.anisotropy_enable = false                              \
+	}

@@ -1,0 +1,19 @@
+#version 450
+#pragma shader_stage(vertex)
+
+layout(set = 0, binding = 0) uniform GlobalBlock {
+    mat4 view_projection;
+};
+
+layout(push_constant) uniform constants {
+    mat4 model;
+} pc;
+
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec2 in_uv0;
+layout(location = 3) in vec4 in_tangent;
+
+void main() {
+    gl_Position = view_projection * pc.model * vec4(in_position.xyz, 1.0f);
+}

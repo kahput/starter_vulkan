@@ -12,6 +12,13 @@ Arena scratch_arenas[2] = { 0 };
 
 Arena arena_make(size_t size) { return (Arena){ .base = malloc(size), .capacity = size }; }
 
+Arena *arena_partition(Arena *arena, size_t size) {
+	Arena *sub = arena_push_struct(arena, Arena);
+	sub->base = arena_push(arena, size, 1, true);
+	sub->capacity = size;
+	return sub;
+}
+
 void arena_destroy(Arena *arena) {
 	if (arena->base)
 		free(arena->base);
@@ -22,8 +29,9 @@ void arena_destroy(Arena *arena) {
 }
 
 void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) {
+	ASSERT(alignment > 0 && ((alignment & (alignment - 1)) == 0));
 	uintptr_t current = (uintptr_t)arena->base + arena->offset;
-	uintptr_t aligned = alignup(current, alignment ? alignment : 1);
+	uintptr_t aligned = alignup(current, alignment);
 
 	size_t padding = aligned - current;
 
@@ -73,10 +81,133 @@ void arena_temp_end(ArenaTemp temp) {
 ArenaTemp arena_scratch_begin(Arena *conflict) {
 	if (scratch_arenas[0].base == NULL) {
 		// TODO: Lower this back down
-		scratch_arenas[0] = arena_make(MiB(16));
-		scratch_arenas[1] = arena_make(MiB(16));
+		scratch_arenas[0] = arena_make(MiB(256));
+		scratch_arenas[1] = arena_make(MiB(256));
 	}
 
 	Arena *selected = conflict == &scratch_arenas[0] ? &scratch_arenas[1] : &scratch_arenas[0];
 	return arena_temp_begin(selected);
+}
+
+ArenaTrieNode *arena_trienode_ensure(Arena *arena, ArenaTrieNode **root, Bytes key, const char *debug_type_name) {
+	ArenaTrieNode **node = root;
+
+	for (uint64_t hash_index = hash64(key.memory, key.size); *node; hash_index <<= 2) {
+		Bytes node_key = bytes((uint8_t *)(*node) + sizeof(ArenaTrieNode), (*node)->key_size);
+		if (bytes_equal(node_key, key)) {
+			ASSERT_FORMAT(
+				debug_type_name && (*node)->debug_type_name
+					? strcmp((*node)->debug_type_name, debug_type_name) == 0
+					: 1,
+				"ArenaTrie type mismatch: Stored: %s, Requested: %s",
+				(*node)->debug_type_name, debug_type_name);
+
+			return (*node);
+		}
+
+		node = &((*node)->children[hash_index >> 62]);
+	}
+	if (arena == NULL)
+		return NULL;
+
+	*node = arena_push(arena, sizeof(ArenaTrieNode) + key.size, alignof(ArenaTrieNode), true);
+	(*node)->key_size = key.size;
+	(*node)->debug_type_name = debug_type_name;
+	memory_copy((uint8_t *)(*node) + sizeof(ArenaTrieNode), key.memory, (*node)->key_size);
+
+	return (*node);
+}
+
+void *arena_triestruct_ensure(Arena *arena, ArenaTrieHeader **root, size_t key_offset, size_t value_offset, Bytes key, size_t map_size, size_t map_align) {
+	ArenaTrieHeader **node = root;
+
+	for (uint64_t hash = hash64(key.memory, key.size); *node; hash <<= 2) {
+		void *node_key = (uint8_t *)(*node) + key_offset;
+		if (memory_equals(node_key, key.memory, key.size)) {
+			return (uint8_t *)(*node) + value_offset;
+		}
+
+		node = &(*node)->children[hash >> 62];
+	}
+
+	if (arena == NULL)
+		return NULL;
+
+	ASSERT(map_size >= sizeof(ArenaTrieNode));
+
+	(*node) = arena_push(arena, map_size, 16, true);
+	memory_copy((uint8_t *)(*node) + key_offset, key.memory, key.size);
+
+	return (uint8_t *)(*node) + value_offset;
+}
+
+void *arena_trie_ensure(Arena *arena, ArenaTrieNode **root, Bytes key, size_t size, size_t align, const char *debug_type_name) {
+	ArenaTrieNode *node = arena_trienode_ensure(arena, root, key, debug_type_name);
+	if (arena && node && node->payload == NULL)
+		node->payload = arena_push(arena, size, align, true);
+
+	return node ? node->payload : NULL;
+}
+
+void *arena_freelist_wrap(void *array, size_t stride, uint32_t capacity) {
+	for (uint32_t index = 0; index < capacity; ++index) {
+		ArenaListNode *element = (ArenaListNode *)((uint8_t *)array + stride * index);
+		element->next = (ArenaListNode *)((uint8_t *)element + stride);
+
+		if (index + 1 == capacity)
+			element->next = NULL;
+	}
+
+	return array;
+}
+
+void *arena_list_alloc(void **first_free) {
+	if (first_free == NULL || *first_free == NULL)
+		return NULL;
+
+	ArenaListNode *element = (ArenaListNode *)*first_free;
+	*first_free = element->next;
+
+	return element;
+}
+
+void arena_list_free(void **first_free, void *slot) {
+	if (first_free == NULL || *first_free == NULL)
+		return;
+
+	ArenaListNode *head = *first_free;
+	ArenaListNode *element = slot;
+
+	element->next = head;
+	*first_free = element;
+}
+
+#define INITIAL_DARRAY_CAPACITY 64
+void *arena_array_ensure(Arena *arena, void *arr, size_t item_size, uint32_t count) {
+	uint32_t capacity = 0;
+
+	if (arr) {
+		ArenaArrayHeader *header = HEADER(arr, ArenaArrayHeader);
+		if (header->count + count <= header->capacity)
+			return arr;
+		capacity = header->capacity;
+
+		if ((uint8_t *)arena->base + arena->offset != (uint8_t *)arr + capacity * item_size) {
+			void *copy = arena_push_copy(arena, header, sizeof(ArenaArrayHeader) + capacity * item_size, 16);
+			arr = (ArenaArrayHeader *)copy + 1;
+		}
+	} else {
+		ArenaArrayHeader *header = arena_push(arena, sizeof(ArenaArrayHeader), 16, true);
+		arr = header + 1;
+	}
+
+	uint32_t extend = capacity ? capacity : INITIAL_DARRAY_CAPACITY;
+	uint32_t needed = HEADER(arr, ArenaArrayHeader)->count + count;
+	while (HEADER(arr, ArenaArrayHeader)->capacity + extend < needed)
+		extend += extend;
+
+	arena_push(arena, extend * item_size, 1, true);
+	HEADER(arr, ArenaArrayHeader)->capacity += extend;
+
+	return arr;
 }

@@ -25,4 +25,3 @@ TabWidth: 4
 UseTab: Always
 IndentPPDirectives: BeforeHash
 SortIncludes: Never
-AllowShortIfStatementsOnASingleLine: WithoutElse

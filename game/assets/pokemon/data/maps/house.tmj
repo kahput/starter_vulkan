@@ -1,0 +1,275 @@
+{ "compressionlevel":-1,
+ "height":12,
+ "infinite":false,
+ "layers":[
+        {
+         "data":[247, 248, 248, 248, 248, 248, 248, 248, 249,
+            277, 258, 258, 270, 271, 258, 258, 258, 259,
+            277, 268, 268, 280, 281, 268, 268, 268, 269,
+            277, 278, 278, 278, 278, 278, 278, 278, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 289,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            277, 288, 288, 288, 288, 288, 288, 288, 279,
+            297, 298, 260, 261, 298, 298, 298, 298, 299],
+         "height":12,
+         "id":1,
+         "name":"Terrain",
+         "opacity":1,
+         "type":"tilelayer",
+         "visible":true,
+         "width":9,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "data":[0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0],
+         "height":12,
+         "id":10,
+         "name":"Terrain Top",
+         "opacity":1,
+         "type":"tilelayer",
+         "visible":true,
+         "width":9,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":2,
+         "name":"Entities",
+         "objects":[
+                {
+                 "height":0,
+                 "id":1,
+                 "name":"Player",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"direction",
+                         "type":"string",
+                         "value":"right"
+                        }, 
+                        {
+                         "name":"pos",
+                         "type":"string",
+                         "value":"world"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":193.333,
+                 "y":620
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":6,
+         "name":"Coast",
+         "objects":[],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":7,
+         "name":"Water",
+         "objects":[],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":8,
+         "name":"Monsters",
+         "objects":[],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":9,
+         "name":"Collisions",
+         "objects":[
+                {
+                 "height":685.333,
+                 "id":13,
+                 "name":"",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":118,
+                 "x":-58,
+                 "y":72.6667
+                }, 
+                {
+                 "height":680,
+                 "id":14,
+                 "name":"",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":81.3333,
+                 "x":515.333,
+                 "y":92.6667
+                }, 
+                {
+                 "height":146.667,
+                 "id":15,
+                 "name":"",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":442,
+                 "x":70.6667,
+                 "y":43.3333
+                }, 
+                {
+                 "height":54.6667,
+                 "id":17,
+                 "name":"",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":89.3333,
+                 "x":67.3333,
+                 "y":670
+                }, 
+                {
+                 "height":54.6667,
+                 "id":18,
+                 "name":"",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":282.667,
+                 "x":226.667,
+                 "y":670.667
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":3,
+         "name":"Objects",
+         "objects":[],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":5,
+         "name":"Transition",
+         "objects":[
+                {
+                 "height":16,
+                 "id":8,
+                 "name":"",
+                 "properties":[
+                        {
+                         "name":"pos",
+                         "type":"string",
+                         "value":"house"
+                        }, 
+                        {
+                         "name":"target",
+                         "type":"string",
+                         "value":"world"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":60,
+                 "x":161.333,
+                 "y":690.666
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        },
+    
+        {
+         "data":[0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0],
+         "height":12,
+         "id":4,
+         "name":"Water",
+         "opacity":1,
+         "type":"tilelayer",
+         "visible":true,
+         "width":9,
+         "x":0,
+         "y":0
+        }],
+ "nextlayerid":11,
+ "nextobjectid":19,
+ "orientation":"orthogonal",
+ "renderorder":"right-down",
+ "tiledversion":"1.11.2",
+ "tileheight":64,
+ "tilesets":[
+        {
+         "firstgid":1,
+         "source":"..\/tilesets\/world.tsj"
+        }, 
+        {
+         "firstgid":211,
+         "source":"..\/tilesets\/objects.tsj"
+        }, 
+        {
+         "firstgid":242,
+         "source":"..\/tilesets\/indoor.tsj"
+        }],
+ "tilewidth":64,
+ "type":"map",
+ "version":"1.10",
+ "width":9
+}

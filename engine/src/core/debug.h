@@ -17,12 +17,11 @@
 	#define ASSERT_MESSAGE(condition, message) ((void)0)
 	#define ASSERT_FORMAT(condition, fmt, ...) ((void)0)
 	#define INVALID_PATH ((void)0)
-	#define NOT_IMPLEMENTED ((void)0)
 #else
 	#define ASSERT(condition)                                    \
 		do {                                                     \
 			if (!(condition)) {                                  \
-				LOG_ERROR("ASSERT [%s]", #condition); \
+				LOG_ERROR("Assertion failed: [%s]", #condition); \
 				debug_break();                                   \
 				abort();                                         \
 			}                                                    \
@@ -30,7 +29,7 @@
 	#define ASSERT_MESSAGE(condition, message)                                 \
 		do {                                                                   \
 			if (!(condition)) {                                                \
-				LOG_ERROR("ASSERT [%s]\n%s", #condition, message); \
+				LOG_ERROR("Assertion failed: [%s] | %s", #condition, message); \
 				debug_break();                                                 \
 				abort();                                                       \
 			}                                                                  \
@@ -38,7 +37,7 @@
 	#define ASSERT_FORMAT(condition, fmt, ...)             \
 		do {                                               \
 			if (!(condition)) {                            \
-				LOG_ERROR("ASSERT [%s]\n" fmt, \
+				LOG_ERROR("Assertion failed: [%s] | " fmt, \
 					#condition, __VA_ARGS__);              \
 				debug_break();                             \
 				abort();                                   \
@@ -46,5 +45,4 @@
 		} while (0)
 
 	#define INVALID_PATH ASSERT(!"InvalidCodePath")
-	#define NOT_IMPLEMENTED ASSERT(!"NotImplemented")
 #endif

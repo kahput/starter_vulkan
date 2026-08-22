@@ -1,6 +1,5 @@
 # Ignore build directories
 /build/
-/build_web/
 /bin/
 /obj/
 /out/
@@ -41,6 +40,8 @@ compile_commands.json
 Thumbs.db           # Windows
 
 # Ignore compiled object files and libraries
+program
+/game/tools
 *.spv
 *.o
 *.a
@@ -77,4 +78,3 @@ coverage/
 conan.lock
 conanbuildinfo.cmake
 conanbuildinfo.txt
-
