@@ -22,6 +22,7 @@ void arena_destroy(Arena *arena) {
 }
 
 void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) {
+
 	uintptr_t current = (uintptr_t)arena->base + arena->offset;
 	uintptr_t aligned = alignup(current, alignment ? alignment : 1);
 

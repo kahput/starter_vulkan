@@ -111,10 +111,70 @@ float2 measure_text(Font *font, String8 text) {
 
 		Glyph *glyph = &font->glyphs[c];
 		x_offset += glyph->advance_x;
-
 	}
 
 	result.y = font->greatest_top_y + font->greatest_bottom_y;
 	result.x = maxf(result.x, x_offset);
+	return result;
+}
+
+String8 wrap_text(Arena *arena, Font *font, String8 text, Rectangle bounds, float font_size, float spacing, float *out_height) {
+	float current_width = 0.0f, current_height = 0.0f;
+	int32_t last_space = -1;
+	float width_at_last_space = 0;
+
+	String8 result = { 0 };
+
+	bool ok = arena;
+	if (ok) {
+		result.length = text.length;
+		result.text = arena_push_count(arena, uint8_t, result.length + 1);
+		memory_copy(result.text, text.text, result.length);
+
+		for (uint32_t index = 0; result.text[index]; ++index) {
+			char c = result.text[index];
+			Glyph *glyph = &font->glyphs[c];
+			float glyph_width = glyph->advance_x;
+			float glyph_height = font_size;
+
+			/* if (current_height + glyph_height > bounds.height) { */
+			/* 	for (int32_t reverse = index - 1; reverse >= 0; --reverse) { */
+			/* 		if (result.text[reverse] == ' ' || result.text[reverse] == '\t' || result.text[reverse] == '\n') { */
+			/* 			result.text[reverse] = '\0'; */
+			/* 			break; */
+			/* 		} */
+			/* 	} */
+			/* 	result.text[index] = '\0'; */
+			/* 	break; */
+			/* } */
+
+			if (c == ' ' || c == '\t') {
+				last_space = (int32_t)index;
+				width_at_last_space = current_width;
+			}
+
+			if (c == '\n' || (c == '\\' && text.text[index + 1] == 'n')) {
+				current_width = 0;
+				width_at_last_space = 0;
+				current_height += font_size + 2.0f;
+				continue;
+			}
+
+			current_width += glyph_width + spacing;
+			if (current_width > bounds.width) {
+				if (last_space >= 0) {
+					result.text[last_space] = '\n';
+
+					current_width -= width_at_last_space;
+					last_space = -1;
+					width_at_last_space = 0;
+					current_height += font_size + 2.0f;
+				}
+			}
+		}
+	}
+
+	if (out_height)
+		*out_height = current_height;
 	return result;
 }

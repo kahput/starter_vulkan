@@ -21,6 +21,17 @@ bool str8_equals(String8 a, String8 b) {
 	return memory_compare(a.text, b.text, a.length) == 0;
 }
 
+bool str8_contains(String8 haystack, String8 needle) {
+	if (haystack.length < needle.length) return false;
+
+	for (uint64_t index = 0; index <= haystack.length - needle.length; ++index) 
+		if (str8_equals((String8){ haystack.text + index, needle.length }, needle))
+			return true;
+	
+
+	return false;
+}
+
 String8 str8_concat(Arena *arena, String8 a, String8 b) {
 	if (a.length == 0)
 		return b;

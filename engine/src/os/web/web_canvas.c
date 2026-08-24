@@ -1,4 +1,4 @@
-#include "core/shape2.h"
+#include "core/geom.h"
 #include "os.h"
 
 bool os_display_startup(void);

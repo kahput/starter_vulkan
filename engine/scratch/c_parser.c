@@ -66,8 +66,11 @@ TokenType keyword_to_token[TOKEN_KEYWORD_MAX] = {
 typedef struct AST_Node AST_Node;
 
 #define AST_MAX_SYMBOLS 2048
-static AST_Node *symbol_table[AST_MAX_SYMBOLS] = { 0 };
-static uint32_t symbol_count = 0;
+static AST_Node *global_symbol_table[AST_MAX_SYMBOLS] = { 0 };
+static uint32_t global_symbol_count = 0;
+
+static AST_Node *tag_symbol_table[AST_MAX_SYMBOLS] = { 0 };
+static uint32_t tag_symbol_count = 0;
 
 typedef enum {
 	AST_NODE_PROGRAM,
@@ -77,7 +80,7 @@ typedef enum {
 	AST_NODE_TYPEDEF_NAME,
 	AST_NODE_STRUCT,
 	AST_NODE_UNION,
-	AST_NODE_ENUM,
+	AST_NODE_GEN_ENUM,
 
 	AST_NODE_ENUMERATOR,
 	AST_NODE_DECLARATOR,
@@ -85,7 +88,7 @@ typedef enum {
 	AST_NODE_ARRAY,
 } AST_NodeType;
 
-typedef enum C_BuiltinKind {
+typedef enum {
 	C_BUILTIN_VOID,
 
 	C_BUILTIN_BOOL,
@@ -109,6 +112,10 @@ typedef enum C_BuiltinKind {
 	C_BUILTIN_MAX,
 } C_BuiltinKind;
 
+enum name {
+	Whatever,
+};
+
 String8 c_builtin_to_string[C_BUILTIN_MAX] = {
 	[C_BUILTIN_VOID] = str_comp("void"),
 	[C_BUILTIN_BOOL] = str_comp("_Bool"),
@@ -127,12 +134,11 @@ String8 c_builtin_to_string[C_BUILTIN_MAX] = {
 	[C_BUILTIN_LONG_DOUBLE] = str_comp("long double"),
 };
 
-enum AST_QualifierBits {
+typedef enum AST_QualifierBits {
 	AST_QUAL_CONST = BIT(0),
 	AST_QUAL_RESTRICT = BIT(1),
 	AST_QUAL_VOLATILE = BIT(2),
-};
-typedef uint8_t AST_QualifierSet;
+} AST_QualifierSet;
 
 typedef enum {
 	AST_STORAGE_NONE,
@@ -175,7 +181,7 @@ typedef struct {
 	bool is_int;
 	bool is_void;
 	uint32_t long_count;
-} AST_DeclSpecifiers;
+} AST_DeclSpecifiers, *AST_DeclSpecifiersPtr;
 
 struct AST_Node {
 	AST_NodeType type;
@@ -286,20 +292,40 @@ bool match_keyword_impl(Lexer *lexer, const TokenKeywordType *in_keywords, uint3
 	return ok;
 }
 
+AST_Node *ast_find_global_symbol(String8 symbol) {
+	AST_Node *result = 0;
+
+	for (uint32_t index = 0; index < global_symbol_count; ++index) {
+		if (str8_equals(symbol, global_symbol_table[index]->name.lexeme)) {
+			result = global_symbol_table[index];
+			break;
+		}
+	}
+
+	return result;
+}
+
+AST_Node *ast_find_tag_symbol(String8 symbol) {
+	AST_Node *result = 0;
+
+	for (uint32_t index = 0; index < tag_symbol_count; ++index) {
+		if (str8_equals(symbol, tag_symbol_table[index]->name.lexeme)) {
+			result = tag_symbol_table[index];
+			break;
+		}
+	}
+
+	return result;
+}
+
 AST_Node *match_typedef_symbol(Lexer *lexer) {
-	AST_Node *result = false;
+	AST_Node *result = 0;
 
 	bool ok = lexer && lexer_peek(lexer).type == TOKEN_IDENTIFIER;
 	if (ok) {
-		String8 name = lexer_peek(lexer).lexeme;
+		result = ast_find_global_symbol(lexer_peek(lexer).lexeme);
 
-		for (uint32_t index = 0; index < symbol_count; ++index) {
-			if (str8_equals(name, symbol_table[index]->name.lexeme)) {
-				lexer_advance(lexer); // consume identifier
-				result = symbol_table[index];
-				break;
-			}
-		}
+		if (result) lexer_advance(lexer);
 	}
 
 	return result;
@@ -368,8 +394,7 @@ AST_Node *ast_parse_declarator(Arena *arena, Lexer *lexer) {
 			arr->string.text = lexer_peek(lexer).lexeme.text;
 			while (lexer_at_end(lexer) == false && match(TOKEN_RBRACKET) == false)
 				lexer_advance(lexer);
-			arr->string = str8_range((char *)arr->string.text, (char *)lexer->current.lexeme.text);
-			ast_pushback(arr, arr);
+			arr->string = str8_from_ends((char *)arr->string.text, (char *)lexer->current.lexeme.text);
 
 			if (arrays_head == 0) arrays_head = arr;
 			if (arrays_tail) ast_pushback(arrays_tail, arr);
@@ -414,11 +439,14 @@ AST_Node *ast_parse_struct(Arena *arena, Lexer *lexer) {
 			if (lexer_peek(lexer).type == TOKEN_LPAREN) // ignore alignas
 				while (match(TOKEN_RPAREN) == false)
 					lexer_advance(lexer);
-			else
+			else {
 				result->name = lexer->current;
+			}
 		}
 
 		if (match(TOKEN_LBRACE)) {
+			tag_symbol_table[tag_symbol_count++] = result;
+
 			while (match(TOKEN_RBRACE) == false)
 				ast_pushback(result, ast_parse_decl(arena, lexer));
 		}
@@ -432,11 +460,14 @@ AST_Node *ast_parse_enum(Arena *arena, Lexer *lexer) {
 
 	bool ok = arena && lexer;
 	if (ok) {
-		result = ast_make(arena, AST_NODE_ENUM);
+		result = ast_make(arena, AST_NODE_GEN_ENUM);
 		if (match(TOKEN_IDENTIFIER))
 			result->name = lexer->current;
 
-		if (match(TOKEN_LBRACE)) do {
+		if (match(TOKEN_LBRACE)) {
+			tag_symbol_table[tag_symbol_count++] = result;
+
+			do {
 				AST_Node *enumerator = ast_make(arena, AST_NODE_ENUMERATOR);
 				enumerator->name = lexer_consume(lexer, TOKEN_IDENTIFIER, s("Expect enumerator."));
 				ast_pushback(result, enumerator);
@@ -446,13 +477,13 @@ AST_Node *ast_parse_enum(Arena *arena, Lexer *lexer) {
 					while ((lexer_peek(lexer).type == TOKEN_COMMA || lexer_peek(lexer).type == TOKEN_RBRACE) == false)
 						lexer_advance(lexer);
 
-					enumerator->string = str8_range((char *)enumerator->string.text, (char *)lexer_peek(lexer).lexeme.text);
-					ast_pushback(enumerator, enumerator);
+					enumerator->string = str8_from_ends((char *)enumerator->string.text, (char *)lexer_peek(lexer).lexeme.text);
 				}
 
 				if (lexer_peek(lexer).type == TOKEN_COMMA)
 					lexer_advance(lexer);
 			} while (match(TOKEN_RBRACE) == false);
+		}
 	}
 
 	return result;
@@ -555,7 +586,7 @@ AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
 		if (lexer_peek(lexer).type != TOKEN_SEMICOLON) do {
 				ast_pushback(result, ast_parse_declarator(arena, lexer));
 				if (result->storage == AST_STORAGE_TYPEDEF)
-					symbol_table[symbol_count++] = result->last_child;
+					global_symbol_table[global_symbol_count++] = result->last_child;
 			} while (match(TOKEN_COMMA));
 
 		lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after declaration"));
@@ -653,7 +684,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 					member = member->next_sibling;
 				} while (member && member != node->first_child);
 		} break;
-		case AST_NODE_ENUM: {
+		case AST_NODE_GEN_ENUM: {
 			printf("ENUM");
 			bool prev = false;
 			if (node->name.lexeme.length || node->qualifiers)
@@ -743,56 +774,20 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 	}
 }
 
-void ast_print_typeid(AST_Node *node) {
-	switch (node->type) {
-		case AST_NODE_PROGRAM: {
-			AST_Node *decl = node->first_child;
-			do {
-				ast_print_typeid(decl);
-				decl = decl->next_sibling;
-			} while (decl && decl != node->first_child);
-		} break;
-		case AST_NODE_DECLARATION: {
-			if (node->storage == AST_STORAGE_TYPEDEF) {
-				AST_Node *declarator = node->first_child->next_sibling;
-				while (declarator && declarator != node->first_child) {
-					if (node->first_child->type != AST_NODE_STRUCT && node->first_child->type != AST_NODE_UNION && node->first_child->type != AST_NODE_ENUM) {
-						String8 type = node->first_child->type == AST_NODE_BUILTIN ? c_builtin_to_string[node->first_child->builtin] : node->first_child->name.lexeme;
-						fprintf(stderr, "#define TYPE_%.*s TYPE_%.*s\n", str_spread(declarator->name.lexeme), str_spread(type));
-					} else {
-						fprintf(stdout, "    TYPE_%.*s,\n", str_spread(declarator->name.lexeme));
-					}
-					declarator = declarator->next_sibling;
-				}
-			}
-		} break;
-		case AST_NODE_BUILTIN:
-		case AST_NODE_TYPEDEF_NAME:
-		case AST_NODE_STRUCT:
-		case AST_NODE_UNION:
-		case AST_NODE_ENUM:
-		case AST_NODE_ENUMERATOR:
-		case AST_NODE_DECLARATOR:
-		case AST_NODE_POINTER:
-		case AST_NODE_ARRAY:
-			break;
-	}
-}
-
 int main(void) {
 	Arena arena[] = { arena_make(MiB(8)) };
 
 	String8 headers[] = {
 		synthetic_types_header,
-		os_file_read_entire(arena, s("engine/src/common.h")),
-		os_file_read_entire(arena, s("engine/src/core/cmath.h")),
-		os_file_read_entire(arena, s("engine/src/core/arena.h")),
-		os_file_read_entire(arena, s("engine/src/draw.h")),
-		os_file_read_entire(arena, s("engine/src/core/geom_types.h")),
-		os_file_read_entire(arena, s("engine/src/utils/anim.h")),
-		os_file_read_entire(arena, s("engine/scratch/skinning.c")),
-		os_file_read_entire(arena, s("engine/src/gfx/gfx_types.h")),
-		os_file_read_entire(arena, s("engine/src/meta.h")),
+		/* os_file_read_entire(arena, s("engine/src/common.h")), */
+		/* os_file_read_entire(arena, s("engine/src/core/cmath.h")), */
+		/* os_file_read_entire(arena, s("engine/src/core/arena.h")), */
+		/* os_file_read_entire(arena, s("engine/src/draw.h")), */
+		/* os_file_read_entire(arena, s("engine/src/core/geom_types.h")), */
+		/* os_file_read_entire(arena, s("engine/src/utils/anim.h")), */
+		/* os_file_read_entire(arena, s("engine/scratch/skinning.c")), */
+		/* os_file_read_entire(arena, s("engine/src/gfx/gfx_types.h")), */
+		/* os_file_read_entire(arena, s("engine/src/meta.h")), */
 		os_file_read_entire(arena, s("engine/scratch/c_parser.c")),
 	};
 
@@ -815,11 +810,51 @@ int main(void) {
 					break;
 			}
 		}
-
-		/* ast_print_typeid(program); */
 	}
 	ast_visit(program, 0);
 
 	arena_destroy(arena);
 	return 0;
 }
+
+struct example {
+	uint32_t x, y, z;
+} const *example0, example1[32];
+
+struct example example2; // not const
+
+typedef struct {
+	struct {
+		volatile union {
+			int32_t i32;
+			uint32_t u32;
+			float f32;
+		} *as;
+
+		float3 f3;
+		const struct {
+			float x, y, z;
+		} xyz;
+	} has_to_be_named;
+} Nested;
+
+//[META_ANNONYMOUS_STRUCT_TAG_0] = {
+//    .kind = META_KIND_STRUCT,
+//    .size = sizeof(struct { ... }),
+//    .fields = (META_Field){ ... },
+//    .field_count = 12
+//},
+//
+//[META_AST_DeclSpecifiers] = {
+//    .kind = META_KIND_ALIAS,
+//    .name = str_comp("AST_DeclSpecifiers")
+//    .size = sizeof(AST_DeclSpecifiers),
+//    .as.alias = META_ANNONYMOUS_STRUCT_TAG_0,
+// }
+//
+// [META_AST_DeclSpecifiersPtr] = {
+//     .kind = META_KIND_POINTER,
+//     .name = str_comp("AST_DeclSpecifiersPtr"),
+//     .size = sizeof(void *),
+//     .as.pointer = META_ANNONYMOUS_STRUCT_TAG_0
+// }

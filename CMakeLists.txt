@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_definitions(DEV_BUILD)
 
-# ── Shaders ───────────────────────────────────────────────────────────────────
+# Shaders
 file(GLOB_RECURSE SHADERS
     "${CMAKE_SOURCE_DIR}/assets/*.vertex"
     "${CMAKE_SOURCE_DIR}/assets/*.fragment"
@@ -20,7 +20,8 @@ foreach(SHADER ${SHADERS})
         OUTPUT ${SPV}
         COMMAND glslc -MD -I "${CMAKE_SOURCE_DIR}/assets/shaders" ${SHADER} -o ${SPV}
         DEPFILE "${SPV}.d"
-        DEPENDS ${SHADER} VERBATIM
+        DEPENDS ${SHADER} 
+        VERBATIM
     )
 
     list(APPEND SHADER_OUTPUTS ${SPV})
@@ -40,7 +41,6 @@ set(NATIVE_SCRATCHES
     c_parser 
     table_generator
     lox
-    draw_scratch
 )
 
 # Web build
@@ -50,6 +50,26 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         add_executable(
             ${NAME} 
             ${SRC}
+
+            "${CMAKE_SOURCE_DIR}/engine/vendor/stb/stb.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_canvas.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_file.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_memory.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_time.c"
+
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
         )
         target_include_directories(${NAME} 
             PUBLIC
@@ -87,8 +107,7 @@ else()
     endif()
 
     file(GLOB_RECURSE VENDOR_SOURCES  "engine/vendor/*/*.c" "engine/vendor/*/*.h")
-    add_executable(${PROJECT_NAME} 
-        "${CMAKE_SOURCE_DIR}/engine/src/app/main.c"
+    add_library(engine
         "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
@@ -111,14 +130,28 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
 
-        "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/res/tables.c"
+
         "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
         "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/draw/camera.c"
 
         ${VENDOR_SOURCES}
     )
-    target_link_options(${PROJECT_NAME} PUBLIC
+    target_include_directories(engine PUBLIC
+        "${CMAKE_SOURCE_DIR}/engine/src"
+        "${CMAKE_SOURCE_DIR}/engine/vendor/"
+    )
+    target_compile_definitions(engine PUBLIC
+        -DLINUX_BUILD
+    )
+    target_link_options(engine PUBLIC
         -Wl,--export-dynamic
+    )
+
+    add_executable(${PROJECT_NAME} 
+        "${CMAKE_SOURCE_DIR}/engine/src/app/main.c"
     )
 
     add_library(game SHARED
@@ -144,6 +177,7 @@ else()
     target_include_directories(
         ${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} "${CMAKE_BINARY_DIR}/engine"
         "${CMAKE_SOURCE_DIR}/engine/vendor")
+    target_link_libraries(${PROJECT_NAME} engine)
 
     # Platform-specific configurations
     if(WIN32)
@@ -172,37 +206,8 @@ else()
     endif()
 
     foreach(NAME ${NATIVE_SCRATCHES})
-        set(SRC 
-            "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
-
-            "${CMAKE_SOURCE_DIR}/engine/src/res/tables.c"
-
-            "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
-
-            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_xcb.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_file.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_time.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_memory.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_dynlib.c"
-
-            "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
-
-            "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
-
-            "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
-        )
-        add_executable(${NAME} ${SRC} ${VENDOR_SOURCES})
+        add_executable(${NAME} "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c" ${VENDOR_SOURCES})
+        target_link_libraries(${NAME} engine)
         target_include_directories(
             ${NAME}
             PUBLIC 

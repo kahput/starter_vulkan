@@ -42,6 +42,7 @@ Shader "Spatial" {
             gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0);
         }
     }
+
     Fragment { 
         #define TEXTURE_ALBEDO 0
         #define TEXTURE_METAL_ROUGHNESS 1

@@ -199,5 +199,4 @@ IMGUI_Interact imgui_button_label(String8 label);
 IMGUI_Interact imgui_button_image(Image2D *image, float scale);
 
 IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max);
-
 IMGUI_Widget *imgui_spacer(void);

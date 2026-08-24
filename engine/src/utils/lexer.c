@@ -16,6 +16,7 @@ const String8 token_type_to_string[TOKEN_MAX] = {
     [TOKEN_SEMICOLON]     = str_comp(";"),   [TOKEN_COLON]         = str_comp(":"),
     [TOKEN_SLASH]         = str_comp("/"),   [TOKEN_STAR]          = str_comp("*"),
     [TOKEN_PERCENT]       = str_comp("%"),   [TOKEN_TILDE]         = str_comp("~"),
+    [TOKEN_DOLLAR] = str_comp("$"),
     [TOKEN_CARET]         = str_comp("^"),   [TOKEN_QUESTION_MARK] = str_comp("?"),
     [TOKEN_MINUS]         = str_comp("-"),   [TOKEN_MINUS_MINUS]   = str_comp("--"),
     [TOKEN_PLUS]          = str_comp("+"),   [TOKEN_PLUS_PLUS]     = str_comp("++"),
@@ -171,6 +172,7 @@ restart:
         case '~': token.type = TOKEN_TILDE;         break;
         case '^': token.type = TOKEN_CARET;         break;
         case '?': token.type = TOKEN_QUESTION_MARK; break;
+        case '$': token.type = TOKEN_DOLLAR; break;
 			// clang-format on
 
 		case '-': {
@@ -345,6 +347,25 @@ Token lexer_advance(Lexer *lexer) {
 
 	lexer->current = result;
 	return result;
+}
+
+char lexer_advance_char(Lexer *lexer) {
+	lexer->has_peeked = false;
+
+	char result = lexer->cursor[0];
+	if (is_newline(result))
+		lexer__advance_newline(lexer);
+	else {
+		++lexer->cursor;
+		++lexer->column;
+	}
+
+	return result;
+}
+
+void lexer_advance_next_line(Lexer *lexer) {
+	for (char c = lexer->cursor[0]; lexer_at_end(lexer) == false && is_newline(c) == false; c = lexer_advance_char(lexer)) {}
+	lexer__advance_newline(lexer);
 }
 Token lexer_peek(Lexer *lexer) {
 	if (!lexer->has_peeked) {

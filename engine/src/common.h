@@ -135,8 +135,9 @@ static inline float3 splat3(float v) { return (float3){ v, v, v }; }
 static inline float4 make4(float x, float y, float z, float w) { return (float4){ x, y, z, w } ; } 
 static inline float4 splat4(float v) { return (float4) {v, v, v, v }; }
 
-static inline float3 make3_from4(float4 v) { return (float3){v.x, v.y, v.z }; } 
-static inline float4 make4_from3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w } ; }
+static inline float2 make2_from4(float4 v) { return make2(v.x, v.y); }
+static inline float3 make3_from4(float4 v) { return make3(v.x, v.y, v.z ); } 
+static inline float4 make4_from3(float3 v, float w) { return make4( v.x, v.y, v.z, w ) ; }
 
 #define xxx(v) splat3((v).x)
 #define yyy(v) splat3((v).y)

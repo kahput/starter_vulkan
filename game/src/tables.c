@@ -165,13 +165,13 @@ String8 texture_slot_to_string[TEXTURE_SLOT_COUNT] = {
 	[TEXTURE_SLOT_EMISSIVE] = str_comp("emissive"),
 };
 
-String8 icon_to_filepath[ICON_MAX] = {
+String8 iconid_to_filepath[ICON_MAX] = {
 	[ICON_PLAY] = str_comp("assets/icons/PNG/White/1x/forward.png"),
 	[ICON_PAUSE] = str_comp("assets/icons/PNG/White/1x/pause.png"),
 	[ICON_STOP] = str_comp("assets/icons/PNG/White/1x/stop.png")
 };
 
-String8 icon_to_string[ICON_MAX] = {
+String8 iconid_to_string[ICON_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(ICON, PLAY),
 	ENUM_STRING_TABLE_ENTRY(ICON, PAUSE),
 	ENUM_STRING_TABLE_ENTRY(ICON, STOP),

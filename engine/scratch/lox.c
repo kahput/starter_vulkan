@@ -60,8 +60,8 @@ typedef enum {
 	AST_NODE_STMT_CONTINUE,
 	AST_NODE_STMT_EXPR,
 
+	AST_NODE_DECLARATOR,
 	AST_NODE_DECL_VAR,
-	AST_NODE_DECL_LIST,
 	AST_NODE_DECL_FN,
 
 	AST_NODE_PROGRAM,
@@ -258,8 +258,8 @@ AST_Node *ast_parse_stmt(Arena *arena, Lexer *lexer);
 AST_Node *ast_parse_stmt_expr(Arena *arena, Lexer *lexer);
 AST_Node *ast_parse_stmt_block(Arena *arena, Lexer *lexer);
 
-AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer);
-AST_Node *ast_parse_decl_list_struct(Arena *arena, Lexer *lexer);
+AST_Node *ast_decl(Arena *arena, Lexer *lexer);
+AST_Node *ast_parse_decl_list(Arena *arena, Lexer *lexer);
 
 AST_Node *ast_parse_expr(Arena *arena, Lexer *lexer);
 AST_Node *ast_parse_expr_comma(Arena *arena, Lexer *lexer); // ","
@@ -728,7 +728,7 @@ AST_Node *ast_parse_stmt_block(Arena *arena, Lexer *lexer) {
 		result = ast_make(arena, AST_NODE_STMT_BLOCK);
 
 		while (ast_match(lexer, TOKEN_RBRACE) == false && lexer_at_end(lexer) == false)
-			ast_pushback(result, ast_parse_decl(arena, lexer));
+			ast_pushback(result, ast_decl(arena, lexer));
 
 		lexer_consume(lexer, TOKEN_RBRACE, s("Expect '}' after block."));
 	}
@@ -757,7 +757,7 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 			if (ast_match(lexer, TOKEN_SEMICOLON))
 				lexer_advance(lexer); // consume ';'
 			else if (ast_match_keyword(lexer, TOKEN_VAR))
-				initializer = ast_parse_decl_list_struct(arena, lexer);
+				initializer = ast_parse_decl_list(arena, lexer);
 			else
 				initializer = ast_parse_stmt_expr(arena, lexer);
 
@@ -824,7 +824,7 @@ AST_Node *ast_parse_decl_var(Arena *arena, Lexer *lexer) {
 	if (ok) {
 		Token identifier = lexer_consume(lexer, TOKEN_IDENTIFIER, s("Expect variable name."));
 
-		result = ast_make(arena, AST_NODE_DECL_VAR);
+		result = ast_make(arena, AST_NODE_DECLARATOR);
 		result->name = identifier;
 
 		if (ast_match(lexer, TOKEN_EQUAL)) { // assignment
@@ -836,14 +836,14 @@ AST_Node *ast_parse_decl_var(Arena *arena, Lexer *lexer) {
 	return result;
 }
 
-AST_Node *ast_parse_decl_list_struct(Arena *arena, Lexer *lexer) {
+AST_Node *ast_parse_decl_list(Arena *arena, Lexer *lexer) {
 	AST_Node *result = 0;
 
 	bool ok = arena && lexer;
 	if (ok) {
 		lexer_advance(lexer); // consume 'var'
 
-		result = ast_make(arena, AST_NODE_DECL_LIST);
+		result = ast_make(arena, AST_NODE_DECL_VAR);
 
 		do {
 			if (lexer_peek(lexer).type == TOKEN_COMMA)
@@ -902,13 +902,13 @@ void ast_sync(Lexer *lexer) {
 	}
 }
 
-AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
+AST_Node *ast_decl(Arena *arena, Lexer *lexer) {
 	AST_Node *result = 0;
 
 	bool ok = arena && lexer;
 	if (ok) {
 		if (ast_match_keyword(lexer, TOKEN_FN)) result = ast_parse_decl_fn(arena, lexer);
-		if (ast_match_keyword(lexer, TOKEN_VAR)) result = ast_parse_decl_list_struct(arena, lexer);
+		if (ast_match_keyword(lexer, TOKEN_VAR)) result = ast_parse_decl_list(arena, lexer);
 		if (result == 0) result = ast_parse_stmt(arena, lexer);
 
 		if (result == 0) {
@@ -928,7 +928,7 @@ AST_Node *ast_parse(Arena *arena, Lexer *lexer) {
 		result = ast_make(arena, AST_NODE_PROGRAM);
 
 		while (ast_match(lexer, TOKEN_EOF) == false)
-			ast_pushback(result, ast_parse_decl(arena, lexer));
+			ast_pushback(result, ast_decl(arena, lexer));
 	}
 
 	return result;
@@ -990,7 +990,7 @@ void ast_print(AST_Node *node) {
 			case AST_NODE_EXPR_PRIMARY:
 				ast_print_literal(node->literal);
 				break;
-			case AST_NODE_DECL_VAR: {
+			case AST_NODE_DECLARATOR: {
 				printf("(");
 				printf("= %.*s", str_spread(node->name.lexeme));
 				if (node->first_child) {
@@ -1290,13 +1290,13 @@ AST_Result ast_execute(Arena *arena, Enviroment *env, AST_Node *node) {
 			case AST_NODE_STMT_EXPR:
 				ast_evaluate(arena, env, node->first_child);
 				break;
-			case AST_NODE_DECL_VAR: {
+			case AST_NODE_DECLARATOR: {
 				AST_Literal lit = { .type = AST_LITERAL_NIL };
 				if (node->first_child)
 					lit = ast_evaluate(arena, env, node->first_child);
 				env_define(env, node->name.lexeme, lit);
 			} break;
-			case AST_NODE_DECL_LIST: {
+			case AST_NODE_DECL_VAR: {
 				AST_Node *decl = node->first_child;
 				if (decl) do // TODO: scoping
 						ast_execute(arena, env, decl), decl = decl->next_sibling;
@@ -1365,6 +1365,145 @@ AST_Result ast_execute(Arena *arena, Enviroment *env, AST_Node *node) {
 	return result;
 }
 
+void ast_visit(AST_Node *node, uint32_t indent_level) {
+	for (uint32_t index = 0; index < indent_level; ++index) {
+		printf("  ");
+	}
+
+	switch (node->type) {
+		case AST_NODE_EXPR_ASSIGN:
+			printf("ASSIGN(%.*s)\n", str_spread(node->name.lexeme));
+			ast_visit(node->first_child, indent_level + 1);
+			break;
+		case AST_NODE_EXPR_BINARY:
+			printf("BINARY(%.*s)\n", str_spread(node->operator.lexeme));
+			ast_visit(node->first_child, indent_level + 1);
+			ast_visit(node->last_child, indent_level + 1);
+			break;
+		case AST_NODE_EXPR_CALL:
+			printf("CALL\n");
+			ast_visit(node->first_child, indent_level + 1);
+			AST_Node *args = node->first_child->next_sibling;
+			while (args != node->first_child) {
+				ast_visit(args, indent_level + 1);
+				args = args->next_sibling;
+			}
+			break;
+		case AST_NODE_EXPR_LOGICAL:
+			printf("LOGICAL(%.*s)\n", str_spread(node->operator.lexeme));
+			ast_visit(node->first_child, indent_level + 1);
+			ast_visit(node->last_child, indent_level + 1);
+			break;
+		case AST_NODE_EXPR_UNARY:
+			printf("LOGICAL(%.*s)\n", str_spread(node->operator.lexeme));
+			ast_visit(node->first_child, indent_level + 1);
+			break;
+		case AST_NODE_EXPR_GROUPING:
+			printf("GROUPING\n");
+			ast_visit(node->first_child, indent_level + 1);
+			break;
+
+		case AST_NODE_EXPR_PRIMARY:
+			switch (node->literal.type) {
+				case AST_LITERAL_NIL:
+					printf("NIL");
+					break;
+				case AST_LITERAL_STRING:
+					printf("STRING(%.*s)", str_spread(node->literal.as.string));
+					break;
+				case AST_LITERAL_REAL:
+					printf("NUMBER(%g)", node->literal.as.real);
+					break;
+				case AST_LITERAL_BOOLEAN:
+					printf("BOOLEAN(%s)", node->literal.as.boolean ? "true" : "false");
+					break;
+				case AST_LITERAL_VARIABLE:
+					printf("VARIABLE(%.*s)", str_spread(node->literal.as.name.lexeme));
+					break;
+				case AST_LITERAL_CALLABLE:
+					printf("CALLABLE");
+					break;
+				default:
+					break;
+			}
+			printf("\n");
+			break;
+
+		case AST_NODE_STMT_PRINT:
+			printf("PRINT\n");
+			ast_visit(node->first_child, indent_level + 1);
+			break;
+		case AST_NODE_STMT_IF:
+			printf("IF\n");
+			ast_visit(node->first_child, indent_level + 1); // cond
+			ast_visit(node->first_child->next_sibling, indent_level + 1); // then
+			if (node->last_child != node->first_child->next_sibling)
+				ast_visit(node->last_child, indent_level + 1); // else
+			break;
+		case AST_NODE_STMT_FOR:
+			printf("FOR\n");
+			ast_visit(node->first_child, indent_level + 1); // cond
+			if (node->first_child->next_sibling != node->last_child)
+				ast_visit(node->first_child->next_sibling, indent_level + 1);
+			ast_visit(node->last_child, indent_level + 1); // body
+			break;
+		case AST_NODE_STMT_BLOCK:
+			printf("BLOCK\n");
+			AST_Node *decl = node->first_child;
+			if (decl) do {
+					ast_visit(decl, indent_level + 1);
+					decl = decl->next_sibling;
+				} while (decl != node->first_child);
+			break;
+		case AST_NODE_STMT_RETURN:
+			printf("RETURN\n");
+			if (node->first_child) ast_visit(node->first_child, indent_level + 1);
+			break;
+		case AST_NODE_STMT_BREAK:
+			printf("BREAK\n");
+			break;
+		case AST_NODE_STMT_CONTINUE:
+			printf("CONTINUE\n");
+			break;
+		case AST_NODE_STMT_EXPR:
+			printf("EXPR_STMT\n");
+			ast_visit(node->first_child, indent_level + 1);
+			break;
+		case AST_NODE_DECLARATOR:
+			printf("DECLARATOR(%.*s)\n", str_spread(node->name.lexeme));
+			if (node->first_child) ast_visit(node->first_child, indent_level + 1);
+			break;
+		case AST_NODE_DECL_VAR: {
+			printf("VAR_DECL\n");
+			AST_Node *var = node->first_child;
+			if (var) do {
+					ast_visit(var, indent_level + 1);
+					var = var->next_sibling;
+				} while (var != node->first_child);
+		} break;
+		case AST_NODE_DECL_FN:
+			printf("FN_DECL(%.*s)\n", str_spread(node->name.lexeme));
+			AST_Node *param = node->first_child;
+			if (param)
+				while (param != node->last_child) {
+					ast_visit(param, indent_level + 1);
+					param = param->next_sibling;
+				}
+			ast_visit(node->last_child, indent_level + 1); // body
+			break;
+		case AST_NODE_PROGRAM: {
+			printf("PROGRAM\n");
+			AST_Node *decl = node->first_child;
+			if (decl) do {
+					ast_visit(decl, indent_level + 1);
+					decl = decl->next_sibling;
+				} while (decl != node->first_child);
+		} break;
+		default:
+			break;
+	}
+}
+
 AST_Literal native_clock(uint32_t argc, AST_Literal *argv) {
 	return (AST_Literal){ .type = AST_LITERAL_REAL, .as.real = os_time_ns() * 1e-9 };
 }
@@ -1374,6 +1513,8 @@ int main(void) {
 
 	String8 source = os_file_read_entire(arena, s("engine/scratch/example.lox"));
 	AST_Node *program = ast_parse(arena, (Lexer[]){ lexer_make(source, keyword_to_string, TOKEN_KEYWORD_MAX) });
+
+	ast_visit(program, 0);
 
 	Enviroment env = { 0 };
 	globals = &env;

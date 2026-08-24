@@ -1,111 +1,88 @@
 #pragma once
 
 #include "common.h"
+#include <core/strings.h>
 
-typedef struct META_Type META_Type;
-typedef struct META_Ref META_Ref;
-typedef struct META_Member META_Member;
-typedef struct META_Enumerator META_Enumerator;
-
-typedef enum {
-	META_QUAL_CONST = BIT(0),
-	META_QUAL_RESTRICT = BIT(1),
-	META_QUAL_VOLATILE = BIT(2),
-} META_Qualifiers;
-
-typedef enum META_RefKind {
-	META_REF_TERMINAL,
-	META_REF_POINTER,
-	META_REF_ARRAY,
-} META_RefKind;
-
-typedef enum {
-	META_BUILTIN_VOID,
-
-	META_BUILTIN_BOOL,
-
-	META_BUILTIN_CHAR,
-	META_BUILTIN_UNSIGNED_CHAR,
-
-	META_BUILTIN_SHORT,
-	META_BUILTIN_UNSIGNED_SHORT,
-	META_BUILTIN_INT,
-	META_BUILTIN_UNSIGNED_INT,
-	META_BUILTIN_LONG,
-	META_BUILTIN_UNSIGNED_LONG,
-	META_BUILTIN_LONG_LONG,
-	META_BUILTIN_UNSIGNED_LONG_LONG,
-
-	META_BUILTIN_FLOAT,
-	META_BUILTIN_DOUBLE,
-	META_BUILTIN_LONG_DOUBLE,
-
-	META_BUILTIN_MAX,
-} META_Builtin;
-
-struct META_Ref {
-	META_RefKind kind;
-	const META_Ref *next;
-	META_Qualifiers qualifiers;
-
-	union {
-		const META_Type *terminal;
-		uint32_t array_count;
-	} as;
-};
-
-struct META_Member {
-	const char *name;
-	uint32_t offset;
-	const META_Ref *type_ref;
-};
-
-struct META_Enumerator {
-	const char *name;
-	int64_t value;
-};
-
-typedef enum {
-	METATYPE_KIND_BUILTIN,
-	METATYPE_KIND_STRUCT,
-	METATYPE_KIND_UNION,
-	METATYPE_KIND_ENUM,
-	METATYPE_KIND_ALIAS,
-
-	METATYPE_KIND_MAX,
-} META_TypeKind;
-
-struct META_Type {
-	const char *name;
-	META_TypeKind kind;
-	uint64_t size, alignment;
-
-	union {
-		META_Builtin builtin;
-
-		struct {
-			META_Member *members;
-			uint32_t member_count;
-		} record;
-
-		struct {
-			META_Enumerator *enumerators;
-			uint32_t enumerator_count;
-		} enumeration;
-
-		struct {
-			META_Ref *target;
-		} alias;
-	} as;
-};
-
-// This will be generated in meta_generated.c/h
 typedef enum {
 	TYPE_float,
 	TYPE_float32x3,
 
 	TYPE_MAX,
-} TypeID;
+} META_TypeID;
 
-#define type_info(T) &type_introspection[TYPE_##T]
-extern const META_Type type_introspection[TYPE_MAX];
+typedef struct META_Type META_Type;
+typedef struct META_Field META_Field;
+typedef struct META_Enumerator META_Enumerator;
+
+typedef enum {
+	META_KIND_PRIMITIVE,
+	META_KIND_STRUCT,
+	META_KIND_UNION,
+	META_KIND_ENUM,
+
+	META_KIND_POINTER,
+	META_KIND_ARRAY,
+	META_KIND_QUALIFIED,
+	META_KIND_ALIAS,
+} META_Kind;
+
+typedef enum {
+	META_QUAL_CONST = BIT(0),
+	META_QUAL_VOLATILE = BIT(1),
+	META_QUAL_RESTRICT = BIT(2),
+} META_QualifierSet;
+
+struct META_Field {
+	META_TypeID type;
+	String8 name;
+	uint32_t offset;
+};
+
+struct META_Enumerator {
+	String8 name;
+	int64_t value;
+};
+
+struct META_Type {
+	META_Kind kind;
+	String8 name;
+	uint64_t size;
+
+	union {
+		struct {
+			const META_Field *fields;
+			uint32_t field_count;
+		} record;
+
+		struct {
+			const META_Enumerator *values;
+			uint32_t value_count;
+		} enumeration;
+
+		struct {
+			META_TypeID type;
+		} pointer;
+
+		struct {
+			META_TypeID type;
+			uint64_t count;
+		} array;
+
+		struct {
+			META_TypeID type;
+			META_QualifierSet qualifiers;
+		} qualified;
+	} as;
+};
+
+// typedef uint32_t Bitset[32];
+//
+// [META_Bitset] = { .kind = META_KIND_ALIAS, .as.alias = META__uint32_t_array_32 } ->
+//   [META__uint32_t_array_32] = { .kind = META_KIND_ARRAY, .as.array = { .type = META_uint32_t, .count = 32 } }
+//     [META_uint32_t] = { .kind = META_KIND_PRIMMITIVE }
+//
+//  vs
+//
+//  [META_Bitset] = { .kind = META_KIND_POINTER, .as.pointer = META_uint32_t_array_32 }
+//    [META_uint32_t_array_32] = { .kind = META_KIND_ARRAY, .as.array = { .type = META_uint32_t, .count = 32 } }
+//      [META_uint32_t] = { .kind = META_KIND_PRIMMITIVE }

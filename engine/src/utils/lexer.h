@@ -20,6 +20,7 @@ typedef enum {
 	TOKEN_SLASH, // /
 	TOKEN_STAR, // *
 	TOKEN_PERCENT, // %
+    TOKEN_DOLLAR, // $
 	TOKEN_TILDE, // ~
 	TOKEN_CARET, // ^
 	TOKEN_QUESTION_MARK, // ?
@@ -157,6 +158,8 @@ static inline Lexer lexer_make(String8 source, String8 *keywords, uint32_t keywo
 }
 
 Token lexer_advance(Lexer *lexer);
+char lexer_advance_char(Lexer *lexer);
+void lexer_advance_next_line(Lexer *lexer);
 Token lexer_peek(Lexer *lexer);
 
 uint8_t *lexer_skip_to_end_of_line(Lexer *lexer);

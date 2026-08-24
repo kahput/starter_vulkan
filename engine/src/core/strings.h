@@ -16,12 +16,14 @@ typedef struct {
 #define shash(s) hash64((s), sizeof((s)) - 1)
 
 String8 str8_wrap(const char *cstring);
-ENSURE_INLINE String8 str8_range(const char *start, const char *end) {
+ENSURE_INLINE String8 str8_from_ends(const char *start, const char *end) {
 	if (end <= start) return (String8){ 0 };
 	return (String8){ .text = (uint8_t *)start, .length = end - start };
 }
 
+
 bool str8_equals(String8 a, String8 b);
+bool str8_contains(String8 haystack, String8 needle);
 
 String8 str8_concat(Arena *arena, String8 a, String8 b);
 String8 str8_indent(Arena *arena, String8 indent, uint32_t depth);

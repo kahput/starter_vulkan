@@ -218,7 +218,7 @@ void imgui_pop_parent(void) {
 		context->parent_stack_cursor--;
 }
 
-void imgui__parse_style_confg(IMGUI_Style *cfg, IMGUI_Settings *style) {
+void imgui__parse_style_config(IMGUI_Style *cfg, IMGUI_Settings *style) {
 	style->flow = cfg->flow;
 	style->sizing[0] = cfg->sizing[0], style->sizing[1] = cfg->sizing[1];
 	style->align[0] = cfg->align[0], style->align[1] = cfg->align[1];
@@ -253,8 +253,8 @@ IMGUI_Style imgui_peek_style(void) {
 
 		result.pl = settings.padding[AXIS_X][0];
 		result.pr = settings.padding[AXIS_X][1];
-		result.pt = settings.padding[AXIS_X][0];
-		result.pb = settings.padding[AXIS_X][1];
+		result.pt = settings.padding[AXIS_Y][0];
+		result.pb = settings.padding[AXIS_Y][1];
 
 		if (result.pl == result.pr)
 			result.ph = result.pl;
@@ -273,7 +273,7 @@ void imgui_push_style(IMGUI_Style style) {
 	bool ok = context;
 	if (ok) {
 		ASSERT(context->setting_stack_cursor < countof(context->settings_stack));
-		imgui__parse_style_confg(&style, context->settings_stack + context->setting_stack_cursor++);
+		imgui__parse_style_config(&style, context->settings_stack + context->setting_stack_cursor++);
 	}
 }
 void imgui_pop_style(uint32_t count) {

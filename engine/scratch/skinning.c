@@ -27,14 +27,13 @@
 #include <draw.h>
 #include <draw/font.h>
 #include <draw/imgui.h>
+#include <draw/camera.h>
 
 #include <math.h>
 
-#include <stdarg.h>
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
 #include <vulkan/vulkan_core.h>
-#include <cglm/cglm.h>
 
 typedef enum {
 	ICON_PLAY,
@@ -44,13 +43,13 @@ typedef enum {
 	ICON_MAX,
 } IconID;
 
-String8 icon_to_filepath[ICON_MAX] = {
+String8 iconid_to_filepath[ICON_MAX] = {
 	[ICON_PLAY] = str_comp("assets/icons/PNG/White/1x/forward.png"),
 	[ICON_PAUSE] = str_comp("assets/icons/PNG/White/1x/pause.png"),
 	[ICON_STOP] = str_comp("assets/icons/PNG/White/1x/stop.png")
 };
 
-String8 icon_to_string[ICON_MAX] = {
+String8 iconid_to_string[ICON_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(ICON, PLAY),
 	ENUM_STRING_TABLE_ENTRY(ICON, PAUSE),
 	ENUM_STRING_TABLE_ENTRY(ICON, STOP),
@@ -161,6 +160,22 @@ static const String8 meshid_to_string[MESH_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(MESH, CYLINDER),
 	ENUM_STRING_TABLE_ENTRY(MESH, SPHERE),
 	ENUM_STRING_TABLE_ENTRY(MESH, GIZMOS_ARROW),
+};
+
+static const String8 meshid_to_display_string[MESH_MAX] = {
+	[MESH_HERO_MALE] = str_comp("hero male"),
+	[MESH_GDBOT] = str_comp("gdbot"),
+	[MESH_MAGE] = str_comp("mage"),
+	[MESH_BARREL] = str_comp("barrel"),
+	[MESH_ROOM] = str_comp("room"),
+	[MESH_TEST_LEVEL] = str_comp("test level"),
+	[MESH_ROOM_LARGE] = str_comp("room large"),
+	[MESH_TERRAIN_FLAT] = str_comp("terrain flat"),
+	[MESH_TERRAIN_HEIGHTMAP] = str_comp("terrain heightmap"),
+	[MESH_GRASS_BILLBOARD] = str_comp("grass billboard"),
+	[MESH_CYLINDER] = str_comp("cylinder"),
+	[MESH_SPHERE] = str_comp("sphere"),
+	[MESH_GIZMOS_ARROW] = str_comp("arrow"),
 };
 
 String8 meshid_to_metadata[MESH_MAX] = {
@@ -713,12 +728,12 @@ int main(void) {
 	{ // :icons
 		ArenaTemp scratch = arena_scratch_begin(0);
 		for (uint32_t index = 0; index < ICON_MAX; ++index) {
-			icons[index] = load_image(scratch.arena, icon_to_filepath[index]);
+			icons[index] = load_image(scratch.arena, iconid_to_filepath[index]);
 
 			Image2D *icon = &icons[index];
 			icon->handle = gfx_image_make(device, icon->width, icon->height,
 				(ImageOptions){
-				  .debug_name = (char *)icon_to_string[index].text,
+				  .debug_name = (char *)iconid_to_string[index].text,
 				  .format = PIXEL_FORMAT_RGBA8_UNORM,
 				  .pixels = icon->pixels,
 				});
@@ -834,12 +849,11 @@ int main(void) {
 	{
 		ArenaTemp scratch = arena_scratch_begin(0);
 
-		// Proportions in meters (Total length = 0.20m)
-		float mult = 5.0f;
-		float shaft_half_height = 0.075f * mult; // Total shaft length is 0.15m
-		float shaft_radius = 0.005f * mult; // 5mm thick
-		float head_height = 0.050f * mult; // 5cm tall cone
-		float head_radius = 0.018f * mult; // 1.8cm base radius
+		float mul = 5.0f;
+		float shaft_half_height = 0.075f * mul;
+		float shaft_radius = 0.005f * mul;
+		float head_height = 0.050f * mul;
+		float head_radius = 0.018f * mul;
 
 		float3 cylinder_origin = { 0.0f, shaft_half_height, 0.0f };
 		Mesh shaft = mesh_cylinder(
@@ -995,13 +1009,15 @@ int main(void) {
 
 	ViewportState state = VIEWPORT_STATE_EDITOR;
 
-	Camera3D cameras[VIEWPORT_STATE_COUNT] = {
+	Camera cameras[VIEWPORT_STATE_COUNT] = {
 		[VIEWPORT_STATE_EDITOR] = {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		  .position = { 0.0f, 1.5f, 20.f },
 		  .target = { 0.0f, 1.5f, 0.0f },
 		  .up = unit3(UP),
 		  .fovy = 45.f,
+		  .near = 0.1f,
+		  .far = 500.0f,
 		},
 		[VIEWPORT_STATE_GAME] = {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
@@ -1009,6 +1025,8 @@ int main(void) {
 		  .target = { 0.0f, 1.5f, 0.0f },
 		  .up = unit3(UP),
 		  .fovy = 45.f,
+		  .near = 0.1f,
+		  .far = 500.0f,
 		},
 	};
 
@@ -1045,7 +1063,6 @@ int main(void) {
 		arena_scratch_end(scratch);
 	}
 
-	bool is_open = true;
 	for (bool is_open = true; is_open;) {
 		double time = os_time_ns() * 1e-9 - start_time * 1e-9;
 		dt = time - last_frame;
@@ -1121,10 +1138,11 @@ int main(void) {
 		if (input_key_pressed(KEY_CODE_TAB))
 			state = (state + 1) % VIEWPORT_STATE_COUNT;
 
-		Camera3D *camera = &cameras[state];
+		Camera *camera = &cameras[state];
 
-		float4x4 view = lookat(camera->position, camera->target, camera->up);
-		float4x4 proj = perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+		float4x4 view = camera_view(camera);
+		float4x4 proj = camera_proj(camera, viewport.width / viewport.height);
+		float4x4 view_proj = mul4x4(proj, view);
 
 		imgui_frame_begin(&imgui,
 			(IMGUI_Mouse){
@@ -1559,6 +1577,8 @@ int main(void) {
 							  .bg = hex(0x262c36),
 							  .border_radius = splat4(4.0f),
 							});
+						Rectangle c = imgui_rect_cached(drop_down);
+						/* widget->offset[0] = c.x, widget->offset[1] = c.y + c.height; */
 						widget->offset[0] = drop_down->offset[0], widget->offset[1] = drop_down->offset[1] + drop_down->size[1];
 						widget->size[0] = drop_down->size[0];
 
@@ -1576,8 +1596,7 @@ int main(void) {
 
 							IMGUI_Interact i = imgui_interact(btn->id, imgui_rect_cached(btn));
 							if (i.hovered)
-
-								btn->settings.bg = hex(0x0d1117);
+								btn->settings.bg = hex(0x3178c6);
 							if (i.released)
 								light_index = index;
 
@@ -1957,24 +1976,51 @@ int main(void) {
 					Entity *target = 0;
 					float closest = FLOAT_MAX;
 
-					if (input_key_pressed(KEY_CODE_F)) {
-						for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
-							Entity *entity = &scene->entities[entity_index];
-							if (entity_has(entity, ENTITY_FEATURE_INTERACTABLE) == false || entity == player)
-								continue;
+					for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
+						Entity *entity = &scene->entities[entity_index];
+						if (entity_has(entity, ENTITY_FEATURE_INTERACTABLE) == false || entity == player)
+							continue;
 
-							float3 offset = sub3(entity->transform.translation, player->transform.translation);
-							float dist_sq = dot3(offset, offset);
+						float3 offset = sub3(entity->transform.translation, player->transform.translation);
+						float dist_sq = dot3(offset, offset);
 
-							if (dist_sq <= (entity->interact_radius * entity->interact_radius) && dist_sq < closest) {
+						if (dist_sq <= (entity->interact_radius * entity->interact_radius)) {
+							float3 interact_point = entity->transform.translation;
+							if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH)) { // make textbox above entity's head
+								Mesh *mesh = &meshes[entity->meshid];
+
+								float3 top_center = aabb3_center(mesh->bounds);
+								top_center.y += aabb3_half_extent(mesh->bounds).y;
+
+								interact_point = add3(interact_point, top_center);
+							}
+
+							float2 screen;
+							if (project_to_viewport(view_proj, viewport, interact_point, &screen)) {
+								screen.y -= 30;
+
+								Rectangle textbox = rect_from_center(screen, make2(60.0f, 10.0f));
+
+								draw2d_quad(batch_2d,
+									textbox, (Rectangle){ 0 }, 0, (float2){ 0 }, 0.0f, 1.0f, BLACK, splat4(8.0f), WHITE);
+
+								Font *font = &fonts[FONT_IBM_PLEX_MONO][FONT_BAKE_SIZE_16];
+								String8 text = s("Press F");
+
+								float2 text_half_size = scale2(measure_text(font, text), 0.5f);
+								float2 center = sub2(screen, text_half_size);
+								draw2d_textf(batch_2d, font, center, BLACK, text);
+							}
+
+							if (dist_sq < closest) {
 								closest = dist_sq;
 								target = entity;
 							}
 						}
-
-						if (target)
-							LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), str8_filename(meshid_to_metadata[target->meshid]).text);
 					}
+
+					if (target && input_key_pressed(KEY_CODE_F))
+						LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), str8_filename(meshid_to_metadata[target->meshid]).text);
 				}
 
 			} break;
@@ -2209,8 +2255,8 @@ int main(void) {
 					  .depth = { depthbuffer, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = 1.0f },
 					});
 
-				frame_data.view = lookat(camera->position, camera->target, camera->up);
-				frame_data.proj = perspective(deg_to_rad(45.f), (float)dims.x / (float)dims.y, 0.1f, 500.f);
+				frame_data.view = camera_view(camera);
+				frame_data.proj = camera_proj(camera, viewport.width / viewport.height);
 				frame_data.camera_position = make4_from3(camera->position, 0.0f);
 
 				Uniform uniforms[] = {

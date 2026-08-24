@@ -86,6 +86,8 @@ static inline bool aabb3_contains_point(AABB3 a, float3 p) {
 
 CastResult3 raycast_plane(Ray3 r, Plane p);
 CastResult3 raycast_aabb3(Ray3 r, AABB3 a);
+
+bool project_to_viewport(float4x4 view_proj, Rectangle viewport, float3 point, float2 *screen); 
 // :3d
 
 #endif

@@ -8,8 +8,8 @@
 #include <emscripten/html5_webgl.h>
 #include <GLES3/gl3.h>
 
-#include "core/shape2.h"
-#include "input.h"
+#include "core/geom.h"
+#include "utils/input.h"
 #include "os.h"
 
 #include <stb/stb_image.h>

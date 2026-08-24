@@ -21,8 +21,6 @@ int main(void) {
 	OS_Timestamp ts = 0;
 
 	os_display_startup();
-	GFX_Device gfx = { 0 };
-	gfx_device_make(&gfx);
 
 	Arena permanenet = arena_make(MiB(128));
 	Arena frame = arena_make(MiB(16));
@@ -34,10 +32,12 @@ int main(void) {
 				os_sleep_ms(100);
 
 			ts = now;
-			os_library_unload(lib);
-			os_file_copy(src, dst);
+        os_library_unload(lib);
+        os_file_copy(src, dst);
 			lib = os_library_load(dst);
+			if (lib == 0) break;
 			os_library_symbol(lib, s("tick"), &tick);
+			if (tick == 0) break;
 		}
 
 		if (tick)
@@ -45,8 +45,6 @@ int main(void) {
 
 		arena_reset(&frame);
 	}
-
-	gfx_device_destroy(&gfx);
 
 	os_library_unload(lib);
 	os_display_shutdown();
