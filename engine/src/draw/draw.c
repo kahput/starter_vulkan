@@ -1,8 +1,10 @@
 #include "draw.h"
 #include "common.h"
 #include "core/arena.h"
+#include "core/cmath.h"
 #include "core/debug.h"
 
+#include "core/geom.h"
 #include "gfx.h"
 #include "gfx/gfx_types.h"
 
@@ -22,17 +24,20 @@ void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 		}
 
 		uint32_t imageid = style.image ? style.image->handle->imageid : 0;
-		Quad2D quad = {
+
+        float rad = style.rotation * DEG2RAD;
+		DRAW_Quad2D quad = {
 			.position = position,
 			.size = size,
 			.radii = style.corner_radii,
-			.rotation = { cosf(style.rotation), sinf(style.rotation) },
+			.rotation = { cosf(rad), sinf(rad) },
 			.uvs = {
 			  uv0,
 			  { uv1.x, uv0.y },
 			  { uv0.x, uv1.y },
 			  uv1,
 			},
+            .origin = style.origin,
 			.imageid = imageid,
 			.flags = 0,
 			.fill_color = color_pack_uint32(style.fill_color),
@@ -40,7 +45,7 @@ void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 			.border_width = style.border_width,
 		};
 
-		memory_copy(arena_push_count(arena, Quad2D, 1), &quad, sizeof(quad));
+		memory_copy(arena_push_count(arena, DRAW_Quad2D, 1), &quad, sizeof(quad));
 	}
 }
 
@@ -87,18 +92,33 @@ void draw2d_triangle(Arena *arena, Triangle2 t, float thickness, Color color) {
 }
 
 void draw2d_line(Arena *arena, float2 start, float2 end, float thickness, Color color) {
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
-		.a = make4(start.x, start.y, 0.0f, thickness),
-		.b = make4(end.x, end.y, 0.0f, thickness),
-		.color = color_pack_uint32(color),
-	};
+	float2 vec = sub2(end, start);
+
+	float len_sq = len2_sq(vec);
+	if (len_sq <= EPSILON * EPSILON)
+		return;
+
+	float len = sqrtf(len_sq);
+
+	float2 center = scale2(add2(start, end), 0.5f);
+	float2 half_extent = { .x = len * 0.5f, .y = thickness * 0.5f };
+
+	float rot_rad = atan2f(vec.y, vec.x);
+	Rectangle rect = rect_from_center(center, half_extent);
+
+	draw2d_quad(arena, rect,
+		(DRAW_QuadStyle){
+		  .fill_color = color,
+          .origin = half_extent,
+		  .rotation = rot_rad * RAD2DEG,
+		});
 }
 
 void draw2d_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color) {
 	float2 shaft_end = add2(start, scale2(sub2(end, start), 0.75f));
 	draw2d_line(arena, start, shaft_end, thickness, color);
 
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
+	*arena_push_count(arena, DRAW_Line3D, 1) = (DRAW_Line3D){
 		.a = make4(shaft_end.x, shaft_end.y, 0.0f, thickness * 4.0f),
 		.b = make4(end.x, end.y, 0.0f, 0.0f),
 		.color = color_pack_uint32(color),
@@ -146,8 +166,8 @@ void draw3d_sphere_outline(Arena *arena, float3 center, float radius, uint8_t se
 }
 
 void draw3d_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
-	LineVertex3D *spine_points = arena_push_count(arena, LineVertex3D, 8);
-	LineVertex3D spine[] = {
+	DRAW_Line3D *spine_points = arena_push_count(arena, DRAW_Line3D, 8);
+	DRAW_Line3D spine[] = {
 		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
 		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
 		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
@@ -170,7 +190,7 @@ void draw3d_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
-	LineVertex3D outline[] = {
+	DRAW_Line3D outline[] = {
 		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
@@ -185,12 +205,12 @@ void draw3d_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color
 		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 	};
 
-	LineVertex3D *points = arena_push_count(arena, LineVertex3D, countof(outline));
+	DRAW_Line3D *points = arena_push_count(arena, DRAW_Line3D, countof(outline));
 	memory_copy_array(points, outline);
 }
 
 void draw3d_line(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
+	*arena_push_count(arena, DRAW_Line3D, 1) = (DRAW_Line3D){
 		.a = make4_from3(start, thickness),
 		.b = make4_from3(end, thickness),
 		.color = color_pack_uint32(color),
@@ -217,7 +237,7 @@ void draw3d_arrow(Arena *arena, float3 start, float3 end, float thickness, Color
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
 	draw3d_line(arena, start, shaft_end, thickness, color);
-	*arena_push_count(arena, LineVertex3D, 1) = (LineVertex3D){
+	*arena_push_count(arena, DRAW_Line3D, 1) = (DRAW_Line3D){
 		.a = make4_from3(shaft_end, thickness * 4.0f),
 		.b = make4_from3(end, 0.0f),
 		.color = color_pack_uint32(color),

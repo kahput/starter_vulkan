@@ -18,7 +18,8 @@ typedef struct {
 
 	float2 origin, rotation;
 	float border_width;
-} Quad2D;
+    float3 _pad0;
+} DRAW_Quad2D;
 
 /*
 typedef struct {
@@ -37,7 +38,7 @@ typedef struct {
 	float4 a, b; // xyz + thickness
 	uint32_t color;
 	float3 _pad0;
-} LineVertex3D;
+} DRAW_Line3D;
 
 typedef struct {
 	float3 position;

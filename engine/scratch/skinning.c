@@ -1097,12 +1097,12 @@ int main(void) {
 
 		// :update
 		Arena batch_quad2d[] = { {
-		  .base = arena_push_count(frame_arena, Quad2D, 6 * 1024),
-		  .capacity = sizeof(Quad2D) * 6 * 1024,
+		  .base = arena_push_count(frame_arena, DRAW_Quad2D, 6 * 1024),
+		  .capacity = sizeof(DRAW_Quad2D) * 6 * 1024,
 		} };
 		Arena batch_line3d[] = { {
-		  .base = arena_push_count(frame_arena, LineVertex3D, 6 * 2048),
-		  .capacity = sizeof(LineVertex3D) * 6 * 2048,
+		  .base = arena_push_count(frame_arena, DRAW_Line3D, 6 * 2048),
+		  .capacity = sizeof(DRAW_Line3D) * 6 * 2048,
 		} };
 
 		uint2 dims = os_surface_size(main_render);
@@ -2009,6 +2009,8 @@ int main(void) {
 				break;
 		}
 
+		draw2d_line(batch_quad2d, splat2(100.0f), splat2(200.0f), 32.0f, RED);
+
 		for (uint32_t index = 0; index < imgui.widget_count; ++index) {
 			IMGUI_Widget *widget = &imgui.widgets[index];
 			if (imgui_valid(widget)) {
@@ -2463,7 +2465,7 @@ int main(void) {
 							storage_data(0, batch_line3d->base, batch_line3d->offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw(cmd, (batch_line3d->offset / sizeof(LineVertex3D)) * 6, 0);
+						gfx_cmd_draw(cmd, (batch_line3d->offset / sizeof(DRAW_Line3D)) * 6, 0);
 					}
 				}
 
@@ -2478,7 +2480,7 @@ int main(void) {
 					.viewport = cast2(dims, float2),
 					.time = time,
 				};
-				uint32_t quad_count = batch_quad2d->offset / sizeof(Quad2D);
+				uint32_t quad_count = batch_quad2d->offset / sizeof(DRAW_Quad2D);
 
 				GFX_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
@@ -2486,7 +2488,7 @@ int main(void) {
 					images[texture_id] = white_texture;
 
 				for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-					Quad2D *quad = (Quad2D *)batch_quad2d->base + quad_instance;
+					DRAW_Quad2D *quad = (DRAW_Quad2D *)batch_quad2d->base + quad_instance;
 
 					if (quad->imageid && quad->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;
