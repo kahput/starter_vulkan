@@ -2,8 +2,6 @@
 #include "core/input_types.h"
 #include "core/strings.h"
 #include "gfx/gfx_types.h"
-#include "tables.h"
-#include "types.h"
 
 #include <common.h>
 #include <core/arena.h>
@@ -17,11 +15,8 @@
 #include <draw/font.h>
 #include <draw/imgui.h>
 
-#include <unistd.h>
 #include <utils/input.h>
 #include <utils/anim.h>
-
-#include "helper.c"
 
 typedef struct {
 	Arena *permanent, *frame;
@@ -59,17 +54,21 @@ bool tick(Arena *permanent, Arena *frame) {
 		state->initialized = true;
 		state->start_time = os_time_ns();
 	}
-	float time = (os_time_ns() * 1e-9) - (state->start_time * 1e-9);
+
+	double time = (os_time_ns() * 1e-9) - (state->start_time * 1e-9);
 	state->dt = time - state->last_frame;
 	state->last_frame = time;
 	input_update();
 
+	uint2 resize = { 0 };
 	for (OS_Event event; os_event_poll(&event);) {
 		switch (event.type) {
 			case OS_EVENT_TYPE_SURFACE_CLOSE:
 				return false;
 				break;
 			case OS_EVENT_TYPE_SURFACE_RESIZE:
+				resize.x = event.as.resize.width;
+				resize.y = event.as.resize.height;
 				break;
 
 			case OS_EVENT_TYPE_KEY_PRESS:
@@ -95,5 +94,43 @@ bool tick(Arena *permanent, Arena *frame) {
 		}
 	}
 
+	GFX_Device *device = state->device;
+	GFX_Swapchain *swapchain = state->swapchain;
+
+	/* draw_begin(&state->draw); */
+
+	// draw_begin(device, swapchain);
+	// draw_view_begin(target, camera);
+	//
+	// draw3d_line(splat3(0.0f), unit(RIGHT), RED, 3.0f);
+	// draw3d_line(splat3(0.0f), unit(UP), GREEN, 3.0f);
+	// draw3d_line(splat3(0.0f), unit(FORWARD), BLUE, 3.0f);
+	//
+	// draw_view_end();
+	// draw_end();
+
+	if (resize.x && resize.y)
+		gfx_swapchain_resize(device, swapchain, resize.x, resize.y);
+
+	GFX_Command *cmd = gfx_frame_begin(state->device);
+	if (cmd == 0) return false;
+
+	GFX_Image *backbuffer = gfx_swapchain_backbuffer(device, cmd, swapchain);
+	if (backbuffer) {
+		gfx_cmd_draw_begin(cmd,
+			(GFX_DrawPassInfo){
+			  .debug_name = "main",
+			  .colors[0] = {
+				.target = backbuffer,
+				.load = LOAD_OP_CLEAR,
+				.store = STORE_OP_STORE,
+				.clear = WHITE,
+			  },
+			});
+
+		gfx_cmd_draw_end(cmd);
+	}
+
+	gfx_frame_end(device, cmd);
 	return true;
 }

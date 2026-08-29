@@ -23,7 +23,7 @@ typedef enum {
 } Keyword;
 
 String8 keyword_to_string[TOKEN_KEYWORD_MAX] = {
-#define X(name, display) [TOKEN_##name] = str_comp(display),
+#define X(name, display) [TOKEN_##name] = scomp(display),
     KEYWORD_LIST
 #undef X
 };
@@ -342,7 +342,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 
 	switch (node->type) {
 		case AST_NODE_TABLE:
-			printf("TABLE(%.*s)\n", str_spread(node->name));
+			printf("TABLE(%.*s)\n", sspread(node->name));
 			ast_visit(node->first_child, indent_level + 1);
 			ast_visit(node->last_child, indent_level + 1);
 			break;
@@ -363,7 +363,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 				} while (entry != node->first_child);
 		} break;
 		case AST_NODE_FIELD:
-			printf("FIELD(%.*s)\n", str_spread(node->name));
+			printf("FIELD(%.*s)\n", sspread(node->name));
 			break;
 		case AST_NODE_ENTRY: {
 			printf("ENTRY\n");
@@ -378,8 +378,8 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			switch (node->lit.type) {
 				case LIT_TYPE_INTEGER: printf("INTEGER(%ld)", node->lit.as.integer); break;
 				case LIT_TYPE_REAL: printf("REAL(%g)", node->lit.as.real); break;
-				case LIT_TYPE_STRING: printf("STRING(%.*s)", str_spread(node->lit.as.string)); break;
-                case LIT_TYPE_IDENTIFIER: printf("IDENTIFER(%.*s)", str_spread(node->lit.as.string)); break;
+				case LIT_TYPE_STRING: printf("STRING(%.*s)", sspread(node->lit.as.string)); break;
+                case LIT_TYPE_IDENTIFIER: printf("IDENTIFER(%.*s)", sspread(node->lit.as.string)); break;
 					break;
 			}
 			// clang-format on
@@ -448,7 +448,7 @@ bool ast_validate_table(AST_Node *table) {
 					} while (entry != row->first_child);
 
 				if (row_entry_count != column_count) {
-					LOG_ERROR("table '%.*s' invalid entry at row %d", str_spread(table->name), row_index);
+					LOG_ERROR("table '%.*s' invalid entry at row %d", sspread(table->name), row_index);
 					ok = false;
 					break;
 				}

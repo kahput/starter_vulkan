@@ -3,8 +3,21 @@
 
 #include "spatial.glsl"
 
-layout(set = 0, binding = 1) readonly buffer VertexBlock {
-    Vertex2 vertex_buffer[];
+struct Quad2D {
+    vec2 position, size;
+    vec4 radii;
+    vec2 uvs[4];
+
+    uint imageid, flags;
+    uint fill_color, border_color;
+
+    vec2 origin, rotation;
+    float border_width;
+    // vec3 _pad0;
+};
+
+layout(set = 0, binding = 1) readonly buffer InstanceBlock {
+    Quad2D instances[];
 };
 
 out OutBlock {
@@ -24,17 +37,28 @@ const vec2 corners[4] = vec2[](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), v
 const uint indices[6] = { 0, 2, 3, 0, 3, 1 };
 
 void main() {
-    Vertex2 vertex = vertex_buffer[gl_VertexIndex];
-    gl_Position = frame.projection * frame.view * vec4(vertex.position, 0.0f, 1.0f);
+    Quad2D quad = instances[gl_InstanceIndex];
 
-    vs_out.tex_coords = vertex.uv;
-    vs_out.texture_id = vertex.imageid;
+    uint vertex_index = indices[gl_VertexIndex % 6];
+    vec2 local = corners[vertex_index] * quad.size;
+    vec2 rot_point = local - quad.origin;
 
-    vs_out.fill_color = unpackUnorm4x8(vertex.fill_color);
-    vs_out.border_color = unpackUnorm4x8(vertex.border_color);
-    vs_out.border_width = vertex.border_width;
+    vec2 rotated = vec2(
+        rot_point.x * quad.rotation.x - rot_point.y * quad.rotation.y,
+        rot_point.x * quad.rotation.y + rot_point.y * quad.rotation.x
+    );
+    vec2 vertex_position = quad.position + quad.origin + rotated;
 
-    vs_out.size = vertex.size;
-    vs_out.local = corners[indices[gl_VertexIndex % 6]];
-    vs_out.radii = vertex.radii;
+    gl_Position = frame.projection * frame.view * vec4(vertex_position, 0.0f, 1.0f);
+
+    vs_out.tex_coords = quad.uvs[vertex_index];
+    vs_out.texture_id = quad.imageid;
+
+    vs_out.fill_color = unpackUnorm4x8(quad.fill_color);
+    vs_out.border_color = unpackUnorm4x8(quad.border_color);
+    vs_out.border_width = quad.border_width;
+
+    vs_out.size = quad.size;
+    vs_out.local = corners[vertex_index];
+    vs_out.radii = quad.radii;
 }

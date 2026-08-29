@@ -73,10 +73,6 @@ struct IMGUI_Widget {
 	// calculated
 	float offset[AXIS_MAX2D];
 	float size[AXIS_MAX2D];
-
-	struct {
-		float scale;
-	} visual;
 };
 
 extern IMGUI_Widget IMGUI_NIL;
@@ -194,6 +190,14 @@ static inline void imgui_layout(IMGUI_Widget *root) {
 // Common widget helpers
 IMGUI_Widget *imgui_label(uint64_t id, String8 label);
 IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale);
+ENSURE_INLINE IMGUI_Widget *imgui_box(uint64_t id, Rectangle rect) {
+	IMGUI_Widget *result = imgui_widget_opt(id,
+		(IMGUI_Style){ .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIXED } });
+	result->offset[0] = rect.x, result->offset[1] = rect.y;
+	result->size[0] = rect.width, result->size[1] = rect.height;
+
+	return result;
+}
 
 IMGUI_Interact imgui_button_label(String8 label);
 IMGUI_Interact imgui_button_image(Image2D *image, float scale);

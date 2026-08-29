@@ -105,15 +105,10 @@ IMGUI_Interact imgui_interact(uint64_t id, Rectangle rect) {
 
 	bool ok = context && id;
 	if (ok) {
-		if (context->mouse.released[0]) {
-			uint32_t x = 0;
-			(void)x;
-		}
-
 		if (rect_contains_point(rect, context->mouse.position)) {
 			context->status.hovered = id;
 
-			if (context->mouse.pressed[0] && context->status.active == 0) {
+			if (context->status.hovered == id && context->mouse.pressed[0] && context->status.active == 0) {
 				result.pressed = true;
 				context->status.active = id;
 				context->status.press_t = 0.0f;
@@ -436,6 +431,7 @@ void imgui_position_tree(IMGUI_Widget *root) {
 		imgui_position_tree(child);
 	}
 }
+
 
 IMGUI_Widget *imgui_label(uint64_t id, String8 label) {
 	IMGUI_Widget *result = imgui_widget(id);

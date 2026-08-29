@@ -63,7 +63,7 @@ bool gfx_buffer_queue_destroy(GFX_Device *device, GFX_Buffer *buffer);
 bool gfx_image_queue_destroy(GFX_Device *device, GFX_Image *image);
 bool gfx_sampler_queue_destroy(GFX_Device *device, GFX_Sampler *sampler);
 
-GFX_Image *gfx_backbuffer(GFX_Device *device, GFX_Command *cmd, GFX_Swapchain *swapchain);
+GFX_Image *gfx_swapchain_backbuffer(GFX_Device *device, GFX_Command *cmd, GFX_Swapchain *swapchain);
 void gfx_present(GFX_Device *device, GFX_Swapchain *swapchain, GFX_Image *image);
 bool gfx_swapchain_resize(GFX_Device *device, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height);
 bool gfx_image_resize(GFX_Device *device, GFX_Image *image, uint32_t new_width, uint32_t new_height);
@@ -96,7 +96,11 @@ void gfx_cmd_bind_index_buffer32(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t 
 void gfx_cmd_push_constant(GFX_Command *cmd, uint64_t size, void *data);
 void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z);
 
-void gfx_cmd_draw(GFX_Command *cmd, uint32_t vertex_count, uint32_t vertex_offset);
+void gfx_cmd_draw(GFX_Command *cmd, uint32_t vertex_offset, uint32_t vertex_count);
+void gfx_cmd_draw_instanced(GFX_Command *cmd, uint32_t vertex_offset, uint32_t vertex_count, uint32_t instance_offset, uint32_t instance_count);
+
+void gfx_cmd_draw_indexed(GFX_Command *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset);
+void gfx_cmd_draw_indexed_instanced(GFX_Command *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset, uint32_t instance_offset, uint32_t instance_count);
 
 static inline uint32_t gfx_image_id(GFX_Device *device, GFX_Image *image) {
 	if (gfx_image_valid(device, image) == false)

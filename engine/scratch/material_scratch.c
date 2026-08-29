@@ -71,7 +71,7 @@ int main(void) {
 		GFX_Command *cmd = gfx_frame_begin(device);
 		if (cmd == 0) continue;
 
-		GFX_Image *screen = gfx_backbuffer(device, cmd, swapchain);
+		GFX_Image *screen = gfx_swapchain_backbuffer(device, cmd, swapchain);
 		if (screen) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, screen);
 

@@ -27,9 +27,9 @@ typedef enum {
 } OS_Backend;
 
 static String8 os_to_string[OS_BACKEND_COUNT] = {
-	[OS_BACKEND_WINDOWS] = str_comp("windows"),
-	[OS_BACKEND_LINUX] = str_comp("linux"),
-	[OS_BACKEND_WEB] = str_comp("web"),
+	[OS_BACKEND_WINDOWS] = scomp("windows"),
+	[OS_BACKEND_LINUX] = scomp("linux"),
+	[OS_BACKEND_WEB] = scomp("web"),
 };
 
 // ----------------------

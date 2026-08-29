@@ -34,7 +34,7 @@ OS_File os_file_open(String8 filepath, OS_FileMode mode) {
 OS_File os_file_open_async(String8 path, OS_FileMode mode) {
 	OS_File result = os__open_file_cwd(path, os__mode_to_flags(mode), 0666);
 	if (os_file_valid(result) == false) {
-		LOG_WARN("failed to read '%.*s' - %s", str_spread(path), strerror(errno));
+		LOG_WARN("failed to read '%.*s' - %s", sspread(path), strerror(errno));
 	}
 
 	return result;
@@ -169,7 +169,7 @@ OS_Timestamp os_file_last_modified(String8 path) {
 }
 
 String8 os_current_directory(Arena *arena) {
-	return os__concat_cwd(arena, str_lit(""));
+	return os__concat_cwd(arena, s(""));
 }
 
 bool os_directory_exists(String8 path) {

@@ -36,5 +36,5 @@ void main() {
     vs_output.fog_strength = exp(-pow(dist * frame.fog_density, frame.fog_gradient));
     vs_output.fog_strength = clamp(vs_output.fog_strength, 0.0, 1.0);
 
-    gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0);
+    gl_Position = frame.projection * frame.view * vec4(vs_output.worldspace, 1.0) ;
 }

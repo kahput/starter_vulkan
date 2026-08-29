@@ -52,7 +52,7 @@ static const TokenKeywordType type_qualifier[] = {
 };
 
 String8 keyword_to_string[TOKEN_KEYWORD_MAX] = {
-#define X(name, key) [TOKEN_##name] = str_comp(key),
+#define X(name, key) [TOKEN_##name] = scomp(key),
 	KEYWORD_LIST
 #undef X
 };
@@ -117,21 +117,21 @@ enum name {
 };
 
 String8 c_builtin_to_string[C_BUILTIN_MAX] = {
-	[C_BUILTIN_VOID] = str_comp("void"),
-	[C_BUILTIN_BOOL] = str_comp("_Bool"),
-	[C_BUILTIN_CHAR] = str_comp("char"),
-	[C_BUILTIN_UNSIGNED_CHAR] = str_comp("unsigned char"),
-	[C_BUILTIN_SHORT] = str_comp("short"),
-	[C_BUILTIN_UNSIGNED_SHORT] = str_comp("unsigned short"),
-	[C_BUILTIN_INT] = str_comp("int"),
-	[C_BUILTIN_UNSIGNED_INT] = str_comp("unsigned int"),
-	[C_BUILTIN_LONG] = str_comp("long"),
-	[C_BUILTIN_UNSIGNED_LONG] = str_comp("unsigned long"),
-	[C_BUILTIN_LONG_LONG] = str_comp("long long"),
-	[C_BUILTIN_UNSIGNED_LONG_LONG] = str_comp("unsigned long long"),
-	[C_BUILTIN_FLOAT] = str_comp("float"),
-	[C_BUILTIN_DOUBLE] = str_comp("double"),
-	[C_BUILTIN_LONG_DOUBLE] = str_comp("long double"),
+	[C_BUILTIN_VOID] = scomp("void"),
+	[C_BUILTIN_BOOL] = scomp("_Bool"),
+	[C_BUILTIN_CHAR] = scomp("char"),
+	[C_BUILTIN_UNSIGNED_CHAR] = scomp("unsigned char"),
+	[C_BUILTIN_SHORT] = scomp("short"),
+	[C_BUILTIN_UNSIGNED_SHORT] = scomp("unsigned short"),
+	[C_BUILTIN_INT] = scomp("int"),
+	[C_BUILTIN_UNSIGNED_INT] = scomp("unsigned int"),
+	[C_BUILTIN_LONG] = scomp("long"),
+	[C_BUILTIN_UNSIGNED_LONG] = scomp("unsigned long"),
+	[C_BUILTIN_LONG_LONG] = scomp("long long"),
+	[C_BUILTIN_UNSIGNED_LONG_LONG] = scomp("unsigned long long"),
+	[C_BUILTIN_FLOAT] = scomp("float"),
+	[C_BUILTIN_DOUBLE] = scomp("double"),
+	[C_BUILTIN_LONG_DOUBLE] = scomp("long double"),
 };
 
 typedef enum AST_QualifierBits {
@@ -149,11 +149,11 @@ typedef enum {
 } AST_StorageQualifier;
 
 static const String8 storage_class_to_string[] = {
-	[AST_STORAGE_NONE] = str_comp("None"),
+	[AST_STORAGE_NONE] = scomp("None"),
 
-	[AST_STORAGE_TYPEDEF] = str_comp("typedef"),
-	[AST_STORAGE_EXTERN] = str_comp("extern"),
-	[AST_STORAGE_STATIC] = str_comp("static"),
+	[AST_STORAGE_TYPEDEF] = scomp("typedef"),
+	[AST_STORAGE_EXTERN] = scomp("extern"),
+	[AST_STORAGE_STATIC] = scomp("static"),
 };
 
 ENSURE_INLINE AST_StorageQualifier
@@ -594,7 +594,7 @@ AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer) {
 
 	return result;
 }
-static const String8 synthetic_types_header = str_comp(
+static const String8 synthetic_types_header = scomp(
 	"typedef unsigned char      uint8_t;\n"
 	"typedef unsigned short     uint16_t;\n"
 	"typedef unsigned int       uint32_t;\n"
@@ -627,7 +627,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		case AST_NODE_DECLARATION: {
 			printf("DECLARATION");
 			if (node->storage != 0)
-				printf("(%.*s)", str_spread(storage_class_to_string[node->storage]));
+				printf("(%.*s)", sspread(storage_class_to_string[node->storage]));
 			printf("\n");
 			ast_visit(node->first_child, indent_level + 1);
 
@@ -639,7 +639,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		} break;
 		case AST_NODE_BUILTIN: {
 			printf("BUILTIN ");
-			printf("(%.*s", str_spread(c_builtin_to_string[node->builtin]));
+			printf("(%.*s", sspread(c_builtin_to_string[node->builtin]));
 			if (has_flag(node->qualifiers, AST_QUAL_CONST))
 				printf("%sCONST", ", ");
 			if (has_flag(node->qualifiers, AST_QUAL_RESTRICT))
@@ -650,7 +650,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		} break;
 		case AST_NODE_TYPEDEF_NAME: {
 			printf("TYPEDEF_NAME");
-			printf("(%.*s)\n", str_spread(node->name.lexeme));
+			printf("(%.*s)\n", sspread(node->name.lexeme));
 		} break;
 		case AST_NODE_UNION:
 		case AST_NODE_STRUCT: {
@@ -659,7 +659,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			if (node->name.lexeme.length || node->qualifiers)
 				printf("(");
 			if (node->name.lexeme.length) {
-				printf("%.*s", str_spread(node->name.lexeme));
+				printf("%.*s", sspread(node->name.lexeme));
 				prev = true;
 			}
 			if (has_flag(node->qualifiers, AST_QUAL_CONST)) {
@@ -690,7 +690,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			if (node->name.lexeme.length || node->qualifiers)
 				printf("(");
 			if (node->name.lexeme.length) {
-				printf("%.*s", str_spread(node->name.lexeme));
+				printf("%.*s", sspread(node->name.lexeme));
 				prev = true;
 			}
 			if (has_flag(node->qualifiers, AST_QUAL_CONST)) {
@@ -718,9 +718,9 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		} break;
 		case AST_NODE_ENUMERATOR: {
 			printf("ENUMERATOR ");
-			printf("name=%.*s", str_spread(node->name.lexeme));
+			printf("name=%.*s", sspread(node->name.lexeme));
 			if (node->string.length)
-				printf(" tokens=%.*s", str_spread(node->string));
+				printf(" tokens=%.*s", sspread(node->string));
 			printf("\n");
 
 			AST_Node *expr = node->first_child;
@@ -729,7 +729,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		case AST_NODE_DECLARATOR: {
 			String8 name = node->name.lexeme;
 			printf("DECLARATOR");
-			printf("(%.*s)\n", str_spread(node->name.lexeme));
+			printf("(%.*s)\n", sspread(node->name.lexeme));
 
 			if (node->first_child)
 				ast_visit(node->first_child, indent_level + 1);
@@ -763,7 +763,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 		case AST_NODE_ARRAY: {
 			printf("ARRAY");
 			if (node->string.length)
-				printf("(%.*s)", str_spread(node->string));
+				printf("(%.*s)", sspread(node->string));
 			printf("\n");
 
 			if (node->first_child)
@@ -847,14 +847,14 @@ typedef struct {
 //
 //[META_AST_DeclSpecifiers] = {
 //    .kind = META_KIND_ALIAS,
-//    .name = str_comp("AST_DeclSpecifiers")
+//    .name = scomp("AST_DeclSpecifiers")
 //    .size = sizeof(AST_DeclSpecifiers),
 //    .as.alias = META_ANNONYMOUS_STRUCT_TAG_0,
 // }
 //
 // [META_AST_DeclSpecifiersPtr] = {
 //     .kind = META_KIND_POINTER,
-//     .name = str_comp("AST_DeclSpecifiersPtr"),
+//     .name = scomp("AST_DeclSpecifiersPtr"),
 //     .size = sizeof(void *),
 //     .as.pointer = META_ANNONYMOUS_STRUCT_TAG_0
 // }

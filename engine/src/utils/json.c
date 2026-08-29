@@ -26,9 +26,9 @@ TokenType json_keyword_to_token_type[keyword(JSON_KEYWORD_MAX)] = {
 };
 
 String8 json_keyword_to_string[keyword(JSON_KEYWORD_MAX)] = {
-	[keyword(JSON_KEYWORD_NULL)] = str_comp("null"),
-	[keyword(JSON_KEYWORD_FALSE)] = str_comp("false"),
-	[keyword(JSON_KEYWORD_TRUE)] = str_comp("true")
+	[keyword(JSON_KEYWORD_NULL)] = scomp("null"),
+	[keyword(JSON_KEYWORD_FALSE)] = scomp("false"),
+	[keyword(JSON_KEYWORD_TRUE)] = scomp("true")
 };
 #undef keyword
 
@@ -309,7 +309,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 
 			str8_indent(arena, indent, *depth);
 			if (keyed)
-				push_text(arena, "\"%.*s\": ", str_spread(child->key));
+				push_text(arena, "\"%.*s\": ", sspread(child->key));
 
 			switch (child->value.type) {
 				case JSON_TYPE_NULL:
@@ -319,7 +319,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 					push_text(arena, "%s", child->value.as.boolean ? "true" : "false");
 					break;
 				case JSON_TYPE_STRING:
-					push_text(arena, "\"%.*s\"", str_spread(child->value.as.string));
+					push_text(arena, "\"%.*s\"", sspread(child->value.as.string));
 					break;
 				case JSON_TYPE_NUMBER:
 					push_text(arena, "%g", child->value.as.number);

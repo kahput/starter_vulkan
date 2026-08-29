@@ -50,7 +50,7 @@ typedef struct {
 typedef struct {
 	float3 *vertices;
 	uint32_t vertex_count;
-} ConvexPolygon3;
+} ConvexPolyhedron;
 
 typedef enum {
 	SHAPE_KIND_AABB3,
@@ -81,7 +81,7 @@ typedef struct {
 		Sphere sphere;
 		Capsule3 capsule;
 		Plane plane;
-		ConvexPolygon3 convex;
+		ConvexPolyhedron convex;
 	} as;
 } Shape3;
 

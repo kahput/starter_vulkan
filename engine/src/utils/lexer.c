@@ -8,30 +8,30 @@
 
 // clang-format off
 const String8 token_type_to_string[TOKEN_MAX] = {
-    [TOKEN_UNKNOWN]       = str_comp("unkown"),
-    [TOKEN_LPAREN]    = str_comp("("),   [TOKEN_RPAREN]   = str_comp(")"),
-    [TOKEN_LBRACE]    = str_comp("{"),   [TOKEN_RBRACE]   = str_comp("}"),
-    [TOKEN_LBRACKET]  = str_comp("["),   [TOKEN_RBRACKET] = str_comp("]"),
-    [TOKEN_COMMA]         = str_comp(","),   [TOKEN_DOT]           = str_comp("."),
-    [TOKEN_SEMICOLON]     = str_comp(";"),   [TOKEN_COLON]         = str_comp(":"),
-    [TOKEN_SLASH]         = str_comp("/"),   [TOKEN_STAR]          = str_comp("*"),
-    [TOKEN_PERCENT]       = str_comp("%"),   [TOKEN_TILDE]         = str_comp("~"),
-    [TOKEN_DOLLAR] = str_comp("$"),
-    [TOKEN_CARET]         = str_comp("^"),   [TOKEN_QUESTION_MARK] = str_comp("?"),
-    [TOKEN_MINUS]         = str_comp("-"),   [TOKEN_MINUS_MINUS]   = str_comp("--"),
-    [TOKEN_PLUS]          = str_comp("+"),   [TOKEN_PLUS_PLUS]     = str_comp("++"),
-    [TOKEN_BANG]          = str_comp("!"),   [TOKEN_BANG_EQUAL]    = str_comp("!="),
-    [TOKEN_EQUAL]         = str_comp("="),   [TOKEN_EQUAL_EQUAL]   = str_comp("=="),
-    [TOKEN_GREATER]       = str_comp(">"),   [TOKEN_GREATER_EQUAL] = str_comp(">="),
-    [TOKEN_LESS]          = str_comp("<"),   [TOKEN_LESS_EQUAL]    = str_comp("<="),
-    [TOKEN_AMP]           = str_comp("&"),   [TOKEN_AMP_AMP]       = str_comp("&&"),
-    [TOKEN_PIPE]          = str_comp("|"),   [TOKEN_PIPE_PIPE]     = str_comp("||"),
-    [TOKEN_IDENTIFIER]    = str_comp("identifier"),
-    [TOKEN_STRING]        = str_comp("string"),
-    [TOKEN_INTEGER]       = str_comp("integer"),
-    [TOKEN_REAL]         = str_comp("real"),
+    [TOKEN_UNKNOWN]       = scomp("unkown"),
+    [TOKEN_LPAREN]    = scomp("("),   [TOKEN_RPAREN]   = scomp(")"),
+    [TOKEN_LBRACE]    = scomp("{"),   [TOKEN_RBRACE]   = scomp("}"),
+    [TOKEN_LBRACKET]  = scomp("["),   [TOKEN_RBRACKET] = scomp("]"),
+    [TOKEN_COMMA]         = scomp(","),   [TOKEN_DOT]           = scomp("."),
+    [TOKEN_SEMICOLON]     = scomp(";"),   [TOKEN_COLON]         = scomp(":"),
+    [TOKEN_SLASH]         = scomp("/"),   [TOKEN_STAR]          = scomp("*"),
+    [TOKEN_PERCENT]       = scomp("%"),   [TOKEN_TILDE]         = scomp("~"),
+    [TOKEN_DOLLAR] = scomp("$"),
+    [TOKEN_CARET]         = scomp("^"),   [TOKEN_QUESTION_MARK] = scomp("?"),
+    [TOKEN_MINUS]         = scomp("-"),   [TOKEN_MINUS_MINUS]   = scomp("--"),
+    [TOKEN_PLUS]          = scomp("+"),   [TOKEN_PLUS_PLUS]     = scomp("++"),
+    [TOKEN_BANG]          = scomp("!"),   [TOKEN_BANG_EQUAL]    = scomp("!="),
+    [TOKEN_EQUAL]         = scomp("="),   [TOKEN_EQUAL_EQUAL]   = scomp("=="),
+    [TOKEN_GREATER]       = scomp(">"),   [TOKEN_GREATER_EQUAL] = scomp(">="),
+    [TOKEN_LESS]          = scomp("<"),   [TOKEN_LESS_EQUAL]    = scomp("<="),
+    [TOKEN_AMP]           = scomp("&"),   [TOKEN_AMP_AMP]       = scomp("&&"),
+    [TOKEN_PIPE]          = scomp("|"),   [TOKEN_PIPE_PIPE]     = scomp("||"),
+    [TOKEN_IDENTIFIER]    = scomp("identifier"),
+    [TOKEN_STRING]        = scomp("string"),
+    [TOKEN_INTEGER]       = scomp("integer"),
+    [TOKEN_REAL]         = scomp("real"),
 
-    [TOKEN_EOF]           = str_comp("end of file"),
+    [TOKEN_EOF]           = scomp("end of file"),
 };
 // clang-format on
 
@@ -398,9 +398,9 @@ Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_advance(lexer);
 	if (t.type != type) {
 		LOG_WARN("expected '%.*s' got '%.*s' (%.*s) at %d:%d",
-			str_spread(token_type_to_string[type]),
-			str_spread(token_type_to_string[t.type]),
-			str_spread(t.lexeme),
+			sspread(token_type_to_string[type]),
+			sspread(token_type_to_string[t.type]),
+			sspread(t.lexeme),
 			t.line, t.column);
 		ASSERT(false);
 	}
@@ -417,7 +417,7 @@ String8 lexer_error_location_string(Arena *arena, Token token) {
 		while (line.text[line.length] != '\n' && line.text[line.length] != '\0')
 			line.length++;
 
-		String8 error_top = str8_pushf(arena, s("    %d | %.*s\n"), token.line, str_spread(line));
+		String8 error_top = str8_pushf(arena, s("    %d | %.*s\n"), token.line, sspread(line));
 		uint32_t error_offset = 0;
 		while (error_top.text[error_offset] != '|')
 			error_offset++;
@@ -433,7 +433,7 @@ String8 lexer_error_location_string(Arena *arena, Token token) {
 }
 
 void report(uint64_t line, uint64_t column, String8 where, String8 message) {
-	LOG_ERROR("#error[%d:%d]: %.*s\n%.*s", line, column, str_spread(message), str_spread(where));
+	LOG_ERROR("#error[%d:%d]: %.*s\n%.*s", line, column, sspread(message), sspread(where));
 }
 
 Token lexer_consume(Lexer *lexer, TokenType type, String8 message) {
@@ -483,9 +483,9 @@ Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count)
 		}
 
 		LOG_WARN("Lexer: expected '%.*s' got '%.*s' (%.*s) at %d:%d",
-			str_spread(types_string),
-			str_spread(token_type_to_string[t.type]),
-			str_spread(t.lexeme),
+			sspread(types_string),
+			sspread(token_type_to_string[t.type]),
+			sspread(t.lexeme),
 			t.line, t.column);
 		arena_scratch_end(scratch);
 	}

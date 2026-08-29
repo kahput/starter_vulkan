@@ -38,4 +38,3 @@ static inline float text_height(Font *font, String8 text) {
 static inline float text_width(Font *font, String8 text) {
 	return measure_text(font, text).x;
 }
-String8 wrap_text(Arena *arena, Font *font, String8 text, Rectangle bounds, float font_size, float spacing, float *out_height);

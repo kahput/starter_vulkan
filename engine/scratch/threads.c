@@ -13,7 +13,7 @@ void *thread_function(void *arg) {
 		if (next_to_print < entry_count) {
 			uint32_t entry_index = __atomic_fetch_add(&next_to_print, 1, __ATOMIC_SEQ_CST);
 
-			LOG_INFO("THREAD[%u]: %.*s", *thread_id, str_arg(strings_to_print[entry_index]));
+			LOG_INFO("THREAD[%u]: %.*s", *thread_id, sarg(strings_to_print[entry_index]));
 		}
 	}
 	pthread_exit(0);

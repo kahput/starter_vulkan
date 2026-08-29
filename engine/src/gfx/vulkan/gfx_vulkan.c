@@ -1235,7 +1235,7 @@ bool gfx_swapchain_destroy(GFX_Device *device, GFX_Swapchain *swapchain) {
 	return ok;
 }
 
-GFX_Image *gfx_backbuffer(GFX_Device *device, GFX_Command *cmd, GFX_Swapchain *swapchain) {
+GFX_Image *gfx_swapchain_backbuffer(GFX_Device *device, GFX_Command *cmd, GFX_Swapchain *swapchain) {
 	GFX_Image *result = 0;
 	uint32_t swapchain_index = cmd->swapchain_count;
 	uint32_t image_index = -1;
@@ -1523,15 +1523,13 @@ bool gfx_frame_end(GFX_Device *device, GFX_Command *cmd) {
 		VkSwapchainKHR handles[MAX_SWAPCHAINS] = { 0 };
 		VkSemaphore wait_semaphores[MAX_SWAPCHAINS] = { 0 };
 		VkSemaphore signal_semaphores[MAX_SWAPCHAINS] = { 0 };
-		VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = {
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		};
+		VkPipelineStageFlags wait_stages[MAX_SWAPCHAINS] = { 0 };
 
 		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
 			handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle;
 			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index];
 			signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]];
+			wait_stages[swapchain_index] = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		}
 
 		VkSubmitInfo submit_info = {
@@ -2045,12 +2043,14 @@ void gfx_cmd_draw_begin(GFX_Command *cmd, GFX_DrawPassInfo info) {
 
 	VkRenderingAttachmentInfo depth_attachment = { 0 };
 	if (info.depth.target) {
-		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_ATTACHMENT, info.depth.target);
+		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_STENCIL_ATTACHMENT, info.depth.target);
+		bool is_depth_stencil = info.depth.target->options.format == PIXEL_FORMAT_DEPTHSTENCIL;
+
 		depth_attachment = (VkRenderingAttachmentInfo){
 			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
 			.imageView = info.depth.target->view,
-			.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-			.clearValue.depthStencil.depth = info.depth.clear,
+			.imageLayout = is_depth_stencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+			.clearValue.depthStencil = { .depth = info.depth.clear, 0 },
 			.loadOp = (VkAttachmentLoadOp)info.depth.load,
 			.storeOp = (VkAttachmentStoreOp)info.depth.store,
 		};
@@ -2152,9 +2152,23 @@ void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z) {
 }
 
 void gfx_cmd_draw(GFX_Command *cmd, uint32_t vertex_count, uint32_t vertex_offset) {
+	gfx_cmd_draw_instanced(cmd, vertex_offset, vertex_count, 0, 1);
+}
+
+void gfx_cmd_draw_instanced(GFX_Command *cmd, uint32_t vertex_offset, uint32_t vertex_count, uint32_t instance_offset, uint32_t instance_count) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
-		vkCmdDraw(cmd->handle, vertex_count, 1, vertex_offset, 0);
+		vkCmdDraw(cmd->handle, vertex_count, instance_count, vertex_offset, instance_offset);
+}
+
+void gfx_cmd_draw_indexed(GFX_Command *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset) {
+	gfx_cmd_draw_indexed_instanced(cmd, index_offset, index_count, vertex_offset, 0, 1);
+}
+
+void gfx_cmd_draw_indexed_instanced(GFX_Command *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset, uint32_t instance_offset, uint32_t instance_count) {
+	bool ok = cmd && cmd->handle;
+	if (ok)
+		vkCmdDrawIndexed(cmd->handle, index_count, instance_count, index_offset, vertex_offset, instance_offset);
 }
 
 // :body

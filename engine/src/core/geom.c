@@ -36,25 +36,23 @@ float3 shape3_support(Shape3 s, float3 direction) {
 	float3 result = { 0 };
 
 	direction = norm3(direction);
-	ASSERT(equalf(len3_sq(direction), 0.0f) == false);
-
-	ArenaTemp scratch = arena_scratch_begin(0);
+	ASSERT(len3_sq(direction) > EPSILON * EPSILON);
 
 	switch (s.kind) {
 		case SHAPE_KIND_CAPSULE3: {
 			Capsule3 *capsule = &s.as.capsule;
 			float adotd = dot3(capsule->a, direction);
 			float bdotd = dot3(capsule->b, direction);
-			result = adotd > bdotd
-				? add3(capsule->a, scale3(direction, capsule->radius))
-				: add3(capsule->b, scale3(direction, capsule->radius));
+			float3 c = adotd > bdotd ? capsule->a : capsule->b;
+
+			result = add3(c, scale3(direction, capsule->radius));
 		} break;
 		case SHAPE_KIND_SPHERE: {
 			Sphere *sphere = &s.as.sphere;
 			result = add3(sphere->center, scale3(direction, sphere->radius));
 		} break;
 		case SHAPE_KIND_CONVEX_POLYGON: {
-			ConvexPolygon3 *polygon = &s.as.convex;
+			ConvexPolyhedron *polygon = &s.as.convex;
 			ASSERT(polygon->vertices && polygon->vertex_count);
 
 			result = polygon->vertices[0];
@@ -72,7 +70,6 @@ float3 shape3_support(Shape3 s, float3 direction) {
 			break;
 	}
 
-	arena_scratch_end(scratch);
 	return result;
 }
 

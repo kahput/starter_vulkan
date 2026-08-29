@@ -3,7 +3,7 @@
   "entity_count": 6,
   "entities": [
     {
-      "features": "DRAW_MESH | PLAYER_CONTROLLED | COLLIDABLE | ANIMATE",
+      "features": "DRAW_MESH | PLAYER_CONTROLLED | CAST_SHADOW | COLLIDABLE | ANIMATE",
       "transform": {
         "translation": [
           0,
@@ -37,8 +37,7 @@
             0.259661
           ]
         }
-      },
-      "pass": "OPAQUE"
+      }
     },
     {
       "features": "DRAW_MESH | CAST_SHADOW | INTERACTABLE | COLLIDABLE",
@@ -76,7 +75,6 @@
           ]
         }
       },
-      "pass": "OPAQUE",
       "target": 0,
       "interact_radius": 3
     },
@@ -100,11 +98,10 @@
           1
         ]
       },
-      "meshid": "TEST_LEVEL",
-      "pass": "OPAQUE"
+      "meshid": "TEST_LEVEL"
     },
     {
-      "features": "DRAW_MESH | COLLIDABLE",
+      "features": "DRAW_MESH | COLLIDABLE | TRANSPARENT",
       "transform": {
         "translation": [
           0,
@@ -138,11 +135,10 @@
             0.5
           ]
         }
-      },
-      "pass": "TRANSPARENT"
+      }
     },
     {
-      "features": "DRAW_MESH | COLLIDABLE",
+      "features": "DRAW_MESH | COLLIDABLE | TRANSPARENT",
       "transform": {
         "translation": [
           0,
@@ -176,11 +172,10 @@
             0.5
           ]
         }
-      },
-      "pass": "TRANSPARENT"
+      }
     },
     {
-      "features": "DRAW_MESH | COLLIDABLE",
+      "features": "DRAW_MESH | COLLIDABLE | TRANSPARENT",
       "transform": {
         "translation": [
           0,
@@ -214,8 +209,7 @@
             0.5
           ]
         }
-      },
-      "pass": "TRANSPARENT"
+      }
     }
   ]
 }

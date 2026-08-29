@@ -41,6 +41,7 @@ set(NATIVE_SCRATCHES
     c_parser 
     table_generator
     lox
+    multi_surface
 )
 
 # Web build
@@ -107,7 +108,7 @@ else()
     endif()
 
     file(GLOB_RECURSE VENDOR_SOURCES  "engine/vendor/*/*.c" "engine/vendor/*/*.h")
-    add_library(engine
+    set(ENGINE_FILES 
         "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
@@ -137,7 +138,10 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
         "${CMAKE_SOURCE_DIR}/engine/src/draw/camera.c"
 
+    )
+    add_library(engine
         ${VENDOR_SOURCES}
+        ${ENGINE_FILES}
     )
     target_include_directories(engine PUBLIC
         "${CMAKE_SOURCE_DIR}/engine/src"
@@ -152,11 +156,14 @@ else()
 
     add_executable(${PROJECT_NAME} 
         "${CMAKE_SOURCE_DIR}/engine/src/app/main.c"
+        ${VENDOR_SOURCES}
+        ${ENGINE_FILES}
     )
-
+    target_link_options(${PROJECT_NAME} PUBLIC
+        -Wl,--export-dynamic
+    )
     add_library(game SHARED
         "game/src/game.c"
-        "game/src/tables.c"
     )
     target_include_directories(game PRIVATE 
         "src" 
@@ -177,7 +184,6 @@ else()
     target_include_directories(
         ${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} "${CMAKE_BINARY_DIR}/engine"
         "${CMAKE_SOURCE_DIR}/engine/vendor")
-    target_link_libraries(${PROJECT_NAME} engine)
 
     # Platform-specific configurations
     if(WIN32)

@@ -21,7 +21,7 @@ enum CullMode {
 
 array cull_mode_to_string(String8) {
     $for row in CullModeTable {
-        [CULL_MODE_${row.name}] = str_comp(${row.display}), 
+        [CULL_MODE_${row.name}] = scomp(${row.display}), 
     }
 }
 
@@ -32,8 +32,8 @@ struct IconMetadata {
 array icon_to_meta(IconMetadata) {
     $for row in IconTable {
         [ICON_${row.id}] = {
-            .name = str_comp(${str(row.id)}),
-            .display =  = str_comp(${row.display})
+            .name = scomp(${str(row.id)}),
+            .display =  = scomp(${row.display})
         },
     }
 }

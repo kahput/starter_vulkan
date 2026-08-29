@@ -1,81 +1,47 @@
 #include "draw.h"
+#include "common.h"
 #include "core/arena.h"
 #include "core/debug.h"
 
-void draw2d_quad(Arena *arena, Rectangle dst, Rectangle src, Image2D *image, float2 origin, float rotation, float border_width, Color border_color, float4 radii, Color fill_color) {
+#include "gfx.h"
+#include "gfx/gfx_types.h"
+
+void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 	bool ok = arena;
 	if (ok) {
-		float2 size = { dst.width, dst.height };
-		float2 min = sub2(make2(dst.x, dst.y), origin), max = add2(min, make2(dst.width, dst.height));
-		float2 corners[] = { min, { max.x, min.y }, { min.x, max.y }, max };
+		float2 position = { rect.x, rect.y };
+		float2 size = { rect.width, rect.height };
+
+		float2 min = sub2(position, style.origin), max = add2(min, size);
 
 		float2 uv0 = splat2(0.0f);
 		float2 uv1 = splat2(1.0f);
-		if (image) {
-			uv0 = make2(src.x / image->width, src.y / image->height);
-			uv1 = make2((src.x + src.width) / image->width, (src.y + src.height) / image->height);
-		}
-		float2 uvs[] = { uv0, { uv1.x, uv0.y }, { uv0.x, uv1.y }, uv1 };
-
-		if (rotation != 0.0f) {
-			float2x2 rot = make2x2_from_rotation(DEG2RAD * rotation);
-			min = negate2(origin);
-			max = add2(min, make2(dst.width, dst.height));
-
-			corners[0] = add2(make2(dst.x, dst.y), mul2x2v(rot, min));
-			corners[1] = add2(make2(dst.x, dst.y), mul2x2v(rot, make2(max.x, min.y)));
-			corners[2] = add2(make2(dst.x, dst.y), mul2x2v(rot, make2(min.x, max.y)));
-			corners[3] = add2(make2(dst.x, dst.y), mul2x2v(rot, max));
+		if (style.image && style.uv.width != 0.0f && style.uv.height != 0.0f) {
+			uv0 = make2(style.uv.x / style.image->width, style.uv.y / style.image->height);
+			uv1 = make2((style.uv.x + style.uv.width) / style.image->width, (style.uv.y + style.uv.height) / style.image->height);
 		}
 
-		uint32_t imageid = image ? image->handle->imageid : 0;
-		// clang-format off
-        QuadVertex2D quad[] = {
-            // pos      // tex
-            (QuadVertex2D){ .position = corners[0], .uv = uvs[0] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[2], .uv = uvs[2] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[3], .uv = uvs[3] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width },  
+		uint32_t imageid = style.image ? style.image->handle->imageid : 0;
+		Quad2D quad = {
+			.position = position,
+			.size = size,
+			.radii = style.corner_radii,
+			.rotation = { cosf(style.rotation), sinf(style.rotation) },
+			.uvs = {
+			  uv0,
+			  { uv1.x, uv0.y },
+			  { uv0.x, uv1.y },
+			  uv1,
+			},
+			.imageid = imageid,
+			.flags = 0,
+			.fill_color = color_pack_uint32(style.fill_color),
+			.border_color = color_pack_uint32(style.border_color),
+			.border_width = style.border_width,
+		};
 
-            (QuadVertex2D){ .position = corners[0], .uv = uvs[0] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[3], .uv = uvs[3] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-            (QuadVertex2D){ .position = corners[1], .uv = uvs[1] , .radii = radii, .size = size, .fill_color = color_pack_uint32(fill_color), .border_color = color_pack_uint32(border_color), .imageid = imageid, .border_width = border_width }, 
-        };
-		// clang-format on
-
-		memory_copy(arena_push_count(arena, QuadVertex2D, 6), quad, sizeof(quad));
+		memory_copy(arena_push_count(arena, Quad2D, 1), &quad, sizeof(quad));
 	}
-}
-
-void draw2d_rect_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, Color color) {
-	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, origin, rotation, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), color);
-}
-
-void draw2d_rect(Arena *arena, Rectangle rect, Color color) {
-	draw2d_rect_ex(arena, rect, splat2(0.0f), 0.0f, color);
-}
-
-void draw2d_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color) {
-	draw2d_quad(arena, rect, (Rectangle){ 0 }, 0, splat2(0.0f), 0, thickness, color, splat4(0.0f), TRANSPARENT);
-}
-
-void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color) {
-	draw2d_quad(arena, rect, rect(0, 0, rect.width, rect.height), 0, splat2(0.0f), 0.0f, 0.0f, rgba(0, 0, 0, 0), radii, color);
-}
-
-void draw2d_rect_rounded_ex(Arena *arena, Rectangle rect, float2 origin, float rotation, float4 radii, Color color) {
-	draw2d_quad(arena, rect, rect(0.0f, 0.0f, rect.width, rect.height), 0, origin, rotation, 0.0f, rgba(0, 0, 0, 0), radii, color);
-}
-
-void draw2d_sprite_ex(Arena *arena, Rectangle src, Rectangle dst, Image2D *image, Color tint) {
-	draw2d_quad(arena, dst, src, image, splat2(0.0f), 0.0f, 0.0f, rgba(0, 0, 0, 0), splat4(0.0f), tint);
-}
-
-void draw2d_sprite(Arena *arena, float2 position, Image2D *image, Color tint) {
-	draw2d_sprite_ex(arena, rect(0, 0, image->width, image->height), rect(position.x, position.y, image->width, image->height), image, tint);
-}
-
-void draw2d_point(Arena *arena, float2 position, float radius, Color color) {
-	draw2d_quad(arena, rect(position.x, position.y, radius * 2.0, radius * 2.0), (Rectangle){ 0 }, 0, splat2(radius), 0.0, 0.0, TRANSPARENT, splat4(radius), color);
 }
 
 void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String8 format, ...) {
@@ -99,15 +65,14 @@ void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String
 
 			Glyph *glyph = &font->glyphs[c];
 
-			Rectangle dst = {
+			Rectangle rect = {
 				.x = position.x + x_offset + (glyph->bearing.x),
 				.y = position.y + y_offset + (glyph->bearing.y),
 				.width = glyph->src.width,
 				.height = glyph->src.height,
 			};
 
-			draw2d_quad(arena, dst, glyph->src, &font->atlas, splat2(0.0f), 0.0f, 0.0f, TRANSPARENT, splat4(0.0f), color);
-
+			draw2d_quad(arena, rect, (DRAW_QuadStyle){ .image = &font->atlas, .fill_color = color, .uv = glyph->src });
 			x_offset += glyph->advance_x;
 		}
 	}

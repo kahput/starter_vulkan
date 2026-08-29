@@ -3,6 +3,7 @@
 #include "gfx/gfx_types.h"
 
 typedef struct {
+	String8 name;
 	String8 filepaths[SHADER_STAGE_MAX];
 	PipelineOptions pipelines[8];
 	uint32_t pipeline_count;
@@ -24,5 +25,5 @@ typedef enum {
 	SHADER_MAX,
 } ShaderID;
 
-extern String8 shader_to_string[SHADER_MAX];
-extern ShaderMetadata shader_to_metadata[SHADER_MAX];
+extern String8 shaderid_to_string[SHADER_MAX];
+extern ShaderMetadata shaderid_to_metadata[SHADER_MAX];

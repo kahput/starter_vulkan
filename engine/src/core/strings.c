@@ -61,7 +61,7 @@ String8 str8_indent(Arena *arena, String8 indent, uint32_t depth) {
 		result.length = arena->offset;
 
 		for (uint32_t index = 0; index < depth; ++index)
-			str8_pushf(arena, s("%.*s"), str_spread(indent));
+			str8_pushf(arena, s("%.*s"), sspread(indent));
 
 		result.length = arena->offset - result.length;
 	}

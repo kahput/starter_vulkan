@@ -43,16 +43,15 @@ typedef enum {
 	ICON_MAX,
 } IconID;
 
-String8 iconid_to_filepath[ICON_MAX] = {
-	[ICON_PLAY] = str_comp("assets/icons/PNG/White/1x/forward.png"),
-	[ICON_PAUSE] = str_comp("assets/icons/PNG/White/1x/pause.png"),
-	[ICON_STOP] = str_comp("assets/icons/PNG/White/1x/stop.png")
-};
-
 String8 iconid_to_string[ICON_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(ICON, PLAY),
 	ENUM_STRING_TABLE_ENTRY(ICON, PAUSE),
 	ENUM_STRING_TABLE_ENTRY(ICON, STOP),
+};
+String8 iconid_to_filepath[ICON_MAX] = {
+	[ICON_PLAY] = scomp("assets/icons/PNG/White/1x/forward.png"),
+	[ICON_PAUSE] = scomp("assets/icons/PNG/White/1x/pause.png"),
+	[ICON_STOP] = scomp("assets/icons/PNG/White/1x/stop.png")
 };
 
 typedef enum {
@@ -66,23 +65,11 @@ typedef enum {
 } TextureSlot;
 
 String8 texture_slot_to_string[TEXTURE_SLOT_COUNT] = {
-	[TEXTURE_SLOT_ALBEDO] = str_comp("albedo"),
-	[TEXTURE_SLOT_METAL_ROUGHNESS] = str_comp("metal_roughness"),
-	[TEXTURE_SLOT_NORMAL] = str_comp("normal"),
-	[TEXTURE_SLOT_OCCLUSION] = str_comp("occlusion"),
-	[TEXTURE_SLOT_EMISSIVE] = str_comp("emissive"),
-};
-
-typedef enum {
-	DRAW_PASS_OPAQUE,
-	DRAW_PASS_TRANSPARENT,
-
-	DRAW_PASS_MAX,
-} DrawPass;
-
-static String8 draw_pass_to_string[DRAW_PASS_MAX] = {
-	ENUM_STRING_TABLE_ENTRY(DRAW_PASS, OPAQUE),
-	ENUM_STRING_TABLE_ENTRY(DRAW_PASS, TRANSPARENT),
+	[TEXTURE_SLOT_ALBEDO] = scomp("albedo"),
+	[TEXTURE_SLOT_METAL_ROUGHNESS] = scomp("metal_roughness"),
+	[TEXTURE_SLOT_NORMAL] = scomp("normal"),
+	[TEXTURE_SLOT_OCCLUSION] = scomp("occlusion"),
+	[TEXTURE_SLOT_EMISSIVE] = scomp("emissive"),
 };
 
 typedef struct {
@@ -163,30 +150,30 @@ static const String8 meshid_to_string[MESH_MAX] = {
 };
 
 static const String8 meshid_to_display_string[MESH_MAX] = {
-	[MESH_HERO_MALE] = str_comp("hero male"),
-	[MESH_GDBOT] = str_comp("gdbot"),
-	[MESH_MAGE] = str_comp("mage"),
-	[MESH_BARREL] = str_comp("barrel"),
-	[MESH_ROOM] = str_comp("room"),
-	[MESH_TEST_LEVEL] = str_comp("test level"),
-	[MESH_ROOM_LARGE] = str_comp("room large"),
-	[MESH_TERRAIN_FLAT] = str_comp("terrain flat"),
-	[MESH_TERRAIN_HEIGHTMAP] = str_comp("terrain heightmap"),
-	[MESH_GRASS_BILLBOARD] = str_comp("grass billboard"),
-	[MESH_CYLINDER] = str_comp("cylinder"),
-	[MESH_SPHERE] = str_comp("sphere"),
-	[MESH_GIZMOS_ARROW] = str_comp("arrow"),
+	[MESH_HERO_MALE] = scomp("hero male"),
+	[MESH_GDBOT] = scomp("gdbot"),
+	[MESH_MAGE] = scomp("mage"),
+	[MESH_BARREL] = scomp("barrel"),
+	[MESH_ROOM] = scomp("room"),
+	[MESH_TEST_LEVEL] = scomp("test level"),
+	[MESH_ROOM_LARGE] = scomp("room large"),
+	[MESH_TERRAIN_FLAT] = scomp("terrain flat"),
+	[MESH_TERRAIN_HEIGHTMAP] = scomp("terrain heightmap"),
+	[MESH_GRASS_BILLBOARD] = scomp("grass billboard"),
+	[MESH_CYLINDER] = scomp("cylinder"),
+	[MESH_SPHERE] = scomp("sphere"),
+	[MESH_GIZMOS_ARROW] = scomp("arrow"),
 };
 
 String8 meshid_to_metadata[MESH_MAX] = {
-	[MESH_HERO_MALE] = str_comp("assets/models/hero_male.glb"),
-	[MESH_GDBOT] = str_comp("assets/models/gdbot.glb"),
-	[MESH_MAGE] = str_comp("assets/models/mage.glb"),
-	[MESH_BARREL] = str_comp("assets/models/barrel.glb"),
-	[MESH_ROOM] = str_comp("assets/models/room.glb"),
-	[MESH_ROOM_LARGE] = str_comp("assets/models/room-large.glb"),
-	[MESH_TEST_LEVEL] = str_comp("assets/models/test_level.glb"),
-	[MESH_GRASS_BILLBOARD] = str_comp("assets/models/grass.glb"),
+	[MESH_HERO_MALE] = scomp("assets/models/hero_male.glb"),
+	[MESH_GDBOT] = scomp("assets/models/gdbot.glb"),
+	[MESH_MAGE] = scomp("assets/models/mage.glb"),
+	[MESH_BARREL] = scomp("assets/models/barrel.glb"),
+	[MESH_ROOM] = scomp("assets/models/room.glb"),
+	[MESH_ROOM_LARGE] = scomp("assets/models/room-large.glb"),
+	[MESH_TEST_LEVEL] = scomp("assets/models/test_level.glb"),
+	[MESH_GRASS_BILLBOARD] = scomp("assets/models/grass.glb"),
 };
 
 typedef enum {
@@ -202,13 +189,14 @@ String8 font_to_string[FONT_MAX] = {
 };
 
 String8 font_to_filepath[FONT_MAX] = {
-	[FONT_PIXELOID_SANS] = str_comp("assets/fonts/PixeloidSans.ttf"),
-	[FONT_IBM_PLEX_MONO] = str_comp("/usr/share/fonts/TTF/IBMPlexMono-Regular.ttf"),
+	[FONT_PIXELOID_SANS] = scomp("assets/fonts/PixeloidSans.ttf"),
+	[FONT_IBM_PLEX_MONO] = scomp("/usr/share/fonts/TTF/IBMPlexMono-Regular.ttf"),
 };
 
 typedef enum {
 	ENTITY_FEATURE_DRAW_MESH,
 	ENTITY_FEATURE_CAST_SHADOW,
+	ENTITY_FEATURE_TRANSPARENT,
 
 	// Gameplay
 	ENTITY_FEATURE_PLAYER_CONTROLLED,
@@ -224,6 +212,7 @@ typedef enum {
 static const String8 entity_feature_to_string[ENTITY_FEATURE_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, DRAW_MESH),
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, CAST_SHADOW),
+	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, TRANSPARENT),
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, PLAYER_CONTROLLED),
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, INTERACTABLE),
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, COLLIDABLE),
@@ -238,7 +227,6 @@ typedef struct Entity {
 	FeatureBitset features;
 
 	MeshID meshid;
-	DrawPass pass;
 	Transform3 transform;
 
 	// skinning
@@ -439,7 +427,6 @@ JSON_Node *world_to_json(Arena *arena, World *world) {
 						break;
 				}
 			}
-			json_append_field(arena, entity_node, s("pass"))->value = json_string(arena, draw_pass_to_string[entity->pass]);
 
 			if (entity->target)
 				json_append_field(arena, entity_node, s("target"))->value = json_number(indexof(world->entities, entity->target) - 1);
@@ -562,16 +549,6 @@ bool json_to_world(JSON_Node *root, World *world) {
 					}
 			}
 
-			{
-				String8 draw_pass = json_str_or(json_find(entity_node, s("pass")), s(""));
-				if (draw_pass.length)
-					for (DrawPass pass = 0; pass < DRAW_PASS_MAX; ++pass) {
-						if (str8_equals(draw_pass, draw_pass_to_string[pass])) {
-							entity->pass = pass;
-							break;
-						}
-					}
-			}
 			entity->interact_radius = json_num_or(json_find(entity_node, s("interact_radius")), 0.0f);
 			JSON_Node *target_node = json_find(entity_node, s("target"));
 			if (json_valid(target_node)) {
@@ -714,7 +691,7 @@ int main(void) {
 				Image2D *atlas = &font_size->atlas;
 				atlas->handle = gfx_image_make(device, atlas->width, atlas->height,
 					(ImageOptions){
-					  .debug_name = (char *)str8_pushf(scratch.arena, s("%.*s:%d"), str_spread(font_to_string[id]), font_bake_size_to_value[bake_size_index]).text,
+					  .debug_name = (char *)str8_pushf(scratch.arena, s("%.*s:%d"), sspread(font_to_string[id]), font_bake_size_to_value[bake_size_index]).text,
 					  .format = PIXEL_FORMAT_RGBA8_UNORM,
 					  .pixels = atlas->pixels,
 					});
@@ -793,7 +770,7 @@ int main(void) {
 	OS_Timestamp shader_ts[SHADER_MAX] = { 0 };
 	GFX_Shader *shaders[SHADER_MAX] = { 0 };
 	for (ShaderID ID = 0; ID < SHADER_MAX; ++ID) { // :shaders
-		ShaderMetadata *metadata = &shader_to_metadata[ID];
+		ShaderMetadata *metadata = &shaderid_to_metadata[ID];
 		if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
 			metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
 			metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
@@ -804,7 +781,7 @@ int main(void) {
 		if (is_compute) {
 			shader_ts[ID] = os_file_last_modified(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 			String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-			shaders[ID] = gfx_compute_make(device, bytecode, (char *)shader_to_string[ID].text);
+			shaders[ID] = gfx_compute_make(device, bytecode, (char *)metadata->name.text);
 		} else {
 			String8 vs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 			String8 fs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
@@ -813,7 +790,7 @@ int main(void) {
 			OS_Timestamp vs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 			shader_ts[ID] = MAX(fs_ts, vs_ts);
-			shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shader_to_string[ID].text);
+			shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.text);
 			for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation)
 				gfx_pipeline_ensure(device, shaders[ID], metadata->pipelines[permutation]);
 		}
@@ -1119,11 +1096,11 @@ int main(void) {
 		}
 
 		// :update
-		Arena batch_2d[] = { {
-		  .base = arena_push_count(frame_arena, QuadVertex2D, 6 * 1024),
-		  .capacity = sizeof(QuadVertex2D) * 6 * 1024,
+		Arena batch_quad2d[] = { {
+		  .base = arena_push_count(frame_arena, Quad2D, 6 * 1024),
+		  .capacity = sizeof(Quad2D) * 6 * 1024,
 		} };
-		Arena batch_line3[] = { {
+		Arena batch_line3d[] = { {
 		  .base = arena_push_count(frame_arena, LineVertex3D, 6 * 2048),
 		  .capacity = sizeof(LineVertex3D) * 6 * 2048,
 		} };
@@ -1784,8 +1761,7 @@ int main(void) {
 					// :collision
 					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) && entity->shape.kind == SHAPE_KIND_AABB3) {
 						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
-							if (len3_sq(velocity) <= EPSILON)
-								break;
+							if (len3_sq(velocity) <= EPSILON) break;
 							CastResult3 nearest = CAST3_NO_HIT;
 							Entity *nearest_entity = 0;
 
@@ -1866,7 +1842,7 @@ int main(void) {
 							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
 							velocity = scale3(velocity, 1.0f - t_min);
 
-							draw3d_arrow(batch_line3, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
+							draw3d_arrow(batch_line3d, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
 						}
 					}
 
@@ -2001,15 +1977,20 @@ int main(void) {
 
 								Rectangle textbox = rect_from_center(screen, make2(60.0f, 10.0f));
 
-								draw2d_quad(batch_2d,
-									textbox, (Rectangle){ 0 }, 0, (float2){ 0 }, 0.0f, 1.0f, BLACK, splat4(8.0f), WHITE);
+								draw2d_quad(batch_quad2d, textbox,
+									(DRAW_QuadStyle){
+									  .corner_radii = splat4(8.0f),
+									  .border_width = 1.0f,
+									  .border_color = BLACK,
+									  .fill_color = WHITE,
+									});
 
 								Font *font = &fonts[FONT_IBM_PLEX_MONO][FONT_BAKE_SIZE_16];
 								String8 text = s("Press F");
 
 								float2 text_half_size = scale2(measure_text(font, text), 0.5f);
 								float2 center = sub2(screen, text_half_size);
-								draw2d_textf(batch_2d, font, center, BLACK, text);
+								draw2d_textf(batch_quad2d, font, center, BLACK, text);
 							}
 
 							if (dist_sq < closest) {
@@ -2037,26 +2018,27 @@ int main(void) {
 				/* 	BeginScissorMode(parent->offset[0], parent->offset[1], parent->size[0], parent->size[1]); */
 
 				if (widget->settings.image) {
-					draw2d_quad(
-						batch_2d,
-						imgui_rect_live(widget),
-						image_rect(*widget->settings.image),
-						widget->settings.image,
-						(float2){ 0 },
-						0.0f,
-						widget->settings.border_width, widget->settings.border, widget->settings.border_radius, widget->settings.fg);
+					draw2d_quad(batch_quad2d, imgui_rect_live(widget),
+						(DRAW_QuadStyle){
+						  .image = widget->settings.image,
+						  .border_width = widget->settings.border_width,
+						  .border_color = widget->settings.border,
+						  .corner_radii = widget->settings.border_radius,
+						  .fill_color = widget->settings.fg,
+						});
+
 				} else if (widget->settings.text.length) {
 					/* draw2d_rect(batch_2d, imgui_rect_live(widget), ORANGE); */
 					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
-					draw2d_textf(batch_2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
+					draw2d_textf(batch_quad2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
 				} else {
-					draw2d_quad(
-						batch_2d,
-						imgui_rect_live(widget),
-						(Rectangle){ 0 },
-						0, (float2){ 0 }, 0.0f,
-						widget->settings.border_width, widget->settings.border,
-						widget->settings.border_radius, widget->settings.bg);
+					draw2d_quad(batch_quad2d, imgui_rect_live(widget),
+						(DRAW_QuadStyle){
+						  .border_width = widget->settings.border_width,
+						  .border_color = widget->settings.border,
+						  .corner_radii = widget->settings.border_radius,
+						  .fill_color = widget->settings.bg,
+						});
 				}
 				/* if (imgui_valid(parent)) */
 				/* 	EndScissorMode(); */
@@ -2080,7 +2062,7 @@ int main(void) {
 				if (entity->shape.kind == SHAPE_KIND_AABB3)
 					a = shape3_from_aabb3(aabb3_from_center(aabb3_center(entity->shape.as.aabb3), mul3(aabb3_half_extent(entity->shape.as.aabb3), entity->transform.scale)));
 
-				draw3d_shape_outline(batch_line3, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
+				draw3d_shape_outline(batch_line3d, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
 			}
 		}
 
@@ -2089,7 +2071,7 @@ int main(void) {
 			continue;
 
 		// Swapchain image acquisition
-		GFX_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gfx_backbuffer(device, cmd, popup_swapchain) : 0;
+		GFX_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gfx_swapchain_backbuffer(device, cmd, popup_swapchain) : 0;
 		if (compute_blit_target) {
 			ASSERT(compute_blit_target->width == compute_image->width && compute_blit_target->height == compute_image->height);
 			// transition swapchain target & blit src compute image
@@ -2115,7 +2097,7 @@ int main(void) {
 			gfx_cmd_image_blit(cmd, area, compute_image, area, compute_blit_target);
 		}
 
-		GFX_Image *main_target = gfx_backbuffer(device, cmd, main_swapchain);
+		GFX_Image *main_target = gfx_swapchain_backbuffer(device, cmd, main_swapchain);
 		if (main_target) {
 			// transition swapchain & offscren targets for drawing
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, main_target);
@@ -2239,7 +2221,7 @@ int main(void) {
 						gfx_cmd_bind(device, 1, array_arg(Uniform, storage_buffers(0, buffer, offset, size)));
 
 						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
-						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
+						gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
 					}
 				}
 
@@ -2271,7 +2253,7 @@ int main(void) {
 				gfx_cmd_shader_bind(cmd, shaders[SHADER_SPATIAL]);
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 					Entity *entity = &scene->entities[instance_index];
-					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity->pass != DRAW_PASS_OPAQUE)
+					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity_has(entity, ENTITY_FEATURE_TRANSPARENT))
 						continue;
 
 					Mesh *mesh = &meshes[entity->meshid];
@@ -2338,7 +2320,7 @@ int main(void) {
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
 						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
-						vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
+						gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
 					}
 				}
 
@@ -2386,7 +2368,7 @@ int main(void) {
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
 
 						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
-						vkCmdDrawIndexed(cmd->handle, part->index_count, map_width * map_depth, part->index_offset, part->vertex_offset, 0);
+						gfx_cmd_draw_indexed_instanced(cmd, part->index_offset, part->index_count, part->vertex_offset, 0, map_width * map_depth);
 					}
 				}
 
@@ -2406,7 +2388,7 @@ int main(void) {
 					uint32_t transparent_mesh_count = 0;
 					for (uint32_t index = 0; index < scene->entity_count; ++index) {
 						Entity *entity = &scene->entities[index];
-						if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity->pass != DRAW_PASS_TRANSPARENT)
+						if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity_has(entity, ENTITY_FEATURE_TRANSPARENT) == false)
 							continue;
 
 						Mesh *mesh = &meshes[entity->meshid];
@@ -2469,55 +2451,47 @@ int main(void) {
 							float4x4 world_from_object = compose4x4_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
 
 							gfx_cmd_push_constant(cmd, sizeof(world_from_object), world_from_object.elements);
-							vkCmdDrawIndexed(cmd->handle, part->index_count, 1, part->index_offset, part->vertex_offset, 0);
+							gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
 						}
 					}
 				}
 
 				{ // :overlay
-					if (batch_line3->offset) {
+					if (batch_line3d->offset) {
 						gfx_cmd_shader_bind(cmd, shaders[SHADER_LINE3D]);
 						Uniform uniforms[] = {
-							storage_data(0, batch_line3->base, batch_line3->offset),
+							storage_data(0, batch_line3d->base, batch_line3d->offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw(cmd, (batch_line3->offset / sizeof(LineVertex3D)) * 6, 0);
+						gfx_cmd_draw(cmd, (batch_line3d->offset / sizeof(LineVertex3D)) * 6, 0);
 					}
 				}
 
 				gfx_cmd_draw_end(cmd);
 			}
 
-			if (batch_2d->offset) { // :canvas
-				typedef struct {
-					float4x4 view;
-					float4x4 projection;
-					float2 camera_position;
-					float2 viewport;
-					float time;
-				} Frame2D;
+			if (batch_quad2d->offset) { // :canvas
 
-				Frame2D frame_2d = {
+				Frame3D frame_2d = {
 					.view = identity4x4(),
-					.projection = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
+					.proj = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
 					.viewport = cast2(dims, float2),
 					.time = time,
 				};
-				uint32_t vertex_count = batch_2d->offset / sizeof(QuadVertex2D);
-				uint32_t quad_count = vertex_count / 6;
+				uint32_t quad_count = batch_quad2d->offset / sizeof(Quad2D);
 
 				GFX_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
 				for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
 					images[texture_id] = white_texture;
 
-				for (uint32_t quad_index = 0; quad_index < quad_count; ++quad_index) {
-					QuadVertex2D *quad_first_vertex = (QuadVertex2D *)batch_2d->base + (quad_index * 6);
+				for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
+					Quad2D *quad = (Quad2D *)batch_quad2d->base + quad_instance;
 
-					if (quad_first_vertex->imageid && quad_first_vertex->imageid != indexof(device->image_pool, white_texture)) {
+					if (quad->imageid && quad->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;
 						for (uint32_t image_index = 1; image_index < image_count; ++image_index) {
-							if (indexof(device->image_pool, images[image_index]) == quad_first_vertex->imageid) {
+							if (indexof(device->image_pool, images[image_index]) == quad->imageid) {
 								found_index = image_index;
 								break;
 							}
@@ -2526,14 +2500,11 @@ int main(void) {
 						if (found_index == -1) {
 							ASSERT(image_count < countof(images) && "Extend sprite batching to support beyond 32 distinct images");
 							found_index = image_count++;
-							images[found_index] = &device->image_pool[quad_first_vertex->imageid];
-							gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, device->image_pool + quad_first_vertex->imageid);
+							images[found_index] = &device->image_pool[quad->imageid];
+							gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, device->image_pool + quad->imageid);
 						}
 
-						for (uint32_t vertex_index = 0; vertex_index < 6; ++vertex_index) {
-							QuadVertex2D *vertex = quad_first_vertex + vertex_index;
-							vertex->imageid = found_index;
-						}
+						quad->imageid = found_index;
 					}
 				}
 
@@ -2552,14 +2523,14 @@ int main(void) {
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &frame_2d, sizeof(frame_2d)),
-					storage_data(1, batch_2d->base, batch_2d->offset),
+					storage_data(1, batch_quad2d->base, batch_quad2d->offset),
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 
 				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
 				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 
-				gfx_cmd_draw(cmd, vertex_count, 0);
+				gfx_cmd_draw_instanced(cmd, 0, 6, 0, quad_count);
 				gfx_cmd_draw_end(cmd);
 			} else
 				gfx_cmd_image_clear(cmd, (Rectangle){ 0 }, TRANSPARENT, ui_target);
@@ -2593,7 +2564,7 @@ int main(void) {
 		gfx_frame_end(device, cmd);
 
 		for (ShaderID ID = 0; ID < SHADER_MAX; ++ID) { // :hot-reload
-			ShaderMetadata *metadata = &shader_to_metadata[ID];
+			ShaderMetadata *metadata = &shaderid_to_metadata[ID];
 			if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
@@ -2611,7 +2582,7 @@ int main(void) {
 
 					gfx_shader_destroy(device, shaders[ID]);
 					String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-					shaders[ID] = gfx_compute_make(device, bytecode, (char *)shader_to_string[ID].text);
+					shaders[ID] = gfx_compute_make(device, bytecode, (char *)shaderid_to_string[ID].text);
 
 					shader_ts[ID] = now;
 					arena_scratch_end(scratch);
@@ -2624,14 +2595,14 @@ int main(void) {
 				if (now != shader_ts[ID]) {
 					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
 					vkDeviceWaitIdle(device->handle);
-					ShaderMetadata *metadata = &shader_to_metadata[ID];
+					ShaderMetadata *metadata = &shaderid_to_metadata[ID];
 
 					gfx_shader_destroy(device, shaders[ID]);
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
 					String8 vs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 					String8 fs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-					shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shader_to_string[ID].text);
+					shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shaderid_to_string[ID].text);
 
 					for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation)
 						gfx_pipeline_ensure(device, shaders[ID], metadata->pipelines[permutation]);
