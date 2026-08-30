@@ -49,7 +49,7 @@ int main(void) {
 				gfx_swapchain_resize(device, swapchains[index], resize[index].x, resize[index].y);
 		}
 
-		GFX_Command *cmd = gfx_frame_begin(device);
+		GFX_CommandEncoder *cmd = gfx_frame_begin(device);
 		if (cmd == 0) break;
 
 		for (uint32_t index = 0; index < SURFACE_COUNT; ++index) {

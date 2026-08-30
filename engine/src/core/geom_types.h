@@ -10,9 +10,15 @@ typedef struct {
 // :2d
 
 typedef struct {
+	float3 translation;
+	quat4 rotation;
+	float3 scale;
+} Transform3;
+
+typedef struct {
 	bool hit;
 	float t;
-	float3 normal, point;
+	float3 point, normal;
 } CastResult3;
 static CastResult3 CAST3_NO_HIT = { false, INFINITY, { 0, 0, 0 }, { 0, 0, 0 } };
 
@@ -50,7 +56,7 @@ typedef struct {
 typedef struct {
 	float3 *vertices;
 	uint32_t vertex_count;
-} ConvexPolyhedron;
+} ConvexPolytope3;
 
 typedef enum {
 	SHAPE_KIND_AABB3,
@@ -81,7 +87,7 @@ typedef struct {
 		Sphere sphere;
 		Capsule3 capsule;
 		Plane plane;
-		ConvexPolyhedron convex;
+		ConvexPolytope3 convex;
 	} as;
 } Shape3;
 

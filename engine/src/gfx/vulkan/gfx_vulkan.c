@@ -226,7 +226,7 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 	}
 
 	if (ok && options.data) { // upload
-		GFX_Command *cmd = gfx_transfer_cmd(device);
+		GFX_CommandEncoder *cmd = gfx_transfer_cmd(device);
 		gfx_cmd_buffer_upload(cmd, result, 0, size, options.data);
 	}
 
@@ -350,7 +350,7 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 	}
 
 	if (ok && options.pixels) { // upload
-		GFX_Command *cmd = gfx_transfer_cmd(device);
+		GFX_CommandEncoder *cmd = gfx_transfer_cmd(device);
 
 		gfx_cmd_image_upload(cmd, result, result->width, result->height, options.pixels);
 
@@ -1235,7 +1235,7 @@ bool gfx_swapchain_destroy(GFX_Device *device, GFX_Swapchain *swapchain) {
 	return ok;
 }
 
-GFX_Image *gfx_swapchain_backbuffer(GFX_Device *device, GFX_Command *cmd, GFX_Swapchain *swapchain) {
+GFX_Image *gfx_swapchain_backbuffer(GFX_Device *device, GFX_CommandEncoder *cmd, GFX_Swapchain *swapchain) {
 	GFX_Image *result = 0;
 	uint32_t swapchain_index = cmd->swapchain_count;
 	uint32_t image_index = -1;
@@ -1428,7 +1428,7 @@ void gfx_device_destroy(GFX_Device *device) {
 		}
 
 		for (uint32_t index = 0; index < countof(device->frame_commands); ++index) {
-			GFX_Command *cmd_buffer = &device->frame_commands[index];
+			GFX_CommandEncoder *cmd_buffer = &device->frame_commands[index];
 
 			if (cmd_buffer->descriptor_pool)
 				vkDestroyDescriptorPool(device->handle, cmd_buffer->descriptor_pool, 0);
@@ -1437,7 +1437,7 @@ void gfx_device_destroy(GFX_Device *device) {
 		}
 
 		for (uint32_t index = 0; index < countof(device->transfer_commands); ++index) {
-			GFX_Command *cmd_buffer = &device->transfer_commands[index];
+			GFX_CommandEncoder *cmd_buffer = &device->transfer_commands[index];
 
 			if (cmd_buffer->in_flight_fence)
 				vkDestroyFence(device->handle, cmd_buffer->in_flight_fence, 0);
@@ -1463,8 +1463,8 @@ void gfx_device_destroy(GFX_Device *device) {
 }
 
 // :cmd
-GFX_Command *gfx_frame_begin(GFX_Device *device) {
-	GFX_Command *result = 0;
+GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device) {
+	GFX_CommandEncoder *result = 0;
 
 	bool ok = gfx_device_valid(device);
 	if (ok) {
@@ -1508,7 +1508,7 @@ GFX_Command *gfx_frame_begin(GFX_Device *device) {
 	return result;
 }
 
-bool gfx_frame_end(GFX_Device *device, GFX_Command *cmd) {
+bool gfx_frame_end(GFX_Device *device, GFX_CommandEncoder *cmd) {
 	bool ok = gfx_device_valid(device) && cmd && cmd->handle;
 	if (ok) {
 		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
@@ -1558,13 +1558,15 @@ bool gfx_frame_end(GFX_Device *device, GFX_Command *cmd) {
 			};
 			vkQueuePresentKHR(device->present_queue, &present_info);
 		}
+
+		device->current_frame_index = (device->current_frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
 
 	return ok;
 }
 
-GFX_Command *gfx_transfer_cmd(GFX_Device *device) {
-	GFX_Command *result = 0;
+GFX_CommandEncoder *gfx_transfer_cmd(GFX_Device *device) {
+	GFX_CommandEncoder *result = 0;
 
 	bool ok = gfx_device_valid(device);
 	if (ok) {
@@ -1606,7 +1608,7 @@ GFX_Command *gfx_transfer_cmd(GFX_Device *device) {
 bool gfx_transfer_flush(GFX_Device *device) {
 	bool ok = gfx_device_valid(device);
 
-	GFX_Command *cmd = 0;
+	GFX_CommandEncoder *cmd = 0;
 	if (ok) { // check if recording
 		cmd = &device->transfer_commands[device->current_transfer_index];
 
@@ -1641,7 +1643,7 @@ bool gfx_transfer_flush(GFX_Device *device) {
 
 bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
 	GFX_Shader *shader = 0;
-	GFX_Command *cmd = 0;
+	GFX_CommandEncoder *cmd = 0;
 	VkDescriptorSet set = 0;
 
 	bool ok = gfx_device_valid(device) && uniforms && uniform_count > 0;
@@ -1776,19 +1778,19 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 	return ok;
 }
 
-void gfx_cmd_bind_index_buffer16(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset) {
+void gfx_cmd_bind_index_buffer16(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t offset) {
 	bool ok = cmd && buffer && cmd->handle && buffer->handle;
 	if (ok)
 		vkCmdBindIndexBuffer(cmd->handle, buffer->handle, offset, VK_INDEX_TYPE_UINT16);
 }
 
-void gfx_cmd_bind_index_buffer32(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset) {
+void gfx_cmd_bind_index_buffer32(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t offset) {
 	bool ok = cmd && buffer && cmd->handle && buffer->handle;
 	if (ok)
 		vkCmdBindIndexBuffer(cmd->handle, buffer->handle, offset, VK_INDEX_TYPE_UINT32);
 }
 
-uint64_t gfx_cmd_put(GFX_Command *cmd, uint64_t size, void *src) {
+uint64_t gfx_cmd_put(GFX_CommandEncoder *cmd, uint64_t size, void *src) {
 	uint64_t result = 0;
 
 	bool ok = cmd && cmd->handle;
@@ -1802,7 +1804,7 @@ uint64_t gfx_cmd_put(GFX_Command *cmd, uint64_t size, void *src) {
 	return result;
 }
 
-void gfx_cmd_buffer_to_buffer(GFX_Command *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
+void gfx_cmd_buffer_to_buffer(GFX_CommandEncoder *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
 		LOG_TRACE("Copying region of %llu from %p to %p", size, src, dst);
@@ -1811,7 +1813,7 @@ void gfx_cmd_buffer_to_buffer(GFX_Command *cmd, GFX_Buffer *dst, GFX_Buffer *src
 	}
 }
 
-void gfx_cmd_buffer_to_image(GFX_Command *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
+void gfx_cmd_buffer_to_image(GFX_CommandEncoder *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	bool ok = cmd && cmd->handle && dst && dst->handle;
 	if (ok == false)
@@ -1844,7 +1846,7 @@ void gfx_cmd_buffer_to_image(GFX_Command *cmd, GFX_Image *dst, GFX_Buffer *src, 
 	arena_scratch_end(scratch);
 }
 
-void gfx_cmd_buffer_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target) {
+void gfx_cmd_buffer_barrier(GFX_CommandEncoder *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target) {
 	bool ok = cmd && target;
 	if (ok) {
 		VkPipelineStageFlags src_stage = resource_usage_to_vulkan_pipeline_stage[src];
@@ -1866,7 +1868,7 @@ void gfx_cmd_buffer_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage d
 	}
 }
 
-bool gfx_cmd_image_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
+bool gfx_cmd_image_barrier(GFX_CommandEncoder *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
 	bool ok = cmd && target;
 	if (ok) {
 		target->res_usage = dst;
@@ -1912,7 +1914,7 @@ bool gfx_cmd_image_barrier(GFX_Command *cmd, ResourceUsage src, ResourceUsage ds
 	return ok;
 }
 
-bool gfx_cmd_image_transition(GFX_Command *cmd, ResourceUsage dst, GFX_Image *target) {
+bool gfx_cmd_image_transition(GFX_CommandEncoder *cmd, ResourceUsage dst, GFX_Image *target) {
 	bool ok = cmd && cmd->handle && target && target->handle;
 	if (ok) {
 		if (target->res_usage == dst)
@@ -1924,7 +1926,7 @@ bool gfx_cmd_image_transition(GFX_Command *cmd, ResourceUsage dst, GFX_Image *ta
 	return ok;
 }
 
-void gfx_cmd_image_blit(GFX_Command *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
+void gfx_cmd_image_blit(GFX_CommandEncoder *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
 	bool ok = cmd && source && target;
 	if (ok) {
 		if (source->res_usage != RESOURCE_USAGE_TRANSFER_SRC)
@@ -1971,7 +1973,7 @@ void gfx_cmd_image_blit(GFX_Command *cmd, Rectangle source_rect, GFX_Image *sour
 	}
 }
 
-void gfx_cmd_image_clear(GFX_Command *cmd, Rectangle rect, Color color, GFX_Image *image) {
+void gfx_cmd_image_clear(GFX_CommandEncoder *cmd, Rectangle rect, Color color, GFX_Image *image) {
 	bool ok = cmd && cmd->handle && image && image->handle;
 	if (ok) {
 		if (image->res_usage != RESOURCE_USAGE_TRANSFER_DST)
@@ -1996,7 +1998,7 @@ void gfx_cmd_image_clear(GFX_Command *cmd, Rectangle rect, Color color, GFX_Imag
 	}
 }
 
-void gfx_cmd_image_upload(GFX_Command *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
+void gfx_cmd_image_upload(GFX_CommandEncoder *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
 	bool ok = cmd && cmd->handle && image && image->handle;
 	if (ok) {
 		uint32_t stride = pixel_format_to_stride[image->options.format];
@@ -2006,7 +2008,7 @@ void gfx_cmd_image_upload(GFX_Command *cmd, GFX_Image *image, uint32_t width, ui
 	}
 }
 
-void gfx_cmd_buffer_upload(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data) {
+void gfx_cmd_buffer_upload(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data) {
 	bool ok = cmd && cmd->handle && buffer && buffer->handle;
 	if (ok) {
 		uint64_t staging_offset = gfx_cmd_put(cmd, size, data);
@@ -2014,7 +2016,7 @@ void gfx_cmd_buffer_upload(GFX_Command *cmd, GFX_Buffer *buffer, uint64_t offset
 	}
 }
 
-void gfx_cmd_draw_begin(GFX_Command *cmd, GFX_DrawPassInfo info) {
+void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 	VkRenderingAttachmentInfo color_attachments[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
 
 	uint32_t color_count = 0;
@@ -2089,12 +2091,12 @@ void gfx_cmd_draw_begin(GFX_Command *cmd, GFX_DrawPassInfo info) {
 	vkCmdSetScissor(cmd->handle, 0, 1, &area);
 }
 
-void gfx_cmd_draw_end(GFX_Command *cmd) {
+void gfx_cmd_draw_end(GFX_CommandEncoder *cmd) {
 	vkCmdEndRendering(cmd->handle);
 	vkCmdEndDebugUtilsLabel(cmd->handle);
 }
 
-void gfx_cmd_viewport(GFX_Command *cmd, Rectangle area) {
+void gfx_cmd_viewport(GFX_CommandEncoder *cmd, Rectangle area) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
 		VkViewport viewports[] = {
@@ -2108,7 +2110,7 @@ void gfx_cmd_viewport(GFX_Command *cmd, Rectangle area) {
 		vkCmdSetViewport(cmd->handle, 0, 1, viewports);
 	}
 }
-void gfx_cmd_scissor(GFX_Command *cmd, Rectangle area) {
+void gfx_cmd_scissor(GFX_CommandEncoder *cmd, Rectangle area) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
 		VkRect2D scissors[] = {
@@ -2121,7 +2123,7 @@ void gfx_cmd_scissor(GFX_Command *cmd, Rectangle area) {
 	}
 }
 
-void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader) {
+void gfx_cmd_shader_bind(GFX_CommandEncoder *cmd, GFX_Shader *shader) {
 	GFX_Pipeline *target = 0;
 
 	bool ok = cmd && cmd->handle && shader && shader->first_pipeline;
@@ -2131,7 +2133,7 @@ void gfx_cmd_shader_bind(GFX_Command *cmd, GFX_Shader *shader) {
 	}
 }
 
-void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline) {
+void gfx_cmd_pipeline_bind(GFX_CommandEncoder *cmd, GFX_Pipeline *pipeline) {
 	bool ok = cmd && cmd->handle && pipeline && pipeline->handle;
 	if (ok) {
 		VkPipelineBindPoint bind_point = pipeline->shader->modules[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -2141,31 +2143,31 @@ void gfx_cmd_pipeline_bind(GFX_Command *cmd, GFX_Pipeline *pipeline) {
 	}
 }
 
-void gfx_cmd_push_constant(GFX_Command *cmd, uint64_t size, void *data) {
+void gfx_cmd_push_constant(GFX_CommandEncoder *cmd, uint64_t size, void *data) {
 	vkCmdPushConstants(cmd->handle, cmd->active_shader->layout, VK_SHADER_STAGE_ALL, 0, size, data);
 }
 
-void gfx_cmd_dispatch(GFX_Command *cmd, uint32_t x, uint32_t y, uint32_t z) {
+void gfx_cmd_dispatch(GFX_CommandEncoder *cmd, uint32_t x, uint32_t y, uint32_t z) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
 		vkCmdDispatch(cmd->handle, x, y, z);
 }
 
-void gfx_cmd_draw(GFX_Command *cmd, uint32_t vertex_count, uint32_t vertex_offset) {
+void gfx_cmd_draw(GFX_CommandEncoder *cmd, uint32_t vertex_count, uint32_t vertex_offset) {
 	gfx_cmd_draw_instanced(cmd, vertex_offset, vertex_count, 0, 1);
 }
 
-void gfx_cmd_draw_instanced(GFX_Command *cmd, uint32_t vertex_offset, uint32_t vertex_count, uint32_t instance_offset, uint32_t instance_count) {
+void gfx_cmd_draw_instanced(GFX_CommandEncoder *cmd, uint32_t vertex_offset, uint32_t vertex_count, uint32_t instance_offset, uint32_t instance_count) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
 		vkCmdDraw(cmd->handle, vertex_count, instance_count, vertex_offset, instance_offset);
 }
 
-void gfx_cmd_draw_indexed(GFX_Command *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset) {
+void gfx_cmd_draw_indexed(GFX_CommandEncoder *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset) {
 	gfx_cmd_draw_indexed_instanced(cmd, index_offset, index_count, vertex_offset, 0, 1);
 }
 
-void gfx_cmd_draw_indexed_instanced(GFX_Command *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset, uint32_t instance_offset, uint32_t instance_count) {
+void gfx_cmd_draw_indexed_instanced(GFX_CommandEncoder *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset, uint32_t instance_offset, uint32_t instance_count) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
 		vkCmdDrawIndexed(cmd->handle, index_count, instance_count, index_offset, vertex_offset, instance_offset);

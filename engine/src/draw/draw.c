@@ -25,7 +25,7 @@ void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 
 		uint32_t imageid = style.image ? style.image->handle->imageid : 0;
 
-        float rad = style.rotation * DEG2RAD;
+		float rad = style.rotation * DEG2RAD;
 		DRAW_Quad2D quad = {
 			.position = position,
 			.size = size,
@@ -37,7 +37,7 @@ void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 			  { uv0.x, uv1.y },
 			  uv1,
 			},
-            .origin = style.origin,
+			.origin = style.origin,
 			.imageid = imageid,
 			.flags = 0,
 			.fill_color = color_pack_uint32(style.fill_color),
@@ -85,12 +85,6 @@ void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String
 	arena_scratch_end(scratch);
 }
 
-void draw2d_triangle(Arena *arena, Triangle2 t, float thickness, Color color) {
-	draw2d_line(arena, t.a, t.b, thickness, color);
-	draw2d_line(arena, t.b, t.c, thickness, color);
-	draw2d_line(arena, t.c, t.a, thickness, color);
-}
-
 void draw2d_line(Arena *arena, float2 start, float2 end, float thickness, Color color) {
 	float2 vec = sub2(end, start);
 
@@ -109,9 +103,15 @@ void draw2d_line(Arena *arena, float2 start, float2 end, float thickness, Color 
 	draw2d_quad(arena, rect,
 		(DRAW_QuadStyle){
 		  .fill_color = color,
-          .origin = half_extent,
+		  .origin = half_extent,
 		  .rotation = rot_rad * RAD2DEG,
 		});
+}
+
+void draw2d_triangle_outline(Arena *arena, Triangle2 t, float thickness, Color color) {
+	draw2d_line(arena, t.a, t.b, thickness, color);
+	draw2d_line(arena, t.b, t.c, thickness, color);
+	draw2d_line(arena, t.c, t.a, thickness, color);
 }
 
 void draw2d_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color) {
@@ -168,10 +168,10 @@ void draw3d_sphere_outline(Arena *arena, float3 center, float radius, uint8_t se
 void draw3d_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
 	DRAW_Line3D *spine_points = arena_push_count(arena, DRAW_Line3D, 8);
 	DRAW_Line3D spine[] = {
-		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
-		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
-		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
-		{ { a.x, a.y, a.z + radius, thickness }, { a.x, b.y, a.z + radius, thickness }, color_pack_uint32(WHITE), splat3(0.0f) },
+		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { a.x, a.y, a.z + radius, thickness }, { a.x, b.y, a.z + radius, thickness }, color_pack_uint32(color), splat3(0.0f) },
 	};
 	memory_copy_array(spine_points, spine);
 
@@ -179,9 +179,9 @@ void draw3d_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint
 		float3 c = end == 0 ? a : b;
 		float signed_r = (end == 0) ? -radius : radius;
 
-		draw3d_arc(arena, c, radius, segments, SIDE_TOP, TAU, thickness, WHITE);
-		draw3d_arc(arena, c, signed_r, segments, SIDE_RIGHT, PIf, thickness, WHITE);
-		draw3d_arc(arena, c, signed_r, segments, SIDE_FRONT, PIf, thickness, WHITE);
+		draw3d_arc(arena, c, radius, segments, SIDE_TOP, TAU, thickness, color);
+		draw3d_arc(arena, c, signed_r, segments, SIDE_RIGHT, PIf, thickness, color);
+		draw3d_arc(arena, c, signed_r, segments, SIDE_FRONT, PIf, thickness, color);
 	}
 }
 
@@ -261,15 +261,15 @@ void draw3d_quad_outline(Arena *arena, Plane plane, float width, float height, f
 		up = norm3(cross3(plane.normal, right));
 	}
 
-	float3 center = scale3(plane.normal, plane.distance);
+	float3 c = scale3(plane.normal, plane.distance);
 	float3 h = scale3(right, width * 0.5f);
 	float3 v = scale3(up, height * 0.5f);
 
 	float3 corners[] = {
-		add3(sub3(center, h), v),
-		add3(add3(center, h), v),
-		sub3(add3(center, h), v),
-		sub3(sub3(center, h), v),
+		add3(sub3(c, h), v),
+		add3(add3(c, h), v),
+		sub3(add3(c, h), v),
+		sub3(sub3(c, h), v),
 	};
 
 	for (uint32_t index = 0; index < countof(corners); ++index)

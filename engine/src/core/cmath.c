@@ -442,6 +442,27 @@ float4x4 lookat(float3 eye, float3 center, float3 up) {
 	return result;
 }
 
+void barycentric(float3 a, float3 b, float3 c, float3 p, float *u, float *v, float *w) {
+	bool ok = u && v && w;
+	if (ok) {
+		float3 ab = sub3(b, a);
+		float3 ac = sub3(c, a);
+		float3 ap = sub3(p, a);
+
+		float ab_dot_ab = dot3(ab, ab);
+		float ab_dot_ac = dot3(ab, ac);
+		float ac_dot_ac = dot3(ac, ac);
+		float ap_dot_ab = dot3(ap, ab);
+
+		float ap_dot_ac = dot3(ap, ac);
+		float denom = ab_dot_ab * ac_dot_ac - ab_dot_ac * ab_dot_ac;
+
+		*v = (ac_dot_ac * ap_dot_ab - ab_dot_ac * ap_dot_ac) / denom;
+		*w = (ab_dot_ab * ap_dot_ac - ab_dot_ac * ap_dot_ab) / denom;
+		*u = 1.0f - *v - *w;
+	}
+}
+
 void float4x4_print(float4x4 m) {
 	LOG_DEBUG(
 		"float4x4 {\n"

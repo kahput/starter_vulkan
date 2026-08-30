@@ -68,7 +68,7 @@ int main(void) {
 		Rectangle viewport = { 0, 0, dims.x, dims.y };
 		float time = os_time_ns() * 1e-9;
 
-		GFX_Command *cmd = gfx_frame_begin(device);
+		GFX_CommandEncoder *cmd = gfx_frame_begin(device);
 		if (cmd == 0) continue;
 
 		GFX_Image *screen = gfx_swapchain_backbuffer(device, cmd, swapchain);

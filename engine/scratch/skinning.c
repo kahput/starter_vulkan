@@ -33,7 +33,6 @@
 
 #include <cgltf/cgltf.h>
 #include <stb/stb_image.h>
-#include <vulkan/vulkan_core.h>
 
 typedef enum {
 	ICON_PLAY,
@@ -74,7 +73,6 @@ String8 texture_slot_to_string[TEXTURE_SLOT_COUNT] = {
 
 typedef struct {
 	Image2D textures[TEXTURE_SLOT_COUNT];
-
 	float4 tint, emissive;
 	float2 metallic_roughness;
 } Material;
@@ -867,7 +865,7 @@ int main(void) {
 		animations[meshid] = load_gltf_animations(permanent, meshid_to_metadata[meshid], &animation_counts[meshid]);
 	}
 
-	GFX_Command *cmd = gfx_transfer_cmd(device);
+	GFX_CommandEncoder *cmd = gfx_transfer_cmd(device);
 	if (cmd->handle) { // :upload
 		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, geometry->size, geometry);
 		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, grass_instancing_buffer->size, grass_instancing_buffer);
@@ -1108,9 +1106,10 @@ int main(void) {
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = cast2(input_mouse_delta(), float2);
 		float2 mouse = cast2(input_mouse_position(), float2);
-		Rectangle viewport = { 0.0f, 0.0f, dims.x, dims.y };
 		mouse_delta.x /= dims.x;
 		mouse_delta.y /= dims.y;
+
+		Rectangle viewport = { 0.0f, 0.0f, dims.x, dims.y };
 
 		if (input_key_pressed(KEY_CODE_TAB))
 			state = (state + 1) % VIEWPORT_STATE_COUNT;
@@ -1872,8 +1871,7 @@ int main(void) {
 							Pose start = final;
 							Pose end = anim_pose_sample(frame_arena, &animations[entity->meshid][target_anim], fmodf(entity->anim_t, animations[entity->meshid][target_anim].duration));
 
-							final = anim_pose_blend_local(frame_arena, &end, &start, entity->blend_t, 0);
-
+							final = anim_pose_blend_local(frame_arena, &start, &end, entity->blend_t, 0);
 							entity->blend_t += dt * 5;
 							if (entity->blend_t >= 1.0f) {
 								entity->current_anim = target_anim;
@@ -1976,7 +1974,6 @@ int main(void) {
 								screen.y -= 30;
 
 								Rectangle textbox = rect_from_center(screen, make2(60.0f, 10.0f));
-
 								draw2d_quad(batch_quad2d, textbox,
 									(DRAW_QuadStyle){
 									  .corner_radii = splat4(8.0f),
@@ -1986,7 +1983,7 @@ int main(void) {
 									});
 
 								Font *font = &fonts[FONT_IBM_PLEX_MONO][FONT_BAKE_SIZE_16];
-								String8 text = s("Press F");
+								String8 text = s("[F] Interact");
 
 								float2 text_half_size = scale2(measure_text(font, text), 0.5f);
 								float2 center = sub2(screen, text_half_size);
@@ -2009,8 +2006,6 @@ int main(void) {
 				break;
 		}
 
-		draw2d_line(batch_quad2d, splat2(100.0f), splat2(200.0f), 32.0f, RED);
-
 		for (uint32_t index = 0; index < imgui.widget_count; ++index) {
 			IMGUI_Widget *widget = &imgui.widgets[index];
 			if (imgui_valid(widget)) {
@@ -2019,27 +2014,17 @@ int main(void) {
 				/* if (imgui_valid(parent)) */
 				/* 	BeginScissorMode(parent->offset[0], parent->offset[1], parent->size[0], parent->size[1]); */
 
-				if (widget->settings.image) {
+				if (widget->settings.text.length) {
+					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
+					draw2d_textf(batch_quad2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
+				} else {
 					draw2d_quad(batch_quad2d, imgui_rect_live(widget),
 						(DRAW_QuadStyle){
 						  .image = widget->settings.image,
 						  .border_width = widget->settings.border_width,
 						  .border_color = widget->settings.border,
 						  .corner_radii = widget->settings.border_radius,
-						  .fill_color = widget->settings.fg,
-						});
-
-				} else if (widget->settings.text.length) {
-					/* draw2d_rect(batch_2d, imgui_rect_live(widget), ORANGE); */
-					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
-					draw2d_textf(batch_quad2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
-				} else {
-					draw2d_quad(batch_quad2d, imgui_rect_live(widget),
-						(DRAW_QuadStyle){
-						  .border_width = widget->settings.border_width,
-						  .border_color = widget->settings.border,
-						  .corner_radii = widget->settings.border_radius,
-						  .fill_color = widget->settings.bg,
+						  .fill_color = widget->settings.image != 0 ? widget->settings.fg : widget->settings.bg,
 						});
 				}
 				/* if (imgui_valid(parent)) */
@@ -2048,29 +2033,26 @@ int main(void) {
 		}
 		imgui_frame_end();
 
-		/* draw2d_quad( */
-		/* 	batch_2d, */
-		/* 	rect(24.0f, 24.0f, 200.0f, 200.0f), */
-		/* 	(Rectangle){ 0 }, 0, (float2){ 0 }, */
-		/* 	0.0f, 4.0f, RED, (float4){ 0.0f, 32.0f, 32.0f, 0.0f }, WHITE); */
-
 		if (draw_collision_shapes) {
 			for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 				Entity *entity = &scene->entities[instance_index];
 				if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) == false)
 					continue;
 
-				Shape3 a = { 0 };
-				if (entity->shape.kind == SHAPE_KIND_AABB3)
-					a = shape3_from_aabb3(aabb3_from_center(aabb3_center(entity->shape.as.aabb3), mul3(aabb3_half_extent(entity->shape.as.aabb3), entity->transform.scale)));
+				Shape3 shape = { 0 };
+				if (entity->shape.kind == SHAPE_KIND_AABB3) {
+					float3 center = aabb3_center(entity->shape.as.aabb3);
+					float3 half = mul3(aabb3_half_extent(entity->shape.as.aabb3), entity->transform.scale);
+					shape = shape3_from_aabb3(aabb3_from_center(center, half));
+				} else
+					shape = entity->shape;
 
-				draw3d_shape_outline(batch_line3d, entity->shape.kind == SHAPE_KIND_AABB3 ? &a : &entity->shape, entity->transform.translation, 3.0f);
+				draw3d_shape_outline(batch_line3d, &shape, entity->transform.translation, 3.0f);
 			}
 		}
 
-		GFX_Command *cmd = gfx_frame_begin(device);
-		if (cmd == 0)
-			continue;
+		GFX_CommandEncoder *cmd = gfx_frame_begin(device);
+		if (cmd == 0) continue;
 
 		// Swapchain image acquisition
 		GFX_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gfx_swapchain_backbuffer(device, cmd, popup_swapchain) : 0;
@@ -2465,7 +2447,7 @@ int main(void) {
 							storage_data(0, batch_line3d->base, batch_line3d->offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw(cmd, (batch_line3d->offset / sizeof(DRAW_Line3D)) * 6, 0);
+						gfx_cmd_draw_instanced(cmd, 0, 6, 0, batch_line3d->offset / sizeof(DRAW_Line3D));
 					}
 				}
 
@@ -2615,12 +2597,12 @@ int main(void) {
 			}
 		}
 
-		device->current_frame_index = (device->current_frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
 		arena_reset(frame_arena);
 	}
 
 	gfx_device_destroy(device);
 	os_display_shutdown();
+
 	return 0;
 }
 

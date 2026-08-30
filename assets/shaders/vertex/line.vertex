@@ -3,13 +3,13 @@
 
 #include "spatial.glsl"  
 
-struct Line {
+struct Line3D {
     vec4 a, b;
     uint color;
 };
 
 layout(set = 1, binding = 0) readonly buffer LineBlock {
-    Line line_buffer[];
+    Line3D instances[];
 };
 
 const ivec2 quad[6] = ivec2[6](ivec2(0, -1), ivec2(0, 1), ivec2(1,  1),
@@ -23,9 +23,8 @@ void main() {
     float aspect = frame.viewport.x / frame.viewport.y;
     mat4 vp = frame.projection * frame.view;
 
-    int line_index = (gl_VertexIndex / 6) ;
+    Line3D line = instances[gl_InstanceIndex];
 
-    Line line = line_buffer[line_index];
     vec3 start = line.a.xyz; 
     vec3 end = line.b.xyz; 
 

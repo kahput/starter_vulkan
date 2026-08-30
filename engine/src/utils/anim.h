@@ -3,17 +3,12 @@
 #include "common.h"
 #include "core/arena.h"
 #include "core/cmath.h"
+#include "core/geom_types.h"
 
 typedef struct {
 	char name[64];
 	int32_t parent;
 } Bone;
-
-typedef struct {
-	float3 translation;
-	quat4 rotation;
-	float3 scale;
-} Transform3;
 
 typedef struct {
 	char name[64];
@@ -24,12 +19,10 @@ typedef struct {
 } AnimationClip;
 
 typedef struct {
-	AnimationClip *clips;
-	uint32_t clip_count;
+	bool playing;
 
-	uint32_t animation_index;
-	float animation_t;
-	bool loop;
+	AnimationClip animation;
+	float anim_t;
 } AnimationPlayer;
 
 typedef struct {
@@ -53,6 +46,8 @@ Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t);
 Pose anim_pose_blend_local(Arena *arena, Pose *dst, Pose *src, float blend_weight, BoneMask *mask);
 float4x4 *anim_pose_local_to_model(Arena *arena, Pose *pose, Skeleton *skeleton);
 float4x4 *anim_pose_skinning_matrices(Arena *arena, float4x4 *model_matrices, Skeleton *skeleton);
+
+void anim_player_update(AnimationPlayer *player, float dt);
 
 typedef struct {
 	float start, target;

@@ -31,7 +31,7 @@ Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t) {
 		float t0 = clip->timings[target_frame - 1] / clip->duration;
 		float t1 = clip->timings[target_frame] / clip->duration;
 
-		result = anim_pose_blend_local(arena, &target, &source, (t / clip->duration - t0) / (t1 - t0), NULL);
+		result = anim_pose_blend_local(arena, &source, &target, (t / clip->duration - t0) / (t1 - t0), NULL);
 	}
 
 	return result;
@@ -45,7 +45,7 @@ static inline float anim__bone_blend_weight(float blend_weight, BoneMask *mask, 
 	}
 }
 
-Pose anim_pose_blend_local(Arena *arena, Pose *target, Pose *source, float blend_weight, BoneMask *mask) {
+Pose anim_pose_blend_local(Arena *arena, Pose *source, Pose *target, float blend_weight, BoneMask *mask) {
 	Pose result = { 0 };
 	ASSERT(arena && target && source);
 	ASSERT(blend_weight >= 0.0f && blend_weight <= 1.0f);

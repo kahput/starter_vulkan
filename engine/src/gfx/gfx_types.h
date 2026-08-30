@@ -525,7 +525,7 @@ typedef struct {
 	Arena transient_arena[1];
 
 	uint32_t frame_index, recording;
-} GFX_Command;
+} GFX_CommandEncoder;
 
 typedef struct {
 	Arena arena[1];
@@ -555,11 +555,11 @@ typedef struct {
 	int32_t transfer_index, compute_index;
 
 	// Transfer
-	GFX_Command transfer_commands[2];
+	GFX_CommandEncoder transfer_commands[2];
 	uint32_t current_transfer_index;
 
 	// Frame
-	GFX_Command frame_commands[MAX_FRAMES_IN_FLIGHT];
+	GFX_CommandEncoder frame_commands[MAX_FRAMES_IN_FLIGHT];
 	uint32_t current_frame_index;
 
 	// Resources
