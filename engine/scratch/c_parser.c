@@ -156,7 +156,7 @@ static const String8 storage_class_to_string[] = {
 	[AST_STORAGE_STATIC] = scomp("static"),
 };
 
-ENSURE_INLINE AST_StorageQualifier
+INLINE AST_StorageQualifier
 keyword_to_storage_class(TokenType type) {
 	AST_StorageQualifier result = AST_STORAGE_NONE;
 

@@ -190,7 +190,7 @@ static inline void imgui_layout(IMGUI_Widget *root) {
 // Common widget helpers
 IMGUI_Widget *imgui_label(uint64_t id, String8 label);
 IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale);
-ENSURE_INLINE IMGUI_Widget *imgui_box(uint64_t id, Rectangle rect) {
+INLINE IMGUI_Widget *imgui_box(uint64_t id, Rectangle rect) {
 	IMGUI_Widget *result = imgui_widget_opt(id,
 		(IMGUI_Style){ .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIXED } });
 	result->offset[0] = rect.x, result->offset[1] = rect.y;

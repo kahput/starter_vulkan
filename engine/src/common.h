@@ -36,11 +36,11 @@
 #endif
 
 #if defined(_MSC_VER)
-	#define ENSURE_INLINE static __forceinline
+	#define INLINE static __forceinline
 	#define PACK_BEGIN(gran) __pragma(pack(push, (gran)))
 	#define PACK_END __pragma(pack(pop))
 #else
-	#define ENSURE_INLINE static inline __attribute((always_inline))
+	#define INLINE static inline __attribute((always_inline))
 	#define PACK_BEGIN(gran) __attribute__((__packed__))
 	#define PACK_END
 #endif
@@ -50,6 +50,12 @@
 #define indexof(array, ptr) (uint32_t)(ptr - array)
 #define container_of(ptr, T, member) ((T *)((uint8_t *)ptr - offsetof(T, member)))
 #define array_arg(T, ...) (T[]){ __VA_ARGS__ }, sizeof(T[]){ __VA_ARGS__ } / sizeof(T)
+#define swap(a, b, T)  \
+	do {               \
+		T _temp = (a); \
+		(a) = (b);     \
+		(b) = _temp;   \
+	} while (0)
 
 #define memory_copy(dst, src, size) memcpy((dst), (src), (size))
 #define memory_set(dst, byte, size) memset((dst), (byte), (size))

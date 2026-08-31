@@ -54,12 +54,12 @@ typedef struct {
 	float elapsed, duration;
 } ANIM_Tween1f;
 
-ENSURE_INLINE float tween1f_eval(ANIM_Tween1f *tw) {
+INLINE float tween1f_eval(ANIM_Tween1f *tw) {
 	float u = tw->duration > 0.0f ? clampf(tw->elapsed / tw->duration, 0.0f, 1.0f) : 1.0f;
 	return lerpf(tw->start, tw->target, u);
 }
 
-ENSURE_INLINE float tween1f_update(ANIM_Tween1f *tw, float target, float duration, float dt) {
+INLINE float tween1f_update(ANIM_Tween1f *tw, float target, float duration, float dt) {
 	if (tw->target != target) {
 		tw->start = tween1f_eval(tw);
 		tw->target = target;

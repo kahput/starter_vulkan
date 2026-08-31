@@ -254,7 +254,8 @@ Image2D load_image(Arena *arena, String8 path);
 Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
 Mesh load_gltf(Arena *arena, String8 path);
 
-Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, uint32_t rings);
+Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segments, uint32_t rings);
+INLINE Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, uint32_t rings) { return mesh_ellipsoid(arena, origin, splat3(radius), segments, rings); }
 Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_radius, float top_radius, uint32_t segments, uint32_t rings, bool top_cap, bool bottom_cap);
 Mesh mesh_cone(Arena *arena, float3 origin, float height, float radius, uint32_t segments);
 
@@ -1758,38 +1759,41 @@ int main(void) {
 					}
 
 					// :collision
-					if (entity_has(entity, ENTITY_FEATURE_COLLIDABLE) && entity->shape.kind == SHAPE_KIND_AABB3) {
+					if (entity_has(entity, ENTITY_FEATURE_PLAYER_CONTROLLED)) {
 						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
 							if (len3_sq(velocity) <= EPSILON) break;
 							CastResult3 nearest = CAST3_NO_HIT;
-							Entity *nearest_entity = 0;
 
-							Ray3 r = { add3(aabb3_center(entity->shape.as.aabb3), entity->transform.translation), velocity };
-							for (uint32_t entity_index = 0; entity_index < scene->entity_count; ++entity_index) {
-								Entity *other = &scene->entities[entity_index];
-								if (other == entity || entity_has(other, ENTITY_FEATURE_COLLIDABLE) == false || other->shape.kind != SHAPE_KIND_AABB3)
-									continue;
+							float3 offset = { 0 };
+							// clang-format off
+                            switch(entity->shape.kind) {
+								case SHAPE_KIND_AABB3: offset = aabb3_center(entity->shape.as.aabb3); break;
+								case SHAPE_KIND_SPHERE: offset = entity->shape.as.sphere.center; break;
+								case SHAPE_KIND_CAPSULE3: offset = capsule3_center(entity->shape.as.capsule); break;
+								case SHAPE_KIND_PLANE: offset = plane_center(entity->shape.as.plane); break;
+                                default: break;
+							}
+							// clang-format on
+							float3 pos = add3(entity->transform.translation, offset);
 
-								float3 center = add3(aabb3_center(other->shape.as.aabb3), other->transform.translation);
-								// NOTE: Minkowski sum
-								float3 half_extent = mul3(other->transform.scale, aabb3_half_extent(other->shape.as.aabb3));
-								float3 swept_extent = add3(
-									mul3(other->transform.scale, aabb3_half_extent(other->shape.as.aabb3)),
-									mul3(entity->transform.scale, aabb3_half_extent(entity->shape.as.aabb3)));
+							Mesh *collision_mesh = &meshes[MESH_TEST_LEVEL];
+							for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
+								MeshPart *part = &collision_mesh->parts[part_index];
 
-								CastResult3 result = raycast_aabb3(r, aabb3_from_center(center, swept_extent));
-								if (result.t < nearest.t) {
-									nearest = result;
-									nearest_entity = other;
+								for (uint32_t index = 0; index < part->index_count / 3; ++index) {
+									Triangle3 triangle = {
+										collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 0]].position,
+										collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 1]].position,
+										collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 2]].position,
+									};
+
+									CastResult3 result = spherecast_triangle(pos, velocity, triangle);
+									if (result.hit && result.t < nearest.t)
+										nearest = result;
 								}
 							}
 
-							bool overlap_before_move = check_for_overlap(entity, scene->entities, scene->entity_count);
 							if (nearest.hit == false) {
-								if (overlap_before_move == false)
-									if (check_for_overlap(entity, scene->entities, scene->entity_count))
-										LOG_ERROR("error in hit detection.");
-
 								entity->transform.translation = add3(entity->transform.translation, velocity);
 								break;
 							}
@@ -1803,40 +1807,6 @@ int main(void) {
 
 							entity->transform.translation = add3(entity->transform.translation, scale3(velocity, t_min));
 							entity->transform.translation = add3(entity->transform.translation, scale3(nearest.normal, 0.001f));
-
-							if (overlap_before_move == false)
-								if (check_for_overlap(entity, scene->entities, scene->entity_count)) {
-									LOG_ERROR("error in t. from { %.2f, %.2f, %2f } to { %.2f, %.2f, %.2f }", spread3(position_before_move), spread3(entity->transform.translation));
-									if (nearest_entity) {
-										LOG_DEBUG(
-											"\nsafe_margin = %.2f\n"
-											"final_t = %.2f\n"
-											"contact_point= { %.2f, %.2f, %2f }\n"
-											"contact_normal = { %.2f, %.2f, %.2f }\n"
-											"entity[%d] = {\n"
-											"  velocity = { %.2f, %.2f, %.2f }\n"
-											"  translation = { %.2f, %.2f, %.2f }\n"
-											"  aabb = {\n    center = { %.2f, %.2f, %.2f },\n    half_extent = { %.2f, %.2f, %.2f }\n  }\n"
-											"}\n"
-											"other[%d] = {\n"
-											"  translation = { %.2f, %.2f, %.2f }\n"
-											"  aabb = {\n    center = { %.2f, %.2f, %.2f },\n    half_extent = { %.2f, %.2f, %.2f }\n  }\n"
-											"}\n",
-											nearest.t,
-											t_min,
-											spread3(nearest.point),
-											spread3(nearest.normal),
-											indexof(scene->entities, entity),
-											spread3(velocity),
-											spread3(entity->transform.translation),
-											spread3(aabb3_center(entity->shape.as.aabb3)),
-											spread3(aabb3_half_extent(entity->shape.as.aabb3)),
-											indexof(scene->entities, nearest_entity),
-											spread3(nearest_entity->transform.translation),
-											spread3(aabb3_center(nearest_entity->shape.as.aabb3)),
-											spread3(aabb3_half_extent(nearest_entity->shape.as.aabb3)));
-									}
-								}
 
 							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
 							velocity = scale3(velocity, 1.0f - t_min);
@@ -2000,7 +1970,6 @@ int main(void) {
 					if (target && input_key_pressed(KEY_CODE_F))
 						LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), str8_filename(meshid_to_metadata[target->meshid]).text);
 				}
-
 			} break;
 			default:
 				break;
@@ -3056,7 +3025,7 @@ static inline float3 face_orient(float3 v, Side face) {
 	return result;
 }
 
-Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, uint32_t rings) {
+Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segments, uint32_t rings) {
 	Mesh result = { 0 };
 	bool ok = arena;
 	if (ok) {
@@ -3078,7 +3047,7 @@ Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, u
 				float ca = cosf(azimuth), sa = -sinf(azimuth);
 
 				result.vertices[vertex_cursor++] = (Vertex3D){
-					.position = add3(origin, make3(st * ca * radius, ct * radius, st * sa * radius)),
+					.position = add3(origin, make3(st * ca * radius.x, ct * radius.y, st * sa * radius.z)),
 					.normal = { st * ca, ct, st * sa },
 					.uv = { (float)segment / (segments - 1), (float)ring / (rings - 1) },
 				};

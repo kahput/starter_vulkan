@@ -17,7 +17,7 @@ typedef struct {
 
 
 String8 str8_wrap(const char *cstring);
-ENSURE_INLINE String8 str8_from_ends(const char *start, const char *end) {
+INLINE String8 str8_from_ends(const char *start, const char *end) {
 	if (end <= start) return (String8){ 0 };
 	return (String8){ .text = (uint8_t *)start, .length = end - start };
 }
