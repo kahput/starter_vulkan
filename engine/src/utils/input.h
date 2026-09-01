@@ -7,11 +7,11 @@
 typedef struct {
 	struct Key {
 		bool state, last;
-	} keys[KEY_CODE_COUNT];
+	} keys[KEY_CODE_MAX];
 
 	struct Button {
 		bool state, last;
-	} buttons[MOUSE_BUTTON_COUNT];
+	} buttons[MOUSE_BUTTON_MAX];
 
 	struct {
 		double x, y;

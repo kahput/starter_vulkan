@@ -97,7 +97,7 @@ INLINE void simplex_pushfront(Simplex *s, SimplexPoint point) {
 
 SimplexPoint simplex_support(const Shape3 *a, const Shape3 *b, float3 d) {
 	float3 p = shape3_furthest_point(a, d);
-	float3 q = shape3_furthest_point(b, negate3(d));
+	float3 q = shape3_furthest_point(b, neg3(d));
 	float3 w = sub3(p, q);
 
 	return (SimplexPoint){ p, q, w };
@@ -122,7 +122,7 @@ bool simplex_line(Simplex *s, float3 *direction) {
 	SimplexPoint b = s->points[1];
 
 	float3 ab = sub3(b.w, a.w);
-	float3 ao = negate3(a.w);
+	float3 ao = neg3(a.w);
 
 	if (same_direction(ab, ao))
 		*direction = cross3(cross3(ab, ao), ab);
@@ -143,7 +143,7 @@ bool simplex_triangle(Simplex *s, float3 *direction) {
 
 	float3 ab = sub3(b.w, a.w);
 	float3 ac = sub3(c.w, a.w);
-	float3 ao = negate3(a.w);
+	float3 ao = neg3(a.w);
 
 	float3 abc = cross3(ab, ac);
 
@@ -164,7 +164,7 @@ bool simplex_triangle(Simplex *s, float3 *direction) {
 				*direction = abc;
 			else {
 				*s = simplex_make(a, c, b);
-				*direction = negate3(abc);
+				*direction = neg3(abc);
 			}
 		}
 	}
@@ -183,7 +183,7 @@ bool simplex_tetrahedron(Simplex *s, float3 *direction) {
 	float3 ab = sub3(b.w, a.w);
 	float3 ac = sub3(c.w, a.w);
 	float3 ad = sub3(d.w, a.w);
-	float3 ao = negate3(a.w);
+	float3 ao = neg3(a.w);
 
 	float3 abc = cross3(ab, ac);
 	float3 acd = cross3(ac, ad);
@@ -236,7 +236,7 @@ bool gjk_overlap(const Shape3 *shape_a, const Shape3 *shape_b) {
 
 		SimplexPoint a = simplex_support(shape_a, shape_b, d);
 		Simplex s = simplex_make(a);
-		d = negate3(a.w);
+		d = neg3(a.w);
 
 		while (true) {
 			a = simplex_support(shape_a, shape_b, d);
@@ -293,7 +293,7 @@ CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
 
 	CastResult3 result = CAST3_NO_HIT, temp = CAST3_NO_HIT;
 	if (len3_sq(r.direction)) {
-		for (uint32_t side = 0; side < SIDE_COUNT3; ++side) {
+		for (uint32_t side = 0; side < SIDE_MAX3; ++side) {
 			float3 pn = side_to_float3[side];
 			float3 po = add3(aabb3_center(a), mul3(pn, aabb3_half_extent(a)));
 
@@ -342,7 +342,7 @@ bool lowest_root(float a, float b, float c, float maxR, float *root) {
 	return false;
 }
 
-CastResult3 spherecast_triangle(float3 position, float3 velocity, Triangle3 triangle) {
+CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triangle) {
 	CastResult3 result = CAST3_NO_HIT;
 
 	bool embedded = false;
@@ -354,32 +354,32 @@ CastResult3 spherecast_triangle(float3 position, float3 velocity, Triangle3 tria
 
 	bool ok = dot3(velocity, velocity) > EPSILON && ndotv <= 0.0f;
 	if (ok) {
-		signed_dist = plane_signed_distance(tp, position);
+		signed_dist = plane_signed_distance(tp, center);
 
-		if (equalf(ndotv, 0.0f)) {
-			ok = fabsf(signed_dist) < 1.0f;
+		embedded = fabsf(signed_dist) < 1.0f;
+		if (embedded) {
+			t0 = 0.0f;
+			t1 = 1.0f;
+		}
 
-			if (ok) {
-				embedded = true;
-				t0 = 0.0f;
-				t1 = 1.0f;
-			}
-		} else {
+		if (equalf(ndotv, 0.0f))
+			ok = embedded;
+		else {
 			t0 = (-1.0f - signed_dist) / ndotv;
 			t1 = (1.0f - signed_dist) / ndotv;
 			if (t0 > t1)
 				swap(t0, t1, float);
 
-			ok = t0 <= 1.0f && t1 >= 0.0f;
-
-			t0 = clampf(t0, 0.0f, 1.0f);
-			t1 = clampf(t1, 0.0f, 1.0f);
+			ok = (t0 > 1.0f || t1 < 0.0f) == false;
 		}
 	}
 
 	if (ok) { // collision between t0 - t1
+		t0 = clampf(t0, 0.0f, 1.0f);
+		t1 = clampf(t1, 0.0f, 1.0f);
+
 		if (embedded == false) {
-			float3 plane_intersect_point = add3(sub3(position, tp.normal), scale3(velocity, t0));
+			float3 plane_intersect_point = add3(sub3(center, tp.normal), scale3(velocity, t0));
 			if (triangle3_contains_point(triangle, plane_intersect_point)) {
 				result.hit = true;
 				result.t = t0;
@@ -400,15 +400,15 @@ CastResult3 spherecast_triangle(float3 position, float3 velocity, Triangle3 tria
 				float3 vertex = vertices[vertex_index];
 				float a = velocity_length_sq;
 
-				float b = 2.0 * dot3(velocity, sub3(position, vertex));
-				float c = len3_sq(sub3(vertex, position)) - radius_sq;
+				float b = 2.0 * dot3(velocity, sub3(center, vertex));
+				float c = len3_sq(sub3(vertex, center)) - radius_sq;
 
 				float temp_t;
 				if (lowest_root(a, b, c, result.t, &temp_t)) {
 					result.hit = true;
 					result.t = temp_t;
 					result.point = vertex;
-					float3 sphere_center_at_t = add3(position, scale3(velocity, result.t));
+					float3 sphere_center_at_t = add3(center, scale3(velocity, result.t));
 					result.normal = norm3(sub3(sphere_center_at_t, result.point));
 				}
 			}
@@ -417,7 +417,7 @@ CastResult3 spherecast_triangle(float3 position, float3 velocity, Triangle3 tria
 			for (uint32_t edge_index = 0; edge_index < countof(vertices); ++edge_index) {
 				float3 edge = sub3(vertices[(edge_index + 1) % 3], vertices[edge_index]);
 				float3 vertex = vertices[edge_index];
-				float3 origin_to_vertex = sub3(vertex, position);
+				float3 origin_to_vertex = sub3(vertex, center);
 
 				float edge_length_sq = len3_sq(edge);
 				float edge_dot_velocity = dot3(edge, velocity);
@@ -434,12 +434,14 @@ CastResult3 spherecast_triangle(float3 position, float3 velocity, Triangle3 tria
 						result.hit = true;
 						result.t = temp_t;
 						result.point = add3(vertex, scale3(edge, f));
-						float3 sphere_center_at_t = add3(position, scale3(velocity, result.t));
+						float3 sphere_center_at_t = add3(center, scale3(velocity, result.t));
 						result.normal = norm3(sub3(sphere_center_at_t, result.point));
 					}
 				}
 			}
 		}
+
+		if (result.t >= 1.0f) result = CAST3_NO_HIT;
 	}
 
 	return result;
@@ -459,3 +461,4 @@ bool project_to_viewport(float4x4 view_proj, Rectangle viewport, float3 point, f
 
 	return ok;
 }
+

@@ -1,5 +1,6 @@
 #include "app/scene.h"
 
+#include "core/geom_types.h"
 #include "meta.h"
 #include "res/tables.h"
 #include "draw.h"
@@ -238,7 +239,7 @@ typedef struct Entity {
 	float interact_radius;
 	Shape3 shape;
 
-	float move_speed;
+	float3 velocity;
 
 	struct Entity *target;
 } Entity;
@@ -586,6 +587,55 @@ bool check_for_overlap(Entity *entity, Entity *entities, uint32_t entity_count) 
 	return result;
 }
 
+#define SKIN_WIDTH 0.0015f
+#define SLOPE_ANGLE 30.0f
+
+CastResult3 spherecast(float3 position, float3 velocity, uint32_t triangle_count, Triangle3 *triangles) {
+	CastResult3 result = CAST3_NO_HIT;
+
+	for (uint32_t tri_index = 0; tri_index < triangle_count; ++tri_index) {
+		Triangle3 triangle = triangles[tri_index];
+
+		CastResult3 cast_result = spherecast_triangle(position, velocity, triangle);
+		if (cast_result.hit && cast_result.t < result.t)
+			result = cast_result;
+	}
+
+	return result;
+}
+
+// TODO: Remove triangles from the signature, pass 'physics world' instead. shape/sphere cast against physics world.
+// Internally in physics world implement known collision.
+float3 move_and_slide(float3 position, float3 direction, float max_dist, uint32_t triangle_count, Triangle3 *triangles) {
+	float3 result = { 0 };
+	bool gravity_pass = direction.x == 0.0f && direction.y != 0.0f && direction.z == 0.0f;
+
+	float3 velocity = scale3(direction, max_dist);
+	for (uint32_t iteration = 0; iteration < 6; ++iteration) {
+		if (len3_sq(velocity) <= EPSILON) break;
+
+		CastResult3 hit = spherecast(add3(position, result), velocity, triangle_count, triangles);
+		if (hit.hit == false) {
+			result = add3(result, velocity);
+			break;
+		}
+
+		float angle = acos(dot3(unit3(UP), hit.normal));
+
+		// Collision resolution
+		float t_skin = max_dist > 0.0f ? SKIN_WIDTH / max_dist : 0.0f;
+		float t_min = clampf(hit.t - t_skin, 0.0f, 1.0f);
+
+		result = add3(result, scale3(velocity, t_min));
+		if (gravity_pass && angle <= SLOPE_ANGLE * DEG2RAD) break;
+
+		velocity = sub3(velocity, scale3(hit.normal, dot3(velocity, hit.normal)));
+		velocity = scale3(velocity, 1.0f - t_min);
+	}
+
+	return result;
+}
+
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
 
@@ -927,7 +977,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(make4x4_rotation(unit3(UP), randf_range(0, TAU)), make4x4_translation(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(axis_angle4x4(unit3(UP), randf_range(0, TAU)), translation4x4(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -984,7 +1034,6 @@ int main(void) {
 	} ViewportState;
 
 	ViewportState state = VIEWPORT_STATE_EDITOR;
-
 	Camera cameras[VIEWPORT_STATE_COUNT] = {
 		[VIEWPORT_STATE_EDITOR] = {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
@@ -1037,6 +1086,28 @@ int main(void) {
 		json_to_world(root, scene);
 		json_to_world(root, scenes + 1);
 		arena_scratch_end(scratch);
+	}
+
+	Triangle3 *world_collider = 0;
+	uint32_t world_collider_tri_count = 0;
+	{
+		Mesh *collision_mesh = &meshes[MESH_TEST_LEVEL];
+
+		world_collider = arena_push_count(permanent, Triangle3, collision_mesh->total_index_count / 3);
+
+		for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
+			MeshPart *part = &collision_mesh->parts[part_index];
+
+			for (uint32_t index = 0; index < part->index_count / 3; ++index) {
+				world_collider[world_collider_tri_count++] = (Triangle3){
+					collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 0]].position,
+					collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 1]].position,
+					collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 2]].position,
+				};
+			}
+		}
+
+		ASSERT(world_collider_tri_count == collision_mesh->total_index_count / 3);
 	}
 
 	for (bool is_open = true; is_open;) {
@@ -1095,11 +1166,11 @@ int main(void) {
 		}
 
 		// :update
-		Arena batch_quad2d[] = { {
+		Arena quad2d[] = { {
 		  .base = arena_push_count(frame_arena, DRAW_Quad2D, 6 * 1024),
 		  .capacity = sizeof(DRAW_Quad2D) * 6 * 1024,
 		} };
-		Arena batch_line3d[] = { {
+		Arena line3d[] = { {
 		  .base = arena_push_count(frame_arena, DRAW_Line3D, 6 * 2048),
 		  .capacity = sizeof(DRAW_Line3D) * 6 * 2048,
 		} };
@@ -1691,8 +1762,8 @@ int main(void) {
 					Entity *entity = &scene->entities[index];
 
 					float2 input_vector = { 0 };
-					float3 velocity = { 0 };
-					float3 direction = { 0 };
+					float3 displacement = { 0 };
+					float3 gravity = { 0.0f, -9.80f, 0.0f };
 
 					// :player
 					if (entity_has(entity, ENTITY_FEATURE_PLAYER_CONTROLLED)) {
@@ -1704,8 +1775,7 @@ int main(void) {
 						if (dot2(input_vector, input_vector) > 0) {
 							float3 camera_offset = sub3(camera->position, entity->transform.translation);
 							float r = len3(camera_offset);
-							if (r < EPSILON)
-								r = EPSILON;
+							if (r < EPSILON) r = EPSILON;
 
 							float current_theta = acosf(camera_offset.y / r);
 							float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
@@ -1732,16 +1802,27 @@ int main(void) {
 						right = cross3(forward, camera->up);
 						right = norm3(right);
 
-						direction = add3(direction, scale3(forward, input_vector.x));
-						direction = add3(direction, scale3(right, input_vector.y));
+						float3 direction = add3(
+							scale3(forward, input_vector.x),
+							scale3(right, input_vector.y) //
+						); //
+						direction = norm3(direction);
 
-						float length = len3(direction);
-						if (length > EPSILON)
-							direction = scale3(direction, 1 / length);
-						entity->move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
+						float accel_speed = 15.0f;
+						float move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
+						float3 target_velocity = scale3(direction, move_speed);
 
-						velocity = scale3(direction, entity->move_speed * dt);
-						/* velocity = add3(velocity, (float3){ 0.0f, -0.1f, 0.0f }); */
+						float3 old_velocity = entity->velocity;
+						entity->velocity = move_toward3(
+							old_velocity,
+							target_velocity,
+							accel_speed * dt //
+						);
+
+						displacement = scale3(
+							add3(old_velocity, entity->velocity),
+							0.5f * dt //
+						);
 					}
 
 					// :ai
@@ -1752,67 +1833,20 @@ int main(void) {
 
 						entity->transform.rotation = quat4_from_axis_angle(unit3(UP), atan2f(direction.x, direction.z));
 
-						entity->move_speed = 3.0f;
-
 						input_vector = (float2){ direction.x, direction.z };
-						velocity = scale3(direction, entity->move_speed * dt);
+						/* velocity = scale3(direction, entity->move_speed * dt); */
 					}
 
 					// :collision
-					if (entity_has(entity, ENTITY_FEATURE_PLAYER_CONTROLLED)) {
-						for (uint32_t iteration = 0; iteration < 6; ++iteration) {
-							if (len3_sq(velocity) <= EPSILON) break;
-							CastResult3 nearest = CAST3_NO_HIT;
+					if (entity->shape.kind == SHAPE_KIND_SPHERE && len3_sq(displacement) > EPSILON) {
+						float max_dist = len3(displacement);
+						float3 direction = scale3(displacement, 1.0f / max_dist);
 
-							float3 offset = { 0 };
-							// clang-format off
-                            switch(entity->shape.kind) {
-								case SHAPE_KIND_AABB3: offset = aabb3_center(entity->shape.as.aabb3); break;
-								case SHAPE_KIND_SPHERE: offset = entity->shape.as.sphere.center; break;
-								case SHAPE_KIND_CAPSULE3: offset = capsule3_center(entity->shape.as.capsule); break;
-								case SHAPE_KIND_PLANE: offset = plane_center(entity->shape.as.plane); break;
-                                default: break;
-							}
-							// clang-format on
-							float3 pos = add3(entity->transform.translation, offset);
-
-							Mesh *collision_mesh = &meshes[MESH_TEST_LEVEL];
-							for (uint32_t part_index = 0; part_index < collision_mesh->part_count; ++part_index) {
-								MeshPart *part = &collision_mesh->parts[part_index];
-
-								for (uint32_t index = 0; index < part->index_count / 3; ++index) {
-									Triangle3 triangle = {
-										collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 0]].position,
-										collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 1]].position,
-										collision_mesh->vertices[part->vertex_offset + collision_mesh->indices[part->index_offset + index * 3 + 2]].position,
-									};
-
-									CastResult3 result = spherecast_triangle(pos, velocity, triangle);
-									if (result.hit && result.t < nearest.t)
-										nearest = result;
-								}
-							}
-
-							if (nearest.hit == false) {
-								entity->transform.translation = add3(entity->transform.translation, velocity);
-								break;
-							}
-
-							// Collision resolution
-							float t_min = maxf(minf(nearest.t, 1.0f), 0.0f);
-							if (t_min <= EPSILON)
-								break;
-
-							float3 position_before_move = entity->transform.translation;
-
-							entity->transform.translation = add3(entity->transform.translation, scale3(velocity, t_min));
-							entity->transform.translation = add3(entity->transform.translation, scale3(nearest.normal, 0.001f));
-
-							velocity = sub3(velocity, scale3(nearest.normal, dot3(velocity, nearest.normal)));
-							velocity = scale3(velocity, 1.0f - t_min);
-
-							draw3d_arrow(batch_line3d, nearest.point, add3(nearest.point, scale3(nearest.normal, 0.8f)), 3.0f, RED, view, proj, dims.x);
-						}
+						float3 pos = add3(entity->transform.translation, entity->shape.as.sphere.center);
+						float3 accum = move_and_slide(pos, direction, max_dist, world_collider_tri_count, world_collider);
+						if (direction.y)
+							accum = add3(accum, move_and_slide(add3(pos, accum), unit3(DOWN), 9.8 * dt, world_collider_tri_count, world_collider));
+						entity->transform.translation = add3(entity->transform.translation, accum);
 					}
 
 					if (
@@ -1944,7 +1978,7 @@ int main(void) {
 								screen.y -= 30;
 
 								Rectangle textbox = rect_from_center(screen, make2(60.0f, 10.0f));
-								draw2d_quad(batch_quad2d, textbox,
+								draw2d_quad(quad2d, textbox,
 									(DRAW_QuadStyle){
 									  .corner_radii = splat4(8.0f),
 									  .border_width = 1.0f,
@@ -1957,7 +1991,7 @@ int main(void) {
 
 								float2 text_half_size = scale2(measure_text(font, text), 0.5f);
 								float2 center = sub2(screen, text_half_size);
-								draw2d_textf(batch_quad2d, font, center, BLACK, text);
+								draw2d_textf(quad2d, font, center, BLACK, text);
 							}
 
 							if (dist_sq < closest) {
@@ -1985,9 +2019,9 @@ int main(void) {
 
 				if (widget->settings.text.length) {
 					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
-					draw2d_textf(batch_quad2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
+					draw2d_textf(quad2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
 				} else {
-					draw2d_quad(batch_quad2d, imgui_rect_live(widget),
+					draw2d_quad(quad2d, imgui_rect_live(widget),
 						(DRAW_QuadStyle){
 						  .image = widget->settings.image,
 						  .border_width = widget->settings.border_width,
@@ -2016,7 +2050,7 @@ int main(void) {
 				} else
 					shape = entity->shape;
 
-				draw3d_shape_outline(batch_line3d, &shape, entity->transform.translation, 3.0f);
+				draw3d_shape_outline(line3d, &shape, entity->transform.translation, 3.0f);
 			}
 		}
 
@@ -2410,20 +2444,20 @@ int main(void) {
 				}
 
 				{ // :overlay
-					if (batch_line3d->offset) {
+					if (line3d->offset) {
 						gfx_cmd_shader_bind(cmd, shaders[SHADER_LINE3D]);
 						Uniform uniforms[] = {
-							storage_data(0, batch_line3d->base, batch_line3d->offset),
+							storage_data(0, line3d->base, line3d->offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw_instanced(cmd, 0, 6, 0, batch_line3d->offset / sizeof(DRAW_Line3D));
+						gfx_cmd_draw_instanced(cmd, 0, 6, 0, line3d->offset / sizeof(DRAW_Line3D));
 					}
 				}
 
 				gfx_cmd_draw_end(cmd);
 			}
 
-			if (batch_quad2d->offset) { // :canvas
+			if (quad2d->offset) { // :canvas
 
 				Frame3D frame_2d = {
 					.view = identity4x4(),
@@ -2431,7 +2465,7 @@ int main(void) {
 					.viewport = cast2(dims, float2),
 					.time = time,
 				};
-				uint32_t quad_count = batch_quad2d->offset / sizeof(DRAW_Quad2D);
+				uint32_t quad_count = quad2d->offset / sizeof(DRAW_Quad2D);
 
 				GFX_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
@@ -2439,7 +2473,7 @@ int main(void) {
 					images[texture_id] = white_texture;
 
 				for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-					DRAW_Quad2D *quad = (DRAW_Quad2D *)batch_quad2d->base + quad_instance;
+					DRAW_Quad2D *quad = (DRAW_Quad2D *)quad2d->base + quad_instance;
 
 					if (quad->imageid && quad->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;
@@ -2476,7 +2510,7 @@ int main(void) {
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &frame_2d, sizeof(frame_2d)),
-					storage_data(1, batch_quad2d->base, batch_quad2d->offset),
+					storage_data(1, quad2d->base, quad2d->offset),
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 
@@ -2531,7 +2565,7 @@ int main(void) {
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
 					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
-					vkDeviceWaitIdle(device->handle);
+					gfx_device_wait_idle(device);
 
 					gfx_shader_destroy(device, shaders[ID]);
 					String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
@@ -2547,7 +2581,8 @@ int main(void) {
 				OS_Timestamp now = MAX(fs_ts, vs_ts);
 				if (now != shader_ts[ID]) {
 					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
-					vkDeviceWaitIdle(device->handle);
+					gfx_device_wait_idle(device);
+
 					ShaderMetadata *metadata = &shaderid_to_metadata[ID];
 
 					gfx_shader_destroy(device, shaders[ID]);
@@ -2617,9 +2652,9 @@ Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count) {
 
 	bool ok = arena && paths;
 
-	Image2D images[SIDE_COUNT3];
+	Image2D images[SIDE_MAX3];
 	if (ok) {
-		for (uint32_t face_index = 0; face_index < SIDE_COUNT3; ++face_index) {
+		for (uint32_t face_index = 0; face_index < SIDE_MAX3; ++face_index) {
 			images[face_index] = load_image(arena, paths[face_index]);
 
 			if (face_index > 0)
@@ -3245,8 +3280,8 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 
 		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
 
-		float3 right = norm3(cross3(p.normal, fabsf(dot3(unit3(UP), p.normal)) >= 0.99f ? unit3(BACKWARD) : unit3(UP)));
-		float3 up = cross3(p.normal, right);
+		float3 right, up;
+		p.normal = basis3(p.normal, &right, &up);
 
 		Vertex3D *vertex_cursor = result.vertices;
 		for (uint32_t z = 0; z < subdivision_z; ++z) {

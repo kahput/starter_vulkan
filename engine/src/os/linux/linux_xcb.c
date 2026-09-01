@@ -33,7 +33,7 @@ typedef struct {
 	xcb_atom_t wm_window_type_atom;
 	xcb_atom_t wm_state_atom;
 
-	uint8_t keycodes[KEY_CODE_COUNT];
+	uint8_t keycodes[KEY_CODE_MAX];
 	uint64_t start_time;
 
 	OS_Surface surfaces[32];

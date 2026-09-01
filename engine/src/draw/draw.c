@@ -128,69 +128,66 @@ void draw2d_arrow(Arena *arena, float2 start, float2 end, float thickness, Color
 	};
 }
 
-void draw3d_arc(Arena *arena, float3 center, float3 radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color) {
-	for (uint32_t i = 0; i < segments; ++i) {
-		float a = ((float)i / segments) * angle_span;
-		float an = ((float)(i + 1) / segments) * angle_span;
-		float ca = cosf(a), sa = sinf(a);
-		float can = cosf(an), san = sinf(an);
+void draw3d_arc_basis(Arena *arena, float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, Color color) {
+	bool ok = arena && segments;
 
-		float3 p0, p1;
-		switch (plane) {
-			case SIDE_BOTTOM:
-			case SIDE_TOP:
-				p0 = (float3){ center.x + ca * radius.x, center.y, center.z + sa * radius.z };
-				p1 = (float3){ center.x + can * radius.x, center.y, center.z + san * radius.z };
-				break;
-			case SIDE_LEFT:
-			case SIDE_RIGHT:
-				p0 = (float3){ center.x, center.y + sa * radius.y, center.z + ca * radius.z };
-				p1 = (float3){ center.x, center.y + san * radius.y, center.z + can * radius.z };
-				break;
-			case SIDE_BACK:
-			case SIDE_FRONT:
-				p0 = (float3){ center.x + ca * radius.x, center.y + sa * radius.y, center.z };
-				p1 = (float3){ center.x + can * radius.x, center.y + san * radius.y, center.z };
-				break;
+	if (ok) {
+		for (uint32_t i = 0; i < segments; ++i) {
+			float a = angle_start + (((float)i / segments) * angle_span);
+			float an = angle_start + (((float)(i + 1) / segments) * angle_span);
+			float ca = cosf(a), sa = sinf(a);
+			float can = cosf(an), san = sinf(an);
 
-			default:
-				ASSERT(false);
-				break;
+			float3 start = add3(center, add3(scale3(axis_x, ca * radius.x), scale3(axis_y, sa * radius.y)));
+			float3 end = add3(center, add3(scale3(axis_x, can * radius.x), scale3(axis_y, san * radius.y)));
+
+			draw3d_line(arena, start, end, thickness, color);
 		}
-
-		draw3d_line(arena, p0, p1, thickness, color);
 	}
 }
 
-void draw3d_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
-	draw3d_arc(arena, center, splat3(radius), segments, SIDE_TOP, TAU, thickness, color);
-	draw3d_arc(arena, center, splat3(radius), segments, SIDE_RIGHT, TAU, thickness, color);
-	draw3d_arc(arena, center, splat3(radius), segments, SIDE_FRONT, TAU, thickness, color);
+void draw3d_arc(Arena *arena, float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, Color color) {
+	float3 right, up;
+	normal = basis3(normal, &right, &up);
+	draw3d_arc_basis(arena, center, radius, segments, right, up, angle_start, angle_span, thickness, color);
 }
 
-void draw3d_ellipsoid_outline(Arena *arena, float3 center, float3 radius, uint8_t segments, float thickness, Color color) {
-	draw3d_arc(arena, center, radius, segments, SIDE_TOP, TAU, thickness, color);
-	draw3d_arc(arena, center, radius, segments, SIDE_RIGHT, TAU, thickness, color);
-	draw3d_arc(arena, center, radius, segments, SIDE_FRONT, TAU, thickness, color);
+void draw3d_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
+	draw3d_arc(arena, center, splat2(radius), segments, unit3(UP), 0, TAU, thickness, color);
+	draw3d_arc(arena, center, splat2(radius), segments, unit3(RIGHT), 0, TAU, thickness, color);
+	draw3d_arc(arena, center, splat2(radius), segments, unit3(FORWARD), 0, TAU, thickness, color);
+}
+
+void draw3d_ellipsoid_outline(Arena *arena, float3 center, float3 r, uint8_t segments, float thickness, Color color) {
+	draw3d_arc(arena, center, make2(r.x, r.z), segments, unit3(UP), 0, TAU, thickness, color);
+	draw3d_arc(arena, center, make2(r.z, r.y), segments, unit3(RIGHT), 0, TAU, thickness, color);
+	draw3d_arc(arena, center, make2(r.x, r.y), segments, unit3(FORWARD), 0, TAU, thickness, color);
 }
 
 void draw3d_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
-	DRAW_Line3D *spine_points = arena_push_count(arena, DRAW_Line3D, 8);
+	float3 direction = sub3(b, a);
+	if (len3_sq(direction) < EPSILON) return;
+
+	float3 right, up;
+	direction = basis3(direction, &right, &up);
+
+	uint32_t packed_color = color_pack_uint32(color);
 	DRAW_Line3D spine[] = {
-		{ { a.x - radius, a.y, a.z, thickness }, { a.x - radius, b.y, a.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { a.x + radius, a.y, a.z, thickness }, { a.x + radius, b.y, a.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { a.x, a.y, a.z - radius, thickness }, { a.x, b.y, a.z - radius, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { a.x, a.y, a.z + radius, thickness }, { a.x, b.y, a.z + radius, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ make4_from3(add3(a, scale3(right, -radius)), thickness), make4_from3(add3(b, scale3(right, -radius)), thickness), packed_color, splat3(0.0f) },
+		{ make4_from3(add3(a, scale3(right, radius)), thickness), make4_from3(add3(b, scale3(right, radius)), thickness), packed_color, splat3(0.0f) },
+
+		{ make4_from3(add3(a, scale3(up, -radius)), thickness), make4_from3(add3(b, scale3(up, -radius)), thickness), packed_color, splat3(0.0f) },
+		{ make4_from3(add3(a, scale3(up, radius)), thickness), make4_from3(add3(b, scale3(up, radius)), thickness), packed_color, splat3(0.0f) },
 	};
-	memory_copy_array(spine_points, spine);
+	memory_copy_array(arena_push_count(arena, DRAW_Line3D, countof(spine)), spine);
 
 	for (uint32_t end = 0; end < 2; ++end) {
 		float3 c = end == 0 ? a : b;
 		float signed_r = (end == 0) ? -radius : radius;
 
-		draw3d_arc(arena, c, splat3(radius), segments, SIDE_TOP, TAU, thickness, color);
-		draw3d_arc(arena, c, splat3(signed_r), segments, SIDE_RIGHT, PIf, thickness, color);
-		draw3d_arc(arena, c, splat3(signed_r), segments, SIDE_FRONT, PIf, thickness, color);
+		draw3d_arc_basis(arena, c, splat2(radius), segments, right, up, 0, TAU, thickness, color);
+		draw3d_arc_basis(arena, c, splat2(signed_r), segments, direction, up, -PIf * 0.5f, PIf, thickness, color);
+		draw3d_arc_basis(arena, c, splat2(signed_r), segments, right, direction, 0, PIf, thickness, color);
 	}
 }
 

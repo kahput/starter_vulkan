@@ -35,6 +35,7 @@ static inline bool gfx_swapchain_valid(GFX_Device *device, GFX_Swapchain *swapch
 
 bool gfx_device_make(GFX_Device *device);
 void gfx_device_destroy(GFX_Device *device);
+void gfx_device_wait_idle(GFX_Device *device);
 
 GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device);
 bool gfx_frame_end(GFX_Device *device, GFX_CommandEncoder *cmd);

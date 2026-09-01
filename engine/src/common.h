@@ -241,18 +241,18 @@ typedef enum {
 	SIDE_BOTTOM,
 	SIDE_DOWN = SIDE_BOTTOM,
 
-	SIDE_COUNT2,
+	SIDE_MAX2,
 
-	SIDE_FRONT = SIDE_COUNT2,
+	SIDE_FRONT = SIDE_MAX2,
 	SIDE_FORWARD = SIDE_FRONT,
 
 	SIDE_BACK,
 	SIDE_BACKWARD = SIDE_BACK,
 
-	SIDE_COUNT3,
+	SIDE_MAX3,
 } Side;
 
-static const float2 side_to_float2[SIDE_COUNT2] = {
+static const float2 side_to_float2[SIDE_MAX2] = {
 	[SIDE_RIGHT] = { 1.0f, 0.0f },
 	[SIDE_LEFT] = { -1.0f, 0.0f },
 
@@ -260,7 +260,7 @@ static const float2 side_to_float2[SIDE_COUNT2] = {
 	[SIDE_BOTTOM] = { 0.0f, 1.0f },
 };
 
-static const float3 side_to_float3[SIDE_COUNT3] = {
+static const float3 side_to_float3[SIDE_MAX3] = {
 	[SIDE_RIGHT] = { 1.0f, 0.0f, 0.0f },
 	[SIDE_LEFT] = { -1.0f, 0.0f, 0.0f },
 

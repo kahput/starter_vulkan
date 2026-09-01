@@ -99,13 +99,13 @@ INLINE float3 load3(float v[3]) { return (float3){ v[0], v[1], v[2] }; }
 #define cast3(v, T) ((T){ v.x, v.y, v.z })
 
 INLINE bool equal3(float3 a, float3 b) { return equalf(a.x, b.x) && equalf(a.y, b.y) && equalf(a.z, b.z); }
-INLINE float3 negate3(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
+INLINE float3 neg3(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
 
 INLINE float3 add3(float3 a, float3 b) { return (float3){ a.x + b.x, a.y + b.y, a.z + b.z }; }
-INLINE float3 mul3(float3 a, float3 b) { return (float3){ a.x * b.x, a.y * b.y, a.z * b.z }; }
-INLINE float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 INLINE float3 sub3(float3 a, float3 b) { return (float3){ a.x - b.x, a.y - b.y, a.z - b.z }; }
+INLINE float3 mul3(float3 a, float3 b) { return (float3){ a.x * b.x, a.y * b.y, a.z * b.z }; }
 INLINE float3 scale3(float3 v, float s) { return (float3){ v.x * s, v.y * s, v.z * s }; }
+INLINE float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
 INLINE float3 cross3(float3 a, float3 b) { return (float3){ .x = a.y * b.z - b.y * a.z, .y = a.z * b.x - b.z * a.x, .z = a.x * b.y - b.x * a.y }; }
 INLINE float len3_sq(float3 v) { return dot3(v, v); }
@@ -124,7 +124,21 @@ INLINE float max3(float3 v) { return maxf(v.x, maxf(v.y, v.z)); }
 INLINE float3 less3(float3 a, float3 b) { return (float3){ minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z) }; }
 INLINE float3 more3(float3 a, float3 b) { return (float3){ maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z) }; }
 INLINE float3 clamp3(float3 v, float min, float max) { return (float3){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max) }; }
+INLINE float3 move_toward3(float3 start, float3 end, float delta) {
+	float3 vd = sub3(end, start);
+	float len = len3(vd);
+	if (len <= delta || len < EPSILON)
+		return end;
+
+	return add3(start, scale3(vd, delta / len));
+}
 INLINE float3 lerp3(float3 start, float3 end, float t) { return (float3){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t), lerpf(start.z, end.z, t) }; }
+INLINE float3 basis3(float3 normal, float3 *right, float3 *up) {
+	normal = norm3(normal);
+	*right = norm3(cross3(normal, fabsf(dot3(unit3(UP), normal)) >= 0.99f ? unit3(BACKWARD) : unit3(UP)));
+	*up = cross3(normal, *right);
+	return normal;
+}
 
 INLINE float angle3(float3 a, float3 b) { return acosf(clampf(dot3(norm3(a), norm3(b)), -1.0f, 1.0f)); }
 float3 rotate3(float3 v, float angle, float3 axis);
@@ -156,14 +170,11 @@ INLINE float4x4 identity4x4(void) { return (float4x4){ .elements[0] = 1.0f, .ele
 float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
 float4 mul4x4v(float4x4 m, float4 v);
 
-float4x4 translate4x4(float4x4 matrix, float3 translation);
-float4x4 rotate4x4(float4x4 matrix, float3 axis, float radians_angle);
-float4x4 scale4x4(float4x4 matrix, float3 scale);
-
-float4x4 make4x4_translation(float3 translation);
-float4x4 make4x4_rotation(float3 axis, float angle);
-float4x4 make4x4_scale(float3 scale);
-float4x4 make4x4_quat(quat4 q);
+float4x4 translation4x4(float3 translation);
+float4x4 basis4x4(float3 right, float3 up, float3 forward);
+float4x4 axis_angle4x4(float3 axis, float angle);
+float4x4 quat4x4(quat4 q);
+float4x4 scale4x4(float3 scale);
 
 float4x4 transpose4x4(float4x4 m);
 

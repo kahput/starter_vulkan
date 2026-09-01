@@ -22,6 +22,20 @@ typedef struct {
 } DRAW_Quad2D;
 
 typedef struct {
+	float3 position;
+	float border_width;
+
+	float4 radii;
+	float2 uvs[4];
+
+	uint32_t imageid, flags;
+	uint32_t fill_color, border_color;
+
+	float2 origin, rotation, size;
+	float2 _pad0;
+} DRAW_Quad3D;
+
+typedef struct {
 	float4 a, b; // xyz + thickness
 	uint32_t color;
 	float3 _pad0;
@@ -101,7 +115,8 @@ void draw3d_line(Arena *arena, float3 start, float3 end, float thickness, Color 
 
 void draw3d_arrow(Arena *arena, float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width);
-void draw3d_arc(Arena *arena, float3 center, float3 radius, uint8_t segments, Side plane, float angle_span, float thickness, Color color);
+void draw3d_arc(Arena *arena, float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, Color color);
+void draw3d_arc_basis(Arena *arena, float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, Color color);
 
 void draw3d_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color);
 void draw3d_ellipsoid_outline(Arena *arena, float3 center, float3 radius, uint8_t segments, float thickness, Color color);

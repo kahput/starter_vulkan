@@ -128,7 +128,7 @@ typedef enum {
 	KEY_CODE_KPENTER,
 	KEY_CODE_KPEQUAL,
 
-	KEY_CODE_COUNT = 256,
+	KEY_CODE_MAX = 256,
 } KeyboardKey;
 
 typedef enum {
@@ -147,7 +147,7 @@ typedef enum {
 	MOUSE_BUTTON_FORWARD = 5,
 	MOUSE_BUTTON_BACK = 6,
 
-	MOUSE_BUTTON_COUNT
+	MOUSE_BUTTON_MAX
 } MouseButton;
 
 typedef enum {

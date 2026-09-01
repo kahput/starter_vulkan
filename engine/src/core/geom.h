@@ -67,7 +67,7 @@ INLINE Shape3 shape3_from_plane(Plane p) { return (Shape3){ .kind = SHAPE_KIND_P
 
 Shape3 shape3_move(Shape3 s, float3 displacement);
 float3 shape3_furthest_point(const Shape3 *s, float3 direction);
-INLINE float3 shape3_support(const Shape3 *a, const Shape3 *b, float3 direction) { return sub3(shape3_furthest_point(a, direction), shape3_furthest_point(b, negate3(direction))); }
+INLINE float3 shape3_support(const Shape3 *a, const Shape3 *b, float3 direction) { return sub3(shape3_furthest_point(a, direction), shape3_furthest_point(b, neg3(direction))); }
 
 bool triangle3_contains_point(Triangle3 triangle, float3 point);
 
@@ -75,7 +75,7 @@ bool gjk_overlap(const Shape3 *a, const Shape3 *b);
 
 CastResult3 raycast_plane(Ray3 r, Plane p);
 CastResult3 raycast_aabb3(Ray3 r, AABB3 a);
-CastResult3 spherecast_triangle(float3 position, float3 velocity, Triangle3 triangle);
+CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triangle);
 
 bool project_to_viewport(float4x4 view_proj, Rectangle viewport, float3 point, float2 *screen);
 

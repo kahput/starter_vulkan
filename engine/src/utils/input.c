@@ -8,12 +8,12 @@ void input_set_context(InputState *in_state) {
 }
 
 void input_update(void) {
-	for (uint32_t index = 0; index < KEY_CODE_COUNT; ++index) {
+	for (uint32_t index = 0; index < KEY_CODE_MAX; ++index) {
 		struct Key *key = &state->keys[index];
 		key->last = key->state;
 	}
 
-	for (uint32_t index = 0; index < MOUSE_BUTTON_COUNT; ++index) {
+	for (uint32_t index = 0; index < MOUSE_BUTTON_MAX; ++index) {
 		struct Button *button = &state->buttons[index];
 		button->last = button->state;
 	}

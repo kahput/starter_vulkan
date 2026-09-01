@@ -187,85 +187,7 @@ float4 mul4x4v(float4x4 m, float4 v) {
 	return result;
 }
 
-float4x4 translate4x4(float4x4 m, float3 t) {
-	float4x4 result = m;
-
-	result.elements[12] = m.elements[0] * t.x + m.elements[4] * t.y + m.elements[8] * t.z + m.elements[12];
-	result.elements[13] = m.elements[1] * t.x + m.elements[5] * t.y + m.elements[9] * t.z + m.elements[13];
-	result.elements[14] = m.elements[2] * t.x + m.elements[6] * t.y + m.elements[10] * t.z + m.elements[14];
-	result.elements[15] = m.elements[3] * t.x + m.elements[7] * t.y + m.elements[11] * t.z + m.elements[15];
-
-	return result;
-}
-
-float4x4 scale4x4(float4x4 m, float3 s) {
-	float4x4 result = m;
-
-	// Post-multiply by scale: result = m * S
-	// This scales the first 3 columns of m (the basis vectortors).
-	result.elements[0] = m.elements[0] * s.x;
-	result.elements[1] = m.elements[1] * s.x;
-	result.elements[2] = m.elements[2] * s.x;
-	result.elements[3] = m.elements[3] * s.x;
-
-	result.elements[4] = m.elements[4] * s.y;
-	result.elements[5] = m.elements[5] * s.y;
-	result.elements[6] = m.elements[6] * s.y;
-	result.elements[7] = m.elements[7] * s.y;
-
-	result.elements[8] = m.elements[8] * s.z;
-	result.elements[9] = m.elements[9] * s.z;
-	result.elements[10] = m.elements[10] * s.z;
-	result.elements[11] = m.elements[11] * s.z;
-
-	// translation column unchanged
-	result.elements[12] = m.elements[12];
-	result.elements[13] = m.elements[13];
-	result.elements[14] = m.elements[14];
-	result.elements[15] = m.elements[15];
-
-	return result;
-}
-
-float4x4 rotate4x4(float4x4 m, float3 axis, float angle) {
-	// Post-multiply by rotation: result = m * R
-	// Means: each of the first 3 columns of m gets mixed by R.
-	float4x4 r = make4x4_rotation(axis, angle);
-	float4x4 result = m;
-
-	// Cache m's basis columns (col 0,1,2). Translation col stays as-is.
-	float m0 = m.elements[0], m1 = m.elements[1], m2 = m.elements[2], m3 = m.elements[3];
-	float m4 = m.elements[4], m5 = m.elements[5], m6 = m.elements[6], m7 = m.elements[7];
-	float m8 = m.elements[8], m9 = m.elements[9], m10 = m.elements[10], m11 = m.elements[11];
-
-	// col0' = m * r.col0
-	result.elements[0] = m0 * r.elements[0] + m4 * r.elements[1] + m8 * r.elements[2];
-	result.elements[1] = m1 * r.elements[0] + m5 * r.elements[1] + m9 * r.elements[2];
-	result.elements[2] = m2 * r.elements[0] + m6 * r.elements[1] + m10 * r.elements[2];
-	result.elements[3] = m3 * r.elements[0] + m7 * r.elements[1] + m11 * r.elements[2];
-
-	// col1' = m * r.col1
-	result.elements[4] = m0 * r.elements[4] + m4 * r.elements[5] + m8 * r.elements[6];
-	result.elements[5] = m1 * r.elements[4] + m5 * r.elements[5] + m9 * r.elements[6];
-	result.elements[6] = m2 * r.elements[4] + m6 * r.elements[5] + m10 * r.elements[6];
-	result.elements[7] = m3 * r.elements[4] + m7 * r.elements[5] + m11 * r.elements[6];
-
-	// col2' = m * r.col2
-	result.elements[8] = m0 * r.elements[8] + m4 * r.elements[9] + m8 * r.elements[10];
-	result.elements[9] = m1 * r.elements[8] + m5 * r.elements[9] + m9 * r.elements[10];
-	result.elements[10] = m2 * r.elements[8] + m6 * r.elements[9] + m10 * r.elements[10];
-	result.elements[11] = m3 * r.elements[8] + m7 * r.elements[9] + m11 * r.elements[10];
-
-	// translation column unchanged for post-multiply by pure rotation
-	result.elements[12] = m.elements[12];
-	result.elements[13] = m.elements[13];
-	result.elements[14] = m.elements[14];
-	result.elements[15] = m.elements[15];
-
-	return result;
-}
-
-float4x4 make4x4_translation(float3 v) {
+float4x4 translation4x4(float3 v) {
 	// clang-format off
 	float4x4 result = {{
 	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = v.x,
@@ -278,7 +200,20 @@ float4x4 make4x4_translation(float3 v) {
 	return result;
 }
 
-float4x4 make4x4_rotation(float3 axis, float angle) {
+float4x4 basis4x4(float3 r, float3 u, float3 f) {
+	// clang-format off
+	float4x4 result = {{
+	  [0] = r.x,  [4] = u.x,  [8] =  f.x,  [12] = 0.0f,
+	  [1] = r.y,  [5] = u.y,  [9] =  f.y,  [13] = 0.0f,
+	  [2] = r.z,  [6] = u.z,  [10] = f.z,  [14] = 0.0f,
+	  [3] = 0.0f, [7] = 0.0f, [11] = 0.0f, [15] = 1.0f
+	}};
+	// clang-format on
+
+	return result;
+}
+
+float4x4 axis_angle4x4(float3 axis, float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
@@ -300,20 +235,7 @@ float4x4 make4x4_rotation(float3 axis, float angle) {
 	return result;
 }
 
-float4x4 make4x4_scale(float3 scale) {
-	// clang-format off
-	float4x4 result = {{
-	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
-	  [1] = 0.0f,    [5] = scale.y, [9 ] = 0.0f,    [13] = 0.0f,
-	  [2] = 0.0f,    [6] = 0.0f,    [10] = scale.z, [14] = 0.0f,
-	  [3] = 0.0f,    [7] = 0.0f,    [11] = 0.0f,    [15] = 1.0f,
-	}};
-	// clang-format on
-
-	return result;
-}
-
-float4x4 make4x4quat(quat4 q) {
+float4x4 quat4x4(quat4 q) {
 	float x = q.x, y = q.y, z = q.z, w = q.w;
 	float xx = x * x, yy = y * y, zz = z * z;
 	float xy = x * y, xz = x * z, yz = y * z;
@@ -327,6 +249,19 @@ float4x4 make4x4quat(quat4 q) {
 	  [3]  = 0.0f,                [7]  = 0.0f,                  [11] = 0.0f,                  [15] = 1.0f
 	}};
 	// clang-format on
+	return result;
+}
+
+float4x4 scale4x4(float3 scale) {
+	// clang-format off
+	float4x4 result = {{
+	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
+	  [1] = 0.0f,    [5] = scale.y, [9 ] = 0.0f,    [13] = 0.0f,
+	  [2] = 0.0f,    [6] = 0.0f,    [10] = scale.z, [14] = 0.0f,
+	  [3] = 0.0f,    [7] = 0.0f,    [11] = 0.0f,    [15] = 1.0f,
+	}};
+	// clang-format on
+
 	return result;
 }
 
@@ -359,11 +294,11 @@ float4x4 transpose4x4(float4x4 m) {
 float4x4 compose4x4_euler(float3 position, float3 rotation, float3 scale) {
 	float4x4 result = { 0 };
 
-	float4x4 T = make4x4_translation(position);
-	float4x4 S = make4x4_scale(scale);
-	float4x4 rotation_x = make4x4_rotation(unit3(RIGHT), rotation.x);
-	float4x4 rotation_y = make4x4_rotation(unit3(UP), rotation.y);
-	float4x4 rotation_z = make4x4_rotation(unit3(FORWARD), rotation.z);
+	float4x4 T = translation4x4(position);
+	float4x4 S = scale4x4(scale);
+	float4x4 rotation_x = axis_angle4x4(unit3(RIGHT), rotation.x);
+	float4x4 rotation_y = axis_angle4x4(unit3(UP), rotation.y);
+	float4x4 rotation_z = axis_angle4x4(unit3(FORWARD), rotation.z);
 	float4x4 R = mul4x4(rotation_z, mul4x4(rotation_y, rotation_x));
 
 	result = mul4x4(T, mul4x4(R, S));
@@ -372,9 +307,9 @@ float4x4 compose4x4_euler(float3 position, float3 rotation, float3 scale) {
 
 float4x4 compose4x4_quat(float3 position, quat4 rotation, float3 scale) {
 	float4x4 result = { 0 };
-	float4x4 T = make4x4_translation(position);
-	float4x4 S = make4x4_scale(scale);
-	float4x4 R = make4x4quat(rotation);
+	float4x4 T = translation4x4(position);
+	float4x4 S = scale4x4(scale);
+	float4x4 R = quat4x4(rotation);
 	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }
@@ -390,6 +325,7 @@ float4x4 perspective(float fovy_radians, float aspect, float near_z, float far_z
 	// Vulkan NDC z: [0, 1]
 	result.elements[10] = far_z / (near_z - far_z);
 	result.elements[11] = -1.0f;
+
 	result.elements[14] = (far_z * near_z) / (near_z - far_z);
 
 	return result;
@@ -417,22 +353,20 @@ float4x4 lookat(float3 eye, float3 center, float3 up) {
 	float3 r = norm3(cross3(f, up));
 	float3 u = cross3(r, f);
 
-	// Row 0: Right Vector (s)
-	result.elements[0] = r.x; // Col 0
-	result.elements[4] = r.y; // Col 1
-	result.elements[8] = r.z; // Col 2
-	result.elements[12] = -dot3(r, eye); // Translation X
+	result.elements[0] = r.x;
+	result.elements[4] = r.y;
+	result.elements[8] = r.z;
+	result.elements[12] = -dot3(r, eye);
 
-	// Row 1: Up Vector (u)
-	result.elements[1] = u.x; // Col 0
-	result.elements[5] = u.y; // Col 1
-	result.elements[9] = u.z; // Col 2
-	result.elements[13] = -dot3(u, eye); // Translation Y
+	result.elements[1] = u.x;
+	result.elements[5] = u.y;
+	result.elements[9] = u.z;
+	result.elements[13] = -dot3(u, eye);
 
-	result.elements[2] = -f.x; // Col 0
-	result.elements[6] = -f.y; // Col 1
-	result.elements[10] = -f.z; // Col 2
-	result.elements[14] = dot3(f, eye); // Translation Z (-dot(-f, eye))
+	result.elements[2] = -f.x;
+	result.elements[6] = -f.y;
+	result.elements[10] = -f.z;
+	result.elements[14] = dot3(f, eye);
 
 	result.elements[3] = 0.0f;
 	result.elements[7] = 0.0f;

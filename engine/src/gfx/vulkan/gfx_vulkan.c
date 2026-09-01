@@ -1462,6 +1462,13 @@ void gfx_device_destroy(GFX_Device *device) {
 	}
 }
 
+void gfx_device_wait_idle(GFX_Device *device) {
+	bool ok = gfx_device_valid(device);
+	if (ok) 
+		vkDeviceWaitIdle(device->handle);
+	
+}
+
 // :cmd
 GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device) {
 	GFX_CommandEncoder *result = 0;
