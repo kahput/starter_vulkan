@@ -14,6 +14,7 @@ INLINE Rectangle rect_from_center(float2 center, float2 half_extent) { return (R
 INLINE float3 ray_at(Ray3 r, float t) { return add3(r.origin, scale3(r.direction, t)); }
 
 INLINE Triangle3 triangle3_move(Triangle3 t, float3 offset) { return (Triangle3){ add3(offset, t.a), add3(offset, t.b), add3(offset, t.c) }; }
+float3 barycentric(Triangle3 t, float3 p); // uvw
 
 INLINE AABB3 aabb3_from_center(float3 center, float3 half_extent) { return (AABB3){ .min = sub3(center, half_extent), .max = add3(center, half_extent) }; }
 INLINE float3 aabb3_center(AABB3 a) { return scale3(add3(a.min, a.max), 0.5f); }
@@ -65,7 +66,7 @@ INLINE Shape3 shape3_from_sphere(Sphere s) { return (Shape3){ .kind = SHAPE_KIND
 INLINE Shape3 shape3_from_capsule(Capsule3 s) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = s }; }
 INLINE Shape3 shape3_from_plane(Plane p) { return (Shape3){ .kind = SHAPE_KIND_PLANE, .as.plane = p }; }
 
-Shape3 shape3_move(Shape3 s, float3 displacement);
+Shape3 shape3_displace(Shape3 s, float3 displacement);
 float3 shape3_furthest_point(const Shape3 *s, float3 direction);
 INLINE float3 shape3_support(const Shape3 *a, const Shape3 *b, float3 direction) { return sub3(shape3_furthest_point(a, direction), shape3_furthest_point(b, neg3(direction))); }
 

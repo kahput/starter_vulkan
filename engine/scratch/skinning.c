@@ -240,6 +240,8 @@ typedef struct Entity {
 	Shape3 shape;
 
 	float3 velocity;
+	bool grounded;
+	float3 ground_normal;
 
 	struct Entity *target;
 } Entity;
@@ -604,33 +606,47 @@ CastResult3 spherecast(float3 position, float3 velocity, uint32_t triangle_count
 	return result;
 }
 
-// TODO: Remove triangles from the signature, pass 'physics world' instead. shape/sphere cast against physics world.
-// Internally in physics world implement known collision.
-float3 move_and_slide(float3 position, float3 direction, float max_dist, uint32_t triangle_count, Triangle3 *triangles) {
-	float3 result = { 0 };
-	bool gravity_pass = direction.x == 0.0f && direction.y != 0.0f && direction.z == 0.0f;
+typedef struct {
+	float3 displacement;
 
-	float3 velocity = scale3(direction, max_dist);
-	for (uint32_t iteration = 0; iteration < 6; ++iteration) {
-		if (len3_sq(velocity) <= EPSILON) break;
+	bool hit_ground, hit_ceiling;
+	float3 ground_normal, ceil_normal;
+} SlideResult3;
 
-		CastResult3 hit = spherecast(add3(position, result), velocity, triangle_count, triangles);
-		if (hit.hit == false) {
-			result = add3(result, velocity);
-			break;
+SlideResult3 move_and_slide(float3 position, float3 direction, float max_dist, uint32_t triangle_count, Triangle3 *triangles) {
+	SlideResult3 result = { 0 };
+
+	bool ok = max_dist > EPSILON;
+	if (ok) {
+		float3 remaining = scale3(direction, max_dist);
+
+		for (uint32_t iteration = 0; iteration < 6; ++iteration) {
+			float remaining_length = len3(remaining);
+			if (remaining_length <= EPSILON) break;
+
+			CastResult3 hit = spherecast(add3(position, result.displacement), remaining, triangle_count, triangles);
+			if (hit.hit == false) {
+				result.displacement = add3(result.displacement, remaining);
+				break;
+			}
+
+			// Collision resolution
+			float t_skin = SKIN_WIDTH / remaining_length;
+			float t = clampf(hit.t - t_skin, 0.0f, 1.0f);
+
+			bool walkable = dot3(hit.normal, unit3(UP)) >= cosf(SLOPE_ANGLE * DEG2RAD);
+			if (walkable) {
+				result.hit_ground = true;
+				result.ground_normal = hit.normal;
+			}
+
+			result.displacement = add3(result.displacement, scale3(remaining, t));
+			remaining = scale3(remaining, 1.0f - t);
+
+			float into = dot3(remaining, hit.normal);
+			if (into < 0.0f)
+				remaining = sub3(remaining, scale3(hit.normal, into));
 		}
-
-		float angle = acos(dot3(unit3(UP), hit.normal));
-
-		// Collision resolution
-		float t_skin = max_dist > 0.0f ? SKIN_WIDTH / max_dist : 0.0f;
-		float t_min = clampf(hit.t - t_skin, 0.0f, 1.0f);
-
-		result = add3(result, scale3(velocity, t_min));
-		if (gravity_pass && angle <= SLOPE_ANGLE * DEG2RAD) break;
-
-		velocity = sub3(velocity, scale3(hit.normal, dot3(velocity, hit.normal)));
-		velocity = scale3(velocity, 1.0f - t_min);
 	}
 
 	return result;
@@ -1763,14 +1779,25 @@ int main(void) {
 
 					float2 input_vector = { 0 };
 					float3 displacement = { 0 };
-					float3 gravity = { 0.0f, -9.80f, 0.0f };
 
 					// :player
 					if (entity_has(entity, ENTITY_FEATURE_PLAYER_CONTROLLED)) {
-						input_vector = (float2){
-							.x = input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
-							.y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
-						};
+						input_vector = norm2((float2){
+						  .x = input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
+						  .y = input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
+						});
+						bool jump_requested = input_key_pressed(KEY_CODE_SPACE);
+						bool sprint_requested = input_key_down(KEY_CODE_LEFTSHIFT);
+
+						float3 center = add3(entity->transform.translation, entity->shape.as.sphere.center);
+
+						SlideResult3 ground_probe_result = move_and_slide(center, unit3(DOWN), SKIN_WIDTH * 4.0f, world_collider_tri_count, world_collider);
+						entity->grounded = ground_probe_result.hit_ground;
+
+						if (ground_probe_result.hit_ground) {
+							draw3d_arrow(line3d, center, add3(center, ground_probe_result.ground_normal), 3.0f, GREEN, view, proj, viewport.width);
+							entity->ground_normal = ground_probe_result.ground_normal;
+						}
 
 						if (dot2(input_vector, input_vector) > 0) {
 							float3 camera_offset = sub3(camera->position, entity->transform.translation);
@@ -1787,7 +1814,7 @@ int main(void) {
 							entity->transform.rotation = quat4_slerp(entity->transform.rotation, target_rotation, t);
 						}
 
-						const float walk_speed = 3.0f, run_speed = 6.0f;
+						const float walk_speed = 3.0f, sprint_speed = 6.0f;
 
 						float3 camera_position = camera->position;
 						float3 camera_target = camera->target;
@@ -1802,15 +1829,27 @@ int main(void) {
 						right = cross3(forward, camera->up);
 						right = norm3(right);
 
-						float3 direction = add3(
+						float3 wish_direction = add3(
 							scale3(forward, input_vector.x),
 							scale3(right, input_vector.y) //
 						); //
-						direction = norm3(direction);
 
-						float accel_speed = 15.0f;
-						float move_speed = input_key_down(KEY_CODE_LEFTSHIFT) ? run_speed : walk_speed;
-						float3 target_velocity = scale3(direction, move_speed);
+						float accel_speed = entity->grounded ? 30.0f : 15.0f;
+						float move_speed = sprint_requested ? sprint_speed : walk_speed;
+
+						float3 target_velocity = scale3(wish_direction, move_speed);
+
+						float vertical_velocity = dot3(entity->velocity, unit3(UP));
+						if (entity->grounded && !jump_requested)
+							/* vertical_velocity = -SKIN_WIDTH * 4.0f / dt; */
+							vertical_velocity = 0.0f;
+						else
+							vertical_velocity = maxf((vertical_velocity - 30.0f * dt), -9.8f * 5.0f);
+
+						if (jump_requested && entity->grounded) {
+							vertical_velocity = 15.0f;
+							entity->grounded = false;
+						}
 
 						float3 old_velocity = entity->velocity;
 						entity->velocity = move_toward3(
@@ -1818,6 +1857,10 @@ int main(void) {
 							target_velocity,
 							accel_speed * dt //
 						);
+
+						entity->velocity.y = vertical_velocity;
+
+						LOG_INFO("%.2f", entity->velocity.y);
 
 						displacement = scale3(
 							add3(old_velocity, entity->velocity),
@@ -1838,15 +1881,15 @@ int main(void) {
 					}
 
 					// :collision
-					if (entity->shape.kind == SHAPE_KIND_SPHERE && len3_sq(displacement) > EPSILON) {
-						float max_dist = len3(displacement);
-						float3 direction = scale3(displacement, 1.0f / max_dist);
-
+					if (entity->shape.kind == SHAPE_KIND_SPHERE) {
 						float3 pos = add3(entity->transform.translation, entity->shape.as.sphere.center);
-						float3 accum = move_and_slide(pos, direction, max_dist, world_collider_tri_count, world_collider);
-						if (direction.y)
-							accum = add3(accum, move_and_slide(add3(pos, accum), unit3(DOWN), 9.8 * dt, world_collider_tri_count, world_collider));
-						entity->transform.translation = add3(entity->transform.translation, accum);
+
+						if (len3_sq(displacement) > EPSILON) {
+							float max_dist = len3(displacement);
+							float3 direction = scale3(displacement, 1.0f / max_dist);
+							SlideResult3 move_result = move_and_slide(pos, direction, max_dist, world_collider_tri_count, world_collider);
+							entity->transform.translation = add3(entity->transform.translation, move_result.displacement);
+						}
 					}
 
 					if (
@@ -1980,7 +2023,7 @@ int main(void) {
 								Rectangle textbox = rect_from_center(screen, make2(60.0f, 10.0f));
 								draw2d_quad(quad2d, textbox,
 									(DRAW_QuadStyle){
-									  .corner_radii = splat4(8.0f),
+									  .radii = splat4(8.0f),
 									  .border_width = 1.0f,
 									  .border_color = BLACK,
 									  .fill_color = WHITE,
@@ -2026,7 +2069,7 @@ int main(void) {
 						  .image = widget->settings.image,
 						  .border_width = widget->settings.border_width,
 						  .border_color = widget->settings.border,
-						  .corner_radii = widget->settings.border_radius,
+						  .radii = widget->settings.border_radius,
 						  .fill_color = widget->settings.image != 0 ? widget->settings.fg : widget->settings.bg,
 						});
 				}
@@ -2550,8 +2593,8 @@ int main(void) {
 		}
 		gfx_frame_end(device, cmd);
 
-		for (ShaderID ID = 0; ID < SHADER_MAX; ++ID) { // :hot-reload
-			ShaderMetadata *metadata = &shaderid_to_metadata[ID];
+		for (ShaderID shaderid = 0; shaderid < SHADER_MAX; ++shaderid) { // :hot-reload
+			ShaderMetadata *metadata = &shaderid_to_metadata[shaderid];
 			if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
@@ -2561,17 +2604,17 @@ int main(void) {
 			if (is_compute) {
 				OS_Timestamp now = os_file_last_modified(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 
-				if (now != shader_ts[ID]) {
+				if (now != shader_ts[shaderid]) {
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
-					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
+					LOG_INFO("hot-reloading %s...", shaders[shaderid]->debug_name);
 					gfx_device_wait_idle(device);
 
-					gfx_shader_destroy(device, shaders[ID]);
+					gfx_shader_destroy(device, shaders[shaderid]);
 					String8 bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-					shaders[ID] = gfx_compute_make(device, bytecode, (char *)shaderid_to_string[ID].text);
+					shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)shaderid_to_string[shaderid].text);
 
-					shader_ts[ID] = now;
+					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);
 				}
 			} else {
@@ -2579,23 +2622,23 @@ int main(void) {
 				OS_Timestamp vs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 				OS_Timestamp now = MAX(fs_ts, vs_ts);
-				if (now != shader_ts[ID]) {
-					LOG_INFO("hot-reloading %s...", shaders[ID]->debug_name);
+				if (now != shader_ts[shaderid]) {
+					LOG_INFO("hot-reloading %s...", shaders[shaderid]->debug_name);
 					gfx_device_wait_idle(device);
 
-					ShaderMetadata *metadata = &shaderid_to_metadata[ID];
+					ShaderMetadata *metadata = &shaderid_to_metadata[shaderid];
 
-					gfx_shader_destroy(device, shaders[ID]);
+					gfx_shader_destroy(device, shaders[shaderid]);
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
 					String8 vs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 					String8 fs_bytecode = os_file_read_entire(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-					shaders[ID] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shaderid_to_string[ID].text);
+					shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shaderid_to_string[shaderid].text);
 
 					for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation)
-						gfx_pipeline_ensure(device, shaders[ID], metadata->pipelines[permutation]);
+						gfx_pipeline_ensure(device, shaders[shaderid], metadata->pipelines[permutation]);
 
-					shader_ts[ID] = now;
+					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);
 				}
 			}

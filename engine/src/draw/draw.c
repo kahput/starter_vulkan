@@ -14,8 +14,6 @@ void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 		float2 position = { rect.x, rect.y };
 		float2 size = { rect.width, rect.height };
 
-		float2 min = sub2(position, style.origin), max = add2(min, size);
-
 		float2 uv0 = splat2(0.0f);
 		float2 uv1 = splat2(1.0f);
 		if (style.image && style.uv.width != 0.0f && style.uv.height != 0.0f) {
@@ -29,7 +27,7 @@ void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 		DRAW_Quad2D quad = {
 			.position = position,
 			.size = size,
-			.radii = style.corner_radii,
+			.radii = style.radii,
 			.rotation = { cosf(rad), sinf(rad) },
 			.uvs = {
 			  uv0,
@@ -213,6 +211,33 @@ void draw3d_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color
 
 	DRAW_Line3D *points = arena_push_count(arena, DRAW_Line3D, countof(outline));
 	memory_copy_array(points, outline);
+}
+
+void draw3d_quad(Arena *arena, Transform3 transform, DRAW_QuadStyle style) {
+	bool ok = arena;
+	if (ok) {
+		float2 uv0 = splat2(0.0f);
+		float2 uv1 = splat2(1.0f);
+		if (style.image && style.uv.width != 0.0f && style.uv.height != 0.0f) {
+			uv0 = make2(style.uv.x / style.image->width, style.uv.y / style.image->height);
+			uv1 = make2((style.uv.x + style.uv.width) / style.image->width, (style.uv.y + style.uv.height) / style.image->height);
+		}
+
+		uint32_t imageid = style.image ? style.image->handle->imageid : 0;
+
+		float rad = style.rotation * DEG2RAD;
+		DRAW_Quad3D quad = {
+			.model = compose4x4_quat(transform.translation, transform.rotation, transform.scale),
+			.radii = style.radii,
+			.uvs = { uv0, { uv1.x, uv0.y }, { uv0.x, uv1.y }, uv1 },
+			.imageid = imageid,
+			.flags = 0,
+			.fill_color = color_pack_uint32(style.fill_color),
+			.border_color = color_pack_uint32(style.border_color),
+			.border_width = style.border_width,
+		};
+		memory_copy(arena_push_count(arena, DRAW_Quad3D, 1), &quad, sizeof(quad));
+	}
 }
 
 void draw3d_line(Arena *arena, float3 start, float3 end, float thickness, Color color) {

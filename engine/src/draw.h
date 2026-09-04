@@ -22,8 +22,7 @@ typedef struct {
 } DRAW_Quad2D;
 
 typedef struct {
-	float3 position;
-	float border_width;
+	float4x4 model;
 
 	float4 radii;
 	float2 uvs[4];
@@ -31,8 +30,8 @@ typedef struct {
 	uint32_t imageid, flags;
 	uint32_t fill_color, border_color;
 
-	float2 origin, rotation, size;
-	float2 _pad0;
+	float border_width;
+	float3 _pad0;
 } DRAW_Quad3D;
 
 typedef struct {
@@ -85,7 +84,7 @@ typedef struct {
 	Color border_color;
 	float border_width;
 
-	float4 corner_radii;
+	float4 radii;
 
 	Image2D *image;
 	Rectangle uv;
@@ -99,9 +98,9 @@ void draw2d_triangle(Arena *arena, Triangle2 t);
 
 INLINE void draw2d_rect(Arena *arena, Rectangle rect, Color color) { draw2d_quad(arena, rect, (DRAW_QuadStyle){ .fill_color = color }); }
 INLINE void draw2d_rect_outline(Arena *arena, Rectangle rect, float thickness, Color color) { draw2d_quad(arena, rect, (DRAW_QuadStyle){ .border_color = color, .border_width = thickness }); }
-INLINE void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color) { draw2d_quad(arena, rect, (DRAW_QuadStyle){ .corner_radii = radii, .fill_color = color }); }
+INLINE void draw2d_rect_rounded(Arena *arena, Rectangle rect, float4 radii, Color color) { draw2d_quad(arena, rect, (DRAW_QuadStyle){ .radii = radii, .fill_color = color }); }
 INLINE void draw2d_sprite(Arena *arena, float2 position, Image2D *image, Color tint) { draw2d_quad(arena, rect(position.x, position.y, image->width, image->height), (DRAW_QuadStyle){ .image = image, .fill_color = tint }); }
-INLINE void draw2d_circle(Arena *arena, float2 position, float radius, Color color) { draw2d_quad(arena, rect(position.x, position.y, radius * 2.0, radius * 2.0), (DRAW_QuadStyle){ .fill_color = color, .origin = splat2(radius), .corner_radii = splat4(radius) }); }
+INLINE void draw2d_circle(Arena *arena, float2 position, float radius, Color color) { draw2d_quad(arena, rect(position.x, position.y, radius * 2.0, radius * 2.0), (DRAW_QuadStyle){ .fill_color = color, .origin = splat2(radius), .radii = splat4(radius) }); }
 
 void draw2d_text(Arena *arena, Font *font, float2 position, Color color, String8 text);
 void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String8 format, ...);
@@ -111,6 +110,7 @@ void draw2d_line(Arena *arena, float2 start, float2 end, float thickness, Color 
 void draw2d_triangle_outline(Arena *arena, Triangle2 triangle, float thickness, Color color);
 void draw2d_arrow(Arena *arena, float2 start, float2 end, float thickness, Color color);
 
+void draw3d_quad(Arena *arena, Transform3 transform, DRAW_QuadStyle style);
 void draw3d_line(Arena *arena, float3 start, float3 end, float thickness, Color color);
 
 void draw3d_arrow(Arena *arena, float3 start, float3 end, float thickness, Color color,

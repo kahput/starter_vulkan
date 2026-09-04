@@ -49,7 +49,7 @@ void main() {
         }
     }
 
-    out_color.rgb = mix(fill.rgb, border.rgb, ring) * outer;
+    out_color.rgb = mix(fill.rgb, border.rgb, ring);
     float fa = fill.a * outer, ba = border.a * ring;
     out_color.a = ba + fa * (1.0 - ba);
 }

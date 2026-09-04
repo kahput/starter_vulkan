@@ -493,8 +493,8 @@ IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max) {
 	thumb->settings.sizing[0] = track->settings.sizing[1];
 	thumb->settings.sizing[1] = track->settings.sizing[0];
 
-	track->size[!flow] = context->default_font->bake_size; // will be decided by theme
-	thumb->size[flow] = context->default_font->bake_size; // will be decided by theme
+	track->size[!flow] = 16.0f; // will be decided by theme
+	thumb->size[flow] = 16.0f; // will be decided by theme
 
 	Rectangle track_rect = imgui_rect_cached(track);
 	Rectangle thumb_rect = imgui_rect_cached(thumb);

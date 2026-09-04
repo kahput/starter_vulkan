@@ -1,0 +1,54 @@
+#version 450
+#pragma shader_stage(vertex)
+
+#include "spatial.glsl"
+
+struct Quad3D {
+    mat4 model;
+
+    vec4 radii;
+    vec2 uvs[4];
+
+    uint imageid, flags;
+    uint fill_color, border_color;
+    float border_width;
+};
+
+layout(set = 1, binding = 1) readonly buffer InstanceBlock {
+    Quad3D instances[];
+};
+
+out OutBlock {
+    layout(location = 0) vec2 tex_coords;
+    layout(location = 1) flat uint texture_id;
+
+    layout(location = 2) vec4 fill_color;
+    layout(location = 3) vec4 border_color;
+    layout(location = 4) float border_width;
+
+    layout(location = 5) vec2 size; 
+    layout(location = 6) vec2 local; 
+    flat layout(location = 7) vec4 radii;
+} vs_out;
+
+const vec3 corners[4] = vec3[](vec3(-1.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), vec3(-1.0, -1.0, 0.0), vec3(1.0, -1.0, 0.0));
+const uint indices[6] = { 0, 2, 3, 0, 3, 1 };
+
+void main() {
+    Quad3D quad = instances[gl_InstanceIndex];
+
+    uint vertex_index = indices[gl_VertexIndex % 6];
+    vec3 local = corners[vertex_index];
+    gl_Position = frame.projection * frame.view * quad.model * vec4(local, 1.0);
+
+    vs_out.tex_coords = quad.uvs[vertex_index];
+    vs_out.texture_id = quad.imageid;
+
+    vs_out.fill_color = unpackUnorm4x8(quad.fill_color);
+    vs_out.border_color = unpackUnorm4x8(quad.border_color);
+    vs_out.border_width = quad.border_width;
+
+    vs_out.size = vec2(1.0, 1.0);
+    vs_out.local = corners[vertex_index].xy * 0.5 + 0.5;
+    vs_out.radii = quad.radii;
+}

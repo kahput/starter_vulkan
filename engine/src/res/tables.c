@@ -112,7 +112,7 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 	[SHADER_QUAD2D] = {
 	  .name = scomp("Quad 2D"),
 	  .filepaths = {
-		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/batch2d.vertex.spv"),
+		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/quad2d.vertex.spv"),
 		[SHADER_STAGE_FRAGMENT] = scomp("assets/shaders/fragment/bin/quad.fragment.spv"),
 	  },
 	  .pipelines = {
@@ -123,6 +123,28 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 		  .cull_mode = CULL_MODE_BACK,
 		  .disable_depth_test = true,
 		  .disable_depth_write = true,
+
+		  .enable_blend = true,
+		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
+		  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+		  .src_alpha_factor = BLEND_FACTOR_ONE,
+		  .dst_alpha_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+		},
+	  },
+	  .pipeline_count = 1,
+	},
+	[SHADER_QUAD3D] = {
+	  .name = scomp("Quad 3D"),
+	  .filepaths = {
+		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/quad3d.vertex.spv"),
+		[SHADER_STAGE_FRAGMENT] = scomp("assets/shaders/fragment/bin/quad.fragment.spv"),
+	  },
+	  .pipelines = {
+		{
+		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
+		  .color_attachment_count = 1,
+		  .sample_count = SAMPLE_COUNT_8,
+		  .cull_mode = CULL_MODE_BACK,
 
 		  .enable_blend = true,
 		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,

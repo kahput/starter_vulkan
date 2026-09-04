@@ -186,6 +186,4 @@ float4x4 orthographic(float left, float right, float top, float bottom, float ne
 
 float4x4 lookat(float3 eye, float3 center, float3 up);
 
-void barycentric(float3 a, float3 b, float3 c, float3 p, float *u, float *v, float *w);
-
 #endif /* CMATH_H_ */

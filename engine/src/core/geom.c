@@ -7,7 +7,31 @@
 #include <stdlib.h>
 #include <strings.h>
 
-Shape3 shape3_move(Shape3 s, float3 displacement) {
+// chapter 3, 5, 9, 11, 12
+
+float3 barycentric(Triangle3 t, float3 p) {
+	float3 result = { 0 };
+
+	float3 ab = sub3(t.b, t.a);
+	float3 ac = sub3(t.c, t.a);
+	float3 ap = sub3(p, t.a);
+
+	float ab_dot_ab = dot3(ab, ab);
+	float ab_dot_ac = dot3(ab, ac);
+	float ac_dot_ac = dot3(ac, ac);
+	float ap_dot_ab = dot3(ap, ab);
+
+	float ap_dot_ac = dot3(ap, ac);
+	float denom = ab_dot_ab * ac_dot_ac - ab_dot_ac * ab_dot_ac;
+
+	result.y = (ac_dot_ac * ap_dot_ab - ab_dot_ac * ap_dot_ac) / denom; // v
+	result.z = (ab_dot_ab * ap_dot_ac - ab_dot_ac * ap_dot_ab) / denom; // w
+	result.x = 1.0f - result.y - result.z; // u
+
+	return result;
+}
+
+Shape3 shape3_displace(Shape3 s, float3 displacement) {
 	Shape3 result = s;
 
 	switch (s.kind) {
@@ -43,6 +67,15 @@ float3 shape3_furthest_point(const Shape3 *s, float3 direction) {
 	ASSERT(s != 0);
 
 	switch (s->kind) {
+		case SHAPE_KIND_AABB3: {
+			const AABB3 *box = &s->as.aabb3;
+			result = (float3){
+				direction.x >= 0.0f ? box->max.x : box->min.x,
+				direction.y >= 0.0f ? box->max.y : box->min.y,
+				direction.z >= 0.0f ? box->max.z : box->min.z,
+			};
+		} break;
+
 		case SHAPE_KIND_CAPSULE3: {
 			const Capsule3 *capsule = &s->as.capsule;
 			float adotd = dot3(capsule->a, direction);
@@ -51,10 +84,12 @@ float3 shape3_furthest_point(const Shape3 *s, float3 direction) {
 
 			result = add3(c, scale3(direction, capsule->radius));
 		} break;
+
 		case SHAPE_KIND_SPHERE: {
 			const Sphere *sphere = &s->as.sphere;
 			result = add3(sphere->center, scale3(direction, sphere->radius));
 		} break;
+
 		case SHAPE_KIND_CONVEX_POLYGON: {
 			const ConvexPolytope3 *polygon = &s->as.convex;
 			ASSERT(polygon->vertices && polygon->vertex_count);
@@ -69,6 +104,7 @@ float3 shape3_furthest_point(const Shape3 *s, float3 direction) {
 				}
 			}
 		} break;
+
 		default:
 			ASSERT(!"Unsupported shape support function");
 			break;
@@ -79,47 +115,46 @@ float3 shape3_furthest_point(const Shape3 *s, float3 direction) {
 
 typedef struct {
 	float3 p, q, w;
-} SimplexPoint;
+} SimplexVertex;
 typedef struct {
-	SimplexPoint points[4];
+	SimplexVertex vertices[4];
 	uint32_t count;
 } Simplex;
 
-INLINE void simplex_pushfront(Simplex *s, SimplexPoint point) {
+INLINE void simplex_pushfront(Simplex *s, SimplexVertex point) {
 	ASSERT(s && s->count < 4);
 
 	for (uint32_t i = s->count; i > 0; --i)
-		s->points[i] = s->points[i - 1];
+		s->vertices[i] = s->vertices[i - 1];
 
-	s->points[0] = point;
+	s->vertices[0] = point;
 	++s->count;
 }
 
-SimplexPoint simplex_support(const Shape3 *a, const Shape3 *b, float3 d) {
+SimplexVertex simplex_support(const Shape3 *a, const Shape3 *b, float3 d) {
 	float3 p = shape3_furthest_point(a, d);
 	float3 q = shape3_furthest_point(b, neg3(d));
-	float3 w = sub3(p, q);
 
-	return (SimplexPoint){ p, q, w };
+	return (SimplexVertex){ p, q, sub3(p, q) };
 }
 
-#define simplex_make(...) simplex_make_impl(sizeof((SimplexPoint[]){ __VA_ARGS__ }) / sizeof(SimplexPoint), (SimplexPoint[]){ __VA_ARGS__ })
-Simplex simplex_make_impl(uint64_t count, SimplexPoint *points) {
+#define simplex_make(...) simplex_make_impl(sizeof((SimplexVertex[]){ __VA_ARGS__ }) / sizeof(SimplexVertex), (SimplexVertex[]){ __VA_ARGS__ })
+Simplex simplex_make_impl(uint64_t count, SimplexVertex *points) {
 	ASSERT(count <= 4);
 
 	Simplex result = { 0 };
 	for (uint32_t index = 0; index < count; ++index)
-		result.points[result.count++] = points[index];
+		result.vertices[result.count++] = points[index];
 
 	return result;
 }
 
 #define same_direction(a, b) dot3(a, b) > 0
-bool simplex_line(Simplex *s, float3 *direction) {
+bool simplex_line(Simplex *simplex, float3 *direction) {
 	bool result = false;
 
-	SimplexPoint a = s->points[0];
-	SimplexPoint b = s->points[1];
+	SimplexVertex a = simplex->vertices[0];
+	SimplexVertex b = simplex->vertices[1];
 
 	float3 ab = sub3(b.w, a.w);
 	float3 ao = neg3(a.w);
@@ -127,19 +162,19 @@ bool simplex_line(Simplex *s, float3 *direction) {
 	if (same_direction(ab, ao))
 		*direction = cross3(cross3(ab, ao), ab);
 	else {
-		*s = simplex_make(a);
+		*simplex = simplex_make(a);
 		*direction = ao;
 	}
 
 	return result;
 }
 
-bool simplex_triangle(Simplex *s, float3 *direction) {
+bool simplex_triangle(Simplex *simplex, float3 *direction) {
 	bool result = false;
 
-	SimplexPoint a = s->points[0];
-	SimplexPoint b = s->points[1];
-	SimplexPoint c = s->points[2];
+	SimplexVertex a = simplex->vertices[0];
+	SimplexVertex b = simplex->vertices[1];
+	SimplexVertex c = simplex->vertices[2];
 
 	float3 ab = sub3(b.w, a.w);
 	float3 ac = sub3(c.w, a.w);
@@ -149,21 +184,21 @@ bool simplex_triangle(Simplex *s, float3 *direction) {
 
 	if (same_direction(cross3(abc, ac), ao)) {
 		if (same_direction(ac, ao)) {
-			*s = simplex_make(a, c);
+			*simplex = simplex_make(a, c);
 			*direction = cross3(cross3(ac, ao), ac);
 		} else {
-			*s = simplex_make(a, b);
-			return simplex_line(s, direction);
+			*simplex = simplex_make(a, b);
+			return simplex_line(simplex, direction);
 		}
 	} else {
 		if (same_direction(cross3(ab, abc), ao)) {
-			*s = simplex_make(a, b);
-			return simplex_line(s, direction);
+			*simplex = simplex_make(a, b);
+			return simplex_line(simplex, direction);
 		} else {
 			if (same_direction(abc, ao))
 				*direction = abc;
 			else {
-				*s = simplex_make(a, c, b);
+				*simplex = simplex_make(a, c, b);
 				*direction = neg3(abc);
 			}
 		}
@@ -172,13 +207,13 @@ bool simplex_triangle(Simplex *s, float3 *direction) {
 	return result;
 }
 
-bool simplex_tetrahedron(Simplex *s, float3 *direction) {
+bool simplex_tetrahedron(Simplex *simplex, float3 *direction) {
 	bool result = true;
 
-	SimplexPoint a = s->points[0];
-	SimplexPoint b = s->points[1];
-	SimplexPoint c = s->points[2];
-	SimplexPoint d = s->points[3];
+	SimplexVertex a = simplex->vertices[0];
+	SimplexVertex b = simplex->vertices[1];
+	SimplexVertex c = simplex->vertices[2];
+	SimplexVertex d = simplex->vertices[3];
 
 	float3 ab = sub3(b.w, a.w);
 	float3 ac = sub3(c.w, a.w);
@@ -190,16 +225,16 @@ bool simplex_tetrahedron(Simplex *s, float3 *direction) {
 	float3 adb = cross3(ad, ab);
 
 	if (same_direction(abc, ao)) {
-		*s = simplex_make(a, b, c);
-		return simplex_triangle(s, direction);
+		*simplex = simplex_make(a, b, c);
+		return simplex_triangle(simplex, direction);
 	}
 	if (same_direction(acd, ao)) {
-		*s = simplex_make(a, c, d);
-		return simplex_triangle(s, direction);
+		*simplex = simplex_make(a, c, d);
+		return simplex_triangle(simplex, direction);
 	}
 	if (same_direction(adb, ao)) {
-		*s = simplex_make(a, d, b);
-		return simplex_triangle(s, direction);
+		*simplex = simplex_make(a, d, b);
+		return simplex_triangle(simplex, direction);
 	}
 
 	return result;
@@ -208,19 +243,19 @@ bool simplex_tetrahedron(Simplex *s, float3 *direction) {
 // src: Real-Time Collision Detection 5.4.2 Testing Point in Triangle
 bool triangle3_contains_point(Triangle3 t, float3 p) {
 	// Translate point and triangle so that point lies at origin
-	float3 a = sub3(t.a, p);
-	float3 b = sub3(t.b, p);
-	float3 c = sub3(t.c, p);
+	float3 pa = sub3(t.a, p);
+	float3 pb = sub3(t.b, p);
+	float3 pc = sub3(t.c, p);
 
-	float ab = dot3(a, b);
-	float ac = dot3(a, c);
-	float bc = dot3(b, c);
-	float cc = dot3(c, c);
+	float ab = dot3(pa, pb);
+	float ac = dot3(pa, pc);
+	float bc = dot3(pb, pc);
+	float cc = dot3(pc, pc);
 
 	// Make sure plane normals for pab and pbc point in the same direction
 	if (bc * ac - cc * ab < 0.0f) return 0;
 	// Make sure plane normals for pab and pca point in the same direction
-	float bb = dot3(b, b);
+	float bb = dot3(pb, pb);
 	if (ab * bc - ac * bb < 0.0f) return 0;
 
 	// Otherwise P must be in (or on) the triangle
@@ -234,7 +269,7 @@ bool gjk_overlap(const Shape3 *shape_a, const Shape3 *shape_b) {
 	if (ok) {
 		float3 d = unit3(RIGHT);
 
-		SimplexPoint a = simplex_support(shape_a, shape_b, d);
+		SimplexVertex a = simplex_support(shape_a, shape_b, d);
 		Simplex s = simplex_make(a);
 		d = neg3(a.w);
 
@@ -461,4 +496,3 @@ bool project_to_viewport(float4x4 view_proj, Rectangle viewport, float3 point, f
 
 	return ok;
 }
-

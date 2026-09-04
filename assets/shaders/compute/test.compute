@@ -26,7 +26,7 @@ vec4 srgb_to_linear(vec4 c) {
 
 
 void main() {
-    vec2 st = vec2(texelCoord) / vec2(resolution);
+    vec2 st = vec2(texelCoord.x, texelCoord.y) / vec2(resolution);
     st.y = 1.0 - st.y;
 
     bool ok = texelCoord.x < resolution.x && texelCoord.y < resolution.y;
