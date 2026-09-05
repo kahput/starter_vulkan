@@ -188,7 +188,8 @@ typedef struct { float32x3 min, max; } Interval3;
 typedef struct {
 	float x, y, width, height;
 } Rectangle;
-#define rect(x, y, w, h) ((Rectangle){ x, y, w, h })
+INLINE Rectangle rect(float x, float y, float w, float h ) { return (Rectangle){ x, y, w, h }; } 
+INLINE Rectangle rect2(float2 xy, float2 wh) { return (Rectangle){ xy.x, xy.y, wh.x, wh.y }; }
 
 #define rgba(r, g, b, a) (Color){ r, g, b, a }
 #define rgb(r, g, b) (Color){ r, g, b, 255 }

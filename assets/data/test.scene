@@ -5,7 +5,7 @@
     {
       "features": "DRAW_MESH | PLAYER_CONTROLLED | CAST_SHADOW | COLLIDABLE | ANIMATE",
       "transform": {
-        "translation": [ 0, 0, 3 ],
+        "translation": [ 0, 0.0015, 3 ],
         "rotation": [ 0, 0, 0, 1 ],
         "scale": [ 1, 1, 1 ]
       },

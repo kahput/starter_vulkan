@@ -8,7 +8,12 @@
 
 INLINE bool rect_contains(Rectangle rect, float x, float y) { return x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height; }
 INLINE bool rect_contains_point(Rectangle rect, float2 position) { return rect_contains(rect, position.x, position.y); }
+
 INLINE Rectangle rect_from_center(float2 center, float2 half_extent) { return (Rectangle){ center.x - half_extent.x, center.y - half_extent.y, half_extent.x * 2.0f, half_extent.y * 2.0f }; }
+INLINE Rectangle rect_padded(Rectangle rect, float4 padding) { return (Rectangle){ rect.x + padding.w, rect.y + padding.x, rect.width - (padding.y + padding.w), rect.height - (padding.x + padding.z) }; }
+
+INLINE float2 rect_center(Rectangle rect) { return (float2){ rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f }; }
+INLINE float2 rect_half_extent(Rectangle rect) { return (float2){ rect.width * 0.5f, rect.height * 0.5f }; }
 // :2d
 
 INLINE float3 ray_at(Ray3 r, float t) { return add3(r.origin, scale3(r.direction, t)); }
@@ -22,16 +27,16 @@ INLINE float3 aabb3_extent(AABB3 a) { return sub3(a.max, a.min); }
 INLINE float3 aabb3_half_extent(AABB3 a) { return scale3(aabb3_extent(a), 0.5f); }
 INLINE AABB3 aabb3_empty(void) { return (AABB3){ .min = splat3(FLOAT_MAX), .max = splat3(-FLOAT_MAX) }; }
 INLINE void aabb3_expand(AABB3 *a, float3 point) {
-	a->min = less3(a->min, point);
-	a->max = more3(a->max, point);
+	a->min = min3(a->min, point);
+	a->max = max3(a->max, point);
 }
-INLINE AABB3 aabb3_merge(AABB3 a, AABB3 b) { return (AABB3){ .min = less3(a.min, b.min), .max = more3(a.max, b.max) }; }
+INLINE AABB3 aabb3_merge(AABB3 a, AABB3 b) { return (AABB3){ .min = min3(a.min, b.min), .max = max3(a.max, b.max) }; }
 INLINE AABB3 aabb3_move(AABB3 a, float3 displacement) { return (AABB3){ .min = add3(a.min, displacement), .max = add3(a.max, displacement) }; }
 INLINE bool aabb3_overlap(AABB3 a, AABB3 b) { return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z); }
 INLINE bool aabb3_contains_point(AABB3 a, float3 p) { return (p.x > a.min.x && p.x < a.max.x) && (p.y > a.min.y && p.y < a.max.x) && (p.z > a.min.z && p.z < a.max.z); }
 
 INLINE Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), len3(aabb3_half_extent(a)) }; }
-INLINE bool sphere_contains_point(Sphere s, float3 p) { return len3_sq(sub3(p, s.center)) <= s.radius * s.radius; }
+INLINE bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.center)) <= s.radius * s.radius; }
 
 INLINE Plane plane_from_side(Side s) { return (Plane){ side_to_float3[s], 0.0f }; }
 INLINE Plane plane_from_point_normal(float3 point, float3 normal) { return (Plane){ normal, dot3(point, normal) }; }

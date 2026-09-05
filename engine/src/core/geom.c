@@ -63,7 +63,7 @@ float3 shape3_furthest_point(const Shape3 *s, float3 direction) {
 	float3 result = { 0 };
 
 	direction = norm3(direction);
-	ASSERT(len3_sq(direction) > EPSILON * EPSILON);
+	ASSERT(lensq3(direction) > EPSILON * EPSILON);
 	ASSERT(s != 0);
 
 	switch (s->kind) {
@@ -327,7 +327,7 @@ CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
 	float3 max = a.max;
 
 	CastResult3 result = CAST3_NO_HIT, temp = CAST3_NO_HIT;
-	if (len3_sq(r.direction)) {
+	if (lensq3(r.direction)) {
 		for (uint32_t side = 0; side < SIDE_MAX3; ++side) {
 			float3 pn = side_to_float3[side];
 			float3 po = add3(aabb3_center(a), mul3(pn, aabb3_half_extent(a)));
@@ -397,7 +397,7 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 			t1 = 1.0f;
 		}
 
-		if (equalf(ndotv, 0.0f))
+		if (eqf(ndotv, 0.0f))
 			ok = embedded;
 		else {
 			t0 = (-1.0f - signed_dist) / ndotv;
@@ -436,7 +436,7 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 				float a = velocity_length_sq;
 
 				float b = 2.0 * dot3(velocity, sub3(center, vertex));
-				float c = len3_sq(sub3(vertex, center)) - radius_sq;
+				float c = lensq3(sub3(vertex, center)) - radius_sq;
 
 				float temp_t;
 				if (lowest_root(a, b, c, result.t, &temp_t)) {
@@ -454,13 +454,13 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 				float3 vertex = vertices[edge_index];
 				float3 origin_to_vertex = sub3(vertex, center);
 
-				float edge_length_sq = len3_sq(edge);
+				float edge_length_sq = lensq3(edge);
 				float edge_dot_velocity = dot3(edge, velocity);
 				float edge_dot_origin_to_vertex = dot3(edge, origin_to_vertex);
 
 				float a = edge_length_sq * -velocity_length_sq + (edge_dot_velocity * edge_dot_velocity);
 				float b = edge_length_sq * (2.0f * dot3(velocity, origin_to_vertex)) - 2.0 * edge_dot_velocity * edge_dot_origin_to_vertex;
-				float c = edge_length_sq * (radius_sq - len3_sq(origin_to_vertex)) + (edge_dot_origin_to_vertex * edge_dot_origin_to_vertex);
+				float c = edge_length_sq * (radius_sq - lensq3(origin_to_vertex)) + (edge_dot_origin_to_vertex * edge_dot_origin_to_vertex);
 
 				float temp_t;
 				if (lowest_root(a, b, c, result.t, &temp_t)) {

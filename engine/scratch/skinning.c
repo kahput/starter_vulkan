@@ -171,7 +171,7 @@ String8 meshid_to_metadata[MESH_MAX] = {
 	[MESH_BARREL] = scomp("assets/models/barrel.glb"),
 	[MESH_ROOM] = scomp("assets/models/room.glb"),
 	[MESH_ROOM_LARGE] = scomp("assets/models/room-large.glb"),
-	[MESH_TEST_LEVEL] = scomp("assets/models/test_level.glb"),
+	[MESH_TEST_LEVEL] = scomp("assets/models/test_level_collider.glb"),
 	[MESH_GRASS_BILLBOARD] = scomp("assets/models/grass.glb"),
 };
 
@@ -247,6 +247,7 @@ typedef struct Entity {
 } Entity;
 
 #define MAX_ENTITIES 1024
+#define DEBUG_SNAPSHOT_MAX 1024
 typedef struct {
 	Entity entities[MAX_ENTITIES];
 	uint32_t entity_count;
@@ -1192,8 +1193,8 @@ int main(void) {
 		} };
 
 		uint2 dims = os_surface_size(main_render);
-		float2 mouse_delta = cast2(input_mouse_delta(), float2);
-		float2 mouse = cast2(input_mouse_position(), float2);
+		float2 mouse_delta = as2(input_mouse_delta(), float2);
+		float2 mouse = as2(input_mouse_position(), float2);
 		mouse_delta.x /= dims.x;
 		mouse_delta.y /= dims.y;
 
@@ -1566,7 +1567,7 @@ int main(void) {
 						if (topbar_interact.held)
 							panel_offset = sub2(mouse, mouse_grab_offset);
 
-						Rectangle dock_rect = rect_from_center(scale2(cast2(dims, float2), 0.5f), make2(40.0f, 40.0f));
+						Rectangle dock_rect = rect_from_center(scale2(as2(dims, float2), 0.5f), make2(40.0f, 40.0f));
 
 						float EDGE_MARGIN = 10.0f;
 						int2 dock_dir = {
@@ -1851,16 +1852,13 @@ int main(void) {
 							entity->grounded = false;
 						}
 
-						float3 old_velocity = entity->velocity;
-						entity->velocity = move_toward3(
+						float3 old_velocity = { entity->velocity.x, 0.0f, entity->velocity.z };
+						entity->velocity = approach3(
 							old_velocity,
 							target_velocity,
 							accel_speed * dt //
 						);
-
 						entity->velocity.y = vertical_velocity;
-
-						LOG_INFO("%.2f", entity->velocity.y);
 
 						displacement = scale3(
 							add3(old_velocity, entity->velocity),
@@ -1884,10 +1882,11 @@ int main(void) {
 					if (entity->shape.kind == SHAPE_KIND_SPHERE) {
 						float3 pos = add3(entity->transform.translation, entity->shape.as.sphere.center);
 
-						if (len3_sq(displacement) > EPSILON) {
+						if (lensq3(displacement) > EPSILON) {
 							float max_dist = len3(displacement);
 							float3 direction = scale3(displacement, 1.0f / max_dist);
 							SlideResult3 move_result = move_and_slide(pos, direction, max_dist, world_collider_tri_count, world_collider);
+
 							entity->transform.translation = add3(entity->transform.translation, move_result.displacement);
 						}
 					}
@@ -2425,7 +2424,7 @@ int main(void) {
 						float3 center = add3(entity->transform.translation, aabb3_center(mesh->bounds));
 
 						transparent_meshes[transparent_mesh_count++] = (MeshSort){
-							.distance = len3_sq(sub3(camera->position, center)),
+							.distance = lensq3(sub3(camera->position, center)),
 							.entity = entity
 						};
 					}
@@ -2505,7 +2504,7 @@ int main(void) {
 				Frame3D frame_2d = {
 					.view = identity4x4(),
 					.proj = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
-					.viewport = cast2(dims, float2),
+					.viewport = as2(dims, float2),
 					.time = time,
 				};
 				uint32_t quad_count = quad2d->offset / sizeof(DRAW_Quad2D);
@@ -2826,7 +2825,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 			float4x4 transform = identity4x4();
 			if (node->skin == 0)
 				cgltf_node_transform_world(node, transform.elements);
-			bool has_transform = equal4x4(identity4x4(), transform) == false;
+			bool has_transform = eq4x4(identity4x4(), transform) == false;
 
 			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
 				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
@@ -2914,8 +2913,8 @@ Mesh load_gltf(Arena *arena, String8 path) {
 					}
 				}
 
-				result.bounds.min = less3(result.bounds.min, part->bounds.min);
-				result.bounds.max = more3(result.bounds.max, part->bounds.max);
+				result.bounds.min = min3(result.bounds.min, part->bounds.min);
+				result.bounds.max = max3(result.bounds.max, part->bounds.max);
 
 				if (data->skins_count > 0 && skinned == 0 && node->parent && node->parent->mesh == 0) { // add dummy skinned data
 					int32_t parent_bone = -1;
@@ -3324,7 +3323,7 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
 
 		float3 right, up;
-		p.normal = basis3(p.normal, &right, &up);
+		p.normal = orthobasis3(p.normal, &right, &up);
 
 		Vertex3D *vertex_cursor = result.vertices;
 		for (uint32_t z = 0; z < subdivision_z; ++z) {

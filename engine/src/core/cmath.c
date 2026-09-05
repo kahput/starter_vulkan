@@ -123,23 +123,23 @@ float2x2 make2x2_from_rotation(float rad) {
 	return result;
 }
 
-bool equal4x4(float4x4 lhs, float4x4 rhs) {
-	return equalf(lhs.elements[0], rhs.elements[0]) &&
-		equalf(lhs.elements[1], rhs.elements[1]) &&
-		equalf(lhs.elements[2], rhs.elements[2]) &&
-		equalf(lhs.elements[3], rhs.elements[3]) &&
-		equalf(lhs.elements[4], rhs.elements[4]) &&
-		equalf(lhs.elements[5], rhs.elements[5]) &&
-		equalf(lhs.elements[6], rhs.elements[6]) &&
-		equalf(lhs.elements[7], rhs.elements[7]) &&
-		equalf(lhs.elements[8], rhs.elements[8]) &&
-		equalf(lhs.elements[9], rhs.elements[9]) &&
-		equalf(lhs.elements[10], rhs.elements[10]) &&
-		equalf(lhs.elements[11], rhs.elements[11]) &&
-		equalf(lhs.elements[12], rhs.elements[12]) &&
-		equalf(lhs.elements[13], rhs.elements[13]) &&
-		equalf(lhs.elements[14], rhs.elements[14]) &&
-		equalf(lhs.elements[15], rhs.elements[15]);
+bool eq4x4(float4x4 lhs, float4x4 rhs) {
+	return eqf(lhs.elements[0], rhs.elements[0]) &&
+		eqf(lhs.elements[1], rhs.elements[1]) &&
+		eqf(lhs.elements[2], rhs.elements[2]) &&
+		eqf(lhs.elements[3], rhs.elements[3]) &&
+		eqf(lhs.elements[4], rhs.elements[4]) &&
+		eqf(lhs.elements[5], rhs.elements[5]) &&
+		eqf(lhs.elements[6], rhs.elements[6]) &&
+		eqf(lhs.elements[7], rhs.elements[7]) &&
+		eqf(lhs.elements[8], rhs.elements[8]) &&
+		eqf(lhs.elements[9], rhs.elements[9]) &&
+		eqf(lhs.elements[10], rhs.elements[10]) &&
+		eqf(lhs.elements[11], rhs.elements[11]) &&
+		eqf(lhs.elements[12], rhs.elements[12]) &&
+		eqf(lhs.elements[13], rhs.elements[13]) &&
+		eqf(lhs.elements[14], rhs.elements[14]) &&
+		eqf(lhs.elements[15], rhs.elements[15]);
 }
 
 float4x4 mul4x4(float4x4 lhs, float4x4 rhs) {

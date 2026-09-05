@@ -1,4 +1,5 @@
 #include "app/scene.h"
+#include "core/cmath.h"
 #include "core/debug.h"
 #include "core/geom.h"
 #include "core/geom_types.h"
@@ -50,6 +51,70 @@ typedef struct {
 State *state = 0;
 static inline char *named(const char *name) {
 	return (char *)str8_pushf(state->permanent, str8_wrap(name)).text;
+}
+
+typedef struct {
+	float2 position;
+	bool active, hovered, initialized;
+} Drag2D;
+Rectangle drag2d_point(Drag2D *drag, float2 initial_position, float radius) {
+	Rectangle result = { 0 };
+
+	bool ok = drag;
+	if (ok) {
+		float2 mouse = as2(input_mouse_position(), float2);
+		if (drag->initialized == false) {
+			drag->position = initial_position;
+			drag->initialized = true;
+		}
+
+		Rectangle handle = rect_from_center(drag->position, splat2(radius));
+		drag->hovered = rect_contains_point(handle, mouse);
+
+		if (drag->hovered && input_mouse_pressed(MOUSE_BUTTON_LEFT))
+			drag->active = true;
+
+		if (drag->active) drag->position = mouse;
+		if (input_mouse_released(MOUSE_BUTTON_LEFT)) drag->active = false;
+
+		result = rect_from_center(drag->position, splat2(radius));
+	}
+
+	return result;
+}
+
+Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, float *t) {
+	Rectangle result = { 0 };
+
+	bool ok = drag != 0 && t != 0;
+	if (ok) {
+		*t = clampf(*t, min, max);
+		float2 mouse = as2(input_mouse_position(), float2);
+
+		float thumb_h = bounds.height;
+		float thumb_w = thumb_h;
+
+		float travel = bounds.width - thumb_w;
+
+		drag->hovered = rect_contains_point(bounds, mouse);
+		if (drag->hovered && input_mouse_pressed(MOUSE_BUTTON_LEFT)) drag->active = true;
+		if (input_mouse_released(MOUSE_BUTTON_LEFT)) drag->active = false;
+
+		if (drag->active) {
+			float local_x = mouse.x - bounds.x - thumb_w * 0.5f;
+			local_x = clampf(local_x, 0.0f, travel);
+
+			float mouse_ratio = (travel != 0.0f) ? (local_x / travel) : 0.0f;
+			*t = min + (mouse_ratio * (max - min));
+		}
+
+		float range = max - min;
+		float t_norm = range != 0.0f ? (*t - min) / range : 0.0f;
+
+		result = rect(bounds.x + t_norm * travel, bounds.y, thumb_w, thumb_h);
+	}
+
+	return result;
 }
 
 bool tick(Arena *permanent, Arena *frame) {
@@ -163,8 +228,8 @@ bool tick(Arena *permanent, Arena *frame) {
 		.width = dims.x, .height = dims.y
 	};
 
-	float2 mouse_delta = cast2(input_mouse_delta(), float2);
-	float2 mouse_position = cast2(input_mouse_position(), float2);
+	float2 mouse_delta = as2(input_mouse_delta(), float2);
+	float2 mouse_position = as2(input_mouse_position(), float2);
 	mouse_delta.x /= dims.x;
 	mouse_delta.y /= dims.y;
 
@@ -178,102 +243,73 @@ bool tick(Arena *permanent, Arena *frame) {
 	  .capacity = sizeof(DRAW_Line3D) * 8096,
 	} };
 	Arena quad2d[] = { {
-	  .base = arena_push_count(frame, DRAW_Quad2D, 1024),
-	  .capacity = sizeof(DRAW_Quad2D) * 1024,
+	  .base = arena_push_count(frame, DRAW_Quad2D, 8096),
+	  .capacity = sizeof(DRAW_Quad2D) * 8096,
 	} };
 	Arena quad3d[] = { {
 	  .base = arena_push_count(frame, DRAW_Quad3D, 1024),
 	  .capacity = sizeof(DRAW_Quad3D) * 1024,
 	} };
 
-	int32_t seg_count = 16;
-	for (int32_t z = -seg_count; z < seg_count; ++z) {
-		for (int32_t x = -seg_count; x < seg_count; ++x) {
-			draw3d_line(line3d, make3(x, 0.0f, z), make3(x + 1.0f, 0.0f, z), 1.0f, z == 0 ? BLUE : GRAY);
-			draw3d_line(line3d, make3(x, 0.0f, z), make3(x, 0.0f, z + 1.0f), 1.0f, x == 0 ? RED : GRAY);
-		}
-	}
+	/* int32_t seg_count = 16; */
+	/* for (int32_t z = -seg_count; z <= seg_count; ++z) */
+	/* 	draw3d_line(line3d, make3(-seg_count, 0.0f, z), make3(seg_count, 0.0f, z), 1.0f, z == 0 ? BLUE : GRAY); */
+	/* for (int32_t x = -seg_count; x <= seg_count; ++x) */
+	/* 	draw3d_line(line3d, make3(x, 0.0f, -seg_count), make3(x, 0.0f, seg_count), 1.0f, x == 0 ? RED : GRAY); */
 
-	Triangle3 triangle = {
-		{ 3.0f, 0.0f, 3.0f },
-		{ 0.0f, 0.0f, -3.0f },
-		{ -3.0f, 0.0f, 3.0f },
+	/* draw3d_sphere_outline(line3d, make3(0.0f, 3.0f, 0.0f), 3.0f, 32, 2.0f, BLACK); */
+
+	float segment_size = 32.0f;
+	float2 origo = rect_center(viewport);
+
+	int2 counts = {
+		(int32_t)ceilf(viewport.width * 0.5f / segment_size),
+		(int32_t)ceilf(viewport.height * 0.5f / segment_size)
 	};
-	static float3 point = { 1.5f, 2.0f, 0.0f };
 
-    float3 ab = sub3(triangle.b, triangle.a);
-    float3 ac=  sub3(triangle.c, triangle.a);
+	for (int32_t x = -counts.x; x <= counts.x; ++x) {
+		float px = origo.x + x * segment_size;
 
-    float3 abc = norm3(cross3(ab, ac));
-
-    float3 center = scale3(add3(add3(triangle.a, triangle.b), triangle.c), 0.5f);
-    draw3d_arrow(line3d, center, add3(center, scale3(abc, 1.0f)), 3.0f, RED, view, proj, viewport.width);
-
-	if (triangle3_contains_point(triangle, point)) {
+		Color c = x == 0 ? BLUE : GRAY;
+		draw2d_line(quad2d, make2(px, 0.0f), make2(px, viewport.height), 1.0f, c);
 	}
 
-	float3 a = sub3(triangle.a, point);
-	float3 b = sub3(triangle.b, point);
-	float3 c = sub3(triangle.c, point);
+	for (int32_t y = -counts.y; y <= counts.y; ++y) {
+		float py = origo.y + y * segment_size;
 
-	draw3d_triangle_outline(line3d, triangle, 3.0f, triangle3_contains_point(triangle, point) ? RED : BLACK);
-
-	draw3d_arrow(line3d, point, add3(point, a), 3.0f, BLACK, view, proj, viewport.width);
-	draw3d_arrow(line3d, point, add3(point, b), 3.0f, BLACK, view, proj, viewport.width);
-	draw3d_arrow(line3d, point, add3(point, c), 3.0f, BLACK, view, proj, viewport.width);
-
-	static bool held = false;
-
-	float2 screen;
-	if (project_to_viewport(view_proj, viewport, point, &screen)) {
-		Rectangle rect = rect_from_center(screen, splat2(8.0f));
-
-		Color c = BLACK;
-		if (rect_contains_point(rect, mouse_position)) {
-			c = ORANGE;
-
-			if (input_mouse_pressed(MOUSE_BUTTON_LEFT)) held = true;
-		}
-
-		if (held) {
-			c = BLUE;
-
-			Ray3 r = { 0 };
-
-			float3 forward = norm3(sub3(camera->target, camera->position));
-
-			float3 right, up;
-			basis3(forward, &right, &up);
-
-			float2 ndc = {
-				(2.0f * (mouse_position.x - viewport.x) / viewport.width) - 1.0f,
-				(2.0f * (mouse_position.y - viewport.y) / viewport.height) - 1.0f,
-			};
-
-			float tan_half_fov = tanf(camera->fovy * 0.5f);
-			float cam_x = ndc.x * tan_half_fov * (viewport.width / viewport.height);
-			float cam_y = ndc.y * tan_half_fov;
-
-			float3 dir = add3(forward, add3(scale3(right, cam_x), scale3(up, cam_y)));
-
-			r.origin = camera->position;
-			r.direction = norm3(dir);
-
-			float denom = dot3(forward, r.direction);
-			if (fabsf(denom) > EPSILON) {
-				float t = dot3(forward, sub3(point, r.origin)) / denom;
-				if (t > 0.0f)
-					point = add3(r.origin, scale3(r.direction, t));
-			}
-		}
-
-		draw2d_quad(quad2d, rect_from_center(screen, splat2(8.0f)),
-			(DRAW_QuadStyle){
-			  .fill_color = c,
-			  .radii = splat4(24.0f),
-			});
+		Color c = y == 0 ? RED : GRAY;
+		draw2d_line(quad2d, make2(0.0f, py), make2(viewport.width, py), 1.0f, c);
 	}
-	if (input_mouse_released(MOUSE_BUTTON_LEFT)) held = false;
+
+	static Drag2D drag_blue = { 0 }, drag_red = { 0 }, slider = { 0 };
+	Rectangle blue = drag2d_point(&drag_blue, add2(origo, make2(-segment_size, 0.0f)), segment_size * 0.25f);
+	draw2d_quad(quad2d, blue,
+		(DRAW_QuadStyle){
+		  .fill_color = drag_blue.active ? rgba(16, 40, 120, 160) : (drag_blue.hovered ? rgba(64, 110, 220, 110) : rgba(20, 40, 80, 90)),
+		  .radii = splat4(segment_size * 0.25f),
+		});
+
+	Rectangle red = drag2d_point(&drag_red, add2(origo, make2(segment_size, 0.0f)), segment_size * 0.25f);
+	draw2d_quad(quad2d, red,
+		(DRAW_QuadStyle){
+		  .fill_color = drag_red.active ? rgba(120, 16, 16, 160) : (drag_red.hovered ? rgba(220, 64, 64, 110) : rgba(80, 20, 20, 90)),
+		  .radii = splat4(segment_size * 0.25f),
+		});
+
+	static float radius = 1.0f;
+	Rectangle slider_rect = rect2(splat2(16.0f), make2(256.0f, 24.0f));
+	draw2d_rect(quad2d, slider_rect, ORANGE);
+	draw2d_quad(quad2d,
+		drag2d_slider(&slider, rect_padded(slider_rect, splat4(4.0f)), 0.0f, 8.0f, &radius),
+		(DRAW_QuadStyle){
+		  .fill_color = RED,
+		});
+
+	bool is_inside = distsq2(origo, rect_center(blue)) <= sqf(radius * segment_size);
+	draw2d_circle_outline(quad2d, origo, radius * segment_size, 3.0f, is_inside ? GREEN : RED);
+
+	float2 blue_to_red = norm2(sub2(rect_center(red), rect_center(blue)));
+	draw2d_arrow(quad2d, rect_center(blue), scale2(blue_to_red, segment_size), 2.0f, segment_size * 0.25f, BLACK);
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -373,7 +409,7 @@ bool tick(Arena *permanent, Arena *frame) {
 			FrameData fd = {
 				.view = identity4x4(),
 				.proj = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
-				.viewport = cast2(dims, float2),
+				.viewport = as2(dims, float2),
 				.time = time,
 			};
 			uint32_t quad_count = quad2d->offset / sizeof(DRAW_Quad2D);

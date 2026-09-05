@@ -118,7 +118,7 @@ int main(void) {
 			Frame2D frame_2d = {
 				.view = identity4x4(),
 				.projection = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
-				.viewport = cast2(dims, float2),
+				.viewport = as2(dims, float2),
 				.time = time,
 			};
 
