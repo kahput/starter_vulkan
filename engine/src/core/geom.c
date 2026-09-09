@@ -16,17 +16,24 @@ float3 barycentric(Triangle3 t, float3 p) {
 	float3 ac = sub3(t.c, t.a);
 	float3 ap = sub3(p, t.a);
 
-	float ab_dot_ab = dot3(ab, ab);
-	float ab_dot_ac = dot3(ab, ac);
-	float ac_dot_ac = dot3(ac, ac);
-	float ap_dot_ab = dot3(ap, ab);
+	// clang-format off
+    float2x2 A = {{
+        [0] = dot3(ab, ab), [2] = dot3(ab, ac),
+        [1] = dot3(ab, ac), [3] = dot3(ac, ac),
+    }};
+	// clang-format on
 
-	float ap_dot_ac = dot3(ap, ac);
-	float denom = ab_dot_ab * ac_dot_ac - ab_dot_ac * ab_dot_ac;
+	float denom = det2x2(A);
+	if (fabsf(denom) > EPSILON) {
+		float2 rhs = { dot3(ap, ab), dot3(ap, ac) };
 
-	result.y = (ac_dot_ac * ap_dot_ab - ab_dot_ac * ap_dot_ac) / denom; // v
-	result.z = (ab_dot_ab * ap_dot_ac - ab_dot_ac * ap_dot_ab) / denom; // w
-	result.x = 1.0f - result.y - result.z; // u
+		denom = 1.0f / denom;
+		float v = det2x2(basis2x2(rhs, col2x2(A, 1))) * denom;
+		float w = det2x2(basis2x2(col2x2(A, 0), rhs)) * denom;
+		float u = 1.0f - (v + w);
+
+		result = f3(u, v, w);
+	}
 
 	return result;
 }

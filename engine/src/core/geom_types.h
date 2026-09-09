@@ -14,6 +14,7 @@ typedef struct {
 	quat4 rotation;
 	float3 scale;
 } Transform3;
+INLINE float4x4 transform4x4(Transform3 transform) { return mul4x4(translation4x4(transform.translation), mul4x4(rotation4x4(transform.rotation), scaling4x4(transform.scale))); }
 
 typedef struct {
 	bool hit;

@@ -881,7 +881,7 @@ int main(void) {
 	const uint32_t map_depth = 32;
 
 	Mesh meshes[MESH_MAX] = { 0 };
-	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, plane_from_side(SIDE_UP), map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, (Plane){ .normal = unit3(UP) }, map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
 	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, SIDE_TOP, 256.f, 256.f, noise_image);
@@ -994,7 +994,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(axis_angle4x4(unit3(UP), randf_range(0, TAU)), translation4x4(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(axisangle4x4(unit3(UP), randf_range(0, TAU)), translation4x4(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -1183,14 +1183,7 @@ int main(void) {
 		}
 
 		// :update
-		Arena quad2d[] = { {
-		  .base = arena_push_count(frame_arena, DRAW_Quad2D, 6 * 1024),
-		  .capacity = sizeof(DRAW_Quad2D) * 6 * 1024,
-		} };
-		Arena line3d[] = { {
-		  .base = arena_push_count(frame_arena, DRAW_Line3D, 6 * 2048),
-		  .capacity = sizeof(DRAW_Line3D) * 6 * 2048,
-		} };
+		DRAW_List *draw = drawlist_make(frame_arena);
 
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = as2(input_mouse_delta(), float2);
@@ -1796,7 +1789,7 @@ int main(void) {
 						entity->grounded = ground_probe_result.hit_ground;
 
 						if (ground_probe_result.hit_ground) {
-							draw3d_arrow(line3d, center, add3(center, ground_probe_result.ground_normal), 3.0f, GREEN, view, proj, viewport.width);
+							draw3d_arrow(center, add3(center, ground_probe_result.ground_normal), 3.0f, GREEN, view, proj, viewport.width);
 							entity->ground_normal = ground_probe_result.ground_normal;
 						}
 
@@ -2020,7 +2013,7 @@ int main(void) {
 								screen.y -= 30;
 
 								Rectangle textbox = rect_from_center(screen, make2(60.0f, 10.0f));
-								draw2d_quad(quad2d, textbox,
+								draw2d_quad(textbox,
 									(DRAW_QuadStyle){
 									  .radii = splat4(8.0f),
 									  .border_width = 1.0f,
@@ -2033,7 +2026,7 @@ int main(void) {
 
 								float2 text_half_size = scale2(measure_text(font, text), 0.5f);
 								float2 center = sub2(screen, text_half_size);
-								draw2d_textf(quad2d, font, center, BLACK, text);
+								draw2d_textf(font, center, BLACK, text);
 							}
 
 							if (dist_sq < closest) {
@@ -2061,9 +2054,9 @@ int main(void) {
 
 				if (widget->settings.text.length) {
 					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
-					draw2d_textf(quad2d, font, load2(widget->offset), widget->settings.fg, widget->settings.text);
+					draw2d_textf(font, load2(widget->offset), widget->settings.fg, widget->settings.text);
 				} else {
-					draw2d_quad(quad2d, imgui_rect_live(widget),
+					draw2d_quad(imgui_rect_live(widget),
 						(DRAW_QuadStyle){
 						  .image = widget->settings.image,
 						  .border_width = widget->settings.border_width,
@@ -2092,7 +2085,7 @@ int main(void) {
 				} else
 					shape = entity->shape;
 
-				draw3d_shape_outline(line3d, &shape, entity->transform.translation, 3.0f);
+				draw3d_shape_outline(&shape, entity->transform.translation, 3.0f);
 			}
 		}
 
@@ -2230,14 +2223,9 @@ int main(void) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
 
-						float4x4 transform = compose4x4_quat(
-							entity->transform.translation,
-							entity->transform.rotation,
-							entity->transform.scale //
-						);
 						struct {
 							float4x4 model;
-						} pc = { .model = transform };
+						} pc = { .model = transform4x4(entity->transform) };
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
@@ -2292,11 +2280,6 @@ int main(void) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
 
-						float4x4 transform = compose4x4_quat(
-							entity->transform.translation,
-							entity->transform.rotation,
-							entity->transform.scale //
-						);
 						struct {
 							float4x4 model;
 							float4 base_color;
@@ -2304,7 +2287,7 @@ int main(void) {
 							float2 metallic_roughness;
 							float4 uv_transform; // xy = scale, zw = offset
 						} pc = {
-							.model = transform,
+							.model = transform4x4(entity->transform),
 							.base_color = material->tint,
 							.emissive = splat4(1.0f),
 							.metallic_roughness = { 0.0f, 0.5f },
@@ -2466,40 +2449,29 @@ int main(void) {
 						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 							MeshPart *part = &mesh->parts[part_index];
 
-							struct {
-								float4x4 model;
-								float4 tint;
-								float4 emissive;
-								float2 metallic_roughness;
-								float4 uv_st;
-							} pc = {
-								.model = compose4x4_quat(e->transform.translation, e->transform.rotation, e->transform.scale),
-								.tint = mesh->materials[part->material_id].tint,
-								.emissive = mesh->materials[part->material_id].tint,
-							};
-							float4x4 world_from_object = compose4x4_quat(e->transform.translation, e->transform.rotation, e->transform.scale);
-
+							float4x4 world_from_object = transform4x4(e->transform);
 							gfx_cmd_push_constant(cmd, sizeof(world_from_object), world_from_object.elements);
+
 							gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
 						}
 					}
 				}
 
 				{ // :overlay
-					if (line3d->offset) {
+					if (draw->line3d->offset) {
 						gfx_cmd_shader_bind(cmd, shaders[SHADER_LINE3D]);
 						Uniform uniforms[] = {
-							storage_data(0, line3d->base, line3d->offset),
+							storage_data(0, draw->line3d->base, draw->line3d->offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw_instanced(cmd, 0, 6, 0, line3d->offset / sizeof(DRAW_Line3D));
+						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_Line3D));
 					}
 				}
 
 				gfx_cmd_draw_end(cmd);
 			}
 
-			if (quad2d->offset) { // :canvas
+			if (draw->quad2d->offset) { // :canvas
 
 				Frame3D frame_2d = {
 					.view = identity4x4(),
@@ -2507,7 +2479,7 @@ int main(void) {
 					.viewport = as2(dims, float2),
 					.time = time,
 				};
-				uint32_t quad_count = quad2d->offset / sizeof(DRAW_Quad2D);
+				uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_Quad2D);
 
 				GFX_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
@@ -2515,7 +2487,7 @@ int main(void) {
 					images[texture_id] = white_texture;
 
 				for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-					DRAW_Quad2D *quad = (DRAW_Quad2D *)quad2d->base + quad_instance;
+					DRAW_Quad2D *quad = (DRAW_Quad2D *)draw->quad2d->base + quad_instance;
 
 					if (quad->imageid && quad->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;
@@ -2552,7 +2524,7 @@ int main(void) {
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &frame_2d, sizeof(frame_2d)),
-					storage_data(1, quad2d->base, quad2d->offset),
+					storage_data(1, draw->quad2d->base, draw->quad2d->offset),
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 
@@ -3124,7 +3096,7 @@ Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segment
 				float ca = cosf(azimuth), sa = -sinf(azimuth);
 
 				result.vertices[vertex_cursor++] = (Vertex3D){
-					.position = add3(origin, make3(st * ca * radius.x, ct * radius.y, st * sa * radius.z)),
+					.position = add3(origin, f3(st * ca * radius.x, ct * radius.y, st * sa * radius.z)),
 					.normal = { st * ca, ct, st * sa },
 					.uv = { (float)segment / (segments - 1), (float)ring / (rings - 1) },
 				};

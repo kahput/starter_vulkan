@@ -19,6 +19,9 @@ typedef struct {
 	float elements[2 * 2];
 } float2x2;
 typedef struct {
+	float elements[3 * 3];
+} float3x3;
+typedef struct {
 	float elements[4 * 4];
 } float4x4;
 typedef float4 quat4;
@@ -32,7 +35,7 @@ uint32_t randu_range(uint32_t min, uint32_t max);
 int32_t randi_range(int32_t min, int32_t max);
 INLINE float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
 INLINE float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
-INLINE float sqf(float v) { return v* v; }
+INLINE float sqf(float v) { return v * v; }
 INLINE float lerpf(float start, float end, float t) { return start + (end - start) * t; }
 INLINE bool eqf(float a, float b) {
 	if (a == b)
@@ -76,7 +79,6 @@ INLINE float2 add2(float2 a, float2 b) { return (float2){ a.x + b.x, a.y + b.y }
 INLINE float2 sub2(float2 a, float2 b) { return (float2){ a.x - b.x, a.y - b.y }; }
 INLINE float2 mul2(float2 a, float2 b) { return (float2){ a.x * b.x, a.y * b.y }; }
 INLINE float2 scale2(float2 v, float s) { return (float2){ v.x * s, v.y * s }; }
-
 INLINE float dot2(float2 a, float2 b) { return a.x * b.x + a.y * b.y; }
 
 INLINE float lensq2(float2 v) { return dot2(v, v); }
@@ -91,7 +93,7 @@ INLINE float2 norm2(float2 v) {
 
 	return scale2(v, 1.0f / length);
 }
-
+INLINE float2 proj2(float2 v, float2 axis) { return scale2(axis, dot2(axis, v)); }
 INLINE float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t) }; }
 INLINE float2 mid2(float2 a, float2 b) { return scale2(add2(a, b), 0.5f); }
 INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
@@ -121,7 +123,7 @@ INLINE float3 scale3(float3 v, float s) { return (float3){ v.x * s, v.y * s, v.z
 INLINE float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 INLINE float3 madd3(float3 a, float3 b, float s) { return (float3){ fmaf(b.x, s, a.x), fmaf(b.y, s, a.y), fmaf(b.z, s, a.z) }; }
 
-INLINE float3 cross3(float3 a, float3 b) { return (float3){ .x = a.y * b.z - b.y * a.z, .y = a.z * b.x - b.z * a.x, .z = a.x * b.y - b.x * a.y }; }
+INLINE float3 cross3(float3 a, float3 b) { return (float3){ a.y * b.z - b.y * a.z, a.z * b.x - b.z * a.x, a.x * b.y - b.x * a.y }; }
 INLINE float lensq3(float3 v) { return dot3(v, v); }
 INLINE float len3(float3 v) { return sqrtf(dot3(v, v)); }
 INLINE float dist3(float3 a, float3 b) { return len3(sub3(b, a)); }
@@ -170,8 +172,12 @@ INLINE float4 load4(const float v[4]) { return (float4){ .x = v[0], .y = v[1], .
 
 INLINE bool eq4(float4 a, float4 b) { return eqf(a.x, b.x) && eqf(a.y, b.y) && eqf(a.z, b.z) && eqf(a.w, b.w); }
 
+INLINE float4 add4(float4 a, float4 b) { return (float4){ a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w }; }
+INLINE float4 sub4(float4 a, float4 b) { return (float4){ a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w }; }
+INLINE float4 mul4(float4 a, float4 b) { return (float4){ a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w }; }
 INLINE float4 scale4(float4 v, float s) { return (float4){ v.x * s, v.y * s, v.z * s, v.w * s }; }
 INLINE float dot4(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
+
 INLINE float len4(float4 v) { return sqrtf(dot4(v, v)); }
 
 INLINE quat4 quat4_identity(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
@@ -182,23 +188,79 @@ quat4 quat4_slerp(quat4 q, quat4 p, float t);
 // --- float2x2 ---
 float2x2 make2x2_from_rotation(float rad);
 INLINE float2 mul2x2v(float2x2 m, float2 v) { return (float2){ m.elements[0] * v.x + m.elements[2] * v.y, m.elements[1] * v.x + m.elements[3] * v.y }; }
+INLINE float det2x2(float2x2 m) { return m.elements[0] * m.elements[3] - m.elements[2] * m.elements[1]; }
+
+INLINE float2x2 basis2x2(float2 right, float2 up) { return (float2x2){ { right.x, right.y, up.x, up.y } }; }
+INLINE float2 col2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i * 2], m.elements[i * 2 + 1] }; }
+INLINE float2 row2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i], m.elements[i + 2] }; }
+
+// --- float3x3 ---
+INLINE float3x3 mul3x3(float3x3 lhs, float3x3 rhs) {
+#define DOT(row, col) (                                     \
+                                                            \
+	lhs.elements[row + 0 * 3] * rhs.elements[col * 3 + 0] + \
+	lhs.elements[row + 1 * 3] * rhs.elements[col * 3 + 1] + \
+	lhs.elements[row + 2 * 3] * rhs.elements[col * 3 + 2]   \
+                                                            \
+)
+	// clang-format off
+	return (float3x3){{
+          [0] = DOT(0, 0), [3] = DOT(0, 1), [6] = DOT(0, 2),
+          [1] = DOT(1, 0), [4] = DOT(1, 1), [7] = DOT(1, 2),
+          [2] = DOT(2, 0), [5] = DOT(2, 1), [8] = DOT(2, 2)
+	}};
+	// clang-format on
+#undef DOT
+}
+
+INLINE float3 mul3x3v(float3x3 m, float3 v) {
+	return (float3){
+		m.elements[0] * v.x + m.elements[3] * v.y + m.elements[6] * v.z,
+		m.elements[1] * v.x + m.elements[4] * v.y + m.elements[7] * v.z,
+		m.elements[2] * v.z + m.elements[5] * v.y + m.elements[8] * v.z,
+	};
+}
+INLINE float det3x3(float3x3 m) {
+	return (
+		m.elements[0] * det2x2((float2x2){ { m.elements[4], m.elements[5], m.elements[7], m.elements[8] } }) -
+		m.elements[3] * det2x2((float2x2){ { m.elements[1], m.elements[2], m.elements[7], m.elements[8] } }) +
+		m.elements[6] * det2x2((float2x2){ { m.elements[1], m.elements[2], m.elements[4], m.elements[5] } }) //
+	);
+}
+
+INLINE float2 xform2p(float3x3 m, float2 p) { return make2_from3(mul3x3v(m, make3_from2(p, 1.0f))); }
+INLINE float2 xform2v(float3x3 m, float2 d) { return make2_from3(mul3x3v(m, make3_from2(d, 0.0f))); }
 
 // --- float4x4 ---
 bool eq4x4(float4x4 lhs, float4x4 rhs);
-INLINE float4x4 identity4x4(void) { return (float4x4){ .elements[0] = 1.0f, .elements[5] = 1.0f, .elements[10] = 1.0f, .elements[15] = 1.0f }; }
 float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
 float4 mul4x4v(float4x4 m, float4 v);
-
-float4x4 translation4x4(float3 translation);
-float4x4 basis4x4(float3 right, float3 up, float3 forward);
-float4x4 axis_angle4x4(float3 axis, float angle);
-float4x4 quat4x4(quat4 q);
-float4x4 scale4x4(float3 scale);
-
 float4x4 transpose4x4(float4x4 m);
 
-float4x4 compose4x4_euler(float3 position, float3 radians_angle, float3 scale);
-float4x4 compose4x4_quat(float3 position, quat4 rotation, float3 scale);
+INLINE float4x4 diagonal4x4(float4 v) {
+	return (float4x4){
+		.elements[0] = v.x,
+		.elements[5] = v.y,
+		.elements[10] = v.z,
+		.elements[15] = v.w,
+	};
+}
+INLINE float4x4 identity4x4(void) { return diagonal4x4(splat4(1.0f)); }
+
+float4x4 translation4x4(float3 translation);
+float4x4 rotation4x4(quat4 q);
+float4x4 scaling4x4(float3 scale);
+
+float4x4 axisangle4x4(float3 axis, float angle);
+float4x4 basis4x4(float3 right, float3 up, float3 forward);
+
+INLINE float4x4 trs4x4_quat(float3 translation, quat4 rotation, float3 scale) {
+	return mul4x4(
+		translation4x4(translation),
+		mul4x4(rotation4x4(rotation), scaling4x4(scale)) //
+	);
+}
+float4x4 trs4x4_euler(float3 position, float3 rotation, float3 scale);
 
 float4x4 perspective(float radians_fovy, float aspect, float near_z, float far_z);
 float4x4 orthographic(float left, float right, float top, float bottom, float near, float far);

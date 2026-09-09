@@ -5,11 +5,35 @@
 #include "core/debug.h"
 
 #include "core/geom.h"
+#include "core/geom_types.h"
 #include "gfx.h"
 #include "gfx/gfx_types.h"
 
-void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
-	bool ok = arena;
+DRAW_List *context = 0;
+DRAW_List *drawlist_make(Arena *arena) {
+	bool ok = arena != 0;
+	if (ok) {
+		context = arena_push_count(arena, DRAW_List, 1);
+
+		context->line3d[0] = (Arena){
+			.base = arena_push_count(arena, DRAW_Line3D, 8192),
+			.capacity = sizeof(DRAW_Line3D) * 8192,
+		};
+		context->quad2d[0] = (Arena){
+			.base = arena_push_count(arena, DRAW_Quad2D, 8192),
+			.capacity = sizeof(DRAW_Quad2D) * 8192,
+		};
+		context->quad3d[0] = (Arena){
+			.base = arena_push_count(arena, DRAW_Quad3D, 1024),
+			.capacity = sizeof(DRAW_Quad3D) * 1024,
+		};
+	}
+
+	return context;
+}
+
+void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
+	bool ok = context;
 	if (ok) {
 		float2 position = { rect.x, rect.y };
 		float2 size = { rect.width, rect.height };
@@ -43,12 +67,12 @@ void draw2d_quad(Arena *arena, Rectangle rect, DRAW_QuadStyle style) {
 			.border_width = style.border_width,
 		};
 
-		memory_copy(arena_push_count(arena, DRAW_Quad2D, 1), &quad, sizeof(quad));
+		memory_copy(arena_push_count(context->quad2d, DRAW_Quad2D, 1), &quad, sizeof(quad));
 	}
 }
 
-void draw2d_text(Arena *arena, Font *font, float2 position, Color color, String8 text) {
-	bool ok = arena && font;
+void draw2d_text(Font *font, float2 position, Color color, String8 text) {
+	bool ok = context && font;
 	if (ok) {
 		float y_offset = font->greatest_top_y;
 		float x_offset = 0.0f;
@@ -68,25 +92,25 @@ void draw2d_text(Arena *arena, Font *font, float2 position, Color color, String8
 				.height = glyph->src.height,
 			};
 
-			draw2d_quad(arena, rect, (DRAW_QuadStyle){ .image = &font->atlas, .fill_color = color, .uv = glyph->src });
+			draw2d_quad(rect, (DRAW_QuadStyle){ .image = &font->atlas, .fill_color = color, .uv = glyph->src });
 			x_offset += glyph->advance_x;
 		}
 	}
 }
 
-void draw2d_textf(Arena *arena, Font *font, float2 position, Color color, String8 format, ...) {
-	ArenaTemp scratch = arena_scratch_begin(arena);
+void draw2d_textf(Font *font, float2 position, Color color, String8 format, ...) {
+	ArenaTemp scratch = arena_scratch_begin(0);
 
 	va_list args;
 	va_start(args, format);
 	String8 text = str8_push_format_list(scratch.arena, format, args);
-	draw2d_text(arena, font, position, color, text);
+	draw2d_text(font, position, color, text);
 	va_end(args);
 
 	arena_scratch_end(scratch);
 }
 
-void draw2d_line(Arena *arena, float2 start, float2 end, float thickness, Color color) {
+void draw2d_line(float2 start, float2 end, float thickness, Color color) {
 	float2 vec = sub2(end, start);
 
 	float len_sq = lensq2(vec);
@@ -101,7 +125,7 @@ void draw2d_line(Arena *arena, float2 start, float2 end, float thickness, Color 
 	float rot_rad = atan2f(vec.y, vec.x);
 	Rectangle rect = rect_from_center(center, half_extent);
 
-	draw2d_quad(arena, rect,
+	draw2d_quad(rect,
 		(DRAW_QuadStyle){
 		  .fill_color = color,
 		  .origin = half_extent,
@@ -109,7 +133,25 @@ void draw2d_line(Arena *arena, float2 start, float2 end, float thickness, Color 
 		});
 }
 
-void draw2d_arrow(Arena *arena, float2 origin, float2 delta, float thicknes, float head_lengh, Color color) {
+void draw2d_dashed(float2 start, float2 end, float thickness, float segment_length, float gap_length, Color color) {
+	float2 diff = sub2(end, start);
+	float len = len2(diff);
+	float step = segment_length + gap_length;
+
+	bool ok = len > EPSILON && segment_length > 0.0f && step > 0.0f;
+	if (ok) {
+		float2 direction = scale2(diff, 1.0f / len);
+
+		for (float t = 0.0f; t < len; t += step) {
+			float2 at = add2(start, scale2(direction, t));
+			float2 to = add2(start, scale2(direction, minf(t + segment_length, len)));
+
+			draw2d_line(at, to, thickness, color);
+		}
+	}
+}
+
+void draw2d_arrow(float2 origin, float2 delta, float thicknes, float head_lengh, Color color) {
 	if (lensq2(delta) <= EPSILON * EPSILON) return;
 	float2 end = add2(origin, delta);
 
@@ -117,19 +159,19 @@ void draw2d_arrow(Arena *arena, float2 origin, float2 delta, float thicknes, flo
 	float2 right = rotate2(tangent, 45.0f * DEG2RAD);
 	float2 left = rotate2(right, 90.0f * DEG2RAD);
 
-	draw2d_line(arena, origin, end, thicknes, color);
-	draw2d_line(arena, end, add2(end, scale2(right, head_lengh)), thicknes, color);
-	draw2d_line(arena, end, add2(end, scale2(left, head_lengh)), thicknes, color);
+	draw2d_line(origin, end, thicknes, color);
+	draw2d_line(end, add2(end, scale2(right, head_lengh)), thicknes, color);
+	draw2d_line(end, add2(end, scale2(left, head_lengh)), thicknes, color);
 }
 
-void draw2d_triangle_outline(Arena *arena, Triangle2 t, float thickness, Color color) {
-	draw2d_line(arena, t.a, t.b, thickness, color);
-	draw2d_line(arena, t.b, t.c, thickness, color);
-	draw2d_line(arena, t.c, t.a, thickness, color);
+void draw2d_triangle_outline(Triangle2 t, float thickness, Color color) {
+	draw2d_line(t.a, t.b, thickness, color);
+	draw2d_line(t.b, t.c, thickness, color);
+	draw2d_line(t.c, t.a, thickness, color);
 }
 
-void draw2d_circle_outline(Arena *arena, float2 center, float radius, float thickness, Color color) {
-	draw2d_quad(arena, rect_from_center(center, splat2(radius)),
+void draw2d_circle_outline(float2 center, float radius, float thickness, Color color) {
+	draw2d_quad(rect_from_center(center, splat2(radius)),
 		(DRAW_QuadStyle){
 		  .border_color = color,
 		  .border_width = thickness,
@@ -137,8 +179,8 @@ void draw2d_circle_outline(Arena *arena, float2 center, float radius, float thic
 		});
 }
 
-void draw3d_arc_basis(Arena *arena, float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, Color color) {
-	bool ok = arena && segments;
+void draw3d_arc_basis(float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, Color color) {
+	bool ok = context && segments;
 
 	if (ok) {
 		for (uint32_t i = 0; i < segments; ++i) {
@@ -150,30 +192,30 @@ void draw3d_arc_basis(Arena *arena, float3 center, float2 radius, uint8_t segmen
 			float3 start = add3(center, add3(scale3(axis_x, ca * radius.x), scale3(axis_y, sa * radius.y)));
 			float3 end = add3(center, add3(scale3(axis_x, can * radius.x), scale3(axis_y, san * radius.y)));
 
-			draw3d_line(arena, start, end, thickness, color);
+			draw3d_line(start, end, thickness, color);
 		}
 	}
 }
 
-void draw3d_arc(Arena *arena, float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, Color color) {
+void draw3d_arc(float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, Color color) {
 	float3 right, up;
 	normal = orthobasis3(normal, &right, &up);
-	draw3d_arc_basis(arena, center, radius, segments, right, up, angle_start, angle_span, thickness, color);
+	draw3d_arc_basis(center, radius, segments, right, up, angle_start, angle_span, thickness, color);
 }
 
-void draw3d_sphere_outline(Arena *arena, float3 center, float radius, uint8_t segments, float thickness, Color color) {
-	draw3d_arc(arena, center, splat2(radius), segments, unit3(UP), 0, TAU, thickness, color);
-	draw3d_arc(arena, center, splat2(radius), segments, unit3(RIGHT), 0, TAU, thickness, color);
-	draw3d_arc(arena, center, splat2(radius), segments, unit3(FORWARD), 0, TAU, thickness, color);
+void draw3d_sphere_outline(float3 center, float radius, uint8_t segments, float thickness, Color color) {
+	draw3d_arc(center, splat2(radius), segments, unit3(UP), 0, TAU, thickness, color);
+	draw3d_arc(center, splat2(radius), segments, unit3(RIGHT), 0, TAU, thickness, color);
+	draw3d_arc(center, splat2(radius), segments, unit3(FORWARD), 0, TAU, thickness, color);
 }
 
-void draw3d_ellipsoid_outline(Arena *arena, float3 center, float3 r, uint8_t segments, float thickness, Color color) {
-	draw3d_arc(arena, center, make2(r.x, r.z), segments, unit3(UP), 0, TAU, thickness, color);
-	draw3d_arc(arena, center, make2(r.z, r.y), segments, unit3(RIGHT), 0, TAU, thickness, color);
-	draw3d_arc(arena, center, make2(r.x, r.y), segments, unit3(FORWARD), 0, TAU, thickness, color);
+void draw3d_ellipsoid_outline(float3 center, float3 r, uint8_t segments, float thickness, Color color) {
+	draw3d_arc(center, make2(r.x, r.z), segments, unit3(UP), 0, TAU, thickness, color);
+	draw3d_arc(center, make2(r.z, r.y), segments, unit3(RIGHT), 0, TAU, thickness, color);
+	draw3d_arc(center, make2(r.x, r.y), segments, unit3(FORWARD), 0, TAU, thickness, color);
 }
 
-void draw3d_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
+void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
 	float3 direction = sub3(b, a);
 	if (lensq3(direction) < EPSILON) return;
 
@@ -188,19 +230,19 @@ void draw3d_capsule_outline(Arena *arena, float3 a, float3 b, float radius, uint
 		{ make4_from3(add3(a, scale3(up, -radius)), thickness), make4_from3(add3(b, scale3(up, -radius)), thickness), packed_color, splat3(0.0f) },
 		{ make4_from3(add3(a, scale3(up, radius)), thickness), make4_from3(add3(b, scale3(up, radius)), thickness), packed_color, splat3(0.0f) },
 	};
-	memory_copy_array(arena_push_count(arena, DRAW_Line3D, countof(spine)), spine);
+	memory_copy_array(arena_push_count(context->line3d, DRAW_Line3D, countof(spine)), spine);
 
 	for (uint32_t end = 0; end < 2; ++end) {
 		float3 c = end == 0 ? a : b;
 		float signed_r = (end == 0) ? -radius : radius;
 
-		draw3d_arc_basis(arena, c, splat2(radius), segments, right, up, 0, TAU, thickness, color);
-		draw3d_arc_basis(arena, c, splat2(signed_r), segments, direction, up, -PIf * 0.5f, PIf, thickness, color);
-		draw3d_arc_basis(arena, c, splat2(signed_r), segments, right, direction, 0, PIf, thickness, color);
+		draw3d_arc_basis(c, splat2(radius), segments, right, up, 0, TAU, thickness, color);
+		draw3d_arc_basis(c, splat2(signed_r), segments, direction, up, -PIf * 0.5f, PIf, thickness, color);
+		draw3d_arc_basis(c, splat2(signed_r), segments, right, direction, 0, PIf, thickness, color);
 	}
 }
 
-void draw3d_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color) {
+void draw3d_aabb_outline(AABB3 aabb3, float thickness, Color color) {
 	float3 min = aabb3.min;
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
@@ -220,12 +262,12 @@ void draw3d_aabb_outline(Arena *arena, AABB3 aabb3, float thickness, Color color
 		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 	};
 
-	DRAW_Line3D *points = arena_push_count(arena, DRAW_Line3D, countof(outline));
+	DRAW_Line3D *points = arena_push_count(context->line3d, DRAW_Line3D, countof(outline));
 	memory_copy_array(points, outline);
 }
 
-void draw3d_quad(Arena *arena, Transform3 transform, DRAW_QuadStyle style) {
-	bool ok = arena;
+void draw3d_quad(float3 position, float2 size, DRAW_QuadStyle style) {
+	bool ok = context;
 	if (ok) {
 		float2 uv0 = splat2(0.0f);
 		float2 uv1 = splat2(1.0f);
@@ -238,28 +280,28 @@ void draw3d_quad(Arena *arena, Transform3 transform, DRAW_QuadStyle style) {
 
 		float rad = style.rotation * DEG2RAD;
 		DRAW_Quad3D quad = {
-			.model = compose4x4_quat(transform.translation, transform.rotation, transform.scale),
+			.model = transform4x4((Transform3){ .translation = position, .scale = f3(size.x, size.y, 0.0f) }),
 			.radii = style.radii,
 			.uvs = { uv0, { uv1.x, uv0.y }, { uv0.x, uv1.y }, uv1 },
 			.imageid = imageid,
-			.flags = 0,
+			.flags = style.flags,
 			.fill_color = color_pack_uint32(style.fill_color),
 			.border_color = color_pack_uint32(style.border_color),
 			.border_width = style.border_width,
 		};
-		memory_copy(arena_push_count(arena, DRAW_Quad3D, 1), &quad, sizeof(quad));
+		memory_copy(arena_push_count(context->quad3d, DRAW_Quad3D, 1), &quad, sizeof(quad));
 	}
 }
 
-void draw3d_line(Arena *arena, float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(arena, DRAW_Line3D, 1) = (DRAW_Line3D){
+void draw3d_line(float3 start, float3 end, float thickness, Color color) {
+	*arena_push_count(context->line3d, DRAW_Line3D, 1) = (DRAW_Line3D){
 		.a = make4_from3(start, thickness),
 		.b = make4_from3(end, thickness),
 		.color = color_pack_uint32(color),
 	};
 }
 
-void draw3d_arrow(Arena *arena, float3 start, float3 end, float thickness, Color color,
+void draw3d_arrow(float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width) {
 	float3 direction = sub3(end, start);
 	float total_world_length = len3(direction);
@@ -278,21 +320,21 @@ void draw3d_arrow(Arena *arena, float3 start, float3 end, float thickness, Color
 
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
-	draw3d_line(arena, start, shaft_end, thickness, color);
-	*arena_push_count(arena, DRAW_Line3D, 1) = (DRAW_Line3D){
+	draw3d_line(start, shaft_end, thickness, color);
+	*arena_push_count(context->line3d, DRAW_Line3D, 1) = (DRAW_Line3D){
 		.a = make4_from3(shaft_end, thickness * 4.0f),
 		.b = make4_from3(end, 0.0f),
 		.color = color_pack_uint32(color),
 	};
 }
 
-void draw3d_triangle_outline(Arena *arena, Triangle3 t, float thickness, Color color) {
-	draw3d_line(arena, t.a, t.b, thickness, color);
-	draw3d_line(arena, t.b, t.c, thickness, color);
-	draw3d_line(arena, t.c, t.a, thickness, color);
+void draw3d_triangle_outline(Triangle3 t, float thickness, Color color) {
+	draw3d_line(t.a, t.b, thickness, color);
+	draw3d_line(t.b, t.c, thickness, color);
+	draw3d_line(t.c, t.a, thickness, color);
 }
 
-void draw3d_quad_outline(Arena *arena, Plane plane, float width, float height, float thickness, Color color) {
+void draw3d_quad_outline(Plane plane, float width, float height, float thickness, Color color) {
 	float3 right = { 0 }, up = { 0 };
 	float dot = dot3(plane.normal, unit3(UP));
 	if (fabsf(dot) >= 0.99f) {
@@ -315,20 +357,20 @@ void draw3d_quad_outline(Arena *arena, Plane plane, float width, float height, f
 	};
 
 	for (uint32_t index = 0; index < countof(corners); ++index)
-		draw3d_line(arena, corners[index], corners[(index + 1) % countof(corners)], thickness, color);
+		draw3d_line(corners[index], corners[(index + 1) % countof(corners)], thickness, color);
 }
 
-void draw3d_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thickness) {
+void draw3d_shape_outline(Shape3 *shape, float3 offset, float thickness) {
 	switch (shape->kind) {
 		case SHAPE_KIND_AABB3:
-			draw3d_aabb_outline(arena, aabb3_move(shape->as.aabb3, offset), thickness, WHITE);
+			draw3d_aabb_outline(aabb3_move(shape->as.aabb3, offset), thickness, WHITE);
 			break;
 		case SHAPE_KIND_SPHERE: {
 			float3 c = add3(shape->as.sphere.center, offset);
 			float r = shape->as.sphere.radius;
 			uint8_t segments = 32;
 
-			draw3d_sphere_outline(arena, c, r, segments, thickness, WHITE);
+			draw3d_sphere_outline(c, r, segments, thickness, WHITE);
 		} break;
 		case SHAPE_KIND_CAPSULE3: {
 			float r = shape->as.capsule.radius;
@@ -336,7 +378,7 @@ void draw3d_shape_outline(Arena *arena, Shape3 *shape, float3 offset, float thic
 				add3(shape->as.capsule.a, offset),
 				add3(shape->as.capsule.b, offset),
 			};
-			draw3d_capsule_outline(arena, centers[0], centers[1], r, 32, thickness, WHITE);
+			draw3d_capsule_outline(centers[0], centers[1], r, 32, thickness, WHITE);
 		} break;
 			break;
 		case SHAPE_KIND_PLANE:

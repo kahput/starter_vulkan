@@ -38,7 +38,6 @@ INLINE bool aabb3_contains_point(AABB3 a, float3 p) { return (p.x > a.min.x && p
 INLINE Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), len3(aabb3_half_extent(a)) }; }
 INLINE bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.center)) <= s.radius * s.radius; }
 
-INLINE Plane plane_from_side(Side s) { return (Plane){ side_to_float3[s], 0.0f }; }
 INLINE Plane plane_from_point_normal(float3 point, float3 normal) { return (Plane){ normal, dot3(point, normal) }; }
 INLINE float3 plane_center(Plane p) { return scale3(p.normal, p.distance); }
 INLINE float plane_signed_distance(Plane p, float3 point) { return dot3(p.normal, point) - p.distance; }

@@ -213,7 +213,7 @@ float4x4 basis4x4(float3 r, float3 u, float3 f) {
 	return result;
 }
 
-float4x4 axis_angle4x4(float3 axis, float angle) {
+float4x4 axisangle4x4(float3 axis, float angle) {
 	float c = cosf(angle);
 	float s = sinf(angle);
 	float t = 1.0f - c;
@@ -235,7 +235,7 @@ float4x4 axis_angle4x4(float3 axis, float angle) {
 	return result;
 }
 
-float4x4 quat4x4(quat4 q) {
+float4x4 rotation4x4(quat4 q) {
 	float x = q.x, y = q.y, z = q.z, w = q.w;
 	float xx = x * x, yy = y * y, zz = z * z;
 	float xy = x * y, xz = x * z, yz = y * z;
@@ -252,7 +252,7 @@ float4x4 quat4x4(quat4 q) {
 	return result;
 }
 
-float4x4 scale4x4(float3 scale) {
+float4x4 scaling4x4(float3 scale) {
 	// clang-format off
 	float4x4 result = {{
 	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
@@ -291,25 +291,16 @@ float4x4 transpose4x4(float4x4 m) {
 	return result;
 }
 
-float4x4 compose4x4_euler(float3 position, float3 rotation, float3 scale) {
+float4x4 trs4x4_euler(float3 position, float3 rotation, float3 scale) {
 	float4x4 result = { 0 };
 
 	float4x4 T = translation4x4(position);
-	float4x4 S = scale4x4(scale);
-	float4x4 rotation_x = axis_angle4x4(unit3(RIGHT), rotation.x);
-	float4x4 rotation_y = axis_angle4x4(unit3(UP), rotation.y);
-	float4x4 rotation_z = axis_angle4x4(unit3(FORWARD), rotation.z);
+	float4x4 S = scaling4x4(scale);
+	float4x4 rotation_x = axisangle4x4(unit3(RIGHT), rotation.x);
+	float4x4 rotation_y = axisangle4x4(unit3(UP), rotation.y);
+	float4x4 rotation_z = axisangle4x4(unit3(FORWARD), rotation.z);
 	float4x4 R = mul4x4(rotation_z, mul4x4(rotation_y, rotation_x));
 
-	result = mul4x4(T, mul4x4(R, S));
-	return result;
-}
-
-float4x4 compose4x4_quat(float3 position, quat4 rotation, float3 scale) {
-	float4x4 result = { 0 };
-	float4x4 T = translation4x4(position);
-	float4x4 S = scale4x4(scale);
-	float4x4 R = quat4x4(rotation);
 	result = mul4x4(T, mul4x4(R, S));
 	return result;
 }

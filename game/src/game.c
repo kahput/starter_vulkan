@@ -168,7 +168,7 @@ bool tick(Arena *permanent, Arena *frame) {
 
 		state->camera = (Camera){
 			.projection = CAMERA_PROJECTION_PERSPECTIVE,
-			.position = { 0.0f, 1.5f, 96.f },
+			.position = { 0.0f, 3.0f, 8.f },
 			.target = { 0.0f, 1.5f, 0.0f },
 			.up = unit3(UP),
 			.fovy = 45.f,
@@ -224,9 +224,7 @@ bool tick(Arena *permanent, Arena *frame) {
 	}
 
 	uint2 dims = os_surface_size(state->surface);
-	Rectangle viewport = {
-		.width = dims.x, .height = dims.y
-	};
+	Rectangle viewport = { .width = dims.x, .height = dims.y };
 
 	float2 mouse_delta = as2(input_mouse_delta(), float2);
 	float2 mouse_position = as2(input_mouse_position(), float2);
@@ -238,78 +236,88 @@ bool tick(Arena *permanent, Arena *frame) {
 	float4x4 view_proj = mul4x4(proj, view);
 	scene_camera_orbit(camera, mouse_delta);
 
-	Arena line3d[] = { {
-	  .base = arena_push_count(frame, DRAW_Line3D, 8096),
-	  .capacity = sizeof(DRAW_Line3D) * 8096,
-	} };
-	Arena quad2d[] = { {
-	  .base = arena_push_count(frame, DRAW_Quad2D, 8096),
-	  .capacity = sizeof(DRAW_Quad2D) * 8096,
-	} };
-	Arena quad3d[] = { {
-	  .base = arena_push_count(frame, DRAW_Quad3D, 1024),
-	  .capacity = sizeof(DRAW_Quad3D) * 1024,
-	} };
+	DRAW_List *draw = drawlist_make(frame);
 
-	/* int32_t seg_count = 16; */
-	/* for (int32_t z = -seg_count; z <= seg_count; ++z) */
-	/* 	draw3d_line(line3d, make3(-seg_count, 0.0f, z), make3(seg_count, 0.0f, z), 1.0f, z == 0 ? BLUE : GRAY); */
-	/* for (int32_t x = -seg_count; x <= seg_count; ++x) */
-	/* 	draw3d_line(line3d, make3(x, 0.0f, -seg_count), make3(x, 0.0f, seg_count), 1.0f, x == 0 ? RED : GRAY); */
+	int32_t seg_count = 32;
+	for (int32_t z = -seg_count; z <= seg_count; ++z)
+		draw3d_line(f3(-seg_count, 0.0f, z), f3(seg_count, 0.0f, z), 1.0f, z == 0 ? RED : GRAY);
+	for (int32_t x = -seg_count; x <= seg_count; ++x)
+		draw3d_line(f3(x, 0.0f, -seg_count), f3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY);
 
-	/* draw3d_sphere_outline(line3d, make3(0.0f, 3.0f, 0.0f), 3.0f, 32, 2.0f, BLACK); */
+	float point_size = 0.03f;
 
-	float segment_size = 32.0f;
-	float2 origo = rect_center(viewport);
-
-	int2 counts = {
-		(int32_t)ceilf(viewport.width * 0.5f / segment_size),
-		(int32_t)ceilf(viewport.height * 0.5f / segment_size)
+	Triangle3 triangle = {
+		{ 0.0f, 2.0f, 1.0f },
+		{ 2.0f, 1.0f, -1.0f },
+		{ 1.0f, 1.0f, 1.0f },
 	};
+	draw3d_triangle_outline(triangle, 3.0f, BLACK);
+	float3 p = f3(1.0f, 0.0f, 0.0f);
 
-	for (int32_t x = -counts.x; x <= counts.x; ++x) {
-		float px = origo.x + x * segment_size;
+	float3 ab = sub3(triangle.b, triangle.a);
+	float3 ac = sub3(triangle.c, triangle.a);
+	float3 ap = sub3(p, triangle.a);
 
-		Color c = x == 0 ? BLUE : GRAY;
-		draw2d_line(quad2d, make2(px, 0.0f), make2(px, viewport.height), 1.0f, c);
-	}
+	float3 uvw = barycentric(triangle, p);
+	float u = uvw.x, v = uvw.y, w = uvw.z;
+	bool projected_point_on_triangle = v >= 0.0f && w >= 0.0f && (v + w) <= 1.0f;
 
-	for (int32_t y = -counts.y; y <= counts.y; ++y) {
-		float py = origo.y + y * segment_size;
+	// clang-format off
+    float3 barycenter = add3(
+        scale3(triangle.a, u),
+        add3(
+            scale3(triangle.b, v),
+            scale3(triangle.c, w)
+        )
+    );
+	// clang-format on
 
-		Color c = y == 0 ? RED : GRAY;
-		draw2d_line(quad2d, make2(0.0f, py), make2(viewport.width, py), 1.0f, c);
-	}
+	draw3d_arrow(p, barycenter, 3.0f, projected_point_on_triangle ? GREEN : RED, view, proj, viewport.width);
 
-	static Drag2D drag_blue = { 0 }, drag_red = { 0 }, slider = { 0 };
-	Rectangle blue = drag2d_point(&drag_blue, add2(origo, make2(-segment_size, 0.0f)), segment_size * 0.25f);
-	draw2d_quad(quad2d, blue,
-		(DRAW_QuadStyle){
-		  .fill_color = drag_blue.active ? rgba(16, 40, 120, 160) : (drag_blue.hovered ? rgba(64, 110, 220, 110) : rgba(20, 40, 80, 90)),
-		  .radii = splat4(segment_size * 0.25f),
-		});
-
-	Rectangle red = drag2d_point(&drag_red, add2(origo, make2(segment_size, 0.0f)), segment_size * 0.25f);
-	draw2d_quad(quad2d, red,
-		(DRAW_QuadStyle){
-		  .fill_color = drag_red.active ? rgba(120, 16, 16, 160) : (drag_red.hovered ? rgba(220, 64, 64, 110) : rgba(80, 20, 20, 90)),
-		  .radii = splat4(segment_size * 0.25f),
-		});
-
-	static float radius = 1.0f;
-	Rectangle slider_rect = rect2(splat2(16.0f), make2(256.0f, 24.0f));
-	draw2d_rect(quad2d, slider_rect, ORANGE);
-	draw2d_quad(quad2d,
-		drag2d_slider(&slider, rect_padded(slider_rect, splat4(4.0f)), 0.0f, 8.0f, &radius),
+	draw3d_quad(barycenter, f2(point_size * 2.0f),
 		(DRAW_QuadStyle){
 		  .fill_color = RED,
+		  .radii = f4(1.0f),
+		  .flags = 1,
 		});
 
-	bool is_inside = distsq2(origo, rect_center(blue)) <= sqf(radius * segment_size);
-	draw2d_circle_outline(quad2d, origo, radius * segment_size, 3.0f, is_inside ? GREEN : RED);
+	/* static float segment_size = 64.0f; */
 
-	float2 blue_to_red = norm2(sub2(rect_center(red), rect_center(blue)));
-	draw2d_arrow(quad2d, rect_center(blue), scale2(blue_to_red, segment_size), 2.0f, segment_size * 0.25f, BLACK);
+	/* float2 origo = rect_center(viewport); */
+	/* float2 scale = { segment_size, -segment_size }; */
+
+	/* int2 counts = { */
+	/* (int32_t)ceilf(viewport.width * 0.5f / segment_size), */
+	/* (int32_t)ceilf(viewport.height * 0.5f / segment_size) */
+	/* }; */
+
+	/* // clang-format off */
+	/* float3x3 screen_from_world = {{  */
+	/* [0] = scale.x, [3] = 0.0f ,   [6] = origo.x, */
+	/* [1] = 0.0f,    [4] = scale.y, [7] = origo.y, */
+	/* [2] = 0.0f,    [5] = 0.0f,    [8] = 1.0f */
+	/* }}; */
+
+	/* float3x3 world_from_screen = {{ */
+	/* [0] = 1.0f / scale.x, [3] = 0.0f,           [6] = -origo.x / scale.x, */
+	/* [1] = 0.0f,           [4] = 1.0f / scale.y, [7] = -origo.y / scale.y, */
+	/* [2] = 0.0f,           [5] = 0.0f,           [8] =  1.0f, */
+	/* }}; */
+	/* // clang-format on */
+
+	/* for (int32_t x = -counts.x; x <= counts.x; ++x) { */
+	/* float px = origo.x + x * segment_size; */
+
+	/* Color c = x == 0 ? BLUE : GRAY; */
+	/* draw2d_line(make2(px, 0.0f), make2(px, viewport.height), 1.0f, c); */
+	/* } */
+
+	/* for (int32_t y = -counts.y; y <= counts.y; ++y) { */
+	/* float py = origo.y + y * segment_size; */
+
+	/* Color c = y == 0 ? RED : GRAY; */
+	/* draw2d_line(make2(0.0f, py), make2(viewport.width, py), 1.0f, c); */
+	/* } */
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -352,25 +360,25 @@ bool tick(Arena *permanent, Arena *frame) {
 		Uniform set0[] = { uniform_data(0, &fd, sizeof(fd)) };
 		gfx_cmd_bind(device, 0, set0, countof(set0));
 
-		if (line3d->offset) {
+		if (draw->line3d->offset) {
 			gfx_cmd_shader_bind(cmd, state->shaders[SHADER_LINE3D]);
 
 			Uniform set1[] = {
-				storage_data(0, line3d->base, line3d->offset),
+				storage_data(0, draw->line3d->base, draw->line3d->offset),
 			};
 			gfx_cmd_bind(device, 0, set0, countof(set0));
 			gfx_cmd_bind(device, 1, set1, countof(set1));
-			gfx_cmd_draw_instanced(cmd, 0, 6, 0, line3d->offset / sizeof(DRAW_Line3D));
+			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_Line3D));
 		}
-		if (quad3d->offset) {
-			uint32_t quad_count = quad3d->offset / sizeof(DRAW_Quad3D);
+		if (draw->quad3d->offset) {
+			uint32_t quad_count = draw->quad3d->offset / sizeof(DRAW_Quad3D);
 			GFX_Image *images[32] = { 0 };
 			uint32_t image_count = 1;
 			for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
 				images[texture_id] = state->white_texture;
 
 			for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-				DRAW_Quad3D *quad = (DRAW_Quad3D *)quad3d->base + quad_instance;
+				DRAW_Quad3D *quad = (DRAW_Quad3D *)draw->quad3d->base + quad_instance;
 
 				if (quad->imageid && quad->imageid != indexof(device->image_pool, state->white_texture)) {
 					int32_t found_index = -1;
@@ -395,7 +403,7 @@ bool tick(Arena *permanent, Arena *frame) {
 			gfx_cmd_shader_bind(cmd, state->shaders[SHADER_QUAD3D]);
 
 			Uniform set1[] = {
-				storage_data(1, quad3d->base, quad3d->offset),
+				storage_data(1, draw->quad3d->base, draw->quad3d->offset),
 				sampler_with_textures(0, images, countof(images), state->nearest),
 			};
 
@@ -405,14 +413,14 @@ bool tick(Arena *permanent, Arena *frame) {
 			gfx_cmd_draw_instanced(cmd, 0, 6, 0, quad_count);
 		}
 
-		if (quad2d->offset) {
+		if (draw->quad2d->offset) {
 			FrameData fd = {
 				.view = identity4x4(),
 				.proj = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
 				.viewport = as2(dims, float2),
 				.time = time,
 			};
-			uint32_t quad_count = quad2d->offset / sizeof(DRAW_Quad2D);
+			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_Quad2D);
 
 			GFX_Image *images[32] = { 0 };
 			uint32_t image_count = 1;
@@ -420,7 +428,7 @@ bool tick(Arena *permanent, Arena *frame) {
 				images[texture_id] = state->white_texture;
 
 			for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-				DRAW_Quad2D *quad = (DRAW_Quad2D *)quad2d->base + quad_instance;
+				DRAW_Quad2D *quad = (DRAW_Quad2D *)draw->quad2d->base + quad_instance;
 
 				if (quad->imageid && quad->imageid != indexof(device->image_pool, state->white_texture)) {
 					int32_t found_index = -1;
@@ -446,7 +454,7 @@ bool tick(Arena *permanent, Arena *frame) {
 
 			Uniform uniforms0[] = {
 				uniform_data(0, &fd, sizeof(fd)),
-				storage_data(1, quad2d->base, quad2d->offset),
+				storage_data(1, draw->quad2d->base, draw->quad2d->offset),
 			};
 			Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->nearest) };
 

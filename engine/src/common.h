@@ -100,10 +100,10 @@
 #define MiB(bytes) ((KiB(bytes)) * 1024ULL)
 #define GiB(bytes) ((MiB(bytes)) * 1024ULL)
 
-static inline uint64_t alignup(uint64_t value, uint64_t alignment) {
+INLINE uint64_t alignup(uint64_t value, uint64_t alignment) {
 	return ((value + (alignment - 1)) & ~(alignment - 1));
 }
-static inline uint64_t hash64(void *memory, size_t size) {
+INLINE uint64_t hash64(void *memory, size_t size) {
 	uint64_t h = 0x100;
 	for (size_t i = 0; i < size; i++) {
 		h ^= ((uint8_t *)memory)[i];
@@ -113,7 +113,7 @@ static inline uint64_t hash64(void *memory, size_t size) {
 }
 
 // From https://stackoverflow.com/a/5889254
-static inline uint64_t hash64_combine(uint64_t lhs, uint64_t rhs) {
+INLINE uint64_t hash64_combine(uint64_t lhs, uint64_t rhs) {
 	lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);
 	return lhs;
 }
@@ -132,22 +132,32 @@ typedef float32x2 float2;
 typedef float32x3 float3;
 typedef float32x4 float4;
 
-static inline float2 make2(float x, float y) { return (float2){ x, y }; }
-static inline float2 splat2(float v) { return (float2){ v, v }; }
+// make
+INLINE float2 splat2(float v) { return (float2){ v, v }; }
+INLINE float2 make2(float x, float y) { return (float2){ x, y }; }
 
-static inline float3 make3(float x, float y, float z) { return (float3){ x, y, z }; }
-static inline float3 splat3(float v) { return (float3){ v, v, v }; }
+INLINE float3 splat3(float v) { return (float3){ v, v, v }; }
+INLINE float3 make3_from2(float2 v, float z) { return (float3){ v.x, v.y, z }; }
+INLINE float3 make3(float x, float y, float z) { return (float3){ x, y, z }; }
 
-static inline float4 make4(float x, float y, float z, float w) { return (float4){ x, y, z, w } ; } 
-static inline float4 splat4(float v) { return (float4) {v, v, v, v }; }
+INLINE float4 splat4(float v) { return (float4){ v, v, v, v }; }
+INLINE float4 make4_from3(float3 v, float w) { return (float4){ v.x, v.y, v.z, w }; }
+INLINE float4 make4_from2(float2 v, float z, float w) { return (float4){ v.x, v.y, z, w }; }
+INLINE float4 make4(float x, float y, float z, float w) { return (float4){ x, y, z, w }; }
 
-static inline float2 make2_from4(float4 v) { return make2(v.x, v.y); }
-static inline float3 make3_from4(float4 v) { return make3(v.x, v.y, v.z ); } 
-static inline float4 make4_from3(float3 v, float w) { return make4( v.x, v.y, v.z, w ) ; }
+// truncate
+INLINE float3 make3_from4(float4 v) { return make3(v.x, v.y, v.z); }
+INLINE float2 make2_from4(float3 v) { return make2(v.x, v.y); }
+INLINE float2 make2_from3(float3 v) { return make2(v.x, v.y); }
 
-#define xxx(v) splat3((v).x)
-#define yyy(v) splat3((v).y)
-#define zzz(v) splat3((v).z)
+#define FLOAT2_SELECT(_1, _2, FN, ...) FN
+#define f2(...) FLOAT2_SELECT(__VA_ARGS__, make2, splat2, _)(__VA_ARGS__)
+
+#define FLOAT3_SELECT(_1, _2, _3, FN, ...) FN
+#define f3(...) FLOAT3_SELECT(__VA_ARGS__, make3, make3_from2, splat3, _)(__VA_ARGS__)
+
+#define FLOAT4_SELECT(_1, _2, _3, _4, FN, ...) FN
+#define f4(...) FLOAT4_SELECT(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
 
 typedef double float64;
 typedef struct { float64 x, y; } float64x2;
@@ -213,17 +223,17 @@ typedef struct { uint8_t r, g, b, a; } Color;
 #define DARK_GRAY rgb(64, 64, 64)
 #define BLACK rgb(0, 0, 0)
 
-static inline uint32_t color_pack_uint32(Color c) {
+INLINE uint32_t color_pack_uint32(Color c) {
 	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);
 }
 
-static inline Color color_from_float(float r, float g, float b, float a) {
+INLINE Color color_from_float(float r, float g, float b, float a) {
 	return (Color){ CLAMP(r, 0.0f, 1.0f) * 255.f, CLAMP(g, 0.0f, 1.0f) * 255.f, CLAMP(b, 0.0f, 1.0f) * 255.f, CLAMP(a, 0.0f, 1.0f) * 255.f };
 }
-static inline float4 color_to_float4(Color color) {
+INLINE float4 color_to_float4(Color color) {
 	return (float4){ color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f };
 }
-static inline Color color_lerp(Color start, Color end, float t) {
+INLINE Color color_lerp(Color start, Color end, float t) {
 	return (Color){ start.r + (end.r - start.r) * t, start.g + (end.g - start.g) * t, start.b + (end.b - start.b) * t, start.a + (end.a - start.a) * t };
 }
 
