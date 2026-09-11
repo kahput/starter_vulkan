@@ -331,8 +331,8 @@ AST_Node *match_typedef_symbol(Lexer *lexer) {
 	return result;
 }
 
-#define match(...) match_impl(lexer, array_arg(TokenType, __VA_ARGS__))
-#define match_keyword(...) match_keyword_impl(lexer, array_arg(TokenKeywordType, __VA_ARGS__))
+#define match(...) match_impl(lexer, arr(TokenType, __VA_ARGS__))
+#define match_keyword(...) match_keyword_impl(lexer, arr(TokenKeywordType, __VA_ARGS__))
 
 AST_Node *ast_parse_decl(Arena *arena, Lexer *lexer);
 AST_Node *ast_parse_declarator(Arena *arena, Lexer *lexer);

@@ -7,6 +7,49 @@
 #include <stdlib.h>
 #include <strings.h>
 
+Convex2 convex_hull(Arena *arena, float2 *points, uint32_t point_count) {
+	Convex2 result = { 0 };
+
+	bool ok = arena != 0 && points != 0 && point_count > 3;
+
+	if (ok) {
+		result.vertices = arena_push_count(arena, float2, point_count);
+
+		float2 rightmost = points[0];
+		for (uint32_t index = 1; index < point_count; ++index)
+			if (points[index].x > rightmost.x) rightmost = points[index];
+
+		result.vertices[result.vertex_count++] = rightmost;
+		while (true) {
+			float2 p = result.vertices[result.vertex_count - 1];
+			float2 p_next = points[0];
+
+			for (uint32_t index = 0; index < point_count; ++index) {
+				float2 q = points[index];
+				if (q.x == p.x && q.y == p.y) continue;
+
+				float2 a = sub2(p_next, p);
+				float2 b = sub2(q, p);
+
+				float cross = cross3(f3(a, 0.0f), f3(b, 0.0f)).z;
+				if (cross >= 0.0f) {
+					if (cross == 0.0f && (p_next.x != q.x || p_next.y != q.y)) {
+						if (dot2(b, b) > dot2(a, a))
+							p_next = q;
+					} else {
+						p_next = q;
+					}
+				}
+			}
+
+			if (p_next.x == rightmost.x && p_next.y == rightmost.y) break;
+			result.vertices[result.vertex_count++] = p_next;
+		}
+	}
+
+	return result;
+}
+
 // chapter 3, 5, 9, 11, 12
 
 float3 barycentric(Triangle3 t, float3 p) {
@@ -98,7 +141,7 @@ float3 shape3_furthest_point(const Shape3 *s, float3 direction) {
 		} break;
 
 		case SHAPE_KIND_CONVEX_POLYGON: {
-			const ConvexPolytope3 *polygon = &s->as.convex;
+			const Convex3 *polygon = &s->as.convex;
 			ASSERT(polygon->vertices && polygon->vertex_count);
 
 			result = polygon->vertices[0];

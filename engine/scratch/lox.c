@@ -199,8 +199,8 @@ bool ast_match_keyword_impl(Lexer *lexer, TokenKeywordType *keywords, uint32_t k
 	return ast_match_impl(lexer, (TokenType *)keywords, keyword_count);
 }
 
-#define ast_match(l, ...) ast_match_impl((l), array_arg(TokenType, __VA_ARGS__))
-#define ast_match_keyword(l, ...) ast_match_keyword_impl((l), array_arg(TokenKeywordType, __VA_ARGS__))
+#define ast_match(l, ...) ast_match_impl((l), arr(TokenType, __VA_ARGS__))
+#define ast_match_keyword(l, ...) ast_match_keyword_impl((l), arr(TokenKeywordType, __VA_ARGS__))
 
 #define MAX_VARIABLES 256
 typedef struct {

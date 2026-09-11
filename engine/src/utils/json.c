@@ -97,7 +97,7 @@ static inline JSON_Value json_parse_value(Arena *arena, Lexer *lexer) {
 				lexer_advance(lexer);
 				double mul = 1.0f - (value.type == TOKEN_MINUS) * 2.0f;
 
-				value = lexer_expect_multiple(lexer, array_arg(TokenType, TOKEN_INTEGER, TOKEN_REAL));
+				value = lexer_expect_multiple(lexer, arr(TokenType, TOKEN_INTEGER, TOKEN_REAL));
 				result = json_number(mul * str8_to_f64(value.lexeme));
 				break;
 

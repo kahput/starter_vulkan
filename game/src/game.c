@@ -238,86 +238,94 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	DRAW_List *draw = drawlist_make(frame);
 
-	int32_t seg_count = 32;
-	for (int32_t z = -seg_count; z <= seg_count; ++z)
-		draw3d_line(f3(-seg_count, 0.0f, z), f3(seg_count, 0.0f, z), 1.0f, z == 0 ? RED : GRAY);
-	for (int32_t x = -seg_count; x <= seg_count; ++x)
-		draw3d_line(f3(x, 0.0f, -seg_count), f3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY);
+	/* int32_t seg_count = 32; */
+	/* for (int32_t z = -seg_count; z <= seg_count; ++z) */
+	/* 	draw3d_line(f3(-seg_count, 0.0f, z), f3(seg_count, 0.0f, z), 1.0f, z == 0 ? RED : GRAY); */
+	/* for (int32_t x = -seg_count; x <= seg_count; ++x) */
+	/* 	draw3d_line(f3(x, 0.0f, -seg_count), f3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY); */
 
 	float point_size = 0.03f;
+	static float segment_size = 64.0f;
 
-	Triangle3 triangle = {
-		{ 0.0f, 2.0f, 1.0f },
-		{ 2.0f, 1.0f, -1.0f },
-		{ 1.0f, 1.0f, 1.0f },
+	float2 origo = rect_center(viewport);
+	float2 scale = { segment_size, -segment_size };
+
+	int2 counts = {
+		(int32_t)ceilf(viewport.width * 0.5f / segment_size),
+		(int32_t)ceilf(viewport.height * 0.5f / segment_size)
 	};
-	draw3d_triangle_outline(triangle, 3.0f, BLACK);
-	float3 p = f3(1.0f, 0.0f, 0.0f);
-
-	float3 ab = sub3(triangle.b, triangle.a);
-	float3 ac = sub3(triangle.c, triangle.a);
-	float3 ap = sub3(p, triangle.a);
-
-	float3 uvw = barycentric(triangle, p);
-	float u = uvw.x, v = uvw.y, w = uvw.z;
-	bool projected_point_on_triangle = v >= 0.0f && w >= 0.0f && (v + w) <= 1.0f;
 
 	// clang-format off
-    float3 barycenter = add3(
-        scale3(triangle.a, u),
-        add3(
-            scale3(triangle.b, v),
-            scale3(triangle.c, w)
-        )
-    );
+	float3x3 screen_from_world = {{ 
+        [0] = scale.x, [3] = 0.0f ,   [6] = origo.x,
+        [1] = 0.0f,    [4] = scale.y, [7] = origo.y,
+        [2] = 0.0f,    [5] = 0.0f,    [8] = 1.0f
+	}};
+
+	float3x3 world_from_screen = {{
+        [0] = 1.0f / scale.x, [3] = 0.0f,           [6] = -origo.x / scale.x,
+        [1] = 0.0f,           [4] = 1.0f / scale.y, [7] = -origo.y / scale.y,
+        [2] = 0.0f,           [5] = 0.0f,           [8] =  1.0f,
+	}};
 	// clang-format on
 
-	draw3d_arrow(p, barycenter, 3.0f, projected_point_on_triangle ? GREEN : RED, view, proj, viewport.width);
+	for (int32_t x = -counts.x; x <= counts.x; ++x) {
+		float px = origo.x + x * segment_size;
 
-	draw3d_quad(barycenter, f2(point_size * 2.0f),
-		(DRAW_QuadStyle){
-		  .fill_color = RED,
-		  .radii = f4(1.0f),
-		  .flags = 1,
-		});
+		Color c = x == 0 ? BLUE : GRAY;
+		draw2d_line(make2(px, 0.0f), make2(px, viewport.height), 1.0f, c);
+	}
 
-	/* static float segment_size = 64.0f; */
+	for (int32_t y = -counts.y; y <= counts.y; ++y) {
+		float py = origo.y + y * segment_size;
 
-	/* float2 origo = rect_center(viewport); */
-	/* float2 scale = { segment_size, -segment_size }; */
+		Color c = y == 0 ? RED : GRAY;
+		draw2d_line(make2(0.0f, py), make2(viewport.width, py), 1.0f, c);
+	}
 
-	/* int2 counts = { */
-	/* (int32_t)ceilf(viewport.width * 0.5f / segment_size), */
-	/* (int32_t)ceilf(viewport.height * 0.5f / segment_size) */
-	/* }; */
+	Convex2 A = { arr_n(float2, 16) };
+	for (uint32_t index = 0; index < 16; ++index) {
+		float angle = ((float)index / 16) * TAU;
+		A.vertices[index] = add2(f2(1.0f, 0.0f), f2(cosf(angle) * 2.0f, sinf(angle) * 2.0f));
+	}
 
-	/* // clang-format off */
-	/* float3x3 screen_from_world = {{  */
-	/* [0] = scale.x, [3] = 0.0f ,   [6] = origo.x, */
-	/* [1] = 0.0f,    [4] = scale.y, [7] = origo.y, */
-	/* [2] = 0.0f,    [5] = 0.0f,    [8] = 1.0f */
-	/* }}; */
+	Convex2 B = {
+		arr(float2,
+			f2(1.0f, -1.0f),
+			f2(4.0f, -1.0f),
+			f2(4.0f, 1.0f),
+			f2(1.0f, 1.0f))
+	};
 
-	/* float3x3 world_from_screen = {{ */
-	/* [0] = 1.0f / scale.x, [3] = 0.0f,           [6] = -origo.x / scale.x, */
-	/* [1] = 0.0f,           [4] = 1.0f / scale.y, [7] = -origo.y / scale.y, */
-	/* [2] = 0.0f,           [5] = 0.0f,           [8] =  1.0f, */
-	/* }}; */
-	/* // clang-format on */
+	for (uint32_t index = 0; index < A.vertex_count; ++index) {
+		float2 a = xform2p(screen_from_world, A.vertices[index]);
+		float2 b = xform2p(screen_from_world, A.vertices[(index + 1) % A.vertex_count]);
 
-	/* for (int32_t x = -counts.x; x <= counts.x; ++x) { */
-	/* float px = origo.x + x * segment_size; */
+		draw2d_line(a, b, 4.0f, BLACK);
+	}
 
-	/* Color c = x == 0 ? BLUE : GRAY; */
-	/* draw2d_line(make2(px, 0.0f), make2(px, viewport.height), 1.0f, c); */
-	/* } */
+	for (uint32_t index = 0; index < B.vertex_count; ++index) {
+		float2 a = xform2p(screen_from_world, B.vertices[index]);
+		float2 b = xform2p(screen_from_world, B.vertices[(index + 1) % B.vertex_count]);
 
-	/* for (int32_t y = -counts.y; y <= counts.y; ++y) { */
-	/* float py = origo.y + y * segment_size; */
+		draw2d_line(a, b, 4.0f, BLACK);
+	}
 
-	/* Color c = y == 0 ? RED : GRAY; */
-	/* draw2d_line(make2(0.0f, py), make2(viewport.width, py), 1.0f, c); */
-	/* } */
+	uint32_t sum_count = A.vertex_count * B.vertex_count;
+	float2 *sum = arena_push_count(frame, float2, sum_count);
+
+	for (uint32_t a_index = 0; a_index < A.vertex_count; ++a_index)
+		for (uint32_t b_index = 0; b_index < B.vertex_count; ++b_index)
+			sum[b_index + a_index * B.vertex_count] = add2(A.vertices[a_index], neg2(B.vertices[b_index]));
+
+	Convex2 hull = convex_hull(frame, sum, sum_count);
+
+	for (uint32_t index = 0; index < hull.vertex_count; ++index) {
+		float2 a = xform2p(screen_from_world, hull.vertices[index]);
+		float2 b = xform2p(screen_from_world, hull.vertices[(index + 1) % hull.vertex_count]);
+
+		draw2d_line(a, b, 4.0f, RED);
+	}
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;

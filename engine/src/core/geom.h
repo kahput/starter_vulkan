@@ -10,10 +10,13 @@ INLINE bool rect_contains(Rectangle rect, float x, float y) { return x > rect.x 
 INLINE bool rect_contains_point(Rectangle rect, float2 position) { return rect_contains(rect, position.x, position.y); }
 
 INLINE Rectangle rect_from_center(float2 center, float2 half_extent) { return (Rectangle){ center.x - half_extent.x, center.y - half_extent.y, half_extent.x * 2.0f, half_extent.y * 2.0f }; }
+INLINE Rectangle rect_from_min_max(float2 min, float2 max) { return (Rectangle){ min.x, max.y, fabsf(max.x - min.x), fabsf(max.y - min.y) }; }
 INLINE Rectangle rect_padded(Rectangle rect, float4 padding) { return (Rectangle){ rect.x + padding.w, rect.y + padding.x, rect.width - (padding.y + padding.w), rect.height - (padding.x + padding.z) }; }
 
 INLINE float2 rect_center(Rectangle rect) { return (float2){ rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f }; }
 INLINE float2 rect_half_extent(Rectangle rect) { return (float2){ rect.width * 0.5f, rect.height * 0.5f }; }
+
+Convex2 convex_hull(Arena *arena, float2 *points, uint32_t point_count);
 // :2d
 
 INLINE float3 ray_at(Ray3 r, float t) { return add3(r.origin, scale3(r.direction, t)); }
@@ -65,7 +68,7 @@ INLINE Shape3 shape3_capsule(float3 center, float height, float radius) { return
 INLINE Shape3 shape3_convex_polygon(float3 *vertices, uint32_t vertex_count) { return (Shape3){ .kind = SHAPE_KIND_CONVEX_POLYGON, .as.convex = { vertices, vertex_count } }; }
 
 INLINE Shape3 shape3_from_aabb3(AABB3 a) { return (Shape3){ .kind = SHAPE_KIND_AABB3, .as.aabb3 = a }; }
-INLINE Shape3 shape3_from_convex3(ConvexPolytope3 c) { return (Shape3){ .kind = SHAPE_KIND_CONVEX_POLYGON, .as.convex = c }; }
+INLINE Shape3 shape3_from_convex3(Convex3 c) { return (Shape3){ .kind = SHAPE_KIND_CONVEX_POLYGON, .as.convex = c }; }
 INLINE Shape3 shape3_from_sphere(Sphere s) { return (Shape3){ .kind = SHAPE_KIND_SPHERE, .as.sphere = s }; }
 INLINE Shape3 shape3_from_capsule(Capsule3 s) { return (Shape3){ .kind = SHAPE_KIND_CAPSULE3, .as.capsule = s }; }
 INLINE Shape3 shape3_from_plane(Plane p) { return (Shape3){ .kind = SHAPE_KIND_PLANE, .as.plane = p }; }

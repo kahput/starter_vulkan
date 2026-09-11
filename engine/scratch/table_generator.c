@@ -173,13 +173,13 @@ bool match_keyword_impl(Lexer *lexer, const Keyword *in_keywords, uint32_t keywo
 	return ok;
 }
 
-#define match(...) match_impl(lexer, array_arg(TokenType, __VA_ARGS__))
-#define match_keyword(...) match_keyword_impl(lexer, array_arg(Keyword, __VA_ARGS__))
+#define match(...) match_impl(lexer, arr(TokenType, __VA_ARGS__))
+#define match_keyword(...) match_keyword_impl(lexer, arr(Keyword, __VA_ARGS__))
 
 AST_Node *ast_parse_literal(Arena *arena, Lexer *lexer) {
 	AST_Node *result = ast_make(arena, AST_NODE_LITERAL);
 
-	Token lit_token = lexer_expect_multiple(lexer, array_arg(TokenType, TOKEN_INTEGER, TOKEN_REAL, TOKEN_STRING, TOKEN_IDENTIFIER));
+	Token lit_token = lexer_expect_multiple(lexer, arr(TokenType, TOKEN_INTEGER, TOKEN_REAL, TOKEN_STRING, TOKEN_IDENTIFIER));
 	switch (lit_token.type) {
 		case TOKEN_REAL:
 			result->lit.type = LIT_TYPE_REAL;

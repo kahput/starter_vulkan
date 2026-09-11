@@ -73,7 +73,7 @@ INLINE float2 load2(const float v[2]) { return (float2){ v[0], v[1] }; }
 #define as2(v, T) ((T){ v.x, v.y })
 
 INLINE bool eq2(float2 a, float2 b) { return eqf(a.x, b.x) && eqf(a.y, b.y); }
-INLINE float2 negate2(float2 v) { return (float2){ -v.x, -v.y }; }
+INLINE float2 neg2(float2 v) { return (float2){ -v.x, -v.y }; }
 
 INLINE float2 add2(float2 a, float2 b) { return (float2){ a.x + b.x, a.y + b.y }; }
 INLINE float2 sub2(float2 a, float2 b) { return (float2){ a.x - b.x, a.y - b.y }; }

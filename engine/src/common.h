@@ -49,7 +49,8 @@
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
 #define container_of(ptr, T, member) ((T *)((uint8_t *)ptr - offsetof(T, member)))
-#define array_arg(T, ...) (T[]){ __VA_ARGS__ }, sizeof(T[]){ __VA_ARGS__ } / sizeof(T)
+#define arr(T, ...) (T[]){ __VA_ARGS__ }, sizeof(T[]){ __VA_ARGS__ } / sizeof(T)
+#define arr_n(T, n) (T[(n)]){ (T){ 0 } }, (n)
 #define swap(a, b, T)  \
 	do {               \
 		T _temp = (a); \

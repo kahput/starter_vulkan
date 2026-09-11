@@ -148,7 +148,7 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 	GFX_Buffer *result = 0;
 
 	bool ok = gfx_device_valid(device) && (device->buffer_count < MAX_BUFFERS || device->first_free_buffer);
-	const char *name = options.debug_name ? options.debug_name : "<unnamed_buffer>";
+	const char *name = options.debug_name ? options.debug_name : "<unnamed>";
 
 	LOG_DEBUG("creating '%s' buffer.", name);
 	if (ok) { // acquire new buffer
@@ -253,7 +253,7 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 	GFX_Image *result = 0;
 
 	bool ok = gfx_device_valid(device) && device->image_count < MAX_IMAGES;
-	const char *name = options.debug_name ? options.debug_name : "<unnamed_image>";
+	const char *name = options.debug_name ? options.debug_name : "<unnamed>";
 
 	LOG_DEBUG("creating '%s' image.", name);
 	if (ok) { // acquire new image
@@ -434,7 +434,7 @@ GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 	GFX_Sampler *result = 0;
 
 	bool ok = gfx_device_valid(device) && (device->sampler_count < MAX_SAMPLERS || device->first_free_sampler);
-	const char *name = options.debug_name ? options.debug_name : "<unnamed_sampler>";
+	const char *name = options.debug_name ? options.debug_name : "<unnamed>";
 
 	LOG_DEBUG("creating '%s' sampler.", name);
 	if (ok) { // acquire new sampler
@@ -498,7 +498,7 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *d
 	uint32_t set_count = 0;
 
 	bool ok = gfx_device_valid(device) && (device->shader_count < MAX_SHADERS || device->first_free_shader);
-	const char *name = debug_name ? debug_name : "<unnamed_compute>";
+	const char *name = debug_name ? debug_name : "<unnamed>";
 
 	LOG_DEBUG("creating '%s' compute shader.", name);
 	if (ok) { // acquire new shader
@@ -605,7 +605,7 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *d
 
 GFX_Shader *gfx_shader_make(GFX_Device *device, String8 vs_bytecode, String8 fs_bytecode, const char *debug_name) {
 	GFX_Shader *result = 0;
-	const char *name = debug_name ? debug_name : "<unnamed_raster>";
+	const char *name = debug_name ? debug_name : "<unnamed>";
 	uint32_t set_count = 0;
 
 	bool ok = gfx_device_valid(device);
@@ -705,7 +705,7 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 
 	bool ok = gfx_shader_valid(device, shader);
 	if (ok) {
-		name = shader->debug_name ? shader->debug_name : "<unnamed_raster>";
+		name = shader->debug_name ? shader->debug_name : "<unnamed>";
 
 		for (GFX_Pipeline *pipeline = shader->first_pipeline; pipeline && pipeline != device->pipeline_pool; pipeline = pipeline->next) {
 			if (memory_equals(&options, &pipeline->options, sizeof(PipelineOptions))) {
@@ -889,7 +889,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	bool ok = gfx_device_valid(device) && (device->swapchain_count < MAX_SWAPCHAINS || device->first_free_swapchain);
-	const char *name = debug_name ? debug_name : "<unnamed_swapchain>";
+	const char *name = debug_name ? debug_name : "<unnamed>";
 
 	LOG_DEBUG("creating '%s' swapchain.", name);
 	if (ok) { // acquire new swapchain
@@ -2082,7 +2082,7 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 
 	VkDebugUtilsLabelEXT label_info = {
 		.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-		.pLabelName = info.debug_name ? info.debug_name : "UNNAMED",
+		.pLabelName = info.debug_name ? info.debug_name : "<unnamed>",
 		.color = { 1.0f, 1.0f, 1.0f, 1.0f },
 	};
 	vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
@@ -2250,9 +2250,9 @@ bool gfx__instance_make(GFX_Device *device) {
 	if (ok) { // create vulkan instance
 		VkApplicationInfo app_info = {
 			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-			.pApplicationName = "unnamed",
+			.pApplicationName = "<unnamed>",
 			.applicationVersion = 1,
-			.pEngineName = "unnamed",
+			.pEngineName = "<unnamed>",
 			.engineVersion = 1,
 			.apiVersion = VK_MAKE_VERSION(1, 3, 0)
 		};

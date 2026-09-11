@@ -720,7 +720,7 @@ int main(void) {
 		});
 
 	Image2D skybox = load_cubemap(permanent,
-		array_arg(
+		arr(
 			String8,
 			s("assets/textures/skybox_mc/dayRight.png"),
 			s("assets/textures/skybox_mc/dayLeft.png"),
@@ -915,7 +915,7 @@ int main(void) {
 			head_radius,
 			16);
 
-		meshes[MESH_GIZMOS_ARROW] = mesh_merge(permanent, array_arg(Mesh, shaft, head));
+		meshes[MESH_GIZMOS_ARROW] = mesh_merge(permanent, arr(Mesh, shaft, head));
 
 		arena_scratch_end(scratch);
 	}
@@ -2101,7 +2101,7 @@ int main(void) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
 			gfx_cmd_shader_bind(cmd, shaders[SHADER_TEST_COMPUTE]);
-			gfx_cmd_bind(device, 0, array_arg(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
+			gfx_cmd_bind(device, 0, arr(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
 			struct {
@@ -2208,7 +2208,7 @@ int main(void) {
 				frame_data.proj.elements[5] *= -1;
 
 				gfx_cmd_shader_bind(cmd, shaders[SHADER_SHADOW]);
-				gfx_cmd_bind(device, 0, array_arg(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
+				gfx_cmd_bind(device, 0, arr(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
 
 				// :shadow
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
@@ -2235,7 +2235,7 @@ int main(void) {
 							offset = entity->skinned_vertices_offset;
 						}
 
-						gfx_cmd_bind(device, 1, array_arg(Uniform, storage_buffers(0, buffer, offset, size)));
+						gfx_cmd_bind(device, 1, arr(Uniform, storage_buffers(0, buffer, offset, size)));
 
 						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
 						gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
@@ -2661,7 +2661,7 @@ Image2D load_image(Arena *arena, String8 path) {
 	return result;
 }
 
-Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count) {
+Image2D load_cubemap(Arena *arena, String8 *paths, uint32_t count) {
 	Image2D result = { 0 };
 
 	bool ok = arena && paths;
