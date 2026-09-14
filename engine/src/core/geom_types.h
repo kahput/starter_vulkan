@@ -7,6 +7,7 @@
 typedef struct {
 	float2 a, b, c;
 } Triangle2;
+
 // :2d
 
 typedef struct {

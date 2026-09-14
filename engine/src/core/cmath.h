@@ -86,6 +86,15 @@ INLINE float len2(float2 v) { return sqrtf(dot2(v, v)); }
 INLINE float dist2(float2 a, float2 b) { return len2(sub2(b, a)); }
 INLINE float distsq2(float2 a, float2 b) { return lensq2(sub2(b, a)); }
 
+INLINE float2 min2(float2 a, float2 b) { return (float2){ minf(a.x, b.x), minf(a.y, b.y) }; }
+INLINE float2 max2(float2 a, float2 b) { return (float2){ maxf(a.x, b.x), maxf(a.y, b.y) }; }
+INLINE float hmin2(float2 v) { return minf(v.x, v.y); }
+INLINE float hmax2(float2 v) { return maxf(v.x, v.y); }
+
+INLINE float2 abs2(float2 v) { return (float2){ fabsf(v.x), fabsf(v.y) }; }
+INLINE int2 ifloor2(float2 v) { return (int2){ (int32_t)v.x, (int32_t)v.y }; }
+INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
+
 INLINE float2 norm2(float2 v) {
 	float length = len2(v);
 	if (length < EPSILON)
@@ -96,8 +105,6 @@ INLINE float2 norm2(float2 v) {
 INLINE float2 proj2(float2 v, float2 axis) { return scale2(axis, dot2(axis, v)); }
 INLINE float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t) }; }
 INLINE float2 mid2(float2 a, float2 b) { return scale2(add2(a, b), 0.5f); }
-INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
-INLINE float2 abs2(float2 v) { return (float2){ fabsf(v.x), fabsf(v.y) }; }
 INLINE float2 rotate2(float2 v, float rad) {
 	float c = cosf(rad);
 	float s = sinf(rad);
@@ -137,12 +144,12 @@ INLINE float3 norm3(float3 v) {
 	return scale3(v, 1.0f / length);
 }
 
+INLINE float3 min3(float3 a, float3 b) { return (float3){ minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z) }; }
+INLINE float3 max3(float3 a, float3 b) { return (float3){ maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z) }; }
 INLINE float hmin3(float3 v) { return minf(v.x, minf(v.y, v.z)); }
 INLINE float hmax3(float3 v) { return maxf(v.x, maxf(v.y, v.z)); }
 
 INLINE float3 abs3(float3 v) { return (float3){ fabsf(v.x), fabsf(v.y), fabsf(v.z) }; }
-INLINE float3 min3(float3 a, float3 b) { return (float3){ minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z) }; }
-INLINE float3 max3(float3 a, float3 b) { return (float3){ maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z) }; }
 INLINE float3 clamp3(float3 v, float min, float max) { return (float3){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max) }; }
 INLINE float3 approach3(float3 start, float3 end, float step) {
 	float3 vd = sub3(end, start);

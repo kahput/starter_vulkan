@@ -362,49 +362,35 @@ bool tick(Arena *permanent, Arena *frame) {
 		draw2d_line(make2(0.0f, py), make2(viewport.width, py), 1.0f, c);
 	}
 
-	static Drag2D hook = { 0 };
-	static float2 grab_point = { 0 };
+	static float angle = 0.0f;
+	if (input_key_down(KEY_CODE_E)) angle -= dt * PI * 0.5f;
+	if (input_key_down(KEY_CODE_Q)) angle += dt * PI * 0.5f;
+	float2 ro = { -2.8f, 2.25f }, rd = { cosf(angle), sinf(angle) };
+	draw2d_circle(xform2p(screen_from_world, ro), 4.0f, BLACK);
+	draw2d_arrow(xform2p(screen_from_world, ro), xform2v(screen_from_world, scale2(rd, 12.0f)), 4.0f, 16.0f, BLACK);
 
-	float2 positions[] = {
-		f2(-3.0f, 5.0f),
-		f2(3.0f, 1.0f)
+	float2 td = { fabsf(1.0f / rd.x), fabsf(1.0f / rd.y) };
+	int2 step = { rd.x >= 0.0f ? 1 : -1, rd.y >= 0.0f ? 1 : -1 };
+	int2 grid_coord = { (int32_t)floorf(ro.x), (int32_t)floorf(ro.y) };
+
+	float2 t_next = {
+		((grid_coord.x + (step.x > 0 ? 1.0f : 0.0f)) - ro.x) / rd.x,
+		((grid_coord.y + (step.y > 0 ? 1.0f : 0.0f)) - ro.y) / rd.y,
 	};
-	float2 sizing = f2(segment_size * 2.0f, segment_size);
+	while (grid_coord.x < counts.x && grid_coord.x >= -counts.x &&
+		grid_coord.y < counts.y && grid_coord.y >= -counts.y) {
+		float2 cell_center = add2(as2(grid_coord, float2), f2(0.0f, 1.0f));
+		float2 screen_pos = xform2p(screen_from_world, cell_center);
+		draw2d_rect(rect2(screen_pos, f2(segment_size)), rgba(0, 128, 128, 96));
 
-	for (uint32_t index = 0; index < countof(positions); ++index) {
-		draw2d_quad(rect2(xform2p(screen_from_world, add2(positions[index], f2(-1.0f, 0.5f))), sizing),
-			(DRAW_QuadStyle){
-			  .fill_color = BLACK,
-			  .radii = f4(8.0f),
-			});
-
-		draw2d_circle(xform2p(screen_from_world, add2(positions[index], f2(1.0f, 0.0f))), 12.0f, RED);
-		draw2d_circle(xform2p(screen_from_world, add2(positions[index], f2(-1.0f, 0.0f))), 12.0f, RED);
+		if (t_next.x < t_next.y) {
+			t_next.x += td.x;
+			grid_coord.x += step.x;
+		} else {
+			t_next.y += td.y;
+			grid_coord.y += step.y;
+		}
 	}
-
-	RES_Image2D *img_heightmap = res_image(state->cache, RES_IMAGE_HEART);
-	RES_Texture2D *tex_heightmap = res_texture(state->cache, RES_IMAGE_HEART);
-
-	Image2D image = {
-		.format = PIXEL_FORMAT_RGBA8_SRGB,
-		.pixels = img_heightmap->pixels,
-		.width = img_heightmap->width,
-		.height = img_heightmap->height,
-		.type = IMAGE_TYPE_2D,
-		.handle = tex_heightmap->handle
-	};
-
-	static Drag2D drag_image = { 0 };
-
-	drag2d_point(&drag_image, f2(0.0f), 24.0f, xform2p(world_from_screen, mouse_position));
-
-	draw2d_quad(rect_from_center(xform2p(screen_from_world, drag_image.position), scale2(image_size(*img_heightmap), 0.5f)),
-		(DRAW_QuadStyle){
-		  .fill_color = WHITE,
-		  .image = &image,
-		});
-
-	draw2d_circle(xform2p(screen_from_world, drag_image.position), 4.0f, BLACK);
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
