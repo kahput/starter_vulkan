@@ -14,6 +14,7 @@ INLINE Rectangle rect_from_min_max(float2 min, float2 max) { return (Rectangle){
 INLINE Rectangle rect_padded(Rectangle rect, float4 padding) { return (Rectangle){ rect.x + padding.w, rect.y + padding.x, rect.width - (padding.y + padding.w), rect.height - (padding.x + padding.z) }; }
 
 INLINE float2 rect_center(Rectangle rect) { return (float2){ rect.x + rect.width * 0.5f, rect.y + rect.height * 0.5f }; }
+INLINE float2 rect_extent(Rectangle rect) { return (float2){ rect.width, rect.height }; }
 INLINE float2 rect_half_extent(Rectangle rect) { return (float2){ rect.width * 0.5f, rect.height * 0.5f }; }
 
 Convex2 convex_hull(Arena *arena, float2 *points, uint32_t point_count);

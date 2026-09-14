@@ -164,10 +164,13 @@ else()
     )
     add_library(game SHARED
         "game/src/game.c"
+        "game/src/res.c"
+        ${VENDOR_SOURCES}
     )
     target_include_directories(game PRIVATE 
         "src" 
         "${CMAKE_SOURCE_DIR}/engine/src"
+        "${CMAKE_SOURCE_DIR}/engine/vendor/"
     )
     target_compile_options(game PRIVATE 
         -Wall -pedantic -Wextra -Werror

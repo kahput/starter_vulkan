@@ -237,6 +237,9 @@ float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
 float4 mul4x4v(float4x4 m, float4 v);
 float4x4 transpose4x4(float4x4 m);
 
+INLINE float3 xform3p(float4x4 m, float3 p) { return make3_from4(mul4x4v(m, make4_from3(p, 1.0f))); }
+INLINE float3 xform3v(float4x4 m, float3 d) { return make3_from4(mul4x4v(m, make4_from3(d, 0.0f))); }
+
 INLINE float4x4 diagonal4x4(float4 v) {
 	return (float4x4){
 		.elements[0] = v.x,

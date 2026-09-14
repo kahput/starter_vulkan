@@ -722,12 +722,12 @@ int main(void) {
 	Image2D skybox = load_cubemap(permanent,
 		arr(
 			String8,
-			s("assets/textures/skybox_mc/dayRight.png"),
-			s("assets/textures/skybox_mc/dayLeft.png"),
-			s("assets/textures/skybox_mc/dayTop.png"),
-			s("assets/textures/skybox_mc/dayBottom.png"),
-			s("assets/textures/skybox_mc/dayFront.png"),
-			s("assets/textures/skybox_mc/dayBack.png") //
+			s("assets/images/skybox_mc/dayRight.png"),
+			s("assets/images/skybox_mc/dayLeft.png"),
+			s("assets/images/skybox_mc/dayTop.png"),
+			s("assets/images/skybox_mc/dayBottom.png"),
+			s("assets/images/skybox_mc/dayFront.png"),
+			s("assets/images/skybox_mc/dayBack.png") //
 			) //
 	);
 	skybox.handle = gfx_image_make(device, skybox.width, skybox.height,
@@ -783,15 +783,15 @@ int main(void) {
 		}
 		arena_scratch_end(scratch);
 	}
-	Image2D terrain_texture = load_image(permanent, s("assets/textures/base_grass.png"));
-	Image2D grid_texture = load_image(permanent, s("assets/textures/prototype/texture_09.png"));
+	Image2D terrain_texture = load_image(permanent, s("assets/images/base_grass.png"));
+	Image2D grid_texture = load_image(permanent, s("assets/images/prototype/texture_09.png"));
 	grid_texture.handle = gfx_image_make(device, grid_texture.width, grid_texture.height,
 		(ImageOptions){
 		  .debug_name = "grid",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
 		  .pixels = grid_texture.pixels,
 		});
-	Image2D window_texture = load_image(permanent, s("assets/textures/blending_transparent_window.png"));
+	Image2D window_texture = load_image(permanent, s("assets/images/blending_transparent_window.png"));
 	window_texture.handle = gfx_image_make(device, window_texture.width, window_texture.height,
 		(ImageOptions){
 		  .debug_name = "window",
@@ -799,7 +799,7 @@ int main(void) {
 		  .pixels = window_texture.pixels,
 		});
 
-	Image2D noise_image = load_image(permanent, s("assets/textures/heightmap.png"));
+	Image2D noise_image = load_image(permanent, s("assets/images/heightmap.png"));
 	noise_image.handle = gfx_image_make(device, noise_image.width, noise_image.height,
 		(ImageOptions){
 		  .debug_name = "noise",
@@ -807,7 +807,7 @@ int main(void) {
 		  .pixels = noise_image.pixels,
 		});
 
-	Image2D heart_image = load_image(permanent, s("assets/textures/heart.png"));
+	Image2D heart_image = load_image(permanent, s("assets/images/heart.png"));
 	heart_image.handle = gfx_image_make(device, heart_image.width, heart_image.height,
 		(ImageOptions){
 		  .debug_name = "heart",

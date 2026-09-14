@@ -358,8 +358,7 @@ CastResult3 raycast_plane(Ray3 r, Plane p) {
 
 	bool ok = fabsf(denominator) >= EPSILON;
 	if (ok) {
-		float3 po = scale3(p.normal, p.distance);
-		t = (dot3(po, p.normal) - dot3(r.origin, p.normal)) / denominator;
+		t = (p.distance - dot3(r.origin, p.normal)) / denominator;
 
 		ok = t >= 0.0f;
 	}

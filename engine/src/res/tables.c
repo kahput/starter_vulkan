@@ -10,6 +10,7 @@ String8 shaderid_to_string[SHADER_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(SHADER, LINE3D),
 	ENUM_STRING_TABLE_ENTRY(SHADER, TRANSPARENT),
 	ENUM_STRING_TABLE_ENTRY(SHADER, QUAD2D),
+	ENUM_STRING_TABLE_ENTRY(SHADER, QUAD3D),
 	ENUM_STRING_TABLE_ENTRY(SHADER, LINE2D),
 	ENUM_STRING_TABLE_ENTRY(SHADER, COMPOSITE),
 };
@@ -144,7 +145,7 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
 		  .color_attachment_count = 1,
 		  .sample_count = SAMPLE_COUNT_8,
-		  .cull_mode = CULL_MODE_BACK,
+		  .cull_mode = CULL_MODE_NONE,
 
 		  .enable_blend = true,
 		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,

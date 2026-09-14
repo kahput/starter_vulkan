@@ -354,8 +354,8 @@ float4x4 lookat(float3 eye, float3 center, float3 up) {
 	result.elements[9] = u.z;
 	result.elements[13] = -dot3(u, eye);
 
-	result.elements[2] = -f.x;
-	result.elements[6] = -f.y;
+	result.elements[2] =  -f.x;
+	result.elements[6] =  -f.y;
 	result.elements[10] = -f.z;
 	result.elements[14] = dot3(f, eye);
 
