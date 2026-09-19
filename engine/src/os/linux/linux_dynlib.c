@@ -3,6 +3,7 @@
 #include "core/strings.h"
 #include "os.h"
 #include <dlfcn.h>
+#include <stdlib.h>
 
 OS_Library os_library_load(String8 path) {
 	OS_Library result = NULL;
@@ -50,4 +51,8 @@ bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
 		*(void **)out_symbol = result;
 
 	return ok;
+}
+
+int32_t os_execute_command(String8 cmd) {
+	return system((char *)cmd.text);
 }

@@ -1,5 +1,6 @@
 #include "tables.h"
 #include "gfx/gfx_types.h"
+#include <vulkan/vulkan_core.h>
 
 const VkDescriptorType uniform_type_to_vulkan_descriptor_type[UNIFORM_TYPE_MAX] = {
 	[UNIFORM_TYPE_IMAGE] = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
@@ -124,7 +125,8 @@ const VkImageViewType image_type_to_vulkan_image_view_type[IMAGE_TYPE_MAX] = {
 
 };
 
-VkImageUsageFlags image_options_to_vulkan_image_usage_flags(ImageOptions opt) {
+VkImageUsageFlags
+image_options_to_vulkan_image_usage_flags(ImageOptions opt) {
 	VkImageUsageFlags result = 0;
 	if (has_flag(opt.usage, IMAGE_USAGE_RENDER)) {
 		if (pixel_format_is_depth(opt.format))

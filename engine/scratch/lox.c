@@ -48,7 +48,7 @@ typedef enum {
 	AST_NODE_EXPR_LOGICAL,
 	AST_NODE_EXPR_UNARY,
 	AST_NODE_EXPR_GROUPING,
-	AST_NODE_EXPR_PRIMARY,
+	AST_NODE_EXPR_LITERAL,
 	AST_NODE_EXPR_MAX,
 
 	AST_NODE_STMT_PRINT = AST_NODE_EXPR_MAX,
@@ -321,7 +321,7 @@ AST_Node *ast_literal(Arena *arena, AST_Literal literal) {
 	AST_Node *result = 0;
 	bool ok = arena;
 	if (ok) {
-		result = ast_make(arena, AST_NODE_EXPR_PRIMARY);
+		result = ast_make(arena, AST_NODE_EXPR_LITERAL);
 
 		result->literal = literal;
 	}
@@ -586,7 +586,7 @@ AST_Node *ast_parse_expr_assignment(Arena *arena, Lexer *lexer) {
 			lexer_advance(lexer); // consume '='
 			AST_Node *value = ast_parse_expr_assignment(arena, lexer);
 
-			if (left->type == AST_NODE_EXPR_PRIMARY && left->literal.type == AST_LITERAL_VARIABLE)
+			if (left->type == AST_NODE_EXPR_LITERAL && left->literal.type == AST_LITERAL_VARIABLE)
 				left = ast_assign(arena, left->literal.as.name, value);
 			else {
 				String8 where = lexer_error_location_string(arena, s);
@@ -987,7 +987,7 @@ void ast_print(AST_Node *node) {
 				ast_print(node->first_child);
 				printf(")");
 			} break;
-			case AST_NODE_EXPR_PRIMARY:
+			case AST_NODE_EXPR_LITERAL:
 				ast_print_literal(node->literal);
 				break;
 			case AST_NODE_DECLARATOR: {
@@ -1246,7 +1246,7 @@ AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr) {
 			case AST_NODE_EXPR_GROUPING:
 				result = ast_evaluate(arena, env, expr->first_child);
 				break;
-			case AST_NODE_EXPR_PRIMARY:
+			case AST_NODE_EXPR_LITERAL:
 				if (expr->literal.type == AST_LITERAL_VARIABLE)
 					result = env_find_val(env, expr->literal.as.name.lexeme);
 				else
@@ -1403,7 +1403,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			ast_visit(node->first_child, indent_level + 1);
 			break;
 
-		case AST_NODE_EXPR_PRIMARY:
+		case AST_NODE_EXPR_LITERAL:
 			switch (node->literal.type) {
 				case AST_LITERAL_NIL:
 					printf("NIL");
@@ -1511,7 +1511,7 @@ AST_Literal native_clock(uint32_t argc, AST_Literal *argv) {
 int main(void) {
 	Arena arena[] = { arena_make(MiB(8)) };
 
-	String8 source = os_file_read_entire(arena, s("engine/scratch/example.lox"));
+	String8 source = os_file_read(arena, s("engine/scratch/example.lox"));
 	AST_Node *program = ast_parse(arena, (Lexer[]){ lexer_make(source, keyword_to_string, TOKEN_KEYWORD_MAX) });
 
 	ast_visit(program, 0);

@@ -26,14 +26,14 @@ int main(void) {
 	Arena frame = arena_make(MiB(16));
 
 	for (bool is_open = true; is_open;) {
-		OS_Timestamp now = os_file_last_modified(src);
+		OS_Timestamp now = os_file_mtime(src);
 		if (now > ts) {
 			if (ts)
 				os_sleep_ms(100);
 
 			ts = now;
-        os_library_unload(lib);
-        os_file_copy(src, dst);
+			os_library_unload(lib);
+			os_file_copy(src, dst);
 			lib = os_library_load(dst);
 			if (lib == 0) break;
 			os_library_symbol(lib, s("tick"), &tick);
@@ -45,6 +45,7 @@ int main(void) {
 
 		arena_reset(&frame);
 	}
+    
 
 	os_library_unload(lib);
 	os_display_shutdown();

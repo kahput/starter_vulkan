@@ -7,7 +7,7 @@
 #include <string.h>
 
 // clang-format off
-const String8 token_type_to_string[TOKEN_MAX] = {
+const String8 token_type_to_string[TOKEN_BUILTIN_MAX] = {
     [TOKEN_UNKNOWN]       = scomp("unkown"),
     [TOKEN_LPAREN]    = scomp("("),   [TOKEN_RPAREN]   = scomp(")"),
     [TOKEN_LBRACE]    = scomp("{"),   [TOKEN_RBRACE]   = scomp("}"),

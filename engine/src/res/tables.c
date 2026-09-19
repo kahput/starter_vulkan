@@ -39,14 +39,7 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/base.vertex.spv"),
 		[SHADER_STAGE_FRAGMENT] = scomp("assets/shaders/fragment/bin/phong.fragment.spv"),
 	  },
-	  .pipelines = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		  .cull_mode = CULL_MODE_BACK,
-		},
-	  },
+	  .pipelines = { { .cull_mode = CULL_MODE_BACK } },
 	  .pipeline_count = 1,
 	},
 	[SHADER_GRASS] = {
@@ -55,13 +48,7 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/grass.vertex.spv"),
 		[SHADER_STAGE_FRAGMENT] = scomp("assets/shaders/fragment/bin/grass.fragment.spv"),
 	  },
-	  .pipelines = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		},
-	  },
+	  .pipelines = { { 0 } },
 	  .pipeline_count = 1,
 	},
 	[SHADER_SKYBOX] = {
@@ -70,13 +57,7 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/skybox.vertex.spv"),
 		[SHADER_STAGE_FRAGMENT] = scomp("assets/shaders/fragment/bin/skybox.fragment.spv"),
 	  },
-	  .pipelines = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		},
-	  },
+	  .pipelines = { { 0 } },
 	  .pipeline_count = 1,
 	},
 	[SHADER_LINE3D] = {
@@ -85,13 +66,7 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/line.vertex.spv"),
 		[SHADER_STAGE_FRAGMENT] = scomp("assets/shaders/fragment/bin/flat.fragment.spv"),
 	  },
-	  .pipelines = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		},
-	  },
+	  .pipelines = { { 0 } },
 	  .pipeline_count = 1,
 	},
 	[SHADER_TRANSPARENT] = {
@@ -100,14 +75,7 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 		[SHADER_STAGE_VERTEX] = scomp("assets/shaders/vertex/bin/base.vertex.spv"),
 		[SHADER_STAGE_FRAGMENT] = scomp("assets/shaders/fragment/bin/energyfield.fragment.spv"),
 	  },
-	  .pipelines = {
-		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
-		  .cull_mode = CULL_MODE_NONE,
-		},
-	  },
+	  .pipelines = { { 0 } },
 	  .pipeline_count = 1,
 	},
 	[SHADER_QUAD2D] = {
@@ -118,14 +86,11 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 	  },
 	  .pipelines = {
 		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_UNORM },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_1,
 		  .cull_mode = CULL_MODE_BACK,
 		  .disable_depth_test = true,
 		  .disable_depth_write = true,
 
-		  .enable_blend = true,
+		  .blend_enable = true,
 		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
 		  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
 		  .src_alpha_factor = BLEND_FACTOR_ONE,
@@ -142,12 +107,9 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 	  },
 	  .pipelines = {
 		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
 		  .cull_mode = CULL_MODE_NONE,
 
-		  .enable_blend = true,
+		  .blend_enable = true,
 		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
 		  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
 		  .src_alpha_factor = BLEND_FACTOR_ONE,
@@ -164,9 +126,6 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 	  },
 	  .pipelines = {
 		{
-		  .color_attachments = { PIXEL_FORMAT_RGBA8_SRGB },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_8,
 		  .cull_mode = CULL_MODE_BACK,
 		  .disable_depth_test = true,
 		  .disable_depth_write = true,
@@ -182,9 +141,6 @@ ShaderMetadata shaderid_to_metadata[SHADER_MAX] = {
 	  },
 	  .pipelines = {
 		{
-		  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
-		  .color_attachment_count = 1,
-		  .sample_count = SAMPLE_COUNT_1,
 		  .cull_mode = CULL_MODE_BACK,
 		  .disable_depth_test = true,
 		  .disable_depth_write = true,

@@ -5,6 +5,23 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_definitions(DEV_BUILD)
 
+# file(GLOB_RECURSE SHADER_SOURCES "${CMAKE_SOURCE_DIR}/assets/*.shader")
+# foreach(SHADER_SOURCE ${SHADER_SOURCES})
+#     get_filename_component(FILE ${SHADER_SOURCE} NAME)
+#     set(STAMP "${CMAKE_BINARY_DIR}/generated/shaders/${FILE}.stamp")
+
+#     add_custom_command(
+#         OUTPUT ${STAMP}
+#         COMMAND asset_compiler shader ${SHADER_SOURCE}
+#         COMMAND ${CMAKE_COMMAND} -E touch ${STAMP}
+#         DEPENDS asset_compiler ${SHADER_SOURCE}
+#         VERBATIM
+#     )
+
+#     list(APPEND SHADER_STAMPS ${STAMP})
+# endforeach()
+# add_custom_target(compile_shaders ALL DEPENDS ${SHADER_STAMPS})
+
 # Shaders
 file(GLOB_RECURSE SHADERS
     "${CMAKE_SOURCE_DIR}/assets/*.vertex"
@@ -26,9 +43,6 @@ foreach(SHADER ${SHADERS})
 
     list(APPEND SHADER_OUTPUTS ${SPV})
 endforeach()
-if(SHADER_OUTPUTS)
-    add_custom_target(compile_shaders ALL DEPENDS ${SHADER_OUTPUTS})
-endif()
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
@@ -42,6 +56,7 @@ set(NATIVE_SCRATCHES
     table_generator
     lox
     multi_surface
+    asset_compiler
 )
 
 # Web build
@@ -165,6 +180,7 @@ else()
     add_library(game SHARED
         "game/src/game.c"
         "game/src/res.c"
+        "game/src/generated/assets_generated.c"
         ${VENDOR_SOURCES}
     )
     target_include_directories(game PRIVATE 

@@ -20,7 +20,7 @@ typedef enum {
 	TOKEN_SLASH, // /
 	TOKEN_STAR, // *
 	TOKEN_PERCENT, // %
-    TOKEN_DOLLAR, // $
+	TOKEN_DOLLAR, // $
 	TOKEN_TILDE, // ~
 	TOKEN_CARET, // ^
 	TOKEN_QUESTION_MARK, // ?
@@ -50,7 +50,7 @@ typedef enum {
 	TOKEN_INTEGER,
 
 	TOKEN_EOF,
-	TOKEN_MAX,
+	TOKEN_BUILTIN_MAX,
 
 	TOKEN_KEYWORD_0,
 	TOKEN_KEYWORD_1,
@@ -134,7 +134,7 @@ typedef struct {
 typedef struct {
 	String8 source;
 
-	String8 *keywords;
+	const String8 *keywords;
 	uint32_t keyword_count;
 
 	uint8_t *cursor;
@@ -144,9 +144,9 @@ typedef struct {
 	bool has_peeked, had_error;
 } Lexer;
 
-extern const String8 token_type_to_string[TOKEN_MAX];
+extern const String8 token_type_to_string[TOKEN_BUILTIN_MAX];
 
-static inline Lexer lexer_make(String8 source, String8 *keywords, uint32_t keyword_count) {
+static inline Lexer lexer_make(String8 source, const String8 *keywords, uint32_t keyword_count) {
 	return (Lexer){
 		.source = source,
 		.cursor = source.text,

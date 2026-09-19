@@ -30,3 +30,5 @@ extern PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessenger;
 extern PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectName;
 extern PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabel;
 extern PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabel;
+
+// Enum mappings

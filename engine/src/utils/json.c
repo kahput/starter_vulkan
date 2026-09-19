@@ -211,7 +211,7 @@ JSON_Node *json_parse_file(Arena *arena, String8 path) {
 
 	bool ok = arena;
 	if (ok) {
-		Lexer lexer = lexer_make(os_file_read_entire(arena, path), json_keyword_to_string, countof(json_keyword_to_string));
+		Lexer lexer = lexer_make(os_file_read(arena, path), json_keyword_to_string, countof(json_keyword_to_string));
 		result = arena_push_count(arena, JSON_Node, 1);
 		result->value = json_parse_value(arena, &lexer);
 	}

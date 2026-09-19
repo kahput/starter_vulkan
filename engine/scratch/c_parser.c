@@ -779,7 +779,7 @@ int main(void) {
 
 	String8 headers[] = {
 		synthetic_types_header,
-		/* os_file_read_entire(arena, s("engine/src/common.h")), */
+		os_file_read(arena, s("engine/src/common.h")),
 		/* os_file_read_entire(arena, s("engine/src/core/cmath.h")), */
 		/* os_file_read_entire(arena, s("engine/src/core/arena.h")), */
 		/* os_file_read_entire(arena, s("engine/src/draw.h")), */
@@ -788,7 +788,7 @@ int main(void) {
 		/* os_file_read_entire(arena, s("engine/scratch/skinning.c")), */
 		/* os_file_read_entire(arena, s("engine/src/gfx/gfx_types.h")), */
 		/* os_file_read_entire(arena, s("engine/src/meta.h")), */
-		os_file_read_entire(arena, s("engine/scratch/c_parser.c")),
+		/* os_file_read_entire(arena, s("engine/scratch/c_parser.c")), */
 	};
 
 	AST_Node *program = ast_make(arena, AST_NODE_PROGRAM);

@@ -47,7 +47,7 @@ RES_Image2D *res_image(RES_Cache *cache, RES_ImageID id) {
 	if (ok) {
 		result->loaded = true;
 
-		file_content = os_file_read_entire(scratch.arena, meta->filepath);
+		file_content = os_file_read(scratch.arena, meta->filepath);
 
 		ok = file_content.length != 0;
 		if (ok == false)

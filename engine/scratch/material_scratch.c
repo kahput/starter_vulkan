@@ -26,15 +26,15 @@ int main(void) {
 		sampler_opt("default:nearest", FILTER_NEAREST, WRAP_MODE_CLAMP));
 
 	ArenaTemp scratch = arena_scratch_begin(0);
+
 	GFX_Shader *quad2d = gfx_shader_make(device,
-		os_file_read_entire(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv")),
-		os_file_read_entire(scratch.arena, s("assets/shaders/fragment/bin/quad.fragment.spv")),
+		os_file_read(scratch.arena, s("assets/shaders/vertex/bin/batch2d.vertex.spv")),
+		os_file_read(scratch.arena, s("assets/shaders/fragment/bin/quad.fragment.spv")),
 		"shader:quad2d");
+
 	gfx_pipeline_ensure(device, quad2d,
 		(PipelineOptions){
-		  .color_attachments = { PIXEL_FORMAT_BGRA8_UNORM },
-		  .color_attachment_count = 1,
-		  .enable_blend = true,
+		  .blend_enable = true,
 		  .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
 		  .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
 		  .src_alpha_factor = BLEND_FACTOR_ONE,
@@ -42,6 +42,10 @@ int main(void) {
 
 		  .disable_depth_test = true,
 		  .disable_depth_write = true,
+		},
+		(GFX_DrawTargetLayout){
+		  .color_formats = { PIXEL_FORMAT_BGRA8_UNORM },
+		  .color_count = 1,
 		});
 
 	arena_scratch_end(scratch);
@@ -171,7 +175,7 @@ int main(void) {
 
 			Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest) };
 
-			gfx_cmd_shader_bind(cmd, quad2d);
+			gfx_cmd_shader_bind(device, quad2d, 0);
 			gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
 			gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 

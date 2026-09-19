@@ -18,7 +18,7 @@ int32_t main(int32_t argc, const char *argv[]) {
 	OS_Surface *main = os_surface_open(1280, 720, s("Hello world!"), OS_SURFACE_FLAG_RESIZEABLE);
 	/* OS_Surface *popup = os_surface_open_with_parent(main, 480, 300, s("Hello world!"), 0); */
 
-	uint64_t timestamp = os_file_last_modified(s("game.so"));
+	uint64_t timestamp = os_file_mtime(s("game.so"));
 	OS_Library game = os_library_load(s("game/game.so"));
 	PFN_game_hookup hookup = NULL;
 	os_library_symbol(game, s("game/game_hook"), &hookup);
@@ -60,13 +60,13 @@ int32_t main(int32_t argc, const char *argv[]) {
 			}
 		}
 
-		if (timestamp != os_file_last_modified(s("game.so"))) {
+		if (timestamp != os_file_mtime(s("game.so"))) {
 			LOG_INFO("hot-reloading...");
 			os_sleep_ms(10);
 			os_library_unload(game);
 			game = os_library_load(s("game/game.so"));
 			os_library_symbol(game, s("game_hook"), &hookup);
-			timestamp = os_file_last_modified(s("game/game.so"));
+			timestamp = os_file_mtime(s("game/game.so"));
 		}
 	}
 

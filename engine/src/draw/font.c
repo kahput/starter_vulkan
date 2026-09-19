@@ -8,7 +8,7 @@ Font load_font(Arena *arena, String8 path, uint32_t font_size) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Font result = { 0 };
 
-	String8 file_content = os_file_read_entire(scratch.arena, path);
+	String8 file_content = os_file_read(scratch.arena, path);
 	stbtt_fontinfo font_info = { 0 };
 
 	bool ok = arena && file_content.length;

@@ -76,7 +76,7 @@ bool os_file_exists(String8 filepath) {
 	return result;
 }
 
-uint64_t os_file_read(OS_File file, void *buffer, uint64_t size) {
+uint64_t os_file_read_stream(OS_File file, void *buffer, uint64_t size) {
 	if (buffer == NULL || size == 0)
 		return 0;
 	uint8_t *running_offset = buffer;
@@ -90,7 +90,7 @@ uint64_t os_file_read(OS_File file, void *buffer, uint64_t size) {
 	return running_offset - (uint8_t *)buffer;
 }
 
-uint64_t os_file_write(OS_File file, const void *buffer, uint64_t size) {
+uint64_t os_file_write_stream(OS_File file, const void *buffer, uint64_t size) {
 	uint8_t *running_offset = (uint8_t *)buffer;
 	int64_t written_bytes = 0;
 
@@ -133,14 +133,14 @@ bool os_file_copy(String8 src, String8 dst) {
 	return true;
 }
 
-String8 os_file_read_entire(Arena *arena, String8 path) {
+String8 os_file_read(Arena *arena, String8 path) {
 	String8 result = { 0 };
 
 	OS_File handle = os_file_open(path, OS_FILE_MODE_READ);
 	if (os_file_valid(handle)) {
 		uint64_t size = os_file_size(handle);
 		uint8_t *buffer = arena_push(arena, size + 1, 8, true);
-		os_file_read(handle, buffer, size);
+		os_file_read_stream(handle, buffer, size);
 		buffer[size] = '\0';
 
 		result.text = buffer;
@@ -152,15 +152,15 @@ String8 os_file_read_entire(Arena *arena, String8 path) {
 	return result;
 }
 
-void os_file_write_entire(String8 path, const void *buffer, uint64_t size) {
+void os_file_write(String8 path, const void *buffer, uint64_t size) {
 	OS_File handle = os_file_open(path, OS_FILE_MODE_WRITE);
 	if (os_file_valid(handle)) {
-		os_file_write(handle, buffer, size);
+		os_file_write_stream(handle, buffer, size);
 		os_file_close(handle);
 	}
 }
 
-OS_Timestamp os_file_last_modified(String8 path) {
+OS_Timestamp os_file_mtime(String8 path) {
 	struct stat attrib;
 	if (stat((char *)path.text, &attrib) == 0)
 		return (uint64_t)attrib.st_mtime;

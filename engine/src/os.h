@@ -69,25 +69,25 @@ OS_File os_file_open(String8 path, OS_FileMode);
 OS_File os_file_open_async(String8 path, OS_FileMode mode);
 
 uint64_t os_file_size(OS_File handle);
+uint64_t os_file_read_stream(OS_File file, void *buffer, uint64_t size);
+uint64_t os_file_write_stream(OS_File file, const void *buffer, uint64_t size);
 void os_file_close(OS_File handle);
 
-uint64_t os_file_read(OS_File file, void *buffer, uint64_t size);
-uint64_t os_file_write(OS_File file, const void *buffer, uint64_t size);
+String8 os_file_read(Arena *arena, String8 path);
+void os_file_write(String8 filename, const void *buffer, uint64_t size);
 bool os_file_copy(String8 src, String8 dst);
-
-String8 os_file_read_entire(Arena *arena, String8 path);
-void os_file_write_entire(String8 filename, const void *buffer, uint64_t size);
 
 bool os_file_exists(String8 path);
 bool os_file_delete(String8 path);
 
 typedef uint64_t OS_Timestamp;
-OS_Timestamp os_file_last_modified(String8 filepath);
+OS_Timestamp os_file_mtime(String8 filepath);
 
 String8 os_current_directory(Arena *arena);
 bool os_directory_exists(String8 path);
 bool os_directory_make(String8 path);
 bool os_directory_delete(String8 path);
+
 
 /* typedef enum { */
 /* 	OS_ENTRY_TYPE_FILE, */
@@ -114,6 +114,9 @@ static inline bool os_library_valid(OS_Library lib) { return lib != OS_LIBRARY_I
 OS_Library os_library_load(String8 path);
 void os_library_unload(OS_Library lib);
 bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol);
+
+
+int32_t os_execute_command(String8 cmd);
 
 // ----------------------
 // - Draw surfaces/windows

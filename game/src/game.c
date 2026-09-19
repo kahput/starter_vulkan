@@ -145,24 +145,26 @@ bool tick(Arena *permanent, Arena *frame) {
 
 			bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length;
 			if (is_compute) {
-				String8 cs = os_file_read_entire(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+				String8 cs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
 				state->shaders[shaderid] = gfx_compute_make(state->device, cs, (char *)metadata->name.text);
-				state->shader_ts[shaderid] = os_file_last_modified(metadata->filepaths[SHADER_STAGE_COMPUTE]);
+				state->shader_ts[shaderid] = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 			} else {
-				String8 vs = os_file_read_entire(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
-				String8 fs = os_file_read_entire(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+				String8 vs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
+				String8 fs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 
-				OS_Timestamp fs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-				OS_Timestamp vs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_VERTEX]);
+				OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+				OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 				state->shader_ts[shaderid] = MAX(fs_ts, vs_ts);
 
 				state->shaders[shaderid] = gfx_shader_make(state->device, vs, fs, (char *)metadata->name.text);
 				for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation) {
 					PipelineOptions opts = metadata->pipelines[permutation];
-					opts.color_attachments[0] = PIXEL_FORMAT_BGRA8_UNORM;
-					opts.sample_count = 1;
-					gfx_pipeline_ensure(state->device, state->shaders[shaderid], opts);
+					gfx_pipeline_ensure(state->device, state->shaders[shaderid], opts,
+						(GFX_DrawTargetLayout){
+						  .color_formats[0] = PIXEL_FORMAT_BGRA8_UNORM,
+						  .color_count = 1,
+						});
 				}
 			}
 		}
@@ -365,17 +367,18 @@ bool tick(Arena *permanent, Arena *frame) {
 	static float angle = 0.0f;
 	if (input_key_down(KEY_CODE_E)) angle -= dt * PI * 0.5f;
 	if (input_key_down(KEY_CODE_Q)) angle += dt * PI * 0.5f;
-	float2 ro = { -2.8f, 2.25f }, rd = { cosf(angle), sinf(angle) };
-	draw2d_circle(xform2p(screen_from_world, ro), 4.0f, BLACK);
-	draw2d_arrow(xform2p(screen_from_world, ro), xform2v(screen_from_world, scale2(rd, 12.0f)), 4.0f, 16.0f, BLACK);
+
+	static Drag2D ro = { 0 };
+	drag2d_point(&ro, f2(0.0f), 0.25f, xform2p(world_from_screen, mouse_position));
+	float2 rd = { cosf(angle), sinf(angle) };
 
 	float2 td = { fabsf(1.0f / rd.x), fabsf(1.0f / rd.y) };
 	int2 step = { rd.x >= 0.0f ? 1 : -1, rd.y >= 0.0f ? 1 : -1 };
-	int2 grid_coord = { (int32_t)floorf(ro.x), (int32_t)floorf(ro.y) };
+	int2 grid_coord = { (int32_t)floorf(ro.position.x), (int32_t)floorf(ro.position.y) };
 
 	float2 t_next = {
-		((grid_coord.x + (step.x > 0 ? 1.0f : 0.0f)) - ro.x) / rd.x,
-		((grid_coord.y + (step.y > 0 ? 1.0f : 0.0f)) - ro.y) / rd.y,
+		((grid_coord.x + (step.x > 0 ? 1.0f : 0.0f)) - ro.position.x) / rd.x,
+		((grid_coord.y + (step.y > 0 ? 1.0f : 0.0f)) - ro.position.y) / rd.y,
 	};
 	while (grid_coord.x < counts.x && grid_coord.x >= -counts.x &&
 		grid_coord.y < counts.y && grid_coord.y >= -counts.y) {
@@ -391,6 +394,9 @@ bool tick(Arena *permanent, Arena *frame) {
 			grid_coord.y += step.y;
 		}
 	}
+
+	draw2d_arrow(xform2p(screen_from_world, ro.position), xform2v(screen_from_world, scale2(rd, 12.0f)), 4.0f, 16.0f, BLACK);
+	draw2d_circle(xform2p(screen_from_world, ro.position), segment_size * 0.25f, RED);
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -465,7 +471,7 @@ bool tick(Arena *permanent, Arena *frame) {
 		gfx_cmd_bind(device, 0, set0, countof(set0));
 
 		if (draw->line3d->offset) {
-			gfx_cmd_shader_bind(cmd, state->shaders[SHADER_LINE3D]);
+			gfx_cmd_shader_bind(device, state->shaders[SHADER_LINE3D], 0);
 
 			Uniform set1[] = {
 				storage_data(0, draw->line3d->base, draw->line3d->offset),
@@ -504,7 +510,7 @@ bool tick(Arena *permanent, Arena *frame) {
 				}
 			}
 
-			gfx_cmd_shader_bind(cmd, state->shaders[SHADER_QUAD3D]);
+			gfx_cmd_shader_bind(device, state->shaders[SHADER_QUAD3D], 0);
 
 			Uniform set1[] = {
 				storage_data(1, draw->quad3d->base, draw->quad3d->offset),
@@ -526,7 +532,7 @@ bool tick(Arena *permanent, Arena *frame) {
 			};
 			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_Quad2D);
 
-			gfx_cmd_shader_bind(cmd, state->shaders[SHADER_QUAD2D]);
+			gfx_cmd_shader_bind(device, state->shaders[SHADER_QUAD2D], 0);
 
 			Uniform uniforms0[] = {
 				uniform_data(0, &fd, sizeof(fd)),
@@ -554,21 +560,21 @@ bool tick(Arena *permanent, Arena *frame) {
 
 		bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length > 0;
 		if (is_compute) {
-			OS_Timestamp now = os_file_last_modified(metadata->filepaths[SHADER_STAGE_COMPUTE]);
+			OS_Timestamp now = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 
 			if (now != state->shader_ts[shaderid]) {
 				LOG_INFO("hot-reloading %s...", state->shaders[shaderid]->debug_name);
 				gfx_device_wait_idle(device);
 
 				gfx_shader_destroy(device, state->shaders[shaderid]);
-				String8 bytecode = os_file_read_entire(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+				String8 bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
 				state->shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)shaderid_to_string[shaderid].text);
 
 				state->shader_ts[shaderid] = now;
 			}
 		} else {
-			OS_Timestamp fs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-			OS_Timestamp vs_ts = os_file_last_modified(metadata->filepaths[SHADER_STAGE_VERTEX]);
+			OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+			OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 			OS_Timestamp now = MAX(fs_ts, vs_ts);
 			if (now != state->shader_ts[shaderid]) {
@@ -579,15 +585,17 @@ bool tick(Arena *permanent, Arena *frame) {
 
 				gfx_shader_destroy(device, state->shaders[shaderid]);
 
-				String8 vs_bytecode = os_file_read_entire(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
-				String8 fs_bytecode = os_file_read_entire(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+				String8 vs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
+				String8 fs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 				state->shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shaderid_to_string[shaderid].text);
 
 				for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation) {
 					PipelineOptions opts = metadata->pipelines[permutation];
-					opts.color_attachments[0] = PIXEL_FORMAT_BGRA8_UNORM;
-					opts.sample_count = 1;
-					gfx_pipeline_ensure(device, state->shaders[shaderid], opts);
+					gfx_pipeline_ensure(device, state->shaders[shaderid], opts,
+						(GFX_DrawTargetLayout){
+						  .color_formats[0] = PIXEL_FORMAT_BGRA8_UNORM,
+						  .color_count = 1,
+						});
 				}
 
 				state->shader_ts[shaderid] = now;

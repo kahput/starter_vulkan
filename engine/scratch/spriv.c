@@ -62,9 +62,9 @@ int main(void) {
 	String8 shader = s("assets/shaders/fragment/bin/phong.fragment.spv");
 	int result = system((char *)str8_concat(scratch.arena, s("spirv-dis "), shader).text);
 
-	LOG_INFO("#%.*s", sspread(os_file_read_entire(scratch.arena, s("dis.test"))));
+	LOG_INFO("#%.*s", sspread(os_file_read(scratch.arena, s("dis.test"))));
 
-	String8 binary = os_file_read_entire(scratch.arena, shader);
+	String8 binary = os_file_read(scratch.arena, shader);
 
 	uint32_t spv_word_count = binary.length / 4;
 	uint32_t *data = (uint32_t *)binary.text;

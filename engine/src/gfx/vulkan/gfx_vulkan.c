@@ -21,7 +21,7 @@ static inline GFX_Pipeline *gfx__pipeline_alloc(GFX_Device *device) {
 	bool ok = gfx_device_valid(device) && (device->pipeline_count < MAX_PIPELINES || device->first_free_pipeline);
 	ASSERT(ok);
 
-	if (ok) { // acquire new shader
+	if (ok) {
 		if (device->first_free_pipeline) {
 			result = device->first_free_pipeline;
 			device->first_free_pipeline = result->next;
@@ -573,9 +573,7 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *d
 	}
 
 	if (ok) { // create default pipeline for compute shader
-		pipeline->next = result->first_pipeline;
-		result->first_pipeline = pipeline;
-
+		result->compute = pipeline;
 		pipeline->shader = result;
 
 		VkPipelineShaderStageCreateInfo compute_stage = {
@@ -697,30 +695,78 @@ GFX_Shader *gfx_shader_make(GFX_Device *device, String8 vs_bytecode, String8 fs_
 	return result;
 }
 
-GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, PipelineOptions options) {
+int32_t gfx_pipeline_register(GFX_Device *device, GFX_Shader *shader, PipelineOptions options) {
+	int32_t result = -1;
+
+	bool ok = gfx_shader_valid(device, shader);
+	if (ok) {
+		for (uint32_t index = 0; index < shader->pipeline_count; ++index) {
+			if (shader->pipelines[index].hash == hash64(&options, sizeof(options))) {
+				result = index;
+				break;
+			}
+		}
+
+		if (result == -1) {
+			ASSERT(shader->pipeline_count < GFX_LIMIT_PIPELINE_PERMUTATIONS);
+
+			shader->pipelines[shader->pipeline_count].hash = hash64(&options, sizeof(options));
+			shader->pipelines[shader->pipeline_count].options = options;
+
+			result = shader->pipeline_count++;
+		}
+	}
+
+	return result;
+}
+
+GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, PipelineOptions opt, GFX_DrawTargetLayout layout) {
 	GFX_Pipeline *result = 0;
 	const char *name = 0;
 	uint32_t set_count = 0;
 	bool match_found = false;
+	int32_t opt_index = -1;
+
+	// normalize
+	layout.sample_count = MAX(1, layout.sample_count);
 
 	bool ok = gfx_shader_valid(device, shader);
 	if (ok) {
 		name = shader->debug_name ? shader->debug_name : "<unnamed>";
 
-		for (GFX_Pipeline *pipeline = shader->first_pipeline; pipeline && pipeline != device->pipeline_pool; pipeline = pipeline->next) {
-			if (memory_equals(&options, &pipeline->options, sizeof(PipelineOptions))) {
-				result = pipeline;
-				match_found = true;
+		uint64_t opt_hash = hash64(&opt, sizeof(opt));
+
+		for (uint32_t index = 0; index < shader->pipeline_count; ++index) {
+			if (shader->pipelines[index].hash == opt_hash) {
+				opt_index = (int32_t)index;
 				break;
+			}
+		}
+
+		if (opt_index != -1) {
+			for (
+				GFX_Pipeline *pipeline = shader->pipelines[opt_index].first_pipeline;
+				pipeline && pipeline != device->pipeline_pool;
+				pipeline = pipeline->next) {
+				if (memory_equals(&layout, &pipeline->layout, sizeof(GFX_DrawTargetLayout))) {
+					result = pipeline;
+					match_found = true;
+					break;
+				}
 			}
 		}
 	}
 
 	if (ok && match_found == false) { // acquire new shader
 		result = gfx__pipeline_alloc(device);
+
+		ok = result;
 	}
 
 	if (ok && match_found == false) { // create graphics pipeline
+		result->shader = shader;
+		result->layout = layout;
+
 		VkPipelineShaderStageCreateInfo shader_stages[] = {
 			{
 			  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -766,9 +812,9 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 			.depthClampEnable = VK_FALSE,
 			.rasterizerDiscardEnable = VK_FALSE,
-			.polygonMode = VK_POLYGON_MODE_FILL,
+			.polygonMode = (VkPolygonMode)opt.polygon_mode,
 			.lineWidth = 1.0f,
-			.cullMode = options.cull_mode,
+			.cullMode = opt.cull_mode,
 			.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 			.depthBiasEnable = VK_FALSE,
 		};
@@ -776,15 +822,15 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 		VkPipelineMultisampleStateCreateInfo mss_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
 			.sampleShadingEnable = VK_FALSE,
-			.rasterizationSamples = options.sample_count ? (VkSampleCountFlags)options.sample_count : VK_SAMPLE_COUNT_1_BIT,
-			.alphaToCoverageEnable = options.color_attachment_count && options.sample_count > 1 ? VK_TRUE : VK_FALSE,
+			.rasterizationSamples = layout.sample_count ? (VkSampleCountFlags)layout.sample_count : VK_SAMPLE_COUNT_1_BIT,
+			.alphaToCoverageEnable = layout.color_count && layout.sample_count > 1 ? VK_TRUE : VK_FALSE,
 			.minSampleShading = 1.0f,
 		};
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-			.depthTestEnable = options.disable_depth_test == false,
-			.depthWriteEnable = options.disable_depth_write == false,
+			.depthTestEnable = opt.disable_depth_test == false,
+			.depthWriteEnable = opt.disable_depth_write == false,
 			.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 			.depthBoundsTestEnable = VK_FALSE,
 			.minDepthBounds = 0.0f,
@@ -801,37 +847,37 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 			VkColorComponentFlags rgba_write_mask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 			VkPipelineColorBlendAttachmentState color_attachment_blend_default = {
 				.colorWriteMask = rgba_write_mask,
-				.blendEnable = options.enable_blend,
+				.blendEnable = opt.blend_enable,
 
 				// Color: result = src.rgb + (0.0 * dst.rgb)
-				.srcColorBlendFactor = (VkBlendFactor)options.src_color_factor,
-				.dstColorBlendFactor = (VkBlendFactor)options.dst_color_factor,
-				.colorBlendOp = VK_BLEND_OP_ADD,
+				.srcColorBlendFactor = (VkBlendFactor)opt.src_color_factor,
+				.dstColorBlendFactor = (VkBlendFactor)opt.dst_color_factor,
+				.colorBlendOp = (VkBlendOp)opt.color_op,
 
-				.srcAlphaBlendFactor = (VkBlendFactor)options.src_alpha_factor,
-				.dstAlphaBlendFactor = (VkBlendFactor)options.dst_alpha_factor,
-				.alphaBlendOp = VK_BLEND_OP_ADD,
+				.srcAlphaBlendFactor = (VkBlendFactor)opt.src_alpha_factor,
+				.dstAlphaBlendFactor = (VkBlendFactor)opt.dst_alpha_factor,
+				.alphaBlendOp = (VkBlendOp)opt.alpha_op,
 			};
-			for (uint32_t index = 0; index < options.color_attachment_count; ++index)
+			for (uint32_t index = 0; index < layout.color_count; ++index)
 				color_attachment_blends[index] = color_attachment_blend_default;
 
 			cbs_create_info = (VkPipelineColorBlendStateCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
 				.logicOpEnable = VK_FALSE,
-				.attachmentCount = options.color_attachment_count,
+				.attachmentCount = layout.color_count,
 				.pAttachments = color_attachment_blends,
 			};
 
-			for (uint32_t attachment_index = 0; attachment_index < options.color_attachment_count; ++attachment_index)
-				color_attachment_formats[attachment_index] = pixel_format_to_vulkan_format[options.color_attachments[attachment_index]];
+			for (uint32_t attachment_index = 0; attachment_index < layout.color_count; ++attachment_index)
+				color_attachment_formats[attachment_index] = pixel_format_to_vulkan_format[layout.color_formats[attachment_index]];
 
 			r_create_info = (VkPipelineRenderingCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-				.colorAttachmentCount = options.color_attachment_count,
+				.colorAttachmentCount = layout.color_count,
 				.pColorAttachmentFormats = color_attachment_formats,
 				.depthAttachmentFormat =
-					pixel_format_is_depth(options.depth_attachment)
-					? pixel_format_to_vulkan_format[options.depth_attachment]
+					pixel_format_is_depth(layout.depth_format)
+					? pixel_format_to_vulkan_format[layout.depth_format]
 					: pixel_format_to_vulkan_format[PIXEL_FORMAT_DEPTH],
 			};
 		}
@@ -858,10 +904,10 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 	}
 
 	if (ok && match_found == false) { // attach to shader
-		result->next = shader->first_pipeline;
-		shader->first_pipeline = result;
+		if (opt_index == -1) opt_index = gfx_pipeline_register(device, shader, opt);
 
-		result->shader = shader;
+		result->next = shader->pipelines[opt_index].first_pipeline;
+		shader->pipelines[opt_index].first_pipeline = result;
 	}
 
 #if DEV_BUILD
@@ -1173,11 +1219,13 @@ bool gfx_shader_destroy(GFX_Device *device, GFX_Shader *shader) {
 		if (shader->layout)
 			vkDestroyPipelineLayout(device->handle, shader->layout, NULL);
 
-		for (GFX_Pipeline *pipeline = shader->first_pipeline; pipeline && pipeline != device->pipeline_pool;) {
-			GFX_Pipeline *curr = pipeline;
-			pipeline = curr->next;
+		for (uint32_t index = 0; index < shader->pipeline_count; ++index) {
+			for (GFX_Pipeline *pipeline = shader->pipelines[index].first_pipeline; pipeline && pipeline != device->pipeline_pool;) {
+				GFX_Pipeline *curr = pipeline;
+				pipeline = curr->next;
 
-			gfx_pipeline_destroy(device, curr);
+				gfx_pipeline_destroy(device, curr);
+			}
 		}
 
 		device->shader_count--;
@@ -1464,9 +1512,8 @@ void gfx_device_destroy(GFX_Device *device) {
 
 void gfx_device_wait_idle(GFX_Device *device) {
 	bool ok = gfx_device_valid(device);
-	if (ok) 
+	if (ok)
 		vkDeviceWaitIdle(device->handle);
-	
 }
 
 // :cmd
@@ -1479,7 +1526,7 @@ GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device) {
 		result->frame_index = device->current_frame_index;
 		memory_zero_array(result->swapchains);
 		memory_zero_array(result->swapchain_image_indices);
-		result->active_shader = 0;
+		result->current_shader = 0;
 		result->swapchain_count = 0;
 
 		// Wait for frame resource availability
@@ -1659,7 +1706,7 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 
 	if (ok) {
 		cmd = &device->frame_commands[device->current_frame_index];
-		shader = cmd->active_shader;
+		shader = cmd->current_shader;
 
 		ok = gfx_shader_valid(device, shader);
 	}
@@ -2024,11 +2071,18 @@ void gfx_cmd_buffer_upload(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t
 }
 
 void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
+	ASSERT(cmd->current_pass.active == false);
+
 	VkRenderingAttachmentInfo color_attachments[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
+	cmd->current_pass.active = true;
 
 	uint32_t color_count = 0;
 	for (uint32_t index = 0; index < countof(color_attachments); ++index) {
 		if (info.colors[index].target == 0) break;
+
+		cmd->current_pass.layout.color_formats[index] = info.colors[index].target->options.format;
+		cmd->current_pass.layout.sample_count = MAX(cmd->current_pass.layout.sample_count, info.colors[index].target->options.sample);
+		cmd->current_pass.layout.color_count++;
 
 		color_attachments[index] = (VkRenderingAttachmentInfo){
 			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -2054,6 +2108,9 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 	if (info.depth.target) {
 		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_STENCIL_ATTACHMENT, info.depth.target);
 		bool is_depth_stencil = info.depth.target->options.format == PIXEL_FORMAT_DEPTHSTENCIL;
+
+		cmd->current_pass.layout.depth_format = info.depth.target->options.format;
+		cmd->current_pass.layout.sample_count = MAX(cmd->current_pass.layout.sample_count, info.depth.target->options.sample);
 
 		depth_attachment = (VkRenderingAttachmentInfo){
 			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -2101,6 +2158,12 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 void gfx_cmd_draw_end(GFX_CommandEncoder *cmd) {
 	vkCmdEndRendering(cmd->handle);
 	vkCmdEndDebugUtilsLabel(cmd->handle);
+
+	memory_zero_struct(cmd->current_pass);
+}
+
+GFX_DrawTargetLayout gfx_cmd_active_layout(GFX_CommandEncoder *cmd) {
+	return cmd->current_pass.layout;
 }
 
 void gfx_cmd_viewport(GFX_CommandEncoder *cmd, Rectangle area) {
@@ -2130,13 +2193,17 @@ void gfx_cmd_scissor(GFX_CommandEncoder *cmd, Rectangle area) {
 	}
 }
 
-void gfx_cmd_shader_bind(GFX_CommandEncoder *cmd, GFX_Shader *shader) {
-	GFX_Pipeline *target = 0;
-
-	bool ok = cmd && cmd->handle && shader && shader->first_pipeline;
+void gfx_cmd_shader_bind(GFX_Device *device, GFX_Shader *shader, uint32_t pipeline_index) {
+	bool ok = gfx_shader_valid(device, shader);
 	if (ok) {
-		ASSERT(shader->first_pipeline && "No shader pipeline created.");
-		gfx_cmd_pipeline_bind(cmd, shader->first_pipeline);
+		GFX_CommandEncoder *cmd = &device->frame_commands[device->current_frame_index];
+		if (shader->compute)
+			gfx_cmd_pipeline_bind(cmd, shader->compute);
+		else {
+			ASSERT(pipeline_index < shader->pipeline_count);
+			GFX_Pipeline *pipeline = gfx_pipeline_ensure(device, shader, shader->pipelines[pipeline_index].options, gfx_cmd_active_layout(cmd));
+			gfx_cmd_pipeline_bind(cmd, pipeline);
+		}
 	}
 }
 
@@ -2146,12 +2213,12 @@ void gfx_cmd_pipeline_bind(GFX_CommandEncoder *cmd, GFX_Pipeline *pipeline) {
 		VkPipelineBindPoint bind_point = pipeline->shader->modules[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
 		vkCmdBindPipeline(cmd->handle, bind_point, pipeline->handle);
 
-		cmd->active_shader = pipeline->shader;
+		cmd->current_shader = pipeline->shader;
 	}
 }
 
 void gfx_cmd_push_constant(GFX_CommandEncoder *cmd, uint64_t size, void *data) {
-	vkCmdPushConstants(cmd->handle, cmd->active_shader->layout, VK_SHADER_STAGE_ALL, 0, size, data);
+	vkCmdPushConstants(cmd->handle, cmd->current_shader->layout, VK_SHADER_STAGE_ALL, 0, size, data);
 }
 
 void gfx_cmd_dispatch(GFX_CommandEncoder *cmd, uint32_t x, uint32_t y, uint32_t z) {

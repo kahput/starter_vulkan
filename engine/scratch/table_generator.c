@@ -464,7 +464,7 @@ bool ast_validate_table(AST_Node *table) {
 int main(void) {
 	Arena arena[] = { arena_make(MiB(8)) };
 
-	String8 source = os_file_read_entire(arena, s("assets/example.table"));
+	String8 source = os_file_read(arena, s("assets/example.table"));
 	Lexer lexer[] = { lexer_make(source, keyword_to_string, TOKEN_KEYWORD_MAX) };
 
 	/* AST_Node *tables[256] = { 0 }; */

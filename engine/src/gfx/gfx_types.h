@@ -14,6 +14,7 @@ typedef enum {
 	GFX_LIMIT_UNIFORM_SETS = 4,
 	GFX_LIMIT_UNIFORMS_PER_SET = 32,
 	GFX_LIMIT_COLOR_ATTACHMENTS = 4,
+	GFX_LIMIT_PIPELINE_PERMUTATIONS = 8,
 } GfxLimits;
 
 typedef enum {
@@ -172,6 +173,25 @@ typedef enum cull_mode {
 
 	CULL_MODE_MAX,
 } CullMode;
+static const String8 cull_mode_to_string[CULL_MODE_MAX] = {
+	[CULL_MODE_NONE] = scomp("CULL_MODE_NONE"),
+	[CULL_MODE_FRONT] = scomp("CULL_MODE_FRONT"),
+	[CULL_MODE_BACK] = scomp("CULL_MODE_BACK"),
+	[CULL_MODE_FRONT_AND_BACK] = scomp("CULL_MODE_FRONT_AND_BACK"),
+};
+
+typedef enum {
+	POLYGON_MODE_FILL = 0,
+	POLYGON_MODE_LINE = 1,
+	POLYGON_MODE_POINT = 2,
+
+	POLYGON_MODE_MAX,
+} PolygonMode;
+static const String8 polygon_mode_to_string[POLYGON_MODE_MAX] = {
+	[POLYGON_MODE_FILL] = scomp("POLYGON_MODE_FILL"),
+	[POLYGON_MODE_LINE] = scomp("POLYGON_MODE_LINE"),
+	[POLYGON_MODE_POINT] = scomp("POLYGON_MODE_POINT"),
+};
 
 typedef enum blend_factor {
 	BLEND_FACTOR_ZERO = 0,
@@ -189,6 +209,36 @@ typedef enum blend_factor {
 
 	BLEND_FACTOR_MAX,
 } BlendFactor;
+static const String8 blend_factor_to_string[BLEND_FACTOR_MAX] = {
+	[BLEND_FACTOR_ZERO] = scomp("BLEND_FACTOR_ZERO"),
+	[BLEND_FACTOR_ONE] = scomp("BLEND_FACTOR_ONE"),
+	[BLEND_FACTOR_SRC_COLOR] = scomp("BLEND_FACTOR_SRC_COLOR"),
+	[BLEND_FACTOR_ONE_MINUS_SRC_COLOR] = scomp("BLEND_FACTOR_ONE_MINUS_SRC_COLOR"),
+	[BLEND_FACTOR_DST_COLOR] = scomp("BLEND_FACTOR_DST_COLOR"),
+	[BLEND_FACTOR_ONE_MINUS_DST_COLOR] = scomp("BLEND_FACTOR_ONE_MINUS_DST_COLOR"),
+	[BLEND_FACTOR_SRC_ALPHA] = scomp("BLEND_FACTOR_SRC_ALPHA"),
+	[BLEND_FACTOR_ONE_MINUS_SRC_ALPHA] = scomp("BLEND_FACTOR_ONE_MINUS_SRC_ALPHA"),
+	[BLEND_FACTOR_DST_ALPHA] = scomp("BLEND_FACTOR_DST_ALPHA"),
+	[BLEND_FACTOR_ONE_MINUS_DST_ALPHA] = scomp("BLEND_FACTOR_ONE_MINUS_DST_ALPHA"),
+};
+
+typedef enum {
+	BLEND_OP_ADD = 0,
+	BLEND_OP_SUB = 1,
+	BLEND_OP_REVERSE_SUB = 2,
+	BLEND_OP_MIN = 3,
+	BLEND_OP_MAX = 4,
+
+	BLEND_OP_COUNT,
+} BlendOp;
+
+static const String8 blend_op_to_string[BLEND_OP_COUNT] = {
+	[BLEND_OP_ADD] = scomp("BLEND_OP_ADD"),
+	[BLEND_OP_SUB] = scomp("BLEND_OP_SUB"),
+	[BLEND_OP_REVERSE_SUB] = scomp("BLEND_OP_REVERSE_SUB"),
+	[BLEND_OP_MIN] = scomp("BLEND_OP_MIN"),
+	[BLEND_OP_MAX] = scomp("BLEND_OP_MAX"),
+};
 
 typedef enum {
 	LOAD_OP_LOAD = 0,
@@ -272,19 +322,24 @@ typedef struct {
 	}
 
 typedef struct {
-	ImageSampleCount sample_count;
 	CullMode cull_mode;
+	PolygonMode polygon_mode;
 
-	PixelFormat color_attachments[GFX_LIMIT_COLOR_ATTACHMENTS];
-	uint32_t color_attachment_count;
-
-	PixelFormat depth_attachment;
 	bool disable_depth_test, disable_depth_write;
-	bool enable_blend, enable_stencil_test;
+	bool blend_enable, enable_stencil_test;
 
+	BlendOp color_op, alpha_op;
 	BlendFactor src_color_factor, dst_color_factor;
 	BlendFactor src_alpha_factor, dst_alpha_factor;
 } PipelineOptions;
+
+typedef struct {
+	PixelFormat color_formats[GFX_LIMIT_COLOR_ATTACHMENTS];
+	uint32_t color_count;
+
+	PixelFormat depth_format;
+	ImageSampleCount sample_count;
+} GFX_DrawTargetLayout;
 
 typedef struct {
 	const char *debug_name;
@@ -453,8 +508,8 @@ struct GFX_Pipeline {
 	GFX_Pipeline *next;
 	GFX_Shader *shader;
 
+	GFX_DrawTargetLayout layout;
 	VkPipeline handle;
-	PipelineOptions options;
 };
 
 struct GFX_Shader {
@@ -469,7 +524,15 @@ struct GFX_Shader {
 		UniformSet sets[GFX_LIMIT_UNIFORM_SETS];
 	} reflection;
 
-	GFX_Pipeline *first_pipeline;
+	struct {
+		uint64_t hash;
+		PipelineOptions options;
+
+		GFX_Pipeline *first_pipeline;
+	} pipelines[GFX_LIMIT_PIPELINE_PERMUTATIONS];
+	uint32_t pipeline_count;
+
+	GFX_Pipeline *compute;
 };
 
 	#define SWAPCHAIN_IMAGE_COUNT 3
@@ -519,7 +582,11 @@ typedef struct {
 	uint32_t swapchain_image_indices[MAX_SWAPCHAINS];
 	uint32_t swapchain_count;
 
-	GFX_Shader *active_shader;
+	GFX_Shader *current_shader;
+	struct {
+		bool active;
+		GFX_DrawTargetLayout layout;
+	} current_pass;
 
 	GFX_Buffer *transient_buffer;
 	Arena transient_arena[1];

@@ -51,7 +51,9 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const
 bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet out_sets[GFX_LIMIT_UNIFORM_SETS]);
 GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *debug_name);
 GFX_Shader *gfx_shader_make(GFX_Device *device, String8 vs_bytecode, String8 fs_bytecode, const char *debug_name);
-GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, PipelineOptions options);
+
+int32_t gfx_pipeline_register(GFX_Device *device, GFX_Shader *shader, PipelineOptions options);
+GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, PipelineOptions options, GFX_DrawTargetLayout layout);
 
 bool gfx_buffer_destroy(GFX_Device *device, GFX_Buffer *buffer);
 bool gfx_image_destroy(GFX_Device *device, GFX_Image *image);
@@ -83,11 +85,12 @@ void gfx_cmd_buffer_upload(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t
 
 void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info);
 void gfx_cmd_draw_end(GFX_CommandEncoder *cmd);
+GFX_DrawTargetLayout gfx_cmd_active_layout(GFX_CommandEncoder *cmd);
 
 void gfx_cmd_viewport(GFX_CommandEncoder *cmd, Rectangle area);
 void gfx_cmd_scissor(GFX_CommandEncoder *cmd, Rectangle area);
 
-void gfx_cmd_shader_bind(GFX_CommandEncoder *cmd, GFX_Shader *shader); // binds first pipeline
+void gfx_cmd_shader_bind(GFX_Device *device, GFX_Shader *shader, uint32_t pipeline_index);
 void gfx_cmd_pipeline_bind(GFX_CommandEncoder *cmd, GFX_Pipeline *pipeline);
 bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count);
 

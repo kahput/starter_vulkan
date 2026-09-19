@@ -30,6 +30,7 @@ float sd_rect_rounded(in vec2 p, in vec2 half_extent, in vec4 r) {
 }
 
 void main() {
+    fs_in.texture_id = 0;
     vec4 sampled = texture(u_textures[fs_in.texture_id], fs_in.tex_coords);
     vec4 fill = sampled * fs_in.fill_color;
     vec4 border = fs_in.border_color;

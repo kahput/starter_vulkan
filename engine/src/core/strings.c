@@ -2,6 +2,7 @@
 #include "common.h"
 #include "core/arena.h"
 #include "core/debug.h"
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,10 +25,9 @@ bool str8_equals(String8 a, String8 b) {
 bool str8_contains(String8 haystack, String8 needle) {
 	if (haystack.length < needle.length) return false;
 
-	for (uint64_t index = 0; index <= haystack.length - needle.length; ++index) 
+	for (uint64_t index = 0; index <= haystack.length - needle.length; ++index)
 		if (str8_equals((String8){ haystack.text + index, needle.length }, needle))
 			return true;
-	
 
 	return false;
 }
@@ -64,6 +64,78 @@ String8 str8_indent(Arena *arena, String8 indent, uint32_t depth) {
 			str8_pushf(arena, s("%.*s"), sspread(indent));
 
 		result.length = arena->offset - result.length;
+	}
+
+	return result;
+}
+
+String8 str8_upper(Arena *arena, String8 s) {
+	String8 result = str8_copy(arena, s);
+
+	for (uint32_t index = 0; index < result.length; ++index)
+		result.text[index] = toupper(result.text[index]);
+
+	return result;
+}
+
+String8 str8_dedent(Arena *arena, String8 str) {
+	String8 result = { 0 };
+	uint64_t min_indent = UINT64_MAX;
+
+	bool ok = str.length;
+	if (ok) {
+		min_indent = UINT64_MAX;
+		uint64_t cur_indent = 0;
+		bool is_line_start = true;
+
+		for (uint64_t i = 0; i < str.length; ++i) {
+			uint8_t c = str.text[i];
+
+			if (is_line_start) {
+				if (c == ' ' || c == '\t') {
+					cur_indent++;
+				} else if (c == '\r' || c == '\n') {
+					cur_indent = 0; // Blank line; ignore for min_indent
+				} else {
+					if (cur_indent < min_indent) {
+						min_indent = cur_indent;
+					}
+					is_line_start = false;
+				}
+			}
+
+			if (c == '\n') {
+				is_line_start = true;
+				cur_indent = 0;
+			}
+		}
+
+		ok = min_indent != UINT64_MAX && min_indent != 0;
+	}
+
+	if (ok) {
+		result.text = arena_push_count(arena, uint8_t, str.length);
+		result.length = 0;
+		uint64_t skipped = 0;
+		bool is_line_start = true;
+
+		for (uint64_t i = 0; i < str.length; ++i) {
+			uint8_t c = str.text[i];
+
+			if (is_line_start && skipped < min_indent && (c == ' ' || c == '\t')) {
+				skipped++;
+				continue;
+			}
+
+			is_line_start = false;
+			result.text[result.length++] = c;
+
+			if (c == '\n') {
+				is_line_start = true;
+				skipped = 0;
+			}
+		}
+
 	}
 
 	return result;

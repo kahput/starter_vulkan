@@ -47,6 +47,9 @@ void logger_clear_prefix(void) {
 	g_logger.prefix = 0;
 }
 
+ENGINE_API void logger_log_va(LogLevel level, const char *fmt, va_list list) {
+}
+
 void logger_log(LogLevel level, const char *fmt, ...) {
 	if (level < g_logger.level) {
 		return;
