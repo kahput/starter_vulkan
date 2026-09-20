@@ -5,44 +5,21 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_definitions(DEV_BUILD)
 
-# file(GLOB_RECURSE SHADER_SOURCES "${CMAKE_SOURCE_DIR}/assets/*.shader")
-# foreach(SHADER_SOURCE ${SHADER_SOURCES})
-#     get_filename_component(FILE ${SHADER_SOURCE} NAME)
-#     set(STAMP "${CMAKE_BINARY_DIR}/generated/shaders/${FILE}.stamp")
-
-#     add_custom_command(
-#         OUTPUT ${STAMP}
-#         COMMAND asset_compiler shader ${SHADER_SOURCE}
-#         COMMAND ${CMAKE_COMMAND} -E touch ${STAMP}
-#         DEPENDS asset_compiler ${SHADER_SOURCE}
-#         VERBATIM
-#     )
-
-#     list(APPEND SHADER_STAMPS ${STAMP})
-# endforeach()
-# add_custom_target(compile_shaders ALL DEPENDS ${SHADER_STAMPS})
-
 # Shaders
-file(GLOB_RECURSE SHADERS
-    "${CMAKE_SOURCE_DIR}/assets/*.vertex"
-    "${CMAKE_SOURCE_DIR}/assets/*.fragment"
-    "${CMAKE_SOURCE_DIR}/assets/*.compute"
-)
-foreach(SHADER ${SHADERS})
-    get_filename_component(DIR  ${SHADER} DIRECTORY)
-    get_filename_component(NAME ${SHADER} NAME)
-
-    set(SPV "${DIR}/bin/${NAME}.spv")
-    add_custom_command(
-        OUTPUT ${SPV}
-        COMMAND glslc -MD -I "${CMAKE_SOURCE_DIR}/assets/shaders" ${SHADER} -o ${SPV}
-        DEPFILE "${SPV}.d"
-        DEPENDS ${SHADER} 
-        VERBATIM
-    )
-
-    list(APPEND SHADER_OUTPUTS ${SPV})
-endforeach()
+# file(GLOB_RECURSE SHADER_INPUTS CONFIGURE_DEPENDS
+#     "${CMAKE_SOURCE_DIR}/assets/shaders/*.shader"
+#     "${CMAKE_SOURCE_DIR}/assets/shaders/*.glsl"
+# )
+# set(SHADER_STAMP "${CMAKE_BINARY_DIR}/shaders.stamp")
+# add_custom_command(
+#     OUTPUT ${SHADER_STAMP}
+#     COMMAND asset_compiler "${CMAKE_SOURCE_DIR}"
+#     COMMAND ${CMAKE_COMMAND} -E touch ${SHADER_STAMP}
+#     DEPENDS asset_compiler ${SHADER_INPUTS}
+#     COMMENT "Compiling Shader DSL and invoking glslc..."
+#     VERBATIM
+# )
+# add_custom_target(compile_shaders ALL DEPENDS ${SHADER_STAMP})
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)
@@ -150,7 +127,6 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
         "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
         "${CMAKE_SOURCE_DIR}/engine/src/draw/camera.c"
-
     )
     add_library(engine
         ${VENDOR_SOURCES}

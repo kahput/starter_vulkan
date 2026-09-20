@@ -2607,6 +2607,8 @@ int main(void) {
 					String8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 					String8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 					shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.text);
+					for (uint32_t index = 0; index < metadata->pipeline_count; ++index)
+						gfx_pipeline_register(device, shaders[shaderid], metadata->pipelines[index]);
 
 					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);

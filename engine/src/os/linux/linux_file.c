@@ -15,12 +15,12 @@
 int32_t os__mode_to_flags(OS_FileMode mode);
 String8 os__concat_cwd(Arena *arena, String8 path);
 uint64_t os__open_file(String8 path, int32_t flags, int32_t access);
-uint64_t os__open_file_cwd(String8 path, int32_t flags, int32_t access);
-DIR *os__open_dir_cwd(String8 path);
+uint64_t os__open_fulllpath(String8 path, int32_t flags, int32_t access);
+DIR *os__open_dir(String8 path);
 
 OS_File os_file_open(String8 filepath, OS_FileMode mode) {
 	int32_t flags = os__mode_to_flags(mode), access = 0666;
-	OS_File result = os__open_file_cwd(filepath, flags, access);
+	OS_File result = os__open_fulllpath(filepath, flags, access);
 	if (result == OS_INVALID_FILE)
 		result = os__open_file(filepath, flags, access);
 
@@ -32,7 +32,7 @@ OS_File os_file_open(String8 filepath, OS_FileMode mode) {
 }
 
 OS_File os_file_open_async(String8 path, OS_FileMode mode) {
-	OS_File result = os__open_file_cwd(path, os__mode_to_flags(mode), 0666);
+	OS_File result = os__open_fulllpath(path, os__mode_to_flags(mode), 0666);
 	if (os_file_valid(result) == false) {
 		LOG_WARN("failed to read '%.*s' - %s", sspread(path), strerror(errno));
 	}
@@ -63,7 +63,7 @@ void os_file_close(OS_File file) {
 
 bool os_file_exists(String8 filepath) {
 	bool result = false;
-	uint64_t fd = os__open_file_cwd(filepath, O_RDONLY, 0);
+	uint64_t fd = os__open_fulllpath(filepath, O_RDONLY, 0);
 
 	// ENOENT - O_CREAT is not set and the named file does not exist.
 	if (fd) {
@@ -74,6 +74,21 @@ bool os_file_exists(String8 filepath) {
 	}
 
 	return result;
+}
+
+bool os_file_delete(String8 path) {
+	ArenaTemp scratch = arena_scratch_begin(0);
+
+	bool relative = path.text[0] != '/';
+	String8 full_path = relative ? os__concat_cwd(scratch.arena, path) : path;
+
+	int32_t result = remove((char *)full_path.text);
+	if (result == -1) {
+		LOG_WARN("os_file_delete(%.*s) - %s", sspread(path), strerror(errno));
+	}
+
+	arena_scratch_end(scratch);
+	return result != 0;
 }
 
 uint64_t os_file_read_stream(OS_File file, void *buffer, uint64_t size) {
@@ -174,7 +189,8 @@ String8 os_current_directory(Arena *arena) {
 
 bool os_directory_exists(String8 path) {
 	bool result = false;
-	DIR *dir = os__open_dir_cwd(path);
+
+	DIR *dir = os__open_dir(path);
 
 	// ENOENT - Directory does not exist, or name is an empty string.
 	if (dir) {
@@ -191,9 +207,12 @@ bool os_directory_make(String8 path) {
 	bool result = false;
 	if (os_directory_exists(path) == false) {
 		ArenaTemp scratch = arena_scratch_begin(NULL);
-		int32_t result = mkdir((char *)os__concat_cwd(scratch.arena, path).text, 0755);
+		bool relative = path.text[0] != '/';
+		String8 full_path = relative ? os__concat_cwd(scratch.arena, path) : path;
+
+		int32_t result = mkdir((char *)full_path.text, 0755);
 		if (result == -1) {
-			LOG_WARN("os_directory_make - %s", strerror(errno));
+			LOG_WARN("os_directory_make(%.*s) - %s", sspread(path), strerror(errno));
 		}
 		arena_scratch_end(scratch);
 
@@ -231,7 +250,7 @@ String8 *os_directory_files(Arena *arena, String8 path, uint32_t *count) {
 
 	DIR *dir = 0;
 	if (ok) {
-		dir = os__open_dir_cwd(path);
+		dir = os__open_dir(path);
 
 		ok = dir != 0;
 	}
@@ -305,18 +324,24 @@ uint64_t os__open_file(String8 path, int32_t flags, int32_t access) {
 	return result;
 }
 
-uint64_t os__open_file_cwd(String8 path, int32_t flags, int32_t access) {
+uint64_t os__open_fulllpath(String8 path, int32_t flags, int32_t access) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	String8 relative_path = os__concat_cwd(scratch.arena, path);
-	uint64_t result = os__open_file(relative_path, flags, access);
+	bool relative = path.text[0] != '/';
+	String8 fullpath = relative ? os__concat_cwd(scratch.arena, path) : path;
+
+	uint64_t result = os__open_file(fullpath, flags, access);
 	arena_scratch_end(scratch);
 
 	return result;
 }
 
-DIR *os__open_dir_cwd(String8 path) {
+DIR *os__open_dir(String8 path) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	DIR *result = opendir((char *)os__concat_cwd(scratch.arena, path).text);
+
+	bool relative = path.text[0] != '/';
+	String8 full_path = relative ? os__concat_cwd(scratch.arena, path) : path;
+
+	DIR *result = opendir((char *)full_path.text);
 	arena_scratch_end(scratch);
 
 	return result;
