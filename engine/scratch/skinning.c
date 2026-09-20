@@ -1,9 +1,11 @@
 #include "app/scene.h"
 
 #include "core/geom_types.h"
+#include "generated/assets_generated.h"
 #include "meta.h"
-#include "res/tables.h"
 #include "draw.h"
+
+#include "generated/assets_generated.c"
 
 #include "common.h"
 #include "core/geom.h"
@@ -833,10 +835,10 @@ int main(void) {
 		  .pixels = &(uint32_t){ 0xFFFFFFFF },
 		});
 
-	OS_Timestamp shader_ts[SHADER_MAX] = { 0 };
-	GFX_Shader *shaders[SHADER_MAX] = { 0 };
-	for (ShaderID id = 0; id < SHADER_MAX; ++id) { // :shaders
-		ShaderMetadata *metadata = &shaderid_to_metadata[id];
+	OS_Timestamp shader_ts[RES_SHADER_MAX] = { 0 };
+	GFX_Shader *shaders[RES_SHADER_MAX] = { 0 };
+	for (RES_ShaderID id = 0; id < RES_SHADER_MAX; ++id) { // :shaders
+		ShaderMetadata *metadata = &res_shaderid_to_metadata[id];
 		if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
 			metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
 			metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
@@ -2100,7 +2102,7 @@ int main(void) {
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, compute_blit_target);
 			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
-			gfx_cmd_shader_bind(device, shaders[SHADER_TEST_COMPUTE], 0);
+			gfx_cmd_shader_bind(device, shaders[RES_SHADER_TESTCOMPUTE], 0);
 			gfx_cmd_bind(device, 0, arr(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
@@ -2144,7 +2146,7 @@ int main(void) {
 				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3D), 256);
 				instance->skinned_vertices_offset = gfx_cmd_put(cmd, skinned_vertices_size, 0);
 
-				gfx_cmd_shader_bind(device, shaders[SHADER_SKINNING_COMPUTE], 0);
+				gfx_cmd_shader_bind(device, shaders[RES_SHADER_SKINNING], 0);
 				struct {
 					uint32_t vertex_count;
 					uint32_t _pad0;
@@ -2207,7 +2209,7 @@ int main(void) {
 				frame_data.camera_position = lights[light_index].position;
 				frame_data.proj.elements[5] *= -1;
 
-				gfx_cmd_shader_bind(device, shaders[SHADER_SHADOW], 0);
+				gfx_cmd_shader_bind(device, shaders[RES_SHADER_SHADOW], 0);
 				gfx_cmd_bind(device, 0, arr(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
 
 				// :shadow
@@ -2267,7 +2269,7 @@ int main(void) {
 				gfx_cmd_bind(device, 0, uniforms, countof(uniforms));
 
 				// :scene
-				gfx_cmd_shader_bind(device, shaders[SHADER_SPATIAL], 0);
+				gfx_cmd_shader_bind(device, shaders[RES_SHADER_SPATIAL], 0);
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 					Entity *entity = &scene->entities[instance_index];
 					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity_has(entity, ENTITY_FEATURE_TRANSPARENT))
@@ -2339,7 +2341,7 @@ int main(void) {
 				// :grass
 				if (draw_grass) {
 					Mesh *mesh = &meshes[MESH_GRASS_BILLBOARD];
-					gfx_cmd_shader_bind(device, shaders[SHADER_GRASS], 0);
+					gfx_cmd_shader_bind(device, shaders[RES_SHADER_GRASS], 0);
 
 					gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
@@ -2385,7 +2387,7 @@ int main(void) {
 				}
 
 				if (draw_skybox) { // :skybox
-					gfx_cmd_shader_bind(device, shaders[SHADER_SKYBOX], 0);
+					gfx_cmd_shader_bind(device, shaders[RES_SHADER_SKYBOX], 0);
 					gfx_cmd_draw(cmd, 36, 0);
 				}
 
@@ -2416,7 +2418,7 @@ int main(void) {
 					qsort(transparent_meshes, transparent_mesh_count, sizeof(MeshSort), cmp_mesh_sort);
 
 					if (transparent_mesh_count)
-						gfx_cmd_shader_bind(device, shaders[SHADER_TRANSPARENT], 0);
+						gfx_cmd_shader_bind(device, shaders[RES_SHADER_TRANSPARENT], 0);
 
 					for (uint32_t index = 0; index < transparent_mesh_count; ++index) {
 						Entity *e = transparent_meshes[index].entity;
@@ -2459,7 +2461,7 @@ int main(void) {
 
 				{ // :overlay
 					if (draw->line3d->offset) {
-						gfx_cmd_shader_bind(device, shaders[SHADER_LINE3D], 0);
+						gfx_cmd_shader_bind(device, shaders[RES_SHADER_LINE3D], 0);
 						Uniform uniforms[] = {
 							storage_data(0, draw->line3d->base, draw->line3d->offset),
 						};
@@ -2520,7 +2522,7 @@ int main(void) {
 					  },
 					});
 
-				gfx_cmd_shader_bind(device, shaders[SHADER_QUAD2D], 0);
+				gfx_cmd_shader_bind(device, shaders[RES_SHADER_QUAD2D], 0);
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &frame_2d, sizeof(frame_2d)),
@@ -2545,7 +2547,7 @@ int main(void) {
 					  .debug_name = "COMPOSITE_PASS",
 					  .colors[0] = { main_target, 0, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = RED },
 					});
-				gfx_cmd_shader_bind(device, shaders[SHADER_COMPOSITE], 0);
+				gfx_cmd_shader_bind(device, shaders[RES_SHADER_COMPOSITE], 0);
 
 				GFX_Image *images[] = {
 					spatial_target,
@@ -2564,8 +2566,8 @@ int main(void) {
 		}
 		gfx_frame_end(device, cmd);
 
-		for (ShaderID shaderid = 0; shaderid < SHADER_MAX; ++shaderid) { // :hot-reload
-			ShaderMetadata *metadata = &shaderid_to_metadata[shaderid];
+		for (RES_ShaderID shaderid = 0; shaderid < RES_SHADER_MAX; ++shaderid) { // :hot-reload
+			ShaderMetadata *metadata = &res_shaderid_to_metadata[shaderid];
 			if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
@@ -2583,7 +2585,7 @@ int main(void) {
 
 					gfx_shader_destroy(device, shaders[shaderid]);
 					String8 bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-					shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)shaderid_to_string[shaderid].text);
+					shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)metadata->name.text);
 
 					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);
@@ -2597,14 +2599,14 @@ int main(void) {
 					LOG_INFO("hot-reloading %s...", shaders[shaderid]->debug_name);
 					gfx_device_wait_idle(device);
 
-					ShaderMetadata *metadata = &shaderid_to_metadata[shaderid];
+					ShaderMetadata *metadata = &res_shaderid_to_metadata[shaderid];
 
 					gfx_shader_destroy(device, shaders[shaderid]);
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
 					String8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 					String8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-					shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)shaderid_to_string[shaderid].text);
+					shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.text);
 
 					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);

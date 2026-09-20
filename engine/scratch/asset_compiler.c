@@ -144,34 +144,38 @@ String8 ast_parse_glsl_block(Lexer *lexer) {
 	return str8_from_ends((char *)start, (char *)end);
 }
 
-AST_Node *ast_assign(Arena *arena, Token identifier, AST_Node *value) {
-	AST_Node *result = 0;
-
-	bool ok = arena && value;
-	if (ok) {
-		result = ast_make(arena, AST_NODE_EXPR_ASSIGN);
-		result->identifier = identifier;
-
-		ast_pushback(result, value);
-	}
-
-	return result;
-}
-
 AST_Node *ast_parse_expr_primary(Arena *arena, Lexer *lexer) {
 	AST_Node *result = 0;
+	ArenaTemp scratch = arena_scratch_begin(arena);
 
 	bool ok = arena && lexer;
 	if (ok) {
-		if (lexer_peek(lexer).type == TOKEN_IDENTIFIER) {
+		switch (lexer_peek(lexer).type) {
+			case TOKEN_INTEGER:
+			case TOKEN_IDENTIFIER: {
+				result = ast_make(arena, AST_NODE_EXPR_VARIABLE);
+				result->identifier = lexer_advance(lexer);
+			} break;
+			default: {
+				Token tok = lexer_peek(lexer);
+				String8 message = str8_pushf(
+					scratch.arena,
+					s("Unexpected token '%.*s'"),
+					sspread(tok.lexeme));
+
+				report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
+				lexer_advance(lexer);
+			} break;
+		}
+		if (lexer_peek(lexer).type == TOKEN_INTEGER) {
+		} else if (lexer_peek(lexer).type == TOKEN_IDENTIFIER) {
 			result = ast_make(arena, AST_NODE_EXPR_VARIABLE);
 			result->identifier = lexer_advance(lexer);
 		} else {
-			LOG_ERROR("#Unexpected token '%.*s'.\n%.*s", sspread(lexer_peek(lexer).lexeme), sspread(lexer_error_location_string(arena, lexer_peek(lexer))));
-			lexer_advance(lexer);
 		}
 	}
 
+	arena_scratch_end(scratch);
 	return result;
 }
 
@@ -210,12 +214,17 @@ AST_Node *ast_parse_expr_assignment(Arena *arena, Lexer *lexer) {
 		Token s = lexer->current;
 
 		left = ast_parse_expr_call(arena, lexer);
+
 		if (lexer_match(lexer, TOKEN_EQUAL, 0)) {
 			AST_Node *value = ast_parse_expr_assignment(arena, lexer);
 
-			if (left->type == AST_NODE_EXPR_VARIABLE)
-				left = ast_assign(arena, left->identifier, value);
-			else {
+			if (left->type == AST_NODE_EXPR_VARIABLE) {
+				AST_Node *assign = ast_make(arena, AST_NODE_EXPR_ASSIGN);
+				ast_pushback(assign, left);
+				ast_pushback(assign, value);
+
+				left = assign;
+			} else {
 				String8 where = lexer_error_location_string(arena, s);
 				LOG_ERROR("#Invalid l-value for assignment\n%.*s", sspread(where));
 			}
@@ -380,8 +389,9 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 					} while (stmt != node->first_child);
 				break;
 			case AST_NODE_EXPR_ASSIGN:
-				printf("ASSIGN(%.*s)\n", sspread(node->identifier.lexeme));
+				printf("ASSIGN\n");
 				ast_visit(node->first_child, indent_level + 1);
+				ast_visit(node->last_child, indent_level + 1);
 				break;
 			case AST_NODE_EXPR_CALL:
 				printf("CALL(%.*s)\n", sspread(node->identifier.lexeme));
@@ -457,10 +467,24 @@ int32_t eval_pipeline_state(const String8 *state_table, uint32_t table_count, St
 		arena_scratch_end(scratch);
 	}
 
-	return ok;
+	return result;
 }
 
+String8 pipeline_state_keys[] = {
+	scomp("cull_mode"),
+	scomp("polygon_mode"),
+
+	scomp("blend"),
+	scomp("blend_color"),
+	scomp("blend_alpha"),
+
+	scomp("depth_write"),
+	scomp("depth_test"),
+};
+
 bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
+	ArenaTemp scratch = arena_scratch_begin(0);
+
 	bool ok = pipeline && opts;
 
 	if (ok) {
@@ -474,17 +498,26 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 			ok = assign->type == AST_NODE_EXPR_ASSIGN;
 			if (ok == false) {
-				LOG_ERROR("Pipeline '%.*s' has invalid member", sspread(name));
+				Token err = assign->identifier;
+				report(err.line, err.column, lexer_error_location_string(scratch.arena, err), s("Expected '=' after pipeline property."));
 				break;
 			}
 
-			bool is_color = str8_equals(assign->identifier.lexeme, s("blend")) || str8_equals(assign->identifier.lexeme, s("blend_color"));
-			bool is_alpha = str8_equals(assign->identifier.lexeme, s("blend_alpha"));
+			Token tok = assign->first_child->identifier;
+			String8 key = tok.lexeme;
+
+			bool is_blend = str8_equals(key, s("blend"));
+			bool is_color = is_blend || str8_equals(key, s("blend_color"));
+			bool is_alpha = is_blend || str8_equals(key, s("blend_alpha"));
+
 			if (is_color || is_alpha) {
-				AST_Node *call = assign->first_child;
+				AST_Node *call = assign->last_child;
 				ok = call && call->type == AST_NODE_EXPR_CALL;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': blend must be a function call", sspread(name));
+					String8 message = str8_pushf(scratch.arena,
+						s("Expect function call value for '%.*s'"),
+						sspread(key));
+					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
 
@@ -497,10 +530,11 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok &= src_node && dst_node && src_node != dst_node;
 				if (ok == false) {
-					LOG_ERROR(
-						"Pipeline '%.*s': blend operation '%.*s' requires two factors",
-						sspread(name),
-						sspread(call->identifier.lexeme));
+					String8 message = str8_pushf(
+						scratch.arena,
+						s("Expect two arguments for blend operation '%.*s'."),
+						sspread(key));
+					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
 
@@ -516,43 +550,119 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 				if (ok) {
 					opts->blend_enable = true;
 
-					if (is_color) {
+					if (is_blend || is_color) {
 						opts->color_op = (BlendOp)op;
 						opts->src_color_factor = (BlendFactor)src;
 						opts->dst_color_factor = (BlendFactor)dst;
-					} else {
+					}
+
+					if (is_blend || is_alpha) {
 						opts->alpha_op = (BlendOp)op;
 						opts->src_alpha_factor = (BlendFactor)src;
 						opts->dst_alpha_factor = (BlendFactor)dst;
 					}
 				}
-			} else if (str8_equals(assign->identifier.lexeme, s("cull"))) {
-				AST_Node *value = assign->first_child;
+			} else if (str8_equals(key, s("cull")) || str8_equals(key, s("cull_mode"))) {
+				AST_Node *value_node = assign->last_child;
 
-				ok = value;
+				ok = value_node;
 				if (ok == false) {
 					LOG_ERROR("Pipeline '%.*s': cull requires a value", sspread(name));
 					break;
 				}
 
-				CullMode mode = CULL_MODE_MAX;
+				CullMode value = CULL_MODE_MAX;
 
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
-					if (str8_equals(cull_mode_table[index], value->identifier.lexeme)) {
-						mode = (CullMode)index;
+					if (str8_equals(cull_mode_table[index], value_node->identifier.lexeme)) {
+						value = (CullMode)index;
 						break;
 					}
 				}
 
-				ok = mode != CULL_MODE_MAX;
+				ok = value != CULL_MODE_MAX;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': unknown cull mode '%.*s'", sspread(name), sspread(value->identifier.lexeme));
+					LOG_ERROR("Pipeline '%.*s': unknown cull mode '%.*s'", sspread(name), sspread(value_node->identifier.lexeme));
 					break;
 				}
 
-				opts->cull_mode = mode;
+				opts->cull_mode = value;
+			} else if (str8_equals(key, s("depth_test")) || str8_equals(key, s("depth_write"))) {
+				AST_Node *value_node = assign->last_child;
+
+				ok = value_node;
+				if (ok == false) {
+					LOG_ERROR("Pipeline '%.*s': depth_test requires a value", sspread(name));
+					break;
+				}
+
+				struct {
+					String8 key;
+					bool value;
+				} depth_table[] = {
+					{ s("true"), true },
+					{ s("false"), false },
+					{ s("1"), true },
+					{ s("0"), false }
+				};
+
+				int32_t found = -1;
+				for (uint32_t index = 0; index < countof(depth_table); ++index) {
+					if (str8_equals(depth_table[index].key, value_node->identifier.lexeme)) {
+						found = index;
+						break;
+					}
+				}
+
+				ok = found != -1;
+				if (ok == false) {
+					String8 message = str8_pushf(
+						scratch.arena,
+						s("Expect boolean for '%.*s', got '%.*s'"),
+						sspread(key),
+						sspread(value_node->identifier.lexeme));
+
+					tok = value_node->identifier;
+					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
+					break;
+				}
+
+				if (str8_equals(key, s("depth_test")))
+					opts->disable_depth_test = !depth_table[found].value;
+				else
+					opts->disable_depth_write = !depth_table[found].value;
+			} else if (str8_equals(key, s("polygon")) || str8_equals(key, s("polygon_mode"))) {
+				AST_Node *value_node = assign->last_child;
+
+				ok = value_node;
+				if (ok == false) {
+					LOG_ERROR("Pipeline '%.*s': polygon requires a value", sspread(name));
+					break;
+				}
+
+				PolygonMode value = POLYGON_MODE_MAX;
+
+				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
+					if (str8_equals(cull_mode_table[index], value_node->identifier.lexeme)) {
+						value = (PolygonMode)index;
+						break;
+					}
+				}
+
+				ok = value != POLYGON_MODE_MAX;
+				if (ok == false) {
+					LOG_ERROR("Pipeline '%.*s': unknown polygon mode '%.*s'", sspread(name), sspread(value_node->identifier.lexeme));
+					break;
+				}
+
+				opts->polygon_mode = value;
 			} else {
-				LOG_ERROR("Pipeline '%.*s': unknown member '%.*s'", sspread(name), sspread(assign->identifier.lexeme));
+				String8 message = str8_pushf(
+					scratch.arena,
+					s("Unknown pipeline property '%.*s'."),
+					sspread(tok.lexeme));
+				report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
+
 				ok = false;
 				break;
 			}
@@ -561,16 +671,23 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 		} while (assign != pipeline->first_child);
 	}
 
+	arena_scratch_end(scratch);
 	return ok;
 }
 
 int main(void) {
 	Arena arena[] = { arena_make(MiB(32)) };
-	String8 files[] = { s("assets/shaders/example.shader") };
+
+	String8 shader_directory = s("assets/shaders/");
+	uint32_t file_count;
+	String8 *files = os_directory_files(arena, shader_directory, &file_count);
 
 	AST_Node *program = ast_make(arena, AST_NODE_PROGRAM);
-	for (uint32_t index = 0; index < countof(files); ++index) {
-		Lexer lexer[] = { lexer_make(os_file_read(arena, files[index]), keyword_to_string, countof(keyword_to_string)) };
+	for (uint32_t index = 0; index < file_count; ++index) {
+		if (str8_equals(str8_fileext(files[index]), s("shader")) == false) continue;
+		String8 file = str8_concat(arena, shader_directory, files[index]);
+
+		Lexer lexer[] = { lexer_make(os_file_read(arena, file), keyword_to_string, countof(keyword_to_string)) };
 		while (lexer_at_end(lexer) == false) {
 			if (lexer_match(lexer, TOKEN_KEYWORD_0 + KEYWORD_SHADER, 0))
 				ast_pushback(program, ast_parse_shader_decl(arena, lexer));
@@ -657,6 +774,9 @@ int main(void) {
 					decl = decl->next_sibling;
 				} while (decl != shader->first_child);
 
+			if (pipeline_count == 0)
+				fprintf(header, "#define PIPELINE_%.*s_%s %u\n", sspread(name_upper), "DEFAULT", pipeline_count++);
+
 			String8 version_header = s("#version 450 core\n");
 			String8 stage_info[SHADER_STAGE_MAX] = {
 				[SHADER_STAGE_VERTEX] = s(
@@ -665,7 +785,7 @@ int main(void) {
 				[SHADER_STAGE_FRAGMENT] = s(
 					"#pragma shader_stage(fragment)\n\n"
 					"#define INOUT in\n"),
-				[SHADER_STAGE_COMPUTE] = s(""),
+				[SHADER_STAGE_COMPUTE] = s("#pragma shader_stage(compute)"),
 			};
 			String8 include_dir = s("assets/shaders/");
 			String8 cleaned_shared = str8_dedent(arena, shared);
@@ -709,10 +829,10 @@ int main(void) {
 	fprintf(header, "\n    RES_SHADER_MAX\n");
 	fprintf(header, "} RES_ShaderID;\n\n");
 
-	fprintf(header, "extern ShaderMetadata shaderid_to_metadata[RES_SHADER_MAX];\n");
+	fprintf(header, "extern ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX];\n");
 
 	fprintf(source, "#include \"assets_generated.h\"\n\n");
-	fprintf(source, "ShaderMetadata shaderid_to_metadata[RES_SHADER_MAX] = {\n");
+	fprintf(source, "ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {\n");
 	if (shader) do {
 			String8 name = shader->identifier.lexeme;
 			String8 upper = str8_upper(arena, name);
@@ -749,11 +869,14 @@ int main(void) {
 			fprintf(source, "      },\n");
 
 			if (is_compute == false) {
-				fprintf(source, "      .pipelines = {%s", pipeline_count ? "\n" : " 0 ");
+				fprintf(source, "      .pipelines = {\n");
 
 				if (decl && pipeline_count) do {
+						PipelineOptions options = { 0 };
+						options.src_color_factor = BLEND_FACTOR_ONE;
+						options.src_alpha_factor = BLEND_FACTOR_ONE;
+
 						if (decl->type == AST_NODE_PIPELINE_DECL) {
-							PipelineOptions options = { 0 };
 							ast_pipeline_eval(decl, &options);
 
 							String8 pipeline_name = decl->identifier.lexeme;
@@ -761,6 +884,9 @@ int main(void) {
 
 							fprintf(source, "          [PIPELINE_%.*s_%.*s] = {\n", sspread(upper), sspread(pipeline_upper)); // TODO: PipelineID
 							fprintf(source, "              .cull_mode = %.*s,\n", sspread(cull_mode_to_string[options.cull_mode]));
+							fprintf(source, "              .polygon_mode = %.*s,\n", sspread(polygon_mode_to_string[options.polygon_mode]));
+							fprintf(source, "              .disable_depth_test = %s,\n", options.disable_depth_test ? "true" : "false");
+							fprintf(source, "              .disable_depth_write = %s,\n", options.disable_depth_write ? "true" : "false");
 							fprintf(source, "              .blend_enable = %s,\n", options.blend_enable ? "true" : "false");
 							fprintf(source, "              .color_op = %.*s,\n", sspread(blend_op_to_string[options.color_op]));
 							fprintf(source, "              .alpha_op = %.*s,\n", sspread(blend_op_to_string[options.alpha_op]));
@@ -774,7 +900,28 @@ int main(void) {
 						decl = decl->next_sibling;
 					} while (decl != shader->first_child);
 
-				fprintf(source, "%s},\n", pipeline_count ? "      " : "");
+				if (pipeline_count == 0) {
+                    pipeline_count = 1;
+					PipelineOptions options = { 0 };
+					options.src_color_factor = BLEND_FACTOR_ONE;
+					options.src_alpha_factor = BLEND_FACTOR_ONE;
+
+					fprintf(source, "          [PIPELINE_%.*s_%s] = {\n", sspread(upper), "DEFAULT");
+					fprintf(source, "              .cull_mode = %.*s,\n", sspread(cull_mode_to_string[options.cull_mode]));
+					fprintf(source, "              .polygon_mode = %.*s,\n", sspread(polygon_mode_to_string[options.polygon_mode]));
+					fprintf(source, "              .disable_depth_test = %s,\n", options.disable_depth_test ? "true" : "false");
+					fprintf(source, "              .disable_depth_write = %s,\n", options.disable_depth_write ? "true" : "false");
+					fprintf(source, "              .blend_enable = %s,\n", options.blend_enable ? "true" : "false");
+					fprintf(source, "              .color_op = %.*s,\n", sspread(blend_op_to_string[options.color_op]));
+					fprintf(source, "              .alpha_op = %.*s,\n", sspread(blend_op_to_string[options.alpha_op]));
+					fprintf(source, "              .src_color_factor = %.*s,\n", sspread(blend_factor_to_string[options.src_color_factor]));
+					fprintf(source, "              .dst_color_factor = %.*s,\n", sspread(blend_factor_to_string[options.dst_color_factor]));
+					fprintf(source, "              .src_alpha_factor = %.*s,\n", sspread(blend_factor_to_string[options.src_alpha_factor]));
+					fprintf(source, "              .dst_alpha_factor = %.*s,\n", sspread(blend_factor_to_string[options.dst_alpha_factor]));
+					fprintf(source, "          },\n");
+				}
+
+				fprintf(source, "      },\n");
 				fprintf(source, "      .pipeline_count = %u,\n", pipeline_count);
 			}
 

@@ -146,8 +146,6 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
 
-        "${CMAKE_SOURCE_DIR}/engine/src/res/tables.c"
-
         "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
         "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
         "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
@@ -180,7 +178,6 @@ else()
     add_library(game SHARED
         "game/src/game.c"
         "game/src/res.c"
-        "game/src/generated/assets_generated.c"
         ${VENDOR_SOURCES}
     )
     target_include_directories(game PRIVATE 
@@ -238,6 +235,7 @@ else()
             PUBLIC 
             "${CMAKE_SOURCE_DIR}/engine/src"
             "${CMAKE_SOURCE_DIR}/engine/vendor"
+            "${CMAKE_SOURCE_DIR}/game/src"
         )
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
         target_compile_definitions(${NAME} PRIVATE LINUX_BUILD VK_USE_PLATFORM_XCB_KHR)

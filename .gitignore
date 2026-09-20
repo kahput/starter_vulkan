@@ -1,6 +1,7 @@
 # Ignore build directories
 /build/
 /build_web/
+/assets/shaders/generated/
 /bin/
 /obj/
 /out/

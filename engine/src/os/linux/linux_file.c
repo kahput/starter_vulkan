@@ -224,10 +224,9 @@ String8 *os_directory_files(Arena *arena, String8 path, uint32_t *count) {
 
 	bool ok = arena && count;
 	if (ok) {
-		ok = os_directory_exists(path);
+		*count = 0;
 
-		if (ok == false)
-			*count = 0;
+		ok = os_directory_exists(path);
 	}
 
 	DIR *dir = 0;

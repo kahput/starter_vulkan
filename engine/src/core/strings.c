@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 bool str8__ispathdelim(char c) {
 	return c == '/' || c == '\\';
@@ -58,12 +59,10 @@ String8 str8_indent(Arena *arena, String8 indent, uint32_t depth) {
 	bool ok = arena && indent.length;
 	if (ok) {
 		result.text = (uint8_t *)arena->base + arena->offset;
-		result.length = arena->offset;
+		result.length = indent.length * depth;
 
 		for (uint32_t index = 0; index < depth; ++index)
-			str8_pushf(arena, s("%.*s"), sspread(indent));
-
-		result.length = arena->offset - result.length;
+			arena_push_copy(arena, indent.text, indent.length, 0);
 	}
 
 	return result;
@@ -135,7 +134,6 @@ String8 str8_dedent(Arena *arena, String8 str) {
 				skipped = 0;
 			}
 		}
-
 	}
 
 	return result;
@@ -229,6 +227,28 @@ String8 str8_filename(String8 path) {
 			result.text = path.text + index + 1;
 			result.length = path.length - (index + 1);
 		}
+	}
+
+	return result;
+}
+
+String8 str8_fileext(String8 file) {
+	String8 result = { 0 };
+
+	bool ok = file.length;
+	if (ok) {
+		int32_t dot = -1;
+		for (int32_t index = file.length - 1; index >= 0; --index) {
+			char c = file.text[index];
+
+			if (c == '.') {
+				dot = index;
+				break;
+			}
+		}
+
+		if (dot != -1)
+			result = (String8){ file.text + dot + 1, file.length - (dot + 1) };
 	}
 
 	return result;

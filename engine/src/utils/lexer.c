@@ -417,16 +417,18 @@ String8 lexer_error_location_string(Arena *arena, Token token) {
 		while (line.text[line.length] != '\n' && line.text[line.length] != '\0')
 			line.length++;
 
-		String8 error_top = str8_pushf(arena, s("    %d | %.*s\n"), token.line, sspread(line));
+		String8 err_top = str8_pushf(arena, s("    %d | %.*s\n"), token.line, sspread(line));
 		uint32_t error_offset = 0;
-		while (error_top.text[error_offset] != '|')
+		while (err_top.text[error_offset] != '|')
 			error_offset++;
 		error_offset++;
 
-		error_offset += col;
+		error_offset += col + 1;
 		String8 indent = str8_indent(arena, s(" "), error_offset);
+		String8 arrow = s("^-- here");
+		String8 err_bottom = str8_pushf(arena, s("%.*s%.*s"), sspread(indent), sspread(arrow));
 
-		result = str8_concat(arena, error_top, str8_concat(arena, indent, s("^-- here")));
+		result = str8_concat(arena, err_top, err_bottom);
 	}
 
 	return result;

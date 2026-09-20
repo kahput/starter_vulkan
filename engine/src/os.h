@@ -88,7 +88,6 @@ bool os_directory_exists(String8 path);
 bool os_directory_make(String8 path);
 bool os_directory_delete(String8 path);
 
-
 /* typedef enum { */
 /* 	OS_ENTRY_TYPE_FILE, */
 /* 	OS_ENTRY_TYPE_DIRECTORY, */
@@ -114,7 +113,6 @@ static inline bool os_library_valid(OS_Library lib) { return lib != OS_LIBRARY_I
 OS_Library os_library_load(String8 path);
 void os_library_unload(OS_Library lib);
 bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol);
-
 
 int32_t os_execute_command(String8 cmd);
 

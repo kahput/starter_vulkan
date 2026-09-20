@@ -24,7 +24,7 @@ typedef enum {
 	TOKEN_VAR,
 	TOKEN_WHILE,
 
-	TOKEN_KEYWORD_MAX,
+	TOKEN_KEYWORD_COUNT,
 } LoxKeyword;
 
 String lox_keywords[TOKEN_KEYWORD_MAX - TOKEN_KEYWORD_0] = {
