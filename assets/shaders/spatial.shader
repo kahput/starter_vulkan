@@ -143,7 +143,7 @@ shader Transparent {
             float t = abs(cos( (v.uv.y + frame.time * 0.2) * TAU * 2.0));
 
             /* out_color =  vec4(vec3(t), smoothstep(0.00, 0.5, t) * pow(1.0 - v.uv.y, 3.0)); */
-            // out_color = vec4(vec3(smoothstep(0.00, 0.5, t)), 1.0);
+            out_color = vec4(vec3(smoothstep(0.00, 0.5, t)), 1.0);
         }
     }
 } 

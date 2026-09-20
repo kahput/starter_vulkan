@@ -54,7 +54,7 @@ typedef struct {
 
 State *state = 0;
 static inline char *named(const char *name) {
-	return (char *)str8_pushf(state->permanent, str8_wrap(name)).text;
+	return (char *)fmt8(state->permanent, name).bytes;
 }
 
 typedef struct {
@@ -130,7 +130,7 @@ bool tick(Arena *permanent, Arena *frame) {
 
 		gfx_device_make(state->device);
 
-		state->surface = os_surface_open(1280, 720, str8_wrap(named("game")), OS_SURFACE_FLAG_RESIZEABLE);
+		state->surface = os_surface_open(1280, 720, str8z(named("game")), OS_SURFACE_FLAG_RESIZEABLE);
 		state->swapchain = gfx_swapchain_make(state->device, state->surface, named("main"));
 		state->depthbuffer = gfx_image_make(state->device, 1280, 720,
 			(ImageOptions){
@@ -144,19 +144,19 @@ bool tick(Arena *permanent, Arena *frame) {
 
 			bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length;
 			if (is_compute) {
-				String8 cs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-				state->shaders[shaderid] = gfx_compute_make(state->device, cs, (char *)metadata->name.text);
+				string8 cs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+				state->shaders[shaderid] = gfx_compute_make(state->device, cs, (char *)metadata->name.bytes);
 				state->shader_ts[shaderid] = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 			} else {
-				String8 vs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
-				String8 fs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+				string8 vs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
+				string8 fs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 
 				OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 				OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 				state->shader_ts[shaderid] = MAX(fs_ts, vs_ts);
 
-				state->shaders[shaderid] = gfx_shader_make(state->device, vs, fs, (char *)metadata->name.text);
+				state->shaders[shaderid] = gfx_shader_make(state->device, vs, fs, (char *)metadata->name.bytes);
 				for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation) {
 					PipelineOptions opts = metadata->pipelines[permutation];
 					gfx_pipeline_ensure(state->device, state->shaders[shaderid], opts,
@@ -539,8 +539,8 @@ bool tick(Arena *permanent, Arena *frame) {
 				gfx_device_wait_idle(device);
 
 				gfx_shader_destroy(device, state->shaders[shaderid]);
-				String8 bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-				state->shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)metadata->name.text);
+				string8 bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+				state->shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)metadata->name.bytes);
 
 				state->shader_ts[shaderid] = now;
 			}
@@ -557,9 +557,9 @@ bool tick(Arena *permanent, Arena *frame) {
 
 				gfx_shader_destroy(device, state->shaders[shaderid]);
 
-				String8 vs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
-				String8 fs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-				state->shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.text);
+				string8 vs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
+				string8 fs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+				state->shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
 
 				for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation) {
 					PipelineOptions opts = metadata->pipelines[permutation];

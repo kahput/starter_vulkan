@@ -3,8 +3,8 @@
 #include "core/strings.h"
 
 typedef struct {
-    String8 name;
-	String8 filepath;
+    string8 name;
+	string8 filepath;
 } RES_ImageMetadata;
 
 typedef enum {

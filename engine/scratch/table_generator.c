@@ -22,8 +22,8 @@ typedef enum {
     TOKEN_KEYWORD_MAX,
 } Keyword;
 
-String8 keyword_to_string[TOKEN_KEYWORD_MAX] = {
-#define X(name, display) [TOKEN_##name] = scomp(display),
+string8 keyword_to_string[TOKEN_KEYWORD_MAX] = {
+#define X(name, display) [TOKEN_##name] = comp8(display),
     KEYWORD_LIST
 #undef X
 };
@@ -59,7 +59,7 @@ typedef struct {
 	LiteralType type;
 
 	union {
-		String8 string;
+		string8 string;
 		double real;
 		int64_t integer;
 	} as;
@@ -74,7 +74,7 @@ struct AST_Node {
 	AST_Node *first_child, *last_child;
 	AST_Node *next_sibling, *prev_sibling;
 
-	String8 name;
+	string8 name;
 	Literal lit;
 };
 
@@ -342,7 +342,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 
 	switch (node->type) {
 		case AST_NODE_TABLE:
-			printf("TABLE(%.*s)\n", sspread(node->name));
+			printf("TABLE(%.*s)\n", arg8(node->name));
 			ast_visit(node->first_child, indent_level + 1);
 			ast_visit(node->last_child, indent_level + 1);
 			break;
@@ -363,7 +363,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 				} while (entry != node->first_child);
 		} break;
 		case AST_NODE_FIELD:
-			printf("FIELD(%.*s)\n", sspread(node->name));
+			printf("FIELD(%.*s)\n", arg8(node->name));
 			break;
 		case AST_NODE_ENTRY: {
 			printf("ENTRY\n");
@@ -378,8 +378,8 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			switch (node->lit.type) {
 				case LIT_TYPE_INTEGER: printf("INTEGER(%ld)", node->lit.as.integer); break;
 				case LIT_TYPE_REAL: printf("REAL(%g)", node->lit.as.real); break;
-				case LIT_TYPE_STRING: printf("STRING(%.*s)", sspread(node->lit.as.string)); break;
-                case LIT_TYPE_IDENTIFIER: printf("IDENTIFER(%.*s)", sspread(node->lit.as.string)); break;
+				case LIT_TYPE_STRING: printf("STRING(%.*s)", arg8(node->lit.as.string)); break;
+                case LIT_TYPE_IDENTIFIER: printf("IDENTIFER(%.*s)", arg8(node->lit.as.string)); break;
 					break;
 			}
 			// clang-format on
@@ -448,7 +448,7 @@ bool ast_validate_table(AST_Node *table) {
 					} while (entry != row->first_child);
 
 				if (row_entry_count != column_count) {
-					LOG_ERROR("table '%.*s' invalid entry at row %d", sspread(table->name), row_index);
+					LOG_ERROR("table '%.*s' invalid entry at row %d", arg8(table->name), row_index);
 					ok = false;
 					break;
 				}
@@ -464,7 +464,7 @@ bool ast_validate_table(AST_Node *table) {
 int main(void) {
 	Arena arena[] = { arena_make(MiB(8)) };
 
-	String8 source = os_file_read(arena, s("assets/example.table"));
+	string8 source = os_file_read(arena, s("assets/example.table"));
 	Lexer lexer[] = { lexer_make(source, keyword_to_string, TOKEN_KEYWORD_MAX) };
 
 	/* AST_Node *tables[256] = { 0 }; */

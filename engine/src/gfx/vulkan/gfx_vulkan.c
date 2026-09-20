@@ -71,7 +71,7 @@ static const char *required_device_extensions[] = {
 };
 
 // :res
-bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[GFX_LIMIT_UNIFORM_SETS]) {
+bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GFX_LIMIT_UNIFORM_SETS]) {
 	uint32_t set_count = 0;
 	SpvReflectShaderModule module = { 0 };
 	SpvReflectDescriptorSet **reflect_sets = 0;
@@ -79,7 +79,7 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 
 	bool ok = sets;
 	if (ok) { // reflect shader module
-		ok = spvReflectCreateShaderModule(bytecode.length, bytecode.text, &module) == SPV_REFLECT_RESULT_SUCCESS;
+		ok = spvReflectCreateShaderModule(bytecode.length, bytecode.bytes, &module) == SPV_REFLECT_RESULT_SUCCESS;
 
 		if (ok == false)
 			LOG_ERROR("%s - failed to reflect shader bytecode.", __func__);
@@ -117,12 +117,12 @@ bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 
 				Uniform *uniform = &set->uniforms[existing_index != -1 ? (uint32_t)existing_index : set->uniform_count++];
 
-				memory_copy(uniform->name, spv_binding->name, MIN(sizeof(uniform->name), str8_wrap(spv_binding->name).length));
+				memory_copy(uniform->name, spv_binding->name, MIN(sizeof(uniform->name), str8z(spv_binding->name).length));
 				if (spv_binding->descriptor_type >= SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
 					spv_binding->descriptor_type <= SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC &&
 					spv_binding->name[0] == 0) {
-					String8 name = str8_wrap(spv_binding->block.member_count == 1 ? spv_binding->block.members[0].name : spv_binding->block.name);
-					memory_copy(uniform->name, name.text, MIN(sizeof(uniform->name) - 1, name.length));
+					string8 name = str8z(spv_binding->block.member_count == 1 ? spv_binding->block.members[0].name : spv_binding->block.name);
+					memory_copy(uniform->name, name.bytes, MIN(sizeof(uniform->name) - 1, name.length));
 				}
 				ASSERT(uniform->name[0] != 0);
 
@@ -492,7 +492,7 @@ GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 	return result;
 }
 
-GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *debug_name) {
+GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *debug_name) {
 	GFX_Shader *result = 0;
 	GFX_Pipeline *pipeline = 0;
 	uint32_t set_count = 0;
@@ -514,7 +514,7 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *d
 		result->debug_name = name;
 		device->shader_count++;
 
-		ok = bytecode.text && bytecode.length > 0;
+		ok = bytecode.bytes && bytecode.length > 0;
 		if (ok == false)
 			LOG_WARN("%s - invalid shader bytecode passed.", __func__);
 	}
@@ -522,7 +522,7 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *d
 	if (ok) { // create shader module
 		VkShaderModuleCreateInfo csm_create_info = {
 			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-			.pCode = (void *)bytecode.text,
+			.pCode = (void *)bytecode.bytes,
 			.codeSize = bytecode.length,
 		};
 
@@ -601,15 +601,15 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *d
 	return result;
 }
 
-GFX_Shader *gfx_shader_make(GFX_Device *device, String8 vs_bytecode, String8 fs_bytecode, const char *debug_name) {
+GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_bytecode, const char *debug_name) {
 	GFX_Shader *result = 0;
 	const char *name = debug_name ? debug_name : "<unnamed>";
 	uint32_t set_count = 0;
 
 	bool ok = gfx_device_valid(device);
 	if (ok) { // check validitiy of shader code
-		ok &= vs_bytecode.text && vs_bytecode.length > 0;
-		ok &= fs_bytecode.text && fs_bytecode.length > 0;
+		ok &= vs_bytecode.bytes && vs_bytecode.length > 0;
+		ok &= fs_bytecode.bytes && fs_bytecode.length > 0;
 
 		if (ok == false) {
 			LOG_WARN("invalid shader bytecode passed.");
@@ -635,13 +635,13 @@ GFX_Shader *gfx_shader_make(GFX_Device *device, String8 vs_bytecode, String8 fs_
 	if (ok) { // create shader module
 		VkShaderModuleCreateInfo vsm_create_info = {
 			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-			.pCode = (void *)vs_bytecode.text,
+			.pCode = (void *)vs_bytecode.bytes,
 			.codeSize = vs_bytecode.length,
 		};
 
 		VkShaderModuleCreateInfo fsm_create_info = {
 			.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-			.pCode = (void *)fs_bytecode.text,
+			.pCode = (void *)fs_bytecode.bytes,
 			.codeSize = fs_bytecode.length,
 		};
 

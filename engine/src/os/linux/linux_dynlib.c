@@ -5,11 +5,11 @@
 #include <dlfcn.h>
 #include <stdlib.h>
 
-OS_Library os_library_load(String8 path) {
+OS_Library os_library_load(string8 path) {
 	OS_Library result = NULL;
 	ArenaTemp scratch = arena_scratch_begin(NULL);
-	String8 cwd = os_current_directory(scratch.arena); // TODO: Internal header to get os__concat_cwd();
-	result = dlopen((char *)str8_filepath_join(scratch.arena, cwd, path).text, RTLD_NOW);
+	string8 cwd = os_current_directory(scratch.arena); // TODO: Internal header to get os__concat_cwd();
+	result = dlopen((char *)pathjoin8(scratch.arena, cwd, path).bytes, RTLD_NOW);
 
 	if (result == NULL) {
 		LOG_WARN("os_library_load - %s", dlerror());
@@ -28,7 +28,7 @@ void os_library_unload(OS_Library lib) {
 	}
 }
 
-bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
+bool os_library_symbol(OS_Library lib, string8 symbol, void *out_symbol) {
 	void *result = 0;
 
 	bool ok = out_symbol;
@@ -40,7 +40,7 @@ bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
 		LOG_WARN("os_library_symbol - invalid library handle passed.");
 
 	if (ok) {
-		result = dlsym(lib, (char *)symbol.text);
+		result = dlsym(lib, (char *)symbol.bytes);
 
 		ok = result;
 		if (ok == false)
@@ -53,6 +53,6 @@ bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol) {
 	return ok;
 }
 
-int32_t os_execute_command(String8 cmd) {
-	return system((char *)cmd.text);
+int32_t os_execute_command(string8 cmd) {
+	return system((char *)cmd.bytes);
 }

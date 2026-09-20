@@ -46,7 +46,7 @@ typedef struct {
 
 static OS_DisplayState state[1];
 
-static inline xcb_intern_atom_reply_t *os__atom(String8 name);
+static inline xcb_intern_atom_reply_t *os__atom(string8 name);
 static inline void create_key_table(void);
 static inline void os__surface_set_min_max(OS_Surface *surface, uint32_t min_w, uint32_t min_h, uint32_t max_w, uint32_t max_h);
 static inline OS_Surface *os__surface_from_handle(xcb_window_t window);
@@ -148,12 +148,12 @@ void os_display_shutdown(void) {
 		xcb_disconnect(state->conn);
 }
 
-OS_Surface *os_surface_open(uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags) {
+OS_Surface *os_surface_open(uint32_t width, uint32_t height, string8 title, OS_SurfaceFlags flags) {
 	OS_Surface *result = os_surface_open_with_parent(&state->root, width, height, title, flags);
 	return result;
 }
 
-OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags) {
+OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, string8 title, OS_SurfaceFlags flags) {
 	bool ok = state->initialized;
 	if (ok == false)
 		LOG_WARN("%s - X server uninitialized, call os_display_startup first.", __func__);
@@ -207,7 +207,7 @@ OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint
 			XCB_ATOM_STRING,
 			8,
 			title.length,
-			title.text);
+			title.bytes);
 		// Register WM_DELETE_WINDOW
 		xcb_change_property(
 			state->conn,
@@ -465,8 +465,8 @@ void os_cursor_set_position(OS_Surface *surface, int32_t x, int32_t y) {
 	xcb_flush(state->conn);
 }
 
-static inline xcb_intern_atom_reply_t *os__atom(String8 name) {
-	xcb_intern_atom_reply_t *result = xcb_intern_atom_reply(state->conn, xcb_intern_atom(state->conn, 1, name.length, (char *)name.text), 0);
+static inline xcb_intern_atom_reply_t *os__atom(string8 name) {
+	xcb_intern_atom_reply_t *result = xcb_intern_atom_reply(state->conn, xcb_intern_atom(state->conn, 1, name.length, (char *)name.bytes), 0);
 	return result;
 }
 

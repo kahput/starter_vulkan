@@ -97,8 +97,8 @@ INLINE void draw2d_rect_rounded(Rectangle rect, float4 radii, Color color) { dra
 INLINE void draw2d_sprite(float2 position, Image2D *image, Color tint) { draw2d_quad(rect(position.x, position.y, image->width, image->height), (DRAW_QuadStyle){ .image = image, .fill_color = tint }); }
 INLINE void draw2d_circle(float2 position, float radius, Color color) { draw2d_quad(rect(position.x - radius, position.y - radius, radius * 2.0, radius * 2.0), (DRAW_QuadStyle){ .fill_color = color, .origin = splat2(radius), .radii = splat4(radius) }); }
 
-void draw2d_text(Font *font, float2 position, Color color, String8 text);
-void draw2d_textf(Font *font, float2 position, Color color, String8 format, ...);
+void draw2d_text(Font *font, float2 position, Color color, string8 text);
+void draw2d_textf(Font *font, float2 position, Color color, const char* format, ...);
 
 void draw2d_line(float2 start, float2 end, float thickness, Color color);
 void draw2d_dashed(float2 start, float2 end, float thickness, float segment_length, float gap_length, Color color);

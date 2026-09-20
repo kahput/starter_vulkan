@@ -29,8 +29,8 @@ typedef enum {
 		TOKEN_KEYWORD_MAX,
 } TokenKeywordType;
 
-String8 keyword_to_string[TOKEN_KEYWORD_MAX] = {
-#define X(name, key) [TOKEN_##name] = scomp(key),
+string8 keyword_to_string[TOKEN_KEYWORD_MAX] = {
+#define X(name, key) [TOKEN_##name] = comp8(key),
 	KEYWORD_LIST
 #undef X
 };
@@ -85,7 +85,7 @@ typedef struct AST_Node AST_Node;
 typedef AST_Literal (*CallableFn)(uint32_t argc, AST_Literal *argv);
 
 typedef struct {
-	String8 name;
+	string8 name;
 	AST_Node *params;
 	uint32_t param_count;
 	AST_Node *block;
@@ -95,7 +95,7 @@ struct AST_Literal {
 	AST_LiteralType type;
 	union {
 		Token name;
-		String8 string;
+		string8 string;
 		AST_Callable callable;
 		double real;
 		bool boolean;
@@ -204,7 +204,7 @@ bool ast_match_keyword_impl(Lexer *lexer, TokenKeywordType *keywords, uint32_t k
 
 #define MAX_VARIABLES 256
 typedef struct {
-	String8 key;
+	string8 key;
 	AST_Literal value;
 } KeyValue;
 typedef struct {
@@ -212,13 +212,13 @@ typedef struct {
 	uint32_t var_count;
 } Enviroment;
 
-KeyValue *env_find(Enviroment *env, String8 key, bool ensure) {
+KeyValue *env_find(Enviroment *env, string8 key, bool ensure) {
 	KeyValue *result = 0;
 
 	bool ok = env && key.length;
 	if (ok) {
 		for (uint32_t index = 0; index < env->var_count; ++index) {
-			if (str8_equals(env->vars[index].key, key)) {
+			if (eq8(env->vars[index].key, key)) {
 				result = &env->vars[index];
 				break;
 			}
@@ -232,22 +232,22 @@ KeyValue *env_find(Enviroment *env, String8 key, bool ensure) {
 	return result;
 }
 
-AST_Literal env_find_val(Enviroment *env, String8 key) {
+AST_Literal env_find_val(Enviroment *env, string8 key) {
 	KeyValue *kv = env_find(env, key, false);
-	ASSERT_FORMAT(kv != 0, "Undefined variable '%.*s'", sspread(key));
+	ASSERT_FORMAT(kv != 0, "Undefined variable '%.*s'", arg8(key));
 
 	return kv->value;
 }
 
-AST_Literal env_assign(Enviroment *env, String8 key, AST_Literal value) {
+AST_Literal env_assign(Enviroment *env, string8 key, AST_Literal value) {
 	KeyValue *var = env_find(env, key, false);
-	ASSERT_FORMAT(var != 0, "Undefined variable '%.*s'", sspread(key));
+	ASSERT_FORMAT(var != 0, "Undefined variable '%.*s'", arg8(key));
 
 	var->value = value;
 	return var->value;
 }
 
-void env_define(Enviroment *env, String8 key, AST_Literal value) {
+void env_define(Enviroment *env, string8 key, AST_Literal value) {
 	KeyValue *var = env_find(env, key, true);
 	if (var) {
 		var->key = key;
@@ -382,7 +382,7 @@ AST_Node *ast_parse_expr_primary(Arena *arena, Lexer *lexer) {
 		} else if (ast_match(lexer, TOKEN_IDENTIFIER)) {
 			result = ast_literal(arena, (AST_Literal){ .type = AST_LITERAL_VARIABLE, .as.name = lexer_advance(lexer) });
 		} else
-			LOG_ERROR("#Unexpected token '%.*s'.\n%.*s", sspread(lexer_peek(lexer).lexeme), sspread(lexer_error_location_string(arena, lexer_peek(lexer))));
+			LOG_ERROR("#Unexpected token '%.*s'.\n%.*s", arg8(lexer_peek(lexer).lexeme), arg8(lexer_error_location_string(arena, lexer_peek(lexer))));
 	}
 
 	return result;
@@ -429,8 +429,8 @@ AST_Node *ast_parse_expr_unary(Arena *arena, Lexer *lexer) {
 		} else if (ast_match(lexer, TOKEN_STAR, TOKEN_SLASH, TOKEN_PLUS, TOKEN_GREATER, TOKEN_GREATER_EQUAL, TOKEN_LESS, TOKEN_LESS_EQUAL)) {
 			Token op = lexer_advance(lexer);
 			LOG_ERROR("#Missing left-hand operand for binary operator '%.*s'\n%.*s",
-				sspread(op.lexeme),
-				sspread(lexer_error_location_string(arena, op)) //
+				arg8(op.lexeme),
+				arg8(lexer_error_location_string(arena, op)) //
 			);
 			switch (op.type) {
 				case TOKEN_GREATER:
@@ -589,8 +589,8 @@ AST_Node *ast_parse_expr_assignment(Arena *arena, Lexer *lexer) {
 			if (left->type == AST_NODE_EXPR_LITERAL && left->literal.type == AST_LITERAL_VARIABLE)
 				left = ast_assign(arena, left->literal.as.name, value);
 			else {
-				String8 where = lexer_error_location_string(arena, s);
-				LOG_ERROR("#Invalid l-value for assignment\n%.*s", sspread(where));
+				string8 where = lexer_error_location_string(arena, s);
+				LOG_ERROR("#Invalid l-value for assignment\n%.*s", arg8(where));
 			}
 		}
 	}
@@ -802,7 +802,7 @@ AST_Node *ast_parse_stmt_for(Arena *arena, Lexer *lexer) {
 }
 
 AST_Node *ast_parse_stmt(Arena *arena, Lexer *lexer) {
-	if (str8_equals(lexer_peek(lexer).lexeme, s("continue"))) {
+	if (eq8(lexer_peek(lexer).lexeme, s("continue"))) {
 		uint32_t x = 0;
 		(void)x;
 	}
@@ -937,7 +937,7 @@ AST_Node *ast_parse(Arena *arena, Lexer *lexer) {
 void ast_print_literal(AST_Literal literal) {
 	switch (literal.type) {
 		case AST_LITERAL_STRING:
-			printf("%.*s", sspread(literal.as.string));
+			printf("%.*s", arg8(literal.as.string));
 			break;
 		case AST_LITERAL_REAL:
 			printf("%g", literal.as.real);
@@ -949,10 +949,10 @@ void ast_print_literal(AST_Literal literal) {
 			printf("nil");
 			break;
 		case AST_LITERAL_VARIABLE:
-			printf("%.*s", sspread(literal.as.name.lexeme));
+			printf("%.*s", arg8(literal.as.name.lexeme));
 			break;
 		case AST_LITERAL_CALLABLE:
-			printf("<fn %.*s>", sspread(literal.as.callable.name));
+			printf("<fn %.*s>", arg8(literal.as.callable.name));
 			break;
 		default:
 			break;
@@ -962,11 +962,11 @@ void ast_print_literal(AST_Literal literal) {
 void ast_print(AST_Node *node) {
 	bool ok = node;
 	if (ok) {
-		String8 result = { 0 };
+		string8 result = { 0 };
 		switch (node->type) {
 			case AST_NODE_EXPR_ASSIGN: {
 				printf("(");
-				printf("%.*s ", sspread(node->name.lexeme));
+				printf("%.*s ", arg8(node->name.lexeme));
 				ast_print(node->first_child);
 				printf(")");
 			} break;
@@ -975,7 +975,7 @@ void ast_print(AST_Node *node) {
 			} break;
 			case AST_NODE_EXPR_BINARY: {
 				printf("(");
-				printf("%.*s ", sspread(node->operator.lexeme));
+				printf("%.*s ", arg8(node->operator.lexeme));
 				ast_print(node->first_child);
 				printf(" ");
 				ast_print(node->last_child);
@@ -983,7 +983,7 @@ void ast_print(AST_Node *node) {
 			} break;
 			case AST_NODE_EXPR_UNARY: {
 				printf("( ");
-				printf("%.*s ", sspread(node->operator.lexeme));
+				printf("%.*s ", arg8(node->operator.lexeme));
 				ast_print(node->first_child);
 				printf(")");
 			} break;
@@ -992,7 +992,7 @@ void ast_print(AST_Node *node) {
 				break;
 			case AST_NODE_DECLARATOR: {
 				printf("(");
-				printf("= %.*s", sspread(node->name.lexeme));
+				printf("= %.*s", arg8(node->name.lexeme));
 				if (node->first_child) {
 					printf(" ");
 					ast_print(node->first_child);
@@ -1048,14 +1048,14 @@ static inline bool ast_equal(AST_Literal left, AST_Literal right) {
 	if (left.type != right.type) return false;
 
 	if (left.type == AST_LITERAL_REAL) return left.as.real == right.as.real;
-	if (left.type == AST_LITERAL_STRING) return str8_equals(left.as.string, right.as.string);
+	if (left.type == AST_LITERAL_STRING) return eq8(left.as.string, right.as.string);
 	if (left.type == AST_LITERAL_BOOLEAN) return left.as.boolean == right.as.boolean;
 
 	return false;
 }
 
-String8 ast_lit_to_string(Arena *arena, AST_Literal lit) {
-	String8 result = { 0 };
+string8 ast_lit_to_string(Arena *arena, AST_Literal lit) {
+	string8 result = { 0 };
 
 	bool ok = arena;
 	if (ok) {
@@ -1064,7 +1064,7 @@ String8 ast_lit_to_string(Arena *arena, AST_Literal lit) {
 				result = lit.as.string;
 				break;
 			case AST_LITERAL_REAL:
-				result = str8_pushf(arena, s("%g"), lit.as.real);
+				result = fmt8(arena, "%g", lit.as.real);
 				break;
 			case AST_LITERAL_BOOLEAN:
 				result = lit.as.boolean ? s("true") : s("false");
@@ -1184,7 +1184,7 @@ AST_Literal ast_evaluate(Arena *arena, Enviroment *env, AST_Node *expr) {
 						break;
 					case TOKEN_PLUS:
 						if (left.type == AST_LITERAL_STRING || right.type == AST_LITERAL_STRING)
-							result = (AST_Literal){ .type = AST_LITERAL_STRING, .as.string = str8_concat(arena, ast_lit_to_string(arena, left), ast_lit_to_string(arena, right)) };
+							result = (AST_Literal){ .type = AST_LITERAL_STRING, .as.string = concat8(arena, ast_lit_to_string(arena, left), ast_lit_to_string(arena, right)) };
 						else if (left.type == AST_LITERAL_REAL)
 							result = (AST_Literal){ .type = AST_LITERAL_REAL, .as.real = left.as.real + ast_lit_to_real(right) };
 						break;
@@ -1372,11 +1372,11 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 
 	switch (node->type) {
 		case AST_NODE_EXPR_ASSIGN:
-			printf("ASSIGN(%.*s)\n", sspread(node->name.lexeme));
+			printf("ASSIGN(%.*s)\n", arg8(node->name.lexeme));
 			ast_visit(node->first_child, indent_level + 1);
 			break;
 		case AST_NODE_EXPR_BINARY:
-			printf("BINARY(%.*s)\n", sspread(node->operator.lexeme));
+			printf("BINARY(%.*s)\n", arg8(node->operator.lexeme));
 			ast_visit(node->first_child, indent_level + 1);
 			ast_visit(node->last_child, indent_level + 1);
 			break;
@@ -1390,12 +1390,12 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			}
 			break;
 		case AST_NODE_EXPR_LOGICAL:
-			printf("LOGICAL(%.*s)\n", sspread(node->operator.lexeme));
+			printf("LOGICAL(%.*s)\n", arg8(node->operator.lexeme));
 			ast_visit(node->first_child, indent_level + 1);
 			ast_visit(node->last_child, indent_level + 1);
 			break;
 		case AST_NODE_EXPR_UNARY:
-			printf("LOGICAL(%.*s)\n", sspread(node->operator.lexeme));
+			printf("LOGICAL(%.*s)\n", arg8(node->operator.lexeme));
 			ast_visit(node->first_child, indent_level + 1);
 			break;
 		case AST_NODE_EXPR_GROUPING:
@@ -1409,7 +1409,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 					printf("NIL");
 					break;
 				case AST_LITERAL_STRING:
-					printf("STRING(%.*s)", sspread(node->literal.as.string));
+					printf("STRING(%.*s)", arg8(node->literal.as.string));
 					break;
 				case AST_LITERAL_REAL:
 					printf("NUMBER(%g)", node->literal.as.real);
@@ -1418,7 +1418,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 					printf("BOOLEAN(%s)", node->literal.as.boolean ? "true" : "false");
 					break;
 				case AST_LITERAL_VARIABLE:
-					printf("VARIABLE(%.*s)", sspread(node->literal.as.name.lexeme));
+					printf("VARIABLE(%.*s)", arg8(node->literal.as.name.lexeme));
 					break;
 				case AST_LITERAL_CALLABLE:
 					printf("CALLABLE");
@@ -1470,7 +1470,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			ast_visit(node->first_child, indent_level + 1);
 			break;
 		case AST_NODE_DECLARATOR:
-			printf("DECLARATOR(%.*s)\n", sspread(node->name.lexeme));
+			printf("DECLARATOR(%.*s)\n", arg8(node->name.lexeme));
 			if (node->first_child) ast_visit(node->first_child, indent_level + 1);
 			break;
 		case AST_NODE_DECL_VAR: {
@@ -1482,7 +1482,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 				} while (var != node->first_child);
 		} break;
 		case AST_NODE_DECL_FN:
-			printf("FN_DECL(%.*s)\n", sspread(node->name.lexeme));
+			printf("FN_DECL(%.*s)\n", arg8(node->name.lexeme));
 			AST_Node *param = node->first_child;
 			if (param)
 				while (param != node->last_child) {
@@ -1511,7 +1511,7 @@ AST_Literal native_clock(uint32_t argc, AST_Literal *argv) {
 int main(void) {
 	Arena arena[] = { arena_make(MiB(8)) };
 
-	String8 source = os_file_read(arena, s("engine/scratch/example.lox"));
+	string8 source = os_file_read(arena, s("engine/scratch/example.lox"));
 	AST_Node *program = ast_parse(arena, (Lexer[]){ lexer_make(source, keyword_to_string, TOKEN_KEYWORD_MAX) });
 
 	ast_visit(program, 0);

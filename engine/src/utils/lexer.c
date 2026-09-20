@@ -7,31 +7,31 @@
 #include <string.h>
 
 // clang-format off
-const String8 token_type_to_string[TOKEN_BUILTIN_MAX] = {
-    [TOKEN_UNKNOWN]       = scomp("unkown"),
-    [TOKEN_LPAREN]    = scomp("("),   [TOKEN_RPAREN]   = scomp(")"),
-    [TOKEN_LBRACE]    = scomp("{"),   [TOKEN_RBRACE]   = scomp("}"),
-    [TOKEN_LBRACKET]  = scomp("["),   [TOKEN_RBRACKET] = scomp("]"),
-    [TOKEN_COMMA]         = scomp(","),   [TOKEN_DOT]           = scomp("."),
-    [TOKEN_SEMICOLON]     = scomp(";"),   [TOKEN_COLON]         = scomp(":"),
-    [TOKEN_SLASH]         = scomp("/"),   [TOKEN_STAR]          = scomp("*"),
-    [TOKEN_PERCENT]       = scomp("%"),   [TOKEN_TILDE]         = scomp("~"),
-    [TOKEN_DOLLAR] = scomp("$"),
-    [TOKEN_CARET]         = scomp("^"),   [TOKEN_QUESTION_MARK] = scomp("?"),
-    [TOKEN_MINUS]         = scomp("-"),   [TOKEN_MINUS_MINUS]   = scomp("--"),
-    [TOKEN_PLUS]          = scomp("+"),   [TOKEN_PLUS_PLUS]     = scomp("++"),
-    [TOKEN_BANG]          = scomp("!"),   [TOKEN_BANG_EQUAL]    = scomp("!="),
-    [TOKEN_EQUAL]         = scomp("="),   [TOKEN_EQUAL_EQUAL]   = scomp("=="),
-    [TOKEN_GREATER]       = scomp(">"),   [TOKEN_GREATER_EQUAL] = scomp(">="),
-    [TOKEN_LESS]          = scomp("<"),   [TOKEN_LESS_EQUAL]    = scomp("<="),
-    [TOKEN_AMP]           = scomp("&"),   [TOKEN_AMP_AMP]       = scomp("&&"),
-    [TOKEN_PIPE]          = scomp("|"),   [TOKEN_PIPE_PIPE]     = scomp("||"),
-    [TOKEN_IDENTIFIER]    = scomp("identifier"),
-    [TOKEN_STRING]        = scomp("string"),
-    [TOKEN_INTEGER]       = scomp("integer"),
-    [TOKEN_REAL]         = scomp("real"),
+const string8 token_type_to_string[TOKEN_BUILTIN_MAX] = {
+    [TOKEN_UNKNOWN]       = comp8("unkown"),
+    [TOKEN_LPAREN]    = comp8("("),   [TOKEN_RPAREN]   = comp8(")"),
+    [TOKEN_LBRACE]    = comp8("{"),   [TOKEN_RBRACE]   = comp8("}"),
+    [TOKEN_LBRACKET]  = comp8("["),   [TOKEN_RBRACKET] = comp8("]"),
+    [TOKEN_COMMA]         = comp8(","),   [TOKEN_DOT]           = comp8("."),
+    [TOKEN_SEMICOLON]     = comp8(";"),   [TOKEN_COLON]         = comp8(":"),
+    [TOKEN_SLASH]         = comp8("/"),   [TOKEN_STAR]          = comp8("*"),
+    [TOKEN_PERCENT]       = comp8("%"),   [TOKEN_TILDE]         = comp8("~"),
+    [TOKEN_DOLLAR] = comp8("$"),
+    [TOKEN_CARET]         = comp8("^"),   [TOKEN_QUESTION_MARK] = comp8("?"),
+    [TOKEN_MINUS]         = comp8("-"),   [TOKEN_MINUS_MINUS]   = comp8("--"),
+    [TOKEN_PLUS]          = comp8("+"),   [TOKEN_PLUS_PLUS]     = comp8("++"),
+    [TOKEN_BANG]          = comp8("!"),   [TOKEN_BANG_EQUAL]    = comp8("!="),
+    [TOKEN_EQUAL]         = comp8("="),   [TOKEN_EQUAL_EQUAL]   = comp8("=="),
+    [TOKEN_GREATER]       = comp8(">"),   [TOKEN_GREATER_EQUAL] = comp8(">="),
+    [TOKEN_LESS]          = comp8("<"),   [TOKEN_LESS_EQUAL]    = comp8("<="),
+    [TOKEN_AMP]           = comp8("&"),   [TOKEN_AMP_AMP]       = comp8("&&"),
+    [TOKEN_PIPE]          = comp8("|"),   [TOKEN_PIPE_PIPE]     = comp8("||"),
+    [TOKEN_IDENTIFIER]    = comp8("identifier"),
+    [TOKEN_STRING]        = comp8("string"),
+    [TOKEN_INTEGER]       = comp8("integer"),
+    [TOKEN_REAL]         = comp8("real"),
 
-    [TOKEN_EOF]           = scomp("end of file"),
+    [TOKEN_EOF]           = comp8("end of file"),
 };
 // clang-format on
 
@@ -41,7 +41,7 @@ static bool is_digit(char c) { return c >= '0' && c <= '9'; }
 static bool is_aplha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
 static bool is_alnum(char c) { return is_aplha(c) || is_digit(c); }
 
-static bool lexer___at_end(Lexer *lexer) { return lexer->cursor[0] == 0 || (uint32_t)(lexer->cursor - lexer->source.text) >= lexer->source.length; }
+static bool lexer___at_end(Lexer *lexer) { return lexer->cursor[0] == 0 || (uint32_t)(lexer->cursor - lexer->source.bytes) >= lexer->source.length; }
 static void lexer__advance_newline(Lexer *lexer) {
 	if (lexer->cursor[0] == '\r' && lexer->cursor[1] == '\n')
 		++lexer->cursor;
@@ -89,7 +89,7 @@ void lexer__skip_whitespace_and_comments(Lexer *lexer) {
 
 TokenType lexer__match_keyword(Lexer *lexer, Token *token) {
 	for (uint32_t index = 0; index < lexer->keyword_count; ++index)
-		if (str8_equals(lexer->keywords[index], token->lexeme))
+		if (eq8(lexer->keywords[index], token->lexeme))
 			return TOKEN_KEYWORD_0 + index;
 
 	/* switch (token->string.chars[0]) { */
@@ -145,7 +145,7 @@ restart:
 
 	Token token = {
 		.type = TOKEN_UNKNOWN,
-		.lexeme = { .text = lexer->cursor, .length = 1 },
+		.lexeme = { .bytes = lexer->cursor, .length = 1 },
 		.line = lexer->line,
 		.column = lexer->column,
 	};
@@ -269,7 +269,7 @@ restart:
 
 		case '"': {
 			token.type = TOKEN_STRING;
-			token.lexeme.text = lexer->cursor;
+			token.lexeme.bytes = lexer->cursor;
 			while (lexer___at_end(lexer) == false && lexer->cursor[0] != '"') {
 				if (lexer->cursor[0] == '\\' && lexer->cursor[1] != '\0') {
 					++lexer->cursor;
@@ -279,7 +279,7 @@ restart:
 				++lexer->column;
 			}
 
-			token.lexeme.length = (int)(lexer->cursor - token.lexeme.text);
+			token.lexeme.length = (int)(lexer->cursor - token.lexeme.bytes);
 			if (lexer->cursor[0] == '"') {
 				++lexer->cursor;
 				++lexer->column;
@@ -319,7 +319,7 @@ restart:
 						++lexer->column;
 					}
 				}
-				token.lexeme.length = (int)(lexer->cursor - token.lexeme.text);
+				token.lexeme.length = (int)(lexer->cursor - token.lexeme.bytes);
 				token.type = is_float ? TOKEN_REAL : TOKEN_INTEGER;
 
 			} else if (is_aplha(c)) {
@@ -327,7 +327,7 @@ restart:
 					++lexer->cursor;
 					++lexer->column;
 				}
-				token.lexeme.length = lexer->cursor - token.lexeme.text;
+				token.lexeme.length = lexer->cursor - token.lexeme.bytes;
 				token.type = lexer__match_keyword(lexer, &token);
 			} else
 				break;
@@ -398,47 +398,47 @@ Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_advance(lexer);
 	if (t.type != type) {
 		LOG_WARN("expected '%.*s' got '%.*s' (%.*s) at %d:%d",
-			sspread(token_type_to_string[type]),
-			sspread(token_type_to_string[t.type]),
-			sspread(t.lexeme),
+			arg8(token_type_to_string[type]),
+			arg8(token_type_to_string[t.type]),
+			arg8(t.lexeme),
 			t.line, t.column);
 		ASSERT(false);
 	}
 	return t;
 }
 
-String8 lexer_error_location_string(Arena *arena, Token token) {
-	String8 result = { 0 };
+string8 lexer_error_location_string(Arena *arena, Token token) {
+	string8 result = { 0 };
 
-	bool ok = arena && token.lexeme.text;
+	bool ok = arena && token.lexeme.bytes;
 	if (ok) {
 		uint32_t col = token.type == TOKEN_STRING ? token.column : (token.column - 1);
-		String8 line = { .text = token.lexeme.text - col, .length = token.lexeme.length };
-		while (line.text[line.length] != '\n' && line.text[line.length] != '\0')
+		string8 line = { .bytes = token.lexeme.bytes - col, .length = token.lexeme.length };
+		while (line.bytes[line.length] != '\n' && line.bytes[line.length] != '\0')
 			line.length++;
 
-		String8 err_top = str8_pushf(arena, s("    %d | %.*s\n"), token.line, sspread(line));
+		string8 err_top = fmt8(arena, "    %d | %.*s\n", token.line, arg8(line));
 		uint32_t error_offset = 0;
-		while (err_top.text[error_offset] != '|')
+		while (err_top.bytes[error_offset] != '|')
 			error_offset++;
 		error_offset++;
 
 		error_offset += col + 1;
-		String8 indent = str8_indent(arena, s(" "), error_offset);
-		String8 arrow = s("^-- here");
-		String8 err_bottom = str8_pushf(arena, s("%.*s%.*s"), sspread(indent), sspread(arrow));
+		string8 indent = indent8(arena, s(" "), error_offset);
+		string8 arrow = s("^-- here");
+		string8 err_bottom = fmt8(arena, "%.*s%.*s", arg8(indent), arg8(arrow));
 
-		result = str8_concat(arena, err_top, err_bottom);
+		result = concat8(arena, err_top, err_bottom);
 	}
 
 	return result;
 }
 
-void report(uint64_t line, uint64_t column, String8 where, String8 message) {
-	LOG_ERROR("#error[%d:%d]: %.*s\n%.*s", line, column, sspread(message), sspread(where));
+void report(uint64_t line, uint64_t column, string8 where, string8 message) {
+	LOG_ERROR("#error[%d:%d]: %.*s\n%.*s", line, column, arg8(message), arg8(where));
 }
 
-Token lexer_consume(Lexer *lexer, TokenType type, String8 message) {
+Token lexer_consume(Lexer *lexer, TokenType type, string8 message) {
 	Token token = lexer_peek(lexer);
 
 	bool had_error = false;
@@ -468,15 +468,15 @@ Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count)
 
 	if (found == false) {
 		ArenaTemp scratch = arena_scratch_begin(0);
-		String8 types_string = { scratch.arena->base, 0 };
+		string8 types_string = { scratch.arena->base, 0 };
 		for (uint32_t index = 0; index < type_count; ++index) {
-			String8 type_string = token_type_to_string[types[index]];
+			string8 type_string = token_type_to_string[types[index]];
 			bool last = index == type_count - 1;
 
 			char *concat = arena_push_count(scratch.arena, char, type_string.length + (last ? 0 : 3));
 			types_string.length += type_string.length + (last ? 0 : 3);
 
-			memory_copy(concat, type_string.text, type_string.length);
+			memory_copy(concat, type_string.bytes, type_string.length);
 			if (last == false) {
 				concat[type_string.length] = ' ';
 				concat[type_string.length + 1] = '|';
@@ -485,9 +485,9 @@ Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count)
 		}
 
 		LOG_WARN("Lexer: expected '%.*s' got '%.*s' (%.*s) at %d:%d",
-			sspread(types_string),
-			sspread(token_type_to_string[t.type]),
-			sspread(t.lexeme),
+			arg8(types_string),
+			arg8(token_type_to_string[t.type]),
+			arg8(t.lexeme),
 			t.line, t.column);
 		arena_scratch_end(scratch);
 	}

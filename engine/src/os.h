@@ -26,10 +26,10 @@ typedef enum {
 #endif
 } OS_Backend;
 
-static String8 os_to_string[OS_BACKEND_COUNT] = {
-	[OS_BACKEND_WINDOWS] = scomp("windows"),
-	[OS_BACKEND_LINUX] = scomp("linux"),
-	[OS_BACKEND_WEB] = scomp("web"),
+static string8 os_to_string[OS_BACKEND_COUNT] = {
+	[OS_BACKEND_WINDOWS] = comp8("windows"),
+	[OS_BACKEND_LINUX] = comp8("linux"),
+	[OS_BACKEND_WEB] = comp8("web"),
 };
 
 // ----------------------
@@ -65,28 +65,28 @@ typedef enum {
 	OS_FILE_MODE_READWRITE,
 } OS_FileMode;
 
-OS_File os_file_open(String8 path, OS_FileMode);
-OS_File os_file_open_async(String8 path, OS_FileMode mode);
+OS_File os_file_open(string8 path, OS_FileMode);
+OS_File os_file_open_async(string8 path, OS_FileMode mode);
 
 uint64_t os_file_size(OS_File handle);
 uint64_t os_file_read_stream(OS_File file, void *buffer, uint64_t size);
 uint64_t os_file_write_stream(OS_File file, const void *buffer, uint64_t size);
 void os_file_close(OS_File handle);
 
-String8 os_file_read(Arena *arena, String8 path);
-void os_file_write(String8 filename, const void *buffer, uint64_t size);
-bool os_file_copy(String8 src, String8 dst);
+string8 os_file_read(Arena *arena, string8 path);
+void os_file_write(string8 filename, const void *buffer, uint64_t size);
+bool os_file_copy(string8 src, string8 dst);
 
-bool os_file_exists(String8 path);
-bool os_file_delete(String8 path);
+bool os_file_exists(string8 path);
+bool os_file_delete(string8 path);
 
 typedef uint64_t OS_Timestamp;
-OS_Timestamp os_file_mtime(String8 filepath);
+OS_Timestamp os_file_mtime(string8 filepath);
 
-String8 os_current_directory(Arena *arena);
-bool os_directory_exists(String8 path);
-bool os_directory_make(String8 path);
-bool os_directory_delete(String8 path);
+string8 os_current_directory(Arena *arena);
+bool os_directory_exists(string8 path);
+bool os_directory_make(string8 path);
+bool os_directory_delete(string8 path);
 
 /* typedef enum { */
 /* 	OS_ENTRY_TYPE_FILE, */
@@ -102,7 +102,7 @@ bool os_directory_delete(String8 path);
 /* } OS_DirectoryEntry; */
 
 /* OS_DirectoryEntry *os_directory_walk(Arena *arena, String8 path, bool recurse, uint32_t *count); */
-String8 *os_directory_files(Arena *arena, String8 path, uint32_t *count);
+string8 *os_directory_files(Arena *arena, string8 path, uint32_t *count);
 
 // ----------------------
 // - Dynamic libraries
@@ -110,11 +110,11 @@ typedef void *OS_Library;
 #define OS_LIBRARY_INVALID ((OS_Library)0)
 static inline bool os_library_valid(OS_Library lib) { return lib != OS_LIBRARY_INVALID; }
 
-OS_Library os_library_load(String8 path);
+OS_Library os_library_load(string8 path);
 void os_library_unload(OS_Library lib);
-bool os_library_symbol(OS_Library lib, String8 symbol, void *out_symbol);
+bool os_library_symbol(OS_Library lib, string8 symbol, void *out_symbol);
 
-int32_t os_execute_command(String8 cmd);
+int32_t os_execute_command(string8 cmd);
 
 // ----------------------
 // - Draw surfaces/windows
@@ -129,8 +129,8 @@ typedef enum {
 	OS_SURFACE_FLAG_RESIZEABLE = 0x1,
 } OS_SurfaceFlags;
 
-OS_Surface *os_surface_open(uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags);
-OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, String8 title, OS_SurfaceFlags flags);
+OS_Surface *os_surface_open(uint32_t width, uint32_t height, string8 title, OS_SurfaceFlags flags);
+OS_Surface *os_surface_open_with_parent(OS_Surface *parent, uint32_t width, uint32_t height, string8 title, OS_SurfaceFlags flags);
 void os_surface_close(OS_Surface *surface);
 
 void os_surface_show(OS_Surface *surface);

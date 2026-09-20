@@ -12,73 +12,78 @@ bool str8__ispathdelim(char c) {
 	return c == '/' || c == '\\';
 }
 
-String8 str8_wrap(const char *cstring) {
-	return (String8){ .text = (uint8_t *)cstring, .length = strlen(cstring) };
+bool eq8(string8 a, string8 b) {
+	if (a.length != b.length) return false;
+	if (a.bytes == b.bytes) return true;
+
+	return memcmp(a.bytes, b.bytes, a.length) == 0;
 }
 
-bool str8_equals(String8 a, String8 b) {
-	if (a.length != b.length)
-		return false;
-
-	return memory_compare(a.text, b.text, a.length) == 0;
-}
-
-bool str8_contains(String8 haystack, String8 needle) {
+bool has8(string8 haystack, string8 needle) {
 	if (haystack.length < needle.length) return false;
 
 	for (uint64_t index = 0; index <= haystack.length - needle.length; ++index)
-		if (str8_equals((String8){ haystack.text + index, needle.length }, needle))
+		if (eq8((string8){ haystack.bytes + index, needle.length }, needle))
 			return true;
 
 	return false;
 }
 
-String8 str8_concat(Arena *arena, String8 a, String8 b) {
+string8 concat8(Arena *arena, string8 a, string8 b) {
 	if (a.length == 0)
 		return b;
 	if (b.length == 0)
 		return a;
 
-	String8 result = { 0 };
+	string8 result = { 0 };
 
 	uint32_t size = a.length + b.length + 1;
 	result.length = size - 1;
 
-	result.text = arena_push(arena, size, 1, false);
-	memory_copy(result.text, a.text, a.length);
-	memory_copy(result.text + a.length, b.text, b.length);
+	result.bytes = arena_push(arena, size, 1, false);
+	memory_copy(result.bytes, a.bytes, a.length);
+	memory_copy(result.bytes + a.length, b.bytes, b.length);
 
-	result.text[result.length] = '\0';
+	result.bytes[result.length] = '\0';
 
 	return result;
 }
 
-String8 str8_indent(Arena *arena, String8 indent, uint32_t depth) {
-	String8 result = { 0 };
+string8 indent8(Arena *arena, string8 indent, uint32_t depth) {
+	string8 result = { 0 };
 
 	bool ok = arena && indent.length;
 	if (ok) {
-		result.text = (uint8_t *)arena->base + arena->offset;
+		result.bytes = (uint8_t *)arena->base + arena->offset;
 		result.length = indent.length * depth;
 
 		for (uint32_t index = 0; index < depth; ++index)
-			arena_push_copy(arena, indent.text, indent.length, 0);
+			arena_push_copy(arena, indent.bytes, indent.length, 0);
 	}
 
 	return result;
 }
 
-String8 str8_upper(Arena *arena, String8 s) {
-	String8 result = str8_copy(arena, s);
+string8 upper8(Arena *arena, string8 s) {
+	string8 result = copy8(arena, s);
 
 	for (uint32_t index = 0; index < result.length; ++index)
-		result.text[index] = toupper(result.text[index]);
+		result.bytes[index] = toupper(result.bytes[index]);
 
 	return result;
 }
 
-String8 str8_dedent(Arena *arena, String8 str) {
-	String8 result = { 0 };
+string8 lower8(Arena *arena, string8 s) {
+	string8 result = copy8(arena, s);
+
+	for (uint32_t index = 0; index < result.length; ++index)
+		result.bytes[index] = tolower(result.bytes[index]);
+
+	return result;
+}
+
+string8 dedent8(Arena *arena, string8 str) {
+	string8 result = { 0 };
 	uint64_t min_indent = UINT64_MAX;
 
 	bool ok = str.length;
@@ -88,7 +93,7 @@ String8 str8_dedent(Arena *arena, String8 str) {
 		bool is_line_start = true;
 
 		for (uint64_t i = 0; i < str.length; ++i) {
-			uint8_t c = str.text[i];
+			uint8_t c = str.bytes[i];
 
 			if (is_line_start) {
 				if (c == ' ' || c == '\t') {
@@ -113,13 +118,13 @@ String8 str8_dedent(Arena *arena, String8 str) {
 	}
 
 	if (ok) {
-		result.text = arena_push_count(arena, uint8_t, str.length);
+		result.bytes = arena_push_count(arena, uint8_t, str.length);
 		result.length = 0;
 		uint64_t skipped = 0;
 		bool is_line_start = true;
 
 		for (uint64_t i = 0; i < str.length; ++i) {
-			uint8_t c = str.text[i];
+			uint8_t c = str.bytes[i];
 
 			if (is_line_start && skipped < min_indent && (c == ' ' || c == '\t')) {
 				skipped++;
@@ -127,7 +132,7 @@ String8 str8_dedent(Arena *arena, String8 str) {
 			}
 
 			is_line_start = false;
-			result.text[result.length++] = c;
+			result.bytes[result.length++] = c;
 
 			if (c == '\n') {
 				is_line_start = true;
@@ -139,49 +144,49 @@ String8 str8_dedent(Arena *arena, String8 str) {
 	return result;
 }
 
-String8 str8_filepath_join(Arena *arena, String8 head, String8 tail) {
+string8 pathjoin8(Arena *arena, string8 head, string8 tail) {
 	if (head.length == 0)
 		return tail;
 	if (tail.length == 0)
 		return head;
 
-	String8 result = { 0 };
+	string8 result = { 0 };
 
-	if (str8__ispathdelim(head.text[head.length - 1]) && str8__ispathdelim(tail.text[0])) {
+	if (str8__ispathdelim(head.bytes[head.length - 1]) && str8__ispathdelim(tail.bytes[0])) {
 		head.length -= 1;
-		result = str8_concat(arena, head, tail);
-	} else if (str8__ispathdelim(head.text[head.length - 1]) || str8__ispathdelim(tail.text[0])) {
-		result = str8_concat(arena, head, tail);
+		result = concat8(arena, head, tail);
+	} else if (str8__ispathdelim(head.bytes[head.length - 1]) || str8__ispathdelim(tail.bytes[0])) {
+		result = concat8(arena, head, tail);
 	} else {
 		result.length = head.length + tail.length + 1; // + path delimiter
-		result.text = arena_push(arena, result.length + 1, 1, false); // + null terminator
-		memory_copy(result.text, head.text, head.length);
-		result.text[head.length] = '/';
-		memory_copy(result.text + head.length + 1, tail.text, tail.length);
-		result.text[result.length] = '\0';
+		result.bytes = arena_push(arena, result.length + 1, 1, false); // + null terminator
+		memory_copy(result.bytes, head.bytes, head.length);
+		result.bytes[head.length] = '/';
+		memory_copy(result.bytes + head.length + 1, tail.bytes, tail.length);
+		result.bytes[result.length] = '\0';
 	}
 
 	return result;
 }
 
-String8 str8_copy(Arena *arena, String8 src) {
-	String8 result = { 0 };
+string8 copy8(Arena *arena, string8 src) {
+	string8 result = { 0 };
 
 	bool ok = arena && src.length;
 	if (ok) {
 		result.length = src.length;
-		uint32_t new_size = src.text[src.length - 1] != '\0' ? src.length + 1 : src.length;
+		uint32_t new_size = src.bytes[src.length - 1] != '\0' ? src.length + 1 : src.length;
 
-		result.text = arena_push_count(arena, uint8_t, new_size);
-		memory_copy(result.text, src.text, src.length);
-		result.text[new_size] = '\0';
+		result.bytes = arena_push_count(arena, uint8_t, new_size);
+		memory_copy(result.bytes, src.bytes, src.length);
+		result.bytes[new_size] = '\0';
 	}
 
 	return result;
 }
 
-String8 str8_push_format_list(Arena *arena, String8 format, va_list args) {
-	String8 result = { 0 };
+string8 fmtv8(Arena *arena, const char *fmt, va_list args) {
+	string8 result = { 0 };
 
 	bool ok = arena;
 	if (ok == false)
@@ -189,42 +194,40 @@ String8 str8_push_format_list(Arena *arena, String8 format, va_list args) {
 
 	int32_t length = 0;
 	if (ok) {
-		ASSERT(format.text[format.length] == '\0');
-
 		va_list copy;
 		va_copy(copy, args);
 
-		length = vsnprintf(0, 0, (char *)format.text, copy);
+		length = vsnprintf(0, 0, (char *)fmt, copy);
 		ok = length >= 0;
 		va_end(copy);
 	}
 
 	if (ok) {
 		result.length = length;
-		result.text = arena_push_count(arena, uint8_t, result.length + 1);
-		vsnprintf((char *)result.text, result.length + 1, (char *)format.text, args);
+		result.bytes = arena_push_count(arena, uint8_t, result.length + 1);
+		vsnprintf((char *)result.bytes, result.length + 1, (char *)fmt, args);
 	}
 
 	return result;
 }
-String8 str8_pushf(Arena *arena, String8 format, ...) {
+string8 fmt8(Arena *arena, const char *fmt, ...) {
 	va_list args;
-	va_start(args, format);
-	String8 result = str8_push_format_list(arena, format, args);
+	va_start(args, fmt);
+	string8 result = fmtv8(arena, fmt, args);
 	va_end(args);
 
 	return result;
 }
 
-String8 str8_filename(String8 path) {
+string8 filename8(string8 path) {
 	if (path.length == 0)
 		return path;
 
-	String8 result = path;
+	string8 result = path;
 
 	for (uint32_t index = 0; index < path.length; ++index) {
-		if (str8__ispathdelim(path.text[index])) {
-			result.text = path.text + index + 1;
+		if (str8__ispathdelim(path.bytes[index])) {
+			result.bytes = path.bytes + index + 1;
 			result.length = path.length - (index + 1);
 		}
 	}
@@ -232,14 +235,14 @@ String8 str8_filename(String8 path) {
 	return result;
 }
 
-String8 str8_fileext(String8 file) {
-	String8 result = { 0 };
+string8 ext8(string8 file) {
+	string8 result = { 0 };
 
 	bool ok = file.length;
 	if (ok) {
 		int32_t dot = -1;
 		for (int32_t index = file.length - 1; index >= 0; --index) {
-			char c = file.text[index];
+			char c = file.bytes[index];
 
 			if (c == '.') {
 				dot = index;
@@ -248,19 +251,19 @@ String8 str8_fileext(String8 file) {
 		}
 
 		if (dot != -1)
-			result = (String8){ file.text + dot + 1, file.length - (dot + 1) };
+			result = (string8){ file.bytes + dot + 1, file.length - (dot + 1) };
 	}
 
 	return result;
 }
 
-String8 str8_directory(String8 path) {
+string8 dir8(string8 path) {
 	if (path.length == 0)
 		return path;
 
-	String8 result = path;
+	string8 result = path;
 	for (int32_t index = path.length - 1; index >= 0; --index) {
-		if (str8__ispathdelim(path.text[index])) {
+		if (str8__ispathdelim(path.bytes[index])) {
 			result.length = index;
 			break;
 		}
@@ -269,14 +272,14 @@ String8 str8_directory(String8 path) {
 	return result;
 }
 
-double str8_to_f64(String8 s) {
-	return strtod((char *)s.text, 0);
+double str8_to_f64(string8 s) {
+	return strtod((char *)s.bytes, 0);
 }
 
-uint64_t str8_to_u64(String8 s) {
-	return strtoull((char *)s.text, 0, 10);
+uint64_t str8_to_u64(string8 s) {
+	return strtoull((char *)s.bytes, 0, 10);
 }
 
-int64_t str8_to_s64(String8 s) {
-	return strtol((char *)s.text, 0, 10);
+int64_t str8_to_s64(string8 s) {
+	return strtol((char *)s.bytes, 0, 10);
 }

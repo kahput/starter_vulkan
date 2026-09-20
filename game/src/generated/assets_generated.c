@@ -2,10 +2,10 @@
 
 ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
     [RES_SHADER_SHADOW] = {
-      .name = scomp("Shadow"),
+      .name = comp8("Shadow"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Shadow.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Shadow.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Shadow.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Shadow.spv"),
       },
       .pipelines = {
           [PIPELINE_SHADOW_DEFAULT] = {
@@ -25,10 +25,10 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_SPATIAL] = {
-      .name = scomp("Spatial"),
+      .name = comp8("Spatial"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Spatial.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Spatial.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Spatial.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Spatial.spv"),
       },
       .pipelines = {
           [PIPELINE_SPATIAL_DEFAULT] = {
@@ -61,10 +61,10 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 2,
     },
     [RES_SHADER_TRANSPARENT] = {
-      .name = scomp("Transparent"),
+      .name = comp8("Transparent"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Transparent.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Transparent.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Transparent.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Transparent.spv"),
       },
       .pipelines = {
           [PIPELINE_TRANSPARENT_DEFAULT] = {
@@ -84,10 +84,10 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_GRASS] = {
-      .name = scomp("Grass"),
+      .name = comp8("Grass"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Grass.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Grass.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Grass.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Grass.spv"),
       },
       .pipelines = {
           [PIPELINE_GRASS_DEFAULT] = {
@@ -107,10 +107,10 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_SKYBOX] = {
-      .name = scomp("Skybox"),
+      .name = comp8("Skybox"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Skybox.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Skybox.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Skybox.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Skybox.spv"),
       },
       .pipelines = {
           [PIPELINE_SKYBOX_DEFAULT] = {
@@ -130,10 +130,10 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_LINE3D] = {
-      .name = scomp("Line3D"),
+      .name = comp8("Line3D"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Line3D.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Line3D.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Line3D.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Line3D.spv"),
       },
       .pipelines = {
           [PIPELINE_LINE3D_DEFAULT] = {
@@ -153,22 +153,22 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_TESTCOMPUTE] = {
-      .name = scomp("TestCompute"),
+      .name = comp8("TestCompute"),
       .filepaths = {
-          [SHADER_STAGE_COMPUTE] = scomp("./assets/shaders/generated/c_TestCompute.spv"),
+          [SHADER_STAGE_COMPUTE] = comp8("./assets/shaders/generated/c_TestCompute.spv"),
       },
     },
     [RES_SHADER_SKINNING] = {
-      .name = scomp("Skinning"),
+      .name = comp8("Skinning"),
       .filepaths = {
-          [SHADER_STAGE_COMPUTE] = scomp("./assets/shaders/generated/c_Skinning.spv"),
+          [SHADER_STAGE_COMPUTE] = comp8("./assets/shaders/generated/c_Skinning.spv"),
       },
     },
     [RES_SHADER_COMPOSITE] = {
-      .name = scomp("Composite"),
+      .name = comp8("Composite"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Composite.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Composite.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Composite.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Composite.spv"),
       },
       .pipelines = {
           [PIPELINE_COMPOSITE_DEFAULT] = {
@@ -188,10 +188,10 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_QUAD2D] = {
-      .name = scomp("Quad2D"),
+      .name = comp8("Quad2D"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = scomp("./assets/shaders/generated/v_Quad2D.spv"),
-          [SHADER_STAGE_FRAGMENT] = scomp("./assets/shaders/generated/f_Quad2D.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Quad2D.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("./assets/shaders/generated/f_Quad2D.spv"),
       },
       .pipelines = {
           [PIPELINE_QUAD2D_DEFAULT] = {

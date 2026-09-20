@@ -4,41 +4,39 @@
 #include "core/arena.h"
 
 typedef struct {
-	uint8_t *text;
+	uint8_t *bytes;
 	uint64_t length;
-} String8;
+} string8;
 
-#define s(s) slit(s)
-#define sarg(s) s.length, s.text
-#define slit(s) (String8){ .text = (uint8_t *)s, .length = sizeof(s) - 1 }
-#define scomp(s) { .text = (uint8_t *)s, .length = sizeof(s) - 1 }
-#define sspread(s) (int32_t)s.length, (char *)s.text
-#define shash(s) hash64((s), sizeof((s)) - 1)
+#define s(s) lit8(s)
+#define lit8(s) (string8){ .bytes = (uint8_t *)s, .length = sizeof(s) - 1 }
+#define comp8(s) { .bytes = (uint8_t *)s, .length = sizeof(s) - 1 }
+#define arg8(s) (int)s.length, (char *)s.bytes
 
-String8 str8_wrap(const char *cstring);
-INLINE String8 str8_from_ends(const char *start, const char *end) {
-	if (end <= start) return (String8){ 0 };
-	return (String8){ .text = (uint8_t *)start, .length = end - start };
-}
+INLINE string8 str8(void *bytes, uint64_t len) { return (string8){ .bytes = bytes, .length = len }; }
+INLINE string8 str8z(const char *cstring) { return (string8){ .bytes = (uint8_t *)cstring, .length = strlen(cstring) }; }
+INLINE string8 str8_range(void *start, void *end) { return (string8){ .bytes = (uint8_t *)start, .length = (uint8_t *)end - (uint8_t *)start }; }
 
-bool str8_equals(String8 a, String8 b);
-bool str8_contains(String8 haystack, String8 needle);
+bool eq8(string8 a, string8 b);
+bool has8(string8 haystack, string8 needle);
 
-String8 str8_concat(Arena *arena, String8 a, String8 b);
-String8 str8_indent(Arena *arena, String8 indent, uint32_t depth);
-String8 str8_upper(Arena *arena, String8 s);
-String8 str8_dedent(Arena *arena, String8 s);
+string8 concat8(Arena *arena, string8 a, string8 b);
+string8 indent8(Arena *arena, string8 indent, uint32_t depth);
+string8 dedent8(Arena *arena, string8 s);
 
-String8 str8_copy(Arena *arena, String8 src);
+string8 upper8(Arena *arena, string8 s);
+string8 lower8(Arena *arena, string8 s);
+string8 copy8(Arena *arena, string8 src);
 
-String8 str8_push_format_list(Arena *arena, String8 format, va_list list);
-String8 str8_pushf(Arena *arena, String8 format, ...);
+string8 fmtv8(Arena *arena, const char *fmt, va_list list);
+string8 fmt8(Arena *arena, const char *fmt, ...);
 
-String8 str8_filename(String8 path);
-String8 str8_fileext(String8 file);
-String8 str8_filepath_join(Arena *arena, String8 head, String8 tail);
-String8 str8_directory(String8 path);
+string8 filename8(string8 path);
+string8 ext8(string8 file);
+string8 pathjoin8(Arena *arena, string8 head, string8 tail);
+string8 dir8(string8 path);
 
-double str8_to_f64(String8 s);
-uint64_t str8_to_u64(String8 s);
-int64_t str8_to_s64(String8 s);
+INLINE uint64_t hash8(string8 s) { return hash64(s.bytes, s.length); }
+double str8_to_f64(string8 s);
+uint64_t str8_to_u64(string8 s);
+int64_t str8_to_s64(string8 s);

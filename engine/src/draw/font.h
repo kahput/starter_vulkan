@@ -29,12 +29,12 @@ typedef enum {
 } FONT_BakeSize;
 extern uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX];
 
-Font load_font(Arena *arena, String8 path, uint32_t font_size);
+Font load_font(Arena *arena, string8 path, uint32_t font_size);
 
-float2 measure_text(Font *font, String8 text);
-static inline float text_height(Font *font, String8 text) {
+float2 measure_text(Font *font, string8 text);
+static inline float text_height(Font *font, string8 text) {
 	return measure_text(font, text).y;
 }
-static inline float text_width(Font *font, String8 text) {
+static inline float text_width(Font *font, string8 text) {
 	return measure_text(font, text).x;
 }

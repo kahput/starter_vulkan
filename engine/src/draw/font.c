@@ -4,16 +4,16 @@
 
 uint32_t font_bake_size_to_value[FONT_BAKE_SIZE_MAX] = { 8, 12, 16, 24, 32, 64 };
 
-Font load_font(Arena *arena, String8 path, uint32_t font_size) {
+Font load_font(Arena *arena, string8 path, uint32_t font_size) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Font result = { 0 };
 
-	String8 file_content = os_file_read(scratch.arena, path);
+	string8 file_content = os_file_read(scratch.arena, path);
 	stbtt_fontinfo font_info = { 0 };
 
 	bool ok = arena && file_content.length;
 	if (ok) {
-		ok = stbtt_InitFont(&font_info, file_content.text, 0);
+		ok = stbtt_InitFont(&font_info, file_content.bytes, 0);
 
 		if (ok == false)
 			LOG_WARN("%s - failed to process font data", __func__);
@@ -98,11 +98,11 @@ Font load_font(Arena *arena, String8 path, uint32_t font_size) {
 	return result;
 }
 
-float2 measure_text(Font *font, String8 text) {
+float2 measure_text(Font *font, string8 text) {
 	float2 result = { 0.0f, 0.0f };
 	float x_offset = 0.0f;
 	for (uint32_t index = 0; index < text.length; ++index) {
-		uint8_t c = text.text[index];
+		uint8_t c = text.bytes[index];
 		if (c == '\n') {
 			result.x = maxf(result.x, x_offset);
 			x_offset = 0.0f;

@@ -24,7 +24,7 @@ RES_Cache res_init(Arena *arena, GFX_Device *device) {
 	result.texture_fallback = (RES_Texture2D){
 		.handle = gfx_image_make(device, 1, 1,
 			(ImageOptions){
-			  .debug_name = (char *)str8_pushf(arena, s("default:white")).text,
+			  .debug_name = (char *)fmt8(arena, "default:white").bytes,
 			  .format = PIXEL_FORMAT_RGBA8_SRGB,
 			  .pixels = &(uint32_t){ 0xFFFFFFFF },
 			}),
@@ -40,7 +40,7 @@ RES_Image2D *res_image(RES_Cache *cache, RES_ImageID id) {
 	RES_Image2D *result = &cache->image_cache[id];
 	RES_ImageMetadata *meta = &res_image_metadata[id];
 
-	String8 file_content = { 0 };
+	string8 file_content = { 0 };
 	uint8_t *pixels = 0;
 
 	bool ok = result->loaded == false;
@@ -51,16 +51,16 @@ RES_Image2D *res_image(RES_Cache *cache, RES_ImageID id) {
 
 		ok = file_content.length != 0;
 		if (ok == false)
-			LOG_WARN("[%s] failed to load", meta->filepath.text);
+			LOG_WARN("[%s] failed to load", meta->filepath.bytes);
 	}
 
 	if (ok) {
 		result->channels = 4;
-		pixels = stbi_load_from_memory(file_content.text, file_content.length, (int32_t *)&result->width, (int32_t *)&result->height, 0, 4);
+		pixels = stbi_load_from_memory(file_content.bytes, file_content.length, (int32_t *)&result->width, (int32_t *)&result->height, 0, 4);
 
 		ok = pixels != 0;
 		if (ok == false)
-			LOG_WARN("[%s] failed to decode image payload", meta->filepath.text);
+			LOG_WARN("[%s] failed to decode image payload", meta->filepath.bytes);
 	}
 
 	if (ok) {
@@ -80,7 +80,7 @@ RES_Texture2D *res_texture(RES_Cache *cache, RES_ImageID id) {
 
 		tex->handle = gfx_image_make(cache->device, img->width, img->height,
 			(ImageOptions){
-			  .debug_name = (char *)str8_pushf(cache->arena, meta->name).text,
+			  .debug_name = (char *)fmt8(cache->arena, (char*)meta->name.bytes).bytes,
 			  .format = PIXEL_FORMAT_RGBA8_UNORM,
 			  .pixels = img->pixels,
 			});

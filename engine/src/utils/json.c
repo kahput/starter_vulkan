@@ -25,10 +25,10 @@ TokenType json_keyword_to_token_type[keyword(JSON_KEYWORD_MAX)] = {
 	[keyword(JSON_KEYWORD_TRUE)] = TOKEN_KEYWORD_2
 };
 
-String8 json_keyword_to_string[keyword(JSON_KEYWORD_MAX)] = {
-	[keyword(JSON_KEYWORD_NULL)] = scomp("null"),
-	[keyword(JSON_KEYWORD_FALSE)] = scomp("false"),
-	[keyword(JSON_KEYWORD_TRUE)] = scomp("true")
+string8 json_keyword_to_string[keyword(JSON_KEYWORD_MAX)] = {
+	[keyword(JSON_KEYWORD_NULL)] = comp8("null"),
+	[keyword(JSON_KEYWORD_FALSE)] = comp8("false"),
+	[keyword(JSON_KEYWORD_TRUE)] = comp8("true")
 };
 #undef keyword
 
@@ -140,13 +140,13 @@ JSON_Node *json_append_item(Arena *arena, JSON_Node *parent) {
 	return result;
 }
 
-JSON_Node *json_append_field(Arena *arena, JSON_Node *parent, String8 key) {
+JSON_Node *json_append_field(Arena *arena, JSON_Node *parent, string8 key) {
 	JSON_Node *result = &JSON_NIL;
 
 	bool ok = arena && json_valid(parent) && parent->value.type == JSON_TYPE_OBJECT;
 	if (ok) {
 		result = json_append(arena, &parent->value.as.children);
-		result->key = str8_copy(arena, key);
+		result->key = copy8(arena, key);
 	}
 
 	return result;
@@ -182,7 +182,7 @@ JSON_Value json_parse_object(Arena *arena, Lexer *lexer) {
 				lexer_expect(lexer, TOKEN_COLON);
 
 				JSON_Node *node = json_append(arena, &result.as.children);
-				node->key = str8_copy(arena, key.lexeme);
+				node->key = copy8(arena, key.lexeme);
 				node->value = json_parse_value(arena, lexer);
 
 			} while (lexer_match(lexer, TOKEN_COMMA, 0));
@@ -193,7 +193,7 @@ JSON_Value json_parse_object(Arena *arena, Lexer *lexer) {
 	return result;
 }
 
-JSON_Node *json_parse_string(Arena *arena, String8 source) {
+JSON_Node *json_parse_string(Arena *arena, string8 source) {
 	JSON_Node *result = &JSON_NIL;
 
 	bool ok = arena;
@@ -206,7 +206,7 @@ JSON_Node *json_parse_string(Arena *arena, String8 source) {
 	return result;
 }
 
-JSON_Node *json_parse_file(Arena *arena, String8 path) {
+JSON_Node *json_parse_file(Arena *arena, string8 path) {
 	JSON_Node *result = &JSON_NIL;
 
 	bool ok = arena;
@@ -219,7 +219,7 @@ JSON_Node *json_parse_file(Arena *arena, String8 path) {
 	return result;
 }
 
-JSON_Node *json_find(JSON_Node *node, String8 key) {
+JSON_Node *json_find(JSON_Node *node, string8 key) {
 	JSON_Node *result = &JSON_NIL;
 
 	bool ok = json_valid(node) && node->value.type == JSON_TYPE_OBJECT && node->value.as.children;
@@ -231,7 +231,7 @@ JSON_Node *json_find(JSON_Node *node, String8 key) {
 			JSON_Node *page = container->pages[slot.page_index];
 			if (page) {
 				JSON_Node *child = &page[slot.page_local_index];
-				if (str8_equals(child->key, key)) {
+				if (eq8(child->key, key)) {
 					result = child;
 					break;
 				}
@@ -242,7 +242,7 @@ JSON_Node *json_find(JSON_Node *node, String8 key) {
 	return result;
 }
 
-JSON_Node *json_find_path(JSON_Node *node, String8 path) {
+JSON_Node *json_find_path(JSON_Node *node, string8 path) {
 	JSON_Node *result = &JSON_NIL;
 
 	bool ok = json_is_container(node) && node->value.as.children;
@@ -294,22 +294,22 @@ void push_text(Arena *arena, const char *fmt, ...) {
 	if (fmt && fmt[0] != '\0') {
 		va_list args;
 		va_start(args, fmt);
-		String8 result = str8_push_format_list(arena, str8_wrap(fmt), args);
+		string8 result = fmtv8(arena, fmt, args);
 		arena->offset -= 1; // remove null-terminator
 		va_end(args);
 	}
 }
 
-void json_write_children(Arena *arena, JSON_Container *children, String8 indent, bool keyed, uint32_t *depth) {
+void json_write_children(Arena *arena, JSON_Container *children, string8 indent, bool keyed, uint32_t *depth) {
 	bool ok = children;
 	if (ok) {
 		for (uint32_t index = 0; index < children->count; ++index) {
 			JSON_ContainerSlot slot = json__locate(index);
 			JSON_Node *child = &children->pages[slot.page_index][slot.page_local_index];
 
-			str8_indent(arena, indent, *depth);
+			indent8(arena, indent, *depth);
 			if (keyed)
-				push_text(arena, "\"%.*s\": ", sspread(child->key));
+				push_text(arena, "\"%.*s\": ", arg8(child->key));
 
 			switch (child->value.type) {
 				case JSON_TYPE_NULL:
@@ -319,7 +319,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 					push_text(arena, "%s", child->value.as.boolean ? "true" : "false");
 					break;
 				case JSON_TYPE_STRING:
-					push_text(arena, "\"%.*s\"", sspread(child->value.as.string));
+					push_text(arena, "\"%.*s\"", arg8(child->value.as.string));
 					break;
 				case JSON_TYPE_NUMBER:
 					push_text(arena, "%g", child->value.as.number);
@@ -331,7 +331,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 						push_text(arena, "\n");
 					json_write_children(arena, child->value.as.children, indent, true, depth);
 					*depth -= 1;
-					str8_indent(arena, indent, *depth);
+					indent8(arena, indent, *depth);
 					push_text(arena, "}");
 				} break;
 				case JSON_TYPE_ARRAY: {
@@ -341,7 +341,7 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 						push_text(arena, "\n");
 					json_write_children(arena, child->value.as.children, indent, false, depth);
 					*depth -= 1;
-					str8_indent(arena, indent, *depth);
+					indent8(arena, indent, *depth);
 					push_text(arena, "]");
 				} break;
 
@@ -358,14 +358,14 @@ void json_write_children(Arena *arena, JSON_Container *children, String8 indent,
 	}
 }
 
-String8 json_stringify(Arena *arena, JSON_Node *root, String8 indent) {
-	String8 result = { 0 };
+string8 json_stringify(Arena *arena, JSON_Node *root, string8 indent) {
+	string8 result = { 0 };
 
 	bool ok = arena && json_valid(root) && root->value.as.children;
 	if (ok) {
 		uint32_t depth = 1;
 
-		result.text = (uint8_t *)arena->base + arena->offset;
+		result.bytes = (uint8_t *)arena->base + arena->offset;
 
 		bool keyed = root->value.type == JSON_TYPE_OBJECT;
 
@@ -375,10 +375,10 @@ String8 json_stringify(Arena *arena, JSON_Node *root, String8 indent) {
 		json_write_children(arena, root->value.as.children, indent, keyed, &depth);
 		push_text(arena, "%s", keyed ? "}" : "]");
 
-		result.length = ((uint8_t *)arena->base + arena->offset) - result.text;
+		result.length = ((uint8_t *)arena->base + arena->offset) - result.bytes;
 
 		arena_push_count(arena, uint8_t, 1);
-		result.text[result.length] = '\0';
+		result.bytes[result.length] = '\0';
 	}
 
 	return result;

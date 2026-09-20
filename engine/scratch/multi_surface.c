@@ -8,7 +8,7 @@
 #include "gfx/gfx_types.h"
 
 int main(void) {
-    logger_set_level(LOG_LEVEL_DEBUG);
+	logger_set_level(LOG_LEVEL_DEBUG);
 	Arena arena[] = { arena_make(GiB(1)) };
 
 	os_display_startup();
@@ -19,13 +19,12 @@ int main(void) {
 	OS_Surface *surfaces[SURFACE_COUNT] = { 0 };
 	GFX_Swapchain *swapchains[SURFACE_COUNT] = { 0 };
 	for (uint32_t index = 0; index < SURFACE_COUNT; ++index) {
-		String8 name = str8_pushf(arena, s("surface%d"), index);
+		string8 name = fmt8(arena, "surface%d", index);
 		surfaces[index] = os_surface_open(1280, 720, name, OS_SURFACE_FLAG_RESIZEABLE);
-		swapchains[index] = gfx_swapchain_make(device, surfaces[index], (char *)name.text);
+		swapchains[index] = gfx_swapchain_make(device, surfaces[index], (char *)name.bytes);
 	}
 
 	for (bool is_open = true; is_open;) {
-
 		uint2 resize[SURFACE_COUNT] = { 0 };
 		for (OS_Event ev; os_event_poll(&ev);) {
 			if (ev.type == OS_EVENT_TYPE_SURFACE_CLOSE)

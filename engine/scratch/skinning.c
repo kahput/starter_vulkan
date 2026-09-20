@@ -45,15 +45,15 @@ typedef enum {
 	ICON_MAX,
 } IconID;
 
-String8 iconid_to_string[ICON_MAX] = {
+string8 iconid_to_string[ICON_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(ICON, PLAY),
 	ENUM_STRING_TABLE_ENTRY(ICON, PAUSE),
 	ENUM_STRING_TABLE_ENTRY(ICON, STOP),
 };
-String8 iconid_to_filepath[ICON_MAX] = {
-	[ICON_PLAY] = scomp("assets/icons/PNG/White/1x/forward.png"),
-	[ICON_PAUSE] = scomp("assets/icons/PNG/White/1x/pause.png"),
-	[ICON_STOP] = scomp("assets/icons/PNG/White/1x/stop.png")
+string8 iconid_to_filepath[ICON_MAX] = {
+	[ICON_PLAY] = comp8("assets/icons/PNG/White/1x/forward.png"),
+	[ICON_PAUSE] = comp8("assets/icons/PNG/White/1x/pause.png"),
+	[ICON_STOP] = comp8("assets/icons/PNG/White/1x/stop.png")
 };
 
 typedef enum {
@@ -66,12 +66,12 @@ typedef enum {
 	TEXTURE_SLOT_COUNT,
 } TextureSlot;
 
-String8 texture_slot_to_string[TEXTURE_SLOT_COUNT] = {
-	[TEXTURE_SLOT_ALBEDO] = scomp("albedo"),
-	[TEXTURE_SLOT_METAL_ROUGHNESS] = scomp("metal_roughness"),
-	[TEXTURE_SLOT_NORMAL] = scomp("normal"),
-	[TEXTURE_SLOT_OCCLUSION] = scomp("occlusion"),
-	[TEXTURE_SLOT_EMISSIVE] = scomp("emissive"),
+string8 texture_slot_to_string[TEXTURE_SLOT_COUNT] = {
+	[TEXTURE_SLOT_ALBEDO] = comp8("albedo"),
+	[TEXTURE_SLOT_METAL_ROUGHNESS] = comp8("metal_roughness"),
+	[TEXTURE_SLOT_NORMAL] = comp8("normal"),
+	[TEXTURE_SLOT_OCCLUSION] = comp8("occlusion"),
+	[TEXTURE_SLOT_EMISSIVE] = comp8("emissive"),
 };
 
 typedef struct {
@@ -134,7 +134,7 @@ typedef enum {
 	MESH_MAX,
 } MeshID;
 
-static const String8 meshid_to_string[MESH_MAX] = {
+static const string8 meshid_to_string[MESH_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(MESH, HERO_MALE),
 	ENUM_STRING_TABLE_ENTRY(MESH, GDBOT),
 	ENUM_STRING_TABLE_ENTRY(MESH, MAGE),
@@ -150,31 +150,31 @@ static const String8 meshid_to_string[MESH_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(MESH, GIZMOS_ARROW),
 };
 
-static const String8 meshid_to_display_string[MESH_MAX] = {
-	[MESH_HERO_MALE] = scomp("hero male"),
-	[MESH_GDBOT] = scomp("gdbot"),
-	[MESH_MAGE] = scomp("mage"),
-	[MESH_BARREL] = scomp("barrel"),
-	[MESH_ROOM] = scomp("room"),
-	[MESH_TEST_LEVEL] = scomp("test level"),
-	[MESH_ROOM_LARGE] = scomp("room large"),
-	[MESH_TERRAIN_FLAT] = scomp("terrain flat"),
-	[MESH_TERRAIN_HEIGHTMAP] = scomp("terrain heightmap"),
-	[MESH_GRASS_BILLBOARD] = scomp("grass billboard"),
-	[MESH_CYLINDER] = scomp("cylinder"),
-	[MESH_SPHERE] = scomp("sphere"),
-	[MESH_GIZMOS_ARROW] = scomp("arrow"),
+static const string8 meshid_to_display_string[MESH_MAX] = {
+	[MESH_HERO_MALE] = comp8("hero male"),
+	[MESH_GDBOT] = comp8("gdbot"),
+	[MESH_MAGE] = comp8("mage"),
+	[MESH_BARREL] = comp8("barrel"),
+	[MESH_ROOM] = comp8("room"),
+	[MESH_TEST_LEVEL] = comp8("test level"),
+	[MESH_ROOM_LARGE] = comp8("room large"),
+	[MESH_TERRAIN_FLAT] = comp8("terrain flat"),
+	[MESH_TERRAIN_HEIGHTMAP] = comp8("terrain heightmap"),
+	[MESH_GRASS_BILLBOARD] = comp8("grass billboard"),
+	[MESH_CYLINDER] = comp8("cylinder"),
+	[MESH_SPHERE] = comp8("sphere"),
+	[MESH_GIZMOS_ARROW] = comp8("arrow"),
 };
 
-String8 meshid_to_metadata[MESH_MAX] = {
-	[MESH_HERO_MALE] = scomp("assets/models/hero_male.glb"),
-	[MESH_GDBOT] = scomp("assets/models/gdbot.glb"),
-	[MESH_MAGE] = scomp("assets/models/mage.glb"),
-	[MESH_BARREL] = scomp("assets/models/barrel.glb"),
-	[MESH_ROOM] = scomp("assets/models/room.glb"),
-	[MESH_ROOM_LARGE] = scomp("assets/models/room-large.glb"),
-	[MESH_TEST_LEVEL] = scomp("assets/models/test_level_collider.glb"),
-	[MESH_GRASS_BILLBOARD] = scomp("assets/models/grass.glb"),
+string8 meshid_to_metadata[MESH_MAX] = {
+	[MESH_HERO_MALE] = comp8("assets/models/hero_male.glb"),
+	[MESH_GDBOT] = comp8("assets/models/gdbot.glb"),
+	[MESH_MAGE] = comp8("assets/models/mage.glb"),
+	[MESH_BARREL] = comp8("assets/models/barrel.glb"),
+	[MESH_ROOM] = comp8("assets/models/room.glb"),
+	[MESH_ROOM_LARGE] = comp8("assets/models/room-large.glb"),
+	[MESH_TEST_LEVEL] = comp8("assets/models/test_level_collider.glb"),
+	[MESH_GRASS_BILLBOARD] = comp8("assets/models/grass.glb"),
 };
 
 typedef enum {
@@ -184,14 +184,14 @@ typedef enum {
 	FONT_MAX,
 } FontID;
 
-String8 font_to_string[FONT_MAX] = {
+string8 font_to_string[FONT_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(FONT, PIXELOID_SANS),
 	ENUM_STRING_TABLE_ENTRY(FONT, IBM_PLEX_MONO),
 };
 
-String8 font_to_filepath[FONT_MAX] = {
-	[FONT_PIXELOID_SANS] = scomp("assets/fonts/PixeloidSans.ttf"),
-	[FONT_IBM_PLEX_MONO] = scomp("/usr/share/fonts/TTF/IBMPlexMono-Regular.ttf"),
+string8 font_to_filepath[FONT_MAX] = {
+	[FONT_PIXELOID_SANS] = comp8("assets/fonts/PixeloidSans.ttf"),
+	[FONT_IBM_PLEX_MONO] = comp8("/usr/share/fonts/TTF/IBMPlexMono-Regular.ttf"),
 };
 
 typedef enum {
@@ -210,7 +210,7 @@ typedef enum {
 	ENTITY_FEATURE_MAX,
 } EntityFeature;
 
-static const String8 entity_feature_to_string[ENTITY_FEATURE_MAX] = {
+static const string8 entity_feature_to_string[ENTITY_FEATURE_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, DRAW_MESH),
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, CAST_SHADOW),
 	ENUM_STRING_TABLE_ENTRY(ENTITY_FEATURE, TRANSPARENT),
@@ -256,9 +256,9 @@ typedef struct {
 } World;
 
 // :functions
-Image2D load_image(Arena *arena, String8 path);
-Image2D load_cubemap(Arena *arena, String8 paths[], uint32_t count);
-Mesh load_gltf(Arena *arena, String8 path);
+Image2D load_image(Arena *arena, string8 path);
+Image2D load_cubemap(Arena *arena, string8 paths[], uint32_t count);
+Mesh load_gltf(Arena *arena, string8 path);
 
 Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segments, uint32_t rings);
 INLINE Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, uint32_t rings) { return mesh_ellipsoid(arena, origin, splat3(radius), segments, rings); }
@@ -270,11 +270,11 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 
 Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count);
 
-AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count);
+AnimationClip *load_gltf_animations(Arena *arena, string8 path, uint32_t *count);
 
-uint32_t find_animation(AnimationClip *clips, uint32_t count, String8 target) {
+uint32_t find_animation(AnimationClip *clips, uint32_t count, string8 target) {
 	for (uint32_t anim_index = 0; anim_index < count; ++anim_index)
-		if (str8_equals(str8_wrap(clips[anim_index].name), target))
+		if (eq8(str8z(clips[anim_index].name), target))
 			return anim_index;
 
 	return 0;
@@ -385,14 +385,14 @@ JSON_Node *world_to_json(Arena *arena, World *world) {
 			JSON_Node *entity_node = json_append_item(arena, arr);
 			entity_node->value = json_object();
 
-			String8 feature_flags = { 0 };
+			string8 feature_flags = { 0 };
 			for (EntityFeature feature = 0; feature < ENTITY_FEATURE_MAX; ++feature) {
 				if (entity_has(entity, feature)) {
-					if (feature_flags.length != 0 && feature_flags.text[feature_flags.length - 1] != ' ') {
-						feature_flags = str8_concat(scratch.arena, feature_flags, s(" | "));
+					if (feature_flags.length != 0 && feature_flags.bytes[feature_flags.length - 1] != ' ') {
+						feature_flags = concat8(scratch.arena, feature_flags, s(" | "));
 					}
 
-					feature_flags = str8_concat(scratch.arena, feature_flags, entity_feature_to_string[feature]);
+					feature_flags = concat8(scratch.arena, feature_flags, entity_feature_to_string[feature]);
 				}
 			}
 			json_append_field(arena, entity_node, s("features"))->value = json_string(arena, feature_flags);
@@ -474,8 +474,8 @@ bool json_to_world(JSON_Node *root, World *world) {
 			}
 
 			{ // features
-				String8 features = json_str_or(json_find(entity_node, s("features")), s(""));
-				Lexer lexer = lexer_make(features, (String8 *)entity_feature_to_string, countof(entity_feature_to_string));
+				string8 features = json_str_or(json_find(entity_node, s("features")), s(""));
+				Lexer lexer = lexer_make(features, (string8 *)entity_feature_to_string, countof(entity_feature_to_string));
 				Token t = { 0 };
 				while ((t = lexer_advance(&lexer)).type != TOKEN_EOF) {
 					if (t.type >= TOKEN_KEYWORD_0 && t.type < TOKEN_KEYWORD_0 + ENTITY_FEATURE_MAX)
@@ -483,10 +483,10 @@ bool json_to_world(JSON_Node *root, World *world) {
 				}
 			}
 
-			String8 meshid = json_str_or(json_find(entity_node, s("meshid")), s(""));
+			string8 meshid = json_str_or(json_find(entity_node, s("meshid")), s(""));
 			if (meshid.length)
 				for (uint32_t index = 0; index < MESH_MAX; ++index) {
-					if (str8_equals(meshid, meshid_to_string[index])) {
+					if (eq8(meshid, meshid_to_string[index])) {
 						entity->meshid = index;
 						break;
 					}
@@ -494,11 +494,11 @@ bool json_to_world(JSON_Node *root, World *world) {
 
 			JSON_Node *shape = json_find(entity_node, s("shape"));
 			if (json_valid(shape)) {
-				String8 kind = json_str_or(json_find(shape, s("kind")), s(""));
+				string8 kind = json_str_or(json_find(shape, s("kind")), s(""));
 
 				if (kind.length)
 					for (uint32_t index = 0; index < SHAPE_KIND_MAX; ++index) {
-						if (str8_equals(kind, shape_kind_to_string[index])) {
+						if (eq8(kind, shape_kind_to_string[index])) {
 							entity->shape.kind = index;
 							break;
 						}
@@ -723,7 +723,7 @@ int main(void) {
 
 	Image2D skybox = load_cubemap(permanent,
 		arr(
-			String8,
+			string8,
 			s("assets/images/skybox_mc/dayRight.png"),
 			s("assets/images/skybox_mc/dayLeft.png"),
 			s("assets/images/skybox_mc/dayTop.png"),
@@ -759,7 +759,7 @@ int main(void) {
 				Image2D *atlas = &font_size->atlas;
 				atlas->handle = gfx_image_make(device, atlas->width, atlas->height,
 					(ImageOptions){
-					  .debug_name = (char *)str8_pushf(scratch.arena, s("%.*s:%d"), sspread(font_to_string[id]), font_bake_size_to_value[bake_size_index]).text,
+					  .debug_name = (char *)fmt8(scratch.arena, "%.*s:%d", arg8(font_to_string[id]), font_bake_size_to_value[bake_size_index]).bytes,
 					  .format = PIXEL_FORMAT_RGBA8_UNORM,
 					  .pixels = atlas->pixels,
 					});
@@ -778,7 +778,7 @@ int main(void) {
 			Image2D *icon = &icons[index];
 			icon->handle = gfx_image_make(device, icon->width, icon->height,
 				(ImageOptions){
-				  .debug_name = (char *)iconid_to_string[index].text,
+				  .debug_name = (char *)iconid_to_string[index].bytes,
 				  .format = PIXEL_FORMAT_RGBA8_UNORM,
 				  .pixels = icon->pixels,
 				});
@@ -848,17 +848,17 @@ int main(void) {
 		bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length > 0;
 		if (is_compute) {
 			shader_ts[id] = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
-			String8 bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-			shaders[id] = gfx_compute_make(device, bytecode, (char *)metadata->name.text);
+			string8 bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+			shaders[id] = gfx_compute_make(device, bytecode, (char *)metadata->name.bytes);
 		} else {
-			String8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
-			String8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+			string8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
+			string8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 
 			OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 			OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 			shader_ts[id] = MAX(fs_ts, vs_ts);
-			shaders[id] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.text);
+			shaders[id] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
 			for (uint32_t index = 0; index < metadata->pipeline_count; ++index)
 				gfx_pipeline_register(device, shaders[id], metadata->pipelines[index]);
 		}
@@ -951,28 +951,28 @@ int main(void) {
 					uint32_t mip_level = 0;
 
 					if (img->pixels) {
-						String8 head = str8_filename(meshid_to_metadata[mesh_index]);
-						String8 tail = texture_slot_to_string[texture_slot];
+						string8 head = filename8(meshid_to_metadata[mesh_index]);
+						string8 tail = texture_slot_to_string[texture_slot];
 
 						head = head.length ? head : s("gen");
 
-						String8 name = { .length = head.length + tail.length + 1 };
-						name.text = arena_push_count(permanent, uint8_t, name.length + 1);
+						string8 name = { .length = head.length + tail.length + 1 };
+						name.bytes = arena_push_count(permanent, uint8_t, name.length + 1);
 
 						uint32_t cursor = 0;
 
-						memory_copy(name.text + cursor, head.text, head.length);
+						memory_copy(name.bytes + cursor, head.bytes, head.length);
 						cursor += head.length;
 
-						name.text[cursor] = ':';
+						name.bytes[cursor] = ':';
 						cursor += 1;
 
-						memory_copy(name.text + cursor, tail.text, tail.length);
+						memory_copy(name.bytes + cursor, tail.bytes, tail.length);
 						cursor += tail.length;
 
 						img->handle = gfx_image_make(device, img->width, img->height,
 							(ImageOptions){
-							  .debug_name = (char *)name.text,
+							  .debug_name = (char *)name.bytes,
 							  .pixels = img->pixels,
 							  .format = img->format,
 							  .max_mip_level = mip_level,
@@ -1331,7 +1331,7 @@ int main(void) {
 
 					static bool dropdown_active = false;
 					IMGUI_Widget *drop_down = 0;
-					String8 light_setting_name[] = {
+					string8 light_setting_name[] = {
 						s("Day"),
 						s("Dawn"),
 						s("Night"),
@@ -1676,7 +1676,7 @@ int main(void) {
 				static uint32_t heart_count = 8;
 				// :ui
 				if (os_cursor_captured(main_render)) {
-					IMGUI_Widget *heal_hurt_container = imgui_widget_opt(shash("heal_hurt_container"),
+					IMGUI_Widget *heal_hurt_container = imgui_widget_opt(hash8(s("heal_hurt_container")),
 						(IMGUI_Style){
 						  .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIT },
 						  .align = { IMGUI_ALIGN_RIGHT, IMGUI_ALIGN_CENTER },
@@ -2024,11 +2024,11 @@ int main(void) {
 									});
 
 								Font *font = &fonts[FONT_IBM_PLEX_MONO][FONT_BAKE_SIZE_16];
-								String8 text = s("[F] Interact");
+								string8 text = s("[F] Interact");
 
 								float2 text_half_size = scale2(measure_text(font, text), 0.5f);
 								float2 center = sub2(screen, text_half_size);
-								draw2d_textf(font, center, BLACK, text);
+								draw2d_textf(font, center, BLACK, (char *)text.bytes);
 							}
 
 							if (dist_sq < closest) {
@@ -2039,7 +2039,7 @@ int main(void) {
 					}
 
 					if (target && input_key_pressed(KEY_CODE_F))
-						LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), str8_filename(meshid_to_metadata[target->meshid]).text);
+						LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), filename8(meshid_to_metadata[target->meshid]).bytes);
 				}
 			} break;
 			default:
@@ -2056,7 +2056,7 @@ int main(void) {
 
 				if (widget->settings.text.length) {
 					Font *font = widget->settings.font ? widget->settings.font : imgui.default_font;
-					draw2d_textf(font, load2(widget->offset), widget->settings.fg, widget->settings.text);
+					draw2d_textf(font, load2(widget->offset), widget->settings.fg, (char *)widget->settings.text.bytes);
 				} else {
 					draw2d_quad(imgui_rect_live(widget),
 						(DRAW_QuadStyle){
@@ -2584,8 +2584,8 @@ int main(void) {
 					gfx_device_wait_idle(device);
 
 					gfx_shader_destroy(device, shaders[shaderid]);
-					String8 bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-					shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)metadata->name.text);
+					string8 bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
+					shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)metadata->name.bytes);
 
 					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);
@@ -2604,9 +2604,9 @@ int main(void) {
 					gfx_shader_destroy(device, shaders[shaderid]);
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
-					String8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
-					String8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-					shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.text);
+					string8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
+					string8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+					shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
 					for (uint32_t index = 0; index < metadata->pipeline_count; ++index)
 						gfx_pipeline_register(device, shaders[shaderid], metadata->pipelines[index]);
 
@@ -2625,7 +2625,7 @@ int main(void) {
 	return 0;
 }
 
-Image2D load_image(Arena *arena, String8 path) {
+Image2D load_image(Arena *arena, string8 path) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Image2D result = { .format = PIXEL_FORMAT_RGBA8_UNORM };
 
@@ -2634,12 +2634,12 @@ Image2D load_image(Arena *arena, String8 path) {
 	uint8_t *pixels = 0;
 	int32_t channels = 0;
 	if (ok) {
-		String8 file_content = os_file_read(scratch.arena, path);
-		pixels = stbi_load_from_memory(file_content.text, file_content.length, (int32_t *)&result.width, (int32_t *)&result.height, &channels, 4);
+		string8 file_content = os_file_read(scratch.arena, path);
+		pixels = stbi_load_from_memory(file_content.bytes, file_content.length, (int32_t *)&result.width, (int32_t *)&result.height, &channels, 4);
 
 		ok = pixels != 0;
 		if (ok == false) {
-			LOG_WARN("[%s] failed to load", path.text);
+			LOG_WARN("[%s] failed to load", path.bytes);
 			static uint8_t magenta[] = { 255, 0, 255, 255 };
 			result.width = result.height = 1;
 			result.pixels = magenta;
@@ -2654,15 +2654,15 @@ Image2D load_image(Arena *arena, String8 path) {
 	}
 
 	if (ok) {
-		String8 filename = str8_filename(path);
-		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.text, result.width, result.height, channels == 4 ? "RGBA8" : "RGB8");
+		string8 filename = filename8(path);
+		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.bytes, result.width, result.height, channels == 4 ? "RGBA8" : "RGB8");
 	}
 
 	arena_scratch_end(scratch);
 	return result;
 }
 
-Image2D load_cubemap(Arena *arena, String8 *paths, uint32_t count) {
+Image2D load_cubemap(Arena *arena, string8 *paths, uint32_t count) {
 	Image2D result = { 0 };
 
 	bool ok = arena && paths;
@@ -2684,7 +2684,7 @@ Image2D load_cubemap(Arena *arena, String8 *paths, uint32_t count) {
 	return result;
 }
 
-Image2D load_gltf_image(Arena *arena, String8 directory, cgltf_image *image) {
+Image2D load_gltf_image(Arena *arena, string8 directory, cgltf_image *image) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	Image2D result = { 0 };
 
@@ -2692,7 +2692,7 @@ Image2D load_gltf_image(Arena *arena, String8 directory, cgltf_image *image) {
 
 	if (ok) {
 		if (image->uri) {
-			String8 image_path = str8_filepath_join(scratch.arena, directory, str8_wrap(image->uri));
+			string8 image_path = pathjoin8(scratch.arena, directory, str8z(image->uri));
 			result = load_image(arena, image_path);
 		} else if (image->buffer_view) {
 			uint8_t *buffer_data = (uint8_t *)cgltf_buffer_view_data(image->buffer_view);
@@ -2706,23 +2706,23 @@ Image2D load_gltf_image(Arena *arena, String8 directory, cgltf_image *image) {
 	return result;
 }
 
-Mesh load_gltf(Arena *arena, String8 path) {
-	LOG_INFO("loading [%s] geometry.", path.text);
+Mesh load_gltf(Arena *arena, string8 path) {
+	LOG_INFO("loading [%s] geometry.", path.bytes);
 
 	Mesh result = { 0 };
 	cgltf_options options = { 0 };
 	cgltf_data *data = 0;
 
-	bool ok = cgltf_parse_file(&options, (char *)path.text, &data) == cgltf_result_success;
+	bool ok = cgltf_parse_file(&options, (char *)path.bytes, &data) == cgltf_result_success;
 	if (ok == false)
-		LOG_ERROR("%s - failed to open file", path.text);
+		LOG_ERROR("%s - failed to open file", path.bytes);
 
 	if (ok) {
-		ok &= cgltf_load_buffers(&options, data, (char *)path.text) == cgltf_result_success;
+		ok &= cgltf_load_buffers(&options, data, (char *)path.bytes) == cgltf_result_success;
 		ok &= cgltf_validate(data) == cgltf_result_success;
 	}
 
-	String8 directory = str8_directory(path);
+	string8 directory = dir8(path);
 
 	if (ok) { // load materials
 		result.material_count = data->materials_count + 1;
@@ -2942,7 +2942,7 @@ Mesh load_gltf(Arena *arena, String8 path) {
 				memory_copy(
 					result.skeleton.bones[joint_index].name,
 					joint->name,
-					MIN(str8_wrap(joint->name).length, sizeof_member(Bone, name)));
+					MIN(str8z(joint->name).length, sizeof_member(Bone, name)));
 
 				bool found = false;
 				for (uint32_t search_index = 0; search_index < skin->joints_count; ++search_index)
@@ -2961,19 +2961,19 @@ Mesh load_gltf(Arena *arena, String8 path) {
 	return result;
 }
 
-AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count) {
-	LOG_INFO("loading [%s] animations.", path.text);
+AnimationClip *load_gltf_animations(Arena *arena, string8 path, uint32_t *count) {
+	LOG_INFO("loading [%s] animations.", path.bytes);
 
 	AnimationClip *result = 0;
 	cgltf_options options = { 0 };
 	cgltf_data *data = 0;
 
-	bool ok = cgltf_parse_file(&options, (char *)path.text, &data) == cgltf_result_success;
+	bool ok = cgltf_parse_file(&options, (char *)path.bytes, &data) == cgltf_result_success;
 	if (ok == false)
-		LOG_ERROR("%s - failed to open file", path.text);
+		LOG_ERROR("%s - failed to open file", path.bytes);
 
 	if (ok) {
-		ok &= cgltf_load_buffers(&options, data, (char *)path.text) == cgltf_result_success;
+		ok &= cgltf_load_buffers(&options, data, (char *)path.bytes) == cgltf_result_success;
 		ok &= cgltf_validate(data) == cgltf_result_success;
 		ok &= data->animations_count > 0;
 	}
@@ -3004,7 +3004,7 @@ AnimationClip *load_gltf_animations(Arena *arena, String8 path, uint32_t *count)
 			out_anim->keyframes = arena_push_count(arena, Transform3 *, out_anim->keyframe_count);
 			out_anim->timings = arena_push_count(arena, float, out_anim->keyframe_count);
 			out_anim->bone_count = data->skins[0].joints_count;
-			memory_copy(out_anim->name, anim->name, MIN(sizeof(out_anim->name) - 1, str8_wrap(anim->name).length));
+			memory_copy(out_anim->name, anim->name, MIN(sizeof(out_anim->name) - 1, str8z(anim->name).length));
 
 			for (uint32_t keyframe = 0; keyframe < out_anim->keyframe_count; ++keyframe) {
 				Transform3 *pose = out_anim->keyframes[keyframe];

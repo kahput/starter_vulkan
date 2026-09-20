@@ -48,9 +48,9 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions opt);
 GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const char *debug_name);
 
-bool gfx_reflect_shader_uniforms(String8 bytecode, UniformSet out_sets[GFX_LIMIT_UNIFORM_SETS]);
-GFX_Shader *gfx_compute_make(GFX_Device *device, String8 bytecode, const char *debug_name);
-GFX_Shader *gfx_shader_make(GFX_Device *device, String8 vs_bytecode, String8 fs_bytecode, const char *debug_name);
+bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet out_sets[GFX_LIMIT_UNIFORM_SETS]);
+GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *debug_name);
+GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_bytecode, const char *debug_name);
 
 int32_t gfx_pipeline_register(GFX_Device *device, GFX_Shader *shader, PipelineOptions options);
 GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, PipelineOptions options, GFX_DrawTargetLayout layout);

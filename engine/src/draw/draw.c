@@ -71,13 +71,13 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 	}
 }
 
-void draw2d_text(Font *font, float2 position, Color color, String8 text) {
+void draw2d_text(Font *font, float2 position, Color color, string8 text) {
 	bool ok = context && font;
 	if (ok) {
 		float y_offset = font->greatest_top_y;
 		float x_offset = 0.0f;
 		for (uint32_t index = 0; index < text.length; ++index) {
-			uint8_t c = text.text[index];
+			uint8_t c = text.bytes[index];
 			if (c == '\n') {
 				x_offset = 0.0f;
 				y_offset += font->greatest_bottom_y + font->greatest_top_y;
@@ -98,12 +98,12 @@ void draw2d_text(Font *font, float2 position, Color color, String8 text) {
 	}
 }
 
-void draw2d_textf(Font *font, float2 position, Color color, String8 format, ...) {
+void draw2d_textf(Font *font, float2 position, Color color, const char* format, ...) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	va_list args;
 	va_start(args, format);
-	String8 text = str8_push_format_list(scratch.arena, format, args);
+	string8 text = fmtv8(scratch.arena, format, args);
 	draw2d_text(font, position, color, text);
 	va_end(args);
 

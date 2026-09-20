@@ -25,8 +25,8 @@ typedef enum {
 } Keyword;
 #define keyword_token(k) (TOKEN_KEYWORD_0 + (k))
 
-static const String8 keyword_to_string[KEYWORD_MAX] = {
-#define X(symbol, display) [KEYWORD_##symbol] = scomp(display),
+static const string8 keyword_to_string[KEYWORD_MAX] = {
+#define X(symbol, display) [KEYWORD_##symbol] = comp8(display),
 	KEYWORD_LIST
 #undef X
 };
@@ -40,11 +40,11 @@ typedef enum {
 	AST_BLOCK_KIND_MAX,
 } AST_BlockKind;
 
-static const String8 ast_block_kind_to_string[AST_BLOCK_KIND_MAX] = {
-	[AST_BLOCK_KIND_SHARED] = scomp("AST_BLOCK_KIND_SHARED"),
-	[AST_BLOCK_KIND_FRAGMENT] = scomp("AST_BLOCK_KIND_FRAGMENT"),
-	[AST_BLOCK_KIND_VERTEX] = scomp("AST_BLOCK_KIND_VERTEX"),
-	[AST_BLOCK_KIND_COMPUTE] = scomp("AST_BLOCK_KIND_COMPUTE"),
+static const string8 ast_block_kind_to_string[AST_BLOCK_KIND_MAX] = {
+	[AST_BLOCK_KIND_SHARED] = comp8("AST_BLOCK_KIND_SHARED"),
+	[AST_BLOCK_KIND_FRAGMENT] = comp8("AST_BLOCK_KIND_FRAGMENT"),
+	[AST_BLOCK_KIND_VERTEX] = comp8("AST_BLOCK_KIND_VERTEX"),
+	[AST_BLOCK_KIND_COMPUTE] = comp8("AST_BLOCK_KIND_COMPUTE"),
 };
 
 static const ShaderStage ast_block_kind_to_shader_stage[AST_BLOCK_KIND_MAX] = {
@@ -53,11 +53,11 @@ static const ShaderStage ast_block_kind_to_shader_stage[AST_BLOCK_KIND_MAX] = {
 	[AST_BLOCK_KIND_COMPUTE] = SHADER_STAGE_COMPUTE,
 };
 
-static const String8 ast_block_kind_to_display_string[AST_BLOCK_KIND_MAX] = {
-	[AST_BLOCK_KIND_SHARED] = scomp("shared"),
-	[AST_BLOCK_KIND_FRAGMENT] = scomp("fragment"),
-	[AST_BLOCK_KIND_VERTEX] = scomp("vertex"),
-	[AST_BLOCK_KIND_COMPUTE] = scomp("compute"),
+static const string8 ast_block_kind_to_display_string[AST_BLOCK_KIND_MAX] = {
+	[AST_BLOCK_KIND_SHARED] = comp8("shared"),
+	[AST_BLOCK_KIND_FRAGMENT] = comp8("fragment"),
+	[AST_BLOCK_KIND_VERTEX] = comp8("vertex"),
+	[AST_BLOCK_KIND_COMPUTE] = comp8("compute"),
 };
 
 typedef enum {
@@ -86,7 +86,7 @@ struct AST_Node {
 
 	AST_BlockKind block_kind;
 	Token identifier;
-	String8 glsl;
+	string8 glsl;
 };
 
 typedef struct AST_NodeList AST_NodeList;
@@ -175,10 +175,10 @@ AST_Node *ast_parse_expr_primary(Arena *arena, Lexer *lexer) {
 			} break;
 			default: {
 				Token tok = lexer_peek(lexer);
-				String8 message = str8_pushf(
+				string8 message = fmt8(
 					scratch.arena,
-					s("Unexpected token '%.*s'"),
-					sspread(tok.lexeme));
+					"Unexpected token '%.*s'",
+					arg8(tok.lexeme));
 
 				report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 				lexer_advance(lexer);
@@ -242,8 +242,8 @@ AST_Node *ast_parse_expr_assignment(Arena *arena, Lexer *lexer) {
 
 				left = assign;
 			} else {
-				String8 where = lexer_error_location_string(arena, s);
-				LOG_ERROR("#Invalid l-value for assignment\n%.*s", sspread(where));
+				string8 where = lexer_error_location_string(arena, s);
+				LOG_ERROR("#Invalid l-value for assignment\n%.*s", arg8(where));
 			}
 		}
 	}
@@ -274,7 +274,7 @@ AST_Node *ast_parse_pipeline_decl(Arena *arena, Lexer *lexer) {
 	return result;
 }
 
-String8 ast_parse_block(Lexer *lexer) {
+string8 ast_parse_block(Lexer *lexer) {
 	lexer_consume(lexer, TOKEN_LBRACE, s("Expect '{' after glsl block declaration."));
 
 	uint8_t *start = lexer->cursor, *end = lexer->cursor;
@@ -292,10 +292,10 @@ String8 ast_parse_block(Lexer *lexer) {
 	}
 	lexer_consume(lexer, TOKEN_RBRACE, s("Expect '}' after glsl block declaration."));
 
-	return str8_from_ends((char *)start, (char *)end);
+	return str8_range((char *)start, (char *)end);
 }
 
-AST_Node *ast_block(Arena *arena, AST_BlockKind kind, String8 source) {
+AST_Node *ast_block(Arena *arena, AST_BlockKind kind, string8 source) {
 	AST_Node *result = 0;
 
 	bool ok = arena;
@@ -336,7 +336,7 @@ AST_Node *ast_parse_block_decl(Arena *arena, Lexer *lexer, AST_BlockKind kind) {
 			result->block_kind = kind;
 			result->identifier = identifier;
 		} else {
-			String8 message = str8_pushf(scratch.arena, s("Expected block or shader reference, got '%.s'."), sspread(token_type_to_string[tok.type]));
+			string8 message = fmt8(scratch.arena, "Expected block or shader reference, got '%.s'.", arg8(token_type_to_string[tok.type]));
 			report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 			lexer_advance(lexer);
 		}
@@ -372,7 +372,7 @@ AST_Node *ast_parse_shader_decl(Arena *arena, Lexer *lexer) {
 			else if (lexer_match(lexer, keyword_token(KEYWORD_COMPUTE), 0))
 				ast_pushback(result, ast_parse_block_decl(arena, lexer, AST_BLOCK_KIND_COMPUTE));
 			else {
-				LOG_ERROR("#Unexpected token '%.*s'.\n%.*s", sspread(lexer_peek(lexer).lexeme), sspread(lexer_error_location_string(arena, lexer_peek(lexer))));
+				LOG_ERROR("#Unexpected token '%.*s'.\n%.*s", arg8(lexer_peek(lexer).lexeme), arg8(lexer_error_location_string(arena, lexer_peek(lexer))));
 				lexer_advance(lexer);
 			}
 		}
@@ -395,7 +395,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 					} while (shader != node->first_child);
 			} break;
 			case AST_NODE_SHADER: {
-				printf("SHADER (%.*s)\n", sspread(node->identifier.lexeme));
+				printf("SHADER (%.*s)\n", arg8(node->identifier.lexeme));
 				AST_Node *decl = node->first_child;
 				if (decl) do {
 						ast_visit(decl, indent_level + 1);
@@ -404,21 +404,21 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 			} break;
 			case AST_NODE_SOURCE_REF:
 			case AST_NODE_SOURCE_DECL: {
-				String8 table[AST_BLOCK_KIND_MAX] = {
+				string8 table[AST_BLOCK_KIND_MAX] = {
 					[AST_BLOCK_KIND_SHARED] = s("SHARED_DECL"),
 					[AST_BLOCK_KIND_VERTEX] = s("VERTEX_DECL"),
 					[AST_BLOCK_KIND_FRAGMENT] = s("FRAGMENT_DECL"),
 					[AST_BLOCK_KIND_COMPUTE] = s("COMPUTE_DECL"),
 				};
 				bool is_ref = node->type == AST_NODE_SOURCE_REF;
-				String8 ref = is_ref ? node->identifier.lexeme : s("");
-				String8 open = is_ref ? s("(") : s("");
-				String8 close = is_ref ? s(")") : s("");
+				string8 ref = is_ref ? node->identifier.lexeme : s("");
+				string8 open = is_ref ? s("(") : s("");
+				string8 close = is_ref ? s(")") : s("");
 
-				printf("%.*s%.*s%.*s%.*s\n", sspread(table[node->block_kind]), sspread(open), sspread(ref), sspread(close));
+				printf("%.*s%.*s%.*s%.*s\n", arg8(table[node->block_kind]), arg8(open), arg8(ref), arg8(close));
 			} break;
 			case AST_NODE_PIPELINE_DECL:
-				printf("PIPELINE_DECL(%.*s)\n", sspread(node->identifier.lexeme));
+				printf("PIPELINE_DECL(%.*s)\n", arg8(node->identifier.lexeme));
 				AST_Node *stmt = node->first_child;
 				if (stmt) do {
 						ast_visit(stmt, indent_level + 1);
@@ -431,7 +431,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 				ast_visit(node->last_child, indent_level + 1);
 				break;
 			case AST_NODE_EXPR_CALL:
-				printf("CALL(%.*s)\n", sspread(node->identifier.lexeme));
+				printf("CALL(%.*s)\n", arg8(node->identifier.lexeme));
 				ast_visit(node->first_child, indent_level + 1);
 				AST_Node *args = node->first_child->next_sibling;
 				while (args != node->first_child) {
@@ -440,7 +440,7 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 				}
 				break;
 			case AST_NODE_EXPR_VARIABLE:
-				printf("VARIABLE(%.*s)\n", sspread(node->identifier.lexeme));
+				printf("VARIABLE(%.*s)\n", arg8(node->identifier.lexeme));
 				break;
 			default:
 				break;
@@ -449,42 +449,42 @@ void ast_visit(AST_Node *node, uint32_t indent_level) {
 
 // clang-format off
 
-static const String8 blend_op_table[] = {
-	[BLEND_OP_ADD]         = scomp("add"),
-	[BLEND_OP_SUB]         = scomp("sub"),
-	[BLEND_OP_REVERSE_SUB] = scomp("rsub"),
-	[BLEND_OP_MIN]         = scomp("min"),
-	[BLEND_OP_MAX]         = scomp("max"),
+static const string8 blend_op_table[] = {
+	[BLEND_OP_ADD]         = comp8("add"),
+	[BLEND_OP_SUB]         = comp8("sub"),
+	[BLEND_OP_REVERSE_SUB] = comp8("rsub"),
+	[BLEND_OP_MIN]         = comp8("min"),
+	[BLEND_OP_MAX]         = comp8("max"),
 };
 
-static const String8 blend_factor_table[BLEND_FACTOR_MAX] = {
-	[BLEND_FACTOR_ZERO]                     = scomp("zero"),
-	[BLEND_FACTOR_ONE]                      = scomp("one"),
-	[BLEND_FACTOR_SRC_COLOR]                = scomp("src_color"),
-	[BLEND_FACTOR_ONE_MINUS_SRC_COLOR]      = scomp("one_minus_src_color"),
-	[BLEND_FACTOR_DST_COLOR]                = scomp("dst_color"),
-	[BLEND_FACTOR_ONE_MINUS_DST_COLOR]      = scomp("one_minus_dst_color"),
-	[BLEND_FACTOR_SRC_ALPHA]                = scomp("src_alpha"),
-	[BLEND_FACTOR_ONE_MINUS_SRC_ALPHA]      = scomp("one_minus_src_alpha"),
-	[BLEND_FACTOR_DST_ALPHA]                = scomp("dst_alpha"),
-	[BLEND_FACTOR_ONE_MINUS_DST_ALPHA]      = scomp("one_minus_dst_alpha"),
+static const string8 blend_factor_table[BLEND_FACTOR_MAX] = {
+	[BLEND_FACTOR_ZERO]                     = comp8("zero"),
+	[BLEND_FACTOR_ONE]                      = comp8("one"),
+	[BLEND_FACTOR_SRC_COLOR]                = comp8("src_color"),
+	[BLEND_FACTOR_ONE_MINUS_SRC_COLOR]      = comp8("one_minus_src_color"),
+	[BLEND_FACTOR_DST_COLOR]                = comp8("dst_color"),
+	[BLEND_FACTOR_ONE_MINUS_DST_COLOR]      = comp8("one_minus_dst_color"),
+	[BLEND_FACTOR_SRC_ALPHA]                = comp8("src_alpha"),
+	[BLEND_FACTOR_ONE_MINUS_SRC_ALPHA]      = comp8("one_minus_src_alpha"),
+	[BLEND_FACTOR_DST_ALPHA]                = comp8("dst_alpha"),
+	[BLEND_FACTOR_ONE_MINUS_DST_ALPHA]      = comp8("one_minus_dst_alpha"),
 };
 
-static const String8 cull_mode_table[CULL_MODE_MAX] = {
-	[CULL_MODE_NONE]           = scomp("none"),
-	[CULL_MODE_FRONT]          = scomp("front"),
-	[CULL_MODE_BACK]           = scomp("back"),
-	[CULL_MODE_FRONT_AND_BACK] = scomp("front_and_back"),
+static const string8 cull_mode_table[CULL_MODE_MAX] = {
+	[CULL_MODE_NONE]           = comp8("none"),
+	[CULL_MODE_FRONT]          = comp8("front"),
+	[CULL_MODE_BACK]           = comp8("back"),
+	[CULL_MODE_FRONT_AND_BACK] = comp8("front_and_back"),
 };
 // clang-format on
 
-int32_t eval_pipeline_state(const String8 *state_table, uint32_t table_count, String8 needle, String8 fmt, ...) {
+int32_t eval_pipeline_state(const string8 *state_table, uint32_t table_count, string8 needle, const char* fmt, ...) {
 	int32_t result = -1;
 
 	bool ok = state_table && table_count;
 	if (ok) {
 		for (uint32_t index = 0; index < table_count; ++index) {
-			if (str8_equals(state_table[index], needle)) {
+			if (eq8(state_table[index], needle)) {
 				result = index;
 				break;
 			}
@@ -497,10 +497,10 @@ int32_t eval_pipeline_state(const String8 *state_table, uint32_t table_count, St
 		ArenaTemp scratch = arena_scratch_begin(0);
 		va_list args;
 		va_start(args, fmt);
-		String8 err = str8_push_format_list(scratch.arena, fmt, args);
+		string8 err = fmtv8(scratch.arena, fmt, args);
 		va_end(args);
 
-		LOG_ERROR("%.*s", sspread(err));
+		LOG_ERROR("%.*s", arg8(err));
 		arena_scratch_end(scratch);
 	}
 
@@ -513,7 +513,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 	bool ok = pipeline && opts;
 
 	if (ok) {
-		String8 name = pipeline->identifier.lexeme.length
+		string8 name = pipeline->identifier.lexeme.length
 			? pipeline->identifier.lexeme
 			: s("unnamed");
 
@@ -529,25 +529,25 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 			}
 
 			Token tok = assign->first_child->identifier;
-			String8 key = tok.lexeme;
+			string8 key = tok.lexeme;
 
-			bool is_blend = str8_equals(key, s("blend"));
-			bool is_color = is_blend || str8_equals(key, s("blend_color"));
-			bool is_alpha = is_blend || str8_equals(key, s("blend_alpha"));
+			bool is_blend = eq8(key, s("blend"));
+			bool is_color = is_blend || eq8(key, s("blend_color"));
+			bool is_alpha = is_blend || eq8(key, s("blend_alpha"));
 
 			if (is_color || is_alpha) {
 				AST_Node *call = assign->last_child;
 				ok = call && call->type == AST_NODE_EXPR_CALL;
 				if (ok == false) {
-					String8 message = str8_pushf(scratch.arena,
-						s("Expect function call value for '%.*s'"),
-						sspread(key));
+					string8 message = fmt8(scratch.arena,
+						"Expect function call value for '%.*s'",
+						arg8(key));
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
 
 				int32_t op = eval_pipeline_state(blend_op_table, countof(blend_op_table), call->identifier.lexeme,
-					s("Pipeline '%.*s': unknown blend operation '%.*s'"), sspread(name), sspread(call->identifier.lexeme));
+					"Pipeline '%.*s': unknown blend operation '%.*s'", arg8(name), arg8(call->identifier.lexeme));
 				ok &= op != -1;
 
 				AST_Node *src_node = call->first_child;
@@ -555,19 +555,19 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok &= src_node && dst_node && src_node != dst_node;
 				if (ok == false) {
-					String8 message = str8_pushf(
+					string8 message = fmt8(
 						scratch.arena,
-						s("Expect two arguments for blend operation '%.*s'."),
-						sspread(key));
+						"Expect two arguments for blend operation '%.*s'.",
+						arg8(key));
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
 
 				int32_t src = eval_pipeline_state(blend_factor_table, countof(blend_factor_table), src_node->identifier.lexeme,
-					s("Pipeline '%.*s': unknown source blend factor '%.*s'"), sspread(name), sspread(src_node->identifier.lexeme));
+					"Pipeline '%.*s': unknown source blend factor '%.*s'", arg8(name), arg8(src_node->identifier.lexeme));
 
 				int32_t dst = eval_pipeline_state(blend_factor_table, countof(blend_factor_table), dst_node->identifier.lexeme,
-					s("Pipeline '%.*s': unknown destination blend factor '%.*s'"), sspread(name), sspread(dst_node->identifier.lexeme));
+					"Pipeline '%.*s': unknown destination blend factor '%.*s'", arg8(name), arg8(dst_node->identifier.lexeme));
 
 				ok &= src != -1;
 				ok &= dst != -1;
@@ -587,19 +587,19 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 						opts->dst_alpha_factor = (BlendFactor)dst;
 					}
 				}
-			} else if (str8_equals(key, s("cull")) || str8_equals(key, s("cull_mode"))) {
+			} else if (eq8(key, s("cull")) || eq8(key, s("cull_mode"))) {
 				AST_Node *value_node = assign->last_child;
 
 				ok = value_node;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': cull requires a value", sspread(name));
+					LOG_ERROR("Pipeline '%.*s': cull requires a value", arg8(name));
 					break;
 				}
 
 				CullMode value = CULL_MODE_MAX;
 
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
-					if (str8_equals(cull_mode_table[index], value_node->identifier.lexeme)) {
+					if (eq8(cull_mode_table[index], value_node->identifier.lexeme)) {
 						value = (CullMode)index;
 						break;
 					}
@@ -607,22 +607,22 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok = value != CULL_MODE_MAX;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': unknown cull mode '%.*s'", sspread(name), sspread(value_node->identifier.lexeme));
+					LOG_ERROR("Pipeline '%.*s': unknown cull mode '%.*s'", arg8(name), arg8(value_node->identifier.lexeme));
 					break;
 				}
 
 				opts->cull_mode = value;
-			} else if (str8_equals(key, s("depth_test")) || str8_equals(key, s("depth_write"))) {
+			} else if (eq8(key, s("depth_test")) || eq8(key, s("depth_write"))) {
 				AST_Node *value_node = assign->last_child;
 
 				ok = value_node;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': depth_test requires a value", sspread(name));
+					LOG_ERROR("Pipeline '%.*s': depth_test requires a value", arg8(name));
 					break;
 				}
 
 				struct {
-					String8 key;
+					string8 key;
 					bool value;
 				} depth_table[] = {
 					{ s("true"), true },
@@ -633,7 +633,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				int32_t found = -1;
 				for (uint32_t index = 0; index < countof(depth_table); ++index) {
-					if (str8_equals(depth_table[index].key, value_node->identifier.lexeme)) {
+					if (eq8(depth_table[index].key, value_node->identifier.lexeme)) {
 						found = index;
 						break;
 					}
@@ -641,34 +641,34 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok = found != -1;
 				if (ok == false) {
-					String8 message = str8_pushf(
+					string8 message = fmt8(
 						scratch.arena,
-						s("Expect boolean for '%.*s', got '%.*s'"),
-						sspread(key),
-						sspread(value_node->identifier.lexeme));
+						"Expect boolean for '%.*s', got '%.*s'",
+						arg8(key),
+						arg8(value_node->identifier.lexeme));
 
 					tok = value_node->identifier;
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
 
-				if (str8_equals(key, s("depth_test")))
+				if (eq8(key, s("depth_test")))
 					opts->disable_depth_test = !depth_table[found].value;
 				else
 					opts->disable_depth_write = !depth_table[found].value;
-			} else if (str8_equals(key, s("polygon")) || str8_equals(key, s("polygon_mode"))) {
+			} else if (eq8(key, s("polygon")) || eq8(key, s("polygon_mode"))) {
 				AST_Node *value_node = assign->last_child;
 
 				ok = value_node;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': polygon requires a value", sspread(name));
+					LOG_ERROR("Pipeline '%.*s': polygon requires a value", arg8(name));
 					break;
 				}
 
 				PolygonMode value = POLYGON_MODE_MAX;
 
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
-					if (str8_equals(cull_mode_table[index], value_node->identifier.lexeme)) {
+					if (eq8(cull_mode_table[index], value_node->identifier.lexeme)) {
 						value = (PolygonMode)index;
 						break;
 					}
@@ -676,16 +676,16 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok = value != POLYGON_MODE_MAX;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': unknown polygon mode '%.*s'", sspread(name), sspread(value_node->identifier.lexeme));
+					LOG_ERROR("Pipeline '%.*s': unknown polygon mode '%.*s'", arg8(name), arg8(value_node->identifier.lexeme));
 					break;
 				}
 
 				opts->polygon_mode = value;
 			} else {
-				String8 message = str8_pushf(
+				string8 message = fmt8(
 					scratch.arena,
-					s("Unknown pipeline property '%.*s'."),
-					sspread(tok.lexeme));
+					"Unknown pipeline property '%.*s'.",
+					arg8(tok.lexeme));
 				report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 
 				ok = false;
@@ -700,13 +700,13 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 	return ok;
 }
 
-static AST_Node *ast_lookup_shader(String8 name) {
+static AST_Node *ast_lookup_shader(string8 name) {
 	AST_Node *result = 0;
 
 	for (AST_NodeList *it = shader_symbol_list; it; it = it->next) {
 		AST_Node *shader = it->node;
 
-		if (str8_equals(shader->identifier.lexeme, name)) {
+		if (eq8(shader->identifier.lexeme, name)) {
 			result = shader;
 			break;
 		}
@@ -765,27 +765,27 @@ bool ast_resolve_ref(AST_Node *node, AST_NodeList *explored) {
 
 			case AST_NODE_SOURCE_REF: {
 				Token tok = node->identifier;
-				String8 ref_name = node->identifier.lexeme;
+				string8 ref_name = node->identifier.lexeme;
 
 				ok = ast_in_list(explored, node) == false;
 				if (ok == false) {
-					String8 cycle = { 0 };
+					string8 cycle = { 0 };
 					for (AST_NodeList *it = explored; it; it = it->next) {
 						AST_Node *shader = it->node->parent;
-						String8 shader_name = shader->identifier.lexeme;
+						string8 shader_name = shader->identifier.lexeme;
 
 						if (cycle.length)
-							cycle = str8_pushf(scratch.arena, s("%.*s -> %.*s"), sspread(cycle), sspread(shader_name));
+							cycle = fmt8(scratch.arena, "%.*s -> %.*s", arg8(cycle), arg8(shader_name));
 						else
 							cycle = shader_name;
 					}
 
-					String8 message = str8_pushf(
+					string8 message = fmt8(
 						scratch.arena,
-						s("Cyclic dependency detected in stage %.*s for shader '%.*s'. %.*s"),
-						sspread(ast_block_kind_to_display_string[node->block_kind]),
-						sspread(ref_name),
-						sspread(cycle));
+						"Cyclic dependency detected in stage %.*s for shader '%.*s'. %.*s",
+						arg8(ast_block_kind_to_display_string[node->block_kind]),
+						arg8(ref_name),
+						arg8(cycle));
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
@@ -793,7 +793,7 @@ bool ast_resolve_ref(AST_Node *node, AST_NodeList *explored) {
 				AST_Node *target_shader = ast_lookup_shader(ref_name);
 				ok = target_shader != 0;
 				if (ok == false) {
-					String8 message = str8_pushf(scratch.arena, s("Referenced shader '%.*s' was not declared."), sspread(ref_name));
+					string8 message = fmt8(scratch.arena, "Referenced shader '%.*s' was not declared.", arg8(ref_name));
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
@@ -801,11 +801,11 @@ bool ast_resolve_ref(AST_Node *node, AST_NodeList *explored) {
 				AST_Node *target_stage = ast_find_stage_in_shader(target_shader, node->block_kind);
 				ok = target_stage != 0;
 				if (ok == false) {
-					String8 message = str8_pushf(
+					string8 message = fmt8(
 						scratch.arena,
-						s("Shader '%.*s' does not define referenced stage %.*s.\n"),
-						sspread(ref_name),
-						sspread(ast_block_kind_to_display_string[node->block_kind]));
+						"Shader '%.*s' does not define referenced stage %.*s.\n",
+						arg8(ref_name),
+						arg8(ast_block_kind_to_display_string[node->block_kind]));
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
@@ -838,18 +838,18 @@ bool ast_resolve_ref(AST_Node *node, AST_NodeList *explored) {
 int main(int32_t argc, char **argv) {
 	Arena arena[] = { arena_make(MiB(32)) };
 
-	String8 ref_directory = argc > 1 ? str8_wrap(argv[1]) : s("./");
-	String8 shader_directory = str8_filepath_join(arena, ref_directory, s("assets/shaders/"));
+	string8 ref_directory = argc > 1 ? str8z(argv[1]) : s("./");
+	string8 shader_directory = pathjoin8(arena, ref_directory, s("assets/shaders/"));
 
 	uint32_t file_count;
-	String8 *files = os_directory_files(arena, shader_directory, &file_count);
+	string8 *files = os_directory_files(arena, shader_directory, &file_count);
 
 	bool had_error = false;
 
 	AST_Node *program = ast_make(arena, AST_NODE_PROGRAM);
 	for (uint32_t index = 0; index < file_count; ++index) {
-		if (str8_equals(str8_fileext(files[index]), s("shader")) == false) continue;
-		String8 file = str8_concat(arena, shader_directory, files[index]);
+		if (eq8(ext8(files[index]), s("shader")) == false) continue;
+		string8 file = concat8(arena, shader_directory, files[index]);
 
 		Lexer lexer[] = { lexer_make(os_file_read(arena, file), keyword_to_string, countof(keyword_to_string)) };
 		while (lexer_at_end(lexer) == false) {
@@ -877,15 +877,15 @@ int main(int32_t argc, char **argv) {
 	 * emit_source();
 	 */
 
-	String8 code_output_directory = str8_filepath_join(arena, ref_directory, s("game/src/generated"));
+	string8 code_output_directory = pathjoin8(arena, ref_directory, s("game/src/generated"));
 	if (os_directory_exists(code_output_directory) == false)
 		os_directory_make(code_output_directory);
-	FILE *header = fopen((char *)str8_filepath_join(arena, code_output_directory, s("assets_generated.h")).text, "w");
-	FILE *source = fopen((char *)str8_filepath_join(arena, code_output_directory, s("assets_generated.c")).text, "w");
+	FILE *header = fopen((char *)pathjoin8(arena, code_output_directory, s("assets_generated.h")).bytes, "w");
+	FILE *source = fopen((char *)pathjoin8(arena, code_output_directory, s("assets_generated.c")).bytes, "w");
 
 	if (header == 0 || source == 0) return -1;
 
-	String8 output_directory = str8_filepath_join(arena, ref_directory, s("assets/shaders/generated"));
+	string8 output_directory = pathjoin8(arena, ref_directory, s("assets/shaders/generated"));
 	if (os_directory_exists(output_directory) == false)
 		if (os_directory_make(output_directory) == false) return -1;
 
@@ -894,8 +894,8 @@ int main(int32_t argc, char **argv) {
 	fprintf(header, "#include \"gfx/gfx_types.h\"\n\n");
 
 	fprintf(header, "typedef struct {\n");
-	fprintf(header, "    String8 name;\n");
-	fprintf(header, "    String8 filepaths[SHADER_STAGE_MAX];\n");
+	fprintf(header, "    string8 name;\n");
+	fprintf(header, "    string8 filepaths[SHADER_STAGE_MAX];\n");
 	fprintf(header, "    PipelineOptions pipelines[8];\n");
 	fprintf(header, "    uint32_t pipeline_count;\n");
 	fprintf(header, "} ShaderMetadata;\n\n");
@@ -903,44 +903,44 @@ int main(int32_t argc, char **argv) {
 	fprintf(header, "typedef enum {\n");
 	AST_Node *shader = program->first_child;
 	if (shader) do {
-			String8 name = shader->identifier.lexeme;
-			String8 name_upper = str8_upper(arena, name);
-			fprintf(header, "    RES_SHADER_%.*s,\n", sspread(name_upper));
+			string8 name = shader->identifier.lexeme;
+			string8 name_upper = upper8(arena, name);
+			fprintf(header, "    RES_SHADER_%.*s,\n", arg8(name_upper));
 
-			String8 glsl_paths[SHADER_STAGE_MAX] = {
-				[SHADER_STAGE_VERTEX] = str8_pushf(arena, s("%.*s/v_%.*s.glsl"), sspread(output_directory), sspread(name)),
-				[SHADER_STAGE_FRAGMENT] = str8_pushf(arena, s("%.*s/f_%.*s.glsl"), sspread(output_directory), sspread(name)),
-				[SHADER_STAGE_COMPUTE] = str8_pushf(arena, s("%.*s/c_%.*s.glsl"), sspread(output_directory), sspread(name)),
+			string8 glsl_paths[SHADER_STAGE_MAX] = {
+				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.glsl", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.glsl", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.glsl", arg8(output_directory), arg8(name)),
 			};
 
-			String8 spv_paths[SHADER_STAGE_MAX] = {
-				[SHADER_STAGE_VERTEX] = str8_pushf(arena, s("%.*s/v_%.*s.spv"), sspread(output_directory), sspread(name)),
-				[SHADER_STAGE_FRAGMENT] = str8_pushf(arena, s("%.*s/f_%.*s.spv"), sspread(output_directory), sspread(name)),
-				[SHADER_STAGE_COMPUTE] = str8_pushf(arena, s("%.*s/c_%.*s.spv"), sspread(output_directory), sspread(name)),
+			string8 spv_paths[SHADER_STAGE_MAX] = {
+				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.spv", arg8(output_directory), arg8(name)),
 			};
 
-			String8 blocks[AST_BLOCK_KIND_MAX] = { 0 };
+			string8 blocks[AST_BLOCK_KIND_MAX] = { 0 };
 
 			uint32_t pipeline_count = 0;
 
 			AST_Node *decl = shader->first_child;
 			if (decl) do {
 					if (decl->type == AST_NODE_SOURCE_DECL)
-						blocks[decl->block_kind] = str8_concat(arena, blocks[decl->block_kind], decl->glsl);
+						blocks[decl->block_kind] = concat8(arena, blocks[decl->block_kind], decl->glsl);
 					else if (decl->type == AST_NODE_PIPELINE_DECL) {
-						String8 pipeline_name = decl->identifier.lexeme;
-						String8 pipeline_name_upper = str8_upper(arena, pipeline_name);
-						fprintf(header, "#define PIPELINE_%.*s_%.*s %u\n", sspread(name_upper), sspread(pipeline_name_upper), pipeline_count++);
+						string8 pipeline_name = decl->identifier.lexeme;
+						string8 pipeline_name_upper = upper8(arena, pipeline_name);
+						fprintf(header, "#define PIPELINE_%.*s_%.*s %u\n", arg8(name_upper), arg8(pipeline_name_upper), pipeline_count++);
 					}
 
 					decl = decl->next_sibling;
 				} while (decl != shader->first_child);
 
 			if (pipeline_count == 0)
-				fprintf(header, "#define PIPELINE_%.*s_%s %u\n", sspread(name_upper), "DEFAULT", pipeline_count++);
+				fprintf(header, "#define PIPELINE_%.*s_%s %u\n", arg8(name_upper), "DEFAULT", pipeline_count++);
 
-			String8 version_header = s("#version 450 core\n");
-			String8 stage_info[SHADER_STAGE_MAX] = {
+			string8 version_header = s("#version 450 core\n");
+			string8 stage_info[SHADER_STAGE_MAX] = {
 				[SHADER_STAGE_VERTEX] = s(
 					"#pragma shader_stage(vertex)\n\n"
 					"#define INOUT out\n"),
@@ -949,47 +949,47 @@ int main(int32_t argc, char **argv) {
 					"#define INOUT in\n"),
 				[SHADER_STAGE_COMPUTE] = s("#pragma shader_stage(compute)"),
 			};
-			String8 include_dir = s("assets/shaders/");
-			String8 cleaned_shared = str8_dedent(arena, blocks[AST_BLOCK_KIND_SHARED]);
+			string8 include_dir = s("assets/shaders/");
+			string8 cleaned_shared = dedent8(arena, blocks[AST_BLOCK_KIND_SHARED]);
 
 			for (AST_BlockKind block_index = 0; block_index < AST_BLOCK_KIND_MAX; ++block_index) {
 				if (block_index == AST_BLOCK_KIND_SHARED) continue;
 				if (blocks[block_index].length == 0) continue;
-				String8 cleaned_source = str8_dedent(arena, blocks[block_index]);
+				string8 cleaned_source = dedent8(arena, blocks[block_index]);
 
-				String8 glsl_path = glsl_paths[stage_index(block_index)];
-				String8 spv_path = spv_paths[stage_index(block_index)];
+				string8 glsl_path = glsl_paths[stage_index(block_index)];
+				string8 spv_path = spv_paths[stage_index(block_index)];
 
-				String8 glsl = str8_pushf(arena,
-					s("%.*s%.*s\n// --- shared_start ---\n%.*s\n\n// --- shared_end ---\n\n// --- source_start ---\n%.*s\n\n// --- source_end ---"),
-					sspread(version_header),
-					sspread(stage_info[stage_index(block_index)]),
-					sspread(cleaned_shared),
-					sspread(cleaned_source) //
+				string8 glsl = fmt8(arena,
+					"%.*s%.*s\n// --- shared_start ---\n%.*s\n\n// --- shared_end ---\n\n// --- source_start ---\n%.*s\n\n// --- source_end ---",
+					arg8(version_header),
+					arg8(stage_info[stage_index(block_index)]),
+					arg8(cleaned_shared),
+					arg8(cleaned_source) //
 				);
 				bool glsl_modified = true;
 
 				if (os_file_exists(glsl_path)) {
-					String8 existing = os_file_read(arena, glsl_path);
+					string8 existing = os_file_read(arena, glsl_path);
 
-					if (str8_equals(existing, glsl))
+					if (eq8(existing, glsl))
 						glsl_modified = false;
 				}
 
 				if (glsl_modified || os_file_exists(spv_path) == false) {
-					String8 tmp_path = str8_pushf(arena, s("%.*s.tmp.vert"), sspread(glsl_path));
-					os_file_write(tmp_path, glsl.text, glsl.length);
+					string8 tmp_path = fmt8(arena, "%.*s.tmp.vert", arg8(glsl_path));
+					os_file_write(tmp_path, glsl.bytes, glsl.length);
 
-					String8 cmd = str8_pushf(
+					string8 cmd = fmt8(
 						arena,
-						s("glslc -I %.*s %.*s -o %.*s"),
-						sspread(include_dir),
-						sspread(tmp_path),
-						sspread(spv_path));
+						"glslc -I %.*s %.*s -o %.*s",
+						arg8(include_dir),
+						arg8(tmp_path),
+						arg8(spv_path));
 
-					LOG_INFO("#Generating %.*s", sspread(spv_path));
+					LOG_INFO("#Generating %.*s", arg8(spv_path));
 					if (os_execute_command(cmd) == 0)
-						os_file_write(glsl_path, glsl.text, glsl.length);
+						os_file_write(glsl_path, glsl.bytes, glsl.length);
 
 					os_file_delete(tmp_path);
 				}
@@ -1005,13 +1005,13 @@ int main(int32_t argc, char **argv) {
 	fprintf(source, "#include \"assets_generated.h\"\n\n");
 	fprintf(source, "ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {\n");
 	if (shader) do {
-			String8 name = shader->identifier.lexeme;
-			String8 upper = str8_upper(arena, name);
+			string8 name = shader->identifier.lexeme;
+			string8 upper = upper8(arena, name);
 
-			String8 filepaths[SHADER_STAGE_MAX] = {
-				[SHADER_STAGE_VERTEX] = str8_pushf(arena, s("%.*s/v_%.*s.spv"), sspread(output_directory), sspread(name)),
-				[SHADER_STAGE_FRAGMENT] = str8_pushf(arena, s("%.*s/f_%.*s.spv"), sspread(output_directory), sspread(name)),
-				[SHADER_STAGE_COMPUTE] = str8_pushf(arena, s("%.*s/c_%.*s.spv"), sspread(output_directory), sspread(name)),
+			string8 filepaths[SHADER_STAGE_MAX] = {
+				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.spv", arg8(output_directory), arg8(name)),
 			};
 
 			bool is_compute = false;
@@ -1026,16 +1026,16 @@ int main(int32_t argc, char **argv) {
 					decl = decl->next_sibling;
 				} while (decl != shader->first_child);
 
-			ASSERT_FORMAT((is_compute && pipeline_count) == false && pipeline_count < 8, "Shader '%.*s': compute and graphics pipeline defined together.", sspread(shader->identifier.lexeme));
+			ASSERT_FORMAT((is_compute && pipeline_count) == false && pipeline_count < 8, "Shader '%.*s': compute and graphics pipeline defined together.", arg8(shader->identifier.lexeme));
 
-			fprintf(source, "    [RES_SHADER_%.*s] = {\n", sspread(upper));
-			fprintf(source, "      .name = scomp(\"%.*s\"),\n", sspread(name));
+			fprintf(source, "    [RES_SHADER_%.*s] = {\n", arg8(upper));
+			fprintf(source, "      .name = comp8(\"%.*s\"),\n", arg8(name));
 			fprintf(source, "      .filepaths = {\n");
 			if (is_compute)
-				fprintf(source, "          [SHADER_STAGE_COMPUTE] = scomp(\"%.*s\"),\n", sspread(filepaths[SHADER_STAGE_COMPUTE]));
+				fprintf(source, "          [SHADER_STAGE_COMPUTE] = comp8(\"%.*s\"),\n", arg8(filepaths[SHADER_STAGE_COMPUTE]));
 			else {
-				fprintf(source, "          [SHADER_STAGE_VERTEX] = scomp(\"%.*s\"),\n", sspread(filepaths[SHADER_STAGE_VERTEX]));
-				fprintf(source, "          [SHADER_STAGE_FRAGMENT] = scomp(\"%.*s\"),\n", sspread(filepaths[SHADER_STAGE_FRAGMENT]));
+				fprintf(source, "          [SHADER_STAGE_VERTEX] = comp8(\"%.*s\"),\n", arg8(filepaths[SHADER_STAGE_VERTEX]));
+				fprintf(source, "          [SHADER_STAGE_FRAGMENT] = comp8(\"%.*s\"),\n", arg8(filepaths[SHADER_STAGE_FRAGMENT]));
 			}
 			fprintf(source, "      },\n");
 
@@ -1050,21 +1050,21 @@ int main(int32_t argc, char **argv) {
 						if (decl->type == AST_NODE_PIPELINE_DECL) {
 							ast_pipeline_eval(decl, &options);
 
-							String8 pipeline_name = decl->identifier.lexeme;
-							String8 pipeline_upper = str8_upper(arena, pipeline_name);
+							string8 pipeline_name = decl->identifier.lexeme;
+							string8 pipeline_upper = upper8(arena, pipeline_name);
 
-							fprintf(source, "          [PIPELINE_%.*s_%.*s] = {\n", sspread(upper), sspread(pipeline_upper)); // TODO: PipelineID
-							fprintf(source, "              .cull_mode = %.*s,\n", sspread(cull_mode_to_string[options.cull_mode]));
-							fprintf(source, "              .polygon_mode = %.*s,\n", sspread(polygon_mode_to_string[options.polygon_mode]));
+							fprintf(source, "          [PIPELINE_%.*s_%.*s] = {\n", arg8(upper), arg8(pipeline_upper)); // TODO: PipelineID
+							fprintf(source, "              .cull_mode = %.*s,\n", arg8(cull_mode_to_string[options.cull_mode]));
+							fprintf(source, "              .polygon_mode = %.*s,\n", arg8(polygon_mode_to_string[options.polygon_mode]));
 							fprintf(source, "              .disable_depth_test = %s,\n", options.disable_depth_test ? "true" : "false");
 							fprintf(source, "              .disable_depth_write = %s,\n", options.disable_depth_write ? "true" : "false");
 							fprintf(source, "              .blend_enable = %s,\n", options.blend_enable ? "true" : "false");
-							fprintf(source, "              .color_op = %.*s,\n", sspread(blend_op_to_string[options.color_op]));
-							fprintf(source, "              .alpha_op = %.*s,\n", sspread(blend_op_to_string[options.alpha_op]));
-							fprintf(source, "              .src_color_factor = %.*s,\n", sspread(blend_factor_to_string[options.src_color_factor]));
-							fprintf(source, "              .dst_color_factor = %.*s,\n", sspread(blend_factor_to_string[options.dst_color_factor]));
-							fprintf(source, "              .src_alpha_factor = %.*s,\n", sspread(blend_factor_to_string[options.src_alpha_factor]));
-							fprintf(source, "              .dst_alpha_factor = %.*s,\n", sspread(blend_factor_to_string[options.dst_alpha_factor]));
+							fprintf(source, "              .color_op = %.*s,\n", arg8(blend_op_to_string[options.color_op]));
+							fprintf(source, "              .alpha_op = %.*s,\n", arg8(blend_op_to_string[options.alpha_op]));
+							fprintf(source, "              .src_color_factor = %.*s,\n", arg8(blend_factor_to_string[options.src_color_factor]));
+							fprintf(source, "              .dst_color_factor = %.*s,\n", arg8(blend_factor_to_string[options.dst_color_factor]));
+							fprintf(source, "              .src_alpha_factor = %.*s,\n", arg8(blend_factor_to_string[options.src_alpha_factor]));
+							fprintf(source, "              .dst_alpha_factor = %.*s,\n", arg8(blend_factor_to_string[options.dst_alpha_factor]));
 							fprintf(source, "          },\n");
 						}
 
@@ -1077,18 +1077,18 @@ int main(int32_t argc, char **argv) {
 					options.src_color_factor = BLEND_FACTOR_ONE;
 					options.src_alpha_factor = BLEND_FACTOR_ONE;
 
-					fprintf(source, "          [PIPELINE_%.*s_%s] = {\n", sspread(upper), "DEFAULT");
-					fprintf(source, "              .cull_mode = %.*s,\n", sspread(cull_mode_to_string[options.cull_mode]));
-					fprintf(source, "              .polygon_mode = %.*s,\n", sspread(polygon_mode_to_string[options.polygon_mode]));
+					fprintf(source, "          [PIPELINE_%.*s_%s] = {\n", arg8(upper), "DEFAULT");
+					fprintf(source, "              .cull_mode = %.*s,\n", arg8(cull_mode_to_string[options.cull_mode]));
+					fprintf(source, "              .polygon_mode = %.*s,\n", arg8(polygon_mode_to_string[options.polygon_mode]));
 					fprintf(source, "              .disable_depth_test = %s,\n", options.disable_depth_test ? "true" : "false");
 					fprintf(source, "              .disable_depth_write = %s,\n", options.disable_depth_write ? "true" : "false");
 					fprintf(source, "              .blend_enable = %s,\n", options.blend_enable ? "true" : "false");
-					fprintf(source, "              .color_op = %.*s,\n", sspread(blend_op_to_string[options.color_op]));
-					fprintf(source, "              .alpha_op = %.*s,\n", sspread(blend_op_to_string[options.alpha_op]));
-					fprintf(source, "              .src_color_factor = %.*s,\n", sspread(blend_factor_to_string[options.src_color_factor]));
-					fprintf(source, "              .dst_color_factor = %.*s,\n", sspread(blend_factor_to_string[options.dst_color_factor]));
-					fprintf(source, "              .src_alpha_factor = %.*s,\n", sspread(blend_factor_to_string[options.src_alpha_factor]));
-					fprintf(source, "              .dst_alpha_factor = %.*s,\n", sspread(blend_factor_to_string[options.dst_alpha_factor]));
+					fprintf(source, "              .color_op = %.*s,\n", arg8(blend_op_to_string[options.color_op]));
+					fprintf(source, "              .alpha_op = %.*s,\n", arg8(blend_op_to_string[options.alpha_op]));
+					fprintf(source, "              .src_color_factor = %.*s,\n", arg8(blend_factor_to_string[options.src_color_factor]));
+					fprintf(source, "              .dst_color_factor = %.*s,\n", arg8(blend_factor_to_string[options.dst_color_factor]));
+					fprintf(source, "              .src_alpha_factor = %.*s,\n", arg8(blend_factor_to_string[options.src_alpha_factor]));
+					fprintf(source, "              .dst_alpha_factor = %.*s,\n", arg8(blend_factor_to_string[options.dst_alpha_factor]));
 					fprintf(source, "          },\n");
 				}
 

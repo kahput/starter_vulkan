@@ -14,7 +14,7 @@ typedef bool (*TickFn)(Arena *permanent, Arena *frame);
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
 
-	String8 src = s("libgame.so"), dst = s("libgame_loaded.so");
+	string8 src = s("libgame.so"), dst = s("libgame_loaded.so");
 
 	OS_Library lib = 0;
 	TickFn tick = 0;

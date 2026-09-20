@@ -3,8 +3,8 @@
 #include "gfx/gfx_types.h"
 
 typedef struct {
-    String8 name;
-    String8 filepaths[SHADER_STAGE_MAX];
+    string8 name;
+    string8 filepaths[SHADER_STAGE_MAX];
     PipelineOptions pipelines[8];
     uint32_t pipeline_count;
 } ShaderMetadata;

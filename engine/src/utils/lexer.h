@@ -121,20 +121,20 @@ typedef enum {
 
 typedef struct {
 	TokenType type;
-	String8 lexeme;
+	string8 lexeme;
 	int line;
 	int column;
 } Token;
 
 typedef struct {
-	String8 *keyword;
+	string8 *keyword;
 	uint32_t keyword_count;
 } LexerConfig;
 
 typedef struct {
-	String8 source;
+	string8 source;
 
-	const String8 *keywords;
+	const string8 *keywords;
 	uint32_t keyword_count;
 
 	uint8_t *cursor;
@@ -144,12 +144,12 @@ typedef struct {
 	bool has_peeked, had_error;
 } Lexer;
 
-extern const String8 token_type_to_string[TOKEN_BUILTIN_MAX];
+extern const string8 token_type_to_string[TOKEN_BUILTIN_MAX];
 
-static inline Lexer lexer_make(String8 source, const String8 *keywords, uint32_t keyword_count) {
+static inline Lexer lexer_make(string8 source, const string8 *keywords, uint32_t keyword_count) {
 	return (Lexer){
 		.source = source,
-		.cursor = source.text,
+		.cursor = source.bytes,
 		.line = 1,
 		.column = 1,
 		.keyword_count = keyword_count,
@@ -173,12 +173,12 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out);
 Token lexer_expect(Lexer *lexer, TokenType type);
 Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count);
 
-Token lexer_consume(Lexer *lexer, TokenType type, String8 message);
-String8 lexer_error_location_string(Arena *arena, Token error);
+Token lexer_consume(Lexer *lexer, TokenType type, string8 message);
+string8 lexer_error_location_string(Arena *arena, Token error);
 
 // True if the next token is EOF.
 bool lexer_at_end(Lexer *lexer);
 
-void report(uint64_t line, uint64_t column, String8 where, String8 message);
+void report(uint64_t line, uint64_t column, string8 where, string8 message);
 
 #endif /* LEXER_H_ */

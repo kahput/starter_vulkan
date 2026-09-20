@@ -433,7 +433,7 @@ void imgui_position_tree(IMGUI_Widget *root) {
 }
 
 
-IMGUI_Widget *imgui_label(uint64_t id, String8 label) {
+IMGUI_Widget *imgui_label(uint64_t id, string8 label) {
 	IMGUI_Widget *result = imgui_widget(id);
 	result->settings.text = label;
 	result->settings.sizing[0] = IMGUI_SIZING_FIXED, result->settings.sizing[1] = IMGUI_SIZING_FIXED;
@@ -460,8 +460,8 @@ IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale) {
 	return result;
 }
 
-IMGUI_Interact imgui_button_label(String8 label) {
-	IMGUI_Widget *box = imgui_widget(hash64(label.text, label.length));
+IMGUI_Interact imgui_button_label(string8 label) {
+	IMGUI_Widget *box = imgui_widget(hash64(label.bytes, label.length));
 	imgui_parent(imgui_label(hash64_combine(box->id, __LINE__), label), box);
 	return imgui_interact(box->id, imgui_rect_cached(box));
 }

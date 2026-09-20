@@ -59,15 +59,15 @@ int main(void) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	/* String8 shader = s("assets/shaders/vertex/bin/batch3d.vertex.spv"); */
-	String8 shader = s("assets/shaders/fragment/bin/phong.fragment.spv");
-	int result = system((char *)str8_concat(scratch.arena, s("spirv-dis "), shader).text);
+	string8 shader = s("assets/shaders/fragment/bin/phong.fragment.spv");
+	int result = system((char *)concat8(scratch.arena, s("spirv-dis "), shader).bytes);
 
-	LOG_INFO("#%.*s", sspread(os_file_read(scratch.arena, s("dis.test"))));
+	LOG_INFO("#%.*s", arg8(os_file_read(scratch.arena, s("dis.test"))));
 
-	String8 binary = os_file_read(scratch.arena, shader);
+	string8 binary = os_file_read(scratch.arena, shader);
 
 	uint32_t spv_word_count = binary.length / 4;
-	uint32_t *data = (uint32_t *)binary.text;
+	uint32_t *data = (uint32_t *)binary.bytes;
 	uint32_t magic_number = data[0];
 	ASSERT(magic_number == 0x07230203);
 
@@ -92,7 +92,7 @@ int main(void) {
 
 		uint32_t value;
 
-		String8 name;
+		string8 name;
 
 		SpvMember *members;
 		uint32_t member_count;
@@ -154,7 +154,7 @@ int main(void) {
 				ASSERT(id_index < id_bound);
 
 				SpvIdentifier *id = &ids[id_index];
-				id->name = str8_wrap((char *)(data + word_index + 2));
+				id->name = str8z((char *)(data + word_index + 2));
 
 				break;
 			}
@@ -237,14 +237,14 @@ int main(void) {
 					switch (uniform_type.op) {
 						case SpvOpTypeStruct: {
 							binding->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-							LOG_INFO("%s", uniform_type.name.text);
+							LOG_INFO("%s", uniform_type.name.bytes);
 							/* for (uint32_t member_index = 0; member_index < uniform_type.member_count; ++member_index) { */
 							/* LOG_INFO("    %s", ids[uniform_type.members[); */
 							/* } */
 						} break;
 						case SpvOpTypeSampledImage: {
 							binding->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-							LOG_INFO("%s", uniform_type.name.text);
+							LOG_INFO("%s", uniform_type.name.bytes);
 						} break;
 						case SpvOpNop:
 							break;

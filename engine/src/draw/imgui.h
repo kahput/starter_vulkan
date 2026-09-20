@@ -57,7 +57,7 @@ typedef struct {
 	float border_width;
 
 	Font *font;
-	String8 text;
+	string8 text;
 	Image2D *image;
 } IMGUI_Settings;
 
@@ -188,7 +188,7 @@ static inline void imgui_layout(IMGUI_Widget *root) {
 }
 
 // Common widget helpers
-IMGUI_Widget *imgui_label(uint64_t id, String8 label);
+IMGUI_Widget *imgui_label(uint64_t id, string8 label);
 IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale);
 INLINE IMGUI_Widget *imgui_box(uint64_t id, Rectangle rect) {
 	IMGUI_Widget *result = imgui_widget_opt(id,
@@ -199,7 +199,7 @@ INLINE IMGUI_Widget *imgui_box(uint64_t id, Rectangle rect) {
 	return result;
 }
 
-IMGUI_Interact imgui_button_label(String8 label);
+IMGUI_Interact imgui_button_label(string8 label);
 IMGUI_Interact imgui_button_image(Image2D *image, float scale);
 
 IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max);

@@ -77,7 +77,7 @@ typedef enum {
 
 	SHAPE_KIND_MAX,
 } ShapeKind;
-static String8 shape_kind_to_string[SHAPE_KIND_MAX] = {
+static string8 shape_kind_to_string[SHAPE_KIND_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, AABB3),
 	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, SPHERE),
 	ENUM_STRING_TABLE_ENTRY(SHAPE_KIND, CAPSULE3),
