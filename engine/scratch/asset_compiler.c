@@ -263,12 +263,14 @@ AST_Node *ast_parse_pipeline_decl(Arena *arena, Lexer *lexer) {
 		result = ast_make(arena, AST_NODE_PIPELINE_DECL);
 		if (lexer_peek(lexer).type == TOKEN_IDENTIFIER) result->identifier = lexer_consume(lexer, TOKEN_IDENTIFIER, s(""));
 
-		lexer_consume(lexer, TOKEN_LBRACE, s("Expect '{' after pipeline declaration."));
-		while (lexer_peek(lexer).type != TOKEN_RBRACE) {
+		lexer_consume(lexer, TOKEN_LPAREN, s("Expect '(' after pipeline declaration."));
+		do {
+            if (lexer_peek(lexer).type == TOKEN_RPAREN) break;
+
 			ast_pushback(result, ast_parse_expr(arena, lexer));
-			lexer_consume(lexer, TOKEN_SEMICOLON, s("Expect ';' after statement"));
-		}
-		lexer_consume(lexer, TOKEN_RBRACE, s("Expect '}' after pipeline definition."));
+		} while (lexer_match(lexer, TOKEN_COMMA, 0));
+
+		lexer_consume(lexer, TOKEN_RPAREN, s("Expect ')' after pipeline definition."));
 	}
 
 	return result;
@@ -478,7 +480,7 @@ static const string8 cull_mode_table[CULL_MODE_MAX] = {
 };
 // clang-format on
 
-int32_t eval_pipeline_state(const string8 *state_table, uint32_t table_count, string8 needle, const char* fmt, ...) {
+int32_t eval_pipeline_state(const string8 *state_table, uint32_t table_count, string8 needle, const char *fmt, ...) {
 	int32_t result = -1;
 
 	bool ok = state_table && table_count;

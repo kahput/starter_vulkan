@@ -1,5 +1,5 @@
 shader Line3D {
-    pipeline default { }
+    pipeline default()
 
     shared {
         #include "lib/frame.glsl"  

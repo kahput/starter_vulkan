@@ -1,11 +1,11 @@
 shader Quad2D {
-    pipeline default {
-		  cull = none;
-          depth_test = false;
-          depth_write = false;
+    pipeline default (
+		  cull = none,
+          depth_test = false,
+          depth_write = false,
 
-          blend = add(src_alpha, one_minus_src_alpha);
-    }
+          blend = add(src_alpha, one_minus_src_alpha)
+    )
 
     shared {
         #include "lib/frame.glsl"

@@ -1,5 +1,5 @@
 shader Shadow {
-    pipeline default { }
+    pipeline default()
 
     shared {
         #include "lib/frame.glsl"
@@ -27,15 +27,12 @@ shader Shadow {
 }
 
 shader Spatial {
-    pipeline default { 
-        cull = back;
-    } 
-
-    pipeline blended {
-        blend = sub(one, one);
-        cull = front;
-        depth_test = false;
-    }
+    pipeline default(cull = back) 
+    pipeline blended(
+        blend = sub(one, one),
+        cull = front,
+        depth_test = false
+    )
 
     shared {
         #include "lib/frame.glsl"
@@ -126,10 +123,10 @@ shader Spatial {
 }
 
 shader Transparent {
-    pipeline default {
-        blend = add(src_alpha, one_minus_src_alpha);
-        cull = none;
-    }
+    pipeline default(
+        blend = add(src_alpha, one_minus_src_alpha),
+        cull = none
+    )
 
     shared Spatial;
     vertex Spatial;
@@ -149,6 +146,7 @@ shader Transparent {
 } 
 
 shader Grass {
+    pipeline default(cull = none)
 
     shared {
         #include "lib/frame.glsl"
@@ -248,7 +246,6 @@ shader Grass {
 }
 
 shader Skybox {
-
     shared {
         #include "lib/frame.glsl"
 

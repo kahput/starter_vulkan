@@ -1,9 +1,5 @@
 shader Composite {
-    pipeline default {
-        cull_mode = back;
-        depth_test = false;
-        depth_write = false;
-    }
+    pipeline default(cull_mode = back, depth_test = false, depth_write = false)
 
     shared {
         layout(set = 0, binding = 0) uniform sampler2D textures[2];
