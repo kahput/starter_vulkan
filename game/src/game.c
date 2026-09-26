@@ -6,12 +6,11 @@
 #include "core/input_types.h"
 #include "core/strings.h"
 #include "draw/camera.h"
-#include "generated/assets_generated.h"
 #include "gfx/gfx_types.h"
 
 #include "res.h"
+#include "generated/assets.c"
 #include "generated/res_generated.c"
-#include "generated/assets_generated.c"
 
 #include <common.h>
 #include <core/arena.h>
@@ -151,7 +150,7 @@ bool tick(Arena *permanent, Arena *frame) {
 		state->nearest = gfx_sampler_make(state->device, sampler_opt(named("sampler:nearest"), FILTER_NEAREST, WRAP_MODE_CLAMP));
 
 		Arena *resource_arena = arena_push_count(permanent, Arena, 1);
-		resource_arena->base = arena_push(state->permanent, MiB(8), 16, true);
+		resource_arena->base = arena_push(state->permanent, MiB(8), alignof(long double), true);
 		resource_arena->capacity = MiB(8);
 
 		state->cache = res_cache_make(resource_arena, state->device, &registry);
@@ -221,7 +220,7 @@ bool tick(Arena *permanent, Arena *frame) {
 	mouse_delta.x /= dims.x;
 	mouse_delta.y /= dims.y;
 
-	DRAW_List *draw = drawlist_make(frame);
+	DRAW_List *draw = drawlist_make(frame, RES_SHADER_QUAD2D, RES_SHADER_LINE3D);
 	scene_camera_orbit(camera, mouse_delta);
 
 	float4x4 view_from_world = camera_view(&state->camera);
@@ -356,17 +355,21 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	float3x3 transform = mul3x3(screen_from_world, world_from_local);
 
-	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_HEIGHTMAP);
+	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_HEART);
 	draw2d_circle(xform2p(transform, f2(0.0f)), 8.0f, BLACK);
 	draw2d_circle(xform2p(transform, f2(0.0f, 2.0f)), 8.0f, BLACK);
-	draw2d_quad(rect2(xform2p(transform, f2(0.0f, 2.0f)), texture_size(*tex)),
+
+	draw2d_push_shader(RES_SHADER_QUAD2D_EXPERIMENT);
+	draw2d_quad(rect2(xform2p(transform, f2(0.0f, 0.0f)), texture_size(*tex)),
 		(DRAW_QuadStyle){
 		  .fill_color = WHITE,
 		  .image = &(Image2D){
 			.handle = tex->handle,
 			.width = tex->width,
 			.height = tex->height,
-		  } });
+		  },
+		});
+	draw2d_pop_shader();
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -383,37 +386,6 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	GFX_Image *backbuffer = gfx_swapchain_backbuffer(device, cmd, swapchain);
 	if (backbuffer) {
-		GFX_Image *images[32] = { 0 };
-		uint32_t image_count = 1;
-		for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
-			images[texture_id] = state->white_texture;
-
-		if (draw->quad2d->offset) {
-			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_QuadInstance3D);
-			for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-				DRAW_QuadInstance3D *quad = (DRAW_QuadInstance3D *)draw->quad2d->base + quad_instance;
-
-				if (quad->imageid && quad->imageid != indexof(device->image_pool, state->white_texture)) {
-					int32_t found_index = -1;
-					for (uint32_t image_index = 1; image_index < image_count; ++image_index) {
-						if (indexof(device->image_pool, images[image_index]) == quad->imageid) {
-							found_index = image_index;
-							break;
-						}
-					}
-
-					if (found_index == -1) {
-						ASSERT(image_count < countof(images) && "Extend sprite batching to support beyond 32 distinct images");
-						found_index = image_count++;
-						images[found_index] = &device->image_pool[quad->imageid];
-						gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, device->image_pool + quad->imageid);
-					}
-
-					quad->imageid = found_index;
-				}
-			}
-		}
-
 		gfx_cmd_draw_begin(cmd,
 			(GFX_DrawPassInfo){
 			  .debug_name = "main",
@@ -442,41 +414,69 @@ bool tick(Arena *permanent, Arena *frame) {
 		Uniform set0[] = { uniform_data(0, &fd, sizeof(fd)) };
 		gfx_cmd_bind(device, 0, set0, countof(set0));
 
-		if (draw->line3d->offset) {
+		if (draw->line3d.instances.offset) {
 			RES_Shader *line3d = res_shader(&state->cache, RES_SHADER_LINE3D);
-            ASSERT(line3d);
+			ASSERT(line3d);
 			gfx_cmd_shader_bind(device, line3d->handle, 0);
 
 			Uniform set1[] = {
-				storage_data(0, draw->line3d->base, draw->line3d->offset),
+				storage_data(0, draw->line3d.instances.base, draw->line3d.instances.offset),
 			};
 			gfx_cmd_bind(device, 0, set0, countof(set0));
 			gfx_cmd_bind(device, 1, set1, countof(set1));
-			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_LineInstance3D));
+			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance3D));
 		}
 
-		if (draw->quad2d->offset) {
+		{
+			DRAW_Channel *qch = &draw->quad2d;
 			FrameData fd = {
 				.view = identity4x4(),
 				.proj = orthographic(0.0f, dims.x, 0.0f, dims.y, -50.f, 50.f),
 				.viewport = as2(dims, float2),
 				.time = time,
 			};
-			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_QuadInstance3D);
 
-			RES_Shader *quad2d = res_shader(&state->cache, RES_SHADER_QUAD2D);
-			gfx_cmd_shader_bind(device, quad2d->handle, 0);
+			for (DRAW_Batch *batch = qch->first_batch; batch; batch = batch->next) {
+				RES_Shader *shader = res_shader(&state->cache, batch->shader);
+				if (shader == 0) continue; // still compiling / broken — skip (or bind an error shader)
+				gfx_cmd_shader_bind(device, shader->handle, 0);
 
-			Uniform uniforms0[] = {
-				uniform_data(0, &fd, sizeof(fd)),
-				storage_data(1, draw->quad2d->base, draw->quad2d->offset),
-			};
-			Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->nearest) };
+				GFX_Image *images[32] = { 0 };
+				uint32_t image_count = 1;
+				for (uint32_t i = 0; i < 32; ++i)
+					images[i] = state->white_texture;
 
-			gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
-			gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
+				DRAW_QuadInstance3D *base =
+					(DRAW_QuadInstance3D *)((uint8_t *)qch->instances.base + batch->instance_offset);
 
-			gfx_cmd_draw_instanced(cmd, 0, 6, 0, quad_count);
+				for (uint32_t qi = 0; qi < batch->instance_count; ++qi) {
+					DRAW_QuadInstance3D *quad = base + qi;
+					if (quad->imageid && quad->imageid != indexof(device->image_pool, state->white_texture)) {
+						int32_t found_index = -1;
+						for (uint32_t ii = 1; ii < image_count; ++ii)
+							if (indexof(device->image_pool, images[ii]) == quad->imageid) {
+								found_index = ii;
+								break;
+							}
+						if (found_index == -1) {
+							ASSERT(image_count < countof(images));
+							found_index = image_count++;
+							images[found_index] = &device->image_pool[quad->imageid];
+							gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, device->image_pool + quad->imageid);
+						}
+						quad->imageid = found_index;
+					}
+				}
+
+				Uniform uniforms0[] = {
+					uniform_data(0, &fd, sizeof(fd)),
+					storage_data(1, base, batch->instance_count * sizeof(DRAW_QuadInstance3D)),
+				};
+				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->nearest) };
+				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
+				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
+				gfx_cmd_draw_instanced(cmd, 0, 6, 0, batch->instance_count);
+			}
 		}
 
 		gfx_cmd_draw_end(cmd);

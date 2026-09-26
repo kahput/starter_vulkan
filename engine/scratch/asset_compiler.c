@@ -883,8 +883,10 @@ int main(int32_t argc, char **argv) {
 	string8 code_output_directory = pathjoin8(arena, ref_directory, s("game/src/generated"));
 	if (os_directory_exists(code_output_directory) == false)
 		os_directory_make(code_output_directory);
-	FILE *header = fopen((char *)pathjoin8(arena, code_output_directory, s("assets_generated.h")).bytes, "w");
-	FILE *source = fopen((char *)pathjoin8(arena, code_output_directory, s("assets_generated.c")).bytes, "w");
+
+    string8 header_file = s("assets.h"), source_file = s("assets.c");
+	FILE *header = fopen((char *)pathjoin8(arena, code_output_directory, header_file).bytes, "w");
+	FILE *source = fopen((char *)pathjoin8(arena, code_output_directory, source_file).bytes, "w");
 
 	if (header == 0 || source == 0) return -1;
 
@@ -944,7 +946,7 @@ int main(int32_t argc, char **argv) {
 					"#define INOUT in\n"),
 				[SHADER_STAGE_COMPUTE] = s("#pragma shader_stage(compute)"),
 			};
-			string8 include_dir = s("assets/shaders/");
+			string8 include_dir = pathjoin8(arena, ref_directory, s("assets/shaders/"));
 			string8 cleaned_shared = dedent8(arena, blocks[AST_BLOCK_KIND_SHARED]);
 
 			for (AST_BlockKind block_index = 0; block_index < AST_BLOCK_KIND_MAX; ++block_index) {
@@ -997,7 +999,7 @@ int main(int32_t argc, char **argv) {
 
 	fprintf(header, "extern RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX];\n");
 
-	fprintf(source, "#include \"assets_generated.h\"\n\n");
+	fprintf(source, "#include \"%.*s\"\n\n", arg8(header_file));
 	fprintf(source, "RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {\n");
 	if (shader) do {
 			string8 name = shader->identifier.lexeme;

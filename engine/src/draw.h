@@ -1,12 +1,13 @@
 #pragma once
 
 #include "common.h"
-#include "draw/font.h"
-#include "draw/camera.h"
-#include "gfx/gfx_types.h"
-
+#include "core/debug.h"
 #include "core/geom.h"
 #include "core/arena.h"
+
+#include "res.h"
+#include "draw/font.h"
+#include "draw/camera.h"
 
 typedef struct {
 	float2 position, size;
@@ -56,15 +57,43 @@ typedef struct {
 	float rotation;
 
 	uint32_t flags;
+
+	uint8_t *uniform_data;
+	uint64_t uniform_data_size;
 } DRAW_QuadStyle;
 
+typedef struct DRAW_Batch DRAW_Batch;
+struct DRAW_Batch {
+	DRAW_Batch *next;
+
+	RES_ID shader;
+	uint32_t instance_offset;
+	uint32_t instance_count;
+};
+
+#define DRAW_SHADER_STACK_MAX 8
+
 typedef struct {
-	Arena quad2d[1];
-	Arena quad3d[1], line3d[1];
+	Arena instances;
+	DRAW_Batch *first_batch, *last_batch;
+
+	RES_ID default_shader;
+	RES_ID shader_stack[DRAW_SHADER_STACK_MAX];
+	uint32_t shader_stack_count;
+} DRAW_Channel;
+
+typedef struct {
+	Arena *arena;
+
+	DRAW_Channel quad2d;
+	DRAW_Channel line3d;
 } DRAW_List;
 
 // Pushes list to arena and sets thread-local context to list.
-DRAW_List *drawlist_make(Arena *arena);
+DRAW_List *drawlist_make(Arena *arena, RES_ID default_quad2d, RES_ID default_line3d);
+
+void draw2d_push_shader(RES_ID s);
+void draw2d_pop_shader(void);
 
 void draw2d_quad(Rectangle rect, DRAW_QuadStyle style);
 INLINE void draw2d_rect(Rectangle rect, Color color) { draw2d_quad(rect, (DRAW_QuadStyle){ .fill_color = color }); }

@@ -46,30 +46,26 @@ const vec2 corners[4] = vec2[](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), v
 const uint indices[6] = { 0, 2, 3, 0, 3, 1 };
 
 void main() {
+    uint vertex_index = indices[gl_VertexIndex % 6];
     Quad2D quad = instances[gl_InstanceIndex];
 
-    uint vertex_index = indices[gl_VertexIndex % 6];
-    vec2 local = corners[vertex_index] * quad.size;
-    vec2 rot_point = local - quad.origin;
+    float t = sin(frame.time * 3.0);
+
+    vec2 uv = corners[vertex_index];
+    vec2 local = (uv - 0.5) * quad.size;
+
+    local.x += (t * 0.5 + 0.5) * quad.size.x;
 
     vec2 rotated = vec2(
-            rot_point.x * quad.rotation.x - rot_point.y * quad.rotation.y,
-            rot_point.x * quad.rotation.y + rot_point.y * quad.rotation.x
-            );
-    vec2 vertex_position = quad.position + quad.origin + rotated;
+        local.x * quad.rotation.x - local.y * quad.rotation.y,
+        local.x * quad.rotation.y + local.y * quad.rotation.x
+    );
 
-    gl_Position = frame.projection * frame.view * vec4(vertex_position, 0.0, 1.0);
+    vec2 world = quad.position + rotated;
+    gl_Position = frame.projection * frame.view * vec4(world, 0.0, 1.0);
 
-    v.tex_coords = quad.uvs[vertex_index];
+    v.tex_coords = uv;
     v.texture_id = quad.imageid;
-
-    v.fill_color = unpackUnorm4x8(quad.fill_color);
-    v.border_color = unpackUnorm4x8(quad.border_color);
-    v.border_width = quad.border_width;
-
-    v.size = quad.size;
-    v.local = corners[vertex_index];
-    v.radii = quad.radii;
 }
 
 // --- source_end ---

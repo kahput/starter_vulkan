@@ -18,17 +18,10 @@ INLINE string8 str8(void *bytes, uint64_t len) { return (string8){ .bytes = byte
 INLINE string8 str8z(const char *cstring) { return (string8){ .bytes = (uint8_t *)cstring, .length = strlen(cstring) }; }
 INLINE string8 str8_range(void *start, void *end) { return (string8){ .bytes = (uint8_t *)start, .length = end && start ? (end > start ? (uint8_t *)end - (uint8_t *)start : 0) : 0 }; }
 
-INLINE string8 chop8(string8 s, uint32_t amt) {
-	amt = amt < s.length ? amt : s.length;
-	return str8(s.bytes, s.bytes ? s.length - amt : 0);
-}
+INLINE string8 chop8(string8 s, uint32_t amt) { return str8(s.bytes, s.length - MIN(s.length, amt)); }
+INLINE string8 skip8(string8 s, uint32_t amt) { return str8(s.bytes + MIN(amt, s.length), s.length - MIN(amt, s.length)); }
+INLINE bool eq8(string8 a, string8 b) { return a.length != b.length ? false : (a.bytes == b.bytes ? true : memcmp(a.bytes, b.bytes, a.length) == 0); }
 
-INLINE string8 skip8(string8 s, uint32_t amt) {
-	amt = amt < s.length ? amt : s.length;
-	return str8(s.bytes ? s.bytes + amt : 0, s.bytes ? s.length - amt : 0);
-}
-
-bool eq8(string8 a, string8 b);
 bool has8(string8 haystack, string8 needle);
 
 string8 concat8(Arena *arena, string8 a, string8 b);

@@ -1,11 +1,11 @@
 #include "app/scene.h"
 
 #include "core/geom_types.h"
-#include "generated/assets_generated.h"
+#include "generated/assets.h"
 #include "meta.h"
 #include "draw.h"
 
-#include "generated/assets_generated.c"
+#include "generated/assets.c"
 
 #include "common.h"
 #include "core/geom.h"
@@ -1187,7 +1187,7 @@ int main(void) {
 		}
 
 		// :update
-		DRAW_List *draw = drawlist_make(frame_arena);
+		DRAW_List *draw = drawlist_make(frame_arena, RES_SHADER_QUAD2D, RES_SHADER_LINE3D);
 
 		uint2 dims = os_surface_size(main_render);
 		float2 mouse_delta = as2(input_mouse_delta(), float2);
@@ -2462,20 +2462,20 @@ int main(void) {
 				}
 
 				{ // :overlay
-					if (draw->line3d->offset) {
+					if (draw->line3d.instances.offset) {
 						gfx_cmd_shader_bind(device, shaders[RES_SHADER_LINE3D], 0);
 						Uniform uniforms[] = {
-							storage_data(0, draw->line3d->base, draw->line3d->offset),
+							storage_data(0, draw->line3d.instances.base, draw->line3d.instances.offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_LineInstance3D));
+						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance3D));
 					}
 				}
 
 				gfx_cmd_draw_end(cmd);
 			}
 
-			if (draw->quad2d->offset) { // :canvas
+			if (draw->quad2d.instances.offset) { // :canvas
 
 				Frame3D frame_2d = {
 					.view = identity4x4(),
@@ -2483,7 +2483,7 @@ int main(void) {
 					.viewport = as2(dims, float2),
 					.time = time,
 				};
-				uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_QuadInstance3D);
+				uint32_t quad_count = draw->quad2d.instances.offset / sizeof(DRAW_QuadInstance3D);
 
 				GFX_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
@@ -2491,7 +2491,7 @@ int main(void) {
 					images[texture_id] = white_texture;
 
 				for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-					DRAW_QuadInstance3D *quad = (DRAW_QuadInstance3D *)draw->quad2d->base + quad_instance;
+					DRAW_QuadInstance3D *quad = (DRAW_QuadInstance3D *)draw->quad2d.instances.base + quad_instance;
 
 					if (quad->imageid && quad->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;
@@ -2528,7 +2528,7 @@ int main(void) {
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &frame_2d, sizeof(frame_2d)),
-					storage_data(1, draw->quad2d->base, draw->quad2d->offset),
+					storage_data(1, draw->quad2d.instances.base, draw->quad2d.instances.offset),
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 

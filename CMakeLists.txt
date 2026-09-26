@@ -6,20 +6,23 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_definitions(DEV_BUILD)
 
 # Shaders
-# file(GLOB_RECURSE SHADER_INPUTS CONFIGURE_DEPENDS
-#     "${CMAKE_SOURCE_DIR}/assets/shaders/*.shader"
-#     "${CMAKE_SOURCE_DIR}/assets/shaders/*.glsl"
-# )
-# set(SHADER_STAMP "${CMAKE_BINARY_DIR}/shaders.stamp")
-# add_custom_command(
-#     OUTPUT ${SHADER_STAMP}
-#     COMMAND asset_compiler "${CMAKE_SOURCE_DIR}"
-#     COMMAND ${CMAKE_COMMAND} -E touch ${SHADER_STAMP}
-#     DEPENDS asset_compiler ${SHADER_INPUTS}
-#     COMMENT "Compiling Shader DSL and invoking glslc..."
-#     VERBATIM
-# )
-# add_custom_target(compile_shaders ALL DEPENDS ${SHADER_STAMP})
+file(GLOB_RECURSE SHADER_INPUTS CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/assets/shaders/*.shader"
+    "${CMAKE_SOURCE_DIR}/assets/shaders/*.glsl"
+)
+
+set(GENERATED_FILES 
+    "${CMAKE_SOURCE_DIR}/game/src/generated/assets.c"
+    "${CMAKE_SOURCE_DIR}/game/src/generated/assets.h"
+)
+add_custom_command(
+    OUTPUT ${GENERATED_FILES}
+    COMMAND asset_compiler ${CMAKE_SOURCE_DIR}
+    DEPENDS asset_compiler ${SHADER_INPUTS}
+    COMMENT "Compiling Shader DSL and invoking glslc..."
+    VERBATIM
+)
+add_custom_target(compile_shaders ALL DEPENDS ${GENERATED_FILES})
 
 # Scratches
 set(WEB_SCRATCHES web_scratch)

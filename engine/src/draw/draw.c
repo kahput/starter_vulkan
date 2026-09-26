@@ -9,27 +9,74 @@
 #include "gfx.h"
 #include "gfx/gfx_types.h"
 
-DRAW_List *context = 0;
-DRAW_List *drawlist_make(Arena *arena) {
+#define DRAW_QUAD_INSTANCE_MAX 8192
+#define DRAW_LINE_INSTANCE_MAX 8192
+
+DRAW_List *CURRENT_DRAWLIST = 0;
+
+DRAW_List *drawlist_make(Arena *arena, RES_ID default_quad2d, RES_ID default_line3d) {
 	bool ok = arena != 0;
 	if (ok) {
-		context = arena_push_count(arena, DRAW_List, 1);
+		CURRENT_DRAWLIST = arena_push_count(arena, DRAW_List, 1);
+		CURRENT_DRAWLIST->arena = arena;
 
-		context->line3d[0] = (Arena){
-			.base = arena_push_count(arena, DRAW_LineInstance3D, 8192),
-			.capacity = sizeof(DRAW_LineInstance3D) * 8192,
+		CURRENT_DRAWLIST->line3d.instances = (Arena){
+			.base = arena_push_count(arena, DRAW_LineInstance3D, DRAW_LINE_INSTANCE_MAX),
+			.capacity = sizeof(DRAW_LineInstance3D) * DRAW_LINE_INSTANCE_MAX,
 		};
-		context->quad2d[0] = (Arena){
-			.base = arena_push_count(arena, DRAW_QuadInstance3D, 8192),
-			.capacity = sizeof(DRAW_QuadInstance3D) * 8192,
+		CURRENT_DRAWLIST->quad2d.instances = (Arena){
+			.base = arena_push_count(arena, DRAW_QuadInstance3D, DRAW_QUAD_INSTANCE_MAX),
+			.capacity = sizeof(DRAW_QuadInstance3D) * DRAW_QUAD_INSTANCE_MAX,
 		};
+
+		CURRENT_DRAWLIST->quad2d.default_shader = default_quad2d;
+		CURRENT_DRAWLIST->line3d.default_shader = default_line3d;
 	}
 
-	return context;
+	return CURRENT_DRAWLIST;
 }
 
+static void draw_push_shader(DRAW_Channel *ch, RES_ID s) {
+	ASSERT(ch->shader_stack_count < DRAW_SHADER_STACK_MAX);
+	ch->shader_stack[ch->shader_stack_count++] = s;
+}
+static void draw_pop_shader(DRAW_Channel *ch) {
+	ASSERT(ch->shader_stack_count > 0);
+	ch->shader_stack_count--;
+}
+
+void draw2d_push_shader(RES_ID s) { draw_push_shader(&CURRENT_DRAWLIST->quad2d, s); }
+void draw2d_pop_shader(void) { draw_pop_shader(&CURRENT_DRAWLIST->quad2d); }
+
+static void *draw__channel_push(Arena *arena, DRAW_Channel *ch, uint64_t size) {
+	RES_ID current = ch->shader_stack_count
+		? ch->shader_stack[ch->shader_stack_count - 1]
+		: ch->default_shader;
+
+	DRAW_Batch *last = ch->last_batch;
+	if (last == 0 || last->shader != current) {
+		DRAW_Batch *new_entry = arena_push_count(arena, DRAW_Batch, 1);
+		new_entry->shader = current;
+		new_entry->instance_offset = ch->instances.offset;
+		new_entry->instance_count = 0;
+
+		if (last == 0)
+			ch->first_batch = new_entry;
+		else
+			last->next = new_entry;
+
+		last = ch->last_batch = new_entry;
+	}
+
+	void *slot = arena_push(&ch->instances, size, 1, false);
+	last->instance_count++;
+	return slot;
+}
+
+#define draw__channel_push_instance(a, ch, T) draw__channel_push((a), (ch), sizeof(T))
+
 void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
-	bool ok = context;
+	bool ok = CURRENT_DRAWLIST;
 	if (ok) {
 		float2 position = { rect.x, rect.y };
 		float2 size = { rect.width, rect.height };
@@ -63,12 +110,12 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 			.border_width = style.border_width,
 		};
 
-		memory_copy(arena_push_count(context->quad2d, DRAW_QuadInstance3D, 1), &quad, sizeof(quad));
+		memory_copy(draw__channel_push_instance(CURRENT_DRAWLIST->arena, &CURRENT_DRAWLIST->quad2d, DRAW_QuadInstance3D), &quad, sizeof(quad));
 	}
 }
 
 void draw2d_text(Font *font, float2 position, Color color, string8 text) {
-	bool ok = context && font;
+	bool ok = CURRENT_DRAWLIST && font;
 	if (ok) {
 		float y_offset = font->greatest_top_y;
 		float x_offset = 0.0f;
@@ -176,7 +223,7 @@ void draw2d_circle_outline(float2 center, float radius, float thickness, Color c
 }
 
 void draw3d_arc_basis(float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, Color color) {
-	bool ok = context && segments;
+	bool ok = CURRENT_DRAWLIST && segments;
 
 	if (ok) {
 		for (uint32_t i = 0; i < segments; ++i) {
@@ -226,7 +273,7 @@ void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, 
 		{ make4_from3(add3(a, scale3(up, -radius)), thickness), make4_from3(add3(b, scale3(up, -radius)), thickness), packed_color, splat3(0.0f) },
 		{ make4_from3(add3(a, scale3(up, radius)), thickness), make4_from3(add3(b, scale3(up, radius)), thickness), packed_color, splat3(0.0f) },
 	};
-	memory_copy_array(arena_push_count(context->line3d, DRAW_LineInstance3D, countof(spine)), spine);
+	memory_copy_array(arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, countof(spine)), spine);
 
 	for (uint32_t end = 0; end < 2; ++end) {
 		float3 c = end == 0 ? a : b;
@@ -258,12 +305,12 @@ void draw3d_aabb_outline(AABB3 aabb3, float thickness, Color color) {
 		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 	};
 
-	DRAW_LineInstance3D *points = arena_push_count(context->line3d, DRAW_LineInstance3D, countof(outline));
+	DRAW_LineInstance3D *points = arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, countof(outline));
 	memory_copy_array(points, outline);
 }
 
 void draw3d_line(float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(context->line3d, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
+	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
 		.a = make4_from3(start, thickness),
 		.b = make4_from3(end, thickness),
 		.color = color_pack_uint32(color),
@@ -290,7 +337,7 @@ void draw3d_arrow(float3 start, float3 end, float thickness, Color color,
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
 	draw3d_line(start, shaft_end, thickness, color);
-	*arena_push_count(context->line3d, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
+	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
 		.a = make4_from3(shaft_end, thickness * 4.0f),
 		.b = make4_from3(end, 0.0f),
 		.color = color_pack_uint32(color),

@@ -12,18 +12,11 @@ bool str8__ispathdelim(char c) {
 	return c == '/' || c == '\\';
 }
 
-bool eq8(string8 a, string8 b) {
-	if (a.length != b.length) return false;
-	if (a.bytes == b.bytes) return true;
-
-	return memcmp(a.bytes, b.bytes, a.length) == 0;
-}
-
 bool has8(string8 haystack, string8 needle) {
 	if (haystack.length < needle.length) return false;
 
 	for (uint64_t index = 0; index <= haystack.length - needle.length; ++index)
-		if (eq8((string8){ haystack.bytes + index, needle.length }, needle))
+		if (eq8(str8(haystack.bytes + index, needle.length), needle))
 			return true;
 
 	return false;
@@ -175,11 +168,10 @@ string8 copy8(Arena *arena, string8 src) {
 	bool ok = arena && src.length;
 	if (ok) {
 		result.length = src.length;
-		uint32_t new_size = src.bytes[src.length - 1] != '\0' ? src.length + 1 : src.length;
+		result.bytes = arena_push_count(arena, uint8_t, result.length + 1);
 
-		result.bytes = arena_push_count(arena, uint8_t, new_size);
 		memory_copy(result.bytes, src.bytes, src.length);
-		result.bytes[new_size] = '\0';
+		result.bytes[src.length] = '\0';
 	}
 
 	return result;
