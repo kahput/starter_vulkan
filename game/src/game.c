@@ -465,7 +465,6 @@ bool tick(Arena *permanent, Arena *frame) {
 			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_QuadInstance3D);
 
 			RES_Shader *quad2d = res_shader(&state->cache, RES_SHADER_QUAD2D);
-            ASSERT(quad2d);
 			gfx_cmd_shader_bind(device, quad2d->handle, 0);
 
 			Uniform uniforms0[] = {

@@ -1,0 +1,39 @@
+program     -> shader_decl* EOF ;
+
+shader_decl -> 
+    "@shader" IDENTIFIER (
+        "{" shader_stmt* "}" | 
+        shader_stmt*
+    ) ;
+
+shader_stmt ->
+      shader_pipeline | 
+      shader_stage ;
+
+shader_pipeline ->
+    "@pipeline" IDENTIFIER (
+        "(" (pipeline_arg ( "," pipeline_arg)* )? ")" |
+        "{" pipeline_stmt* "}"
+    ) ;
+
+pipeline_stmt ->
+    IDENTIFIER "=" literal ";" ;
+
+pipeline_arg ->
+    IDENTIFIER ":" literal ;
+
+literal ->
+    INTEGER | FLOAT | STRING | "true" | "false" | IDENTIFIER ;
+
+shader_stage ->
+    ("@shared" | "@vertex" | "@fragment" | "@compute") (
+        "{" stage_stmt* "}" |
+        stage_stmt*
+    )
+
+stage_stmt ->
+      GLSL | 
+      insert_stmt ;
+
+insert_stmt ->
+    "@insert" IDENTIFIER ;

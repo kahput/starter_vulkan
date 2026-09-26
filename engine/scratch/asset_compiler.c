@@ -995,10 +995,10 @@ int main(int32_t argc, char **argv) {
 	fprintf(header, "\n    RES_SHADER_MAX\n");
 	fprintf(header, "} RES_ShaderID;\n\n");
 
-	fprintf(header, "extern RES_ShaderMeta res_shaderid_to_metadata[RES_SHADER_MAX];\n");
+	fprintf(header, "extern RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX];\n");
 
 	fprintf(source, "#include \"assets_generated.h\"\n\n");
-	fprintf(source, "RES_ShaderMeta res_shaderid_to_metadata[RES_SHADER_MAX] = {\n");
+	fprintf(source, "RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {\n");
 	if (shader) do {
 			string8 name = shader->identifier.lexeme;
 			string8 upper = upper8(arena, name);
