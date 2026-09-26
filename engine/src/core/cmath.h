@@ -235,6 +235,7 @@ INLINE float det3x3(float3x3 m) {
 	);
 }
 
+
 INLINE float2 xform2p(float3x3 m, float2 p) { return make2_from3(mul3x3v(m, make3_from2(p, 1.0f))); }
 INLINE float2 xform2v(float3x3 m, float2 d) { return make2_from3(mul3x3v(m, make3_from2(d, 0.0f))); }
 

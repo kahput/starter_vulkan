@@ -1,14 +1,5 @@
 #pragma once
-#include "core/strings.h"
-#include "gfx/gfx_types.h"
-
-typedef struct {
-    string8 name;
-    string8 filepaths[SHADER_STAGE_MAX];
-    PipelineOptions pipelines[8];
-    uint32_t pipeline_count;
-} ShaderMetadata;
-
+#include "res.h"
 typedef enum {
     RES_SHADER_SHADOW,
 #define PIPELINE_SHADOW_DEFAULT 0
@@ -35,4 +26,4 @@ typedef enum {
     RES_SHADER_MAX
 } RES_ShaderID;
 
-extern ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX];
+extern RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX];

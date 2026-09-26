@@ -10,12 +10,14 @@
 #include "common.h"
 #include "core/geom.h"
 #include "core/debug.h"
+#include "core/err.h"
 #include "core/arena.h"
 #include "core/logger.h"
 #include "core/cmath.h"
 #include "core/strings.h"
 #include "core/input_types.h"
 
+#include "res.h"
 #include "utils/anim.h"
 #include "utils/json.h"
 #include "utils/lexer.h"
@@ -90,8 +92,8 @@ typedef struct {
 
 typedef struct {
 	// CPU
-	Vertex3D *vertices;
-	SkinningVertex3D *skinning;
+	DRAW_Vertex3D *vertices;
+	DRAW_SkinningVertex3D *skinning;
 	uint32_t *indices;
 
 	// GPU
@@ -838,7 +840,7 @@ int main(void) {
 	OS_Timestamp shader_ts[RES_SHADER_MAX] = { 0 };
 	GFX_Shader *shaders[RES_SHADER_MAX] = { 0 };
 	for (RES_ShaderID id = 0; id < RES_SHADER_MAX; ++id) { // :shaders
-		ShaderMetadata *metadata = &res_shaderid_to_metadata[id];
+		RES_ShaderMeta *metadata = &res_shader_metadata[id];
 		if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
 			metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
 			metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
@@ -951,7 +953,7 @@ int main(void) {
 					uint32_t mip_level = 0;
 
 					if (img->pixels) {
-						string8 head = filename8(meshid_to_metadata[mesh_index]);
+						string8 head = pathfile8(meshid_to_metadata[mesh_index]);
 						string8 tail = texture_slot_to_string[texture_slot];
 
 						head = head.length ? head : s("gen");
@@ -1009,13 +1011,13 @@ int main(void) {
 			Mesh *mesh = &meshes[mesh_index];
 			mesh->buffer = geometry;
 
-			uint64_t total_vertex_buffer_size = alignup(mesh->total_vertex_count * sizeof(Vertex3D), 256);
+			uint64_t total_vertex_buffer_size = alignup(mesh->total_vertex_count * sizeof(DRAW_Vertex3D), 256);
 			uint64_t total_index_buffer_size = alignup(mesh->total_index_count * sizeof(uint32_t), 256);
-			uint64_t total_skinning_buffer_size = alignup(mesh->total_vertex_count * sizeof(SkinningVertex3D), 256);
+			uint64_t total_skinning_buffer_size = alignup(mesh->total_vertex_count * sizeof(DRAW_SkinningVertex3D), 256);
 
 			// Vertices
 			mesh->buffer_vertex_byte_offset = geometry_upload_cursor;
-			memory_copy(arena_push(cmd->transient_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3D));
+			memory_copy(arena_push(cmd->transient_arena, total_vertex_buffer_size, 1, false), mesh->vertices, mesh->total_vertex_count * sizeof(DRAW_Vertex3D));
 			geometry_upload_cursor += total_vertex_buffer_size;
 
 			// Indices
@@ -1026,7 +1028,7 @@ int main(void) {
 			// Skinning
 			if (mesh->skeleton.bone_count) {
 				mesh->buffer_skinning_data_byte_offset = geometry_upload_cursor;
-				memory_copy(arena_push(cmd->transient_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(SkinningVertex3D));
+				memory_copy(arena_push(cmd->transient_arena, total_skinning_buffer_size, 1, false), mesh->skinning, mesh->total_vertex_count * sizeof(DRAW_SkinningVertex3D));
 				geometry_upload_cursor += total_skinning_buffer_size;
 			}
 		}
@@ -2039,7 +2041,7 @@ int main(void) {
 					}
 
 					if (target && input_key_pressed(KEY_CODE_F))
-						LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), filename8(meshid_to_metadata[target->meshid]).bytes);
+						LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), pathfile8(meshid_to_metadata[target->meshid]).bytes);
 				}
 			} break;
 			default:
@@ -2143,7 +2145,7 @@ int main(void) {
 				uint64_t matrices_size = mesh->skeleton.bone_count * sizeof(float4x4);
 				uint64_t matrices_offset = gfx_cmd_put(cmd, matrices_size, instance->skin_matrices);
 
-				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(Vertex3D), 256);
+				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(DRAW_Vertex3D), 256);
 				instance->skinned_vertices_offset = gfx_cmd_put(cmd, skinned_vertices_size, 0);
 
 				gfx_cmd_shader_bind(device, shaders[RES_SHADER_SKINNING], 0);
@@ -2231,7 +2233,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3D);
+						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
 						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = entity->skinned_vertices_offset;
@@ -2313,7 +2315,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3D);
+						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
 						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = entity->skinned_vertices_offset;
@@ -2364,7 +2366,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3D);
+						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
 						GFX_Image *images[] = {
 							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].handle,
 							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].handle,
@@ -2426,7 +2428,7 @@ int main(void) {
 
 						GFX_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
-						uint64_t size = mesh->total_vertex_count * sizeof(Vertex3D);
+						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
 						if (entity_has(e, ENTITY_FEATURE_ANIMATE) && animation_counts[e->meshid] && e->skin_matrices) {
 							buffer = cmd->transient_buffer;
 							offset = e->skinned_vertices_offset;
@@ -2466,7 +2468,7 @@ int main(void) {
 							storage_data(0, draw->line3d->base, draw->line3d->offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_Line3D));
+						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_LineInstance3D));
 					}
 				}
 
@@ -2481,7 +2483,7 @@ int main(void) {
 					.viewport = as2(dims, float2),
 					.time = time,
 				};
-				uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_Quad2D);
+				uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_QuadInstance3D);
 
 				GFX_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
@@ -2489,7 +2491,7 @@ int main(void) {
 					images[texture_id] = white_texture;
 
 				for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-					DRAW_Quad2D *quad = (DRAW_Quad2D *)draw->quad2d->base + quad_instance;
+					DRAW_QuadInstance3D *quad = (DRAW_QuadInstance3D *)draw->quad2d->base + quad_instance;
 
 					if (quad->imageid && quad->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;
@@ -2567,7 +2569,7 @@ int main(void) {
 		gfx_frame_end(device, cmd);
 
 		for (RES_ShaderID shaderid = 0; shaderid < RES_SHADER_MAX; ++shaderid) { // :hot-reload
-			ShaderMetadata *metadata = &res_shaderid_to_metadata[shaderid];
+			RES_ShaderMeta *metadata = &res_shader_metadata[shaderid];
 			if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
 				metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
@@ -2598,8 +2600,6 @@ int main(void) {
 				if (now != shader_ts[shaderid]) {
 					LOG_INFO("hot-reloading %s...", shaders[shaderid]->debug_name);
 					gfx_device_wait_idle(device);
-
-					ShaderMetadata *metadata = &res_shaderid_to_metadata[shaderid];
 
 					gfx_shader_destroy(device, shaders[shaderid]);
 					ArenaTemp scratch = arena_scratch_begin(NULL);
@@ -2654,7 +2654,7 @@ Image2D load_image(Arena *arena, string8 path) {
 	}
 
 	if (ok) {
-		string8 filename = filename8(path);
+		string8 filename = pathfile8(path);
 		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.bytes, result.width, result.height, channels == 4 ? "RGBA8" : "RGB8");
 	}
 
@@ -2722,7 +2722,7 @@ Mesh load_gltf(Arena *arena, string8 path) {
 		ok &= cgltf_validate(data) == cgltf_result_success;
 	}
 
-	string8 directory = dir8(path);
+	string8 directory = pathdir8(path);
 
 	if (ok) { // load materials
 		result.material_count = data->materials_count + 1;
@@ -2783,9 +2783,9 @@ Mesh load_gltf(Arena *arena, string8 path) {
 		}
 
 		result.parts = arena_push_count(arena, MeshPart, result.part_count);
-		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DRAW_Vertex3D, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
-		result.skinning = data->skins_count > 0 ? arena_push_count(arena, SkinningVertex3D, result.total_vertex_count) : 0;
+		result.skinning = data->skins_count > 0 ? arena_push_count(arena, DRAW_SkinningVertex3D, result.total_vertex_count) : 0;
 		result.bounds = aabb3_empty();
 
 		uint32_t part_offset = 0;
@@ -2821,35 +2821,35 @@ Mesh load_gltf(Arena *arena, string8 path) {
 					uint32_t offset = 0;
 					switch (attribute->type) {
 						case cgltf_attribute_type_position:
-							offset = offsetof(Vertex3D, position);
+							offset = offsetof(DRAW_Vertex3D, position);
 							if (has_transform == false) {
 								part->bounds.min = load3(accessor->min);
 								part->bounds.max = load3(accessor->max);
 							}
 							break;
 						case cgltf_attribute_type_normal:
-							offset = offsetof(Vertex3D, normal);
+							offset = offsetof(DRAW_Vertex3D, normal);
 							break;
 						case cgltf_attribute_type_tangent:
-							offset = offsetof(Vertex3D, tangent);
+							offset = offsetof(DRAW_Vertex3D, tangent);
 							break;
 						case cgltf_attribute_type_texcoord:
-							offset = offsetof(Vertex3D, uv);
+							offset = offsetof(DRAW_Vertex3D, uv);
 							break;
 						case cgltf_attribute_type_weights:
-							offset = offsetof(SkinningVertex3D, weights);
+							offset = offsetof(DRAW_SkinningVertex3D, weights);
 							skinned++;
 							break;
 						case cgltf_attribute_type_joints:
-							offset = offsetof(SkinningVertex3D, bone_ids);
+							offset = offsetof(DRAW_SkinningVertex3D, bone_ids);
 							skinned++;
 							break;
 						default:
 							continue;
 					}
 
-					Vertex3D *mesh_vertices = result.vertices + vertex_offset;
-					SkinningVertex3D *mesh_skinning = result.skinning + vertex_offset;
+					DRAW_Vertex3D *mesh_vertices = result.vertices + vertex_offset;
+					DRAW_SkinningVertex3D *mesh_skinning = result.skinning + vertex_offset;
 
 					for (uint32_t vertex_index = 0; vertex_index < part->vertex_count; ++vertex_index) {
 						if (attribute->type == cgltf_attribute_type_weights)
@@ -2899,7 +2899,7 @@ Mesh load_gltf(Arena *arena, string8 path) {
 					}
 
 					if (parent_bone >= 0) {
-						SkinningVertex3D *mesh_skinning = result.skinning + vertex_offset;
+						DRAW_SkinningVertex3D *mesh_skinning = result.skinning + vertex_offset;
 						for (uint32_t vertex_index = 0; vertex_index < part->vertex_count; ++vertex_index) {
 							mesh_skinning[vertex_index].bone_ids = (uint32x4){ parent_bone, 0, 0, 0 };
 							mesh_skinning[vertex_index].weights = (float4){ 1.0f, 0.0f, 0.0f, 0.0f };
@@ -3085,7 +3085,7 @@ Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segment
 
 		result.total_vertex_count = rings * segments;
 		result.bounds = aabb3_empty();
-		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DRAW_Vertex3D, result.total_vertex_count);
 
 		uint32_t vertex_cursor = 0;
 		for (uint32_t ring = 0; ring < rings; ++ring) {
@@ -3096,7 +3096,7 @@ Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segment
 				float azimuth = ((float)segment / (segments - 1)) * TAU;
 				float ca = cosf(azimuth), sa = -sinf(azimuth);
 
-				result.vertices[vertex_cursor++] = (Vertex3D){
+				result.vertices[vertex_cursor++] = (DRAW_Vertex3D){
 					.position = add3(origin, f3(st * ca * radius.x, ct * radius.y, st * sa * radius.z)),
 					.normal = { st * ca, ct, st * sa },
 					.uv = { (float)segment / (segments - 1), (float)ring / (rings - 1) },
@@ -3160,7 +3160,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 		uint32_t cap_vertices = 1 + segments;
 		result.bounds = aabb3_empty();
 		result.total_vertex_count = (segments * rings) + (cap_vertices * (top_cap + bottom_cap));
-		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DRAW_Vertex3D, result.total_vertex_count);
 
 		uint32_t vertex_cursor = 0;
 		for (uint32_t ring = 0; ring < rings; ++ring) {
@@ -3174,7 +3174,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 				float a = ((float)segment / (segments - 1)) * TAU;
 				float ca = cosf(a), sa = -sinf(a);
 
-				result.vertices[vertex_cursor++] = (Vertex3D){
+				result.vertices[vertex_cursor++] = (DRAW_Vertex3D){
 					.position = add3(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { ca, 0.0f, sa },
 					.uv = { sv, 1.0 - rv },
@@ -3197,7 +3197,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 			float r = top_radius + rv * (bottom_radius - top_radius);
 
 			uint32_t center_index = center_indices[end_index] = vertex_cursor++;
-			result.vertices[center_index] = (Vertex3D){
+			result.vertices[center_index] = (DRAW_Vertex3D){
 				.position = add3(origin, (float3){ 0.0f, y, 0.0f }),
 				.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 				.uv = { 0.5f, 0.5f }
@@ -3211,7 +3211,7 @@ Mesh mesh_cylinder(Arena *arena, float3 origin, float half_height, float bottom_
 				float a = ((float)segment / segments) * TAU;
 				float ca = cosf(a), sa = -sinf(a);
 
-				result.vertices[vertex_cursor++] = (Vertex3D){
+				result.vertices[vertex_cursor++] = (DRAW_Vertex3D){
 					.position = add3(origin, (float3){ ca * r, y, sa * r }),
 					.normal = { 0.0f, (rv - 0.5f) * -2.0f, 0.0f },
 					.uv = { (ca + 1.0f) * 0.5f, (sa + 1.0f) * 0.5f } // Planar mapping
@@ -3293,12 +3293,12 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 		subdivision_z += 2;
 		result.total_vertex_count = subdivision_x * subdivision_z;
 
-		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DRAW_Vertex3D, result.total_vertex_count);
 
 		float3 right, up;
 		p.normal = orthobasis3(p.normal, &right, &up);
 
-		Vertex3D *vertex_cursor = result.vertices;
+		DRAW_Vertex3D *vertex_cursor = result.vertices;
 		for (uint32_t z = 0; z < subdivision_z; ++z) {
 			for (uint32_t x = 0; x < subdivision_x; ++x) {
 				float3 local = {
@@ -3307,7 +3307,7 @@ Mesh mesh_plane(Arena *arena, Plane p, float width, float height, uint32_t subdi
 					.z = (((float)z / (subdivision_z - 1)) - 0.5f) * height,
 				};
 
-				*vertex_cursor = (Vertex3D){
+				*vertex_cursor = (DRAW_Vertex3D){
 					.position = add3(scale3(right, local.x), scale3(up, local.z)),
 					.normal = p.normal,
 					.uv = { (float)x / (subdivision_x - 1), (float)z / (subdivision_z - 1) },
@@ -3364,7 +3364,7 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 	if (ok) {
 		result.total_vertex_count = heightmap.width * heightmap.height;
 
-		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DRAW_Vertex3D, result.total_vertex_count);
 		for (uint32_t z = 0; z < heightmap.height; ++z) {
 			for (uint32_t x = 0; x < heightmap.width; ++x) {
 				uint32_t index = x + z * heightmap.width;
@@ -3374,7 +3374,7 @@ Mesh mesh_heightmap(Arena *arena, Side orientation, float w, float h, Image2D he
 					.y = ((heightmap.pixels[index * 4] / 255.f) - 0.5f) * 40.f,
 					.z = (((float)z / (heightmap.height - 1)) - 0.5f) * h,
 				};
-				result.vertices[index] = (Vertex3D){
+				result.vertices[index] = (DRAW_Vertex3D){
 					.position = face_orient(local, orientation),
 					.normal = { 0.0f, 1.0f, 0.0f },
 					.uv = { (float)x / (heightmap.width - 1), (float)z / (heightmap.height - 1) },
@@ -3438,7 +3438,7 @@ Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count) {
 			result.material_count += mesh->material_count;
 		}
 
-		result.vertices = arena_push_count(arena, Vertex3D, result.total_vertex_count);
+		result.vertices = arena_push_count(arena, DRAW_Vertex3D, result.total_vertex_count);
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
 		result.parts = arena_push_count(arena, MeshPart, result.part_count);
 		result.materials = arena_push_count(arena, Material, result.material_count);
@@ -3448,7 +3448,7 @@ Mesh mesh_merge(Arena *arena, Mesh *meshes, uint32_t mesh_count) {
 		for (uint32_t mesh_index = 0; mesh_index < mesh_count; ++mesh_index) {
 			Mesh *mesh = &meshes[mesh_index];
 
-			memory_copy(result.vertices + vertex_cursor, mesh->vertices, mesh->total_vertex_count * sizeof(Vertex3D));
+			memory_copy(result.vertices + vertex_cursor, mesh->vertices, mesh->total_vertex_count * sizeof(DRAW_Vertex3D));
 			memory_copy(result.indices + index_cursor, mesh->indices, mesh->total_index_count * sizeof(uint32_t));
 			memory_copy(result.materials + material_cursor, mesh->materials, mesh->material_count * sizeof(Material));
 

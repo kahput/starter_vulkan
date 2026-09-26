@@ -19,37 +19,13 @@ typedef struct {
 	float2 origin, rotation;
 	float border_width;
 	float3 _pad0;
-} DRAW_Quad2D;
-
-typedef struct {
-	float4x4 model;
-
-	float4 radii;
-	float2 uvs[4];
-
-	uint32_t imageid, flags;
-	uint32_t fill_color, border_color;
-
-	float border_width;
-	float3 _pad0;
-} DRAW_Quad3D;
+} DRAW_QuadInstance3D;
 
 typedef struct {
 	float4 a, b; // xyz + thickness
 	uint32_t color;
 	float3 _pad0;
-} DRAW_Line3D;
-
-typedef enum {
-	DRAW_PASS_SHADOW,
-	DRAW_PASS_OPAQUE,
-	DRAW_PASS_SKYBOX,
-	DRAW_PASS_TRANSPARENT,
-	DRAW_PASS_DEBUG_OVERLAY,
-	DRAW_PASS_2D,
-
-	DRAW_PASS_MAX,
-} DRAW_PassKind;
+} DRAW_LineInstance3D;
 
 typedef struct {
 	float3 position;
@@ -58,12 +34,12 @@ typedef struct {
 	float _pad1;
 	float2 uv;
 	float4 tangent;
-} Vertex3D;
+} DRAW_Vertex3D;
 
 typedef struct {
 	uint4 bone_ids;
 	float4 weights;
-} SkinningVertex3D;
+} DRAW_SkinningVertex3D;
 
 typedef struct {
 	Color fill_color;
@@ -98,7 +74,7 @@ INLINE void draw2d_sprite(float2 position, Image2D *image, Color tint) { draw2d_
 INLINE void draw2d_circle(float2 position, float radius, Color color) { draw2d_quad(rect(position.x - radius, position.y - radius, radius * 2.0, radius * 2.0), (DRAW_QuadStyle){ .fill_color = color, .origin = splat2(radius), .radii = splat4(radius) }); }
 
 void draw2d_text(Font *font, float2 position, Color color, string8 text);
-void draw2d_textf(Font *font, float2 position, Color color, const char* format, ...);
+void draw2d_textf(Font *font, float2 position, Color color, const char *format, ...);
 
 void draw2d_line(float2 start, float2 end, float thickness, Color color);
 void draw2d_dashed(float2 start, float2 end, float thickness, float segment_length, float gap_length, Color color);
@@ -107,9 +83,7 @@ void draw2d_arrow(float2 origin, float2 delta, float thickness, float head_lengh
 void draw2d_triangle_outline(Triangle2 triangle, float thickness, Color color);
 void draw2d_circle_outline(float2 center, float radius, float thickness, Color color);
 
-void draw3d_quad(float3 position, float2 size, DRAW_QuadStyle style);
 void draw3d_line(float3 start, float3 end, float thickness, Color color);
-
 void draw3d_arrow(float3 start, float3 end, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width);
 void draw3d_arc(float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, Color color);

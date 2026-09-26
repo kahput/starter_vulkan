@@ -16,16 +16,12 @@ DRAW_List *drawlist_make(Arena *arena) {
 		context = arena_push_count(arena, DRAW_List, 1);
 
 		context->line3d[0] = (Arena){
-			.base = arena_push_count(arena, DRAW_Line3D, 8192),
-			.capacity = sizeof(DRAW_Line3D) * 8192,
+			.base = arena_push_count(arena, DRAW_LineInstance3D, 8192),
+			.capacity = sizeof(DRAW_LineInstance3D) * 8192,
 		};
 		context->quad2d[0] = (Arena){
-			.base = arena_push_count(arena, DRAW_Quad2D, 8192),
-			.capacity = sizeof(DRAW_Quad2D) * 8192,
-		};
-		context->quad3d[0] = (Arena){
-			.base = arena_push_count(arena, DRAW_Quad3D, 1024),
-			.capacity = sizeof(DRAW_Quad3D) * 1024,
+			.base = arena_push_count(arena, DRAW_QuadInstance3D, 8192),
+			.capacity = sizeof(DRAW_QuadInstance3D) * 8192,
 		};
 	}
 
@@ -48,7 +44,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 		uint32_t imageid = style.image ? style.image->handle->imageid : 0;
 
 		float rad = style.rotation * DEG2RAD;
-		DRAW_Quad2D quad = {
+		DRAW_QuadInstance3D quad = {
 			.position = position,
 			.size = size,
 			.radii = style.radii,
@@ -67,7 +63,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 			.border_width = style.border_width,
 		};
 
-		memory_copy(arena_push_count(context->quad2d, DRAW_Quad2D, 1), &quad, sizeof(quad));
+		memory_copy(arena_push_count(context->quad2d, DRAW_QuadInstance3D, 1), &quad, sizeof(quad));
 	}
 }
 
@@ -98,7 +94,7 @@ void draw2d_text(Font *font, float2 position, Color color, string8 text) {
 	}
 }
 
-void draw2d_textf(Font *font, float2 position, Color color, const char* format, ...) {
+void draw2d_textf(Font *font, float2 position, Color color, const char *format, ...) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	va_list args;
@@ -223,14 +219,14 @@ void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, 
 	direction = orthobasis3(direction, &right, &up);
 
 	uint32_t packed_color = color_pack_uint32(color);
-	DRAW_Line3D spine[] = {
+	DRAW_LineInstance3D spine[] = {
 		{ make4_from3(add3(a, scale3(right, -radius)), thickness), make4_from3(add3(b, scale3(right, -radius)), thickness), packed_color, splat3(0.0f) },
 		{ make4_from3(add3(a, scale3(right, radius)), thickness), make4_from3(add3(b, scale3(right, radius)), thickness), packed_color, splat3(0.0f) },
 
 		{ make4_from3(add3(a, scale3(up, -radius)), thickness), make4_from3(add3(b, scale3(up, -radius)), thickness), packed_color, splat3(0.0f) },
 		{ make4_from3(add3(a, scale3(up, radius)), thickness), make4_from3(add3(b, scale3(up, radius)), thickness), packed_color, splat3(0.0f) },
 	};
-	memory_copy_array(arena_push_count(context->line3d, DRAW_Line3D, countof(spine)), spine);
+	memory_copy_array(arena_push_count(context->line3d, DRAW_LineInstance3D, countof(spine)), spine);
 
 	for (uint32_t end = 0; end < 2; ++end) {
 		float3 c = end == 0 ? a : b;
@@ -247,7 +243,7 @@ void draw3d_aabb_outline(AABB3 aabb3, float thickness, Color color) {
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
-	DRAW_Line3D outline[] = {
+	DRAW_LineInstance3D outline[] = {
 		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
@@ -262,39 +258,12 @@ void draw3d_aabb_outline(AABB3 aabb3, float thickness, Color color) {
 		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
 	};
 
-	DRAW_Line3D *points = arena_push_count(context->line3d, DRAW_Line3D, countof(outline));
+	DRAW_LineInstance3D *points = arena_push_count(context->line3d, DRAW_LineInstance3D, countof(outline));
 	memory_copy_array(points, outline);
 }
 
-void draw3d_quad(float3 position, float2 size, DRAW_QuadStyle style) {
-	bool ok = context;
-	if (ok) {
-		float2 uv0 = splat2(0.0f);
-		float2 uv1 = splat2(1.0f);
-		if (style.image && style.uv.width != 0.0f && style.uv.height != 0.0f) {
-			uv0 = make2(style.uv.x / style.image->width, style.uv.y / style.image->height);
-			uv1 = make2((style.uv.x + style.uv.width) / style.image->width, (style.uv.y + style.uv.height) / style.image->height);
-		}
-
-		uint32_t imageid = style.image ? style.image->handle->imageid : 0;
-
-		float rad = style.rotation * DEG2RAD;
-		DRAW_Quad3D quad = {
-			.model = transform4x4((Transform3){ .translation = position, .scale = f3(size.x, size.y, 0.0f) }),
-			.radii = style.radii,
-			.uvs = { uv0, { uv1.x, uv0.y }, { uv0.x, uv1.y }, uv1 },
-			.imageid = imageid,
-			.flags = style.flags,
-			.fill_color = color_pack_uint32(style.fill_color),
-			.border_color = color_pack_uint32(style.border_color),
-			.border_width = style.border_width,
-		};
-		memory_copy(arena_push_count(context->quad3d, DRAW_Quad3D, 1), &quad, sizeof(quad));
-	}
-}
-
 void draw3d_line(float3 start, float3 end, float thickness, Color color) {
-	*arena_push_count(context->line3d, DRAW_Line3D, 1) = (DRAW_Line3D){
+	*arena_push_count(context->line3d, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
 		.a = make4_from3(start, thickness),
 		.b = make4_from3(end, thickness),
 		.color = color_pack_uint32(color),
@@ -321,7 +290,7 @@ void draw3d_arrow(float3 start, float3 end, float thickness, Color color,
 	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
 
 	draw3d_line(start, shaft_end, thickness, color);
-	*arena_push_count(context->line3d, DRAW_Line3D, 1) = (DRAW_Line3D){
+	*arena_push_count(context->line3d, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
 		.a = make4_from3(shaft_end, thickness * 4.0f),
 		.b = make4_from3(end, 0.0f),
 		.color = color_pack_uint32(color),

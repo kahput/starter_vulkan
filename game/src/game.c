@@ -6,9 +6,11 @@
 #include "core/input_types.h"
 #include "core/strings.h"
 #include "draw/camera.h"
+#include "generated/assets_generated.h"
 #include "gfx/gfx_types.h"
 
 #include "res.h"
+#include "generated/res_generated.c"
 #include "generated/assets_generated.c"
 
 #include <common.h>
@@ -36,11 +38,8 @@ typedef struct {
 
 	InputState input;
 
-	GFX_Shader *shaders[RES_SHADER_MAX];
-	OS_Timestamp shader_ts[RES_SHADER_MAX];
-
 	GFX_Image *white_texture;
-	RES_Cache cache[1];
+	RES_Cache cache;
 
 	GFX_Sampler *nearest;
 
@@ -120,15 +119,24 @@ Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, fl
 	return result;
 }
 
+const RES_Registry registry = {
+	.images = res_image_metadata,
+	.image_count = RES_IMAGE_MAX,
+
+	.shader_count = RES_SHADER_MAX,
+	.shaders = res_shader_metadata,
+};
+
 bool tick(Arena *permanent, Arena *frame) {
+	if (permanent->offset == 0) arena_push_count(permanent, State, 1); // reserve space for state
+
 	state = (State *)permanent->base;
 	input_set_context(&state->input);
 
 	if (state->initialized == false) {
-		arena_push_count(permanent, State, 1); // reserve space for state
 		state->permanent = permanent, state->frame = frame;
 
-		gfx_device_make(state->device);
+		if (gfx_device_make(state->device) == false) return false;
 
 		state->surface = os_surface_open(1280, 720, str8z(named("game")), OS_SURFACE_FLAG_RESIZEABLE);
 		state->swapchain = gfx_swapchain_make(state->device, state->surface, named("main"));
@@ -139,42 +147,14 @@ bool tick(Arena *permanent, Arena *frame) {
 			  .usage = IMAGE_USAGE_RENDER,
 			});
 
-		for (RES_ShaderID shaderid = 0; shaderid < RES_SHADER_MAX; ++shaderid) {
-			ShaderMetadata *metadata = &res_shaderid_to_metadata[shaderid];
-
-			bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length;
-			if (is_compute) {
-				string8 cs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-				state->shaders[shaderid] = gfx_compute_make(state->device, cs, (char *)metadata->name.bytes);
-				state->shader_ts[shaderid] = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
-			} else {
-				string8 vs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
-				string8 fs = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-
-				OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-				OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
-
-				state->shader_ts[shaderid] = MAX(fs_ts, vs_ts);
-
-				state->shaders[shaderid] = gfx_shader_make(state->device, vs, fs, (char *)metadata->name.bytes);
-				for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation) {
-					PipelineOptions opts = metadata->pipelines[permutation];
-					gfx_pipeline_ensure(state->device, state->shaders[shaderid], opts,
-						(GFX_DrawTargetLayout){
-						  .color_formats[0] = PIXEL_FORMAT_BGRA8_UNORM,
-						  .color_count = 1,
-						});
-				}
-			}
-		}
-
 		state->white_texture = gfx_image_make(state->device, 1, 1, (ImageOptions){ .pixels = (uint8_t[]){ 255, 255, 255, 255 } });
 		state->nearest = gfx_sampler_make(state->device, sampler_opt(named("sampler:nearest"), FILTER_NEAREST, WRAP_MODE_CLAMP));
 
 		Arena *resource_arena = arena_push_count(permanent, Arena, 1);
 		resource_arena->base = arena_push(state->permanent, MiB(8), 16, true);
 		resource_arena->capacity = MiB(8);
-		state->cache[0] = res_init(resource_arena, state->device);
+
+		state->cache = res_cache_make(resource_arena, state->device, &registry);
 
 		state->camera = (Camera){
 			.projection = CAMERA_PROJECTION_PERSPECTIVE,
@@ -363,55 +343,31 @@ bool tick(Arena *permanent, Arena *frame) {
 		draw2d_line(make2(0.0f, py), make2(viewport.width, py), 1.0f, c);
 	}
 
-	static Drag2D anchors[2] = { 0 };
-	static Drag2D controls[2] = { 0 };
-	drag2d_point(&anchors[0], f2(-2.0f, -1.0f), 0.15f, xform2p(world_from_screen, mouse_position));
-	drag2d_point(&anchors[1], f2(1.0f, 2.0f), 0.15f, xform2p(world_from_screen, mouse_position));
+	static Drag2D drag = { 0 };
+	drag2d_point(&drag, f2(0.0f), 8.0f, xform2p(world_from_screen, mouse_position));
 
-	drag2d_point(&controls[0], f2(-3.0f, 0.0f), 0.1f, xform2p(world_from_screen, mouse_position));
-	drag2d_point(&controls[1], f2(0.0f, 3.0f), 0.1f, xform2p(world_from_screen, mouse_position));
+	// clang-format off
+	float3x3 world_from_local = { {
+	  [0] = 1.0f, [3] = 0.0f, [6] = drag.position.x,
+	  [1] = 0.0f, [4] = 1.0f, [7] = drag.position.y,
+	  [2] = 0.0f, [5] = 0.0f, [8] = 1.0f,
+	} };
+	// clang-format on
 
-	draw2d_line(xform2p(screen_from_world, anchors[0].position), xform2p(screen_from_world, controls[0].position), 4.0f, BLACK);
-	draw2d_line(xform2p(screen_from_world, anchors[1].position), xform2p(screen_from_world, controls[1].position), 4.1f, BLACK);
+	float3x3 transform = mul3x3(screen_from_world, world_from_local);
 
-	float step = 1.0f / 128.0f;
-	for (uint32_t res = 0; res < 128; ++res) {
-		float t = (float)res / 128.0f;
+	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_HEIGHTMAP);
+	draw2d_circle(xform2p(transform, f2(0.0f)), 8.0f, BLACK);
+	draw2d_circle(xform2p(transform, f2(0.0f, 2.0f)), 8.0f, BLACK);
+	draw2d_quad(rect2(xform2p(transform, f2(0.0f, 2.0f)), texture_size(*tex)),
+		(DRAW_QuadStyle){
+		  .fill_color = WHITE,
+		  .image = &(Image2D){
+			.handle = tex->handle,
+			.width = tex->width,
+			.height = tex->height,
+		  } });
 
-		float2 a = lerp2(anchors[0].position, controls[0].position, t);
-		float2 b = lerp2(controls[0].position, anchors[1].position, t);
-		float2 q1 = lerp2(a, b, t);
-
-		float2 c = lerp2(anchors[0].position, controls[1].position, t);
-		float2 d = lerp2(controls[1].position, anchors[1].position, t);
-		float2 q2 = lerp2(c, d, t);
-
-		float2 cubic = lerp2(q1, q2, t);
-
-		draw2d_circle(xform2p(screen_from_world, cubic), 2.0f, BLACK);
-	}
-
-	for (uint32_t index = 0; index < countof(anchors); ++index)
-		draw2d_circle(xform2p(screen_from_world, anchors[index].position), segment_size * 0.15f, RED);
-
-	for (uint32_t index = 0; index < countof(controls); ++index)
-		draw2d_circle(xform2p(screen_from_world, controls[index].position), segment_size * 0.1f, BLACK);
-
-	/*
-	auto brick = Spatial::material({
-		.albedo = textures::brick_albedo,
-		.normal = textures::brick_normal,
-		.metallic_roughness = { 0.0f, 0.8f },
-	});
-
-	draw3d_mesh(mesh, transform, brick);
-
-	auto material = Unlit::material({
-		.color = logo,
-	});
-
-	draw3d_mesh(quad, transform, material);
-	   */
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
 
@@ -419,6 +375,8 @@ bool tick(Arena *permanent, Arena *frame) {
 		gfx_swapchain_resize(device, swapchain, resize.x, resize.y);
 		gfx_image_resize(device, state->depthbuffer, resize.x, resize.y);
 	}
+
+	res_cache_tick(frame, &state->cache);
 
 	GFX_CommandEncoder *cmd = gfx_frame_begin(state->device);
 	if (cmd == 0) return false;
@@ -431,9 +389,9 @@ bool tick(Arena *permanent, Arena *frame) {
 			images[texture_id] = state->white_texture;
 
 		if (draw->quad2d->offset) {
-			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_Quad2D);
+			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_QuadInstance3D);
 			for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-				DRAW_Quad2D *quad = (DRAW_Quad2D *)draw->quad2d->base + quad_instance;
+				DRAW_QuadInstance3D *quad = (DRAW_QuadInstance3D *)draw->quad2d->base + quad_instance;
 
 				if (quad->imageid && quad->imageid != indexof(device->image_pool, state->white_texture)) {
 					int32_t found_index = -1;
@@ -485,14 +443,16 @@ bool tick(Arena *permanent, Arena *frame) {
 		gfx_cmd_bind(device, 0, set0, countof(set0));
 
 		if (draw->line3d->offset) {
-			gfx_cmd_shader_bind(device, state->shaders[RES_SHADER_LINE3D], 0);
+			RES_Shader *line3d = res_shader(&state->cache, RES_SHADER_LINE3D);
+            ASSERT(line3d);
+			gfx_cmd_shader_bind(device, line3d->handle, 0);
 
 			Uniform set1[] = {
 				storage_data(0, draw->line3d->base, draw->line3d->offset),
 			};
 			gfx_cmd_bind(device, 0, set0, countof(set0));
 			gfx_cmd_bind(device, 1, set1, countof(set1));
-			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_Line3D));
+			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d->offset / sizeof(DRAW_LineInstance3D));
 		}
 
 		if (draw->quad2d->offset) {
@@ -502,9 +462,11 @@ bool tick(Arena *permanent, Arena *frame) {
 				.viewport = as2(dims, float2),
 				.time = time,
 			};
-			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_Quad2D);
+			uint32_t quad_count = draw->quad2d->offset / sizeof(DRAW_QuadInstance3D);
 
-			gfx_cmd_shader_bind(device, state->shaders[RES_SHADER_QUAD2D], 0);
+			RES_Shader *quad2d = res_shader(&state->cache, RES_SHADER_QUAD2D);
+            ASSERT(quad2d);
+			gfx_cmd_shader_bind(device, quad2d->handle, 0);
 
 			Uniform uniforms0[] = {
 				uniform_data(0, &fd, sizeof(fd)),
@@ -522,58 +484,6 @@ bool tick(Arena *permanent, Arena *frame) {
 	}
 
 	gfx_frame_end(device, cmd);
-
-	for (RES_ShaderID shaderid = 0; shaderid < RES_SHADER_MAX; ++shaderid) { // :hot-reload
-		ShaderMetadata *metadata = &res_shaderid_to_metadata[shaderid];
-		if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
-			metadata->filepaths[SHADER_STAGE_FRAGMENT].length == 0 &&
-			metadata->filepaths[SHADER_STAGE_COMPUTE].length == 0)
-			continue;
-
-		bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length > 0;
-		if (is_compute) {
-			OS_Timestamp now = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
-
-			if (now != state->shader_ts[shaderid]) {
-				LOG_INFO("hot-reloading %s...", state->shaders[shaderid]->debug_name);
-				gfx_device_wait_idle(device);
-
-				gfx_shader_destroy(device, state->shaders[shaderid]);
-				string8 bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-				state->shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)metadata->name.bytes);
-
-				state->shader_ts[shaderid] = now;
-			}
-		} else {
-			OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-			OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
-
-			OS_Timestamp now = MAX(fs_ts, vs_ts);
-			if (now != state->shader_ts[shaderid]) {
-				LOG_INFO("hot-reloading %s...", state->shaders[shaderid]->debug_name);
-				gfx_device_wait_idle(device);
-
-				ShaderMetadata *metadata = &res_shaderid_to_metadata[shaderid];
-
-				gfx_shader_destroy(device, state->shaders[shaderid]);
-
-				string8 vs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_VERTEX]);
-				string8 fs_bytecode = os_file_read(frame, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-				state->shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
-
-				for (uint32_t permutation = 0; permutation < metadata->pipeline_count; ++permutation) {
-					PipelineOptions opts = metadata->pipelines[permutation];
-					gfx_pipeline_ensure(device, state->shaders[shaderid], opts,
-						(GFX_DrawTargetLayout){
-						  .color_formats[0] = PIXEL_FORMAT_BGRA8_UNORM,
-						  .color_count = 1,
-						});
-				}
-
-				state->shader_ts[shaderid] = now;
-			}
-		}
-	}
 
 	return true;
 }

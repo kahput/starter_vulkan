@@ -5,6 +5,7 @@
 #include <core.h>
 #include <stdio.h>
 #include <utils/lexer.h>
+#include <inttypes.h>
 
 #include <gfx/gfx_types.h>
 
@@ -265,7 +266,7 @@ AST_Node *ast_parse_pipeline_decl(Arena *arena, Lexer *lexer) {
 
 		lexer_consume(lexer, TOKEN_LPAREN, s("Expect '(' after pipeline declaration."));
 		do {
-            if (lexer_peek(lexer).type == TOKEN_RPAREN) break;
+			if (lexer_peek(lexer).type == TOKEN_RPAREN) break;
 
 			ast_pushback(result, ast_parse_expr(arena, lexer));
 		} while (lexer_match(lexer, TOKEN_COMMA, 0));
@@ -850,7 +851,7 @@ int main(int32_t argc, char **argv) {
 
 	AST_Node *program = ast_make(arena, AST_NODE_PROGRAM);
 	for (uint32_t index = 0; index < file_count; ++index) {
-		if (eq8(ext8(files[index]), s("shader")) == false) continue;
+		if (eq8(pathext8(files[index]), s("shader")) == false) continue;
 		string8 file = concat8(arena, shader_directory, files[index]);
 
 		Lexer lexer[] = { lexer_make(os_file_read(arena, file), keyword_to_string, countof(keyword_to_string)) };
@@ -892,15 +893,7 @@ int main(int32_t argc, char **argv) {
 		if (os_directory_make(output_directory) == false) return -1;
 
 	fprintf(header, "#pragma once\n");
-	fprintf(header, "#include \"core/strings.h\"\n");
-	fprintf(header, "#include \"gfx/gfx_types.h\"\n\n");
-
-	fprintf(header, "typedef struct {\n");
-	fprintf(header, "    string8 name;\n");
-	fprintf(header, "    string8 filepaths[SHADER_STAGE_MAX];\n");
-	fprintf(header, "    PipelineOptions pipelines[8];\n");
-	fprintf(header, "    uint32_t pipeline_count;\n");
-	fprintf(header, "} ShaderMetadata;\n\n");
+	fprintf(header, "#include \"res.h\"\n");
 
 	fprintf(header, "typedef enum {\n");
 	AST_Node *shader = program->first_child;
@@ -1002,10 +995,10 @@ int main(int32_t argc, char **argv) {
 	fprintf(header, "\n    RES_SHADER_MAX\n");
 	fprintf(header, "} RES_ShaderID;\n\n");
 
-	fprintf(header, "extern ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX];\n");
+	fprintf(header, "extern RES_ShaderMeta res_shaderid_to_metadata[RES_SHADER_MAX];\n");
 
 	fprintf(source, "#include \"assets_generated.h\"\n\n");
-	fprintf(source, "ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {\n");
+	fprintf(source, "RES_ShaderMeta res_shaderid_to_metadata[RES_SHADER_MAX] = {\n");
 	if (shader) do {
 			string8 name = shader->identifier.lexeme;
 			string8 upper = upper8(arena, name);
@@ -1031,6 +1024,7 @@ int main(int32_t argc, char **argv) {
 			ASSERT_FORMAT((is_compute && pipeline_count) == false && pipeline_count < 8, "Shader '%.*s': compute and graphics pipeline defined together.", arg8(shader->identifier.lexeme));
 
 			fprintf(source, "    [RES_SHADER_%.*s] = {\n", arg8(upper));
+			fprintf(source, "      .uuid = { %" PRIu64 "ULL },\n", hash8(name));
 			fprintf(source, "      .name = comp8(\"%.*s\"),\n", arg8(name));
 			fprintf(source, "      .filepaths = {\n");
 			if (is_compute)

@@ -84,6 +84,7 @@ typedef uint64_t OS_Timestamp;
 OS_Timestamp os_file_mtime(string8 filepath);
 
 string8 os_current_directory(Arena *arena);
+string8 os_cwd(Arena *arena);
 bool os_directory_exists(string8 path);
 bool os_directory_make(string8 path);
 bool os_directory_delete(string8 path);

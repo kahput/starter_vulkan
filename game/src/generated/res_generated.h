@@ -1,11 +1,6 @@
 #pragma once
 
-#include "core/strings.h"
-
-typedef struct {
-    string8 name;
-	string8 filepath;
-} RES_ImageMetadata;
+#include "res.h"
 
 typedef enum {
 	RES_IMAGE_BASE_GRASS,
@@ -16,4 +11,3 @@ typedef enum {
 
 	RES_IMAGE_MAX,
 } RES_ImageID;
-extern RES_ImageMetadata res_image_metadata[RES_IMAGE_MAX];

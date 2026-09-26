@@ -94,9 +94,6 @@ bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 		}
 	}
 
-	if (ok) {
-	}
-
 	if (ok) { // populate uniform metadata
 		ASSERT(set_count <= GFX_LIMIT_UNIFORM_SETS);
 

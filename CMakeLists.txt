@@ -31,9 +31,9 @@ set(NATIVE_SCRATCHES
     spriv 
     c_parser 
     table_generator
-    lox
     multi_surface
     asset_compiler
+    lang
 )
 
 # Web build
@@ -105,6 +105,7 @@ else()
 
         "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/err.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
@@ -119,6 +120,7 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
         "${CMAKE_SOURCE_DIR}/engine/src/utils/lexer.c"
         "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/res/res.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
@@ -153,7 +155,6 @@ else()
     )
     add_library(game SHARED
         "game/src/game.c"
-        "game/src/res.c"
         ${VENDOR_SOURCES}
     )
     target_include_directories(game PRIVATE 
@@ -204,7 +205,9 @@ else()
     endif()
 
     foreach(NAME ${NATIVE_SCRATCHES})
-        add_executable(${NAME} "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c" ${VENDOR_SOURCES})
+        file(GLOB_RECURSE SCRATCH_FILE "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")
+        add_executable(${NAME} ${SCRATCH_FILE} ${VENDOR_SOURCES})
+
         target_link_libraries(${NAME} engine)
         target_include_directories(
             ${NAME}

@@ -10,10 +10,9 @@ typedef struct {
 	LogLevel level;
 	bool quiet;
 	uint32_t indent;
-	const char *prefix;
 } Logger;
 
-static Logger g_logger = { LOG_LEVEL_TRACE, false, 0, NULL };
+static Logger g_logger = { LOG_LEVEL_TRACE, false, 0 };
 static const char *g_level_strings[] = {
 	"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"
 };
@@ -39,18 +38,10 @@ void logger_dedent(void) {
 		g_logger.indent--;
 }
 
-void logger_set_prefix(const char *prefix) {
-	g_logger.prefix = prefix;
-}
-
-void logger_clear_prefix(void) {
-	g_logger.prefix = 0;
-}
-
 ENGINE_API void logger_log_va(LogLevel level, const char *fmt, va_list list) {
 }
 
-void logger_log(LogLevel level, const char *fmt, ...) {
+void logger_log(LogLevel level, const char *file, uint64_t line, const char *fmt, ...) {
 	if (level < g_logger.level) {
 		return;
 	}
@@ -61,11 +52,6 @@ void logger_log(LogLevel level, const char *fmt, ...) {
 	char time_buffer[16];
 	strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
 
-	char indent_buffer[32];
-	memory_set(indent_buffer, ' ', sizeof(indent_buffer));
-	int32_t indent_space = MIN(g_logger.indent, 15) * 4;
-	indent_buffer[indent_space] = '\0';
-
 	va_list arg_ptr;
 	va_start(arg_ptr, fmt);
 
@@ -73,14 +59,10 @@ void logger_log(LogLevel level, const char *fmt, ...) {
 
 	if (decorate) {
 		printf(
-			"%s " // timestamp
-			"%s%s[%s]\x1b[0m " // color, indent, log level
-			"%s", // custom prefix
-			time_buffer, // Timestamp
+			"%s[%-5s]\x1b[0m ", // color, indent, log level
 			g_log_level_colors[level], // Start color for the level
-			indent_buffer,
-			g_level_strings[level], // Log level string
-			g_logger.prefix ? g_logger.prefix : "");
+			g_level_strings[level] // Log level string
+		);
 		if (level >= LOG_LEVEL_ERROR)
 			printf("%s", g_log_level_colors[level]);
 	} else
@@ -89,7 +71,7 @@ void logger_log(LogLevel level, const char *fmt, ...) {
 	vprintf(fmt, arg_ptr);
 	if (decorate)
 		printf("\x1b[0m");
-    printf("\n");
+	printf("\n");
 	fflush(stdout);
 	va_end(arg_ptr);
 }

@@ -18,6 +18,24 @@ uint64_t os__open_file(string8 path, int32_t flags, int32_t access);
 uint64_t os__open_fulllpath(string8 path, int32_t flags, int32_t access);
 DIR *os__open_dir(string8 path);
 
+string8 os_cwd(Arena *arena) {
+	string8 result = { 0 };
+	ArenaTemp scratch = arena_scratch_begin(arena);
+
+	uint32_t initial_size = 256;
+	uint8_t *buffer = arena_push(scratch.arena, initial_size, 8, true);
+	while (getcwd((void *)buffer, initial_size) == NULL) {
+		initial_size += 256;
+		arena_push(scratch.arena, 256, 1, true);
+	}
+
+	string8 cwd = str8z((char *)buffer);
+	result = copy8(arena, cwd);
+
+	arena_scratch_end(scratch);
+	return result;
+}
+
 OS_File os_file_open(string8 filepath, OS_FileMode mode) {
 	int32_t flags = os__mode_to_flags(mode), access = 0666;
 	OS_File result = os__open_fulllpath(filepath, flags, access);
@@ -282,18 +300,12 @@ string8 *os_directory_files(Arena *arena, string8 path, uint32_t *count) {
 
 string8 os__concat_cwd(Arena *arena, string8 path) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
+
 	string8 result = { 0 };
+	string8 cwd = os_cwd(scratch.arena);
+	result = pathjoin8(arena, cwd, path);
 
-	uint32_t initial_size = 256;
-	uint8_t *buffer = arena_push(scratch.arena, initial_size, 8, true);
-	while (getcwd((void *)buffer, initial_size) == NULL) {
-		initial_size += 256;
-		arena_push(scratch.arena, 256, 1, true);
-	}
-
-	result = pathjoin8(arena, str8z((char *)buffer), path);
 	arena_scratch_end(scratch);
-
 	return result;
 }
 

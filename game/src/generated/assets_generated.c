@@ -1,7 +1,8 @@
 #include "assets_generated.h"
 
-ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
+RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
     [RES_SHADER_SHADOW] = {
+      .uuid = { 8702348675885943488ULL },
       .name = comp8("Shadow"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Shadow.spv"),
@@ -25,6 +26,7 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_SPATIAL] = {
+      .uuid = { 1978482764426785900ULL },
       .name = comp8("Spatial"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Spatial.spv"),
@@ -61,6 +63,7 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 2,
     },
     [RES_SHADER_TRANSPARENT] = {
+      .uuid = { 9376197970318518482ULL },
       .name = comp8("Transparent"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Transparent.spv"),
@@ -84,6 +87,7 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_GRASS] = {
+      .uuid = { 14156169020513442342ULL },
       .name = comp8("Grass"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Grass.spv"),
@@ -107,6 +111,7 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_SKYBOX] = {
+      .uuid = { 15303572049235304430ULL },
       .name = comp8("Skybox"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Skybox.spv"),
@@ -130,6 +135,7 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_LINE3D] = {
+      .uuid = { 9724632580759604653ULL },
       .name = comp8("Line3D"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Line3D.spv"),
@@ -153,18 +159,21 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_TESTCOMPUTE] = {
+      .uuid = { 17104535008024914169ULL },
       .name = comp8("TestCompute"),
       .filepaths = {
           [SHADER_STAGE_COMPUTE] = comp8("./assets/shaders/generated/c_TestCompute.spv"),
       },
     },
     [RES_SHADER_SKINNING] = {
+      .uuid = { 13527874114409681247ULL },
       .name = comp8("Skinning"),
       .filepaths = {
           [SHADER_STAGE_COMPUTE] = comp8("./assets/shaders/generated/c_Skinning.spv"),
       },
     },
     [RES_SHADER_COMPOSITE] = {
+      .uuid = { 3831973690472649551ULL },
       .name = comp8("Composite"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Composite.spv"),
@@ -188,6 +197,7 @@ ShaderMetadata res_shaderid_to_metadata[RES_SHADER_MAX] = {
       .pipeline_count = 1,
     },
     [RES_SHADER_QUAD2D] = {
+      .uuid = { 13230834648733991069ULL },
       .name = comp8("Quad2D"),
       .filepaths = {
           [SHADER_STAGE_VERTEX] = comp8("./assets/shaders/generated/v_Quad2D.spv"),

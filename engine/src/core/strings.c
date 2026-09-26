@@ -219,7 +219,7 @@ string8 fmt8(Arena *arena, const char *fmt, ...) {
 	return result;
 }
 
-string8 filename8(string8 path) {
+string8 pathfile8(string8 path) {
 	if (path.length == 0)
 		return path;
 
@@ -235,7 +235,7 @@ string8 filename8(string8 path) {
 	return result;
 }
 
-string8 ext8(string8 file) {
+string8 pathext8(string8 file) {
 	string8 result = { 0 };
 
 	bool ok = file.length;
@@ -257,7 +257,7 @@ string8 ext8(string8 file) {
 	return result;
 }
 
-string8 dir8(string8 path) {
+string8 pathdir8(string8 path) {
 	if (path.length == 0)
 		return path;
 

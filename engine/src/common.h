@@ -35,6 +35,8 @@
 	#define alignas(X) __attribute((aligned(X)))
 #endif
 
+#define FN_NAME __func__
+
 #if defined(_MSC_VER)
 	#define INLINE static __forceinline
 	#define PACK_BEGIN(gran) __pragma(pack(push, (gran)))
@@ -48,9 +50,15 @@
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
-#define container_of(ptr, T, member) ((T *)((uint8_t *)ptr - offsetof(T, member)))
+#define containerof(ptr, T, member) ((T *)((uint8_t *)ptr - offsetof(T, member)))
 #define arr(T, ...) (T[]){ __VA_ARGS__ }, sizeof(T[]){ __VA_ARGS__ } / sizeof(T)
 #define arr_n(T, n) (T[(n)]){ (T){ 0 } }, (n)
+#define swapptr(a, b)      \
+	do {                   \
+		void *_temp = (a); \
+		(a) = (b);         \
+		(b) = _temp        \
+	} while (0)
 #define swap(a, b, T)  \
 	do {               \
 		T _temp = (a); \
@@ -81,10 +89,7 @@
 #define CLAMP(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
 
 #define BIT(b) (1 << (b))
-
 #define has_flag(flags, flag) (((flags) & (flag)) == (flag))
-#define HEADER(ptr, T) ((T *)ptr - 1)
-#define HEADER_SET(ptr, x, T) (*((T *)ptr - 1) = x)
 
 #define STATIC_ASSERT_PASTE_(a, b) a##b
 #define STATIC_ASSERT_PASTE(a, b) STATIC_ASSERT_PASTE_(a, b)
@@ -237,11 +242,6 @@ INLINE float4 color_to_float4(Color color) {
 INLINE Color color_lerp(Color start, Color end, float t) {
 	return (Color){ start.r + (end.r - start.r) * t, start.g + (end.g - start.g) * t, start.b + (end.b - start.b) * t, start.a + (end.a - start.a) * t };
 }
-
-typedef struct {
-	uint8_t *memory;
-	uint64_t length;
-} Slice;
 
 typedef enum {
 	SIDE_RIGHT,

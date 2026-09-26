@@ -6,10 +6,11 @@
 
 #include "core/debug.h"
 #include "core/logger.h"
+#include "core/err.h"
 
 #include "utils/input.h"
 
-typedef bool (*TickFn)(Arena *permanent, Arena *frame);
+typedef bool (*Tick)(Arena *permanent, Arena *frame);
 
 int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
@@ -17,7 +18,7 @@ int main(void) {
 	string8 src = s("libgame.so"), dst = s("libgame_loaded.so");
 
 	OS_Library lib = 0;
-	TickFn tick = 0;
+	Tick tick = 0;
 	OS_Timestamp ts = 0;
 
 	os_display_startup();
@@ -45,7 +46,6 @@ int main(void) {
 
 		arena_reset(&frame);
 	}
-    
 
 	os_library_unload(lib);
 	os_display_shutdown();
