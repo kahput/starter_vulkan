@@ -223,29 +223,29 @@ float2 measure_text(RES_Font *font, string8 text) {
 	float x_offset = 0.0f;
 
 	bool ok = font && font->glyphs && text.bytes && text.length;
-	if (ok) {
-		for (uint32_t index = 0; index < text.length; ++index) {
-			uint8_t codepoint = text.bytes[index];
+	/* if (ok) { */
+	/* 	for (uint32_t index = 0; index < text.length; ++index) { */
+	/* 		uint8_t codepoint = text.bytes[index]; */
 
-			if (codepoint == '\n') {
-				result.x = maxf(result.x, x_offset);
-				result.y += font->bake_size;
-				x_offset = 0.0f;
-				continue;
-			}
+	/* 		if (codepoint == '\n') { */
+	/* 			result.x = maxf(result.x, x_offset); */
+	/* 			result.y += font->bake_size; */
+	/* 			x_offset = 0.0f; */
+	/* 			continue; */
+	/* 		} */
 
-			uint32_t first = font->first_codepoint;
-			uint32_t last = first + font->glyph_count;
-			if (codepoint < first || codepoint >= last)
-				codepoint = '?';
+	/* 		uint32_t first = font->first_codepoint; */
+	/* 		uint32_t last = first + font->glyph_count; */
+	/* 		if (codepoint < first || codepoint >= last) */
+	/* 			codepoint = '?'; */
 
-			RES_Glyph *glyph = &font->glyphs[codepoint - first];
-			x_offset += glyph->advance;
-		}
+	/* 		RES_Glyph *glyph = &font->glyphs[codepoint - first]; */
+	/* 		x_offset += glyph->advance; */
+	/* 	} */
 
-		result.x = maxf(result.x, x_offset);
-		result.y += font->greatest_top_y + font->greatest_bottom_y;
-	}
+	/* 	result.x = maxf(result.x, x_offset); */
+	/* 	result.y += font->greatest_top_y + font->greatest_bottom_y; */
+	/* } */
 	return result;
 }
 
@@ -273,8 +273,9 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 		if (!stbtt_GetFontVMetricsOS2(&font_info, &ascent, &descent, &line_gap))
 			stbtt_GetFontVMetrics(&font_info, &ascent, &descent, &line_gap);
 
-		result.line_height = (ascent - descent + line_gap) * scale_factor;
-		result.bake_size = font_size;
+		result.ascent = ascent * scale_factor;
+		result.descent = descent * scale_factor;
+		result.line_gap = line_gap * scale_factor;
 
 		result.glyph_count = 95;
 		result.first_codepoint = ' ';
@@ -316,9 +317,6 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 				.bearing = { x0, y0 },
 				.advance = (int32_t)(advance * scale_factor),
 			};
-
-			result.greatest_top_y = max1i(result.greatest_top_y, abs(y0));
-			result.greatest_bottom_y = max1i(result.greatest_bottom_y, height - abs(y0));
 
 			col += width + padding;
 		}

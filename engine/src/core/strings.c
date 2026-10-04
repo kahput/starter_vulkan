@@ -275,3 +275,39 @@ uint64_t str8_to_u64(string8 s) {
 int64_t str8_to_s64(string8 s) {
 	return strtol((char *)s.bytes, 0, 10);
 }
+
+uint32_t utf8_decode(string8 message, uint32_t *at) {
+	if (message.length == 0 || at == 0 || *at >= message.length) return 0xFFFD;
+	uint8_t leading_byte = message.bytes[*at];
+	uint32_t result = 0, length = 0;
+
+	// clang-format off
+	switch (leading_byte & 0xF0) {
+		case 0xF0: result = leading_byte & 0x07; length = 4; break;
+		case 0xE0: result = leading_byte & 0xF;  length = 3; break;
+		case 0xD0: 
+		case 0xC0: result = leading_byte & 0x1F; length = 2; break;
+        default:   result = leading_byte;        length = 1; break;
+	};
+	// clang-format on
+	if (*at + length > message.length) return *at += 1, 0xFFFD;
+
+	for (uint32_t index = 1; index < length; ++index) {
+		uint8_t byte = message.bytes[*at + index];
+		if ((byte & 0xC0) != 0x80)
+			return 0xFFFD;
+
+		result = (result << 6) | (byte & 0x3F);
+	}
+
+	if ((length == 2 && result < 0x80) ||
+		(length == 3 && result < 0x800) ||
+		(length == 4 && result < 0x10000) ||
+		(result >= 0xD800 && result <= 0xDFFF) ||
+		result > 0x10FFFF) {
+		return 0xFFFD;
+	}
+
+	*at += length;
+	return result;
+}

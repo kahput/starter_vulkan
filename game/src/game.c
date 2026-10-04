@@ -380,7 +380,14 @@ bool tick(Arena *permanent, Arena *frame) {
 		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
 		draw2d_rect(slider_visual, hex(0xe9eff5));
 		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.center_size, slider_visual.height), hex(0x3024a4));
-		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+
+		draw2d_quad(thumb,
+			(DRAW_QuadStyle){
+			  .fill_color = hex(0x3024a4),
+			  .border_color = BLACK,
+			  .border_width = 4.0f,
+			  .radii = f4(slider_rect.height),
+			});
 	}
 	slider_rect.y += 36.0f;
 
@@ -432,11 +439,45 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW, PIXEL_FORMAT_RGBA8_UNORM);
 	RES_Font *font16 = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
-	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 400, RES_FONT_STYLE_ITALIC, 32);
+	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 800, RES_FONT_STYLE_NORMAL, 64);
 
-	float2 text_dimensions = measure_text(font, s("Hello world!"));
-	draw2d_rect(rect(100.0f, 400.0f, text_dimensions.x, text_dimensions.y), BLACK);
-	draw2d_text(font, f2(100.0f, 400.0f), WHITE, s("Hello world!"));
+	string8 message = s("Fancy text æøå 日本語");
+
+	draw2d_textf(font, f2(origo.x * 0.25f, 24.f), BLACK, "drag_pos={%.2f,%.2f}", spread2(drag.position));
+
+	float2 draw_anchor = f2(100.0f, 400.0f);
+	float2 cursor = f2(draw_anchor.x, draw_anchor.y + font->ascent);
+	draw2d_circle(draw_anchor, 2.0f, RED);
+
+	float amplitude = 16.0f;
+	float frequency = 4.0f;
+
+	for (uint32_t at = 0, char_index = 0; at < message.length; char_index++) {
+		float normalized = (float)char_index / 5;
+		float offset_y = char_index < 5 ? sinf(normalized * frequency + time * TAU) * amplitude : 0;
+		float hue = normalized * 360.0f;
+		Color c = char_index < 5 ? color_from_float4(rgba_from_hsv(hue, 1.0f, 1.0f)) : BLACK;
+
+		uint32_t codepoint = utf8_decode(message, &at);
+		if (codepoint == '\n' || codepoint == '\r') {
+			cursor.y += font->ascent + font->descent + font->line_gap;
+			cursor.x = draw_anchor.x;
+			continue;
+		}
+		if (codepoint < font->first_codepoint || codepoint - font->first_codepoint >= font->glyph_count) codepoint = '?';
+
+		RES_Glyph *glyph = &font->glyphs[codepoint - font->first_codepoint];
+
+		draw2d_quad(
+			rect(cursor.x + glyph->bearing.x, cursor.y + offset_y + glyph->bearing.y, glyph->uv.width, glyph->uv.height),
+			(DRAW_QuadStyle){
+			  .fill_color = c,
+			  .texture = &font->tex_atlas,
+			  .uv = glyph->uv,
+			});
+
+		cursor.x += glyph->advance;
+	}
 
 	uint64_t *my_ptr = 0, my_ptr_count = 32;
 	uint64_t buf = 0, tex1 = 0, tex2 = 0, tex3 = 0;

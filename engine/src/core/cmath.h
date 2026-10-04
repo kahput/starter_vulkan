@@ -332,4 +332,22 @@ float4x4 orthographic(float left, float right, float top, float bottom, float ne
 
 float4x4 lookat(float3 eye, float3 center, float3 up);
 
+INLINE float4 rgba_from_hsv(float h, float s, float v) {
+	h = CLAMP(h, 0.0, 360.0) / 360.0, s = CLAMP(s, 0.0, 1.0), v = CLAMP(v, 0.0, 1.0);
+	float max_rgb = v;
+	float range_rgb = v * s;
+	float min_rgb = max_rgb - range_rgb;
+
+	float r = fabsf(h * 6.0f - 3.0f) - 1.0f;
+	float g = 2.0f - fabsf(h * 6.0f - 2.0f);
+	float b = 2.0f - fabsf(h * 6.0f - 4.0f);
+
+	return (float4){
+		.x = clampf(r, 0.0f, 1.0f) * range_rgb + min_rgb,
+		.y = clampf(g, 0.0f, 1.0f) * range_rgb + min_rgb,
+		.z = clampf(b, 0.0f, 1.0f) * range_rgb + min_rgb,
+		.w = 1.0f
+	};
+}
+
 #endif /* CMATH_H_ */

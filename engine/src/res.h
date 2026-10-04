@@ -91,11 +91,9 @@ typedef struct {
 	RES_Image2D img_atlas;
 	RES_Texture2D tex_atlas;
 
-	uint32_t line_height, bake_size;
-	uint32_t greatest_bottom_y, greatest_top_y;
-
 	RES_Glyph *glyphs;
 	uint32_t first_codepoint, glyph_count;
+	float ascent, descent, line_gap;
 
 	RES_FontWeight weight;
 } RES_Font;

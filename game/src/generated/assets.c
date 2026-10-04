@@ -214,7 +214,7 @@ RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
               .alpha_op = BLEND_OP_ADD,
               .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
               .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-              .src_alpha_factor = BLEND_FACTOR_SRC_ALPHA,
+              .src_alpha_factor = BLEND_FACTOR_ONE,
               .dst_alpha_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
           },
       },

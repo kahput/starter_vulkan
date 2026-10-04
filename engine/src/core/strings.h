@@ -49,3 +49,5 @@ INLINE uint64_t hash8(string8 s) { return hash64(s.bytes, s.length); }
 double str8_to_f64(string8 s);
 uint64_t str8_to_u64(string8 s);
 int64_t str8_to_s64(string8 s);
+
+uint32_t utf8_decode(string8 message, uint32_t *at);

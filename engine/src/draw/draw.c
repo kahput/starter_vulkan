@@ -131,25 +131,27 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 void draw2d_text(RES_Font *font, float2 position, Color color, string8 text) {
 	bool ok = CURRENT_DRAWLIST && font;
 	if (ok) {
-		float y_offset = font->greatest_top_y;
-		float x_offset = 0.0f;
+		float2 cursor = f2(position.x, position.y + font->ascent);
+
 		for (uint32_t index = 0; index < text.length; ++index) {
 			uint8_t c = text.bytes[index];
-			if (c == '\n') {
-				x_offset = 0.0f;
-				y_offset += font->greatest_bottom_y + font->greatest_top_y;
+			if (c == '\n' || c == '\r') {
+				cursor.x = position.x;
+				cursor.y += font->ascent + font->descent + font->line_gap;
+				continue;
 			}
+			if (c < ' ' || c - font->first_codepoint >= font->glyph_count) c = '?';
 
 			RES_Glyph *glyph = &font->glyphs[c - font->first_codepoint];
 			Rectangle rect = {
-				.x = position.x + x_offset + (glyph->bearing.x),
-				.y = position.y + y_offset + (glyph->bearing.y),
+				.x = cursor.x + glyph->bearing.x,
+				.y = cursor.y + glyph->bearing.y,
 				.width = glyph->uv.width,
 				.height = glyph->uv.height,
 			};
 
 			draw2d_quad(rect, (DRAW_QuadStyle){ .texture = &font->tex_atlas, .fill_color = color, .uv = glyph->uv });
-			x_offset += glyph->advance;
+			cursor.x += glyph->advance;
 		}
 	}
 }

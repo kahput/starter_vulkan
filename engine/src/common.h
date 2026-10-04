@@ -218,12 +218,14 @@ typedef struct { uint8_t r, g, b, a; } Color;
 // clang-format on
 #define TRANSPARENT rgba(0, 0, 0, 0)
 
-#define RED rgb(255, 0, 0)
-#define GREEN rgb(0, 255, 0)
-#define BLUE rgb(0, 0, 255)
+#define RED hex(0xFF0000)
+#define ORANGE hex(0xFF7F00)
+#define YELLOW hex(0xFFFF00)
+#define GREEN hex(0x00FF00)
+#define BLUE hex(0x0000FF)
+#define INDIGO hex(0x4B0082)
+#define VIOLET hex(0x8B00FF)
 
-#define YELLOW rgb(255, 255, 0)
-#define ORANGE hex(0xFFA500)
 #define TEAL rgb(0, 128, 128)
 
 #define WHITE rgb(255, 255, 255)
@@ -237,6 +239,10 @@ INLINE uint32_t color_pack_uint32(Color c) {
 
 INLINE Color color_from_float(float r, float g, float b, float a) {
 	return (Color){ CLAMP(r, 0.0f, 1.0f) * 255.f, CLAMP(g, 0.0f, 1.0f) * 255.f, CLAMP(b, 0.0f, 1.0f) * 255.f, CLAMP(a, 0.0f, 1.0f) * 255.f };
+}
+
+INLINE Color color_from_float4(float4 rgba) {
+	return (Color){ CLAMP(rgba.x, 0.0f, 1.0f) * 255.f, CLAMP(rgba.y, 0.0f, 1.0f) * 255.f, CLAMP(rgba.z, 0.0f, 1.0f) * 255.f, CLAMP(rgba.w, 0.0f, 1.0f) * 255.f };
 }
 INLINE float4 color_to_float4(Color color) {
 	return (float4){ color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f };

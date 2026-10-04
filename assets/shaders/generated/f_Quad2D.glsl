@@ -58,22 +58,22 @@ void main() {
 
     vec2 p = (v.local - 0.5) * v.size;
     vec2 e = v.size * 0.5;
+    float dist = sd_rect_rounded(p, e, v.radii);
+    float aa = max(fwidth(dist), 1e-4);
 
-    float outer = 1.0, ring = 0.0;
-    if (v.border_width > 0.0 || any(greaterThan(v.radii, vec4(0.0)))) { 
-        float dist = sd_rect_rounded(p, e, v.radii);
-        float aa = max(fwidth(dist), 1e-4);
-        outer = 1.0 - smoothstep(-aa, aa, dist);
+    float inner = 1.0, ring = 0.0;
+    float outer = 1.0 - smoothstep(-aa, aa, dist);
 
-        if (v.border_width > 0.0) {
-            float inner = 1.0 - smoothstep(-aa, aa, dist+v.border_width);
-            ring = clamp(outer - inner, 0.0, 1.0);
-        }
-    }
+    inner = 1.0 - smoothstep(-aa, aa, dist+v.border_width);
+    ring = clamp(outer - inner, 0.0, 1.0);
 
-    out_color.rgb = mix(mix(border.rgb, fill.rgb, fill.a), border.rgb, ring);
-    float fa = fill.a * outer, ba = border.a * ring;
-    out_color.a = ba + fa * (1.0 - ba);
+    float fa = fill.a   * inner;
+    float ba = border.a * ring;
+    float a = fa + ba;
+
+    vec3 premultiplied = fill.rgb * fa + border.rgb * ba;
+    out_color.rgb = premultiplied / max(a, 1e-6);
+    out_color.a   = a;
 }
 
 // --- source_end ---
