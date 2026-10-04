@@ -29,7 +29,7 @@ set(WEB_SCRATCHES web_scratch)
 set(NATIVE_SCRATCHES 
     scratch 
     xcb_scratch 
-    skinning 
+    # skinning 
     material_scratch 
     spriv 
     c_parser 
@@ -112,6 +112,7 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/camera.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_xcb.c"
         "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_file.c"
@@ -129,9 +130,7 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/draw/font.c"
         "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/draw/camera.c"
     )
     add_library(engine
         ${VENDOR_SOURCES}
@@ -208,16 +207,18 @@ else()
     endif()
 
     foreach(NAME ${NATIVE_SCRATCHES})
-        file(GLOB_RECURSE SCRATCH_FILE "${CMAKE_SOURCE_DIR}/engine/scratch/${NAME}.c")
-        add_executable(${NAME} ${SCRATCH_FILE} ${VENDOR_SOURCES})
+        file(GLOB_RECURSE DEV_FILE "${CMAKE_SOURCE_DIR}/dev/*/${NAME}.c")
+        if(NOT EXISTS "${DEV_FILE}")
+            message(FATAL_ERROR "Dev source does not exist: ${DEV_FILE}")
+        endif()
 
+        add_executable(${NAME} ${DEV_FILE} ${VENDOR_SOURCES})
         target_link_libraries(${NAME} engine)
         target_include_directories(
             ${NAME}
             PUBLIC 
             "${CMAKE_SOURCE_DIR}/engine/src"
             "${CMAKE_SOURCE_DIR}/engine/vendor"
-            "${CMAKE_SOURCE_DIR}/game/src"
         )
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
         target_compile_definitions(${NAME} PRIVATE LINUX_BUILD VK_USE_PLATFORM_XCB_KHR)

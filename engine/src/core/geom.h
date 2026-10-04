@@ -37,7 +37,7 @@ INLINE void aabb3_expand(AABB3 *a, float3 point) {
 INLINE AABB3 aabb3_merge(AABB3 a, AABB3 b) { return (AABB3){ .min = min3(a.min, b.min), .max = max3(a.max, b.max) }; }
 INLINE AABB3 aabb3_move(AABB3 a, float3 displacement) { return (AABB3){ .min = add3(a.min, displacement), .max = add3(a.max, displacement) }; }
 INLINE bool aabb3_overlap(AABB3 a, AABB3 b) { return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z); }
-INLINE bool aabb3_contains_point(AABB3 a, float3 p) { return (p.x > a.min.x && p.x < a.max.x) && (p.y > a.min.y && p.y < a.max.x) && (p.z > a.min.z && p.z < a.max.z); }
+INLINE bool aabb3_contains_point(AABB3 a, float3 p) { return (p.x > a.min.x && p.x < a.max.x) && (p.y > a.min.y && p.y < a.max.y) && (p.z > a.min.z && p.z < a.max.z); }
 
 INLINE Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), len3(aabb3_half_extent(a)) }; }
 INLINE bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.center)) <= s.radius * s.radius; }

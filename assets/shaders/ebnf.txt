@@ -1,0 +1,24 @@
+program        -> shader_decl* EOF ;
+
+shader_decl    -> "@shader" "(" IDENTIFIER ")" shader_stmt* ;
+
+shader_stmt    -> shader_pipeline | shader_stage ;
+
+shader_pipeline
+    -> "@pipeline" "(" IDENTIFIER ")" "{"
+       (pipeline_arg ("," pipeline_arg)* ","?)?
+       "}" ;
+
+pipeline_arg   -> IDENTIFIER ":" literal ;
+literal        -> INTEGER | FLOAT | STRING | "true" | "false" | IDENTIFIER ;
+
+shader_stage   -> stage_kind ("(" IDENTIFIER ")" mode? )? blob* ;
+stage_kind     -> "@shared" | "@vertex" | "@fragment" | "@compute" ;
+
+blob           -> TEXT_BLOB | insert_stmt | section ;
+
+section        -> "@section" "(" IDENTIFIER ")" mode? blob* "@end" ;
+mode           -> ":" ( "before" | "after" | "replace" ) ;
+
+insert_stmt    -> "@insert" path ;
+path           -> IDENTIFIER ("." IDENTIFIER)* ;

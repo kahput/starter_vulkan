@@ -82,7 +82,7 @@ string8 pretty_error_string(Arena *arena, Token token) {
 }
 
 void report(uint64_t line, uint64_t column, string8 where, string8 message) {
-	printf("error[%lu:%lu]: %.*s\n%.*s", line, column, arg8(message), arg8(where));
+	printf("error[%lu:%lu]: %.*s\n%.*s\n", line, column, arg8(message), arg8(where));
 }
 
 typedef struct {
@@ -97,18 +97,6 @@ void run(string8 source) {
 
 int main(int argc, const char **argv) {
 	Arena arena[] = { arena_make(MiB(8)) };
-
-	string8 hello = s("hello world");
-	Token token = {
-		.line = 1,
-		.column = 7,
-		.lexeme = str8(hello.bytes + 6, 5),
-	};
-
-	report(token.line, token.column, pretty_error_string(arena, token), s("Unexpected token 'world'"));
-	return 0;
-
-	string8 invalid = str8(0, 58);
 
 	switch (argc) {
 		case 1: {

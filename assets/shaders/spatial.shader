@@ -1,3 +1,22 @@
+/*
+@shader(Shadow)
+
+@section(shared)
+...
+
+@pipeline(default) {
+    cull_mode: none,
+    blend: add(src_alpha, one_minus_src_alpha) 
+}
+
+@vertex
+...
+
+@fragment
+...
+
+*/
+
 shader Shadow {
     pipeline default()
 

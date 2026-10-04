@@ -11,3 +11,10 @@ typedef enum {
 
 	RES_IMAGE_MAX,
 } RES_ImageID;
+
+typedef enum {
+	RES_FONT_PIXELOID_SANS,
+	RES_FONT_IBM_PLEX_MONO,
+
+	RES_FONT_MAX,
+} RES_FontID;

@@ -14,7 +14,7 @@
 
 DRAW_List *CURRENT_DRAWLIST = 0;
 
-DRAW_List *drawlist_make(Arena *arena, RES_ID default_quad2d, RES_ID default_line3d) {
+DRAW_List *drawlist_make(Arena *arena, RES_AssetID default_quad2d, RES_AssetID default_line3d) {
 	bool ok = arena != 0;
 	if (ok) {
 		CURRENT_DRAWLIST = arena_push_count(arena, DRAW_List, 1);
@@ -36,7 +36,7 @@ DRAW_List *drawlist_make(Arena *arena, RES_ID default_quad2d, RES_ID default_lin
 	return CURRENT_DRAWLIST;
 }
 
-static void draw_push_shader(DRAW_Channel *ch, RES_ID s) {
+static void draw_push_shader(DRAW_Channel *ch, RES_AssetID s) {
 	ASSERT(ch->shader_stack_count < DRAW_SHADER_STACK_MAX);
 	ch->shader_stack[ch->shader_stack_count++] = s;
 }
@@ -45,11 +45,26 @@ static void draw_pop_shader(DRAW_Channel *ch) {
 	ch->shader_stack_count--;
 }
 
-void draw2d_push_shader(RES_ID s) { draw_push_shader(&CURRENT_DRAWLIST->quad2d, s); }
+void draw2d_push_shader(RES_AssetID s) { draw_push_shader(&CURRENT_DRAWLIST->quad2d, s); }
 void draw2d_pop_shader(void) { draw_pop_shader(&CURRENT_DRAWLIST->quad2d); }
 
+void draw2d_push_uniforms(uint32_t uniform_count, Uniform uniforms[]) {
+	bool ok = CURRENT_DRAWLIST && uniform_count && uniforms;
+	ASSERT(ok);
+
+	if (ok) {
+		DRAW_Channel *ch = &CURRENT_DRAWLIST->quad2d;
+		ASSERT(ch->last_batch->uniforms == 0);
+
+		ch->last_batch->uniform_count = uniform_count;
+		ch->last_batch->uniforms = arena_push_count(CURRENT_DRAWLIST->arena, Uniform, uniform_count);
+
+		memory_copy_count(ch->last_batch->uniforms, uniforms, uniform_count);
+	}
+}
+
 static void *draw__channel_push(Arena *arena, DRAW_Channel *ch, uint64_t size) {
-	RES_ID current = ch->shader_stack_count
+	RES_AssetID current = ch->shader_stack_count
 		? ch->shader_stack[ch->shader_stack_count - 1]
 		: ch->default_shader;
 
@@ -83,12 +98,11 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 
 		float2 uv0 = splat2(0.0f);
 		float2 uv1 = splat2(1.0f);
-		if (style.image && style.uv.width != 0.0f && style.uv.height != 0.0f) {
-			uv0 = make2(style.uv.x / style.image->width, style.uv.y / style.image->height);
-			uv1 = make2((style.uv.x + style.uv.width) / style.image->width, (style.uv.y + style.uv.height) / style.image->height);
+		if (style.texture && style.uv.width != 0.0f && style.uv.height != 0.0f) {
+			uv0 = make2(style.uv.x / style.texture->width, style.uv.y / style.texture->height);
+			uv1 = make2((style.uv.x + style.uv.width) / style.texture->width, (style.uv.y + style.uv.height) / style.texture->height);
 		}
-
-		uint32_t imageid = style.image ? style.image->handle->imageid : 0;
+		uint32_t imageid = style.texture ? style.texture->handle->imageid : 0;
 
 		float rad = style.rotation * DEG2RAD;
 		DRAW_QuadInstance3D quad = {
@@ -114,7 +128,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 	}
 }
 
-void draw2d_text(Font *font, float2 position, Color color, string8 text) {
+void draw2d_text(RES_Font *font, float2 position, Color color, string8 text) {
 	bool ok = CURRENT_DRAWLIST && font;
 	if (ok) {
 		float y_offset = font->greatest_top_y;
@@ -126,22 +140,21 @@ void draw2d_text(Font *font, float2 position, Color color, string8 text) {
 				y_offset += font->greatest_bottom_y + font->greatest_top_y;
 			}
 
-			Glyph *glyph = &font->glyphs[c];
-
+			RES_Glyph *glyph = &font->glyphs[c - font->first_codepoint];
 			Rectangle rect = {
 				.x = position.x + x_offset + (glyph->bearing.x),
 				.y = position.y + y_offset + (glyph->bearing.y),
-				.width = glyph->src.width,
-				.height = glyph->src.height,
+				.width = glyph->uv.width,
+				.height = glyph->uv.height,
 			};
 
-			draw2d_quad(rect, (DRAW_QuadStyle){ .image = &font->atlas, .fill_color = color, .uv = glyph->src });
-			x_offset += glyph->advance_x;
+			draw2d_quad(rect, (DRAW_QuadStyle){ .texture = &font->tex_atlas, .fill_color = color, .uv = glyph->uv });
+			x_offset += glyph->advance;
 		}
 	}
 }
 
-void draw2d_textf(Font *font, float2 position, Color color, const char *format, ...) {
+void draw2d_textf(RES_Font *font, float2 position, Color color, const char *format, ...) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	va_list args;

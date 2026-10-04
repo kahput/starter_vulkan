@@ -1,8 +1,8 @@
 #include "common.h"
-#include "draw/font.h"
 #include "draw/imgui.h"
 
 #include "core/debug.h"
+#include "res.h"
 
 static IMGUI_Context *context = 0;
 IMGUI_Widget IMGUI_NIL = { 0 };
@@ -432,13 +432,12 @@ void imgui_position_tree(IMGUI_Widget *root) {
 	}
 }
 
-
 IMGUI_Widget *imgui_label(uint64_t id, string8 label) {
 	IMGUI_Widget *result = imgui_widget(id);
 	result->settings.text = label;
 	result->settings.sizing[0] = IMGUI_SIZING_FIXED, result->settings.sizing[1] = IMGUI_SIZING_FIXED;
 
-	Font *font = result->settings.font ? result->settings.font : context->default_font;
+	RES_Font *font = result->settings.font ? result->settings.font : context->default_font;
 	if (font) {
 		float2 text_size = measure_text(font, label);
 		result->size[0] = text_size.x, result->size[1] = text_size.y;
@@ -447,7 +446,7 @@ IMGUI_Widget *imgui_label(uint64_t id, string8 label) {
 	return result;
 }
 
-IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale) {
+IMGUI_Widget *imgui_image(uint64_t id, RES_Texture2D *image, float scale) {
 	IMGUI_Widget *result = imgui_widget(id);
 
 	result->settings.image = image;
@@ -466,7 +465,7 @@ IMGUI_Interact imgui_button_label(string8 label) {
 	return imgui_interact(box->id, imgui_rect_cached(box));
 }
 
-IMGUI_Interact imgui_button_image(Image2D *image, float scale) {
+IMGUI_Interact imgui_button_image(RES_Texture2D *image, float scale) {
 	IMGUI_Widget *box = imgui_widget(hash64(image, 8));
 
 	IMGUI_Widget *icon = imgui_child(0, box);

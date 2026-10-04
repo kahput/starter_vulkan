@@ -8,7 +8,7 @@
 #include "lib/frame.glsl"
 #extension GL_EXT_nonuniform_qualifier : enable
 
-struct Quad2D {
+struct QuadInstance2D {
     vec2 position, size;
     vec4 radii;
     vec2 uvs[4];
@@ -20,13 +20,12 @@ struct Quad2D {
     float border_width;
     // vec3 _pad0;
 };
-layout(set = 0, binding = 1) readonly buffer InstanceBlock {
-    Quad2D instances[];
-};
+
+layout(set = 0, binding = 1) readonly buffer InstanceBlock { QuadInstance2D instances[]; };
 layout(set = 1, binding = 0) uniform sampler2D u_textures[32];
 
 INOUT Varying {
-    layout(location = 0) vec2 tex_coords;
+    layout(location = 0) vec2 uv;
     layout(location = 1) flat uint texture_id;
 
     layout(location = 2) vec4 fill_color;
@@ -47,24 +46,15 @@ const uint indices[6] = { 0, 2, 3, 0, 3, 1 };
 
 void main() {
     uint vertex_index = indices[gl_VertexIndex % 6];
-    Quad2D quad = instances[gl_InstanceIndex];
-
-    float t = sin(frame.time * 3.0);
+    QuadInstance2D quad = instances[gl_InstanceIndex];
 
     vec2 uv = corners[vertex_index];
-    vec2 local = (uv - 0.5) * quad.size;
+    vec2 local = corners[vertex_index] * quad.size;
+    vec2 vertex_position = quad.position + local;
 
-    local.x += (t * 0.5 + 0.5) * quad.size.x;
+    gl_Position = frame.projection * frame.view * vec4(vertex_position, 0.0, 1.0);
 
-    vec2 rotated = vec2(
-        local.x * quad.rotation.x - local.y * quad.rotation.y,
-        local.x * quad.rotation.y + local.y * quad.rotation.x
-    );
-
-    vec2 world = quad.position + rotated;
-    gl_Position = frame.projection * frame.view * vec4(world, 0.0, 1.0);
-
-    v.tex_coords = uv;
+    v.uv = quad.uvs[vertex_index];
     v.texture_id = quad.imageid;
 }
 

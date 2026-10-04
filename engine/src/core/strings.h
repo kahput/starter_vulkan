@@ -7,7 +7,6 @@ typedef struct {
 	uint8_t *bytes;
 	uint64_t length;
 } string8;
-typedef string8 string;
 
 #define s(s) lit8(s)
 #define lit8(s) (string8){ .bytes = (uint8_t *)s, .length = sizeof(s) - 1 }

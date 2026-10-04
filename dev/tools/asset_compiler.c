@@ -884,7 +884,7 @@ int main(int32_t argc, char **argv) {
 	if (os_directory_exists(code_output_directory) == false)
 		os_directory_make(code_output_directory);
 
-    string8 header_file = s("assets.h"), source_file = s("assets.c");
+	string8 header_file = s("assets.h"), source_file = s("assets.c");
 	FILE *header = fopen((char *)pathjoin8(arena, code_output_directory, header_file).bytes, "w");
 	FILE *source = fopen((char *)pathjoin8(arena, code_output_directory, source_file).bytes, "w");
 
@@ -922,9 +922,9 @@ int main(int32_t argc, char **argv) {
 
 			AST_Node *decl = shader->first_child;
 			if (decl) do {
-					if (decl->type == AST_NODE_SOURCE_DECL)
+					if (decl->type == AST_NODE_SOURCE_DECL) {
 						blocks[decl->block_kind] = concat8(arena, blocks[decl->block_kind], decl->glsl);
-					else if (decl->type == AST_NODE_PIPELINE_DECL) {
+					} else if (decl->type == AST_NODE_PIPELINE_DECL) {
 						string8 pipeline_name = decl->identifier.lexeme;
 						string8 pipeline_name_upper = upper8(arena, pipeline_name);
 						fprintf(header, "#define PIPELINE_%.*s_%.*s %u\n", arg8(name_upper), arg8(pipeline_name_upper), pipeline_count++);

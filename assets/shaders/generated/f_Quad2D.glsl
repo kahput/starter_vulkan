@@ -8,7 +8,7 @@
 #include "lib/frame.glsl"
 #extension GL_EXT_nonuniform_qualifier : enable
 
-struct Quad2D {
+struct QuadInstance2D {
     vec2 position, size;
     vec4 radii;
     vec2 uvs[4];
@@ -20,13 +20,12 @@ struct Quad2D {
     float border_width;
     // vec3 _pad0;
 };
-layout(set = 0, binding = 1) readonly buffer InstanceBlock {
-    Quad2D instances[];
-};
+
+layout(set = 0, binding = 1) readonly buffer InstanceBlock { QuadInstance2D instances[]; };
 layout(set = 1, binding = 0) uniform sampler2D u_textures[32];
 
 INOUT Varying {
-    layout(location = 0) vec2 tex_coords;
+    layout(location = 0) vec2 uv;
     layout(location = 1) flat uint texture_id;
 
     layout(location = 2) vec4 fill_color;
@@ -53,7 +52,7 @@ float sd_rect_rounded(in vec2 p, in vec2 half_extent, in vec4 r) {
 }
 
 void main() {
-    vec4 sampled = texture(u_textures[v.texture_id], v.tex_coords);
+    vec4 sampled = texture(u_textures[v.texture_id], v.uv);
     vec4 fill = sampled * v.fill_color;
     vec4 border = v.border_color;
 

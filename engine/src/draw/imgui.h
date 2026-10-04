@@ -4,7 +4,7 @@
 #include "core/geom.h"
 #include "core/strings.h"
 
-#include "draw/font.h"
+#include "res.h"
 #include "gfx/gfx_types.h"
 
 #define IMGUI_MAX_CHILDREN 32
@@ -56,9 +56,9 @@ typedef struct {
 	float4 border_radius;
 	float border_width;
 
-	Font *font;
+	RES_Font *font;
 	string8 text;
-	Image2D *image;
+	RES_Texture2D *image;
 } IMGUI_Settings;
 
 struct IMGUI_Widget {
@@ -79,7 +79,7 @@ extern IMGUI_Widget IMGUI_NIL;
 bool imgui_valid(IMGUI_Widget *node);
 
 typedef struct {
-	Font *font;
+	RES_Font *font;
 
 	IMGUI_Direction flow;
 	IMGUI_SizingMode sizing[2];
@@ -107,7 +107,7 @@ typedef struct {
 } IMGUI_Mouse;
 
 typedef struct {
-	Font *default_font;
+	RES_Font *default_font;
 	IMGUI_Mouse mouse;
 
 	IMGUI_Widget widgets[IMGUI_MAX_WIDGETS];
@@ -189,7 +189,7 @@ static inline void imgui_layout(IMGUI_Widget *root) {
 
 // Common widget helpers
 IMGUI_Widget *imgui_label(uint64_t id, string8 label);
-IMGUI_Widget *imgui_image(uint64_t id, Image2D *image, float scale);
+IMGUI_Widget *imgui_image(uint64_t id, RES_Texture2D *image, float scale);
 INLINE IMGUI_Widget *imgui_box(uint64_t id, Rectangle rect) {
 	IMGUI_Widget *result = imgui_widget_opt(id,
 		(IMGUI_Style){ .sizing = { IMGUI_SIZING_FIXED, IMGUI_SIZING_FIXED } });
@@ -200,7 +200,7 @@ INLINE IMGUI_Widget *imgui_box(uint64_t id, Rectangle rect) {
 }
 
 IMGUI_Interact imgui_button_label(string8 label);
-IMGUI_Interact imgui_button_image(Image2D *image, float scale);
+IMGUI_Interact imgui_button_image(RES_Texture2D *image, float scale);
 
 IMGUI_Interact imgui_sliderf(uint64_t id, float *t, float min, float max);
 IMGUI_Widget *imgui_spacer(void);

@@ -27,12 +27,16 @@ typedef struct {
 typedef float4 quat4;
 
 // --- scalar ---
-INLINE float deg_to_rad(float degree) { return degree * DEG2RAD; }
-INLINE float rad_to_deg(float radians) { return radians * RAD2DEG; }
+INLINE float radians(float degree) { return degree * DEG2RAD; }
+INLINE float degrees(float radians) { return radians * RAD2DEG; }
 
 float randf_range(float min, float max);
 uint32_t randu_range(uint32_t min, uint32_t max);
 int32_t randi_range(int32_t min, int32_t max);
+
+INLINE uint32_t clamp1u(uint32_t value, uint32_t lo, uint32_t hi) { return value < lo ? lo : (value > hi ? hi : value); }
+INLINE int32_t abs1i(int32_t value) { return value < 0 ? -value : value; }
+
 INLINE float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
 INLINE float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
 INLINE float sqf(float v) { return v * v; }
@@ -63,8 +67,8 @@ INLINE float fractf(float v) { return v - floorf(v); }
 INLINE float minf(float a, float b) { return a < b ? a : b; }
 INLINE float maxf(float a, float b) { return a > b ? a : b; }
 
-INLINE int32_t min1s(int32_t a, int32_t b) { return a < b ? a : b; }
-INLINE int32_t max1s(int32_t a, int32_t b) { return a > b ? a : b; }
+INLINE int32_t min1i(int32_t a, int32_t b) { return a < b ? a : b; }
+INLINE int32_t max1i(int32_t a, int32_t b) { return a > b ? a : b; }
 
 // --- float2 ---
 INLINE void store2(float2 src, float dst[2]) { dst[0] = src.x, dst[1] = src.y; }
@@ -193,7 +197,16 @@ quat4 quat4_from_axis_angle(float3 axis, float angle);
 quat4 quat4_slerp(quat4 q, quat4 p, float t);
 
 // --- float2x2 ---
-float2x2 make2x2_from_rotation(float rad);
+// clang-format off
+INLINE float2x2 rot2x2(float rad) {
+	float c = cosf(rad);
+	float s = sinf(rad);
+	return (float2x2){{
+        [0] = c, [2] = -s,
+        [1] = s, [3] = c,
+    }};
+}
+// clang-format on
 INLINE float2 mul2x2v(float2x2 m, float2 v) { return (float2){ m.elements[0] * v.x + m.elements[2] * v.y, m.elements[1] * v.x + m.elements[3] * v.y }; }
 INLINE float det2x2(float2x2 m) { return m.elements[0] * m.elements[3] - m.elements[2] * m.elements[1]; }
 
@@ -202,6 +215,7 @@ INLINE float2 col2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i * 2
 INLINE float2 row2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i], m.elements[i + 2] }; }
 
 // --- float3x3 ---
+// clang-format off
 INLINE float3x3 mul3x3(float3x3 lhs, float3x3 rhs) {
 #define DOT(row, col) (                                     \
                                                             \
@@ -210,13 +224,11 @@ INLINE float3x3 mul3x3(float3x3 lhs, float3x3 rhs) {
 	lhs.elements[row + 2 * 3] * rhs.elements[col * 3 + 2]   \
                                                             \
 )
-	// clang-format off
 	return (float3x3){{
           [0] = DOT(0, 0), [3] = DOT(0, 1), [6] = DOT(0, 2),
           [1] = DOT(1, 0), [4] = DOT(1, 1), [7] = DOT(1, 2),
           [2] = DOT(2, 0), [5] = DOT(2, 1), [8] = DOT(2, 2)
 	}};
-	// clang-format on
 #undef DOT
 }
 
@@ -235,6 +247,40 @@ INLINE float det3x3(float3x3 m) {
 	);
 }
 
+INLINE float3x3 affine3x3(float2x2 m, float2 t) {
+    return (float3x3){{
+        [0] = m.elements[0], [3] = m.elements[2], [6] = t.x,
+        [1] = m.elements[1], [4] = m.elements[3], [7] = t.y,
+        [2] = 0.0,           [5] = 0.0,           [8] = 1.0,
+    }};
+}
+
+INLINE float3x3 columns3x3(float3 r, float3 u, float3 f) {
+	return (float3x3){{
+	  [0] = r.x,  [3] = u.x,  [6] = f.x, 
+	  [1] = r.y,  [4] = u.y,  [7] = f.y, 
+	  [2] = r.z,  [5] = u.z,  [8] = f.z,  
+	}};
+}
+
+INLINE float3x3 rows3x3(float3 r, float3 u, float3 f) {
+	return (float3x3){{
+	  [0] = r.x,  [3] = r.y,  [6] = r.z, 
+	  [1] = u.x,  [4] = u.y,  [7] = u.z, 
+	  [2] = f.x,  [5] = f.y,  [8] = f.z,  
+	}};
+}
+
+INLINE float3x3 transpose3x3(float3x3 m) {
+    return (float3x3){{
+        [0] = m.elements[0], [3] = m.elements[1], [6] = m.elements[2],
+        [1] = m.elements[3], [4] = m.elements[4], [7] = m.elements[5],
+        [2] = m.elements[6], [5] = m.elements[7], [8] = m.elements[8]
+    }};
+}
+// clang-format on
+
+float3x3 axisangle3x3(float3 axis, float angle);
 
 INLINE float2 xform2p(float3x3 m, float2 p) { return make2_from3(mul3x3v(m, make3_from2(p, 1.0f))); }
 INLINE float2 xform2v(float3x3 m, float2 d) { return make2_from3(mul3x3v(m, make3_from2(d, 0.0f))); }
@@ -262,8 +308,15 @@ float4x4 translation4x4(float3 translation);
 float4x4 rotation4x4(quat4 q);
 float4x4 scaling4x4(float3 scale);
 
-float4x4 axisangle4x4(float3 axis, float angle);
-float4x4 basis4x4(float3 right, float3 up, float3 forward);
+// clang-format off
+INLINE float4x4 affine4x4(float3x3 m, float3 translation) {
+	return (float4x4){{
+	  [0] = m.elements[0], [4] = m.elements[3], [8] =  m.elements[6], [12] = translation.x,
+	  [1] = m.elements[1], [5] = m.elements[4], [9] =  m.elements[7], [13] = translation.y,
+	  [2] = m.elements[2], [6] = m.elements[5], [10] = m.elements[8], [14] = translation.z,
+	  [3] = 0.0f,          [7] = 0.0f,          [11] = 0.0f,          [15] = 1.0f
+	}};
+}
 
 INLINE float4x4 trs4x4_quat(float3 translation, quat4 rotation, float3 scale) {
 	return mul4x4(
@@ -271,6 +324,7 @@ INLINE float4x4 trs4x4_quat(float3 translation, quat4 rotation, float3 scale) {
 		mul4x4(rotation4x4(rotation), scaling4x4(scale)) //
 	);
 }
+// clang-format on
 float4x4 trs4x4_euler(float3 position, float3 rotation, float3 scale);
 
 float4x4 perspective(float radians_fovy, float aspect, float near_z, float far_z);

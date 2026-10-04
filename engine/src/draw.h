@@ -6,8 +6,6 @@
 #include "core/arena.h"
 
 #include "res.h"
-#include "draw/font.h"
-#include "draw/camera.h"
 
 typedef struct {
 	float2 position, size;
@@ -50,7 +48,7 @@ typedef struct {
 
 	float4 radii;
 
-	Image2D *image;
+	RES_Texture2D *texture;
 	Rectangle uv;
 
 	float2 origin;
@@ -66,9 +64,12 @@ typedef struct DRAW_Batch DRAW_Batch;
 struct DRAW_Batch {
 	DRAW_Batch *next;
 
-	RES_ID shader;
+	RES_AssetID shader;
 	uint32_t instance_offset;
 	uint32_t instance_count;
+
+	Uniform *uniforms;
+	uint32_t uniform_count;
 };
 
 #define DRAW_SHADER_STACK_MAX 8
@@ -77,8 +78,8 @@ typedef struct {
 	Arena instances;
 	DRAW_Batch *first_batch, *last_batch;
 
-	RES_ID default_shader;
-	RES_ID shader_stack[DRAW_SHADER_STACK_MAX];
+	RES_AssetID default_shader;
+	RES_AssetID shader_stack[DRAW_SHADER_STACK_MAX];
 	uint32_t shader_stack_count;
 } DRAW_Channel;
 
@@ -90,20 +91,21 @@ typedef struct {
 } DRAW_List;
 
 // Pushes list to arena and sets thread-local context to list.
-DRAW_List *drawlist_make(Arena *arena, RES_ID default_quad2d, RES_ID default_line3d);
+DRAW_List *drawlist_make(Arena *arena, RES_AssetID default_quad2d, RES_AssetID default_line3d);
 
-void draw2d_push_shader(RES_ID s);
+void draw2d_push_shader(RES_AssetID s);
+void draw2d_push_uniforms(uint32_t uniform_count, Uniform uniforms[]);
 void draw2d_pop_shader(void);
 
 void draw2d_quad(Rectangle rect, DRAW_QuadStyle style);
 INLINE void draw2d_rect(Rectangle rect, Color color) { draw2d_quad(rect, (DRAW_QuadStyle){ .fill_color = color }); }
 INLINE void draw2d_rect_outline(Rectangle rect, float thickness, Color color) { draw2d_quad(rect, (DRAW_QuadStyle){ .border_color = color, .border_width = thickness }); }
 INLINE void draw2d_rect_rounded(Rectangle rect, float4 radii, Color color) { draw2d_quad(rect, (DRAW_QuadStyle){ .radii = radii, .fill_color = color }); }
-INLINE void draw2d_sprite(float2 position, Image2D *image, Color tint) { draw2d_quad(rect(position.x, position.y, image->width, image->height), (DRAW_QuadStyle){ .image = image, .fill_color = tint }); }
+INLINE void draw2d_sprite(float2 position, RES_Texture2D *image, Color tint) { draw2d_quad(rect(position.x, position.y, image->width, image->height), (DRAW_QuadStyle){ .texture = image, .fill_color = tint }); }
 INLINE void draw2d_circle(float2 position, float radius, Color color) { draw2d_quad(rect(position.x - radius, position.y - radius, radius * 2.0, radius * 2.0), (DRAW_QuadStyle){ .fill_color = color, .origin = splat2(radius), .radii = splat4(radius) }); }
 
-void draw2d_text(Font *font, float2 position, Color color, string8 text);
-void draw2d_textf(Font *font, float2 position, Color color, const char *format, ...);
+void draw2d_text(RES_Font *font, float2 position, Color color, string8 text);
+void draw2d_textf(RES_Font *font, float2 position, Color color, const char *format, ...);
 
 void draw2d_line(float2 start, float2 end, float thickness, Color color);
 void draw2d_dashed(float2 start, float2 end, float thickness, float segment_length, float gap_length, Color color);

@@ -1,3 +1,32 @@
+/* TODO:
+material {
+    META(
+        @hint(color),
+        @default(1.0, 1.0, 1.0, 1.0),
+        @display("Tint")
+    )
+    float4 tint;
+
+    META(
+        @default(0.5), @range(0.0, 1.0), @display("Roughness")
+    )
+    float roughness;
+
+    META(
+        @default(0.0), @range(0.0, 10.0), @logarithmic
+    )
+    float emission;
+
+    META(
+      @hint(albedo), @default(white), @display("Albedo")
+    )
+    texture2d albedo;
+
+    META( @hint(normal), @default(normal) );
+    texture2D normal;
+}
+*/
+
 shader Quad2D {
     pipeline default (
 		  cull = none,
@@ -11,7 +40,7 @@ shader Quad2D {
         #include "lib/frame.glsl"
         #extension GL_EXT_nonuniform_qualifier : enable
 
-        struct Quad2D {
+        struct QuadInstance2D {
             vec2 position, size;
             vec4 radii;
             vec2 uvs[4];
@@ -23,13 +52,12 @@ shader Quad2D {
             float border_width;
             // vec3 _pad0;
         };
-        layout(set = 0, binding = 1) readonly buffer InstanceBlock {
-            Quad2D instances[];
-        };
+
+        layout(set = 0, binding = 1) readonly buffer InstanceBlock { QuadInstance2D instances[]; };
         layout(set = 1, binding = 0) uniform sampler2D u_textures[32];
 
         INOUT Varying {
-            layout(location = 0) vec2 tex_coords;
+            layout(location = 0) vec2 uv;
             layout(location = 1) flat uint texture_id;
 
             layout(location = 2) vec4 fill_color;
@@ -40,7 +68,6 @@ shader Quad2D {
             layout(location = 6) vec2 local; 
             flat layout(location = 7) vec4 radii;
         } v;
-
     }
 
     vertex { 
@@ -48,21 +75,21 @@ shader Quad2D {
         const uint indices[6] = { 0, 2, 3, 0, 3, 1 };
 
         void main() {
-            Quad2D quad = instances[gl_InstanceIndex];
+            QuadInstance2D quad = instances[gl_InstanceIndex];
 
             uint vertex_index = indices[gl_VertexIndex % 6];
             vec2 local = corners[vertex_index] * quad.size;
             vec2 rot_point = local - quad.origin;
 
             vec2 rotated = vec2(
-                    rot_point.x * quad.rotation.x - rot_point.y * quad.rotation.y,
-                    rot_point.x * quad.rotation.y + rot_point.y * quad.rotation.x
-                    );
+                rot_point.x * quad.rotation.x - rot_point.y * quad.rotation.y,
+                rot_point.x * quad.rotation.y + rot_point.y * quad.rotation.x
+            );
             vec2 vertex_position = quad.position + quad.origin + rotated;
 
             gl_Position = frame.projection * frame.view * vec4(vertex_position, 0.0, 1.0);
 
-            v.tex_coords = quad.uvs[vertex_index];
+            v.uv = quad.uvs[vertex_index];
             v.texture_id = quad.imageid;
 
             v.fill_color = unpackUnorm4x8(quad.fill_color);
@@ -87,7 +114,7 @@ shader Quad2D {
         }
 
         void main() {
-            vec4 sampled = texture(u_textures[v.texture_id], v.tex_coords);
+            vec4 sampled = texture(u_textures[v.texture_id], v.uv);
             vec4 fill = sampled * v.fill_color;
             vec4 border = v.border_color;
 
@@ -123,45 +150,44 @@ shader Quad2D_Experiment {
     )
 
     shared Quad2D;
-    vertex {
+    vertex { 
         const vec2 corners[4] = vec2[](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0));
         const uint indices[6] = { 0, 2, 3, 0, 3, 1 };
 
         void main() {
             uint vertex_index = indices[gl_VertexIndex % 6];
-            Quad2D quad = instances[gl_InstanceIndex];
-
-            float t = sin(frame.time * 3.0);
+            QuadInstance2D quad = instances[gl_InstanceIndex];
 
             vec2 uv = corners[vertex_index];
-            vec2 local = (uv - 0.5) * quad.size;
+            vec2 local = corners[vertex_index] * quad.size;
+            vec2 vertex_position = quad.position + local;
 
-            local.x += (t * 0.5 + 0.5) * quad.size.x;
+            gl_Position = frame.projection * frame.view * vec4(vertex_position, 0.0, 1.0);
 
-            vec2 rotated = vec2(
-                local.x * quad.rotation.x - local.y * quad.rotation.y,
-                local.x * quad.rotation.y + local.y * quad.rotation.x
-            );
-
-            vec2 world = quad.position + rotated;
-            gl_Position = frame.projection * frame.view * vec4(world, 0.0, 1.0);
-
-            v.tex_coords = uv;
+            v.uv = quad.uvs[vertex_index];
             v.texture_id = quad.imageid;
         }
     }
 
     fragment {
         layout(location = 0) out vec4 out_color;
+        layout(push_constant) uniform Block {
+            float center_size;
+            float circle_width;
+            float circle_distance;
+            float cutout_size;
+        };
 
         void main() {
-            vec4 sampled = texture(u_textures[v.texture_id], v.tex_coords);
+            out_color.rgb = vec3(0.0); 
 
-            float t = sin(frame.time * 8.0);
+            float smoothness = 0.005;
+            float circle = 1.0 - smoothstep(center_size * 0.1 - smoothness, center_size *0.1 +smoothness, distance(v.uv, vec2(0.5)));
+            float outer_circle = 1.0 - smoothstep(circle_distance - smoothness, circle_distance + smoothness, distance(v.uv, vec2(0.5)));
+            float inner_circle = 1.0 - smoothstep(circle_distance - circle_width - smoothness, circle_distance - circle_width + smoothness, distance(v.uv, vec2(0.5)));
 
-            float dist = distance(v.tex_coords, vec2(0.5));
-
-            out_color = step(dist, mix(0.2, 1.0, t*0.5+0.5)) * sampled;
+            float dist_bands = 1.0 - (step(distance(v.uv.x, 0.5), cutout_size) + step(distance(v.uv.y, 0.5), cutout_size));
+            out_color.a = circle  + ((outer_circle - inner_circle) * dist_bands);
         }
     }
 }

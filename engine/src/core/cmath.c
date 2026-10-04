@@ -110,15 +110,23 @@ quat4 quat4_slerp(quat4 q, quat4 p, float t) {
 	return result;
 }
 
-float2x2 make2x2_from_rotation(float rad) {
-	float2x2 result = { 0 };
-	float c = cosf(rad);
-	float s = sinf(rad);
+float3x3 axisangle3x3(float3 axis, float angle) {
+	float c = cosf(angle);
+	float s = sinf(angle);
+	float t = 1.0f - c;
 
-	result.elements[0] = c;
-	result.elements[1] = s;
-	result.elements[2] = -s;
-	result.elements[3] = c;
+	float3 normalized_axis = norm3(axis);
+	float x = normalized_axis.x;
+	float y = normalized_axis.y;
+	float z = normalized_axis.z;
+
+	// clang-format off
+	float3x3 result = {{
+	  [0] = c + x*x*t,   [3] = x*y*t - z*s, [6] = x*z*t + y*s, 
+	  [1] = y*x*t + z*s, [4] = y*y*t + c,   [7] = y*z*t - x*s,
+	  [2] = z*x*t - y*s, [5] = z*y*t + x*s, [8] = c + z*z*t,  
+	}};
+	// clang-format on
 
 	return result;
 }
@@ -213,28 +221,6 @@ float4x4 basis4x4(float3 r, float3 u, float3 f) {
 	return result;
 }
 
-float4x4 axisangle4x4(float3 axis, float angle) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	float t = 1.0f - c;
-
-	float3 normalized_axis = norm3(axis);
-	float x = normalized_axis.x;
-	float y = normalized_axis.y;
-	float z = normalized_axis.z;
-
-	// clang-format off
-	float4x4 result = {{
-	  [0]  = c + x*x*t,     [4]  = x*y*t - z*s, [8]  = x*z*t + y*s, [12] = 0.0f,
-	  [1]  = y*x*t + z*s,   [5]  = y*y*t + c,   [9]  = y*z*t - x*s, [13] = 0.0f,
-	  [2]  = z*x*t - y*s,   [6]  = z*y*t + x*s, [10] = c + z*z*t,   [14] = 0.0f,
-	  [3]  = 0.0f,          [7]  = 0.0f,        [11] = 0.0f,        [15] = 1.0f
-	}};
-	// clang-format on
-
-	return result;
-}
-
 float4x4 rotation4x4(quat4 q) {
 	float x = q.x, y = q.y, z = q.z, w = q.w;
 	float xx = x * x, yy = y * y, zz = z * z;
@@ -296,10 +282,10 @@ float4x4 trs4x4_euler(float3 position, float3 rotation, float3 scale) {
 
 	float4x4 T = translation4x4(position);
 	float4x4 S = scaling4x4(scale);
-	float4x4 rotation_x = axisangle4x4(unit3(RIGHT), rotation.x);
-	float4x4 rotation_y = axisangle4x4(unit3(UP), rotation.y);
-	float4x4 rotation_z = axisangle4x4(unit3(FORWARD), rotation.z);
-	float4x4 R = mul4x4(rotation_z, mul4x4(rotation_y, rotation_x));
+	float3x3 rotation_x = axisangle3x3(unit3(RIGHT), rotation.x);
+	float3x3 rotation_y = axisangle3x3(unit3(UP), rotation.y);
+	float3x3 rotation_z = axisangle3x3(unit3(FORWARD), rotation.z);
+	float4x4 R = affine4x4(mul3x3(rotation_z, mul3x3(rotation_y, rotation_x)), f3(0.0));
 
 	result = mul4x4(T, mul4x4(R, S));
 	return result;
@@ -354,8 +340,8 @@ float4x4 lookat(float3 eye, float3 center, float3 up) {
 	result.elements[9] = u.z;
 	result.elements[13] = -dot3(u, eye);
 
-	result.elements[2] =  -f.x;
-	result.elements[6] =  -f.y;
+	result.elements[2] = -f.x;
+	result.elements[6] = -f.y;
 	result.elements[10] = -f.z;
 	result.elements[14] = dot3(f, eye);
 

@@ -492,7 +492,6 @@ GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *debug_name) {
 	GFX_Shader *result = 0;
 	GFX_Pipeline *pipeline = 0;
-	uint32_t set_count = 0;
 
 	bool ok = gfx_device_valid(device) && (device->shader_count < MAX_SHADERS || device->first_free_shader);
 	const char *name = debug_name ? debug_name : "<unnamed>";
@@ -543,16 +542,16 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *d
 				.bindingCount = set->uniform_count,
 				.pBindings = bindings,
 			};
-			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[set_count]) == VK_SUCCESS;
+			ok = ok && vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[result->reflection.set_count]) == VK_SUCCESS;
 
-			set_count = ok ? set_count + 1 : set_count;
+			result->reflection.set_count = ok ? result->reflection.set_count + 1 : result->reflection.set_count;
 		}
 	}
 
 	if (ok) { // create pipeline layout
 		VkPipelineLayoutCreateInfo pl_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = set_count,
+			.setLayoutCount = result->reflection.set_count,
 			.pSetLayouts = result->layouts,
 			.pushConstantRangeCount = 1,
 			.pPushConstantRanges = &device->global_range,
@@ -601,7 +600,6 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *d
 GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_bytecode, const char *debug_name) {
 	GFX_Shader *result = 0;
 	const char *name = debug_name ? debug_name : "<unnamed>";
-	uint32_t set_count = 0;
 
 	bool ok = gfx_device_valid(device);
 	if (ok) { // check validitiy of shader code
@@ -665,16 +663,16 @@ GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_
 				.bindingCount = set->uniform_count,
 				.pBindings = bindings,
 			};
-			ok &= vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[set_count]) == VK_SUCCESS;
+			ok = ok && vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[result->reflection.set_count]) == VK_SUCCESS;
 
-			set_count = ok ? set_count + 1 : set_count;
+			result->reflection.set_count = ok ? result->reflection.set_count + 1 : result->reflection.set_count;
 		}
 	}
 
 	if (ok) { // create pipeline layout
 		VkPipelineLayoutCreateInfo pl_create_info = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = set_count,
+			.setLayoutCount = result->reflection.set_count,
 			.pSetLayouts = result->layouts,
 			.pushConstantRangeCount = 1,
 			.pPushConstantRanges = &device->global_range,

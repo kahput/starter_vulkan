@@ -5,7 +5,8 @@
 #include "core/geom_types.h"
 #include "core/input_types.h"
 #include "core/strings.h"
-#include "draw/camera.h"
+#include "generated/assets.h"
+#include "generated/res_generated.h"
 #include "gfx/gfx_types.h"
 
 #include "res.h"
@@ -21,7 +22,6 @@
 #include <gfx.h>
 
 #include <draw.h>
-#include <draw/font.h>
 
 #include <utils/input.h>
 #include <utils/anim.h>
@@ -87,7 +87,7 @@ Rectangle drag2d_point(Drag2D *drag, float2 initial_position, float radius, floa
 Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, float *t) {
 	Rectangle result = { 0 };
 
-	bool ok = drag != 0 && t != 0;
+	bool ok = drag && t;
 	if (ok) {
 		*t = clampf(*t, min, max);
 		float2 mouse = as2(input_mouse_position(), float2);
@@ -118,9 +118,12 @@ Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, fl
 	return result;
 }
 
-const RES_Registry registry = {
+const RES_Catalog registry = {
 	.images = res_image_metadata,
 	.image_count = RES_IMAGE_MAX,
+
+	.fonts = res_font_metadata,
+	.font_count = RES_FONT_MAX,
 
 	.shader_count = RES_SHADER_MAX,
 	.shaders = res_shader_metadata,
@@ -223,14 +226,24 @@ bool tick(Arena *permanent, Arena *frame) {
 	DRAW_List *draw = drawlist_make(frame, RES_SHADER_QUAD2D, RES_SHADER_LINE3D);
 	scene_camera_orbit(camera, mouse_delta);
 
-	float4x4 view_from_world = camera_view(&state->camera);
+	float3 camera_forward = norm3(sub3(camera->target, camera->position));
+	float3 camera_right = norm3(cross3(camera_forward, unit3(UP)));
+	float3 camera_up = cross3(camera_right, camera_forward);
+
+	float3x3 view_rotation = rows3x3(camera_right, camera_up, neg3(camera_forward));
+	float4x4 view_from_world = affine4x4(
+		view_rotation,
+		neg3(mul3x3v(view_rotation, camera->position)) //
+	);
+	float4x4 world_from_view = affine4x4(
+		transpose3x3(view_rotation),
+		camera->position //
+	);
+
 	float4x4 clip_from_view = camera_proj(&state->camera, viewport.width / viewport.height);
 	float4x4 clip_from_world = mul4x4(clip_from_view, view_from_world);
 
 	/* // clang-format off */
-	/* float3 camera_right, camera_up; */
-	/* float3 camera_forward = orthobasis3(sub3(camera->target, camera->position), &camera_right, &camera_up); */
-
 	/* float4x4 world_from_view = {{ */
 	/* [0] = camera_right.x, [4] = camera_up.x, [8 ] = -camera_forward.x, [12] = camera->position.x, */
 	/* [1] = camera_right.y, [5] = camera_up.y, [9 ] = -camera_forward.y, [13] = camera->position.y, */
@@ -315,17 +328,17 @@ bool tick(Arena *permanent, Arena *frame) {
 	};
 
 	// clang-format off
-	float3x3 screen_from_world = {{ 
-	[0] = scale.x, [3] = 0.0f ,   [6] = origo.x,
-	[1] = 0.0f,    [4] = scale.y, [7] = origo.y,
-	[2] = 0.0f,    [5] = 0.0f,    [8] = 1.0f
-	}};
+    float3x3 screen_from_world = {{ 
+        [0] = scale.x, [3] = 0.0f ,   [6] = origo.x,
+        [1] = 0.0f,    [4] = scale.y, [7] = origo.y,
+        [2] = 0.0f,    [5] = 0.0f,    [8] = 1.0f
+    }};
 
-	float3x3 world_from_screen = {{
-	[0] = 1.0f / scale.x, [3] = 0.0f,           [6] = -origo.x / scale.x,
-	[1] = 0.0f,           [4] = 1.0f / scale.y, [7] = -origo.y / scale.y,
-	[2] = 0.0f,           [5] = 0.0f,           [8] =  1.0f,
-	}};
+    float3x3 world_from_screen = {{
+        [0] = 1.0f / scale.x, [3] = 0.0f,           [6] = -origo.x / scale.x,
+        [1] = 0.0f,           [4] = 1.0f / scale.y, [7] = -origo.y / scale.y,
+        [2] = 0.0f,           [5] = 0.0f,           [8] =  1.0f,
+    }};
 	// clang-format on
 
 	for (int32_t x = -counts.x; x <= counts.x; ++x) {
@@ -342,20 +355,97 @@ bool tick(Arena *permanent, Arena *frame) {
 		draw2d_line(make2(0.0f, py), make2(viewport.width, py), 1.0f, c);
 	}
 
-	static Drag2D drag = { 0 };
-	drag2d_point(&drag, f2(0.0f), 8.0f, xform2p(world_from_screen, mouse_position));
+	static Drag2D drag = { 0 }, center_size_slider = { 0 }, circle_width_slider = { 0 };
+	static Drag2D circle_distance_slider = { 0 }, cutout_size_slider;
+	drag2d_point(&drag, f2(0.0f), 8.0f / segment_size, xform2p(world_from_screen, mouse_position));
+
+	static struct {
+		float center_size;
+		float circle_width;
+		float circle_distance;
+		float cutout_size;
+	} circle_params = {
+		.center_size = 0.7f,
+		.circle_width = 0.1f,
+		.circle_distance = 0.5f,
+		.cutout_size = 0.1f
+	};
+
+	Rectangle slider_rect = { 24.0f, 24.0f, 256.0f, 24.0f };
+	{
+		Rectangle thumb = drag2d_slider(&center_size_slider, slider_rect, 0.0f, 1.0f, &circle_params.center_size);
+
+		Rectangle slider_visual = slider_rect;
+		slider_visual.height = 8.0f;
+		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
+		draw2d_rect(slider_visual, hex(0xe9eff5));
+		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.center_size, slider_visual.height), hex(0x3024a4));
+		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+	}
+	slider_rect.y += 36.0f;
+
+	{
+		Rectangle thumb = drag2d_slider(&circle_width_slider, slider_rect, 0.0f, 1.0f, &circle_params.circle_width);
+		float t = circle_params.circle_width / 1.0f;
+
+		Rectangle slider_visual = slider_rect;
+		slider_visual.height = 8.0f;
+		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
+		draw2d_rect(slider_visual, hex(0xe9eff5));
+		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * t, slider_visual.height), hex(0x3024a4));
+		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+	}
+	slider_rect.y += 36.0f;
+
+	{
+		Rectangle thumb = drag2d_slider(&circle_distance_slider, slider_rect, 0.0f, 1.0f, &circle_params.circle_distance);
+
+		Rectangle slider_visual = slider_rect;
+		slider_visual.height = 8.0f;
+		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
+		draw2d_rect(slider_visual, hex(0xe9eff5));
+		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.circle_distance, slider_visual.height), hex(0x3024a4));
+		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+	}
+	slider_rect.y += 36.0f;
+
+	{
+		Rectangle thumb = drag2d_slider(&cutout_size_slider, slider_rect, 0.0f, 1.0f, &circle_params.cutout_size);
+
+		Rectangle slider_visual = slider_rect;
+		slider_visual.height = 8.0f;
+		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
+		draw2d_rect(slider_visual, hex(0xe9eff5));
+		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.cutout_size, slider_visual.height), hex(0x3024a4));
+		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+	}
 
 	// clang-format off
-	float3x3 world_from_local = { {
-	  [0] = 1.0f, [3] = 0.0f, [6] = drag.position.x,
-	  [1] = 0.0f, [4] = 1.0f, [7] = drag.position.y,
-	  [2] = 0.0f, [5] = 0.0f, [8] = 1.0f,
-	} };
+    float3x3 world_from_local = { {
+        [0] = 1.0f, [3] = 0.0f, [6] = drag.position.x,
+        [1] = 0.0f, [4] = 1.0f, [7] = drag.position.y,
+        [2] = 0.0f, [5] = 0.0f, [8] = 1.0f,
+    } };
 	// clang-format on
 
 	float3x3 transform = mul3x3(screen_from_world, world_from_local);
 
-	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_HEART);
+	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW, PIXEL_FORMAT_RGBA8_UNORM);
+	RES_Font *font16 = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
+	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 400, RES_FONT_STYLE_ITALIC, 32);
+
+	float2 text_dimensions = measure_text(font, s("Hello world!"));
+	draw2d_rect(rect(100.0f, 400.0f, text_dimensions.x, text_dimensions.y), BLACK);
+	draw2d_text(font, f2(100.0f, 400.0f), WHITE, s("Hello world!"));
+
+	uint64_t *my_ptr = 0, my_ptr_count = 32;
+	uint64_t buf = 0, tex1 = 0, tex2 = 0, tex3 = 0;
+	GFX_Binding bindings[] = {
+		{ .binding = 0, arr(uint64_t, buf) },
+		{ .binding = 1, arr(uint64_t, tex1, tex2, tex3) },
+		{ .binding = 2, .ids = my_ptr, .count = my_ptr_count },
+	};
+
 	draw2d_circle(xform2p(transform, f2(0.0f)), 8.0f, BLACK);
 	draw2d_circle(xform2p(transform, f2(0.0f, 2.0f)), 8.0f, BLACK);
 
@@ -363,11 +453,7 @@ bool tick(Arena *permanent, Arena *frame) {
 	draw2d_quad(rect2(xform2p(transform, f2(0.0f, 0.0f)), texture_size(*tex)),
 		(DRAW_QuadStyle){
 		  .fill_color = WHITE,
-		  .image = &(Image2D){
-			.handle = tex->handle,
-			.width = tex->width,
-			.height = tex->height,
-		  },
+		  .texture = tex,
 		});
 	draw2d_pop_shader();
 
@@ -438,7 +524,6 @@ bool tick(Arena *permanent, Arena *frame) {
 
 			for (DRAW_Batch *batch = qch->first_batch; batch; batch = batch->next) {
 				RES_Shader *shader = res_shader(&state->cache, batch->shader);
-				if (shader == 0) continue; // still compiling / broken — skip (or bind an error shader)
 				gfx_cmd_shader_bind(device, shader->handle, 0);
 
 				GFX_Image *images[32] = { 0 };
@@ -475,6 +560,10 @@ bool tick(Arena *permanent, Arena *frame) {
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->nearest) };
 				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
 				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
+
+				if (batch->shader == RES_SHADER_QUAD2D_EXPERIMENT)
+					gfx_cmd_push_constant(cmd, sizeof(circle_params), &circle_params);
+
 				gfx_cmd_draw_instanced(cmd, 0, 6, 0, batch->instance_count);
 			}
 		}
