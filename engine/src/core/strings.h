@@ -50,4 +50,8 @@ double str8_to_f64(string8 s);
 uint64_t str8_to_u64(string8 s);
 int64_t str8_to_s64(string8 s);
 
-uint32_t utf8_decode(string8 message, uint32_t *at);
+typedef struct {
+	uint32_t codepoint, length;
+} UTF8Result;
+UTF8Result utf8_decode(string8 message, uint64_t at);
+uint32_t utf8_next(string8 message, uint64_t *at);

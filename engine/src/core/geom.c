@@ -31,7 +31,7 @@ Convex2 convex_hull(Arena *arena, float2 *points, uint32_t point_count) {
 				float2 a = sub2(p_next, p);
 				float2 b = sub2(q, p);
 
-				float cross = cross3(f3(a, 0.0f), f3(b, 0.0f)).z;
+				float cross = cross3(float3(a, 0.0f), float3(b, 0.0f)).z;
 				if (cross >= 0.0f) {
 					if (cross == 0.0f && (p_next.x != q.x || p_next.y != q.y)) {
 						if (dot2(b, b) > dot2(a, a))
@@ -75,7 +75,7 @@ float3 barycentric(Triangle3 t, float3 p) {
 		float w = det2x2(basis2x2(col2x2(A, 0), rhs)) * denom;
 		float u = 1.0f - (v + w);
 
-		result = f3(u, v, w);
+		result = float3(u, v, w);
 	}
 
 	return result;

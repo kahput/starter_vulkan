@@ -276,38 +276,50 @@ int64_t str8_to_s64(string8 s) {
 	return strtol((char *)s.bytes, 0, 10);
 }
 
-uint32_t utf8_decode(string8 message, uint32_t *at) {
-	if (message.length == 0 || at == 0 || *at >= message.length) return 0xFFFD;
-	uint8_t leading_byte = message.bytes[*at];
-	uint32_t result = 0, length = 0;
+#define REPLACEMENT_CHAR 0xFFFD
 
-	// clang-format off
-	switch (leading_byte & 0xF0) {
-		case 0xF0: result = leading_byte & 0x07; length = 4; break;
-		case 0xE0: result = leading_byte & 0xF;  length = 3; break;
-		case 0xD0: 
-		case 0xC0: result = leading_byte & 0x1F; length = 2; break;
-        default:   result = leading_byte;        length = 1; break;
-	};
-	// clang-format on
-	if (*at + length > message.length) return *at += 1, 0xFFFD;
+// TODO: Respect UTF8 standard
+UTF8Result utf8_decode(string8 message, uint64_t at) {
+	UTF8Result result = { .codepoint = REPLACEMENT_CHAR, 1 };
 
-	for (uint32_t index = 1; index < length; ++index) {
-		uint8_t byte = message.bytes[*at + index];
-		if ((byte & 0xC0) != 0x80)
-			return 0xFFFD;
+	bool ok = message.bytes && at < message.length && (message.bytes[at] & 0xC0) != 0x80;
+	if (ok) {
+		uint8_t leading_byte = message.bytes[at];
 
-		result = (result << 6) | (byte & 0x3F);
+		// clang-format off
+        switch (leading_byte & 0xF0) {
+            case 0xF0: result.codepoint = leading_byte & 0x07; result.length = 4; break;
+            case 0xE0: result.codepoint = leading_byte & 0xF;  result.length = 3; break;
+            case 0xD0: 
+            case 0xC0: result.codepoint = leading_byte & 0x1F; result.length = 2; break;
+            default:   result.codepoint = leading_byte;        result.length = 1; break;
+        };
+		// clang-format on
+
+		ok = at + result.length <= message.length;
 	}
 
-	if ((length == 2 && result < 0x80) ||
-		(length == 3 && result < 0x800) ||
-		(length == 4 && result < 0x10000) ||
-		(result >= 0xD800 && result <= 0xDFFF) ||
-		result > 0x10FFFF) {
-		return 0xFFFD;
+	if (ok) {
+		for (uint32_t index = 1; index < result.length; ++index) {
+			uint8_t byte = message.bytes[at + index];
+			ok = ok && (byte & 0xC0) == 0x80;
+
+			result.codepoint = (result.codepoint << 6) | (byte & 0x3F);
+		}
 	}
 
-	*at += length;
+	if (ok == false) {
+		result.codepoint = REPLACEMENT_CHAR;
+		result.length = 1;
+	}
+
 	return result;
+}
+
+uint32_t utf8_next(string8 message, uint64_t *at) {
+	if (at == 0) return REPLACEMENT_CHAR;
+
+	UTF8Result result = utf8_decode(message, *at);
+	*at += result.length;
+	return result.codepoint;
 }

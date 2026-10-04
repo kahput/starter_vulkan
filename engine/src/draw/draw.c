@@ -131,7 +131,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 void draw2d_text(RES_Font *font, float2 position, Color color, string8 text) {
 	bool ok = CURRENT_DRAWLIST && font;
 	if (ok) {
-		float2 cursor = f2(position.x, position.y + font->ascent);
+		float2 cursor = float2(position.x, position.y + font->ascent);
 
 		for (uint32_t index = 0; index < text.length; ++index) {
 			uint8_t c = text.bytes[index];

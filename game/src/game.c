@@ -264,9 +264,9 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	/* int32_t seg_count = 32; */
 	/* for (int32_t z = -seg_count; z <= seg_count; ++z) */
-	/* draw3d_line(f3(-seg_count, 0.0f, z), f3(seg_count, 0.0f, z), 1.0f, z == 0 ? RED : GRAY); */
+	/* draw3d_line(float3(-seg_count, 0.0f, z), float3(seg_count, 0.0f, z), 1.0f, z == 0 ? RED : GRAY); */
 	/* for (int32_t x = -seg_count; x <= seg_count; ++x) */
-	/* draw3d_line(f3(x, 0.0f, -seg_count), f3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY); */
+	/* draw3d_line(float3(x, 0.0f, -seg_count), float3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY); */
 
 	/* float3 point = { -1.0f, 0.0f, -8.0f }; */
 
@@ -284,16 +284,16 @@ bool tick(Arena *permanent, Arena *frame) {
 	/* -1.0f */
 	/* }; */
 
-	/* draw3d_arrow(f3(0.0f), proj, 4.0f, GREEN, view_from_world, clip_from_view, viewport.width); */
+	/* draw3d_arrow(float3(0.0f), proj, 4.0f, GREEN, view_from_world, clip_from_view, viewport.width); */
 	/* draw3d_quad_outline((Plane){ { 0.0f, 0.0f, -1.0f }, 1.0f }, frustum_near_plane_half_extent.x * 2.0f, frustum_near_plane_half_extent.y * 2.0f, 4.0f, BLACK); */
 
-	/* float2 viewport_size_inverse = f2(1.0f / (viewport.width * 0.5f), 1.0f / (viewport.height * 0.5f)); */
-	/* float2 mouse_ndc = sub2(mul2(mouse_position, viewport_size_inverse), f2(1.0f)); */
+	/* float2 viewport_size_inverse = float2(1.0f / (viewport.width * 0.5f), 1.0f / (viewport.height * 0.5f)); */
+	/* float2 mouse_ndc = sub2(mul2(mouse_position, viewport_size_inverse), float3(1.0f)); */
 
 	/* float near_plane_half_height = tanf(deg_to_rad(camera->fovy) * 0.5f); */
 	/* float near_plane_half_width = near_plane_half_height * aspect; */
 
-	/* float3 mouse_view = f3(mul2(mouse_ndc, f2(near_plane_half_width, near_plane_half_height)), -1.0f); */
+	/* float3 mouse_view = float3(mul2(mouse_ndc, float3(near_plane_half_width, near_plane_half_height)), -1.0f); */
 
 	/* Ray3 mouse_ray = { */
 	/* camera->position, */
@@ -302,14 +302,14 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	/* CastResult3 hit = raycast_plane(mouse_ray, (Plane){ .normal = unit3(UP), .distance = 0.0f }); */
 	/* if (hit.hit) */
-	/* draw3d_quad(hit.point, f2(1.0f), */
+	/* draw3d_quad(hit.point, float3(1.0f), */
 	/* (DRAW_QuadStyle){ */
 	/* .fill_color = RED, */
 	/* .radii = f4(1.0f), */
 	/* .flags = 1, */
 	/* }); */
 
-	/* draw3d_quad(point, f2(0.1f), */
+	/* draw3d_quad(point, float3(0.1f), */
 	/* (DRAW_QuadStyle){ */
 	/* .fill_color = BLACK, */
 	/* .radii = f4(1.0f), */
@@ -328,12 +328,7 @@ bool tick(Arena *permanent, Arena *frame) {
 	};
 
 	// clang-format off
-    float3x3 screen_from_world = {{ 
-        [0] = scale.x, [3] = 0.0f ,   [6] = origo.x,
-        [1] = 0.0f,    [4] = scale.y, [7] = origo.y,
-        [2] = 0.0f,    [5] = 0.0f,    [8] = 1.0f
-    }};
-
+    float3x3 screen_from_world = affine3x3(diagonal2x2(scale), origo);
     float3x3 world_from_screen = {{
         [0] = 1.0f / scale.x, [3] = 0.0f,           [6] = -origo.x / scale.x,
         [1] = 0.0f,           [4] = 1.0f / scale.y, [7] = -origo.y / scale.y,
@@ -345,7 +340,7 @@ bool tick(Arena *permanent, Arena *frame) {
 		float px = origo.x + x * segment_size;
 
 		Color c = x == 0 ? BLUE : GRAY;
-		draw2d_line(make2(px, 0.0f), make2(px, viewport.height), 1.0f, c);
+		draw2d_line(float2(px, 0.0f), float2(px, viewport.height), 1.0f, c);
 	}
 
 	for (int32_t y = -counts.y; y <= counts.y; ++y) {
@@ -357,7 +352,7 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	static Drag2D drag = { 0 }, center_size_slider = { 0 }, circle_width_slider = { 0 };
 	static Drag2D circle_distance_slider = { 0 }, cutout_size_slider;
-	drag2d_point(&drag, f2(0.0f), 8.0f / segment_size, xform2p(world_from_screen, mouse_position));
+	drag2d_point(&drag, float2(0.0f), 8.0f / segment_size, xform2p(world_from_screen, mouse_position));
 
 	static struct {
 		float center_size;
@@ -372,6 +367,8 @@ bool tick(Arena *permanent, Arena *frame) {
 	};
 
 	Rectangle slider_rect = { 24.0f, 24.0f, 256.0f, 24.0f };
+	RES_Font *font16 = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
+
 	{
 		Rectangle thumb = drag2d_slider(&center_size_slider, slider_rect, 0.0f, 1.0f, &circle_params.center_size);
 
@@ -383,24 +380,32 @@ bool tick(Arena *permanent, Arena *frame) {
 
 		draw2d_quad(thumb,
 			(DRAW_QuadStyle){
-			  .fill_color = hex(0x3024a4),
-			  .border_color = BLACK,
+			  .fill_color = WHITE,
+			  .border_color = hex(0x3024a4),
 			  .border_width = 4.0f,
-			  .radii = f4(slider_rect.height),
+			  .radii = float4(slider_rect.height),
 			});
 	}
 	slider_rect.y += 36.0f;
 
 	{
 		Rectangle thumb = drag2d_slider(&circle_width_slider, slider_rect, 0.0f, 1.0f, &circle_params.circle_width);
-		float t = circle_params.circle_width / 1.0f;
+		float t = circle_params.circle_width;
 
 		Rectangle slider_visual = slider_rect;
 		slider_visual.height = 8.0f;
 		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
 		draw2d_rect(slider_visual, hex(0xe9eff5));
 		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * t, slider_visual.height), hex(0x3024a4));
-		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+
+		draw2d_quad(thumb,
+			(DRAW_QuadStyle){
+			  .fill_color = WHITE,
+			  .border_color = hex(0x3024a4),
+			  .border_width = 4.0f,
+			  .radii = float4(slider_rect.height),
+			});
+		draw2d_textf(font16, float2(slider_rect.x + slider_rect.width + 12.0f, thumb.y + 4.0f), BLACK, "%.2f", t);
 	}
 	slider_rect.y += 36.0f;
 
@@ -412,7 +417,14 @@ bool tick(Arena *permanent, Arena *frame) {
 		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
 		draw2d_rect(slider_visual, hex(0xe9eff5));
 		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.circle_distance, slider_visual.height), hex(0x3024a4));
-		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+
+		draw2d_quad(thumb,
+			(DRAW_QuadStyle){
+			  .fill_color = WHITE,
+			  .border_color = hex(0x3024a4),
+			  .border_width = 4.0f,
+			  .radii = float4(slider_rect.height),
+			});
 	}
 	slider_rect.y += 36.0f;
 
@@ -424,7 +436,14 @@ bool tick(Arena *permanent, Arena *frame) {
 		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
 		draw2d_rect(slider_visual, hex(0xe9eff5));
 		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.cutout_size, slider_visual.height), hex(0x3024a4));
-		draw2d_rect_rounded(thumb, f4(slider_rect.height), hex(0x3024a4));
+
+		draw2d_quad(thumb,
+			(DRAW_QuadStyle){
+			  .fill_color = WHITE,
+			  .border_color = hex(0x3024a4),
+			  .border_width = 4.0f,
+			  .radii = float4(slider_rect.height),
+			});
 	}
 
 	// clang-format off
@@ -438,27 +457,24 @@ bool tick(Arena *permanent, Arena *frame) {
 	float3x3 transform = mul3x3(screen_from_world, world_from_local);
 
 	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW, PIXEL_FORMAT_RGBA8_UNORM);
-	RES_Font *font16 = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
 	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 800, RES_FONT_STYLE_NORMAL, 64);
 
 	string8 message = s("Fancy text æøå 日本語");
 
-	draw2d_textf(font, f2(origo.x * 0.25f, 24.f), BLACK, "drag_pos={%.2f,%.2f}", spread2(drag.position));
-
-	float2 draw_anchor = f2(100.0f, 400.0f);
-	float2 cursor = f2(draw_anchor.x, draw_anchor.y + font->ascent);
+	float2 draw_anchor = float2(100.0f, 400.0f);
+	float2 cursor = float2(draw_anchor.x, draw_anchor.y + font->ascent);
 	draw2d_circle(draw_anchor, 2.0f, RED);
 
 	float amplitude = 16.0f;
 	float frequency = 4.0f;
 
-	for (uint32_t at = 0, char_index = 0; at < message.length; char_index++) {
+	for (uint64_t at = 0, char_index = 0; at < message.length; char_index++) {
 		float normalized = (float)char_index / 5;
 		float offset_y = char_index < 5 ? sinf(normalized * frequency + time * TAU) * amplitude : 0;
 		float hue = normalized * 360.0f;
 		Color c = char_index < 5 ? color_from_float4(rgba_from_hsv(hue, 1.0f, 1.0f)) : BLACK;
 
-		uint32_t codepoint = utf8_decode(message, &at);
+		uint32_t codepoint = utf8_next(message, &at);
 		if (codepoint == '\n' || codepoint == '\r') {
 			cursor.y += font->ascent + font->descent + font->line_gap;
 			cursor.x = draw_anchor.x;
@@ -479,19 +495,11 @@ bool tick(Arena *permanent, Arena *frame) {
 		cursor.x += glyph->advance;
 	}
 
-	uint64_t *my_ptr = 0, my_ptr_count = 32;
-	uint64_t buf = 0, tex1 = 0, tex2 = 0, tex3 = 0;
-	GFX_Binding bindings[] = {
-		{ .binding = 0, arr(uint64_t, buf) },
-		{ .binding = 1, arr(uint64_t, tex1, tex2, tex3) },
-		{ .binding = 2, .ids = my_ptr, .count = my_ptr_count },
-	};
-
-	draw2d_circle(xform2p(transform, f2(0.0f)), 8.0f, BLACK);
-	draw2d_circle(xform2p(transform, f2(0.0f, 2.0f)), 8.0f, BLACK);
+	draw2d_circle(xform2p(transform, float2(0.0f)), 8.0f, BLACK);
+	draw2d_circle(xform2p(transform, float2(0.0f, 2.0f)), 8.0f, BLACK);
 
 	draw2d_push_shader(RES_SHADER_QUAD2D_EXPERIMENT);
-	draw2d_quad(rect2(xform2p(transform, f2(0.0f, 0.0f)), texture_size(*tex)),
+	draw2d_quad(rect2(xform2p(transform, float2(0.0f, 0.0f)), texture_size(*tex)),
 		(DRAW_QuadStyle){
 		  .fill_color = WHITE,
 		  .texture = tex,

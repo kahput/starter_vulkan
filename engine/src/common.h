@@ -159,13 +159,13 @@ INLINE float2 make2_from4(float3 v) { return make2(v.x, v.y); }
 INLINE float2 make2_from3(float3 v) { return make2(v.x, v.y); }
 
 #define FLOAT2_SELECT(_1, _2, FN, ...) FN
-#define f2(...) FLOAT2_SELECT(__VA_ARGS__, make2, splat2, _)(__VA_ARGS__)
+#define float2(...) FLOAT2_SELECT(__VA_ARGS__, make2, splat2, _)(__VA_ARGS__)
 
 #define FLOAT3_SELECT(_1, _2, _3, FN, ...) FN
-#define f3(...) FLOAT3_SELECT(__VA_ARGS__, make3, make3_from2, splat3, _)(__VA_ARGS__)
+#define float3(...) FLOAT3_SELECT(__VA_ARGS__, make3, make3_from2, splat3, _)(__VA_ARGS__)
 
 #define FLOAT4_SELECT(_1, _2, _3, _4, FN, ...) FN
-#define f4(...) FLOAT4_SELECT(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
+#define float4(...) FLOAT4_SELECT(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
 
 typedef double float64;
 typedef struct { float64 x, y; } float64x2;

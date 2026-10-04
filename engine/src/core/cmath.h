@@ -84,6 +84,7 @@ INLINE float2 sub2(float2 a, float2 b) { return (float2){ a.x - b.x, a.y - b.y }
 INLINE float2 mul2(float2 a, float2 b) { return (float2){ a.x * b.x, a.y * b.y }; }
 INLINE float2 scale2(float2 v, float s) { return (float2){ v.x * s, v.y * s }; }
 INLINE float dot2(float2 a, float2 b) { return a.x * b.x + a.y * b.y; }
+INLINE float2 inverse2(float2 v) { return (float2){ 1.0f / v.x, 1.0f / v.y }; }
 
 INLINE float lensq2(float2 v) { return dot2(v, v); }
 INLINE float len2(float2 v) { return sqrtf(dot2(v, v)); }
@@ -211,6 +212,7 @@ INLINE float2 mul2x2v(float2x2 m, float2 v) { return (float2){ m.elements[0] * v
 INLINE float det2x2(float2x2 m) { return m.elements[0] * m.elements[3] - m.elements[2] * m.elements[1]; }
 
 INLINE float2x2 basis2x2(float2 right, float2 up) { return (float2x2){ { right.x, right.y, up.x, up.y } }; }
+INLINE float2x2 diagonal2x2(float2 d) { return (float2x2){ { d.x, 0.0f, 0.0, d.y } }; }
 INLINE float2 col2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i * 2], m.elements[i * 2 + 1] }; }
 INLINE float2 row2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i], m.elements[i + 2] }; }
 
