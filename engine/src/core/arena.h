@@ -15,7 +15,6 @@ static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .bas
 void arena_destroy(Arena *arena);
 
 void *arena_push(Arena *arena, size_t size, size_t align, bool zero);
-void *arena_push_copy(Arena *arena, void *src, size_t size, size_t align);
 void arena_pop(Arena *arena, size_t size);
 
 size_t arena_mark(Arena *arena);
@@ -28,4 +27,5 @@ void arena_temp_end(ArenaTemp temp);
 ArenaTemp arena_scratch_begin(Arena *conflict);
 static inline void arena_scratch_end(ArenaTemp scratch) { arena_temp_end(scratch); }
 
-#define arena_push_count(a, T, c) (T *)arena_push((a), sizeof(T) * (c), alignof(T), true)
+#define arena_push_count(a, T, count) (T *)arena_push((a), sizeof(T) * (count), alignof(T), true)
+#define arena_push_copy(a, src, count) memory_copy(arena_push((a), sizeof((src)[0]) * (count), alignof((src)[0]), false), (src), sizeof((src)[0]) * (count))

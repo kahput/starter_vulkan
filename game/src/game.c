@@ -457,7 +457,7 @@ bool tick(Arena *permanent, Arena *frame) {
 	float3x3 transform = mul3x3(screen_from_world, world_from_local);
 
 	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW, PIXEL_FORMAT_RGBA8_UNORM);
-	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 800, RES_FONT_STYLE_NORMAL, 64);
+	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 400, RES_FONT_STYLE_NORMAL, 64);
 
 	string8 message = s(
 		"Fancy [u]Underline[\\u]\n\n"
@@ -474,6 +474,10 @@ bool tick(Arena *permanent, Arena *frame) {
 
 	float2 underline_start = { 0 };
 	bool underlining = false;
+
+	RES_Font *font32 = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 32);
+	draw2d_textf(font32, float2(400.0f, 24.0f), BLACK, "%lluMiB/%lluMiB", permanent->offset / 1024 / 1024, permanent->capacity / 1024 / 1024);
+	draw2d_textf(font32, float2(400.0f, 48.0f), BLACK, "%lluMiB/%lluMiB", state->cache.arena->offset / 1024 / 1024, state->cache.arena->capacity / 1024 / 1024);
 
 	for (uint64_t at = 0, char_index = 0; at < message.length; char_index++) {
 		float normalized = (float)char_index / 5;

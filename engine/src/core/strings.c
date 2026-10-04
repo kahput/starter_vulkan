@@ -51,7 +51,7 @@ string8 indent8(Arena *arena, string8 indent, uint32_t depth) {
 		result.length = indent.length * depth;
 
 		for (uint32_t index = 0; index < depth; ++index)
-			arena_push_copy(arena, indent.bytes, indent.length, 0);
+			arena_push_copy(arena, indent.bytes, indent.length);
 	}
 
 	return result;

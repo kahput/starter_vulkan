@@ -292,7 +292,8 @@ string8 *os_directory_files(Arena *arena, string8 path, uint32_t *count) {
 					.length = strnlen(entry->d_name, 256),
 				};
 
-				path.bytes = arena_push_copy(arena, entry->d_name, path.length + 1, 1);
+
+				path.bytes = arena_push_copy(arena, entry->d_name, path.length + 1);
 				result[cursor++] = path;
 			}
 		}

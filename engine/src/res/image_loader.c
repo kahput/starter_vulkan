@@ -29,7 +29,7 @@ RES_Image2D res__load_image(Arena *arena, string8 path) {
 	}
 
 	if (ok) {
-		result.pixels = arena_push_copy(arena, pixels, result.width * result.height * result.channels, 16);
+		result.pixels = arena_push_copy(arena, pixels, result.width * result.height * result.channels);
 		stbi_image_free(pixels);
 
 		string8 filename = pathfile8(path);

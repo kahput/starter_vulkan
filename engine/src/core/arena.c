@@ -22,7 +22,6 @@ void arena_destroy(Arena *arena) {
 }
 
 void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) {
-
 	uintptr_t current = (uintptr_t)arena->base + arena->offset;
 	uintptr_t aligned = alignup(current, alignment ? alignment : 1);
 
@@ -38,12 +37,6 @@ void *arena_push(Arena *arena, size_t size, size_t alignment, bool zero_memory) 
 
 	arena->offset += padding + size;
 	return (void *)aligned;
-}
-
-void *arena_push_copy(Arena *arena, void *src, size_t size, size_t align) {
-	void *dst = arena_push(arena, size, align, false);
-	memcpy(dst, src, size);
-	return dst;
 }
 
 void arena_pop(Arena *arena, size_t size) {

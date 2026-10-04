@@ -95,8 +95,11 @@ static bool res__loader_font(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_
 
 	uint32_t face_index = res__find_closest_font_face(meta, weight, style);
 
-	RES_Font font = res__load_font(cache->arena, meta->faces[face_index].filepath, weight, font_size);
+	ArenaTemp scratch = arena_scratch_begin(cache->arena);
+	RES_Font font = res__load_font(scratch.arena, meta->faces[face_index].filepath, weight, font_size);
+
 	if (font.img_atlas.pixels) {
+        font.glyphs = arena_push_copy(cache->arena, font.glyphs, font.glyph_count);
 		font.tex_atlas = (RES_Texture2D){
 			.handle = gfx_image_make(cache->device, font.img_atlas.width, font.img_atlas.height,
 				(ImageOptions){
@@ -115,6 +118,7 @@ static bool res__loader_font(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_
 		};
 	}
 
+	arena_scratch_end(scratch);
 	*out = font;
 	return font.tex_atlas.handle != 0;
 }
