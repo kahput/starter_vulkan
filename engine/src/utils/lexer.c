@@ -9,14 +9,14 @@
 // clang-format off
 const string8 token_type_to_string[TOKEN_BUILTIN_MAX] = {
     [TOKEN_UNKNOWN]       = comp8("unkown"),
-    [TOKEN_LPAREN]    = comp8("("),   [TOKEN_RPAREN]   = comp8(")"),
-    [TOKEN_LBRACE]    = comp8("{"),   [TOKEN_RBRACE]   = comp8("}"),
-    [TOKEN_LBRACKET]  = comp8("["),   [TOKEN_RBRACKET] = comp8("]"),
+    [TOKEN_LPAREN]        = comp8("("),   [TOKEN_RPAREN]        = comp8(")"),
+    [TOKEN_LBRACE]        = comp8("{"),   [TOKEN_RBRACE]        = comp8("}"),
+    [TOKEN_LBRACKET]      = comp8("["),   [TOKEN_RBRACKET]      = comp8("]"),
     [TOKEN_COMMA]         = comp8(","),   [TOKEN_DOT]           = comp8("."),
     [TOKEN_SEMICOLON]     = comp8(";"),   [TOKEN_COLON]         = comp8(":"),
     [TOKEN_SLASH]         = comp8("/"),   [TOKEN_STAR]          = comp8("*"),
     [TOKEN_PERCENT]       = comp8("%"),   [TOKEN_TILDE]         = comp8("~"),
-    [TOKEN_DOLLAR] = comp8("$"),
+    [TOKEN_DOLLAR]        = comp8("$"),
     [TOKEN_CARET]         = comp8("^"),   [TOKEN_QUESTION_MARK] = comp8("?"),
     [TOKEN_MINUS]         = comp8("-"),   [TOKEN_MINUS_MINUS]   = comp8("--"),
     [TOKEN_PLUS]          = comp8("+"),   [TOKEN_PLUS_PLUS]     = comp8("++"),
@@ -29,7 +29,7 @@ const string8 token_type_to_string[TOKEN_BUILTIN_MAX] = {
     [TOKEN_IDENTIFIER]    = comp8("identifier"),
     [TOKEN_STRING]        = comp8("string"),
     [TOKEN_INTEGER]       = comp8("integer"),
-    [TOKEN_REAL]         = comp8("real"),
+    [TOKEN_REAL]          = comp8("real"),
 
     [TOKEN_EOF]           = comp8("end of file"),
 };

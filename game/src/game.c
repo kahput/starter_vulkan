@@ -459,7 +459,11 @@ bool tick(Arena *permanent, Arena *frame) {
 	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW, PIXEL_FORMAT_RGBA8_UNORM);
 	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 800, RES_FONT_STYLE_NORMAL, 64);
 
-	string8 message = s("Fancy text æøå 日本語");
+	string8 message = s(
+		"Fancy [u]Underline[\\u]\n\n"
+		"Hei på deg\n\n"
+		"日本語書いても全然オーケー" //
+	);
 
 	float2 draw_anchor = float2(100.0f, 400.0f);
 	float2 cursor = float2(draw_anchor.x, draw_anchor.y + font->ascent);
@@ -468,11 +472,14 @@ bool tick(Arena *permanent, Arena *frame) {
 	float amplitude = 16.0f;
 	float frequency = 4.0f;
 
+	float2 underline_start = { 0 };
+	bool underlining = false;
+
 	for (uint64_t at = 0, char_index = 0; at < message.length; char_index++) {
 		float normalized = (float)char_index / 5;
 		float offset_y = char_index < 5 ? sinf(normalized * frequency + time * TAU) * amplitude : 0;
 		float hue = normalized * 360.0f;
-		Color c = char_index < 5 ? color_from_float4(rgba_from_hsv(hue, 1.0f, 1.0f)) : BLACK;
+		Color c = char_index < 5 ? color_from_float4(rgba_from_hsv(fmodf(hue + time * 180.0, 360.0f), 1.0f, 1.0f)) : BLACK;
 
 		uint32_t codepoint = utf8_next(message, &at);
 		if (codepoint == '\n' || codepoint == '\r') {
@@ -483,6 +490,37 @@ bool tick(Arena *permanent, Arena *frame) {
 		if (codepoint < font->first_codepoint || codepoint - font->first_codepoint >= font->glyph_count) codepoint = '?';
 
 		RES_Glyph *glyph = &font->glyphs[codepoint - font->first_codepoint];
+		if (codepoint == '[') {
+			codepoint = utf8_next(message, &at);
+
+			if (codepoint == '\\') {
+				codepoint = utf8_next(message, &at);
+				switch (codepoint) {
+					case 'u': {
+						if (underlining) {
+							draw2d_line(underline_start, float2(cursor.x, underline_start.y), 2.0f, BLACK);
+							underlining = false;
+						}
+					} break;
+					default:
+						break;
+				};
+			} else {
+				switch (codepoint) {
+					case 'u': {
+						underlining = true;
+						underline_start = float2(cursor.x, cursor.y + 3.0f);
+					} break;
+					default:
+						break;
+				};
+			}
+
+			UTF8Result res = utf8_decode(message, at);
+			if (res.codepoint == ']')
+				at += res.length;
+			continue;
+		}
 
 		draw2d_quad(
 			rect(cursor.x + glyph->bearing.x, cursor.y + offset_y + glyph->bearing.y, glyph->uv.width, glyph->uv.height),

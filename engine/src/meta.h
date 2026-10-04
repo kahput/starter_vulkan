@@ -34,18 +34,18 @@ typedef enum {
 
 struct META_Field {
 	META_TypeID type;
-	string8 name;
+	string name;
 	uint32_t offset;
 };
 
 struct META_Enumerator {
-	string8 name;
+	string name;
 	int64_t value;
 };
 
 struct META_Type {
 	META_Kind kind;
-	string8 name;
+	string name;
 	uint64_t size;
 
 	union {

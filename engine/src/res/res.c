@@ -101,8 +101,14 @@ static bool res__loader_font(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_
 			.handle = gfx_image_make(cache->device, font.img_atlas.width, font.img_atlas.height,
 				(ImageOptions){
 				  .debug_name = (char *)fmt8(cache->arena, "%.*s[weight=%u, style=%.*s, size=%u]", arg8(meta->name), weight, arg8(res_font_style_to_display_string[style]), font_size).bytes,
-				  .format = PIXEL_FORMAT_RGBA8_UNORM,
+				  .format = PIXEL_FORMAT_R8_UNORM,
 				  .pixels = font.img_atlas.pixels,
+				  .swizzle = {
+					[0] = GFX_SWIZZLE_ONE,
+					[1] = GFX_SWIZZLE_ONE,
+					[2] = GFX_SWIZZLE_ONE,
+					[3] = GFX_SWIZZLE_R,
+				  },
 				}),
 			.width = font.img_atlas.width,
 			.height = font.img_atlas.height,
@@ -250,7 +256,7 @@ float2 measure_text(RES_Font *font, string8 text) {
 }
 
 #include <stb/stb_truetype.h>
-#define RES_FONT_ATLAS_MAX 512
+#define RES_FONT_ATLAS_MAX 1024
 RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint32_t font_size) {
 	ArenaTemp scratch = arena_scratch_begin(arena);
 	RES_Font result = { 0 };
@@ -277,13 +283,14 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 		result.descent = descent * scale_factor;
 		result.line_gap = line_gap * scale_factor;
 
-		result.glyph_count = 95;
-		result.first_codepoint = ' ';
+		result.first_codepoint = 0x20;
+		result.glyph_count = 0x100 - 0x20; // 224
 		result.glyphs = arena_push_count(arena, RES_Glyph, result.glyph_count);
 		result.weight = weight;
 
 		result.img_atlas = (RES_Image2D){
-			.pixels = arena_push_count(arena, uint8_t, RES_FONT_ATLAS_MAX * RES_FONT_ATLAS_MAX * 4),
+			.pixels = arena_push_count(arena, uint8_t, RES_FONT_ATLAS_MAX *RES_FONT_ATLAS_MAX),
+			.channels = 1,
 			.width = RES_FONT_ATLAS_MAX,
 			.height = RES_FONT_ATLAS_MAX,
 		};
@@ -291,8 +298,6 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 		uint32_t padding = 2;
 		uint32_t row = 0;
 		uint32_t col = padding;
-
-		uint8_t *temp_bitmap = arena_push_count(scratch.arena, uint8_t, RES_FONT_ATLAS_MAX *RES_FONT_ATLAS_MAX);
 
 		for (uint32_t index = 0; index < result.glyph_count; ++index) {
 			int32_t codepoint = result.first_codepoint + index;
@@ -310,7 +315,7 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 				row += (uint32_t)(font_size + 0.5f);
 				ASSERT(row + y1 - y0 < RES_FONT_ATLAS_MAX);
 			}
-			stbtt_MakeGlyphBitmap(&font_info, (uint8_t *)temp_bitmap + col + (row * RES_FONT_ATLAS_MAX), width, height, RES_FONT_ATLAS_MAX, scale_factor, scale_factor, glyph_index);
+			stbtt_MakeGlyphBitmap(&font_info, (uint8_t *)result.img_atlas.pixels + col + (row * RES_FONT_ATLAS_MAX), width, height, RES_FONT_ATLAS_MAX, scale_factor, scale_factor, glyph_index);
 			result.glyphs[index] = (RES_Glyph){
 				.codepoint = codepoint,
 				.uv = { .x = col, .y = row, .width = width, .height = height },
@@ -319,15 +324,6 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 			};
 
 			col += width + padding;
-		}
-
-		uint8_t *src = temp_bitmap;
-		uint8_t *dst = result.img_atlas.pixels;
-		for (uint32_t i = 0; i < RES_FONT_ATLAS_MAX * RES_FONT_ATLAS_MAX; i++) {
-			*dst++ = 255;
-			*dst++ = 255;
-			*dst++ = 255;
-			*dst++ = *src++;
 		}
 	}
 

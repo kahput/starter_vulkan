@@ -329,10 +329,10 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 			.viewType = vk_type,
 			.format = vk_format,
 			.components = {
-			  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-			  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-			  .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-			  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+			  .r = (VkComponentSwizzle)options.swizzle[0],
+			  .g = (VkComponentSwizzle)options.swizzle[1],
+			  .b = (VkComponentSwizzle)options.swizzle[2],
+			  .a = (VkComponentSwizzle)options.swizzle[3],
 			},
 			.subresourceRange = {
 			  .aspectMask = vk_aspect,

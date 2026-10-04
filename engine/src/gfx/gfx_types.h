@@ -58,8 +58,7 @@ typedef enum {
 
 	PIXEL_FORMAT_RGBA16_FLOAT,
 	PIXEL_FORMAT_R32_FLOAT,
-
-	PIXEL_FORMAT_R32_UNORM,
+	PIXEL_FORMAT_R8_UNORM,
 
 	PIXEL_FORMAT_DEPTH,
 	PIXEL_FORMAT_DEPTHSTENCIL,
@@ -79,6 +78,8 @@ static uint32_t pixel_format_to_stride[PIXEL_FORMAT_MAX] = {
 
 	[PIXEL_FORMAT_RGBA16_FLOAT] = 2 * 4,
 	[PIXEL_FORMAT_R32_FLOAT] = 4,
+	[PIXEL_FORMAT_R8_UNORM] = 1,
+
 	[PIXEL_FORMAT_DEPTH] = 4,
 	[PIXEL_FORMAT_DEPTHSTENCIL] = 4,
 };
@@ -89,6 +90,7 @@ static const string8 pixel_format_to_string[PIXEL_FORMAT_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, BGRA8_UNORM),
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, RGBA16_FLOAT),
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, R32_FLOAT),
+	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, R8_UNORM),
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, DEPTH),
 	ENUM_STRING_TABLE_ENTRY(PIXEL_FORMAT, DEPTHSTENCIL),
 };
@@ -100,7 +102,7 @@ static const string8 pixel_format_to_display_string[PIXEL_FORMAT_MAX] = {
 	[PIXEL_FORMAT_BGRA8_UNORM] = comp8("BGRA8"),
 	[PIXEL_FORMAT_RGBA16_FLOAT] = comp8("RGBA16f"),
 	[PIXEL_FORMAT_R32_FLOAT] = comp8("R32f"),
-	[PIXEL_FORMAT_R32_UNORM] = comp8("R32"),
+	[PIXEL_FORMAT_R8_UNORM] = comp8("R8"),
 	[PIXEL_FORMAT_DEPTH] = comp8("Depth"),
 	[PIXEL_FORMAT_DEPTHSTENCIL] = comp8("Depth Stencil"),
 
@@ -295,6 +297,17 @@ typedef struct {
 	void *data;
 } BufferOptions;
 
+typedef enum {
+	GFX_SWIZZLE_IDENTITY = 0,
+	GFX_SWIZZLE_ZERO = 1,
+	GFX_SWIZZLE_ONE = 2,
+	GFX_SWIZZLE_R = 3,
+	GFX_SWIZZLE_G = 4,
+	GFX_SWIZZLE_B = 5,
+	GFX_SWIZZLE_A = 6,
+
+} GFX_Swizzle;
+
 typedef struct {
 	const char *debug_name;
 
@@ -303,6 +316,7 @@ typedef struct {
 	PixelFormat format;
 	ImageUsageFlags usage; // zero initializes to IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER
 	ImageSampleCount sample; // zero initializes to SAMPLE_COUNT_1
+	GFX_Swizzle swizzle[4];
 
 	void *pixels;
 } ImageOptions;
