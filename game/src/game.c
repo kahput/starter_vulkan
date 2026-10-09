@@ -4,6 +4,7 @@
 #include "core/geom.h"
 #include "core/geom_types.h"
 #include "core/input_types.h"
+#include "core/mesh.h"
 #include "core/strings.h"
 #include "generated/assets.h"
 #include "generated/res_generated.h"
@@ -162,7 +163,7 @@ bool tick(Arena *permanent, Arena *frame) {
 			.projection = CAMERA_PROJECTION_PERSPECTIVE,
 			.position = { 0.0f, 3.0f, 8.f },
 			.target = { 0.0f, 1.5f, 0.0f },
-			.up = unit3(UP),
+			.up = FLOAT3_UP,
 			.fovy = 45.f,
 			.near = 0.1f,
 			.far = 500.0f,
@@ -227,326 +228,49 @@ bool tick(Arena *permanent, Arena *frame) {
 	scene_camera_orbit(camera, mouse_delta);
 
 	float3 camera_forward = norm3(sub3(camera->target, camera->position));
-	float3 camera_right = norm3(cross3(camera_forward, unit3(UP)));
+	float3 camera_right = norm3(cross3(camera_forward, FLOAT3_UP));
 	float3 camera_up = cross3(camera_right, camera_forward);
 
-	float3x3 view_rotation = rows3x3(camera_right, camera_up, neg3(camera_forward));
-	float4x4 view_from_world = affine4x4(
-		view_rotation,
-		neg3(mul3x3v(view_rotation, camera->position)) //
-	);
+	float3x3 camera_rotation = columns3x3(camera_right, camera_up, neg3(camera_forward));
 	float4x4 world_from_view = affine4x4(
-		transpose3x3(view_rotation),
+		camera_rotation,
 		camera->position //
+	);
+
+	float4x4 view_from_world = affine4x4(
+		transpose3x3(camera_rotation),
+		float3(-dot3(camera_right, camera->position), -dot3(camera_up, camera->position), dot3(camera_forward, camera->position)) //
 	);
 
 	float4x4 clip_from_view = camera_proj(&state->camera, viewport.width / viewport.height);
 	float4x4 clip_from_world = mul4x4(clip_from_view, view_from_world);
 
-	/* // clang-format off */
-	/* float4x4 world_from_view = {{ */
-	/* [0] = camera_right.x, [4] = camera_up.x, [8 ] = -camera_forward.x, [12] = camera->position.x, */
-	/* [1] = camera_right.y, [5] = camera_up.y, [9 ] = -camera_forward.y, [13] = camera->position.y, */
-	/* [2] = camera_right.z, [6] = camera_up.z, [10] = -camera_forward.z, [14] = camera->position.z, */
-	/* [3] = 0.0f,           [7] = 0.0f,        [11] =  0.0f,             [15] = 1.0f, */
-	/* }}; */
+	int32_t seg_count = 32;
+	for (int32_t z = -seg_count; z <= seg_count; ++z)
+		draw3d_line(float3(-seg_count, 0.0f, z), float3(seg_count, 0.0f, z), 1.0f, z == 0 ? RED : GRAY);
+	for (int32_t x = -seg_count; x <= seg_count; ++x)
+		draw3d_line(float3(x, 0.0f, -seg_count), float3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY);
 
-	/* float aspect = viewport.width / viewport.height; */
-	/* float f = tanf(deg_to_rad(camera->fovy) * 0.5f); */
-
-	/* float4x4 view_from_clip = {{ */
-	/* [0] = f * aspect, [4] = 0.0f, [8 ] = 0.0f, [12] = 0.0f, */
-	/* [1] = 0.0f,       [5] = f,    [9 ] = 0.0f, [13] = 0.0f, */
-	/* [2] = 0.0f,       [6] = 0.0f, [10] = 0.0f, [14] = 0.0f, */
-	/* [3] = 0.0f,       [7] = 0.0f, [11] = -1.0f, [15] = 0.0f, */
-	/* }}; */
-	/* // clang-format on */
-
-	/* int32_t seg_count = 32; */
-	/* for (int32_t z = -seg_count; z <= seg_count; ++z) */
-	/* draw3d_line(float3(-seg_count, 0.0f, z), float3(seg_count, 0.0f, z), 1.0f, z == 0 ? RED : GRAY); */
-	/* for (int32_t x = -seg_count; x <= seg_count; ++x) */
-	/* draw3d_line(float3(x, 0.0f, -seg_count), float3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY); */
-
-	/* float3 point = { -1.0f, 0.0f, -8.0f }; */
-
-	/* float fovy = 45.0f; */
-	/* float2 frustum_near_plane_half_extent = { */
-	/* 0.0, */
-	/* tanf(deg_to_rad(fovy) * 0.5f), */
-	/* }; */
-	/* frustum_near_plane_half_extent.x = frustum_near_plane_half_extent.y * aspect; */
-
-	/* // proj = scale3(point, plane.distance / dot3(plane.normal, point)); */
-	/* float3 proj = { */
-	/* point.x / (-point.z), */
-	/* point.y / (-point.z), */
-	/* -1.0f */
-	/* }; */
-
-	/* draw3d_arrow(float3(0.0f), proj, 4.0f, GREEN, view_from_world, clip_from_view, viewport.width); */
-	/* draw3d_quad_outline((Plane){ { 0.0f, 0.0f, -1.0f }, 1.0f }, frustum_near_plane_half_extent.x * 2.0f, frustum_near_plane_half_extent.y * 2.0f, 4.0f, BLACK); */
-
-	/* float2 viewport_size_inverse = float2(1.0f / (viewport.width * 0.5f), 1.0f / (viewport.height * 0.5f)); */
-	/* float2 mouse_ndc = sub2(mul2(mouse_position, viewport_size_inverse), float3(1.0f)); */
-
-	/* float near_plane_half_height = tanf(deg_to_rad(camera->fovy) * 0.5f); */
-	/* float near_plane_half_width = near_plane_half_height * aspect; */
-
-	/* float3 mouse_view = float3(mul2(mouse_ndc, float3(near_plane_half_width, near_plane_half_height)), -1.0f); */
-
-	/* Ray3 mouse_ray = { */
-	/* camera->position, */
-	/* norm3(xform3v(world_from_view, mouse_view)), */
-	/* }; */
-
-	/* CastResult3 hit = raycast_plane(mouse_ray, (Plane){ .normal = unit3(UP), .distance = 0.0f }); */
-	/* if (hit.hit) */
-	/* draw3d_quad(hit.point, float3(1.0f), */
-	/* (DRAW_QuadStyle){ */
-	/* .fill_color = RED, */
-	/* .radii = f4(1.0f), */
-	/* .flags = 1, */
-	/* }); */
-
-	/* draw3d_quad(point, float3(0.1f), */
-	/* (DRAW_QuadStyle){ */
-	/* .fill_color = BLACK, */
-	/* .radii = f4(1.0f), */
-	/* .flags = 1, */
-	/* }); */
-
-	float point_size = 0.03f;
-	static float segment_size = 64.0f;
-
-	float2 origo = rect_center(viewport);
-	float2 scale = { segment_size, -segment_size };
-
-	int2 counts = {
-		(int32_t)ceilf(viewport.width * 0.5f / segment_size),
-		(int32_t)ceilf(viewport.height * 0.5f / segment_size)
+	float3 points[] = {
+		{ -1.0, 0.0, 1.0 },
+		{ 1.0, 0.0, 1.0 },
+		{ -1.0, 0.0, -1.0 },
+		{ 1.0, 0.0, -1.0 },
 	};
 
-	// clang-format off
-    float3x3 screen_from_world = affine3x3(diagonal2x2(scale), origo);
-    float3x3 world_from_screen = {{
-        [0] = 1.0f / scale.x, [3] = 0.0f,           [6] = -origo.x / scale.x,
-        [1] = 0.0f,           [4] = 1.0f / scale.y, [7] = -origo.y / scale.y,
-        [2] = 0.0f,           [5] = 0.0f,           [8] =  1.0f,
-    }};
-	// clang-format on
-
-	for (int32_t x = -counts.x; x <= counts.x; ++x) {
-		float px = origo.x + x * segment_size;
-
-		Color c = x == 0 ? BLUE : GRAY;
-		draw2d_line(float2(px, 0.0f), float2(px, viewport.height), 1.0f, c);
-	}
-
-	for (int32_t y = -counts.y; y <= counts.y; ++y) {
-		float py = origo.y + y * segment_size;
-
-		Color c = y == 0 ? RED : GRAY;
-		draw2d_line(make2(0.0f, py), make2(viewport.width, py), 1.0f, c);
-	}
-
-	static Drag2D drag = { 0 }, center_size_slider = { 0 }, circle_width_slider = { 0 };
-	static Drag2D circle_distance_slider = { 0 }, cutout_size_slider;
-	drag2d_point(&drag, float2(0.0f), 8.0f / segment_size, xform2p(world_from_screen, mouse_position));
-
-	static struct {
-		float center_size;
-		float circle_width;
-		float circle_distance;
-		float cutout_size;
-	} circle_params = {
-		.center_size = 0.7f,
-		.circle_width = 0.1f,
-		.circle_distance = 0.5f,
-		.cutout_size = 0.1f
+	float3 normals[] = {
+		{ 0.0, 1.0, 0.0 },
+		{ 0.0, 1.0, 0.0 },
+		{ 0.0, 1.0, 0.0 },
+		{ 0.0, 1.0, 0.0 },
 	};
+	float2 uvs[] = { { 0.0, 0.0 }, { 1.0, 0.0 }, { 0.0, 1.0 }, { 1.0, 1.0 } };
+	uint32_t indices[] = { 0, 1, 2, 1, 3, 2 };
 
-	Rectangle slider_rect = { 24.0f, 24.0f, 256.0f, 24.0f };
-	RES_Font *font16 = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
+	Mesh mesh = mesh_ellipsoid(frame, FLOAT3_UP, float3(1.0), 32, 16);
+    draw3d_aabb_outline(mesh.bounds, 4.0f, RED);
 
-	{
-		Rectangle thumb = drag2d_slider(&center_size_slider, slider_rect, 0.0f, 1.0f, &circle_params.center_size);
-
-		Rectangle slider_visual = slider_rect;
-		slider_visual.height = 8.0f;
-		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
-		draw2d_rect(slider_visual, hex(0xe9eff5));
-		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.center_size, slider_visual.height), hex(0x3024a4));
-
-		draw2d_quad(thumb,
-			(DRAW_QuadStyle){
-			  .fill_color = WHITE,
-			  .border_color = hex(0x3024a4),
-			  .border_width = 4.0f,
-			  .radii = float4(slider_rect.height),
-			});
-	}
-	slider_rect.y += 36.0f;
-
-	{
-		Rectangle thumb = drag2d_slider(&circle_width_slider, slider_rect, 0.0f, 1.0f, &circle_params.circle_width);
-		float t = circle_params.circle_width;
-
-		Rectangle slider_visual = slider_rect;
-		slider_visual.height = 8.0f;
-		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
-		draw2d_rect(slider_visual, hex(0xe9eff5));
-		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * t, slider_visual.height), hex(0x3024a4));
-
-		draw2d_quad(thumb,
-			(DRAW_QuadStyle){
-			  .fill_color = WHITE,
-			  .border_color = hex(0x3024a4),
-			  .border_width = 4.0f,
-			  .radii = float4(slider_rect.height),
-			});
-		draw2d_textf(font16, float2(slider_rect.x + slider_rect.width + 12.0f, thumb.y + 4.0f), BLACK, "%.2f", t);
-	}
-	slider_rect.y += 36.0f;
-
-	{
-		Rectangle thumb = drag2d_slider(&circle_distance_slider, slider_rect, 0.0f, 1.0f, &circle_params.circle_distance);
-
-		Rectangle slider_visual = slider_rect;
-		slider_visual.height = 8.0f;
-		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
-		draw2d_rect(slider_visual, hex(0xe9eff5));
-		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.circle_distance, slider_visual.height), hex(0x3024a4));
-
-		draw2d_quad(thumb,
-			(DRAW_QuadStyle){
-			  .fill_color = WHITE,
-			  .border_color = hex(0x3024a4),
-			  .border_width = 4.0f,
-			  .radii = float4(slider_rect.height),
-			});
-	}
-	slider_rect.y += 36.0f;
-
-	{
-		Rectangle thumb = drag2d_slider(&cutout_size_slider, slider_rect, 0.0f, 1.0f, &circle_params.cutout_size);
-
-		Rectangle slider_visual = slider_rect;
-		slider_visual.height = 8.0f;
-		slider_visual.y += (slider_rect.height - slider_visual.height) * 0.5f;
-		draw2d_rect(slider_visual, hex(0xe9eff5));
-		draw2d_rect(rect(slider_visual.x, slider_visual.y, slider_visual.width * circle_params.cutout_size, slider_visual.height), hex(0x3024a4));
-
-		draw2d_quad(thumb,
-			(DRAW_QuadStyle){
-			  .fill_color = WHITE,
-			  .border_color = hex(0x3024a4),
-			  .border_width = 4.0f,
-			  .radii = float4(slider_rect.height),
-			});
-	}
-
-	// clang-format off
-    float3x3 world_from_local = { {
-        [0] = 1.0f, [3] = 0.0f, [6] = drag.position.x,
-        [1] = 0.0f, [4] = 1.0f, [7] = drag.position.y,
-        [2] = 0.0f, [5] = 0.0f, [8] = 1.0f,
-    } };
-	// clang-format on
-
-	float3x3 transform = mul3x3(screen_from_world, world_from_local);
-
-	RES_Texture2D *tex = res_texture(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW, PIXEL_FORMAT_RGBA8_UNORM);
-	RES_Font *font = res_font_ex(&state->cache, RES_FONT_IBM_PLEX_MONO, 400, RES_FONT_STYLE_NORMAL, 64);
-
-	string8 message = s(
-		"Fancy [u]Underline[\\u]\n\n"
-		"Hei på deg\n\n"
-		"日本語書いても全然オーケー" //
-	);
-
-	float2 draw_anchor = float2(100.0f, 400.0f);
-	float2 cursor = float2(draw_anchor.x, draw_anchor.y + font->ascent);
-	draw2d_circle(draw_anchor, 2.0f, RED);
-
-	float amplitude = 16.0f;
-	float frequency = 4.0f;
-
-	float2 underline_start = { 0 };
-	bool underlining = false;
-
-	RES_Font *font32 = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 32);
-	draw2d_textf(font32, float2(400.0f, 24.0f), BLACK, "%lluMiB/%lluMiB", permanent->offset / 1024 / 1024, permanent->capacity / 1024 / 1024);
-	draw2d_textf(font32, float2(400.0f, 48.0f), BLACK, "%lluMiB/%lluMiB", state->cache.arena->offset / 1024 / 1024, state->cache.arena->capacity / 1024 / 1024);
-
-	for (uint64_t at = 0, char_index = 0; at < message.length; char_index++) {
-		float normalized = (float)char_index / 5;
-		float offset_y = char_index < 5 ? sinf(normalized * frequency + time * TAU) * amplitude : 0;
-		float hue = normalized * 360.0f;
-		Color c = char_index < 5 ? color_from_float4(rgba_from_hsv(fmodf(hue + time * 180.0, 360.0f), 1.0f, 1.0f)) : BLACK;
-
-		uint32_t codepoint = utf8_next(message, &at);
-		if (codepoint == '\n' || codepoint == '\r') {
-			cursor.y += font->ascent + font->descent + font->line_gap;
-			cursor.x = draw_anchor.x;
-			continue;
-		}
-		if (codepoint < font->first_codepoint || codepoint - font->first_codepoint >= font->glyph_count) codepoint = '?';
-
-		RES_Glyph *glyph = &font->glyphs[codepoint - font->first_codepoint];
-		if (codepoint == '[') {
-			codepoint = utf8_next(message, &at);
-
-			if (codepoint == '\\') {
-				codepoint = utf8_next(message, &at);
-				switch (codepoint) {
-					case 'u': {
-						if (underlining) {
-							draw2d_line(underline_start, float2(cursor.x, underline_start.y), 2.0f, BLACK);
-							underlining = false;
-						}
-					} break;
-					default:
-						break;
-				};
-			} else {
-				switch (codepoint) {
-					case 'u': {
-						underlining = true;
-						underline_start = float2(cursor.x, cursor.y + 3.0f);
-					} break;
-					default:
-						break;
-				};
-			}
-
-			UTF8Result res = utf8_decode(message, at);
-			if (res.codepoint == ']')
-				at += res.length;
-			continue;
-		}
-
-		draw2d_quad(
-			rect(cursor.x + glyph->bearing.x, cursor.y + offset_y + glyph->bearing.y, glyph->uv.width, glyph->uv.height),
-			(DRAW_QuadStyle){
-			  .fill_color = c,
-			  .texture = &font->tex_atlas,
-			  .uv = glyph->uv,
-			});
-
-		cursor.x += glyph->advance;
-	}
-
-	draw2d_circle(xform2p(transform, float2(0.0f)), 8.0f, BLACK);
-	draw2d_circle(xform2p(transform, float2(0.0f, 2.0f)), 8.0f, BLACK);
-
-	draw2d_push_shader(RES_SHADER_QUAD2D_EXPERIMENT);
-	draw2d_quad(rect2(xform2p(transform, float2(0.0f, 0.0f)), texture_size(*tex)),
-		(DRAW_QuadStyle){
-		  .fill_color = WHITE,
-		  .texture = tex,
-		});
-	draw2d_pop_shader();
+	// write into mesh.vertices
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -605,6 +329,34 @@ bool tick(Arena *permanent, Arena *frame) {
 		}
 
 		{
+			gfx_cmd_shader_bind(device, res_shader(&state->cache, RES_SHADER_UNLIT)->handle, 0);
+			gfx_cmd_bind(device, 0, (Uniform[]){ uniform_data(0, &fd, sizeof(fd)) }, 1);
+
+			VertexLayout shader_layout = vertex_layout(
+				{ VERTEX_SEMANTIC_POSITION, DATA_FORMAT_FLOAT4 },
+				{ VERTEX_SEMANTIC_NORMAL, DATA_FORMAT_FLOAT4 },
+				{ VERTEX_SEMANTIC_UV0, DATA_FORMAT_FLOAT2 },
+				{ VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT2 } //
+			);
+			uint64_t byte_size = mesh.total_vertex_count * shader_layout.stride;
+			void *vertices = arena_push_count(frame, uint8_t, byte_size);
+			bool ok = mesh_pack_into(&mesh, &shader_layout, vertices, byte_size);
+
+			if (ok) {
+				gfx_cmd_bind(device, 1, (Uniform[]){ storage_data(0, vertices, byte_size) }, 1);
+
+				if (mesh.indices) {
+					uint64_t offset = gfx_cmd_put(cmd, index_format_to_size(mesh_index_format(&mesh)) * mesh.total_index_count, mesh.indices);
+					gfx_cmd_bind_index_buffer32(cmd, cmd->transient_buffer, offset);
+
+					gfx_cmd_draw_indexed(cmd, 0, mesh.total_index_count, 0);
+				} else {
+					gfx_cmd_draw(cmd, 0, mesh.total_vertex_count);
+				}
+			}
+		}
+
+		{
 			DRAW_Channel *qch = &draw->quad2d;
 			FrameData fd = {
 				.view = identity4x4(),
@@ -651,9 +403,6 @@ bool tick(Arena *permanent, Arena *frame) {
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->nearest) };
 				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
 				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
-
-				if (batch->shader == RES_SHADER_QUAD2D_EXPERIMENT)
-					gfx_cmd_push_constant(cmd, sizeof(circle_params), &circle_params);
 
 				gfx_cmd_draw_instanced(cmd, 0, 6, 0, batch->instance_count);
 			}

@@ -639,7 +639,7 @@ SlideResult3 move_and_slide(float3 position, float3 direction, float max_dist, u
 			float t_skin = SKIN_WIDTH / remaining_length;
 			float t = clampf(hit.t - t_skin, 0.0f, 1.0f);
 
-			bool walkable = dot3(hit.normal, unit3(UP)) >= cosf(SLOPE_ANGLE * DEG2RAD);
+			bool walkable = dot3(hit.normal, FLOAT3_UP) >= cosf(SLOPE_ANGLE * DEG2RAD);
 			if (walkable) {
 				result.hit_ground = true;
 				result.ground_normal = hit.normal;
@@ -885,14 +885,14 @@ int main(void) {
 	const uint32_t map_depth = 32;
 
 	Mesh meshes[MESH_MAX] = { 0 };
-	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, (Plane){ .normal = unit3(UP) }, map_width, map_depth, map_width, map_depth);
+	meshes[MESH_TERRAIN_FLAT] = mesh_plane(permanent, (Plane){ .normal = FLOAT3_UP }, map_width, map_depth, map_width, map_depth);
 	meshes[MESH_TERRAIN_FLAT].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
 	meshes[MESH_TERRAIN_HEIGHTMAP] = mesh_heightmap(permanent, SIDE_TOP, 256.f, 256.f, noise_image);
 	meshes[MESH_TERRAIN_HEIGHTMAP].materials[0].textures[TEXTURE_SLOT_ALBEDO] = terrain_texture;
 
-	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, unit3(UP), 1.0f, 0.5f, 0.5f, 32, 0, true, true);
-	meshes[MESH_SPHERE] = mesh_sphere(permanent, unit3(UP), 1.0f, 32, 16);
+	meshes[MESH_CYLINDER] = mesh_cylinder(permanent, FLOAT3_UP, 1.0f, 0.5f, 0.5f, 32, 0, true, true);
+	meshes[MESH_SPHERE] = mesh_sphere(permanent, FLOAT3_UP, 1.0f, 32, 16);
 	{
 		ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -998,7 +998,7 @@ int main(void) {
 					.z = z - (map_depth * 0.5f) + randf_range(0.0, 1.0),
 				};
 				pos = scale3(pos, 1.f / 2.f);
-				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(axisangle4x4(unit3(UP), randf_range(0, TAU)), translation4x4(pos));
+				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(axisangle4x4(FLOAT3_UP, randf_range(0, TAU)), translation4x4(pos));
 			}
 		}
 		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
@@ -1060,7 +1060,7 @@ int main(void) {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		  .position = { 0.0f, 1.5f, 20.f },
 		  .target = { 0.0f, 1.5f, 0.0f },
-		  .up = unit3(UP),
+		  .up = FLOAT3_UP,
 		  .fovy = 45.f,
 		  .near = 0.1f,
 		  .far = 500.0f,
@@ -1069,7 +1069,7 @@ int main(void) {
 		  .projection = CAMERA_PROJECTION_PERSPECTIVE,
 		  .position = { 0.0f, 1.5f, 20.f },
 		  .target = { 0.0f, 1.5f, 0.0f },
-		  .up = unit3(UP),
+		  .up = FLOAT3_UP,
 		  .fovy = 45.f,
 		  .near = 0.1f,
 		  .far = 500.0f,
@@ -1806,7 +1806,7 @@ int main(void) {
 							float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
 																							  //
 							float target_angle = -current_azimuth - PIf + atan2f(input_vector.x, input_vector.y);
-							quat4 target_rotation = quat4_from_axis_angle(unit3(UP), target_angle);
+							quat4 target_rotation = quat4_from_axis_angle(FLOAT3_UP, target_angle);
 
 							float t = 1.0f - expf(-15.0f * dt);
 							entity->transform.rotation = quat4_slerp(entity->transform.rotation, target_rotation, t);
@@ -1837,7 +1837,7 @@ int main(void) {
 
 						float3 target_velocity = scale3(wish_direction, move_speed);
 
-						float vertical_velocity = dot3(entity->velocity, unit3(UP));
+						float vertical_velocity = dot3(entity->velocity, FLOAT3_UP);
 						if (entity->grounded && !jump_requested)
 							/* vertical_velocity = -SKIN_WIDTH * 4.0f / dt; */
 							vertical_velocity = 0.0f;
@@ -1869,7 +1869,7 @@ int main(void) {
 						float3 delta = sub3(target->transform.translation, entity->transform.translation);
 						float3 direction = norm3(delta);
 
-						entity->transform.rotation = quat4_from_axis_angle(unit3(UP), atan2f(direction.x, direction.z));
+						entity->transform.rotation = quat4_from_axis_angle(FLOAT3_UP, atan2f(direction.x, direction.z));
 
 						input_vector = (float2){ direction.x, direction.z };
 						/* velocity = scale3(direction, entity->move_speed * dt); */
@@ -2188,7 +2188,7 @@ int main(void) {
 			float ortho_size = 10.0f;
 			lights[light_index].matrix = mul4x4(
 				orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				lookat(make3_from4(lights[light_index].position), splat3(0.0f), unit3(UP)));
+				lookat(make3_from4(lights[light_index].position), splat3(0.0f), FLOAT3_UP));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },

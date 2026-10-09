@@ -52,7 +52,7 @@ void main() {
     vec2 local = corners[vertex_index] * quad.size;
     vec2 vertex_position = quad.position + local;
 
-    gl_Position = frame.projection * frame.view * vec4(vertex_position, 0.0, 1.0);
+    gl_Position = frame.clip_from_view * frame.view_from_world * vec4(vertex_position, 0.0, 1.0);
 
     v.uv = quad.uvs[vertex_index];
     v.texture_id = quad.imageid;

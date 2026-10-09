@@ -262,15 +262,15 @@ void draw3d_arc(float3 center, float2 radius, uint8_t segments, float3 normal, f
 }
 
 void draw3d_sphere_outline(float3 center, float radius, uint8_t segments, float thickness, Color color) {
-	draw3d_arc(center, splat2(radius), segments, unit3(UP), 0, TAU, thickness, color);
-	draw3d_arc(center, splat2(radius), segments, unit3(RIGHT), 0, TAU, thickness, color);
-	draw3d_arc(center, splat2(radius), segments, unit3(FORWARD), 0, TAU, thickness, color);
+	draw3d_arc(center, splat2(radius), segments, FLOAT3_UP, 0, TAU, thickness, color);
+	draw3d_arc(center, splat2(radius), segments, FLOAT3_RIGHT, 0, TAU, thickness, color);
+	draw3d_arc(center, splat2(radius), segments, FLOAT3_FORWARD, 0, TAU, thickness, color);
 }
 
 void draw3d_ellipsoid_outline(float3 center, float3 r, uint8_t segments, float thickness, Color color) {
-	draw3d_arc(center, make2(r.x, r.z), segments, unit3(UP), 0, TAU, thickness, color);
-	draw3d_arc(center, make2(r.z, r.y), segments, unit3(RIGHT), 0, TAU, thickness, color);
-	draw3d_arc(center, make2(r.x, r.y), segments, unit3(FORWARD), 0, TAU, thickness, color);
+	draw3d_arc(center, make2(r.x, r.z), segments, FLOAT3_UP, 0, TAU, thickness, color);
+	draw3d_arc(center, make2(r.z, r.y), segments, FLOAT3_RIGHT, 0, TAU, thickness, color);
+	draw3d_arc(center, make2(r.x, r.y), segments, FLOAT3_FORWARD, 0, TAU, thickness, color);
 }
 
 void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
@@ -367,7 +367,7 @@ void draw3d_triangle_outline(Triangle3 t, float thickness, Color color) {
 
 void draw3d_quad_outline(Plane plane, float width, float height, float thickness, Color color) {
 	float3 right = { 0 }, up = { 0 };
-	float dot = dot3(plane.normal, unit3(UP));
+	float dot = dot3(plane.normal, FLOAT3_UP);
 	if (fabsf(dot) >= 0.99f) {
 		right.x = dot > 0 ? 1.0f : -1.0f;
 		up.z = -1.0f;

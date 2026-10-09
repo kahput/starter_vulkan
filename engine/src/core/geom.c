@@ -317,7 +317,7 @@ bool gjk_overlap(const Shape3 *shape_a, const Shape3 *shape_b) {
 
 	bool ok = shape_a && shape_b;
 	if (ok) {
-		float3 d = unit3(RIGHT);
+		float3 d = FLOAT3_RIGHT;
 
 		SimplexVertex a = simplex_support(shape_a, shape_b, d);
 		Simplex s = simplex_make(a);
@@ -374,6 +374,17 @@ CastResult3 raycast_plane(Ray3 r, Plane p) {
 CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
 	float3 min = a.min;
 	float3 max = a.max;
+
+	static const float3 side_to_float3[SIDE_MAX3] = {
+		[SIDE_RIGHT] = { 1.0f, 0.0f, 0.0f },
+		[SIDE_LEFT] = { -1.0f, 0.0f, 0.0f },
+
+		[SIDE_TOP] = { 0.0f, 1.0f, 0.0f },
+		[SIDE_BOTTOM] = { 0.0f, -1.0f, 0.0f },
+
+		[SIDE_FRONT] = { 0.0f, 0.0f, 1.0f },
+		[SIDE_BACK] = { 0.0f, 0.0f, -1.0f },
+	};
 
 	CastResult3 result = CAST3_NO_HIT, temp = CAST3_NO_HIT;
 	if (lensq3(r.direction)) {

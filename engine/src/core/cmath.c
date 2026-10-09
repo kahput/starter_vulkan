@@ -282,9 +282,9 @@ float4x4 trs4x4_euler(float3 position, float3 rotation, float3 scale) {
 
 	float4x4 T = translation4x4(position);
 	float4x4 S = scaling4x4(scale);
-	float3x3 rotation_x = axisangle3x3(unit3(RIGHT), rotation.x);
-	float3x3 rotation_y = axisangle3x3(unit3(UP), rotation.y);
-	float3x3 rotation_z = axisangle3x3(unit3(FORWARD), rotation.z);
+	float3x3 rotation_x = axisangle3x3(FLOAT3_RIGHT, rotation.x);
+	float3x3 rotation_y = axisangle3x3(FLOAT3_UP, rotation.y);
+	float3x3 rotation_z = axisangle3x3(FLOAT3_FORWARD, rotation.z);
 	float4x4 R = affine4x4(mul3x3(rotation_z, mul3x3(rotation_y, rotation_x)), float3(0.0));
 
 	result = mul4x4(T, mul4x4(R, S));

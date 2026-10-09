@@ -25,7 +25,7 @@ shader Line3D {
 
         void main() {
             float aspect = frame.viewport.x / frame.viewport.y;
-            mat4 vp = frame.projection * frame.view;
+            mat4 vp = frame.clip_from_view * frame.view_from_world;
 
             LineInstance3D line = instances[gl_InstanceIndex];
 

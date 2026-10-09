@@ -1,3 +1,5 @@
+layout(set = 0, binding = 2) uniform sampler2DShadow u_shadow;
+
 float calculate_shadow(vec4 lightspace, float bias) {
     vec2 poissonDisk[4] = vec2[](
       vec2( -0.94201624, -0.39906216 ),

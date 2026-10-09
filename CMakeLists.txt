@@ -113,6 +113,7 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/camera.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/mesh.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_xcb.c"
         "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_file.c"

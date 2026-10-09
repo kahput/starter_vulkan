@@ -1,124 +1,15 @@
 #include "assets.h"
 
 RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
-    [RES_SHADER_SHADOW] = {
-      .uuid = { 8702348675885943488ULL },
-      .name = comp8("Shadow"),
+    [RES_SHADER_UNLIT] = {
+      .uuid = { 10699412431024026564ULL },
+      .name = comp8("Unlit"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Shadow.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Shadow.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Unlit.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Unlit.spv"),
       },
       .pipelines = {
-          [PIPELINE_SHADOW_DEFAULT] = {
-              .cull_mode = CULL_MODE_NONE,
-              .polygon_mode = POLYGON_MODE_FILL,
-              .disable_depth_test = false,
-              .disable_depth_write = false,
-              .blend_enable = false,
-              .color_op = BLEND_OP_ADD,
-              .alpha_op = BLEND_OP_ADD,
-              .src_color_factor = BLEND_FACTOR_ONE,
-              .dst_color_factor = BLEND_FACTOR_ZERO,
-              .src_alpha_factor = BLEND_FACTOR_ONE,
-              .dst_alpha_factor = BLEND_FACTOR_ZERO,
-          },
-      },
-      .pipeline_count = 1,
-    },
-    [RES_SHADER_SPATIAL] = {
-      .uuid = { 1978482764426785900ULL },
-      .name = comp8("Spatial"),
-      .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Spatial.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Spatial.spv"),
-      },
-      .pipelines = {
-          [PIPELINE_SPATIAL_DEFAULT] = {
-              .cull_mode = CULL_MODE_BACK,
-              .polygon_mode = POLYGON_MODE_FILL,
-              .disable_depth_test = false,
-              .disable_depth_write = false,
-              .blend_enable = false,
-              .color_op = BLEND_OP_ADD,
-              .alpha_op = BLEND_OP_ADD,
-              .src_color_factor = BLEND_FACTOR_ONE,
-              .dst_color_factor = BLEND_FACTOR_ZERO,
-              .src_alpha_factor = BLEND_FACTOR_ONE,
-              .dst_alpha_factor = BLEND_FACTOR_ZERO,
-          },
-          [PIPELINE_SPATIAL_BLENDED] = {
-              .cull_mode = CULL_MODE_FRONT,
-              .polygon_mode = POLYGON_MODE_FILL,
-              .disable_depth_test = true,
-              .disable_depth_write = false,
-              .blend_enable = true,
-              .color_op = BLEND_OP_SUB,
-              .alpha_op = BLEND_OP_SUB,
-              .src_color_factor = BLEND_FACTOR_ONE,
-              .dst_color_factor = BLEND_FACTOR_ONE,
-              .src_alpha_factor = BLEND_FACTOR_ONE,
-              .dst_alpha_factor = BLEND_FACTOR_ONE,
-          },
-      },
-      .pipeline_count = 2,
-    },
-    [RES_SHADER_TRANSPARENT] = {
-      .uuid = { 9376197970318518482ULL },
-      .name = comp8("Transparent"),
-      .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Transparent.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Transparent.spv"),
-      },
-      .pipelines = {
-          [PIPELINE_TRANSPARENT_DEFAULT] = {
-              .cull_mode = CULL_MODE_NONE,
-              .polygon_mode = POLYGON_MODE_FILL,
-              .disable_depth_test = false,
-              .disable_depth_write = false,
-              .blend_enable = true,
-              .color_op = BLEND_OP_ADD,
-              .alpha_op = BLEND_OP_ADD,
-              .src_color_factor = BLEND_FACTOR_SRC_ALPHA,
-              .dst_color_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-              .src_alpha_factor = BLEND_FACTOR_SRC_ALPHA,
-              .dst_alpha_factor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-          },
-      },
-      .pipeline_count = 1,
-    },
-    [RES_SHADER_GRASS] = {
-      .uuid = { 14156169020513442342ULL },
-      .name = comp8("Grass"),
-      .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Grass.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Grass.spv"),
-      },
-      .pipelines = {
-          [PIPELINE_GRASS_DEFAULT] = {
-              .cull_mode = CULL_MODE_NONE,
-              .polygon_mode = POLYGON_MODE_FILL,
-              .disable_depth_test = false,
-              .disable_depth_write = false,
-              .blend_enable = false,
-              .color_op = BLEND_OP_ADD,
-              .alpha_op = BLEND_OP_ADD,
-              .src_color_factor = BLEND_FACTOR_ONE,
-              .dst_color_factor = BLEND_FACTOR_ZERO,
-              .src_alpha_factor = BLEND_FACTOR_ONE,
-              .dst_alpha_factor = BLEND_FACTOR_ZERO,
-          },
-      },
-      .pipeline_count = 1,
-    },
-    [RES_SHADER_SKYBOX] = {
-      .uuid = { 15303572049235304430ULL },
-      .name = comp8("Skybox"),
-      .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Skybox.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Skybox.spv"),
-      },
-      .pipelines = {
-          [PIPELINE_SKYBOX_DEFAULT] = {
+          [PIPELINE_UNLIT_DEFAULT] = {
               .cull_mode = CULL_MODE_NONE,
               .polygon_mode = POLYGON_MODE_FILL,
               .disable_depth_test = false,

@@ -167,6 +167,15 @@ INLINE float2 make2_from3(float3 v) { return make2(v.x, v.y); }
 #define FLOAT4_SELECT(_1, _2, _3, _4, FN, ...) FN
 #define float4(...) FLOAT4_SELECT(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
 
+
+#define FLOAT3_RIGHT ((float3){1.0, 0.0f, 0.0f})
+#define FLOAT3_LEFT ((float3){-1.0, 0.0f, 0.0f})
+#define FLOAT3_UP ((float3){0.0, 1.0f, 0.0f})
+#define FLOAT3_DOWN ((float3){0.0, -1.0f, 0.0f})
+#define FLOAT3_FORWARD ((float3){0.0, 0.0f, -1.0f})
+#define FLOAT3_BACKWARD ((float3){0.0, 0.0f, 1.0f})
+
+
 typedef double float64;
 typedef struct { float64 x, y; } float64x2;
 typedef struct { float64 x, y, z; } float64x3;
@@ -202,6 +211,8 @@ typedef int32x4 int4;
 typedef struct { float min, max; } Interval;
 typedef struct { float32x2 min, max; } Interval2;
 typedef struct { float32x3 min, max; } Interval3;
+
+typedef struct { void *elements; uint32_t element_count; uint16_t element_size, stride; } Buffer;
 
 typedef struct {
 	float x, y, width, height;
@@ -271,28 +282,6 @@ typedef enum {
 
 	SIDE_MAX3,
 } Side;
-
-static const float2 side_to_float2[SIDE_MAX2] = {
-	[SIDE_RIGHT] = { 1.0f, 0.0f },
-	[SIDE_LEFT] = { -1.0f, 0.0f },
-
-	[SIDE_TOP] = { 0.0f, -1.0f },
-	[SIDE_BOTTOM] = { 0.0f, 1.0f },
-};
-
-static const float3 side_to_float3[SIDE_MAX3] = {
-	[SIDE_RIGHT] = { 1.0f, 0.0f, 0.0f },
-	[SIDE_LEFT] = { -1.0f, 0.0f, 0.0f },
-
-	[SIDE_TOP] = { 0.0f, 1.0f, 0.0f },
-	[SIDE_BOTTOM] = { 0.0f, -1.0f, 0.0f },
-
-	[SIDE_FRONT] = { 0.0f, 0.0f, 1.0f },
-	[SIDE_BACK] = { 0.0f, 0.0f, -1.0f },
-};
-
-#define unit2(s) side_to_float2[SIDE_##s]
-#define unit3(s) side_to_float3[SIDE_##s]
 
 typedef enum {
 	AXIS_X,

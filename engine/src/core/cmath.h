@@ -168,7 +168,7 @@ INLINE float3 approach3(float3 start, float3 end, float step) {
 INLINE float3 lerp3(float3 start, float3 end, float t) { return madd3(start, sub3(end, start), t); }
 INLINE float3 orthobasis3(float3 normal, float3 *right, float3 *up) {
 	normal = norm3(normal);
-	*right = norm3(cross3(normal, fabsf(dot3(unit3(UP), normal)) >= 0.99f ? unit3(BACKWARD) : unit3(UP)));
+	*right = norm3(cross3(normal, fabsf(dot3(FLOAT3_UP, normal)) >= 0.99f ? FLOAT3_BACKWARD : FLOAT3_UP));
 	*up = cross3(normal, *right);
 	return normal;
 }

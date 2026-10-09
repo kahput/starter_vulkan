@@ -1395,7 +1395,7 @@ bool gfx_device_make(GFX_Device *device) {
 				(BufferOptions){
 				  .debug_name = "engine:frame_staging_buffer",
 				  .memory = MEMORY_TYPE_CPU,
-				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
+				  .usage = BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
 
 		ok = device->frame_staging_buffer;
@@ -1408,7 +1408,7 @@ bool gfx_device_make(GFX_Device *device) {
 				(BufferOptions){
 				  .debug_name = "engine:transfer_staging_buffer",
 				  .memory = MEMORY_TYPE_CPU,
-				  .usage = BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
+				  .usage = BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
 		ok = device->transfer_staging_buffer;
 
@@ -2222,7 +2222,7 @@ void gfx_cmd_dispatch(GFX_CommandEncoder *cmd, uint32_t x, uint32_t y, uint32_t 
 		vkCmdDispatch(cmd->handle, x, y, z);
 }
 
-void gfx_cmd_draw(GFX_CommandEncoder *cmd, uint32_t vertex_count, uint32_t vertex_offset) {
+void gfx_cmd_draw(GFX_CommandEncoder *cmd, uint32_t vertex_offset, uint32_t vertex_count) {
 	gfx_cmd_draw_instanced(cmd, vertex_offset, vertex_count, 0, 1);
 }
 
