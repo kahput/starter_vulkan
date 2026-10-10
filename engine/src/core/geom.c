@@ -547,7 +547,7 @@ bool project_to_viewport(float4x4 view_proj, Rectangle viewport, float3 point, f
 
 	bool ok = clip.w > EPSILON;
 	if (ok) {
-		float3 ndc = scale3(make3_from4(clip), 1.0f / clip.w);
+		float3 ndc = scale3(xyz4(clip), 1.0f / clip.w);
 		*screen = make2(
 			viewport.x + ((ndc.x * 0.5f + 0.5f) * viewport.width),
 			viewport.y + ((ndc.y * 0.5f + 0.5f) * viewport.height) //

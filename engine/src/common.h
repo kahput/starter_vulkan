@@ -154,9 +154,9 @@ INLINE float4 make4_from2(float2 v, float z, float w) { return (float4){ v.x, v.
 INLINE float4 make4(float x, float y, float z, float w) { return (float4){ x, y, z, w }; }
 
 // truncate
-INLINE float3 make3_from4(float4 v) { return make3(v.x, v.y, v.z); }
-INLINE float2 make2_from4(float3 v) { return make2(v.x, v.y); }
-INLINE float2 make2_from3(float3 v) { return make2(v.x, v.y); }
+INLINE float3 xyz4(float4 v) { return make3(v.x, v.y, v.z); }
+INLINE float2 xy4(float4 v) { return make2(v.x, v.y); }
+INLINE float2 xy3(float3 v) { return make2(v.x, v.y); }
 
 #define FLOAT2_SELECT(_1, _2, FN, ...) FN
 #define float2(...) FLOAT2_SELECT(__VA_ARGS__, make2, splat2, _)(__VA_ARGS__)
@@ -166,7 +166,6 @@ INLINE float2 make2_from3(float3 v) { return make2(v.x, v.y); }
 
 #define FLOAT4_SELECT(_1, _2, _3, _4, FN, ...) FN
 #define float4(...) FLOAT4_SELECT(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
-
 
 #define FLOAT3_RIGHT ((float3){1.0, 0.0f, 0.0f})
 #define FLOAT3_LEFT ((float3){-1.0, 0.0f, 0.0f})

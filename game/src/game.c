@@ -251,26 +251,45 @@ bool tick(Arena *permanent, Arena *frame) {
 	for (int32_t x = -seg_count; x <= seg_count; ++x)
 		draw3d_line(float3(x, 0.0f, -seg_count), float3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY);
 
-	float3 points[] = {
-		{ -1.0, 0.0, 1.0 },
-		{ 1.0, 0.0, 1.0 },
-		{ -1.0, 0.0, -1.0 },
-		{ 1.0, 0.0, -1.0 },
+	float2 points[] = {
+		{ -1.0, 1.0 },
+		{ 1.0, 1.0 },
+		{ -1.0, -1.0 },
+		{ 1.0, -1.0 },
 	};
-
-	float3 normals[] = {
-		{ 0.0, 1.0, 0.0 },
-		{ 0.0, 1.0, 0.0 },
-		{ 0.0, 1.0, 0.0 },
-		{ 0.0, 1.0, 0.0 },
+	float2 uvs[] = {
+		{ 0.0, 0.0 },
+		{ 1.0, 0.0 },
+		{ 0.0, 1.0 },
+		{ 1.0, 1.0 },
 	};
-	float2 uvs[] = { { 0.0, 0.0 }, { 1.0, 0.0 }, { 0.0, 1.0 }, { 1.0, 1.0 } };
 	uint32_t indices[] = { 0, 1, 2, 1, 3, 2 };
 
-	Mesh mesh = mesh_ellipsoid(frame, FLOAT3_UP, float3(1.0), 32, 16);
-    draw3d_aabb_outline(mesh.bounds, 4.0f, RED);
+	Mesh my_mesh = {
+		.stream_formats[VERTEX_SEMANTIC_POSITION] = DATA_FORMAT_FLOAT2,
 
-	// write into mesh.vertices
+		.streams[VERTEX_SEMANTIC_POSITION] = points,
+		.streams[VERTEX_SEMANTIC_UV0] = uvs,
+		.total_vertex_count = countof(points),
+
+		.indices = indices,
+		.total_index_count = countof(indices),
+
+		/* .bounds = aabb3_from_points(points, countof(points)), */
+	};
+	Mesh mesh = mesh_ellipsoid(frame, FLOAT3_UP, float3(1.0), 32, 16);
+
+	static Mesh loaded_mesh = { 0 };
+	static bool has_loaded = false;
+	if (has_loaded == false) {
+		loaded_mesh = res_load_gltf(permanent, s("assets/models/room-large.glb"));
+		has_loaded = true;
+	}
+
+	// Make the common case fast, and the rare case correct.
+
+	mesh = loaded_mesh;
+	draw3d_aabb_outline(mesh.bounds, 4.0f, TEAL);
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -329,14 +348,14 @@ bool tick(Arena *permanent, Arena *frame) {
 		}
 
 		{
-			gfx_cmd_shader_bind(device, res_shader(&state->cache, RES_SHADER_UNLIT)->handle, 0);
+			gfx_cmd_shader_bind(device, res_shader(&state->cache, RES_SHADER_UNLIT)->handle, PIPELINE_UNLIT_DEFAULT);
 			gfx_cmd_bind(device, 0, (Uniform[]){ uniform_data(0, &fd, sizeof(fd)) }, 1);
 
 			VertexLayout shader_layout = vertex_layout(
 				{ VERTEX_SEMANTIC_POSITION, DATA_FORMAT_FLOAT4 },
 				{ VERTEX_SEMANTIC_NORMAL, DATA_FORMAT_FLOAT4 },
-				{ VERTEX_SEMANTIC_UV0, DATA_FORMAT_FLOAT2 },
-				{ VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT2 } //
+                { VERTEX_SEMANTIC_UV0, DATA_FORMAT_FLOAT2 },
+                { VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT2 },
 			);
 			uint64_t byte_size = mesh.total_vertex_count * shader_layout.stride;
 			void *vertices = arena_push_count(frame, uint8_t, byte_size);
@@ -344,14 +363,18 @@ bool tick(Arena *permanent, Arena *frame) {
 
 			if (ok) {
 				gfx_cmd_bind(device, 1, (Uniform[]){ storage_data(0, vertices, byte_size) }, 1);
-
 				if (mesh.indices) {
 					uint64_t offset = gfx_cmd_put(cmd, index_format_to_size(mesh_index_format(&mesh)) * mesh.total_index_count, mesh.indices);
 					gfx_cmd_bind_index_buffer32(cmd, cmd->transient_buffer, offset);
+				}
 
-					gfx_cmd_draw_indexed(cmd, 0, mesh.total_index_count, 0);
-				} else {
-					gfx_cmd_draw(cmd, 0, mesh.total_vertex_count);
+				for (uint32_t part_index = 0; part_index < mesh.part_count; ++part_index) {
+					MeshPart *part = &mesh.parts[part_index];
+					if (mesh.indices) {
+						gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
+					} else {
+						gfx_cmd_draw(cmd, part->vertex_offset, part->index_count);
+					}
 				}
 			}
 		}

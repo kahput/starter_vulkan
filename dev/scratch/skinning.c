@@ -2188,7 +2188,7 @@ int main(void) {
 			float ortho_size = 10.0f;
 			lights[light_index].matrix = mul4x4(
 				orthographic(-ortho_size, ortho_size, -ortho_size, ortho_size, 0.1f, 100.f),
-				lookat(make3_from4(lights[light_index].position), splat3(0.0f), FLOAT3_UP));
+				lookat(xyz4(lights[light_index].position), splat3(0.0f), FLOAT3_UP));
 
 			Frame3D frame_data = {
 				.viewport = { dims.x, dims.y },
@@ -2864,7 +2864,7 @@ Mesh load_gltf(Arena *arena, string8 path) {
 
 							if (attribute->type == cgltf_attribute_type_position) {
 								float3 *pos = (float3 *)dst;
-								float3 new_pos = make3_from4(mul4x4v(transform, make4_from3(*pos, 1.0f)));
+								float3 new_pos = xyz4(mul4x4v(transform, make4_from3(*pos, 1.0f)));
 								pos->x = new_pos.x;
 								pos->y = new_pos.y;
 								pos->z = new_pos.z;
@@ -2872,11 +2872,11 @@ Mesh load_gltf(Arena *arena, string8 path) {
 								aabb3_expand(&part->bounds, new_pos);
 							} else if (attribute->type == cgltf_attribute_type_normal) {
 								float3 *norm = (float3 *)dst;
-								float3 new_norm = make3_from4(mul4x4v(transform, make4_from3(*norm, 0.0f)));
+								float3 new_norm = xyz4(mul4x4v(transform, make4_from3(*norm, 0.0f)));
 								*norm = norm3(new_norm);
 							} else if (attribute->type == cgltf_attribute_type_tangent) {
 								float4 *tan = (float4 *)dst;
-								float3 new_tan = make3_from4(mul4x4v(transform, (float4){ tan->x, tan->y, tan->z, 0.0f }));
+								float3 new_tan = xyz4(mul4x4v(transform, (float4){ tan->x, tan->y, tan->z, 0.0f }));
 								float3 norm_tan = norm3(new_tan);
 								tan->x = norm_tan.x;
 								tan->y = norm_tan.y;

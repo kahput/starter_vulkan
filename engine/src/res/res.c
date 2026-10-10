@@ -1,4 +1,5 @@
 #include "res.h"
+#include "core/mesh.h"
 #include "gfx.h"
 #include "gfx/gfx_types.h"
 #include "image_loader.c"
@@ -99,7 +100,7 @@ static bool res__loader_font(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_
 	RES_Font font = res__load_font(scratch.arena, meta->faces[face_index].filepath, weight, font_size);
 
 	if (font.img_atlas.pixels) {
-        font.glyphs = arena_push_copy(cache->arena, font.glyphs, font.glyph_count);
+		font.glyphs = arena_push_copy(cache->arena, font.glyphs, font.glyph_count);
 		font.tex_atlas = (RES_Texture2D){
 			.handle = gfx_image_make(cache->device, font.img_atlas.width, font.img_atlas.height,
 				(ImageOptions){
@@ -523,4 +524,197 @@ OS_Timestamp res__source_mtime(RES_Cache *cache, RES_AssetType asset_type, RES_A
 			break;
 	}
 	return latest;
+}
+
+#include <cgltf/cgltf.h>
+static const VertexSemantic vertex_semantic_cgltf_attribute_table[cgltf_attribute_type_max_enum] = {
+	[cgltf_attribute_type_invalid] = VERTEX_SEMANTIC_MAX,
+	[cgltf_attribute_type_position] = VERTEX_SEMANTIC_POSITION,
+	[cgltf_attribute_type_normal] = VERTEX_SEMANTIC_NORMAL,
+	[cgltf_attribute_type_tangent] = VERTEX_SEMANTIC_TANGENT,
+	[cgltf_attribute_type_texcoord] = VERTEX_SEMANTIC_UV0,
+	[cgltf_attribute_type_color] = VERTEX_SEMANTIC_COLOR0,
+	[cgltf_attribute_type_joints] = VERTEX_SEMANTIC_JOINTS,
+	[cgltf_attribute_type_weights] = VERTEX_SEMANTIC_WEIGHTS,
+	[cgltf_attribute_type_custom] = VERTEX_SEMANTIC_CUSTOM0,
+};
+/* INLINE VertexSemantic vertex_semantic_from_cgltf_attribute_type(cgltf_attribute_type type) { */
+/* 	return (uint32_t)type < cgltf_attribute_type_max_enum ? vertex_semantic_cgltf_attribute_table[type] : VERTEX_SEMANTIC_MAX; */
+/* } */
+
+Mesh res_load_gltf(Arena *arena, string8 path) {
+	LOG_INFO("loading [%s] geometry.", path.bytes);
+
+	Mesh result = { 0 };
+	cgltf_options options = { 0 };
+	cgltf_data *data = 0;
+
+	bool ok = cgltf_parse_file(&options, (char *)path.bytes, &data) == cgltf_result_success;
+	if (ok == false)
+		LOG_ERROR("%s - failed to open file", path.bytes);
+
+	if (ok) {
+		ok = ok && cgltf_load_buffers(&options, data, (char *)path.bytes) == cgltf_result_success;
+		ok = ok && cgltf_validate(data) == cgltf_result_success;
+	}
+
+	string8 directory = pathdir8(path);
+
+	if (ok) { // load geometry
+		VertexLayout layout = { 0 };
+		for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
+			cgltf_node *node = &data->nodes[node_index];
+			if (node->mesh == 0)
+				continue;
+
+			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
+				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
+				if (primitive->type != cgltf_primitive_type_triangles) continue;
+
+				result.part_count++;
+				result.total_vertex_count += primitive->attributes[0].data->count;
+				result.total_index_count += primitive->indices->count;
+
+				for (uint32_t index = 0; index < primitive->attributes_count; ++index) {
+					cgltf_attribute *attribute = &primitive->attributes[index];
+					if (attribute->index != 0) continue;
+
+					cgltf_accessor *accessor = attribute->data;
+					uint32_t attribute_size = cgltf_component_size(accessor->component_type) * cgltf_num_components(accessor->type);
+
+					VertexSemantic semantic = vertex_semantic_cgltf_attribute_table[attribute->type];
+					DataFormat semantic_default_format = vertex_semantic_default_format[semantic];
+
+					uint64_t semantic_default_data_format_size = data_format_to_size(semantic_default_format);
+					ASSERT(attribute_size == semantic_default_data_format_size); // TODO: Convert from component_type + type to DataFormat
+					vertex_layout_push(&layout, semantic, semantic_default_format);
+				}
+			}
+		}
+
+		result.parts = arena_push_count(arena, MeshPart, result.part_count);
+		for (uint32_t index = 0; index < layout.attribute_count; ++index) {
+			VertexAttribute attr = layout.attributes[index];
+			result.streams[attr.semantic] = arena_push_count(arena, uint8_t, result.total_vertex_count *data_format_to_size(attr.format));
+		}
+		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+		result.bounds = aabb3_empty();
+
+		uint32_t part_offset = 0;
+		uint64_t vertex_offset = 0, index_offset = 0;
+		for (uint32_t node_index = 0; node_index < data->nodes_count; ++node_index) {
+			cgltf_node *node = &data->nodes[node_index];
+			if (node->mesh == 0)
+				continue;
+
+			float4x4 transform = identity4x4();
+			if (node->skin == 0)
+				cgltf_node_transform_world(node, transform.elements);
+			bool has_transform = eq4x4(identity4x4(), transform) == false;
+
+			for (uint32_t primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
+				cgltf_primitive *primitive = &node->mesh->primitives[primitive_index];
+				if (primitive->type != cgltf_primitive_type_triangles) continue;
+
+				MeshPart *part = &result.parts[part_offset++];
+				part->bounds = aabb3_empty();
+
+				part->vertex_count = primitive->attributes[0].data->count;
+				part->vertex_offset = vertex_offset;
+
+				part->index_count = primitive->indices->count;
+				part->index_offset = index_offset;
+				cgltf_accessor_unpack_indices(primitive->indices, (uint32_t *)result.indices + index_offset, sizeof(uint32_t), part->index_count);
+
+				for (uint32_t attribute_index = 0; attribute_index < primitive->attributes_count; ++attribute_index) {
+					cgltf_attribute *attribute = &primitive->attributes[attribute_index];
+					if (attribute->index != 0) continue;
+
+					cgltf_accessor *accessor = attribute->data;
+					cgltf_attribute_type type = attribute->type;
+					cgltf_size component_count = cgltf_num_components(accessor->type);
+					cgltf_size component_size = cgltf_component_size(accessor->component_type);
+					cgltf_size attribute_size = component_count * component_size;
+
+					VertexSemantic semantic = vertex_semantic_cgltf_attribute_table[type];
+					DataFormat format = vertex_semantic_default_format[semantic];
+
+					ASSERT(attribute_size == data_format_to_size(format) && "Sizing mismatch");
+					ASSERT(accessor->count == part->vertex_count && "expect all attributes to have same number of vertices");
+
+					bool is_position = type == cgltf_attribute_type_position;
+					if (is_position && has_transform == false) {
+						part->bounds.min = load3(accessor->min);
+						part->bounds.max = load3(accessor->max);
+					}
+
+					cgltf_bool ok = true;
+
+					void *dst = (uint8_t *)result.streams[semantic] + part->vertex_offset * component_count * component_size;
+					for (uint32_t vertex_index = 0; vertex_index < part->vertex_count; ++vertex_index) {
+						void *element = (uint8_t *)dst + vertex_index * component_count * component_size;
+
+						switch (attribute->type) {
+							case cgltf_attribute_type_position:
+							case cgltf_attribute_type_normal:
+							case cgltf_attribute_type_tangent:
+								cgltf_accessor_read_float(accessor, vertex_index, element, component_count);
+
+								if (has_transform) {
+									float4 world = mul4x4v(transform, float4(load3(element), is_position ? 1.0f : 0.0f));
+									if (is_position) {
+										aabb3_expand(&part->bounds, store3(element, xyz4(world)));
+									} else // TODO: Handle non-uniform transform
+										store3(element, norm3(xyz4(world)));
+								}
+								break;
+
+							case cgltf_attribute_type_weights:
+							case cgltf_attribute_type_texcoord:
+								cgltf_accessor_read_float(accessor, vertex_index, element, component_count);
+								break;
+
+							case cgltf_attribute_type_color: {
+								ASSERT(component_count <= 4);
+								component_count = MIN(component_count, 4);
+
+								cgltf_float tmp[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+								cgltf_bool ok = cgltf_accessor_read_float(accessor, vertex_index, tmp, component_count);
+								for (uint32_t comp = 0; comp < countof(tmp); ++comp)
+									tmp[comp] = clampf(tmp[comp] * 255.0f + 0.5f, 0.0f, 255.0f);
+								uint8_t color[4] = { tmp[0], tmp[1], tmp[2], tmp[3] };
+								memory_copy(element, color, sizeof(color));
+
+								ASSERT(ok);
+							} break;
+							case cgltf_attribute_type_joints: {
+								ASSERT(component_count <= 4);
+								component_count = MIN(component_count, 4);
+
+								cgltf_uint tmp[4] = { 0 };
+								ok = cgltf_accessor_read_uint(accessor, vertex_index, tmp, component_count);
+								ok = ok && (tmp[0] <= 255 && tmp[1] <= 255 && tmp[2] <= 255 && tmp[3] <= 255);
+
+								uint8_t joints[4] = { tmp[0], tmp[1], tmp[2], tmp[3] };
+								memory_copy(element, joints, sizeof(joints));
+								ASSERT(ok);
+							} break;
+
+							default:
+								continue;
+						}
+					}
+				}
+
+				result.bounds.min = min3(result.bounds.min, part->bounds.min);
+				result.bounds.max = max3(result.bounds.max, part->bounds.max);
+
+				vertex_offset += part->vertex_count;
+				index_offset += part->index_count;
+			}
+		}
+	}
+
+	cgltf_free(data);
+	return result;
 }

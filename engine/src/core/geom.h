@@ -38,6 +38,12 @@ INLINE AABB3 aabb3_merge(AABB3 a, AABB3 b) { return (AABB3){ .min = min3(a.min, 
 INLINE AABB3 aabb3_move(AABB3 a, float3 displacement) { return (AABB3){ .min = add3(a.min, displacement), .max = add3(a.max, displacement) }; }
 INLINE bool aabb3_overlap(AABB3 a, AABB3 b) { return (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y) && (a.min.z <= b.max.z && a.max.z >= b.min.z); }
 INLINE bool aabb3_contains_point(AABB3 a, float3 p) { return (p.x > a.min.x && p.x < a.max.x) && (p.y > a.min.y && p.y < a.max.y) && (p.z > a.min.z && p.z < a.max.z); }
+INLINE AABB3 aabb3_from_points(float3 *points, uint32_t point_count) {
+	AABB3 result = aabb3_empty();
+	for (uint32_t index = 0; index < point_count; ++index)
+		aabb3_expand(&result, points[index]);
+	return result;
+}
 
 INLINE Sphere sphere_from_aabb3(AABB3 a) { return (Sphere){ aabb3_center(a), len3(aabb3_half_extent(a)) }; }
 INLINE bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.center)) <= s.radius * s.radius; }

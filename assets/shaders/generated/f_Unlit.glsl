@@ -23,10 +23,10 @@ INOUT layout(location = 0) Varying {
 
 // --- source_start ---
 
-layout(location = 0) out vec4 color;
+    layout(location = 0) out vec4 color;
 
-void main(void) {
-    color = vec4(vec3(uv.yyy), 1.0);
+    void main(void) {
+        color = vec4(vec3(uv.xxx), 1.0);
 }
 
 // --- source_end ---

@@ -479,6 +479,12 @@ static const string8 cull_mode_table[CULL_MODE_MAX] = {
 	[CULL_MODE_BACK]           = comp8("back"),
 	[CULL_MODE_FRONT_AND_BACK] = comp8("front_and_back"),
 };
+
+static const string8 polygon_mode_table[CULL_MODE_MAX] = {
+	[POLYGON_MODE_FILL]  = comp8("fill"),
+	[POLYGON_MODE_LINE]  = comp8("line"),
+	[POLYGON_MODE_POINT] = comp8("point"),
+};
 // clang-format on
 
 int32_t eval_pipeline_state(const string8 *state_table, uint32_t table_count, string8 needle, const char *fmt, ...) {
@@ -669,9 +675,8 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 				}
 
 				PolygonMode value = POLYGON_MODE_MAX;
-
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
-					if (eq8(cull_mode_table[index], value_node->identifier.lexeme)) {
+					if (eq8(polygon_mode_table[index], value_node->identifier.lexeme)) {
 						value = (PolygonMode)index;
 						break;
 					}

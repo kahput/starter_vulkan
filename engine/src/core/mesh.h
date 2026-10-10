@@ -2,7 +2,7 @@
 
 #include "common.h"
 #include "core/debug.h"
-#include "core/geom_types.h"
+#include "core/geom.h"
 
 // ============================================================================
 // Data Formats
@@ -17,6 +17,7 @@ typedef enum {
 	DATA_FORMAT_FLOAT4,
 
 	DATA_FORMAT_INT4,
+	DATA_FORMAT_UBYTE4,
 
 	DATA_FORMAT_MAX,
 } DataFormat;

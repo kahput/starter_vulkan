@@ -2,8 +2,6 @@
 #include "core/cmath.h"
 #include "core/debug.h"
 
-#include "geom.h"
-
 uint32_t data_format_sizes[DATA_FORMAT_MAX] = {
 	[DATA_FORMAT_FLOAT] = 4 * 1,
 	[DATA_FORMAT_FLOAT2] = 4 * 2,
@@ -11,7 +9,7 @@ uint32_t data_format_sizes[DATA_FORMAT_MAX] = {
 	[DATA_FORMAT_FLOAT4] = 4 * 4,
 
 	[DATA_FORMAT_INT4] = 4 * 4,
-
+	[DATA_FORMAT_UBYTE4] = 1 * 4,
 };
 
 uint32_t data_format_alignments[DATA_FORMAT_MAX] = {
@@ -21,6 +19,7 @@ uint32_t data_format_alignments[DATA_FORMAT_MAX] = {
 	[DATA_FORMAT_FLOAT4] = 16,
 
 	[DATA_FORMAT_INT4] = 16,
+	[DATA_FORMAT_UBYTE4] = 4,
 };
 
 bool vertex_layout_push(VertexLayout *layout, VertexSemantic semantic, DataFormat format) {
@@ -66,22 +65,22 @@ VertexLayout vertex_layout_from_array(const VertexAttribute *attributes, uint32_
 DataFormat vertex_semantic_default_format[VERTEX_SEMANTIC_MAX] = {
 	[VERTEX_SEMANTIC_POSITION] = DATA_FORMAT_FLOAT3,
 	[VERTEX_SEMANTIC_NORMAL] = DATA_FORMAT_FLOAT3,
-	[VERTEX_SEMANTIC_TANGENT] = DATA_FORMAT_FLOAT3,
+	[VERTEX_SEMANTIC_TANGENT] = DATA_FORMAT_FLOAT4,
 	[VERTEX_SEMANTIC_UV0] = DATA_FORMAT_FLOAT2,
 	[VERTEX_SEMANTIC_UV1] = DATA_FORMAT_FLOAT2,
-	/* [VERTEX_SEMANTIC_COLOR0] = DATA_FORMAT_NONE, */
-	[VERTEX_SEMANTIC_JOINTS] = DATA_FORMAT_INT4,
+	[VERTEX_SEMANTIC_COLOR0] = DATA_FORMAT_UBYTE4,
+	[VERTEX_SEMANTIC_JOINTS] = DATA_FORMAT_UBYTE4,
 	[VERTEX_SEMANTIC_WEIGHTS] = DATA_FORMAT_FLOAT4,
 };
 
-void *vertex_semantic_default_value[VERTEX_SEMANTIC_MAX] = {
+static const void *vertex_semantic_default_value[VERTEX_SEMANTIC_MAX] = {
 	[VERTEX_SEMANTIC_NORMAL] = &(float3){ 0.0f, 0.0f, 1.0f },
-	[VERTEX_SEMANTIC_TANGENT] = &(float3){ 1.0f, 0.0f, 0.0f },
+	[VERTEX_SEMANTIC_TANGENT] = &(float4){ 1.0f, 0.0f, 0.0f, 0.0 },
 	[VERTEX_SEMANTIC_UV0] = &(float2){ 0 },
 	[VERTEX_SEMANTIC_UV1] = &(float2){ 0 },
-	/* [VERTEX_SEMANTIC_COLOR0] = DATA_FORMAT_NONE, */
+	[VERTEX_SEMANTIC_COLOR0] = &WHITE,
 	[VERTEX_SEMANTIC_JOINTS] = &(int4){ 0 },
-	[VERTEX_SEMANTIC_WEIGHTS] = &(float4){ 0 },
+	[VERTEX_SEMANTIC_WEIGHTS] = &(float4){ 1.0f, 0.0f, 0.0f, 0.0f },
 };
 
 bool mesh_pack_into(const Mesh *mesh, const VertexLayout *layout, void *output, uint64_t output_size) {
@@ -97,7 +96,7 @@ bool mesh_pack_into(const Mesh *mesh, const VertexLayout *layout, void *output, 
 
 			offset += layout_element_size;
 			if (src == 0) {
-				void *default_value = vertex_semantic_default_value[at.semantic];
+				const void *default_value = vertex_semantic_default_value[at.semantic];
 				uint32_t default_element_size = data_format_to_size(vertex_semantic_default_format[attribute_index]);
 				uint32_t copy_size = MIN(layout_element_size, default_element_size);
 

@@ -120,8 +120,8 @@ INLINE float2 rotate2(float2 v, float rad) {
 }
 
 // --- float3 ---
-INLINE void store3(float3 src, float dst[3]) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z; }
 INLINE float3 load3(const float v[3]) { return (float3){ v[0], v[1], v[2] }; }
+INLINE float3 store3(float dst[3], float3 src) { return dst[0] = src.x, dst[1] = src.y, dst[2] = src.z, load3(dst); }
 #define spread3(v) (v).x, (v).y, (v).z
 #define as3(v, T) ((T){ (v).x, (v).y, (v).z })
 
@@ -177,7 +177,7 @@ INLINE float angle3(float3 a, float3 b) { return acosf(clampf(dot3(norm3(a), nor
 float3 rotate3(float3 v, float angle, float3 axis);
 
 // --- float4 & quaternions ---
-INLINE void store4(float4 src, float dst[4]) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z, dst[3] = src.w; }
+INLINE void store4(float dst[4], float4 src) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z, dst[3] = src.w; }
 INLINE float4 load4(const float v[4]) { return (float4){ .x = v[0], .y = v[1], .z = v[2], .w = v[3] }; }
 #define spread4(v) v.x, v.y, v.z, v.w
 #define as4(v, T) ((T){ v.x, v.y, v.z, v.w })
@@ -191,6 +191,7 @@ INLINE float4 scale4(float4 v, float s) { return (float4){ v.x * s, v.y * s, v.z
 INLINE float dot4(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
 
 INLINE float len4(float4 v) { return sqrtf(dot4(v, v)); }
+INLINE float4 clamp4(float4 v, float min, float max) { return (float4){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max), clampf(v.z, min, max) }; }
 
 INLINE quat4 quat4_identity(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
 float3 quat4_to_euler(quat4 quat);
@@ -238,7 +239,7 @@ INLINE float3 mul3x3v(float3x3 m, float3 v) {
 	return (float3){
 		m.elements[0] * v.x + m.elements[3] * v.y + m.elements[6] * v.z,
 		m.elements[1] * v.x + m.elements[4] * v.y + m.elements[7] * v.z,
-		m.elements[2] * v.z + m.elements[5] * v.y + m.elements[8] * v.z,
+		m.elements[2] * v.x + m.elements[5] * v.y + m.elements[8] * v.z,
 	};
 }
 INLINE float det3x3(float3x3 m) {
@@ -284,8 +285,8 @@ INLINE float3x3 transpose3x3(float3x3 m) {
 
 float3x3 axisangle3x3(float3 axis, float angle);
 
-INLINE float2 xform2p(float3x3 m, float2 p) { return make2_from3(mul3x3v(m, make3_from2(p, 1.0f))); }
-INLINE float2 xform2v(float3x3 m, float2 d) { return make2_from3(mul3x3v(m, make3_from2(d, 0.0f))); }
+INLINE float2 xform2p(float3x3 m, float2 p) { return xy3(mul3x3v(m, make3_from2(p, 1.0f))); }
+INLINE float2 xform2v(float3x3 m, float2 d) { return xy3(mul3x3v(m, make3_from2(d, 0.0f))); }
 
 // --- float4x4 ---
 bool eq4x4(float4x4 lhs, float4x4 rhs);
@@ -293,8 +294,8 @@ float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
 float4 mul4x4v(float4x4 m, float4 v);
 float4x4 transpose4x4(float4x4 m);
 
-INLINE float3 xform3p(float4x4 m, float3 p) { return make3_from4(mul4x4v(m, make4_from3(p, 1.0f))); }
-INLINE float3 xform3v(float4x4 m, float3 d) { return make3_from4(mul4x4v(m, make4_from3(d, 0.0f))); }
+INLINE float3 xform3p(float4x4 m, float3 p) { return xyz4(mul4x4v(m, make4_from3(p, 1.0f))); }
+INLINE float3 xform3v(float4x4 m, float3 d) { return xyz4(mul4x4v(m, make4_from3(d, 0.0f))); }
 
 INLINE float4x4 diagonal4x4(float4 v) {
 	return (float4x4){

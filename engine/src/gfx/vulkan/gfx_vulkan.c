@@ -2086,7 +2086,7 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 			.loadOp = (VkAttachmentLoadOp)info.colors[index].load,
 			.storeOp = (VkAttachmentStoreOp)info.colors[index].store,
 		};
-		store4(color_to_float4(info.colors[index].clear), color_attachments[index].clearValue.color.float32);
+		store4(color_attachments[index].clearValue.color.float32, color_to_float4(info.colors[index].clear));
 		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, info.colors[index].target);
 
 		if (info.colors[index].resolve) {

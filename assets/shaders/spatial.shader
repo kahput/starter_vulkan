@@ -1,5 +1,6 @@
 shader Unlit {
     pipeline default ( cull = none )
+    pipeline wireframe ( cull = none, polygon_mode = line )
 
     shared {
         #include "lib/frame.glsl"
@@ -30,7 +31,6 @@ shader Unlit {
         layout(location = 0) out vec4 color;
 
         void main(void) {
-            color = vec4(vec3(uv.yyy), 1.0);
-        }
+            color = vec4(vec3(uv.xxx), 1.0);
     }
 }
