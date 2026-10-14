@@ -11,13 +11,15 @@
 typedef enum {
 	DATA_FORMAT_NONE = 0,
 
-	DATA_FORMAT_FLOAT,
-	DATA_FORMAT_FLOAT2,
-	DATA_FORMAT_FLOAT3,
-	DATA_FORMAT_FLOAT4,
+	DATA_FORMAT_FLOAT32x1,
+	DATA_FORMAT_FLOAT32x2,
+	DATA_FORMAT_FLOAT32x3,
+	DATA_FORMAT_FLOAT32x4,
 
-	DATA_FORMAT_INT4,
-	DATA_FORMAT_UBYTE4,
+	DATA_FORMAT_SINT32x4,
+
+	DATA_FORMAT_UINT8x4,
+	// DATA_FORMAT_UNORM8x4
 
 	DATA_FORMAT_MAX,
 } DataFormat;
@@ -119,7 +121,7 @@ typedef struct {
 } MeshPart;
 
 typedef struct {
-	DataFormat stream_formats[VERTEX_SEMANTIC_MAX];
+	DataFormat stream_formats[VERTEX_SEMANTIC_MAX]; // DATA_FORMAT_NONE == data_format_default_format
 	void *streams[VERTEX_SEMANTIC_MAX];
 	uint32_t total_vertex_count;
 
@@ -133,6 +135,21 @@ typedef struct {
 	AABB3 bounds;
 } Mesh;
 
+INLINE MeshPart meshpart(Mesh m, uint32_t part_index) {
+	if (m.part_count) {
+		ASSERT(part_index < m.part_count);
+		return part_index < m.part_count ? m.parts[part_index] : (MeshPart){ 0 };
+	}
+
+	return (MeshPart){
+		.index_offset = 0,
+		.index_count = m.total_index_count,
+		.vertex_offset = 0,
+		.vertex_count = m.total_vertex_count,
+		.bounds = m.bounds,
+	};
+}
+
 extern DataFormat vertex_semantic_default_format[VERTEX_SEMANTIC_MAX];
 INLINE DataFormat mesh_stream_format(const Mesh *mesh, VertexSemantic semantic) {
 	DataFormat override_fmt = mesh->stream_formats[semantic];
@@ -143,6 +160,7 @@ INLINE IndexFormat mesh_index_format(const Mesh *mesh) {
 	return (mesh->index_format != INDEX_FORMAT_NONE) ? mesh->index_format : INDEX_FORMAT32;
 }
 
+// size-based interleave.
 bool mesh_pack_into(const Mesh *mesh, const VertexLayout *layout, void *output, uint64_t output_size);
 
 Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segments, uint32_t rings);

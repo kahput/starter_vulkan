@@ -66,7 +66,7 @@ typedef enum {
 } OS_FileMode;
 
 OS_File os_file_open(string8 path, OS_FileMode);
-OS_File os_file_open_async(string8 path, OS_FileMode mode);
+/* OS_File os_file_open_async(string8 path, OS_FileMode mode); */
 
 uint64_t os_file_size(OS_File handle);
 uint64_t os_file_read_stream(OS_File file, void *buffer, uint64_t size);

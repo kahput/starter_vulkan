@@ -62,6 +62,13 @@ RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
       },
       .pipeline_count = 1,
     },
+    [RES_SHADER_BLURCOMPUTE] = {
+      .uuid = { 7371880362503032826ULL },
+      .name = comp8("BlurCompute"),
+      .filepaths = {
+          [SHADER_STAGE_COMPUTE] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/c_BlurCompute.spv"),
+      },
+    },
     [RES_SHADER_TESTCOMPUTE] = {
       .uuid = { 17104535008024914169ULL },
       .name = comp8("TestCompute"),

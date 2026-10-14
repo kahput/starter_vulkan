@@ -29,13 +29,13 @@ material {
 
 shader Quad2D {
     pipeline default (
-		  cull = none,
-          depth_test = false,
-          depth_write = false,
+		cull = none,
+        depth_test = false,
+        depth_write = false,
 
-          blend_color = add(src_alpha, one_minus_src_alpha),
-          blend_alpha = add(one, one_minus_src_alpha)
-  )
+        blend_color = add(src_alpha, one_minus_src_alpha),
+        blend_alpha = add(one, one_minus_src_alpha)
+    )
 
     shared {
         #include "lib/frame.glsl"

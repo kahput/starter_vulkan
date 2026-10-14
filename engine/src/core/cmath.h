@@ -288,6 +288,10 @@ float3x3 axisangle3x3(float3 axis, float angle);
 INLINE float2 xform2p(float3x3 m, float2 p) { return xy3(mul3x3v(m, make3_from2(p, 1.0f))); }
 INLINE float2 xform2v(float3x3 m, float2 d) { return xy3(mul3x3v(m, make3_from2(d, 0.0f))); }
 
+INLINE float3x3 diagonal3x3(float3 v) {
+	return (float3x3){ .elements[0] = v.x, .elements[4] = v.y, .elements[8] = v.z };
+}
+
 // --- float4x4 ---
 bool eq4x4(float4x4 lhs, float4x4 rhs);
 float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
@@ -298,12 +302,7 @@ INLINE float3 xform3p(float4x4 m, float3 p) { return xyz4(mul4x4v(m, make4_from3
 INLINE float3 xform3v(float4x4 m, float3 d) { return xyz4(mul4x4v(m, make4_from3(d, 0.0f))); }
 
 INLINE float4x4 diagonal4x4(float4 v) {
-	return (float4x4){
-		.elements[0] = v.x,
-		.elements[5] = v.y,
-		.elements[10] = v.z,
-		.elements[15] = v.w,
-	};
+	return (float4x4){ .elements[0] = v.x, .elements[5] = v.y, .elements[10] = v.z, .elements[15] = v.w };
 }
 INLINE float4x4 identity4x4(void) { return diagonal4x4(splat4(1.0f)); }
 

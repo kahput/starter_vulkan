@@ -15,18 +15,45 @@ layout(set = 1, binding = 0) readonly buffer VertexBlock {
     Vertex vertex_buffer[];
 };
 
+layout(set = 1, binding = 1) uniform MaterialBlock {
+    float health;
+};
+layout(set = 1, binding = 2) uniform sampler2D u_healthbar;
+
 INOUT layout(location = 0) Varying {
     vec2 uv;
 };
+
+float inv_lerp(float a, float b, float v) {
+    return (v - a) / (b - a);
+}
 
 // --- shared_end ---
 
 // --- source_start ---
 
-    layout(location = 0) out vec4 color;
+layout(location = 0) out vec4 color;
 
-    void main(void) {
-        color = vec4(vec3(uv.xxx), 1.0);
+void main(void) {
+    vec2 coords = uv;
+    coords.x *= 8.0;
+
+    vec2 point_on_segment = vec2(clamp(coords.x, 0.5, 7.5), 0.5);
+    float dist = distance(coords, point_on_segment) * 2.0 - 1.0;
+    if (dist > 0.0) discard;
+
+    float border_sdf = dist + 0.3;
+    float pd = fwidth(border_sdf);
+    float border_mask = 1.0 - clamp(border_sdf / pd, 0.0, 1.0);
+    
+    vec4 sampled = texture(u_healthbar, vec2(health, uv.y));
+    vec4 mask = vec4(vec3(float(health > uv.x)), 1.0);
+    float flash = cos(frame.time * 8.0) * 0.6 + 1.0;
+
+    if (health <= 0.2)
+        sampled *= flash;
+
+    color = vec4(sampled.xyz * mask.xyz * border_mask, 1.0) ;
 }
 
 // --- source_end ---

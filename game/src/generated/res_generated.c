@@ -22,6 +22,10 @@ RES_ImageMeta res_image_metadata[RES_IMAGE_MAX] = {
 	  .name = comp8("heightmap"),
 	  .filepath = comp8("assets/images/heightmap.png"),
 	},
+	[RES_IMAGE_HEALTHBAR] = {
+	  .name = comp8("healthbar"),
+	  .filepath = comp8("assets/images/healthbar.png"),
+	},
 };
 
 RES_FontFaceMeta res_pixeloid_sans_faces[] = {

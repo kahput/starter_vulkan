@@ -8,6 +8,19 @@
 #include "res.h"
 
 typedef struct {
+	float4 radii;
+    
+	Color fill_color, border_color;
+	float border_width, rotation;
+
+	RES_Texture2D *texture;
+	Rectangle uv;
+
+	float2 origin;
+	uint32_t flags;
+} DRAW_QuadStyle;
+
+typedef struct {
 	float2 position, size;
 	float4 radii;
 	float2 uvs[4];
@@ -39,26 +52,6 @@ typedef struct {
 	uint4 bone_ids;
 	float4 weights;
 } DRAW_SkinningVertex3D;
-
-typedef struct {
-	Color fill_color;
-
-	Color border_color;
-	float border_width;
-
-	float4 radii;
-
-	RES_Texture2D *texture;
-	Rectangle uv;
-
-	float2 origin;
-	float rotation;
-
-	uint32_t flags;
-
-	uint8_t *uniform_data;
-	uint64_t uniform_data_size;
-} DRAW_QuadStyle;
 
 typedef struct DRAW_Batch DRAW_Batch;
 struct DRAW_Batch {
@@ -115,7 +108,7 @@ void draw2d_triangle_outline(Triangle2 triangle, float thickness, Color color);
 void draw2d_circle_outline(float2 center, float radius, float thickness, Color color);
 
 void draw3d_line(float3 start, float3 end, float thickness, Color color);
-void draw3d_arrow(float3 start, float3 end, float thickness, Color color,
+void draw3d_arrow(float3 origin, float3 delta, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width);
 void draw3d_arc(float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, Color color);
 void draw3d_arc_basis(float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, Color color);

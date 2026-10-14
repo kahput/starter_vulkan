@@ -332,29 +332,31 @@ void draw3d_line(float3 start, float3 end, float thickness, Color color) {
 	};
 }
 
-void draw3d_arrow(float3 start, float3 end, float thickness, Color color,
+void draw3d_arrow(float3 origin, float3 delta, float thickness, Color color,
 	float4x4 view, float4x4 projeciton, float viewport_width) {
-	float3 direction = sub3(end, start);
-	float total_world_length = len3(direction);
-	if (total_world_length < EPSILON)
+	float total_world_length = lensq3(delta);
+	if (total_world_length < EPSILON * EPSILON)
 		return;
+	total_world_length = sqrtf(total_world_length);
 
-	float3 dir_norm = scale3(direction, 1.0f / total_world_length);
+	float3 tip = add3(origin, delta);
+
+	float3 direction = scale3(delta, 1.0f / total_world_length);
 
 	float4x4 vp = mul4x4(projeciton, view);
-	float w = vp.elements[3] * end.x + vp.elements[7] * end.y + vp.elements[11] * end.z + vp.elements[15] * 1.0f;
+	float w = vp.elements[3] * tip.x + vp.elements[7] * tip.y + vp.elements[11] * tip.z + vp.elements[15] * 1.0f;
 	float desired_pixel_length = thickness * 5.0f;
 
 	float world_head_length = (2.0f * w * desired_pixel_length) / (projeciton.elements[0] * viewport_width);
 	if (world_head_length > total_world_length * 0.5f)
 		world_head_length = total_world_length * 0.5f;
 
-	float3 shaft_end = sub3(end, scale3(dir_norm, world_head_length));
+	float3 shaft_end = sub3(tip, scale3(direction, world_head_length));
 
-	draw3d_line(start, shaft_end, thickness, color);
+	draw3d_line(origin, shaft_end, thickness, color);
 	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
 		.a = make4_from3(shaft_end, thickness * 4.0f),
-		.b = make4_from3(end, 0.0f),
+		.b = make4_from3(tip, 0.0f),
 		.color = color_pack_uint32(color),
 	};
 }

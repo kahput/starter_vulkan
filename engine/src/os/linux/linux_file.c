@@ -52,14 +52,14 @@ OS_File os_file_open(string8 filepath, OS_FileMode mode) {
 	return result;
 }
 
-OS_File os_file_open_async(string8 path, OS_FileMode mode) {
-	OS_File result = os__open_fulllpath(path, os__mode_to_flags(mode), 0666);
-	if (os_file_valid(result) == false) {
-		LOG_WARN("failed to read '%.*s' - %s", arg8(path), strerror(errno));
-	}
+/* OS_File os_file_open_async(string8 path, OS_FileMode mode) { */
+/* 	OS_File result = os__open_fulllpath(path, os__mode_to_flags(mode), 0666); */
+/* 	if (os_file_valid(result) == false) { */
+/* 		LOG_WARN("failed to read '%.*s' - %s", arg8(path), strerror(errno)); */
+/* 	} */
 
-	return result;
-}
+/* 	return result; */
+/* } */
 
 uint64_t os_file_size(OS_File handle) {
 	uint64_t result = 0;

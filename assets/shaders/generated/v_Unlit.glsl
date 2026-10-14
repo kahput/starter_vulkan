@@ -15,9 +15,18 @@ layout(set = 1, binding = 0) readonly buffer VertexBlock {
     Vertex vertex_buffer[];
 };
 
+layout(set = 1, binding = 1) uniform MaterialBlock {
+    float health;
+};
+layout(set = 1, binding = 2) uniform sampler2D u_healthbar;
+
 INOUT layout(location = 0) Varying {
     vec2 uv;
 };
+
+float inv_lerp(float a, float b, float v) {
+    return (v - a) / (b - a);
+}
 
 // --- shared_end ---
 

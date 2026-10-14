@@ -37,11 +37,11 @@ typedef struct {
 	GFX_Image *depthbuffer;
 
 	InputState input;
-
 	GFX_Image *white_texture;
 	RES_Cache cache;
 
-	GFX_Sampler *nearest;
+	GFX_Sampler *sampler_nearest;
+	GFX_Sampler *sampler_linear;
 
 	Camera camera;
 
@@ -50,6 +50,11 @@ typedef struct {
 
 	bool initialized;
 } State;
+
+// image imfilter(image, kernel, boundary_condition);
+// rgb2gray(im
+// normxcorr2(onion, peppers);
+// image imedge(image, algorithim);
 
 State *state = 0;
 static inline char *named(const char *name) {
@@ -126,8 +131,8 @@ const RES_Catalog registry = {
 	.fonts = res_font_metadata,
 	.font_count = RES_FONT_MAX,
 
-	.shader_count = RES_SHADER_MAX,
 	.shaders = res_shader_metadata,
+	.shader_count = RES_SHADER_MAX,
 };
 
 bool tick(Arena *permanent, Arena *frame) {
@@ -151,7 +156,8 @@ bool tick(Arena *permanent, Arena *frame) {
 			});
 
 		state->white_texture = gfx_image_make(state->device, 1, 1, (ImageOptions){ .pixels = (uint8_t[]){ 255, 255, 255, 255 } });
-		state->nearest = gfx_sampler_make(state->device, sampler_opt(named("sampler:nearest"), FILTER_NEAREST, WRAP_MODE_CLAMP));
+		state->sampler_nearest = gfx_sampler_make(state->device, sampler_opt(named("sampler:nearest"), FILTER_NEAREST, WRAP_MODE_CLAMP));
+		state->sampler_linear = gfx_sampler_make(state->device, sampler_opt(named("sampler:linear"), FILTER_LINEAR, WRAP_MODE_CLAMP));
 
 		Arena *resource_arena = arena_push_count(permanent, Arena, 1);
 		resource_arena->base = arena_push(state->permanent, MiB(8), alignof(long double), true);
@@ -251,11 +257,11 @@ bool tick(Arena *permanent, Arena *frame) {
 	for (int32_t x = -seg_count; x <= seg_count; ++x)
 		draw3d_line(float3(x, 0.0f, -seg_count), float3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY);
 
-	float2 points[] = {
-		{ -1.0, 1.0 },
-		{ 1.0, 1.0 },
-		{ -1.0, -1.0 },
-		{ 1.0, -1.0 },
+	float3 points_healthbar[] = {
+		{ -1.0, 0.0f, 1.0 },
+		{ 1.0, 0.0f, 1.0 },
+		{ -1.0, 0.0f, -1.0 },
+		{ 1.0, 0.0f, -1.0 },
 	};
 	float2 uvs[] = {
 		{ 0.0, 0.0 },
@@ -265,31 +271,51 @@ bool tick(Arena *permanent, Arena *frame) {
 	};
 	uint32_t indices[] = { 0, 1, 2, 1, 3, 2 };
 
-	Mesh my_mesh = {
-		.stream_formats[VERTEX_SEMANTIC_POSITION] = DATA_FORMAT_FLOAT2,
+	float3x3 scale = diagonal3x3(float3(4.0f, 1.0f, 0.5f));
+	float3x3 rotation = axisangle3x3(FLOAT3_RIGHT, radians(90.0f));
+	float3x3 camera_follow_rotation = axisangle3x3(FLOAT3_UP, atan2f(camera->position.x, camera->position.z));
+	float4x4 world_from_local = affine4x4(
+		mul3x3(mul3x3(camera_follow_rotation, rotation), scale),
+		float3(0.0f, 4.0f, 0.0f) //
+	);
+	for (uint32_t index = 0; index < countof(points_healthbar); ++index)
+		points_healthbar[index] = xform3p(world_from_local, points_healthbar[index]);
 
-		.streams[VERTEX_SEMANTIC_POSITION] = points,
+	Mesh my_mesh = {
+		.streams[VERTEX_SEMANTIC_POSITION] = points_healthbar,
 		.streams[VERTEX_SEMANTIC_UV0] = uvs,
-		.total_vertex_count = countof(points),
+		.total_vertex_count = countof(points_healthbar),
 
 		.indices = indices,
 		.total_index_count = countof(indices),
 
-		/* .bounds = aabb3_from_points(points, countof(points)), */
+		.bounds = aabb3_from_points(points_healthbar, countof(points_healthbar)),
 	};
-	Mesh mesh = mesh_ellipsoid(frame, FLOAT3_UP, float3(1.0), 32, 16);
+	Mesh mesh = mesh_ellipsoid(frame, FLOAT3_UP, float3(1.0f, 4.0f, 1.0f), 32, 16);
 
 	static Mesh loaded_mesh = { 0 };
 	static bool has_loaded = false;
 	if (has_loaded == false) {
-		loaded_mesh = res_load_gltf(permanent, s("assets/models/room-large.glb"));
+		loaded_mesh = res_load_gltf(permanent, s("assets/models/barrel.glb"));
 		has_loaded = true;
 	}
 
 	// Make the common case fast, and the rare case correct.
+	(void)loaded_mesh;
+	mesh = my_mesh;
+	/* draw3d_aabb_outline(mesh.bounds, 4.0f, WHITE); */
+	RES_Texture2D *healthbar = res_texture(&state->cache, RES_IMAGE_HEALTHBAR, PIXEL_FORMAT_RGBA8_UNORM);
 
-	mesh = loaded_mesh;
-	draw3d_aabb_outline(mesh.bounds, 4.0f, TEAL);
+	static Drag2D health_slider = { 0 };
+	static float health = 0.25f;
+
+	Rectangle slider_rect = rect(24.0f, 24.0f, 288.0f, 24.0f);
+	draw2d_rect(slider_rect, ORANGE);
+
+	Rectangle thumb_rect = drag2d_slider(&health_slider, slider_rect, 0.0f, 1.0f, &health);
+	draw2d_rect(thumb_rect, RED);
+
+	RES_Image2D *image = res_image(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW);
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -309,7 +335,7 @@ bool tick(Arena *permanent, Arena *frame) {
 		gfx_cmd_draw_begin(cmd,
 			(GFX_DrawPassInfo){
 			  .debug_name = "main",
-			  .colors[0] = { .target = backbuffer, .load = LOAD_OP_CLEAR, .store = STORE_OP_STORE, .clear = WHITE },
+			  .colors[0] = { .target = backbuffer, .load = LOAD_OP_CLEAR, .store = STORE_OP_STORE, .clear = hex(0x151a24) },
 			  .depth = { .target = state->depthbuffer, .clear = 1.0f, .load = LOAD_OP_CLEAR, .store = STORE_OP_STORE },
 			});
 
@@ -331,8 +357,6 @@ bool tick(Arena *permanent, Arena *frame) {
 			.proj = clip_from_view,
 			.camera_position = make4_from3(state->camera.position, 0.0f),
 		};
-		Uniform set0[] = { uniform_data(0, &fd, sizeof(fd)) };
-		gfx_cmd_bind(device, 0, set0, countof(set0));
 
 		if (draw->line3d.instances.offset) {
 			RES_Shader *line3d = res_shader(&state->cache, RES_SHADER_LINE3D);
@@ -342,40 +366,52 @@ bool tick(Arena *permanent, Arena *frame) {
 			Uniform set1[] = {
 				storage_data(0, draw->line3d.instances.base, draw->line3d.instances.offset),
 			};
+			Uniform set0[] = { uniform_data(0, &fd, sizeof(fd)) };
+			gfx_cmd_bind(device, 0, set0, countof(set0));
 			gfx_cmd_bind(device, 0, set0, countof(set0));
 			gfx_cmd_bind(device, 1, set1, countof(set1));
 			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance3D));
 		}
 
 		{
-			gfx_cmd_shader_bind(device, res_shader(&state->cache, RES_SHADER_UNLIT)->handle, PIPELINE_UNLIT_DEFAULT);
+			RES_Shader *shader = res_shader(&state->cache, RES_SHADER_UNLIT);
+			gfx_cmd_shader_bind(device, shader->handle, PIPELINE_UNLIT_DEFAULT);
 			gfx_cmd_bind(device, 0, (Uniform[]){ uniform_data(0, &fd, sizeof(fd)) }, 1);
 
+			/* VertexLayout shader_layout = shader_vertex_layout(shader); */
 			VertexLayout shader_layout = vertex_layout(
-				{ VERTEX_SEMANTIC_POSITION, DATA_FORMAT_FLOAT4 },
-				{ VERTEX_SEMANTIC_NORMAL, DATA_FORMAT_FLOAT4 },
-                { VERTEX_SEMANTIC_UV0, DATA_FORMAT_FLOAT2 },
-                { VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT2 },
-			);
+				{ VERTEX_SEMANTIC_POSITION, DATA_FORMAT_FLOAT32x4 },
+				{ VERTEX_SEMANTIC_NORMAL, DATA_FORMAT_FLOAT32x4 },
+				{ VERTEX_SEMANTIC_UV0, DATA_FORMAT_FLOAT32x2 },
+				{ VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT32x2 }, );
+
 			uint64_t byte_size = mesh.total_vertex_count * shader_layout.stride;
 			void *vertices = arena_push_count(frame, uint8_t, byte_size);
 			bool ok = mesh_pack_into(&mesh, &shader_layout, vertices, byte_size);
 
 			if (ok) {
-				gfx_cmd_bind(device, 1, (Uniform[]){ storage_data(0, vertices, byte_size) }, 1);
+				Uniform set1[] = {
+					storage_data(0, vertices, byte_size),
+					uniform_data(1, &health, sizeof(health)),
+					sampler_with_textures(2, (GFX_Image *[]){ healthbar->handle }, 1, state->sampler_linear),
+				};
+				gfx_cmd_bind(device, 1, set1, countof(set1));
+
 				if (mesh.indices) {
 					uint64_t offset = gfx_cmd_put(cmd, index_format_to_size(mesh_index_format(&mesh)) * mesh.total_index_count, mesh.indices);
 					gfx_cmd_bind_index_buffer32(cmd, cmd->transient_buffer, offset);
 				}
 
-				for (uint32_t part_index = 0; part_index < mesh.part_count; ++part_index) {
-					MeshPart *part = &mesh.parts[part_index];
+				uint32_t part_index = 0;
+				do {
+					MeshPart part = meshpart(mesh, part_index);
 					if (mesh.indices) {
-						gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
+						gfx_cmd_draw_indexed(cmd, part.index_offset, part.index_count, part.vertex_offset);
 					} else {
-						gfx_cmd_draw(cmd, part->vertex_offset, part->index_count);
+						gfx_cmd_draw(cmd, part.vertex_offset, part.vertex_count);
 					}
-				}
+
+				} while (++part_index < mesh.part_count);
 			}
 		}
 
@@ -423,7 +459,7 @@ bool tick(Arena *permanent, Arena *frame) {
 					uniform_data(0, &fd, sizeof(fd)),
 					storage_data(1, base, batch->instance_count * sizeof(DRAW_QuadInstance3D)),
 				};
-				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->nearest) };
+				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->sampler_nearest) };
 				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
 				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 
