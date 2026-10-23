@@ -375,7 +375,7 @@ typedef struct {
 		GFX_Image *resolve;
 		LoadOp load;
 		StoreOp store;
-		Color clear;
+		rgba8 clear;
 	} colors[GFX_LIMIT_COLOR_ATTACHMENTS];
 	struct {
 		GFX_Image *target;

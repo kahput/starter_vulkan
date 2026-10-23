@@ -1,12 +1,12 @@
-#include "assets.h"
+#include "resources.h"
 
 RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
     [RES_SHADER_UNLIT] = {
       .uuid = { 10699412431024026564ULL },
       .name = comp8("Unlit"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Unlit.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Unlit.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("resources/shaders/generated/v_Unlit.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("resources/shaders/generated/f_Unlit.spv"),
       },
       .pipelines = {
           [PIPELINE_UNLIT_DEFAULT] = {
@@ -42,8 +42,8 @@ RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
       .uuid = { 9724632580759604653ULL },
       .name = comp8("Line3D"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Line3D.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Line3D.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("resources/shaders/generated/v_Line3D.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("resources/shaders/generated/f_Line3D.spv"),
       },
       .pipelines = {
           [PIPELINE_LINE3D_DEFAULT] = {
@@ -66,29 +66,29 @@ RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
       .uuid = { 7371880362503032826ULL },
       .name = comp8("BlurCompute"),
       .filepaths = {
-          [SHADER_STAGE_COMPUTE] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/c_BlurCompute.spv"),
+          [SHADER_STAGE_COMPUTE] = comp8("resources/shaders/generated/c_BlurCompute.spv"),
       },
     },
     [RES_SHADER_TESTCOMPUTE] = {
       .uuid = { 17104535008024914169ULL },
       .name = comp8("TestCompute"),
       .filepaths = {
-          [SHADER_STAGE_COMPUTE] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/c_TestCompute.spv"),
+          [SHADER_STAGE_COMPUTE] = comp8("resources/shaders/generated/c_TestCompute.spv"),
       },
     },
     [RES_SHADER_SKINNING] = {
       .uuid = { 13527874114409681247ULL },
       .name = comp8("Skinning"),
       .filepaths = {
-          [SHADER_STAGE_COMPUTE] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/c_Skinning.spv"),
+          [SHADER_STAGE_COMPUTE] = comp8("resources/shaders/generated/c_Skinning.spv"),
       },
     },
     [RES_SHADER_COMPOSITE] = {
       .uuid = { 3831973690472649551ULL },
       .name = comp8("Composite"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Composite.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Composite.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("resources/shaders/generated/v_Composite.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("resources/shaders/generated/f_Composite.spv"),
       },
       .pipelines = {
           [PIPELINE_COMPOSITE_DEFAULT] = {
@@ -111,8 +111,8 @@ RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
       .uuid = { 13230834648733991069ULL },
       .name = comp8("Quad2D"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Quad2D.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Quad2D.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("resources/shaders/generated/v_Quad2D.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("resources/shaders/generated/f_Quad2D.spv"),
       },
       .pipelines = {
           [PIPELINE_QUAD2D_DEFAULT] = {
@@ -135,8 +135,8 @@ RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {
       .uuid = { 2374438767155098957ULL },
       .name = comp8("Quad2D_Experiment"),
       .filepaths = {
-          [SHADER_STAGE_VERTEX] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/v_Quad2D_Experiment.spv"),
-          [SHADER_STAGE_FRAGMENT] = comp8("/home/kahput/projects/starter_vulkan/assets/shaders/generated/f_Quad2D_Experiment.spv"),
+          [SHADER_STAGE_VERTEX] = comp8("resources/shaders/generated/v_Quad2D_Experiment.spv"),
+          [SHADER_STAGE_FRAGMENT] = comp8("resources/shaders/generated/f_Quad2D_Experiment.spv"),
       },
       .pipelines = {
           [PIPELINE_QUAD2D_EXPERIMENT_DEFAULT] = {

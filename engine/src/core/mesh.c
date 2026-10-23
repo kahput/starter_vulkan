@@ -155,6 +155,7 @@ Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segment
 
 		uint32_t face_count = (segments - 1) * (rings - 1);
 		result.total_index_count = face_count * 6;
+		result.index_format = INDEX_FORMAT32;
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
 
 		uint32_t *index_cursor = result.indices;
@@ -173,6 +174,104 @@ Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segment
 
 			index_cursor += 6;
 		}
+	}
+
+	return result;
+}
+
+Mesh mesh_capsule(Arena *arena, float3 origin, float height, float radius, uint32_t segments, uint32_t rings) {
+	Mesh result = { 0 };
+
+	height = MAX(radius * 2.0f, height);
+	if (eqf(height, radius * 2.0f)) // draw a sphere instead if there is no middle section
+		return mesh_sphere(arena, origin, radius, segments, rings);
+
+	bool ok = arena;
+	if (ok) {
+		rings += 2; // end caps
+		segments = MAX(segments, 4) + 1; // duplicate seam segment
+
+		uint32_t section_vertex_count = rings * segments;
+		uint32_t vertex_count = section_vertex_count * 3;
+
+		AABB3 bounds = aabb3_empty();
+		float3 *positions = arena_push_count(arena, float3, vertex_count);
+		float3 *normals = arena_push_count(arena, float3, vertex_count);
+		float2 *uvs = arena_push_count(arena, float2, vertex_count);
+
+		float half_height = (height - radius * 2.0f) * 0.5f;
+		for (uint32_t ring = 0; ring < rings; ++ring) {
+			float ty = (float)ring / (rings - 1); // 0.0f -> 1.0f
+			float ay = ty * (PI * 0.5f); // 0.0f -> π/2
+			float cy = cosf(ay), sy = sinf(ay);
+
+			for (uint32_t segment = 0; segment < segments; ++segment) {
+				float tx = (float)segment / (segments - 1); // 0.0f -> 1.0f
+				float ax = tx * TAU; // 0.0f -> 2π
+
+				float3 disk = { sinf(ax), 0.0f, cosf(ax) };
+				float3 sphere = { sy * disk.x, cy, sy * disk.z };
+
+				float3 side = scale3(disk, radius);
+				side.y += (ty * 2.0f - 1.0f) * half_height;
+
+				float3 cap = scale3(sphere, radius);
+				cap.y += half_height;
+
+				aabb3_expand(&bounds, side);
+				aabb3_expand(&bounds, cap);
+				aabb3_expand(&bounds, float3(cap.x, -cap.y, cap.z));
+
+				uint32_t i = segment + ring * segments, j = i + section_vertex_count, k = j + section_vertex_count;
+				positions[i] = add3(origin, cap), normals[i] = sphere, uvs[i] = float2(tx, (cap.y + half_height) / height);
+				positions[j] = add3(origin, side), normals[j] = disk, uvs[j] = float2(tx, (side.y + half_height) / height);
+
+				cap.y *= -1.0f, sphere.y *= -1.0f;
+				positions[k] = add3(origin, cap), normals[k] = sphere, uvs[k] = float2(tx, (cap.y + half_height) / half_height);
+			}
+		}
+
+		uint32_t face_count = (segments - 1) * (rings - 1);
+		uint32_t index_count = face_count * 6 * 3;
+		uint32_t *indices = arena_push_count(arena, uint32_t, index_count);
+
+		uint32_t *index_cursor = indices;
+		for (uint32_t section = 0; section < 3; ++section) {
+			if (section == 1) {
+				float x = 0.0f;
+				(void)x;
+			}
+
+			for (uint32_t face = 0; face < face_count; ++face) {
+				uint32_t ring = face / (segments - 1);
+				uint32_t segment = face % (segments - 1);
+				uint32_t index = segment + ring * segments;
+
+				index += section_vertex_count * section;
+
+				index_cursor[0] = index;
+				index_cursor[1] = index + segments;
+				index_cursor[2] = index + segments + 1;
+
+				index_cursor[3] = index;
+				index_cursor[4] = index + segments + 1;
+				index_cursor[5] = index + 1;
+
+				index_cursor += 6;
+			}
+		}
+		result = (Mesh){
+			.streams[VERTEX_SEMANTIC_POSITION] = positions,
+			.streams[VERTEX_SEMANTIC_NORMAL] = normals,
+			.streams[VERTEX_SEMANTIC_UV0] = uvs,
+			.total_vertex_count = vertex_count,
+
+			.indices = indices,
+			.index_format = INDEX_FORMAT32,
+			.total_index_count = index_count,
+
+			.bounds = bounds,
+		};
 	}
 
 	return result;

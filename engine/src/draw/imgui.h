@@ -52,7 +52,7 @@ typedef struct {
 	IMGUI_SizingMode sizing[AXIS_MAX2D];
 	float child_gap, padding[AXIS_MAX2D][2];
 
-	Color bg, fg, border;
+	rgba8 bg, fg, border;
 	float4 border_radius;
 	float border_width;
 
@@ -86,7 +86,7 @@ typedef struct {
 
 	IMGUI_Align align[2];
 
-	Color bg, fg, border;
+	rgba8 bg, fg, border;
 	float4 border_radius;
 	float border_width;
 

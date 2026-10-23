@@ -12,21 +12,6 @@ int32_t randi_range(int32_t min, int32_t max) {
 	return min + (rand() % (max - min + 1));
 }
 
-/* Right Hand, Rodrigues' rotation formula:
-	v = v*cos(t) + (kxv)sin(t) + k*(k.v)(1 - cos(t))
-*/
-float3 rotate3(float3 v, float angle, float3 axis) {
-	float c = cosf(angle);
-	float s = sinf(angle);
-	float3 k = norm3(axis);
-
-	return add3(
-		scale3(v, c),
-		add3(
-			scale3(cross3(k, v), s),
-			scale3(k, dot3(k, v) * (1.0f - c))));
-}
-
 float3 quat4_to_euler(quat4 q) {
 	float3 result = { 0 };
 
@@ -208,19 +193,6 @@ float4x4 translation4x4(float3 v) {
 	return result;
 }
 
-float4x4 basis4x4(float3 r, float3 u, float3 f) {
-	// clang-format off
-	float4x4 result = {{
-	  [0] = r.x,  [4] = u.x,  [8] =  f.x,  [12] = 0.0f,
-	  [1] = r.y,  [5] = u.y,  [9] =  f.y,  [13] = 0.0f,
-	  [2] = r.z,  [6] = u.z,  [10] = f.z,  [14] = 0.0f,
-	  [3] = 0.0f, [7] = 0.0f, [11] = 0.0f, [15] = 1.0f
-	}};
-	// clang-format on
-
-	return result;
-}
-
 float4x4 rotation4x4(quat4 q) {
 	float x = q.x, y = q.y, z = q.z, w = q.w;
 	float xx = x * x, yy = y * y, zz = z * z;
@@ -235,45 +207,6 @@ float4x4 rotation4x4(quat4 q) {
 	  [3]  = 0.0f,                [7]  = 0.0f,                  [11] = 0.0f,                  [15] = 1.0f
 	}};
 	// clang-format on
-	return result;
-}
-
-float4x4 scaling4x4(float3 scale) {
-	// clang-format off
-	float4x4 result = {{
-	  [0] = scale.x, [4] = 0.0f,    [8 ] = 0.0f,    [12] = 0.0f,
-	  [1] = 0.0f,    [5] = scale.y, [9 ] = 0.0f,    [13] = 0.0f,
-	  [2] = 0.0f,    [6] = 0.0f,    [10] = scale.z, [14] = 0.0f,
-	  [3] = 0.0f,    [7] = 0.0f,    [11] = 0.0f,    [15] = 1.0f,
-	}};
-	// clang-format on
-
-	return result;
-}
-
-float4x4 transpose4x4(float4x4 m) {
-	float4x4 result = { 0 };
-
-	result.elements[0] = m.elements[0];
-	result.elements[1] = m.elements[4];
-	result.elements[2] = m.elements[8];
-	result.elements[3] = m.elements[12];
-
-	result.elements[4] = m.elements[1];
-	result.elements[5] = m.elements[5];
-	result.elements[6] = m.elements[9];
-	result.elements[7] = m.elements[13];
-
-	result.elements[8] = m.elements[2];
-	result.elements[9] = m.elements[6];
-	result.elements[10] = m.elements[10];
-	result.elements[11] = m.elements[14];
-
-	result.elements[12] = m.elements[3];
-	result.elements[13] = m.elements[7];
-	result.elements[14] = m.elements[11];
-	result.elements[15] = m.elements[15];
-
 	return result;
 }
 
@@ -321,52 +254,4 @@ float4x4 orthographic(float left, float right, float bottom, float top, float ne
 	result.elements[15] = 1.0f;
 
 	return result;
-}
-
-float4x4 lookat(float3 eye, float3 center, float3 up) {
-	float4x4 result = identity4x4();
-
-	float3 f = norm3(sub3(center, eye));
-	float3 r = norm3(cross3(f, up));
-	float3 u = cross3(r, f);
-
-	result.elements[0] = r.x;
-	result.elements[4] = r.y;
-	result.elements[8] = r.z;
-	result.elements[12] = -dot3(r, eye);
-
-	result.elements[1] = u.x;
-	result.elements[5] = u.y;
-	result.elements[9] = u.z;
-	result.elements[13] = -dot3(u, eye);
-
-	result.elements[2] = -f.x;
-	result.elements[6] = -f.y;
-	result.elements[10] = -f.z;
-	result.elements[14] = dot3(f, eye);
-
-	result.elements[3] = 0.0f;
-	result.elements[7] = 0.0f;
-	result.elements[11] = 0.0f;
-	result.elements[15] = 1.0f;
-
-	return result;
-}
-
-void float4x4_print(float4x4 m) {
-	LOG_DEBUG(
-		"float4x4 {\n"
-		" %.2f, %.2f, %.2f, %.2f,\n" // Row 0
-		" %.2f, %.2f, %.2f, %.2f,\n" // Row 1
-		" %.2f, %.2f, %.2f, %.2f,\n" // Row 2
-		" %.2f, %.2f, %.2f, %.2f\n" // Row 3
-		"}",
-		// Row 0: indices 0, 4, 8, 12
-		m.elements[0], m.elements[4], m.elements[8], m.elements[12],
-		// Row 1: indices 1, 5, 9, 13
-		m.elements[1], m.elements[5], m.elements[9], m.elements[13],
-		// Row 2: indices 2, 6, 10, 14
-		m.elements[2], m.elements[6], m.elements[10], m.elements[14],
-		// Row 3: indices 3, 7, 11, 15
-		m.elements[3], m.elements[7], m.elements[11], m.elements[15]);
 }

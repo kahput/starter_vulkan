@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "core/image.h"
 #include "core/mesh.h"
 #include "gfx.h"
 #include "core/strings.h"
@@ -66,13 +67,6 @@ typedef struct {
 } RES_ShaderMeta;
 
 typedef struct {
-	uint8_t *pixels;
-	uint32_t width, height, channels;
-} RES_Image2D;
-INLINE Rectangle image_rect(RES_Image2D image) { return (Rectangle){ 0, 0, image.width, image.height }; }
-INLINE float2 image_size(RES_Image2D image) { return (float2){ image.width, image.height }; }
-
-typedef struct {
 	GFX_Image *handle;
 	uint32_t width, height;
 } RES_Texture2D;
@@ -89,7 +83,7 @@ typedef struct {
 } RES_Glyph;
 
 typedef struct {
-	RES_Image2D img_atlas;
+	Image img_atlas;
 	RES_Texture2D tex_atlas;
 
 	RES_Glyph *glyphs;
@@ -182,7 +176,7 @@ typedef struct {
 	RES_InstancePool instances[RES_INSTANCE_TYPE_MAX];
 
 	struct {
-		RES_Image2D image;
+		Image image;
 		RES_Texture2D texture;
 		RES_Font font;
 		RES_Shader shader;
@@ -190,7 +184,7 @@ typedef struct {
 } RES_Cache;
 ENGINE_API RES_Cache res_cache_make(Arena *arena, GFX_Device *device, const RES_Catalog *catalog);
 
-ENGINE_API RES_Image2D *res_image(RES_Cache *cache, RES_AssetID id);
+ENGINE_API Image *res_image(RES_Cache *cache, RES_AssetID id);
 ENGINE_API RES_Texture2D *res_texture(RES_Cache *cache, RES_AssetID id, PixelFormat fmt);
 ENGINE_API RES_Font *res_font_ex(RES_Cache *cache, RES_AssetID family, RES_FontWeight weight, RES_FontStyle style, uint32_t font_size);
 INLINE RES_Font *res_font(RES_Cache *cache, RES_AssetID family, uint32_t font_size) { return res_font_ex(cache, family, RES_FONT_WEIGHT_REGULAR, RES_FONT_STYLE_NORMAL, font_size); }

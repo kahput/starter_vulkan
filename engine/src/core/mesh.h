@@ -11,14 +11,41 @@
 typedef enum {
 	DATA_FORMAT_NONE = 0,
 
+	DATA_FORMAT_SINT8x1,
+	DATA_FORMAT_SINT8x2,
+	DATA_FORMAT_SINT8x3,
+	DATA_FORMAT_SINT8x4,
+
+	DATA_FORMAT_UINT8x1,
+	DATA_FORMAT_UINT8x2,
+	DATA_FORMAT_UINT8x3,
+	DATA_FORMAT_UINT8x4,
+
+	DATA_FORMAT_SINT16x1,
+	DATA_FORMAT_SINT16x2,
+	DATA_FORMAT_SINT16x3,
+	DATA_FORMAT_SINT16x4,
+
+	DATA_FORMAT_UINT16x1,
+	DATA_FORMAT_UINT16x2,
+	DATA_FORMAT_UINT16x3,
+	DATA_FORMAT_UINT16x4,
+
 	DATA_FORMAT_FLOAT32x1,
 	DATA_FORMAT_FLOAT32x2,
 	DATA_FORMAT_FLOAT32x3,
 	DATA_FORMAT_FLOAT32x4,
 
+	DATA_FORMAT_SINT32x1,
+	DATA_FORMAT_SINT32x2,
+	DATA_FORMAT_SINT32x3,
 	DATA_FORMAT_SINT32x4,
 
-	DATA_FORMAT_UINT8x4,
+	DATA_FORMAT_UINT32x1,
+	DATA_FORMAT_UINT32x2,
+	DATA_FORMAT_UINT32x3,
+	DATA_FORMAT_UINT32x4,
+
 	// DATA_FORMAT_UNORM8x4
 
 	DATA_FORMAT_MAX,
@@ -150,6 +177,8 @@ INLINE MeshPart meshpart(Mesh m, uint32_t part_index) {
 	};
 }
 
+INLINE uint32_t mesh_part_count(Mesh m) { return m.part_count ? m.part_count : (m.total_vertex_count ? 1 : 0); }
+
 extern DataFormat vertex_semantic_default_format[VERTEX_SEMANTIC_MAX];
 INLINE DataFormat mesh_stream_format(const Mesh *mesh, VertexSemantic semantic) {
 	DataFormat override_fmt = mesh->stream_formats[semantic];
@@ -164,3 +193,8 @@ INLINE IndexFormat mesh_index_format(const Mesh *mesh) {
 bool mesh_pack_into(const Mesh *mesh, const VertexLayout *layout, void *output, uint64_t output_size);
 
 Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segments, uint32_t rings);
+INLINE Mesh mesh_sphere(Arena *arena, float3 origin, float radius, uint32_t segments, uint32_t rings) {
+	return mesh_ellipsoid(arena, origin, float3(radius), segments, rings);
+}
+
+Mesh mesh_capsule(Arena *arena, float3 origin, float height, float radius, uint32_t segments, uint32_t rings);

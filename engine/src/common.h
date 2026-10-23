@@ -51,7 +51,7 @@
 #define countof(array) (sizeof(array) / sizeof((array)[0]))
 #define indexof(array, ptr) (uint32_t)(ptr - array)
 #define containerof(ptr, T, member) ((T *)((uint8_t *)ptr - offsetof(T, member)))
-#define arr(T, ...) (T[]){ __VA_ARGS__ }, sizeof(T[]){ __VA_ARGS__ } / sizeof(T)
+#define arr(T, ...) (T[]){ __VA_ARGS__ }, sizeof (T[]){ __VA_ARGS__ } / sizeof(T)
 #define arr_n(T, n) (T[(n)]){ (T){ 0 } }, (n)
 #define swapptr(a, b)      \
 	do {                   \
@@ -167,13 +167,12 @@ INLINE float2 xy3(float3 v) { return make2(v.x, v.y); }
 #define FLOAT4_SELECT(_1, _2, _3, _4, FN, ...) FN
 #define float4(...) FLOAT4_SELECT(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
 
-#define FLOAT3_RIGHT ((float3){1.0, 0.0f, 0.0f})
-#define FLOAT3_LEFT ((float3){-1.0, 0.0f, 0.0f})
-#define FLOAT3_UP ((float3){0.0, 1.0f, 0.0f})
-#define FLOAT3_DOWN ((float3){0.0, -1.0f, 0.0f})
-#define FLOAT3_FORWARD ((float3){0.0, 0.0f, -1.0f})
-#define FLOAT3_BACKWARD ((float3){0.0, 0.0f, 1.0f})
-
+#define FLOAT3_RIGHT ((float3){1.0f, 0.0f, 0.0f})
+#define FLOAT3_LEFT ((float3){-1.0f, 0.0f, 0.0f})
+#define FLOAT3_UP ((float3){0.0f, 1.0f, 0.0f})
+#define FLOAT3_DOWN ((float3){0.0f, -1.0f, 0.0f})
+#define FLOAT3_FORWARD ((float3){0.0f, 0.0f, -1.0f})
+#define FLOAT3_BACKWARD ((float3){0.0f, 0.0f, 1.0f})
 
 typedef double float64;
 typedef struct { float64 x, y; } float64x2;
@@ -216,14 +215,21 @@ typedef struct { void *elements; uint32_t element_count; uint16_t element_size, 
 typedef struct {
 	float x, y, width, height;
 } Rectangle;
-INLINE Rectangle rect(float x, float y, float w, float h ) { return (Rectangle){ x, y, w, h }; } 
+INLINE Rectangle rect_square(float s){  return (Rectangle){ 0.0f, 0.0f, s, s }; }
+INLINE Rectangle rect_wh(float w, float h) { return (Rectangle){ 0.0f, 0.0f, w, h }; }
+INLINE Rectangle rect_pwh(float2 p, float w, float h) { return (Rectangle){ p.x, p.y, w, h }; }
+INLINE Rectangle rect_xywh(float x, float y, float w, float h ){ return (Rectangle){ x, y, w, h }; }
+
 INLINE Rectangle rect2(float2 xy, float2 wh) { return (Rectangle){ xy.x, xy.y, wh.x, wh.y }; }
 
-#define rgba(r, g, b, a) (Color){ r, g, b, a }
-#define rgb(r, g, b) (Color){ r, g, b, 255 }
-#define hex(u) (Color){ ((u) >> 16) & 0xFF, ((u) >> 8) & 0xFF, ((u) >> 0) & 0xFF, 0xFF } 
+#define RECT_SELECT(_1, _2, _3, _4, FN, ...) FN
+#define rect(...) RECT_SELECT(__VA_ARGS__, rect_xywh, rect_pwh, rect_wh, rect_square, _)(__VA_ARGS__)
 
-typedef struct { uint8_t r, g, b, a; } Color;
+#define rgba(r, g, b, a) (rgba8){ r, g, b, a }
+#define rgb(r, g, b) (rgba8){ r, g, b, 255 }
+#define hex(u) (rgba8){ ((u) >> 16) & 0xFF, ((u) >> 8) & 0xFF, ((u) >> 0) & 0xFF, 0xFF } 
+
+typedef struct { uint8_t r, g, b, a; } rgba8;
 
 // clang-format on
 #define TRANSPARENT rgba(0, 0, 0, 0)
@@ -243,22 +249,22 @@ typedef struct { uint8_t r, g, b, a; } Color;
 #define DARK_GRAY rgb(64, 64, 64)
 #define BLACK rgb(0, 0, 0)
 
-INLINE uint32_t color_pack_uint32(Color c) {
+INLINE uint32_t rgba8_as_uint32(rgba8 c) {
 	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);
 }
 
-INLINE Color color_from_float(float r, float g, float b, float a) {
-	return (Color){ CLAMP(r, 0.0f, 1.0f) * 255.f, CLAMP(g, 0.0f, 1.0f) * 255.f, CLAMP(b, 0.0f, 1.0f) * 255.f, CLAMP(a, 0.0f, 1.0f) * 255.f };
+INLINE rgba8 color_from_float(float r, float g, float b, float a) {
+	return (rgba8){ CLAMP(r, 0.0f, 1.0f) * 255.f, CLAMP(g, 0.0f, 1.0f) * 255.f, CLAMP(b, 0.0f, 1.0f) * 255.f, CLAMP(a, 0.0f, 1.0f) * 255.f };
 }
 
-INLINE Color color_from_float4(float4 rgba) {
-	return (Color){ CLAMP(rgba.x, 0.0f, 1.0f) * 255.f, CLAMP(rgba.y, 0.0f, 1.0f) * 255.f, CLAMP(rgba.z, 0.0f, 1.0f) * 255.f, CLAMP(rgba.w, 0.0f, 1.0f) * 255.f };
+INLINE rgba8 color_from_float4(float4 rgba) {
+	return (rgba8){ CLAMP(rgba.x, 0.0f, 1.0f) * 255.f, CLAMP(rgba.y, 0.0f, 1.0f) * 255.f, CLAMP(rgba.z, 0.0f, 1.0f) * 255.f, CLAMP(rgba.w, 0.0f, 1.0f) * 255.f };
 }
-INLINE float4 color_to_float4(Color color) {
+INLINE float4 color_to_float4(rgba8 color) {
 	return (float4){ color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f };
 }
-INLINE Color color_lerp(Color start, Color end, float t) {
-	return (Color){ start.r + (end.r - start.r) * t, start.g + (end.g - start.g) * t, start.b + (end.b - start.b) * t, start.a + (end.a - start.a) * t };
+INLINE rgba8 color_lerp(rgba8 start, rgba8 end, float t) {
+	return (rgba8){ start.r + (end.r - start.r) * t, start.g + (end.g - start.g) * t, start.b + (end.b - start.b) * t, start.a + (end.a - start.a) * t };
 }
 
 typedef enum {

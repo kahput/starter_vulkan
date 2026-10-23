@@ -8,25 +8,21 @@
 #include "lib/frame.glsl"
 struct Vertex {
     vec3 position;
-    vec3 normals;
+    vec3 normal;
     vec2 uv0, uv1;
 };
 layout(set = 1, binding = 0) readonly buffer VertexBlock {
     Vertex vertex_buffer[];
 };
 
-layout(set = 1, binding = 1) uniform MaterialBlock {
-    float health;
+layout(push_constant) uniform ConstantBlock {
+    mat4 world_from_local;
 };
-layout(set = 1, binding = 2) uniform sampler2D u_healthbar;
 
 INOUT layout(location = 0) Varying {
+    vec3 normal;
     vec2 uv;
 };
-
-float inv_lerp(float a, float b, float v) {
-    return (v - a) / (b - a);
-}
 
 // --- shared_end ---
 
@@ -35,8 +31,9 @@ float inv_lerp(float a, float b, float v) {
 void main(void) {
     Vertex vertex = vertex_buffer[gl_VertexIndex];
 
-    gl_Position = frame.clip_from_view * frame.view_from_world * vec4(vertex.position, 1.0);
+    gl_Position = frame.clip_from_view * frame.view_from_world * world_from_local * vec4(vertex.position, 1.0);
     uv = vertex.uv0;
+    normal = vertex.normal;
 }
 
 // --- source_end ---

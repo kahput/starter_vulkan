@@ -2,35 +2,27 @@
 #include "res.h"
 
 RES_ImageMeta res_image_metadata[RES_IMAGE_MAX] = {
-	[RES_IMAGE_BASE_GRASS] = {
-	  .name = comp8("base_grass"),
-	  .filepath = comp8("assets/images/base_grass.png"),
-	},
-	[RES_IMAGE_BLENDING_TRANSPARENT_WINDOW] = {
-	  .name = comp8("blending_transparent_window"),
-	  .filepath = comp8("assets/images/blending_transparent_window.png"),
-	},
 	[RES_IMAGE_GRASS] = {
 	  .name = comp8("grass"),
-	  .filepath = comp8("assets/images/grass.png"),
+	  .filepath = comp8("resources/images/grass.png"),
 	},
 	[RES_IMAGE_HEART] = {
 	  .name = comp8("heart"),
-	  .filepath = comp8("assets/images/heart.png"),
+	  .filepath = comp8("resources/images/heart.png"),
 	},
 	[RES_IMAGE_HEIGHTMAP] = {
 	  .name = comp8("heightmap"),
-	  .filepath = comp8("assets/images/heightmap.png"),
+	  .filepath = comp8("resources/images/heightmap.png"),
 	},
 	[RES_IMAGE_HEALTHBAR] = {
 	  .name = comp8("healthbar"),
-	  .filepath = comp8("assets/images/healthbar.png"),
+	  .filepath = comp8("resources/images/healthbar.png"),
 	},
 };
 
 RES_FontFaceMeta res_pixeloid_sans_faces[] = {
 	[0] = {
-	  .filepath = comp8("assets/fonts/PixeloidSans.ttf"),
+	  .filepath = comp8("resources/fonts/PixeloidSans.ttf"),
 	  .style = RES_FONT_STYLE_NORMAL,
 	  .min_weight = RES_FONT_WEIGHT_REGULAR,
 	  .max_weight = RES_FONT_WEIGHT_REGULAR,

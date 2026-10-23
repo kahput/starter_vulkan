@@ -40,8 +40,6 @@ INLINE string8 pathstem8(string8 path) {
 	string8 ext = pathext8(path);
 	return str8_range(pathfile8(path).bytes, ext.bytes ? ext.bytes - 1 : 0);
 }
-INLINE string8 pathrel8(string8 path, string8 base) { return skip8(path, base.length ? base.length + 1 : 0); }
-
 string8 pathjoin8(Arena *arena, string8 head, string8 tail);
 string8 pathdir8(string8 path);
 

@@ -233,7 +233,7 @@ bool os_directory_make(string8 path) {
 
 		int32_t result = mkdir((char *)full_path.bytes, 0755);
 		if (result == -1) {
-			LOG_WARN("os_directory_make(%.*s) - %s", arg8(path), strerror(errno));
+			LOG_WARN("os_directory_make(%.*s) - %s", arg8(full_path), strerror(errno));
 		}
 		arena_scratch_end(scratch);
 

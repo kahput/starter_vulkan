@@ -847,7 +847,7 @@ int main(int32_t argc, char **argv) {
 	Arena arena[] = { arena_make(MiB(32)) };
 
 	string8 ref_directory = argc > 1 ? str8z(argv[1]) : s("./");
-	string8 shader_directory = pathjoin8(arena, ref_directory, s("assets/shaders/"));
+	string8 shader_directory = pathjoin8(arena, ref_directory, s("resources/shaders/"));
 
 	uint32_t file_count;
 	string8 *files = os_directory_files(arena, shader_directory, &file_count);
@@ -889,13 +889,13 @@ int main(int32_t argc, char **argv) {
 	if (os_directory_exists(code_output_directory) == false)
 		os_directory_make(code_output_directory);
 
-	string8 header_file = s("assets.h"), source_file = s("assets.c");
+	string8 header_file = s("resources.h"), source_file = s("resources.c");
 	FILE *header = fopen((char *)pathjoin8(arena, code_output_directory, header_file).bytes, "w");
 	FILE *source = fopen((char *)pathjoin8(arena, code_output_directory, source_file).bytes, "w");
 
 	if (header == 0 || source == 0) return -1;
 
-	string8 output_directory = pathjoin8(arena, ref_directory, s("assets/shaders/generated"));
+	string8 output_directory = pathjoin8(arena, ref_directory, s("resources/shaders/generated"));
 	if (os_directory_exists(output_directory) == false)
 		if (os_directory_make(output_directory) == false) return -1;
 
@@ -951,7 +951,7 @@ int main(int32_t argc, char **argv) {
 					"#define INOUT in\n"),
 				[SHADER_STAGE_COMPUTE] = s("#pragma shader_stage(compute)"),
 			};
-			string8 include_dir = pathjoin8(arena, ref_directory, s("assets/shaders/"));
+			string8 include_dir = pathjoin8(arena, ref_directory, s("resources/shaders/"));
 			string8 cleaned_shared = dedent8(arena, blocks[AST_BLOCK_KIND_SHARED]);
 
 			for (AST_BlockKind block_index = 0; block_index < AST_BLOCK_KIND_MAX; ++block_index) {
@@ -1010,10 +1010,11 @@ int main(int32_t argc, char **argv) {
 			string8 name = shader->identifier.lexeme;
 			string8 upper = upper8(arena, name);
 
+            string8 relative_path = skip8(output_directory, ref_directory.length ? ref_directory.length + 1 : 0);
 			string8 filepaths[SHADER_STAGE_MAX] = {
-				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.spv", arg8(output_directory), arg8(name)),
-				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.spv", arg8(output_directory), arg8(name)),
-				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.spv", arg8(relative_path), arg8(name)),
+				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.spv", arg8(relative_path), arg8(name)),
+				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.spv", arg8(relative_path), arg8(name)),
 			};
 
 			bool is_compute = false;

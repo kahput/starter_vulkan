@@ -84,6 +84,8 @@ INLINE float2 sub2(float2 a, float2 b) { return (float2){ a.x - b.x, a.y - b.y }
 INLINE float2 mul2(float2 a, float2 b) { return (float2){ a.x * b.x, a.y * b.y }; }
 INLINE float2 scale2(float2 v, float s) { return (float2){ v.x * s, v.y * s }; }
 INLINE float dot2(float2 a, float2 b) { return a.x * b.x + a.y * b.y; }
+INLINE float2 madd2(float2 a, float2 b, float2 c) { return (float2){ fmaf(b.x, c.x, a.x), fmaf(b.y, c.x, a.y) }; }
+INLINE float2 sadd2(float2 a, float2 b, float c) { return (float2){ fmaf(b.x, c, a.x), fmaf(b.y, c, a.y) }; }
 INLINE float2 inverse2(float2 v) { return (float2){ 1.0f / v.x, 1.0f / v.y }; }
 
 INLINE float lensq2(float2 v) { return dot2(v, v); }
@@ -101,15 +103,15 @@ INLINE int2 ifloor2(float2 v) { return (int2){ (int32_t)v.x, (int32_t)v.y }; }
 INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
 
 INLINE float2 norm2(float2 v) {
-	float length = len2(v);
-	if (length < EPSILON)
+	float lengthsq = lensq2(v);
+	if (lengthsq < EPSILON * EPSILON)
 		return (float2){ 0 };
 
-	return scale2(v, 1.0f / length);
+	return scale2(v, 1.0f / sqrtf(lengthsq));
 }
 INLINE float2 proj2(float2 v, float2 axis) { return scale2(axis, dot2(axis, v)); }
 INLINE float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t) }; }
-INLINE float2 mid2(float2 a, float2 b) { return scale2(add2(a, b), 0.5f); }
+INLINE float2 center2(float2 a, float2 b) { return scale2(add2(a, b), 0.5f); }
 INLINE float2 rotate2(float2 v, float rad) {
 	float c = cosf(rad);
 	float s = sinf(rad);
@@ -133,7 +135,8 @@ INLINE float3 sub3(float3 a, float3 b) { return (float3){ a.x - b.x, a.y - b.y, 
 INLINE float3 mul3(float3 a, float3 b) { return (float3){ a.x * b.x, a.y * b.y, a.z * b.z }; }
 INLINE float3 scale3(float3 v, float s) { return (float3){ v.x * s, v.y * s, v.z * s }; }
 INLINE float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-INLINE float3 madd3(float3 a, float3 b, float s) { return (float3){ fmaf(b.x, s, a.x), fmaf(b.y, s, a.y), fmaf(b.z, s, a.z) }; }
+INLINE float3 madd3(float3 a, float3 b, float3 c) { return (float3){ fmaf(b.x, c.x, a.x), fmaf(b.y, c.x, a.y), fmaf(b.z, c.x, a.z) }; }
+INLINE float3 sadd3(float3 a, float3 b, float c) { return (float3){ fmaf(b.x, c, a.x), fmaf(b.y, c, a.y), fmaf(b.z, c, a.z) }; }
 
 INLINE float3 cross3(float3 a, float3 b) { return (float3){ a.y * b.z - b.y * a.z, a.z * b.x - b.z * a.x, a.x * b.y - b.x * a.y }; }
 INLINE float lensq3(float3 v) { return dot3(v, v); }
@@ -165,7 +168,7 @@ INLINE float3 approach3(float3 start, float3 end, float step) {
 
 	return add3(start, scale3(vd, step / len));
 }
-INLINE float3 lerp3(float3 start, float3 end, float t) { return madd3(start, sub3(end, start), t); }
+INLINE float3 lerp3(float3 start, float3 end, float t) { return madd3(start, sub3(end, start), float3(t)); }
 INLINE float3 orthobasis3(float3 normal, float3 *right, float3 *up) {
 	normal = norm3(normal);
 	*right = norm3(cross3(normal, fabsf(dot3(FLOAT3_UP, normal)) >= 0.99f ? FLOAT3_BACKWARD : FLOAT3_UP));
@@ -174,7 +177,6 @@ INLINE float3 orthobasis3(float3 normal, float3 *right, float3 *up) {
 }
 
 INLINE float angle3(float3 a, float3 b) { return acosf(clampf(dot3(norm3(a), norm3(b)), -1.0f, 1.0f)); }
-float3 rotate3(float3 v, float angle, float3 axis);
 
 // --- float4 & quaternions ---
 INLINE void store4(float dst[4], float4 src) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z, dst[3] = src.w; }
@@ -291,12 +293,12 @@ INLINE float2 xform2v(float3x3 m, float2 d) { return xy3(mul3x3v(m, make3_from2(
 INLINE float3x3 diagonal3x3(float3 v) {
 	return (float3x3){ .elements[0] = v.x, .elements[4] = v.y, .elements[8] = v.z };
 }
+INLINE float3x3 identity3x3(void) { return diagonal3x3(splat3(1.0f)); }
 
 // --- float4x4 ---
 bool eq4x4(float4x4 lhs, float4x4 rhs);
 float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
 float4 mul4x4v(float4x4 m, float4 v);
-float4x4 transpose4x4(float4x4 m);
 
 INLINE float3 xform3p(float4x4 m, float3 p) { return xyz4(mul4x4v(m, make4_from3(p, 1.0f))); }
 INLINE float3 xform3v(float4x4 m, float3 d) { return xyz4(mul4x4v(m, make4_from3(d, 0.0f))); }
@@ -308,7 +310,7 @@ INLINE float4x4 identity4x4(void) { return diagonal4x4(splat4(1.0f)); }
 
 float4x4 translation4x4(float3 translation);
 float4x4 rotation4x4(quat4 q);
-float4x4 scaling4x4(float3 scale);
+INLINE float4x4 scaling4x4(float3 scale) { return diagonal4x4(float4(scale, 1.0f)); }
 
 // clang-format off
 INLINE float4x4 affine4x4(float3x3 m, float3 translation) {
@@ -326,16 +328,52 @@ INLINE float4x4 trs4x4_quat(float3 translation, quat4 rotation, float3 scale) {
 		mul4x4(rotation4x4(rotation), scaling4x4(scale)) //
 	);
 }
+INLINE float4x4 columns4x4(float4 a, float4 b, float4 c, float4 d) {
+	return (float4x4){{
+	  [0] = a.x,  [4] = b.x,  [8 ] = c.x, [12] = d.x,
+	  [1] = a.y,  [5] = b.y,  [9 ] = c.y, [13] = d.y,
+	  [2] = a.z,  [6] = b.z,  [10] = c.z, [14] = d.z,
+      [3] = a.w,  [7] = b.w,  [11] = c.w, [15] = d.w,
+	}};
+}
+
+INLINE float4x4 rows4x4(float4 a, float4 b, float4 c, float4 d) {
+	return (float4x4){{
+	  [0] = a.x,  [4] = a.y,  [8 ] = a.z, [12] = a.w,
+	  [1] = b.x,  [5] = b.y,  [9 ] = b.z, [13] = b.w,
+	  [2] = c.x,  [6] = c.y,  [10] = c.z, [14] = c.w,
+      [3] = d.x,  [7] = d.y,  [11] = d.z, [15] = d.w,
+	}};
+}
+
+INLINE float4x4 transpose4x4(float4x4 m) {
+    return (float4x4){{
+        [0] = m.elements[0 ], [4] = m.elements[1],  [8 ] = m.elements[2 ], [12] = m.elements[3 ],
+        [1] = m.elements[4 ], [5] = m.elements[5],  [9 ] = m.elements[6 ], [13] = m.elements[7 ],
+        [2] = m.elements[8 ], [6] = m.elements[9],  [10] = m.elements[10], [14] = m.elements[11],
+        [3] = m.elements[12], [7] = m.elements[13], [11] = m.elements[14], [15] = m.elements[15],
+    }};
+}
+
 // clang-format on
 float4x4 trs4x4_euler(float3 position, float3 rotation, float3 scale);
 
 float4x4 perspective(float radians_fovy, float aspect, float near_z, float far_z);
 float4x4 orthographic(float left, float right, float top, float bottom, float near, float far);
 
-float4x4 lookat(float3 eye, float3 center, float3 up);
+INLINE float4x4 lookat(float3 eye, float3 center, float3 up) {
+	float3 camera_forward = norm3(sub3(center, eye));
+	float3 camera_right = norm3(cross3(camera_forward, up));
+	float3 camera_up = cross3(camera_right, camera_forward);
+
+	return affine4x4(
+		rows3x3(camera_right, camera_up, neg3(camera_forward)),
+		float3(-dot3(camera_right, eye), -dot3(camera_up, eye), dot3(camera_forward, eye)) //
+	);
+}
 
 INLINE float4 rgba_from_hsv(float h, float s, float v) {
-	h = CLAMP(h, 0.0, 360.0) / 360.0, s = CLAMP(s, 0.0, 1.0), v = CLAMP(v, 0.0, 1.0);
+	h = fmodf(maxf(h, 0.0f), 360.0) / 360.0, s = CLAMP(s, 0.0, 1.0), v = CLAMP(v, 0.0, 1.0);
 	float max_rgb = v;
 	float range_rgb = v * s;
 	float min_rgb = max_rgb - range_rgb;

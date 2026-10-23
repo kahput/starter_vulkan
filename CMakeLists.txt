@@ -7,13 +7,13 @@ add_compile_definitions(DEV_BUILD)
 
 # Shaders
 file(GLOB_RECURSE SHADER_INPUTS CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/assets/shaders/*.shader"
-    "${CMAKE_SOURCE_DIR}/assets/shaders/*.glsl"
+    "${CMAKE_SOURCE_DIR}/resources/shaders/*.shader"
+    "${CMAKE_SOURCE_DIR}/resources/shaders/*.glsl"
 )
 
 set(GENERATED_FILES 
-    "${CMAKE_SOURCE_DIR}/game/src/generated/assets.c"
-    "${CMAKE_SOURCE_DIR}/game/src/generated/assets.h"
+    "${CMAKE_SOURCE_DIR}/game/src/generated/resources.c"
+    "${CMAKE_SOURCE_DIR}/game/src/generated/resources.h"
 )
 add_custom_command(
     OUTPUT ${GENERATED_FILES}
@@ -56,6 +56,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/image.c"
 
             "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_canvas.c"
             "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_file.c"
@@ -86,7 +87,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         set_target_properties(${NAME} PROPERTIES SUFFIX ".html")
 
         target_link_options(${NAME} PRIVATE 
-            "--preload-file" "${CMAKE_SOURCE_DIR}/assets@/assets"
+            "--preload-file" "${CMAKE_SOURCE_DIR}/resources@/resources"
         )
     endforeach()
 else()
@@ -114,6 +115,7 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/camera.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/mesh.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/image.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_xcb.c"
         "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_file.c"

@@ -2022,7 +2022,7 @@ void gfx_cmd_image_blit(GFX_CommandEncoder *cmd, Rectangle source_rect, GFX_Imag
 	}
 }
 
-void gfx_cmd_image_clear(GFX_CommandEncoder *cmd, Rectangle rect, Color color, GFX_Image *image) {
+void gfx_cmd_image_clear(GFX_CommandEncoder *cmd, Rectangle rect, rgba8 color, GFX_Image *image) {
 	bool ok = cmd && cmd->handle && image && image->handle;
 	if (ok) {
 		if (image->res_usage != RESOURCE_USAGE_TRANSFER_DST)

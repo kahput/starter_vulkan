@@ -6,12 +6,12 @@
 #include "core/input_types.h"
 #include "core/mesh.h"
 #include "core/strings.h"
-#include "generated/assets.h"
+#include "generated/resources.h"
 #include "generated/res_generated.h"
 #include "gfx/gfx_types.h"
 
 #include "res.h"
-#include "generated/assets.c"
+#include "generated/resources.c"
 #include "generated/res_generated.c"
 
 #include <common.h>
@@ -54,7 +54,7 @@ typedef struct {
 // image imfilter(image, kernel, boundary_condition);
 // rgb2gray(im
 // normxcorr2(onion, peppers);
-// image imedge(image, algorithim);
+// image imedge(image, algorithm);
 
 State *state = 0;
 static inline char *named(const char *name) {
@@ -257,65 +257,14 @@ bool tick(Arena *permanent, Arena *frame) {
 	for (int32_t x = -seg_count; x <= seg_count; ++x)
 		draw3d_line(float3(x, 0.0f, -seg_count), float3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY);
 
-	float3 points_healthbar[] = {
-		{ -1.0, 0.0f, 1.0 },
-		{ 1.0, 0.0f, 1.0 },
-		{ -1.0, 0.0f, -1.0 },
-		{ 1.0, 0.0f, -1.0 },
-	};
-	float2 uvs[] = {
-		{ 0.0, 0.0 },
-		{ 1.0, 0.0 },
-		{ 0.0, 1.0 },
-		{ 1.0, 1.0 },
-	};
-	uint32_t indices[] = { 0, 1, 2, 1, 3, 2 };
+	float4x4 world_from_local = affine4x4(identity3x3(), FLOAT3_UP);
 
-	float3x3 scale = diagonal3x3(float3(4.0f, 1.0f, 0.5f));
-	float3x3 rotation = axisangle3x3(FLOAT3_RIGHT, radians(90.0f));
-	float3x3 camera_follow_rotation = axisangle3x3(FLOAT3_UP, atan2f(camera->position.x, camera->position.z));
-	float4x4 world_from_local = affine4x4(
-		mul3x3(mul3x3(camera_follow_rotation, rotation), scale),
-		float3(0.0f, 4.0f, 0.0f) //
-	);
-	for (uint32_t index = 0; index < countof(points_healthbar); ++index)
-		points_healthbar[index] = xform3p(world_from_local, points_healthbar[index]);
+	static Drag2D slider = { 0 };
 
-	Mesh my_mesh = {
-		.streams[VERTEX_SEMANTIC_POSITION] = points_healthbar,
-		.streams[VERTEX_SEMANTIC_UV0] = uvs,
-		.total_vertex_count = countof(points_healthbar),
+	uint32_t segments = 32, rings = 16;
+	float radius = 0.5f, height = 2.0f;
 
-		.indices = indices,
-		.total_index_count = countof(indices),
-
-		.bounds = aabb3_from_points(points_healthbar, countof(points_healthbar)),
-	};
-	Mesh mesh = mesh_ellipsoid(frame, FLOAT3_UP, float3(1.0f, 4.0f, 1.0f), 32, 16);
-
-	static Mesh loaded_mesh = { 0 };
-	static bool has_loaded = false;
-	if (has_loaded == false) {
-		loaded_mesh = res_load_gltf(permanent, s("assets/models/barrel.glb"));
-		has_loaded = true;
-	}
-
-	// Make the common case fast, and the rare case correct.
-	(void)loaded_mesh;
-	mesh = my_mesh;
-	/* draw3d_aabb_outline(mesh.bounds, 4.0f, WHITE); */
-	RES_Texture2D *healthbar = res_texture(&state->cache, RES_IMAGE_HEALTHBAR, PIXEL_FORMAT_RGBA8_UNORM);
-
-	static Drag2D health_slider = { 0 };
-	static float health = 0.25f;
-
-	Rectangle slider_rect = rect(24.0f, 24.0f, 288.0f, 24.0f);
-	draw2d_rect(slider_rect, ORANGE);
-
-	Rectangle thumb_rect = drag2d_slider(&health_slider, slider_rect, 0.0f, 1.0f, &health);
-	draw2d_rect(thumb_rect, RED);
-
-	RES_Image2D *image = res_image(&state->cache, RES_IMAGE_BLENDING_TRANSPARENT_WINDOW);
+	Mesh mesh = mesh_capsule(frame, float3(0.0f), 2.0f, 0.5f, 32, 16);
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -324,7 +273,6 @@ bool tick(Arena *permanent, Arena *frame) {
 		gfx_swapchain_resize(device, swapchain, resize.x, resize.y);
 		gfx_image_resize(device, state->depthbuffer, resize.x, resize.y);
 	}
-
 	res_cache_tick(frame, &state->cache);
 
 	GFX_CommandEncoder *cmd = gfx_frame_begin(state->device);
@@ -335,7 +283,7 @@ bool tick(Arena *permanent, Arena *frame) {
 		gfx_cmd_draw_begin(cmd,
 			(GFX_DrawPassInfo){
 			  .debug_name = "main",
-			  .colors[0] = { .target = backbuffer, .load = LOAD_OP_CLEAR, .store = STORE_OP_STORE, .clear = hex(0x151a24) },
+			  .colors[0] = { .target = backbuffer, .load = LOAD_OP_CLEAR, .store = STORE_OP_STORE, .clear = hex(0x101010) },
 			  .depth = { .target = state->depthbuffer, .clear = 1.0f, .load = LOAD_OP_CLEAR, .store = STORE_OP_STORE },
 			});
 
@@ -374,44 +322,44 @@ bool tick(Arena *permanent, Arena *frame) {
 		}
 
 		{
-			RES_Shader *shader = res_shader(&state->cache, RES_SHADER_UNLIT);
-			gfx_cmd_shader_bind(device, shader->handle, PIPELINE_UNLIT_DEFAULT);
-			gfx_cmd_bind(device, 0, (Uniform[]){ uniform_data(0, &fd, sizeof(fd)) }, 1);
+			RES_Shader *unlit = res_shader(&state->cache, RES_SHADER_UNLIT);
+			gfx_cmd_shader_bind(device, unlit->handle, 0);
 
-			/* VertexLayout shader_layout = shader_vertex_layout(shader); */
-			VertexLayout shader_layout = vertex_layout(
+			VertexLayout shader_vlayout = vertex_layout(
 				{ VERTEX_SEMANTIC_POSITION, DATA_FORMAT_FLOAT32x4 },
 				{ VERTEX_SEMANTIC_NORMAL, DATA_FORMAT_FLOAT32x4 },
 				{ VERTEX_SEMANTIC_UV0, DATA_FORMAT_FLOAT32x2 },
-				{ VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT32x2 }, );
+				{ VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT32x2 } //
+			);
 
-			uint64_t byte_size = mesh.total_vertex_count * shader_layout.stride;
-			void *vertices = arena_push_count(frame, uint8_t, byte_size);
-			bool ok = mesh_pack_into(&mesh, &shader_layout, vertices, byte_size);
+			uint64_t vertices_size = mesh.total_vertex_count * shader_vlayout.stride;
 
-			if (ok) {
-				Uniform set1[] = {
-					storage_data(0, vertices, byte_size),
-					uniform_data(1, &health, sizeof(health)),
-					sampler_with_textures(2, (GFX_Image *[]){ healthbar->handle }, 1, state->sampler_linear),
-				};
-				gfx_cmd_bind(device, 1, set1, countof(set1));
+			uint64_t offset = alignup(cmd->transient_arena->offset, 256);
+			void *vertices = arena_push(cmd->transient_arena, alignup(vertices_size, 256), 256, 0);
+			mesh_pack_into(&mesh, &shader_vlayout, vertices, vertices_size);
 
-				if (mesh.indices) {
-					uint64_t offset = gfx_cmd_put(cmd, index_format_to_size(mesh_index_format(&mesh)) * mesh.total_index_count, mesh.indices);
-					gfx_cmd_bind_index_buffer32(cmd, cmd->transient_buffer, offset);
+			Uniform set0[] = { uniform_data(0, &fd, sizeof(fd)) };
+			Uniform set1[] = { storage_buffers(0, cmd->transient_buffer, offset, vertices_size) };
+
+			gfx_cmd_bind(device, 0, set0, countof(set0));
+			gfx_cmd_bind(device, 1, set1, countof(set0));
+
+			gfx_cmd_push_constant(cmd, sizeof(world_from_local), world_from_local.elements);
+
+			uint64_t index_offset = gfx_cmd_put(cmd, mesh.total_index_count * index_format_to_size(mesh.index_format), mesh.indices);
+			if (mesh.index_format == INDEX_FORMAT32)
+				gfx_cmd_bind_index_buffer32(cmd, cmd->transient_buffer, index_offset);
+			else
+				gfx_cmd_bind_index_buffer16(cmd, cmd->transient_buffer, index_offset);
+
+			for (uint32_t part_index = 0; part_index < mesh_part_count(mesh); ++part_index) {
+				MeshPart part = meshpart(mesh, part_index);
+
+				if (part.index_count) {
+					gfx_cmd_draw_indexed(cmd, part.index_offset, part.index_count, part.vertex_offset);
+				} else {
+					gfx_cmd_draw(cmd, part.vertex_offset, part.vertex_count);
 				}
-
-				uint32_t part_index = 0;
-				do {
-					MeshPart part = meshpart(mesh, part_index);
-					if (mesh.indices) {
-						gfx_cmd_draw_indexed(cmd, part.index_offset, part.index_count, part.vertex_offset);
-					} else {
-						gfx_cmd_draw(cmd, part.vertex_offset, part.vertex_count);
-					}
-
-				} while (++part_index < mesh.part_count);
 			}
 		}
 

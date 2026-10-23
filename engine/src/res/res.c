@@ -1,8 +1,8 @@
 #include "res.h"
+#include "common.h"
 #include "core/mesh.h"
 #include "gfx.h"
 #include "gfx/gfx_types.h"
-#include "image_loader.c"
 
 #include "core/arena.h"
 #include "core/debug.h"
@@ -15,7 +15,7 @@ uint64_t res_instance_limits[RES_INSTANCE_TYPE_MAX] = {
 };
 
 uint64_t res_instance_strides[RES_INSTANCE_TYPE_MAX] = {
-	[RES_INSTANCE_TYPE_IMAGE] = sizeof(RES_Image2D),
+	[RES_INSTANCE_TYPE_IMAGE] = sizeof(Image),
 	[RES_INSTANCE_TYPE_TEXTURE] = sizeof(RES_Texture2D),
 	[RES_INSTANCE_TYPE_SHADER] = sizeof(RES_Shader),
 	[RES_INSTANCE_TYPE_FONT] = sizeof(RES_Font),
@@ -39,8 +39,13 @@ static void *res__acquire(RES_Cache *cache, RES_AssetType asset_type, RES_AssetI
 static OS_Timestamp res__combined_mtime(string8 *filepaths, uint32_t count);
 static OS_Timestamp res__source_mtime(RES_Cache *cache, RES_AssetType asset_type, RES_AssetID id);
 
+static bool default_loader_image(RES_Cache *cache, RES_AssetID id, Image *out) {
+	*out = imload(cache->arena, cache->catalog.images[id].filepath);
+	return out->pixels != 0;
+}
+
 static bool res__loader_texture(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_Texture2D *out) {
-	RES_Image2D *image = res__acquire(cache, RES_ASSET_TYPE_IMAGE, id, (RES_Key){ .output_type = RES_INSTANCE_TYPE_IMAGE });
+	Image *image = res__acquire(cache, RES_ASSET_TYPE_IMAGE, id, (RES_Key){ .output_type = RES_INSTANCE_TYPE_IMAGE });
 	if (image == 0) return false;
 
 	RES_ImageMeta *meta = &cache->catalog.images[id];
@@ -165,9 +170,9 @@ RES_Cache res_cache_make(Arena *arena, GFX_Device *device, const RES_Catalog *ca
 	return result;
 }
 
-RES_Image2D *res_image(RES_Cache *cache, RES_AssetID id) {
+Image *res_image(RES_Cache *cache, RES_AssetID id) {
 	ASSERT(cache);
-	RES_Image2D *result = res__acquire(cache, RES_ASSET_TYPE_IMAGE, id, (RES_Key){ .output_type = RES_INSTANCE_TYPE_IMAGE });
+	Image *result = res__acquire(cache, RES_ASSET_TYPE_IMAGE, id, (RES_Key){ .output_type = RES_INSTANCE_TYPE_IMAGE });
 	return result ? result : &cache->fallback.image;
 }
 
@@ -293,7 +298,7 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 		result.glyphs = arena_push_count(arena, RES_Glyph, result.glyph_count);
 		result.weight = weight;
 
-		result.img_atlas = (RES_Image2D){
+		result.img_atlas = (Image){
 			.pixels = arena_push_count(arena, uint8_t, RES_FONT_ATLAS_MAX *RES_FONT_ATLAS_MAX),
 			.channels = 1,
 			.width = RES_FONT_ATLAS_MAX,
@@ -538,9 +543,29 @@ static const VertexSemantic vertex_semantic_cgltf_attribute_table[cgltf_attribut
 	[cgltf_attribute_type_weights] = VERTEX_SEMANTIC_WEIGHTS,
 	[cgltf_attribute_type_custom] = VERTEX_SEMANTIC_CUSTOM0,
 };
-/* INLINE VertexSemantic vertex_semantic_from_cgltf_attribute_type(cgltf_attribute_type type) { */
-/* 	return (uint32_t)type < cgltf_attribute_type_max_enum ? vertex_semantic_cgltf_attribute_table[type] : VERTEX_SEMANTIC_MAX; */
-/* } */
+
+// clang-format off
+STATIC_ASSERT(DATA_FORMAT_UINT8x1 + 3 == DATA_FORMAT_UINT8x4);
+INLINE DataFormat cgltf_type_to_data_format(cgltf_type type, cgltf_component_type component_type, bool normalized) {
+	int n = type == cgltf_type_scalar ? 1
+		: type == cgltf_type_vec2     ? 2
+		: type == cgltf_type_vec3     ? 3
+		: type == cgltf_type_vec4     ? 4
+		                              : 0;
+	DataFormat base;
+	switch (component_type) {
+		case cgltf_component_type_r_8:   base = DATA_FORMAT_SINT8x1;   break;
+		case cgltf_component_type_r_8u:  base = DATA_FORMAT_UINT8x1;   break;
+		case cgltf_component_type_r_16:  base = DATA_FORMAT_SINT16x1;  break;
+		case cgltf_component_type_r_16u: base = DATA_FORMAT_UINT16x1;  break;
+		case cgltf_component_type_r_32u: base = DATA_FORMAT_UINT32x1;  break;
+		case cgltf_component_type_r_32f: base = DATA_FORMAT_FLOAT32x1; break;
+		default: return DATA_FORMAT_NONE;
+	}
+
+	return n ? (DataFormat)(base + n - 1) : DATA_FORMAT_NONE;
+}
+// clang-format on
 
 Mesh res_load_gltf(Arena *arena, string8 path) {
 	LOG_INFO("loading [%s] geometry.", path.bytes);
@@ -582,12 +607,13 @@ Mesh res_load_gltf(Arena *arena, string8 path) {
 					cgltf_accessor *accessor = attribute->data;
 					uint32_t attribute_size = cgltf_component_size(accessor->component_type) * cgltf_num_components(accessor->type);
 
+					DataFormat format = cgltf_type_to_data_format(accessor->type, accessor->component_type, accessor->normalized);
+					ASSERT_MESSAGE(format != DATA_FORMAT_NONE, "Invalid/Unhandled attribute stream");
 					VertexSemantic semantic = vertex_semantic_cgltf_attribute_table[attribute->type];
-					DataFormat semantic_default_format = vertex_semantic_default_format[semantic];
 
-					uint64_t semantic_default_data_format_size = data_format_to_size(semantic_default_format);
-					ASSERT(attribute_size == semantic_default_data_format_size); // TODO: Convert from component_type + type to DataFormat
-					vertex_layout_push(&layout, semantic, semantic_default_format);
+					uint64_t data_format_size = data_format_to_size(format);
+					ASSERT(attribute_size == data_format_size);
+					vertex_layout_push(&layout, semantic, format);
 				}
 			}
 		}
@@ -637,7 +663,7 @@ Mesh res_load_gltf(Arena *arena, string8 path) {
 					cgltf_size attribute_size = component_count * component_size;
 
 					VertexSemantic semantic = vertex_semantic_cgltf_attribute_table[type];
-					DataFormat format = vertex_semantic_default_format[semantic];
+					DataFormat format = cgltf_type_to_data_format(accessor->type, accessor->component_type, accessor->normalized);
 
 					ASSERT(attribute_size == data_format_to_size(format) && "Sizing mismatch");
 					ASSERT(accessor->count == part->vertex_count && "expect all attributes to have same number of vertices");

@@ -119,8 +119,8 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 			.origin = style.origin,
 			.imageid = imageid,
 			.flags = 0,
-			.fill_color = color_pack_uint32(style.fill_color),
-			.border_color = color_pack_uint32(style.border_color),
+			.fill_color = rgba8_as_uint32(style.fill_color),
+			.border_color = rgba8_as_uint32(style.border_color),
 			.border_width = style.border_width,
 		};
 
@@ -128,7 +128,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 	}
 }
 
-void draw2d_text(RES_Font *font, float2 position, Color color, string8 text) {
+void draw2d_text(RES_Font *font, float2 position, rgba8 color, string8 text) {
 	bool ok = CURRENT_DRAWLIST && font;
 	if (ok) {
 		float2 cursor = float2(position.x, position.y + font->ascent);
@@ -156,7 +156,7 @@ void draw2d_text(RES_Font *font, float2 position, Color color, string8 text) {
 	}
 }
 
-void draw2d_textf(RES_Font *font, float2 position, Color color, const char *format, ...) {
+void draw2d_textf(RES_Font *font, float2 position, rgba8 color, const char *format, ...) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	va_list args;
@@ -168,7 +168,7 @@ void draw2d_textf(RES_Font *font, float2 position, Color color, const char *form
 	arena_scratch_end(scratch);
 }
 
-void draw2d_line(float2 start, float2 end, float thickness, Color color) {
+void draw2d_line(float2 start, float2 end, float thickness, rgba8 color) {
 	float2 vec = sub2(end, start);
 
 	float len_sq = lensq2(vec);
@@ -191,7 +191,7 @@ void draw2d_line(float2 start, float2 end, float thickness, Color color) {
 		});
 }
 
-void draw2d_dashed(float2 start, float2 end, float thickness, float segment_length, float gap_length, Color color) {
+void draw2d_dashed(float2 start, float2 end, float thickness, float segment_length, float gap_length, rgba8 color) {
 	float2 diff = sub2(end, start);
 	float len = len2(diff);
 	float step = segment_length + gap_length;
@@ -209,7 +209,7 @@ void draw2d_dashed(float2 start, float2 end, float thickness, float segment_leng
 	}
 }
 
-void draw2d_arrow(float2 origin, float2 delta, float thicknes, float head_lengh, Color color) {
+void draw2d_arrow(float2 origin, float2 delta, float thicknes, float head_lengh, rgba8 color) {
 	if (lensq2(delta) <= EPSILON * EPSILON) return;
 	float2 end = add2(origin, delta);
 
@@ -222,13 +222,13 @@ void draw2d_arrow(float2 origin, float2 delta, float thicknes, float head_lengh,
 	draw2d_line(end, add2(end, scale2(left, head_lengh)), thicknes, color);
 }
 
-void draw2d_triangle_outline(Triangle2 t, float thickness, Color color) {
+void draw2d_triangle_outline(Triangle2 t, float thickness, rgba8 color) {
 	draw2d_line(t.a, t.b, thickness, color);
 	draw2d_line(t.b, t.c, thickness, color);
 	draw2d_line(t.c, t.a, thickness, color);
 }
 
-void draw2d_circle_outline(float2 center, float radius, float thickness, Color color) {
+void draw2d_circle_outline(float2 center, float radius, float thickness, rgba8 color) {
 	draw2d_quad(rect_from_center(center, splat2(radius)),
 		(DRAW_QuadStyle){
 		  .border_color = color,
@@ -237,7 +237,7 @@ void draw2d_circle_outline(float2 center, float radius, float thickness, Color c
 		});
 }
 
-void draw3d_arc_basis(float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, Color color) {
+void draw3d_arc_basis(float3 center, float2 radius, uint8_t segments, float3 axis_x, float3 axis_y, float angle_start, float angle_span, float thickness, rgba8 color) {
 	bool ok = CURRENT_DRAWLIST && segments;
 
 	if (ok) {
@@ -255,32 +255,32 @@ void draw3d_arc_basis(float3 center, float2 radius, uint8_t segments, float3 axi
 	}
 }
 
-void draw3d_arc(float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, Color color) {
+void draw3d_arc(float3 center, float2 radius, uint8_t segments, float3 normal, float angle_start, float angle_span, float thickness, rgba8 color) {
 	float3 right, up;
 	normal = orthobasis3(normal, &right, &up);
 	draw3d_arc_basis(center, radius, segments, right, up, angle_start, angle_span, thickness, color);
 }
 
-void draw3d_sphere_outline(float3 center, float radius, uint8_t segments, float thickness, Color color) {
+void draw3d_sphere_outline(float3 center, float radius, uint8_t segments, float thickness, rgba8 color) {
 	draw3d_arc(center, splat2(radius), segments, FLOAT3_UP, 0, TAU, thickness, color);
 	draw3d_arc(center, splat2(radius), segments, FLOAT3_RIGHT, 0, TAU, thickness, color);
 	draw3d_arc(center, splat2(radius), segments, FLOAT3_FORWARD, 0, TAU, thickness, color);
 }
 
-void draw3d_ellipsoid_outline(float3 center, float3 r, uint8_t segments, float thickness, Color color) {
+void draw3d_ellipsoid_outline(float3 center, float3 r, uint8_t segments, float thickness, rgba8 color) {
 	draw3d_arc(center, make2(r.x, r.z), segments, FLOAT3_UP, 0, TAU, thickness, color);
 	draw3d_arc(center, make2(r.z, r.y), segments, FLOAT3_RIGHT, 0, TAU, thickness, color);
 	draw3d_arc(center, make2(r.x, r.y), segments, FLOAT3_FORWARD, 0, TAU, thickness, color);
 }
 
-void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, float thickness, Color color) {
+void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, float thickness, rgba8 color) {
 	float3 direction = sub3(b, a);
 	if (lensq3(direction) < EPSILON) return;
 
 	float3 right, up;
 	direction = orthobasis3(direction, &right, &up);
 
-	uint32_t packed_color = color_pack_uint32(color);
+	uint32_t packed_color = rgba8_as_uint32(color);
 	DRAW_LineInstance3D spine[] = {
 		{ make4_from3(add3(a, scale3(right, -radius)), thickness), make4_from3(add3(b, scale3(right, -radius)), thickness), packed_color, splat3(0.0f) },
 		{ make4_from3(add3(a, scale3(right, radius)), thickness), make4_from3(add3(b, scale3(right, radius)), thickness), packed_color, splat3(0.0f) },
@@ -300,39 +300,39 @@ void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, 
 	}
 }
 
-void draw3d_aabb_outline(AABB3 aabb3, float thickness, Color color) {
+void draw3d_aabb_outline(AABB3 aabb3, float thickness, rgba8 color) {
 	float3 min = aabb3.min;
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
 	DRAW_LineInstance3D outline[] = {
-		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
-		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, color_pack_uint32(color), splat3(0.0f) },
+		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, max.z, thickness }, { max.x, max.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { min.x, min.y, min.z, thickness }, { min.x, min.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { min.x, min.y, min.z, thickness }, { max.x, min.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, max.z, thickness }, { max.x, min.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { max.x, min.y, max.z, thickness }, { min.x, min.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { min.x, max.y, min.z, thickness }, { min.x, max.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { min.x, max.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { max.x, max.y, max.z, thickness }, { max.x, max.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
+		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
 	};
 
 	DRAW_LineInstance3D *points = arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, countof(outline));
 	memory_copy_array(points, outline);
 }
 
-void draw3d_line(float3 start, float3 end, float thickness, Color color) {
+void draw3d_line(float3 start, float3 end, float thickness, rgba8 color) {
 	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
 		.a = make4_from3(start, thickness),
 		.b = make4_from3(end, thickness),
-		.color = color_pack_uint32(color),
+		.color = rgba8_as_uint32(color),
 	};
 }
 
-void draw3d_arrow(float3 origin, float3 delta, float thickness, Color color,
+void draw3d_arrow(float3 origin, float3 delta, float thickness, rgba8 color,
 	float4x4 view, float4x4 projeciton, float viewport_width) {
 	float total_world_length = lensq3(delta);
 	if (total_world_length < EPSILON * EPSILON)
@@ -357,17 +357,17 @@ void draw3d_arrow(float3 origin, float3 delta, float thickness, Color color,
 	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
 		.a = make4_from3(shaft_end, thickness * 4.0f),
 		.b = make4_from3(tip, 0.0f),
-		.color = color_pack_uint32(color),
+		.color = rgba8_as_uint32(color),
 	};
 }
 
-void draw3d_triangle_outline(Triangle3 t, float thickness, Color color) {
+void draw3d_triangle_outline(Triangle3 t, float thickness, rgba8 color) {
 	draw3d_line(t.a, t.b, thickness, color);
 	draw3d_line(t.b, t.c, thickness, color);
 	draw3d_line(t.c, t.a, thickness, color);
 }
 
-void draw3d_quad_outline(Plane plane, float width, float height, float thickness, Color color) {
+void draw3d_quad_outline(Plane plane, float width, float height, float thickness, rgba8 color) {
 	float3 right = { 0 }, up = { 0 };
 	float dot = dot3(plane.normal, FLOAT3_UP);
 	if (fabsf(dot) >= 0.99f) {

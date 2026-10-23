@@ -151,17 +151,17 @@ int main(void) {
 				{ 1.0f, 1.0f },
 			};
 
-			Color c = TEAL;
+			rgba8 c = TEAL;
 			float4 radii = splat4(8.0f);
 
 			QuadVertex2D vertices[6] = {
-				[0] = { corners[0], uvs[0], radii, { viewport.width, viewport.height }, color_pack_uint32(c), color_pack_uint32(TRANSPARENT), 0.0f, 0 },
-				[1] = { corners[2], uvs[2], radii, { viewport.width, viewport.height }, color_pack_uint32(c), color_pack_uint32(TRANSPARENT), 0.0f, 0 },
-				[2] = { corners[3], uvs[3], radii, { viewport.width, viewport.height }, color_pack_uint32(c), color_pack_uint32(TRANSPARENT), 0.0f, 0 },
+				[0] = { corners[0], uvs[0], radii, { viewport.width, viewport.height }, rgba8_as_uint32(c), rgba8_as_uint32(TRANSPARENT), 0.0f, 0 },
+				[1] = { corners[2], uvs[2], radii, { viewport.width, viewport.height }, rgba8_as_uint32(c), rgba8_as_uint32(TRANSPARENT), 0.0f, 0 },
+				[2] = { corners[3], uvs[3], radii, { viewport.width, viewport.height }, rgba8_as_uint32(c), rgba8_as_uint32(TRANSPARENT), 0.0f, 0 },
 
-				[3] = { corners[0], uvs[0], radii, { viewport.width, viewport.height }, color_pack_uint32(c), color_pack_uint32(TRANSPARENT), 0.0f, 0 },
-				[4] = { corners[3], uvs[3], radii, { viewport.width, viewport.height }, color_pack_uint32(c), color_pack_uint32(TRANSPARENT), 0.0f, 0 },
-				[5] = { corners[1], uvs[1], radii, { viewport.width, viewport.height }, color_pack_uint32(c), color_pack_uint32(TRANSPARENT), 0.0f, 0 }
+				[3] = { corners[0], uvs[0], radii, { viewport.width, viewport.height }, rgba8_as_uint32(c), rgba8_as_uint32(TRANSPARENT), 0.0f, 0 },
+				[4] = { corners[3], uvs[3], radii, { viewport.width, viewport.height }, rgba8_as_uint32(c), rgba8_as_uint32(TRANSPARENT), 0.0f, 0 },
+				[5] = { corners[1], uvs[1], radii, { viewport.width, viewport.height }, rgba8_as_uint32(c), rgba8_as_uint32(TRANSPARENT), 0.0f, 0 }
 			};
 
 			Uniform uniforms0[] = {
