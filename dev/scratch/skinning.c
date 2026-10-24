@@ -295,7 +295,7 @@ Entity *entity_spawn(World *world) {
 	if (ok) {
 		result = &world->entities[world->entity_count++];
 
-		result->transform.rotation = quat4_identity();
+		result->transform.rotation = identity4q();
 		result->transform.scale = splat3(1.0f);
 	}
 
@@ -1806,10 +1806,10 @@ int main(void) {
 							float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
 																							  //
 							float target_angle = -current_azimuth - PIf + atan2f(input_vector.x, input_vector.y);
-							quat4 target_rotation = quat4_from_axis_angle(FLOAT3_UP, target_angle);
+							quat4 target_rotation = axisangle4q(FLOAT3_UP, target_angle);
 
 							float t = 1.0f - expf(-15.0f * dt);
-							entity->transform.rotation = quat4_slerp(entity->transform.rotation, target_rotation, t);
+							entity->transform.rotation = slerp4q(entity->transform.rotation, target_rotation, t);
 						}
 
 						const float walk_speed = 3.0f, sprint_speed = 6.0f;
@@ -1869,7 +1869,7 @@ int main(void) {
 						float3 delta = sub3(target->transform.translation, entity->transform.translation);
 						float3 direction = norm3(delta);
 
-						entity->transform.rotation = quat4_from_axis_angle(FLOAT3_UP, atan2f(direction.x, direction.z));
+						entity->transform.rotation = axisangle4q(FLOAT3_UP, atan2f(direction.x, direction.z));
 
 						input_vector = (float2){ direction.x, direction.z };
 						/* velocity = scale3(direction, entity->move_speed * dt); */

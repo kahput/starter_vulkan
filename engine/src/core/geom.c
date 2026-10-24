@@ -71,8 +71,8 @@ float3 barycentric(Triangle3 t, float3 p) {
 		float2 rhs = { dot3(ap, ab), dot3(ap, ac) };
 
 		denom = 1.0f / denom;
-		float v = det2x2(basis2x2(rhs, col2x2(A, 1))) * denom;
-		float w = det2x2(basis2x2(col2x2(A, 0), rhs)) * denom;
+		float v = det2x2(columns2x2(rhs, load2(A.elements + 2))) * denom;
+		float w = det2x2(columns2x2(load2(A.elements + 0), rhs)) * denom;
 		float u = 1.0f - (v + w);
 
 		result = float3(u, v, w);
@@ -96,7 +96,7 @@ Shape3 shape3_displace(Shape3 s, float3 displacement) {
 			break;
 		case SHAPE_KIND_PLANE: {
 			float3 c = add3(plane_center(s.as.plane), displacement);
-			result = shape3_from_plane(plane_from_point_normal(c, norm3(scale3(c, -1.0f))));
+			result = shape3_from_plane(plane_from_point_normal(c, normalize3(scale3(c, -1.0f))));
 		} break;
 		case SHAPE_KIND_CONVEX_POLYGON: {
 			for (uint32_t index = 0; index < s.as.convex.vertex_count; ++index)
@@ -112,7 +112,7 @@ Shape3 shape3_displace(Shape3 s, float3 displacement) {
 float3 shape3_furthest_point(const Shape3 *s, float3 direction) {
 	float3 result = { 0 };
 
-	direction = norm3(direction);
+	direction = normalize3(direction);
 	ASSERT(lensq3(direction) > EPSILON * EPSILON);
 	ASSERT(s != 0);
 
@@ -504,7 +504,7 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 					result.t = temp_t;
 					result.point = vertex;
 					float3 sphere_center_at_t = add3(center, scale3(velocity, result.t));
-					result.normal = norm3(sub3(sphere_center_at_t, result.point));
+					result.normal = normalize3(sub3(sphere_center_at_t, result.point));
 				}
 			}
 
@@ -530,7 +530,7 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 						result.t = temp_t;
 						result.point = add3(vertex, scale3(edge, f));
 						float3 sphere_center_at_t = add3(center, scale3(velocity, result.t));
-						result.normal = norm3(sub3(sphere_center_at_t, result.point));
+						result.normal = normalize3(sub3(sphere_center_at_t, result.point));
 					}
 				}
 			}

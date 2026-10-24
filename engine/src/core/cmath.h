@@ -102,7 +102,7 @@ INLINE float2 abs2(float2 v) { return (float2){ fabsf(v.x), fabsf(v.y) }; }
 INLINE int2 ifloor2(float2 v) { return (int2){ (int32_t)v.x, (int32_t)v.y }; }
 INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
 
-INLINE float2 norm2(float2 v) {
+INLINE float2 normalize2(float2 v) {
 	float lengthsq = lensq2(v);
 	if (lengthsq < EPSILON * EPSILON)
 		return (float2){ 0 };
@@ -144,7 +144,7 @@ INLINE float len3(float3 v) { return sqrtf(dot3(v, v)); }
 INLINE float dist3(float3 a, float3 b) { return len3(sub3(b, a)); }
 INLINE float distsq3(float3 a, float3 b) { return lensq3(sub3(b, a)); }
 
-INLINE float3 norm3(float3 v) {
+INLINE float3 normalize3(float3 v) {
 	float length = len3(v);
 	if (length < EPSILON)
 		return (float3){ 0 };
@@ -170,13 +170,13 @@ INLINE float3 approach3(float3 start, float3 end, float step) {
 }
 INLINE float3 lerp3(float3 start, float3 end, float t) { return madd3(start, sub3(end, start), float3(t)); }
 INLINE float3 orthobasis3(float3 normal, float3 *right, float3 *up) {
-	normal = norm3(normal);
-	*right = norm3(cross3(normal, fabsf(dot3(FLOAT3_UP, normal)) >= 0.99f ? FLOAT3_BACKWARD : FLOAT3_UP));
+	normal = normalize3(normal);
+	*right = normalize3(cross3(normal, fabsf(dot3(FLOAT3_UP, normal)) >= 0.99f ? FLOAT3_BACKWARD : FLOAT3_UP));
 	*up = cross3(normal, *right);
 	return normal;
 }
 
-INLINE float angle3(float3 a, float3 b) { return acosf(clampf(dot3(norm3(a), norm3(b)), -1.0f, 1.0f)); }
+INLINE float angle3(float3 a, float3 b) { return acosf(clampf(dot3(normalize3(a), normalize3(b)), -1.0f, 1.0f)); }
 
 // --- float4 & quaternions ---
 INLINE void store4(float dst[4], float4 src) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z, dst[3] = src.w; }
@@ -191,14 +191,43 @@ INLINE float4 sub4(float4 a, float4 b) { return (float4){ a.x - b.x, a.y - b.y, 
 INLINE float4 mul4(float4 a, float4 b) { return (float4){ a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w }; }
 INLINE float4 scale4(float4 v, float s) { return (float4){ v.x * s, v.y * s, v.z * s, v.w * s }; }
 INLINE float dot4(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
+INLINE float4 neg4(float4 v) { return (float4){ -v.x, -v.y, -v.z, -v.w }; }
 
+INLINE float lensq4(float4 v) { return dot4(v, v); }
 INLINE float len4(float4 v) { return sqrtf(dot4(v, v)); }
 INLINE float4 clamp4(float4 v, float min, float max) { return (float4){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max), clampf(v.z, min, max) }; }
 
-INLINE quat4 quat4_identity(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
-float3 quat4_to_euler(quat4 quat);
-quat4 quat4_from_axis_angle(float3 axis, float angle);
-quat4 quat4_slerp(quat4 q, quat4 p, float t);
+INLINE float4 normalize4(float4 v) {
+	float length = len4(v);
+	if (length < EPSILON)
+		return (float4){ 0 };
+
+	return scale4(v, 1.0f / length);
+}
+
+INLINE quat4 identity4q(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
+float3 euler4q(quat4 quat);
+quat4 axisangle4q(float3 axis, float angle);
+quat4 slerp4q(quat4 q, quat4 p, float t);
+
+// clang-format off
+// https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
+INLINE quat4 mul4q(quat4 q, quat4 p) {
+    return (quat4){
+        q.w*p.x + q.x*p.w + q.y*p.z - q.z*p.y,
+        q.w*p.y - q.x*p.z + q.y*p.w + q.z*p.x,
+        q.w*p.z + q.x*p.y - q.y*p.x + q.z*p.w,
+        q.w*p.w - q.x*p.x - q.y*p.y - q.z*p.z,
+    };
+}
+INLINE quat4 conjugate4q(quat4 q) { return (quat4){ -q.x, -q.y, -q.z, q.w }; }
+
+// https://raw.org/math/algebra/vector-rotation-using-quaternions/
+INLINE float3 rotate4q(quat4 q, float3 v) {
+    float3 u = { q.x, q.y, q.z }, t = scale3(cross3(u, v), 2.0f);
+    return add3(v, add3(scale3(t, q.w), cross3(u, t))); // v + t * q.w + cross(u, t);
+}
+// clang-format on
 
 // --- float2x2 ---
 // clang-format off
@@ -214,10 +243,8 @@ INLINE float2x2 rot2x2(float rad) {
 INLINE float2 mul2x2v(float2x2 m, float2 v) { return (float2){ m.elements[0] * v.x + m.elements[2] * v.y, m.elements[1] * v.x + m.elements[3] * v.y }; }
 INLINE float det2x2(float2x2 m) { return m.elements[0] * m.elements[3] - m.elements[2] * m.elements[1]; }
 
-INLINE float2x2 basis2x2(float2 right, float2 up) { return (float2x2){ { right.x, right.y, up.x, up.y } }; }
+INLINE float2x2 columns2x2(float2 right, float2 up) { return (float2x2){ { right.x, right.y, up.x, up.y } }; }
 INLINE float2x2 diagonal2x2(float2 d) { return (float2x2){ { d.x, 0.0f, 0.0, d.y } }; }
-INLINE float2 col2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i * 2], m.elements[i * 2 + 1] }; }
-INLINE float2 row2x2(float2x2 m, uint32_t i) { return (float2){ m.elements[i], m.elements[i + 2] }; }
 
 // --- float3x3 ---
 // clang-format off
@@ -306,13 +333,43 @@ INLINE float3 xform3v(float4x4 m, float3 d) { return xyz4(mul4x4v(m, make4_from3
 INLINE float4x4 diagonal4x4(float4 v) {
 	return (float4x4){ .elements[0] = v.x, .elements[5] = v.y, .elements[10] = v.z, .elements[15] = v.w };
 }
+
+#define IDENTITY4x4 { { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f } }
 INLINE float4x4 identity4x4(void) { return diagonal4x4(splat4(1.0f)); }
 
-float4x4 translation4x4(float3 translation);
-float4x4 rotation4x4(quat4 q);
-INLINE float4x4 scaling4x4(float3 scale) { return diagonal4x4(float4(scale, 1.0f)); }
-
 // clang-format off
+// https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation#Quaternion-derived_rotation_matrix
+INLINE float4x4 rot4x4(quat4 q) {
+	float x = q.x, y = q.y, z = q.z, w = q.w;
+	float xx = x * x, yy = y * y, zz = z * z;
+	float xy = x * y, xz = x * z, yz = y * z;
+	float wx = w * x, wy = w * y, wz = w * z;
+	float s = 1.0f; // NOTE: assumes q is normalized
+
+	return (float4x4){{
+	  [0]  = 1.0f-2.0f*s*(yy+zz), [4]  = 2.0f*s*(xy-wz),      [8 ] = 2.0f*s*(xz+wy),      [12] = 0.0f,
+	  [1]  = 2.0f*s*(xy+wz),      [5]  = 1.0f-2.0f*s*(xx+zz), [9 ] = 2.0f*s*(yz-wx),      [13] = 0.0f,
+	  [2]  = 2.0f*s*(xz-wy),      [6]  = 2.0f*s*(yz+wx),      [10] = 1.0f-2.0f*s*(xx+yy), [14] = 0.0f,
+	  [3]  = 0.0f,                [7]  = 0.0f,                [11] = 0.0f,                [15] = 1.0f
+	}};
+}
+INLINE float4x4 translation4x4(float3 translation) {
+    return (float4x4){{
+	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = translation.x,
+	  [1] = 0.0f, [5] = 1.0f, [9] =  0.0f, [13] = translation.y,
+	  [2] = 0.0f, [6] = 0.0f, [10] = 1.0f, [14] = translation.z,
+	  [3] = 0.0f, [7] = 0.0f, [11] = 0.0f, [15] = 1.0f
+	}};
+}
+INLINE float4x4 scaling4x4(float3 scale) {
+    return (float4x4){{
+	  [0] = scale.x, [4] = 0.0f,    [8] =  0.0f,    [12] = 0.0f,
+	  [1] = 0.0f,    [5] = scale.y, [9] =  0.0f,    [13] = 0.0f,
+	  [2] = 0.0f,    [6] = 0.0f,    [10] = scale.z, [14] = 0.0f,
+	  [3] = 0.0f,    [7] = 0.0f,    [11] = 0.0f,    [15] = 1.0f
+	}};
+}
+
 INLINE float4x4 affine4x4(float3x3 m, float3 translation) {
 	return (float4x4){{
 	  [0] = m.elements[0], [4] = m.elements[3], [8] =  m.elements[6], [12] = translation.x,
@@ -325,7 +382,7 @@ INLINE float4x4 affine4x4(float3x3 m, float3 translation) {
 INLINE float4x4 trs4x4_quat(float3 translation, quat4 rotation, float3 scale) {
 	return mul4x4(
 		translation4x4(translation),
-		mul4x4(rotation4x4(rotation), scaling4x4(scale)) //
+		mul4x4(rot4x4(rotation), scaling4x4(scale)) //
 	);
 }
 INLINE float4x4 columns4x4(float4 a, float4 b, float4 c, float4 d) {
@@ -362,8 +419,8 @@ float4x4 perspective(float radians_fovy, float aspect, float near_z, float far_z
 float4x4 orthographic(float left, float right, float top, float bottom, float near, float far);
 
 INLINE float4x4 lookat(float3 eye, float3 center, float3 up) {
-	float3 camera_forward = norm3(sub3(center, eye));
-	float3 camera_right = norm3(cross3(camera_forward, up));
+	float3 camera_forward = normalize3(sub3(center, eye));
+	float3 camera_right = normalize3(cross3(camera_forward, up));
 	float3 camera_up = cross3(camera_right, camera_forward);
 
 	return affine4x4(

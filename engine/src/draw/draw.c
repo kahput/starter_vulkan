@@ -213,7 +213,7 @@ void draw2d_arrow(float2 origin, float2 delta, float thicknes, float head_lengh,
 	if (lensq2(delta) <= EPSILON * EPSILON) return;
 	float2 end = add2(origin, delta);
 
-	float2 tangent = norm2(make2(-delta.y, delta.x));
+	float2 tangent = normalize2(make2(-delta.y, delta.x));
 	float2 right = rotate2(tangent, 45.0f * DEG2RAD);
 	float2 left = rotate2(right, 90.0f * DEG2RAD);
 
@@ -374,8 +374,8 @@ void draw3d_quad_outline(Plane plane, float width, float height, float thickness
 		right.x = dot > 0 ? 1.0f : -1.0f;
 		up.z = -1.0f;
 	} else {
-		right = norm3(cross3(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }));
-		up = norm3(cross3(plane.normal, right));
+		right = normalize3(cross3(plane.normal, (float3){ 0.0f, 1.0f, 0.0f }));
+		up = normalize3(cross3(plane.normal, right));
 	}
 
 	float3 c = scale3(plane.normal, plane.distance);

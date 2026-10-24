@@ -12,7 +12,7 @@ int32_t randi_range(int32_t min, int32_t max) {
 	return min + (rand() % (max - min + 1));
 }
 
-float3 quat4_to_euler(quat4 q) {
+float3 euler4q(quat4 q) {
 	float3 result = { 0 };
 
 	// Roll (x-axis rotation)
@@ -34,7 +34,7 @@ float3 quat4_to_euler(quat4 q) {
 	return result;
 }
 
-quat4 quat4_from_axis_angle(float3 axis, float angle) {
+quat4 axisangle4q(float3 axis, float angle) {
 	quat4 result = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 	float length = len3(axis);
@@ -42,22 +42,17 @@ quat4 quat4_from_axis_angle(float3 axis, float angle) {
 		angle *= 0.5f;
 		axis = scale3(axis, 1.0f / length);
 
-		float s = sinf(angle);
-		float c = cosf(angle);
+		float s = sinf(angle), c = cosf(angle);
+		result = float4(scale3(axis, s), c);
 
-		result.x = axis.x * s;
-		result.y = axis.y * s;
-		result.z = axis.z * s;
-		result.w = c;
-
-		// NOTE: Maybe normalize?
-		/* result = float4_scale(result, 1 / float4_length(result)); */
+		if (lensq4(result) > 1.0f)
+			result = normalize4(result);
 	}
 
 	return result;
 }
 
-quat4 quat4_slerp(quat4 q, quat4 p, float t) {
+quat4 slerp4q(quat4 q, quat4 p, float t) {
 	quat4 result = { 0 };
 
 	float cosHalfTheta = q.x * p.x + q.y * p.y + q.z * p.z + q.w * p.w;
@@ -100,7 +95,7 @@ float3x3 axisangle3x3(float3 axis, float angle) {
 	float s = sinf(angle);
 	float t = 1.0f - c;
 
-	float3 normalized_axis = norm3(axis);
+	float3 normalized_axis = normalize3(axis);
 	float x = normalized_axis.x;
 	float y = normalized_axis.y;
 	float z = normalized_axis.z;
@@ -177,36 +172,6 @@ float4 mul4x4v(float4x4 m, float4 v) {
 	result.z = m.elements[2] * v.x + m.elements[6] * v.y + m.elements[10] * v.z + m.elements[14] * v.w;
 	result.w = m.elements[3] * v.x + m.elements[7] * v.y + m.elements[11] * v.z + m.elements[15] * v.w;
 
-	return result;
-}
-
-float4x4 translation4x4(float3 v) {
-	// clang-format off
-	float4x4 result = {{
-	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = v.x,
-	  [1] = 0.0f, [5] = 1.0f, [9] =  0.0f, [13] = v.y,
-	  [2] = 0.0f, [6] = 0.0f, [10] = 1.0f, [14] = v.z,
-	  [3] = 0.0f, [7] = 0.0f, [11] = 0.0f, [15] = 1.0f
-	}};
-	// clang-format on
-
-	return result;
-}
-
-float4x4 rotation4x4(quat4 q) {
-	float x = q.x, y = q.y, z = q.z, w = q.w;
-	float xx = x * x, yy = y * y, zz = z * z;
-	float xy = x * y, xz = x * z, yz = y * z;
-	float wx = w * x, wy = w * y, wz = w * z;
-
-	// clang-format off
-	float4x4 result = {{
-	  [0]  = 1.0f - 2.0f*(yy+zz), [4]  = 2.0f*(xy - wz),       [8]  = 2.0f*(xz + wy),       [12] = 0.0f,
-	  [1]  = 2.0f*(xy + wz),      [5]  = 1.0f - 2.0f*(xx+zz),  [9]  = 2.0f*(yz - wx),       [13] = 0.0f,
-	  [2]  = 2.0f*(xz - wy),      [6]  = 2.0f*(yz + wx),       [10] = 1.0f - 2.0f*(xx+yy),  [14] = 0.0f,
-	  [3]  = 0.0f,                [7]  = 0.0f,                  [11] = 0.0f,                  [15] = 1.0f
-	}};
-	// clang-format on
 	return result;
 }
 

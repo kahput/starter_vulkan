@@ -64,19 +64,20 @@ Pose anim_pose_blend_local(Arena *arena, Pose *source, Pose *target, float blend
 			Transform3 *target_transform = &target->transforms[bone_index];
 
 			result.transforms[bone_index].translation = lerp3(
-				source_transform->translation,
-				target_transform->translation,
-				bone_blend_weight);
-
-			result.transforms[bone_index].rotation = quat4_slerp(
-				source_transform->rotation,
-				target_transform->rotation,
-				bone_blend_weight);
-
+				source_transform->translation, // from
+				target_transform->translation, // to
+				bone_blend_weight // weight
+			);
+			result.transforms[bone_index].rotation = slerp4q(
+				source_transform->rotation, // from
+				target_transform->rotation, // to
+				bone_blend_weight // weight
+			);
 			result.transforms[bone_index].scale = lerp3(
-				source_transform->scale,
-				target_transform->scale,
-				bone_blend_weight);
+				source_transform->scale, // from
+				target_transform->scale, // to
+				bone_blend_weight // weight
+			);
 		}
 	}
 

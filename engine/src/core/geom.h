@@ -55,7 +55,7 @@ INLINE float3 plane_project_point(Plane p, float3 point) { return sub3(point, sc
 INLINE Plane plane_from_triangle(Triangle3 t) {
 	Plane result = { 0 };
 
-	result.normal = norm3(cross3(sub3(t.b, t.a), sub3(t.c, t.a)));
+	result.normal = normalize3(cross3(sub3(t.b, t.a), sub3(t.c, t.a)));
 	result.distance = dot3(result.normal, t.a);
 
 	return result;

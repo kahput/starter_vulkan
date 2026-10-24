@@ -621,9 +621,11 @@ Mesh res_load_gltf(Arena *arena, string8 path) {
 		result.parts = arena_push_count(arena, MeshPart, result.part_count);
 		for (uint32_t index = 0; index < layout.attribute_count; ++index) {
 			VertexAttribute attr = layout.attributes[index];
+            result.stream_formats[attr.semantic] = attr.format;
 			result.streams[attr.semantic] = arena_push_count(arena, uint8_t, result.total_vertex_count *data_format_to_size(attr.format));
 		}
 		result.indices = arena_push_count(arena, uint32_t, result.total_index_count);
+        result.index_format = INDEX_FORMAT32;
 		result.bounds = aabb3_empty();
 
 		uint32_t part_offset = 0;
@@ -691,7 +693,7 @@ Mesh res_load_gltf(Arena *arena, string8 path) {
 									if (is_position) {
 										aabb3_expand(&part->bounds, store3(element, xyz4(world)));
 									} else // TODO: Handle non-uniform transform
-										store3(element, norm3(xyz4(world)));
+										store3(element, normalize3(xyz4(world)));
 								}
 								break;
 

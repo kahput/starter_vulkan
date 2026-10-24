@@ -227,7 +227,7 @@ Mesh mesh_capsule(Arena *arena, float3 origin, float height, float radius, uint3
 				positions[j] = add3(origin, side), normals[j] = disk, uvs[j] = float2(tx, (side.y + half_height) / height);
 
 				cap.y *= -1.0f, sphere.y *= -1.0f;
-				positions[k] = add3(origin, cap), normals[k] = sphere, uvs[k] = float2(tx, (cap.y + half_height) / half_height);
+				positions[k] = add3(origin, cap), normals[k] = sphere, uvs[k] = float2(tx, (cap.y + half_height) / height);
 			}
 		}
 
@@ -237,11 +237,6 @@ Mesh mesh_capsule(Arena *arena, float3 origin, float height, float radius, uint3
 
 		uint32_t *index_cursor = indices;
 		for (uint32_t section = 0; section < 3; ++section) {
-			if (section == 1) {
-				float x = 0.0f;
-				(void)x;
-			}
-
 			for (uint32_t face = 0; face < face_count; ++face) {
 				uint32_t ring = face / (segments - 1);
 				uint32_t segment = face % (segments - 1);

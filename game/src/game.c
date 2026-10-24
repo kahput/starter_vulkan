@@ -1,139 +1,10 @@
-#include "app/scene.h"
+#include "game.h"
 #include "core/cmath.h"
-#include "core/debug.h"
-#include "core/geom.h"
-#include "core/geom_types.h"
-#include "core/input_types.h"
-#include "core/mesh.h"
-#include "core/strings.h"
-#include "generated/resources.h"
-#include "generated/res_generated.h"
-#include "gfx/gfx_types.h"
-
-#include "res.h"
-#include "generated/resources.c"
-#include "generated/res_generated.c"
-
-#include <common.h>
-#include <core/arena.h>
-#include <core/logger.h>
-
-#include <os.h>
-
-#include <gfx.h>
-
-#include <draw.h>
-
-#include <utils/input.h>
-#include <utils/anim.h>
-
-typedef struct {
-	Arena *permanent, *frame;
-
-	GFX_Device device[1];
-
-	OS_Surface *surface;
-	GFX_Swapchain *swapchain;
-	GFX_Image *depthbuffer;
-
-	InputState input;
-	GFX_Image *white_texture;
-	RES_Cache cache;
-
-	GFX_Sampler *sampler_nearest;
-	GFX_Sampler *sampler_linear;
-
-	Camera camera;
-
-	uint64_t start_time;
-	float last_frame;
-
-	bool initialized;
-} State;
 
 // image imfilter(image, kernel, boundary_condition);
 // rgb2gray(im
 // normxcorr2(onion, peppers);
 // image imedge(image, algorithm);
-
-State *state = 0;
-static inline char *named(const char *name) {
-	return (char *)fmt8(state->permanent, name).bytes;
-}
-
-typedef struct {
-	float2 position;
-	bool active, hovered, initialized;
-} Drag2D;
-Rectangle drag2d_point(Drag2D *drag, float2 initial_position, float radius, float2 mouse) {
-	Rectangle result = { 0 };
-
-	bool ok = drag;
-	if (ok) {
-		if (drag->initialized == false) {
-			drag->position = initial_position;
-			drag->initialized = true;
-		}
-
-		Rectangle handle = rect_from_center(drag->position, splat2(radius));
-		drag->hovered = rect_contains_point(handle, mouse);
-
-		if (drag->hovered && input_mouse_pressed(MOUSE_BUTTON_LEFT))
-			drag->active = true;
-
-		if (drag->active) drag->position = mouse;
-		if (input_mouse_released(MOUSE_BUTTON_LEFT)) drag->active = false;
-
-		result = rect_from_center(drag->position, splat2(radius));
-	}
-
-	return result;
-}
-
-Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, float *t) {
-	Rectangle result = { 0 };
-
-	bool ok = drag && t;
-	if (ok) {
-		*t = clampf(*t, min, max);
-		float2 mouse = as2(input_mouse_position(), float2);
-
-		float thumb_h = bounds.height;
-		float thumb_w = thumb_h;
-
-		float travel = bounds.width - thumb_w;
-
-		drag->hovered = rect_contains_point(bounds, mouse);
-		if (drag->hovered && input_mouse_pressed(MOUSE_BUTTON_LEFT)) drag->active = true;
-		if (input_mouse_released(MOUSE_BUTTON_LEFT)) drag->active = false;
-
-		if (drag->active) {
-			float local_x = mouse.x - bounds.x - thumb_w * 0.5f;
-			local_x = clampf(local_x, 0.0f, travel);
-
-			float mouse_ratio = (travel != 0.0f) ? (local_x / travel) : 0.0f;
-			*t = min + (mouse_ratio * (max - min));
-		}
-
-		float range = max - min;
-		float t_norm = range != 0.0f ? (*t - min) / range : 0.0f;
-
-		result = rect(bounds.x + t_norm * travel, bounds.y, thumb_w, thumb_h);
-	}
-
-	return result;
-}
-
-const RES_Catalog registry = {
-	.images = res_image_metadata,
-	.image_count = RES_IMAGE_MAX,
-
-	.fonts = res_font_metadata,
-	.font_count = RES_FONT_MAX,
-
-	.shaders = res_shader_metadata,
-	.shader_count = RES_SHADER_MAX,
-};
 
 bool tick(Arena *permanent, Arena *frame) {
 	if (permanent->offset == 0) arena_push_count(permanent, State, 1); // reserve space for state
@@ -181,6 +52,7 @@ bool tick(Arena *permanent, Arena *frame) {
 		state->start_time = os_time_ns();
 	}
 	Camera *camera = &state->camera;
+	GameState *gstate = &state->game;
 
 	double time = (os_time_ns() - state->start_time) * 1e-9;
 	float dt = time - state->last_frame;
@@ -231,10 +103,68 @@ bool tick(Arena *permanent, Arena *frame) {
 	mouse_delta.y /= dims.y;
 
 	DRAW_List *draw = drawlist_make(frame, RES_SHADER_QUAD2D, RES_SHADER_LINE3D);
-	scene_camera_orbit(camera, mouse_delta);
+	if (input_key_pressed(KEY_CODE_TAB)) gstate->viewport_state_editor = !gstate->viewport_state_editor;
 
-	float3 camera_forward = norm3(sub3(camera->target, camera->position));
-	float3 camera_right = norm3(cross3(camera_forward, FLOAT3_UP));
+	if (gstate->viewport_state_editor) {
+		os_cursor_capture(state->surface, false);
+		scene_camera_orbit(camera, mouse_delta);
+	} else {
+		os_cursor_capture(state->surface, true);
+
+		static float azimuth = PIf * 3 / 2.f;
+		static float theta = PIf / 3.f;
+		static const float sensitivity = 1.0f;
+		static const float spring_arm_length = 10.f;
+
+		float yaw_delta = mouse_delta.x * sensitivity;
+		float pitch_delta = mouse_delta.y * sensitivity;
+
+		azimuth = fmodf(azimuth + yaw_delta, PIf * 2.f);
+		if (azimuth < 0)
+			azimuth += PIf * 2.f;
+
+		theta = clampf(theta - pitch_delta, PIf / 4.f, PIf / 2.f);
+
+		float3 *p = &gstate->player_position;
+
+		float3 camera_offset = sub3(camera->position, gstate->player_position);
+
+		float r = len3(camera_offset);
+		if (r < EPSILON)
+			r = EPSILON;
+
+		float current_theta = acosf(camera_offset.y / r);
+		float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+
+		if (current_azimuth < 0)
+			current_azimuth += PIf * 2.f;
+
+		float da = azimuth - current_azimuth;
+		if (da > PIf)
+			da -= PIf * 2.f;
+		if (da < -PIf)
+			da += PIf * 2.f;
+
+		float t = 1.0f - expf(-15.0f * dt);
+
+		current_azimuth += t * da;
+		current_theta += t * (theta - current_theta);
+
+		camera->position = (float3){
+			(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + p->x,
+			spring_arm_length * cosf(current_theta),
+			(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + p->z,
+		};
+
+		camera->target.x = p->x;
+		camera->target.z = p->z;
+
+		camera->position.y += p->y;
+		camera->target.y = p->y + 1.5f;
+	}
+
+	float3 camera_forward = normalize3(sub3(camera->target, camera->position));
+	float3 camera_right = normalize3(cross3(camera_forward, FLOAT3_UP));
 	float3 camera_up = cross3(camera_right, camera_forward);
 
 	float3x3 camera_rotation = columns3x3(camera_right, camera_up, neg3(camera_forward));
@@ -257,14 +187,118 @@ bool tick(Arena *permanent, Arena *frame) {
 	for (int32_t x = -seg_count; x <= seg_count; ++x)
 		draw3d_line(float3(x, 0.0f, -seg_count), float3(x, 0.0f, seg_count), 1.0f, x == 0 ? GREEN : GRAY);
 
-	float4x4 world_from_local = affine4x4(identity3x3(), FLOAT3_UP);
-
-	static Drag2D slider = { 0 };
-
 	uint32_t segments = 32, rings = 16;
 	float radius = 0.5f, height = 2.0f;
 
-	Mesh mesh = mesh_capsule(frame, float3(0.0f), 2.0f, 0.5f, 32, 16);
+	float2 input = {
+		input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
+		input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
+	};
+
+	float input_length_sq = lensq2(input);
+	if (input_length_sq > EPSILON * EPSILON) {
+		input = normalize2(input);
+
+		float3 camera_position = camera->position;
+		float3 camera_target = camera->target;
+
+		camera_position.y = 0.0f;
+		camera_target.y = 0.0f;
+
+		float3 fwd = normalize3(sub3(camera_target, camera_position));
+		float3 right = normalize3(cross3(fwd, camera->up));
+
+		float3 move = add3(scale3(right, input.x * dt * 4.0f), scale3(fwd, input.y * dt * 4.0f));
+		gstate->player_position = add3(gstate->player_position, move);
+
+		// :emitter
+		for (uint32_t particle_spawn_index = 0; particle_spawn_index < 1; ++particle_spawn_index) {
+			Particle3 *particle = gstate->particles + gstate->particle_next;
+			gstate->particle_next = (gstate->particle_next + 1) % countof(gstate->particles);
+			particle->t = 0.0f;
+
+			float random_angle = randf_range(0.0f, TAU);
+			float random_radius = randf_range(0.0f, 0.3f);
+
+			float3 spawn = { sinf(random_angle) * random_radius, 0.1f, cosf(random_angle) * random_radius };
+			particle->position = add3(gstate->player_position, spawn);
+
+			float3 particle_direction = neg3(normalize3(move));
+			float3 right, up;
+			particle_direction = orthobasis3(particle_direction, &right, &up);
+
+			// clang-format off
+			particle->velocity =
+				add3(scale3(particle_direction, randf_range(0.5f, 1.0f)),
+					add3(
+						scale3(right, randf_range(-1.0f, 1.0f)),
+						scale3(up, randf_range(-0.5f, 0.0f) 
+                    ) //
+                ));
+			// clang-format on
+		}
+	}
+
+	Mesh sphere = mesh_sphere(frame, float3(0.0f), 0.5f, 32, 16);
+	Mesh capsule = mesh_capsule(frame, float3(0.0f, 1.0f, 0.0f), 2.0f, 0.5f, 32, 16);
+
+	enum {
+		MESH_SPHERE,
+		MESH_CAPSULE,
+		MESH_GDBOT
+	};
+
+	static Mesh gdbot = { 0 };
+	if (gdbot.total_vertex_count == 0)
+		gdbot = res_load_gltf(permanent, s("resources/models/gdbot.glb"));
+
+	Mesh meshes[] = {
+		[MESH_SPHERE] = sphere,
+		[MESH_CAPSULE] = capsule,
+		[MESH_GDBOT] = gdbot,
+	};
+
+	typedef uint32_t RID;
+	typedef struct {
+		RID mesh;
+		Transform3 transform;
+	} MeshInstance;
+
+	MeshInstance instances[512];
+	uint32_t instance_count = 0;
+
+	float3 camera_offset = sub3(camera->position, gstate->player_position);
+	float current_azimuth = atan2f(-camera_offset.z, camera_offset.x) - PI * 0.5f; // [-pi, pi]
+	instances[instance_count++] = (MeshInstance){ MESH_GDBOT, { gstate->player_position, axisangle4q(FLOAT3_UP, current_azimuth), float3(1.0f) } };
+
+	// :particle
+	for (uint32_t particle_index = 0; particle_index < countof(gstate->particles); ++particle_index) {
+		Particle3 *particle = gstate->particles + particle_index;
+		particle->t += dt;
+		if (particle->t > 0.7f) {
+			int32_t last = gstate->particle_next - 1;
+			if (last < 0) last += countof(gstate->particles);
+			gstate->particle_next = last;
+
+			*particle = gstate->particles[last];
+			continue;
+		}
+		particle->position = sadd3(particle->position, particle->velocity, dt);
+		instances[instance_count++] = (MeshInstance){
+			MESH_SPHERE,
+			{ particle->position, identity4q(), scale3(float3(0.3f), 0.7f - particle->t) },
+		};
+	}
+
+	RES_Font *font = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
+	static uint32_t fps = 0, fps_sum, frame_counter = 0;
+	frame_counter += 1, fps_sum += (int32_t)roundf(1.0f / dt);
+	if (frame_counter > 30) {
+		fps = fps_sum / frame_counter;
+		frame_counter = 0, fps_sum = 0;
+	}
+
+	draw2d_textf(font, float2(12.0f), WHITE, "FPS: %u", fps);
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -332,33 +366,52 @@ bool tick(Arena *permanent, Arena *frame) {
 				{ VERTEX_SEMANTIC_UV1, DATA_FORMAT_FLOAT32x2 } //
 			);
 
-			uint64_t vertices_size = mesh.total_vertex_count * shader_vlayout.stride;
-
-			uint64_t offset = alignup(cmd->transient_arena->offset, 256);
-			void *vertices = arena_push(cmd->transient_arena, alignup(vertices_size, 256), 256, 0);
-			mesh_pack_into(&mesh, &shader_vlayout, vertices, vertices_size);
-
 			Uniform set0[] = { uniform_data(0, &fd, sizeof(fd)) };
-			Uniform set1[] = { storage_buffers(0, cmd->transient_buffer, offset, vertices_size) };
-
 			gfx_cmd_bind(device, 0, set0, countof(set0));
-			gfx_cmd_bind(device, 1, set1, countof(set0));
 
-			gfx_cmd_push_constant(cmd, sizeof(world_from_local), world_from_local.elements);
+			uint64_t index_buffer_offsets[countof(meshes)];
+			uint64_t vertex_buffer_offsets[countof(meshes)];
+			uint64_t vertex_buffer_sizes[countof(meshes)];
 
-			uint64_t index_offset = gfx_cmd_put(cmd, mesh.total_index_count * index_format_to_size(mesh.index_format), mesh.indices);
-			if (mesh.index_format == INDEX_FORMAT32)
-				gfx_cmd_bind_index_buffer32(cmd, cmd->transient_buffer, index_offset);
-			else
-				gfx_cmd_bind_index_buffer16(cmd, cmd->transient_buffer, index_offset);
+			for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
+				Mesh *mesh = meshes + mesh_index;
 
-			for (uint32_t part_index = 0; part_index < mesh_part_count(mesh); ++part_index) {
-				MeshPart part = meshpart(mesh, part_index);
+				uint64_t vertex_buffer_size = mesh->total_vertex_count * shader_vlayout.stride;
+				uint64_t vertex_buffer_offset = alignup(cmd->transient_arena->offset, 256);
+				void *vertices = arena_push(cmd->transient_arena, alignup(vertex_buffer_size, 256), 256, 0);
+				mesh_pack_into(mesh, &shader_vlayout, vertices, vertex_buffer_size);
 
-				if (part.index_count) {
-					gfx_cmd_draw_indexed(cmd, part.index_offset, part.index_count, part.vertex_offset);
-				} else {
-					gfx_cmd_draw(cmd, part.vertex_offset, part.vertex_count);
+				index_buffer_offsets[mesh_index] = gfx_cmd_put(cmd, mesh->total_index_count * index_format_to_size(mesh->index_format), mesh->indices);
+				vertex_buffer_offsets[mesh_index] = vertex_buffer_offset;
+				vertex_buffer_sizes[mesh_index] = vertex_buffer_size;
+			}
+
+			for (uint32_t instance_index = 0; instance_index < instance_count; ++instance_index) {
+				MeshInstance *instance = &instances[instance_index];
+				RID mesh_index = instance->mesh;
+				if (mesh_index >= countof(meshes)) continue;
+
+				Mesh mesh = meshes[mesh_index];
+
+				Uniform set1[] = { storage_buffers(0, cmd->transient_buffer, vertex_buffer_offsets[mesh_index], vertex_buffer_sizes[mesh_index]) };
+				gfx_cmd_bind(device, 1, set1, countof(set0));
+
+				float4x4 transform = transform4x4(instance->transform);
+				gfx_cmd_push_constant(cmd, sizeof(transform), transform.elements);
+
+				if (mesh.index_format == INDEX_FORMAT32)
+					gfx_cmd_bind_index_buffer32(cmd, cmd->transient_buffer, index_buffer_offsets[mesh_index]);
+				else
+					gfx_cmd_bind_index_buffer16(cmd, cmd->transient_buffer, index_buffer_offsets[mesh_index]);
+
+				for (uint32_t part_index = 0; part_index < mesh_part_count(mesh); ++part_index) {
+					MeshPart part = meshpart(mesh, part_index);
+
+					if (part.index_count) {
+						gfx_cmd_draw_indexed(cmd, part.index_offset, part.index_count, part.vertex_offset);
+					} else {
+						gfx_cmd_draw(cmd, part.vertex_offset, part.vertex_count);
+					}
 				}
 			}
 		}
