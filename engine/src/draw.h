@@ -9,7 +9,7 @@
 
 typedef struct {
 	float4 radii;
-    
+
 	rgba8 fill_color, border_color;
 	float border_width, rotation;
 
@@ -31,13 +31,18 @@ typedef struct {
 	float2 origin, rotation;
 	float border_width;
 	float3 _pad0;
-} DRAW_QuadInstance3D;
+} DRAW_QuadInstance;
 
 typedef struct {
 	float4 a, b; // xyz + thickness
 	uint32_t color;
 	float3 _pad0;
-} DRAW_LineInstance3D;
+} DRAW_LineInstance;
+
+/* typedef struct { */
+/*     RID mesh; */
+/*     float4x4 world_from_local; */
+/* } DRAW_MeshInstance; */
 
 typedef struct {
 	float3 position;

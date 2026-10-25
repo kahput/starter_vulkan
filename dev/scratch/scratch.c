@@ -23,7 +23,7 @@ int main(int32_t argc, const char *argv[]) {
 
 		gray.pixels[pixel_index] = (uint8_t)roundf(rgb[0] + rgb[1] + rgb[2]);
 	}
-	imsave(s("resources/images/duck_grayscale.jpg"), &gray);
+	imsave(s("resources/images/duck_grayscale.png"), &gray);
 
 	rgba8 top = hex(0xF7EF81);
 	rgba8 bot = hex(0xDD1C1A);
@@ -42,29 +42,34 @@ int main(int32_t argc, const char *argv[]) {
 	}
 	imsave(s("resources/images/gradient.png"), &gradient);
 
-	int sobelx[3][3] = {
-		{ -1, 0, 1 },
-		{ -2, 0, 2 },
-		{ -1, 0, 1 },
+	// clang-format off
+    const uint32_t kw = 3, kh = 3;
+	int sobelx[] = {
+		-1, 0, 1,
+		-2, 0, 2,
+		-1, 0, 1,
 	};
-	int sobely[3][3] = {
-		{ -1, -2, -1 },
-		{ 0, 0, 0 },
-		{ 1, 2, 1 },
+    ASSERT(countof(sobelx) == kw * kh);
+	int sobely[] = {
+		-1, -2, -1,
+		 0,  0,  0,
+		 1,  2,  1,
 	};
+    ASSERT(countof(sobely) == kw * kh);
+	// clang-format on
 
 	Image edges = impush(arena, gray.width, gray.height, 1);
 	for (int32_t y = 0; y < (int32_t)gray.height; ++y) {
 		for (int32_t x = 0; x < (int32_t)gray.width; ++x) {
 			int32_t gx = 0, gy = 0;
-			for (int32_t j = 0; j < 3; ++j) {
-				for (int32_t i = 0; i < 3; ++i) {
-					int32_t px = CLAMP(x + i - 1, 0, (int32_t)gray.width - 1);
-					int32_t py = CLAMP(y + j - 1, 0, (int32_t)gray.height - 1);
+			for (uint32_t j = 0; j < kh; ++j) {
+				for (uint32_t i = 0; i < kw; ++i) {
+					int32_t px = clamp1s((int32_t)x + i - 1, 0, gray.width - 1);
+					int32_t py = clamp1s((int32_t)y + j - 1, 0, gray.height - 1);
 
 					int32_t index = px + py * gray.width;
-					gx += sobelx[j][i] * gray.pixels[index];
-					gy += sobely[j][i] * gray.pixels[index];
+					gx += sobelx[i + j * kw] * gray.pixels[index];
+					gy += sobely[i + j * kw] * gray.pixels[index];
 				}
 			}
 
@@ -73,11 +78,6 @@ int main(int32_t argc, const char *argv[]) {
 		}
 	}
 	imsave(s("resources/images/duck_sobel.png"), &edges);
-
-	float4x4 translation = affine4x4(identity3x3(), float3(1.0f, 0.0f, 0.0f));
-	float4x4 rotation = affine4x4(axisangle3x3(FLOAT3_UP, radians(45.0f)), float3(0.0f));
-
-	float4x4 result = mul4x4(translation, rotation);
 
 	return 0;
 }

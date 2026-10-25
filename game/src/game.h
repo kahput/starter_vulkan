@@ -28,17 +28,26 @@
 
 #include <utils/input.h>
 #include <utils/anim.h>
-typedef struct {
+
+typedef struct Particle3 {
 	float3 position, velocity;
-	float t;
+	float t, lifetime;
 } Particle3;
 
 typedef struct {
-	bool viewport_state_editor;
-	float3 player_position;
+	Transform3 transform;
 
-	Particle3 particles[256];
-	uint32_t particle_next;
+	bool grounded;
+	float3 acceleration, velocity;
+} Player;
+
+typedef struct {
+	bool viewport_state_editor;
+	Player player;
+
+	Particle3 particles[128];
+	float dust_accum;
+	uint32_t particle_count;
 } GameState;
 
 typedef struct {

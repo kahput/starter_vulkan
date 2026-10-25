@@ -17,5 +17,5 @@ INLINE Image imcopy(Arena *arena, Image image) { return (Image){ arena_push_copy
 Image imload(Arena *arena, string8 path);
 bool imsave(string8 path, const Image *image);
 
-Image imfliter(Arena *arena, Image target, int32_t k[], uint32_t kd[], uint32_t kc);
+Image imfliter(Arena *arena, Image target, int32_t kernel[], uint32_t kw, uint32_t kh);
 /* bool imtext(Font font, Image im, string8 text); */

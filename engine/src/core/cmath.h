@@ -35,6 +35,7 @@ uint32_t randu_range(uint32_t min, uint32_t max);
 int32_t randi_range(int32_t min, int32_t max);
 
 INLINE uint32_t clamp1u(uint32_t value, uint32_t lo, uint32_t hi) { return value < lo ? lo : (value > hi ? hi : value); }
+INLINE int32_t clamp1s(int32_t value, int32_t lo, int32_t hi) { return value < lo ? lo : (value > hi ? hi : value); }
 INLINE int32_t abs1i(int32_t value) { return value < 0 ? -value : value; }
 
 INLINE float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
@@ -69,6 +70,11 @@ INLINE float maxf(float a, float b) { return a > b ? a : b; }
 
 INLINE int32_t min1i(int32_t a, int32_t b) { return a < b ? a : b; }
 INLINE int32_t max1i(int32_t a, int32_t b) { return a > b ? a : b; }
+
+INLINE float smoothstepf(float edge0, float edge1, float v) {
+	v = clampf((v - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+	return v * v * (3.0f - 2.0f * v);
+}
 
 // --- float2 ---
 INLINE void store2(float2 src, float dst[2]) { dst[0] = src.x, dst[1] = src.y; }
@@ -136,7 +142,7 @@ INLINE float3 mul3(float3 a, float3 b) { return (float3){ a.x * b.x, a.y * b.y, 
 INLINE float3 scale3(float3 v, float s) { return (float3){ v.x * s, v.y * s, v.z * s }; }
 INLINE float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 INLINE float3 madd3(float3 a, float3 b, float3 c) { return (float3){ fmaf(b.x, c.x, a.x), fmaf(b.y, c.x, a.y), fmaf(b.z, c.x, a.z) }; }
-INLINE float3 sadd3(float3 a, float3 b, float c) { return (float3){ fmaf(b.x, c, a.x), fmaf(b.y, c, a.y), fmaf(b.z, c, a.z) }; }
+INLINE float3 sadd3(float3 a, float3 b, float c) { return madd3(a, b, float3(c)); }
 
 INLINE float3 cross3(float3 a, float3 b) { return (float3){ a.y * b.z - b.y * a.z, a.z * b.x - b.z * a.x, a.x * b.y - b.x * a.y }; }
 INLINE float lensq3(float3 v) { return dot3(v, v); }

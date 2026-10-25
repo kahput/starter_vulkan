@@ -2468,7 +2468,7 @@ int main(void) {
 							storage_data(0, draw->line3d.instances.base, draw->line3d.instances.offset),
 						};
 						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance3D));
+						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance));
 					}
 				}
 
@@ -2483,7 +2483,7 @@ int main(void) {
 					.viewport = as2(dims, float2),
 					.time = time,
 				};
-				uint32_t quad_count = draw->quad2d.instances.offset / sizeof(DRAW_QuadInstance3D);
+				uint32_t quad_count = draw->quad2d.instances.offset / sizeof(DRAW_QuadInstance);
 
 				GFX_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
@@ -2491,7 +2491,7 @@ int main(void) {
 					images[texture_id] = white_texture;
 
 				for (uint32_t quad_instance = 0; quad_instance < quad_count; ++quad_instance) {
-					DRAW_QuadInstance3D *quad = (DRAW_QuadInstance3D *)draw->quad2d.instances.base + quad_instance;
+					DRAW_QuadInstance *quad = (DRAW_QuadInstance *)draw->quad2d.instances.base + quad_instance;
 
 					if (quad->imageid && quad->imageid != indexof(device->image_pool, white_texture)) {
 						int32_t found_index = -1;

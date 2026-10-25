@@ -98,6 +98,10 @@
 #define STATIC_ASSERT(COND) typedef char STATIC_ASSERT_PASTE(static_assertion_failed_at_line_, __LINE__)[(COND) ? 1 : -1]
 #define ENUM_STRING_TABLE_ENTRY(prefix, value) [prefix##_##value] = comp8(#value)
 
+#define SELECT2(_1, _2, FN, ...) FN
+#define SELECT3(_1, _2, _3, FN, ...) FN
+#define SELECT4(_1, _2, _3, _4, FN, ...) FN
+
 #define META(...)
 
 #define KB(bytes) ((uint64_t)(bytes) * 1000ULL)
@@ -158,14 +162,9 @@ INLINE float3 xyz4(float4 v) { return make3(v.x, v.y, v.z); }
 INLINE float2 xy4(float4 v) { return make2(v.x, v.y); }
 INLINE float2 xy3(float3 v) { return make2(v.x, v.y); }
 
-#define FLOAT2_SELECT(_1, _2, FN, ...) FN
-#define float2(...) FLOAT2_SELECT(__VA_ARGS__, make2, splat2, _)(__VA_ARGS__)
-
-#define FLOAT3_SELECT(_1, _2, _3, FN, ...) FN
-#define float3(...) FLOAT3_SELECT(__VA_ARGS__, make3, make3_from2, splat3, _)(__VA_ARGS__)
-
-#define FLOAT4_SELECT(_1, _2, _3, _4, FN, ...) FN
-#define float4(...) FLOAT4_SELECT(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
+#define float2(...) SELECT2(__VA_ARGS__, make2, splat2, _)(__VA_ARGS__)
+#define float3(...) SELECT3(__VA_ARGS__, make3, make3_from2, splat3, _)(__VA_ARGS__)
+#define float4(...) SELECT4(__VA_ARGS__, make4, make4_from2, make4_from3, splat4, _)(__VA_ARGS__)
 
 #define FLOAT3_RIGHT ((float3){1.0f, 0.0f, 0.0f})
 #define FLOAT3_LEFT ((float3){-1.0f, 0.0f, 0.0f})
@@ -219,20 +218,20 @@ INLINE Rectangle rect_square(float s){  return (Rectangle){ 0.0f, 0.0f, s, s }; 
 INLINE Rectangle rect_wh(float w, float h) { return (Rectangle){ 0.0f, 0.0f, w, h }; }
 INLINE Rectangle rect_pwh(float2 p, float w, float h) { return (Rectangle){ p.x, p.y, w, h }; }
 INLINE Rectangle rect_xywh(float x, float y, float w, float h ){ return (Rectangle){ x, y, w, h }; }
+#define rect(...) SELECT4(__VA_ARGS__, rect_xywh, rect_pwh, rect_wh, rect_square, _)(__VA_ARGS__)
 
-INLINE Rectangle rect2(float2 xy, float2 wh) { return (Rectangle){ xy.x, xy.y, wh.x, wh.y }; }
-
-#define RECT_SELECT(_1, _2, _3, _4, FN, ...) FN
-#define rect(...) RECT_SELECT(__VA_ARGS__, rect_xywh, rect_pwh, rect_wh, rect_square, _)(__VA_ARGS__)
-
-#define rgba(r, g, b, a) (rgba8){ r, g, b, a }
-#define rgb(r, g, b) (rgba8){ r, g, b, 255 }
-#define hex(u) (rgba8){ ((u) >> 16) & 0xFF, ((u) >> 8) & 0xFF, ((u) >> 0) & 0xFF, 0xFF } 
 
 typedef struct { uint8_t r, g, b, a; } rgba8;
+INLINE rgba8 rgba8_gray(uint8_t scale) { return (rgba8){ scale, scale, scale, 255 }; }
+INLINE rgba8 rgba8_gray_alpha(uint8_t scale, uint8_t alpha) { return (rgba8){ scale, scale, scale, alpha }; }
+INLINE rgba8 rgba8_color(uint8_t r, uint8_t g, uint8_t b) { return (rgba8){ r, g, b, 255 }; }
+INLINE rgba8 rgba8_color_alpha(uint8_t r, uint8_t g, uint8_t b, uint8_t a) { return (rgba8){ r, g, b, a }; }
+
+#define rgba8(...) SELECT4(__VA_ARGS__, rgba8_color_alpha, rgba8_color, rgba8_gray_alpha, rgba8_gray, _)(__VA_ARGS__)
+#define hex(u) (rgba8){ ((u) >> 16) & 0xFF, ((u) >> 8) & 0xFF, ((u) >> 0) & 0xFF, 0xFF }
 
 // clang-format on
-#define TRANSPARENT rgba(0, 0, 0, 0)
+#define TRANSPARENT (rgba8){ 0 } 
 
 #define RED hex(0xFF0000)
 #define ORANGE hex(0xFF7F00)
@@ -242,12 +241,12 @@ typedef struct { uint8_t r, g, b, a; } rgba8;
 #define INDIGO hex(0x4B0082)
 #define VIOLET hex(0x8B00FF)
 
-#define TEAL rgb(0, 128, 128)
+#define TEAL (rgba8){ 0, 128, 128, 255 }
 
-#define WHITE rgb(255, 255, 255)
-#define GRAY rgb(128, 128, 128)
-#define DARK_GRAY rgb(64, 64, 64)
-#define BLACK rgb(0, 0, 0)
+#define WHITE (rgba8){ 255, 255, 255, 255 }
+#define GRAY (rgba8){ 128, 128, 128, 255 }
+#define DARK_GRAY (rgba8){ 64, 64, 64, 255 }
+#define BLACK (rgba8){ 0, 0, 0, 255 }
 
 INLINE uint32_t rgba8_as_uint32(rgba8 c) {
 	return ((uint32_t)c.r) | ((uint32_t)c.g << 8) | ((uint32_t)c.b << 16) | ((uint32_t)c.a << 24);

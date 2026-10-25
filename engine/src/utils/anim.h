@@ -19,13 +19,6 @@ typedef struct {
 } AnimationClip;
 
 typedef struct {
-	bool playing;
-
-	AnimationClip animation;
-	float anim_t;
-} AnimationPlayer;
-
-typedef struct {
 	Transform3 *transforms;
 	uint32_t bone_count;
 } Pose;
@@ -46,26 +39,3 @@ Pose anim_pose_sample(Arena *arena, AnimationClip *clip, float t);
 Pose anim_pose_blend_local(Arena *arena, Pose *dst, Pose *src, float blend_weight, BoneMask *mask);
 float4x4 *anim_pose_local_to_model(Arena *arena, Pose *pose, Skeleton *skeleton);
 float4x4 *anim_pose_skinning_matrices(Arena *arena, float4x4 *model_matrices, Skeleton *skeleton);
-
-void anim_player_update(AnimationPlayer *player, float dt);
-
-typedef struct {
-	float start, target;
-	float elapsed, duration;
-} ANIM_Tween1f;
-
-INLINE float tween1f_eval(ANIM_Tween1f *tw) {
-	float u = tw->duration > 0.0f ? clampf(tw->elapsed / tw->duration, 0.0f, 1.0f) : 1.0f;
-	return lerpf(tw->start, tw->target, u);
-}
-
-INLINE float tween1f_update(ANIM_Tween1f *tw, float target, float duration, float dt) {
-	if (tw->target != target) {
-		tw->start = tween1f_eval(tw);
-		tw->target = target;
-		tw->elapsed = 0.0f;
-		tw->duration = duration;
-	}
-	tw->elapsed += dt;
-	return tween1f_eval(tw);
-}

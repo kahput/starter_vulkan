@@ -1,5 +1,10 @@
 #include "game.h"
 #include "core/cmath.h"
+#include "core/geom_types.h"
+#include "core/input_types.h"
+#include "draw.h"
+#include "utils/anim.h"
+#include "utils/input.h"
 
 // image imfilter(image, kernel, boundary_condition);
 // rgb2gray(im
@@ -48,6 +53,11 @@ bool tick(Arena *permanent, Arena *frame) {
 
 		state->last_frame = 0.0f;
 
+		state->game.player = (Player){
+			.transform = transform3(float3(0.0f), identity4q(), float3(1.0f)),
+		};
+		state->game.viewport_state_editor = true;
+
 		state->initialized = true;
 		state->start_time = os_time_ns();
 	}
@@ -59,7 +69,6 @@ bool tick(Arena *permanent, Arena *frame) {
 	state->last_frame = time;
 
 	input_update();
-
 	uint2 resize = { 0 };
 	for (OS_Event event; os_event_poll(&event);) {
 		switch (event.type) {
@@ -111,56 +120,156 @@ bool tick(Arena *permanent, Arena *frame) {
 	} else {
 		os_cursor_capture(state->surface, true);
 
-		static float azimuth = PIf * 3 / 2.f;
-		static float theta = PIf / 3.f;
-		static const float sensitivity = 1.0f;
-		static const float spring_arm_length = 10.f;
+		Player *player = &gstate->player;
 
-		float yaw_delta = mouse_delta.x * sensitivity;
-		float pitch_delta = mouse_delta.y * sensitivity;
+		{ // :controller
+			Transform3 *transform = &gstate->player.transform;
 
-		azimuth = fmodf(azimuth + yaw_delta, PIf * 2.f);
-		if (azimuth < 0)
-			azimuth += PIf * 2.f;
+			// :input
+			float2 input = {
+				input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
+				input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
+			};
+			bool jump_requested = input_key_down(KEY_CODE_SPACE);
 
-		theta = clampf(theta - pitch_delta, PIf / 4.f, PIf / 2.f);
+			// :settings
+			float speed = 5.0f; // m/s
+			float x_apex = 2.0f, t_down = 0.3f, h_apex = 2.0f;
 
-		float3 *p = &gstate->player_position;
+			{ // :jump
+				float t_up = x_apex / speed;
 
-		float3 camera_offset = sub3(camera->position, gstate->player_position);
+				float initial_velocity = 2.0f * h_apex / t_up;
+				float g_up = -2.0f * h_apex / (t_up * t_up);
+				float g_down = -2.0f * h_apex / (t_down * t_down);
 
-		float r = len3(camera_offset);
-		if (r < EPSILON)
-			r = EPSILON;
+				if (jump_requested && player->transform.translation.y <= 0.0f)
+					player->velocity.y = initial_velocity;
 
-		float current_theta = acosf(camera_offset.y / r);
-		float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+				transform->translation.y += player->velocity.y * dt;
+				if (player->transform.translation.y > EPSILON) {
+					bool heavy = jump_requested == false || player->velocity.y <= 0.0f;
+					player->velocity.y += heavy ? g_down * dt : g_up * dt;
+				} else {
+					player->transform.translation.y = 0.0f;
+					player->velocity.y = 0.0f;
+				}
+			}
 
-		if (current_azimuth < 0)
-			current_azimuth += PIf * 2.f;
+			float input_length_sq = lensq2(input);
+			if (input_length_sq > EPSILON * EPSILON) { // :move
+				input = normalize2(input);
 
-		float da = azimuth - current_azimuth;
-		if (da > PIf)
-			da -= PIf * 2.f;
-		if (da < -PIf)
-			da += PIf * 2.f;
+				float3 camera_position = camera->position;
+				float3 camera_target = camera->target;
 
-		float t = 1.0f - expf(-15.0f * dt);
+				camera_position.y = 0.0f;
+				camera_target.y = 0.0f;
 
-		current_azimuth += t * da;
-		current_theta += t * (theta - current_theta);
+				float3 fwd = normalize3(sub3(camera_target, camera_position));
+				float3 right = normalize3(cross3(fwd, camera->up));
 
-		camera->position = (float3){
-			(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + p->x,
-			spring_arm_length * cosf(current_theta),
-			(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + p->z,
-		};
+				float3 move = add3(scale3(right, input.x * speed * dt), scale3(fwd, input.y * speed * dt));
 
-		camera->target.x = p->x;
-		camera->target.z = p->z;
+				transform->translation = add3(transform->translation, move);
 
-		camera->position.y += p->y;
-		camera->target.y = p->y + 1.5f;
+				float3 camera_offset = sub3(camera->position, transform->translation);
+				float current_theta = acosf(camera_offset.y / len3(camera_offset));
+				float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+																				  //
+				float target_angle = -current_azimuth - PIf * 0.5f + atan2f(-input.x, input.y);
+				quat4 target_rotation = axisangle4q(FLOAT3_UP, target_angle);
+
+				float t = 1.0f - expf(-15.0f * dt);
+				transform->rotation = slerp4q(transform->rotation, target_rotation, t);
+
+				// :emitter
+				static float emit_accumulator = 0.0f;
+				emit_accumulator += dt * 24.0f;
+
+				while (gstate->particle_count < countof(gstate->particles) && emit_accumulator >= 1.0f) {
+					Particle3 *particle = 0;
+					for (uint32_t index = 0; index < countof(gstate->particles); ++index) {
+						if (gstate->particles[index].t <= 0.0f) {
+							particle = &gstate->particles[index];
+							gstate->particle_count++;
+							break;
+						}
+					}
+					ASSERT(particle);
+
+					particle->lifetime = particle->t = 0.7f;
+
+					float random_angle = randf_range(0.0f, TAU);
+					float random_radius = 0.3f * randf_range(0.0f, 1.0f);
+
+					float3 spawn = { sinf(random_angle) * random_radius, 0.1f, cosf(random_angle) * random_radius };
+					particle->position = add3(transform->translation, spawn);
+
+					float3 particle_direction = neg3(normalize3(move));
+					float3 right, up;
+					particle_direction = orthobasis3(particle_direction, &right, &up);
+
+					particle->velocity = scale3(particle_direction, randf_range(0.8f, 1.0f));
+					particle->velocity = sadd3(particle_direction, right, randf_range(0.1f, 0.3f));
+					particle->velocity = sadd3(particle_direction, up, randf_range(0.2f, 0.3f));
+
+					emit_accumulator -= 1.0f;
+				}
+			}
+		}
+
+		{ // :camera
+			static float azimuth = PIf * 3 / 2.f;
+			static float theta = PIf / 3.f;
+			static const float sensitivity = 1.0f;
+			static const float spring_arm_length = 10.f;
+
+			float yaw_delta = mouse_delta.x * sensitivity;
+			float pitch_delta = mouse_delta.y * sensitivity;
+
+			azimuth = fmodf(azimuth + yaw_delta, PIf * 2.f);
+			if (azimuth < 0)
+				azimuth += PIf * 2.f;
+
+			theta = clampf(theta - pitch_delta, PIf / 8.f, PIf / 2.f);
+
+			float3 target = player->transform.translation;
+			float3 camera_offset = sub3(camera->position, target);
+
+			float r = len3(camera_offset);
+			if (r < EPSILON)
+				r = EPSILON;
+
+			float current_theta = acosf(camera_offset.y / r);
+			float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
+
+			if (current_azimuth < 0)
+				current_azimuth += PIf * 2.f;
+
+			float da = azimuth - current_azimuth;
+			if (da > PIf)
+				da -= PIf * 2.f;
+			if (da < -PIf)
+				da += PIf * 2.f;
+
+			float t = 1.0f - expf(-15.0f * dt);
+
+			current_azimuth += t * da;
+			current_theta += t * (theta - current_theta);
+
+			camera->position = (float3){
+				(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + target.x,
+				spring_arm_length * cosf(current_theta),
+				(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + target.z,
+			};
+
+			camera->target.x = target.x;
+			camera->target.z = target.z;
+
+			camera->position.y += target.y;
+			camera->target.y = target.y + 1.5f;
+		}
 	}
 
 	float3 camera_forward = normalize3(sub3(camera->target, camera->position));
@@ -190,72 +299,27 @@ bool tick(Arena *permanent, Arena *frame) {
 	uint32_t segments = 32, rings = 16;
 	float radius = 0.5f, height = 2.0f;
 
-	float2 input = {
-		input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
-		input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
-	};
-
-	float input_length_sq = lensq2(input);
-	if (input_length_sq > EPSILON * EPSILON) {
-		input = normalize2(input);
-
-		float3 camera_position = camera->position;
-		float3 camera_target = camera->target;
-
-		camera_position.y = 0.0f;
-		camera_target.y = 0.0f;
-
-		float3 fwd = normalize3(sub3(camera_target, camera_position));
-		float3 right = normalize3(cross3(fwd, camera->up));
-
-		float3 move = add3(scale3(right, input.x * dt * 4.0f), scale3(fwd, input.y * dt * 4.0f));
-		gstate->player_position = add3(gstate->player_position, move);
-
-		// :emitter
-		for (uint32_t particle_spawn_index = 0; particle_spawn_index < 1; ++particle_spawn_index) {
-			Particle3 *particle = gstate->particles + gstate->particle_next;
-			gstate->particle_next = (gstate->particle_next + 1) % countof(gstate->particles);
-			particle->t = 0.0f;
-
-			float random_angle = randf_range(0.0f, TAU);
-			float random_radius = randf_range(0.0f, 0.3f);
-
-			float3 spawn = { sinf(random_angle) * random_radius, 0.1f, cosf(random_angle) * random_radius };
-			particle->position = add3(gstate->player_position, spawn);
-
-			float3 particle_direction = neg3(normalize3(move));
-			float3 right, up;
-			particle_direction = orthobasis3(particle_direction, &right, &up);
-
-			// clang-format off
-			particle->velocity =
-				add3(scale3(particle_direction, randf_range(0.5f, 1.0f)),
-					add3(
-						scale3(right, randf_range(-1.0f, 1.0f)),
-						scale3(up, randf_range(-0.5f, 0.0f) 
-                    ) //
-                ));
-			// clang-format on
-		}
-	}
-
 	Mesh sphere = mesh_sphere(frame, float3(0.0f), 0.5f, 32, 16);
 	Mesh capsule = mesh_capsule(frame, float3(0.0f, 1.0f, 0.0f), 2.0f, 0.5f, 32, 16);
 
 	enum {
 		MESH_SPHERE,
 		MESH_CAPSULE,
-		MESH_GDBOT
+		MESH_GDBOT,
+		MESH_CLOUD,
 	};
 
-	static Mesh gdbot = { 0 };
-	if (gdbot.total_vertex_count == 0)
-		gdbot = res_load_gltf(permanent, s("resources/models/gdbot.glb"));
+	static Mesh gdbot = { 0 }, cloud;
+	static Skeleton gdbot_skeleton = { 0 };
+	static AnimationClip gdbot_animations = { 0 };
+	if (gdbot.total_vertex_count == 0) gdbot = res_load_gltf(permanent, s("resources/models/gdbot.glb"));
+	if (cloud.total_vertex_count == 0) cloud = res_load_gltf(permanent, s("resources/models/cloud.glb"));
 
 	Mesh meshes[] = {
 		[MESH_SPHERE] = sphere,
 		[MESH_CAPSULE] = capsule,
 		[MESH_GDBOT] = gdbot,
+		[MESH_CLOUD] = cloud,
 	};
 
 	typedef uint32_t RID;
@@ -267,31 +331,37 @@ bool tick(Arena *permanent, Arena *frame) {
 	MeshInstance instances[512];
 	uint32_t instance_count = 0;
 
-	float3 camera_offset = sub3(camera->position, gstate->player_position);
-	float current_azimuth = atan2f(-camera_offset.z, camera_offset.x) - PI * 0.5f; // [-pi, pi]
-	instances[instance_count++] = (MeshInstance){ MESH_GDBOT, { gstate->player_position, axisangle4q(FLOAT3_UP, current_azimuth), float3(1.0f) } };
+	instances[instance_count++] = (MeshInstance){ MESH_CAPSULE, gstate->player.transform };
 
 	// :particle
 	for (uint32_t particle_index = 0; particle_index < countof(gstate->particles); ++particle_index) {
 		Particle3 *particle = gstate->particles + particle_index;
-		particle->t += dt;
-		if (particle->t > 0.7f) {
-			int32_t last = gstate->particle_next - 1;
-			if (last < 0) last += countof(gstate->particles);
-			gstate->particle_next = last;
+		if (particle->t <= 0.0f) continue;
 
-			*particle = gstate->particles[last];
+		particle->t -= dt;
+		if (particle->t <= 0.0f) {
+			*particle = (Particle3){ 0 };
+			gstate->particle_count--;
 			continue;
 		}
+
 		particle->position = sadd3(particle->position, particle->velocity, dt);
-		instances[instance_count++] = (MeshInstance){
-			MESH_SPHERE,
-			{ particle->position, identity4q(), scale3(float3(0.3f), 0.7f - particle->t) },
-		};
+
+		float age = clampf(1.0f - particle->t / particle->lifetime, 0.0f, 1.0f);
+
+		float fade_in = smoothstepf(0.0f, 0.12f, age);
+		float fade_out = 1.0f - smoothstepf(0.45f, 1.0f, age);
+		float scale = fade_in * fade_out;
+
+		instances[instance_count++] =
+			(MeshInstance){
+				MESH_CLOUD,
+				transform3(particle->position, identity4q(), float3(scale))
+			};
 	}
 
 	RES_Font *font = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
-	static uint32_t fps = 0, fps_sum, frame_counter = 0;
+	static uint32_t fps = 0, fps_sum = 0, frame_counter = 0;
 	frame_counter += 1, fps_sum += (int32_t)roundf(1.0f / dt);
 	if (frame_counter > 30) {
 		fps = fps_sum / frame_counter;
@@ -350,9 +420,8 @@ bool tick(Arena *permanent, Arena *frame) {
 			};
 			Uniform set0[] = { uniform_data(0, &fd, sizeof(fd)) };
 			gfx_cmd_bind(device, 0, set0, countof(set0));
-			gfx_cmd_bind(device, 0, set0, countof(set0));
 			gfx_cmd_bind(device, 1, set1, countof(set1));
-			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance3D));
+			gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance));
 		}
 
 		{
@@ -394,7 +463,7 @@ bool tick(Arena *permanent, Arena *frame) {
 				Mesh mesh = meshes[mesh_index];
 
 				Uniform set1[] = { storage_buffers(0, cmd->transient_buffer, vertex_buffer_offsets[mesh_index], vertex_buffer_sizes[mesh_index]) };
-				gfx_cmd_bind(device, 1, set1, countof(set0));
+				gfx_cmd_bind(device, 1, set1, countof(set1));
 
 				float4x4 transform = transform4x4(instance->transform);
 				gfx_cmd_push_constant(cmd, sizeof(transform), transform.elements);
@@ -434,11 +503,11 @@ bool tick(Arena *permanent, Arena *frame) {
 				for (uint32_t i = 0; i < 32; ++i)
 					images[i] = state->white_texture;
 
-				DRAW_QuadInstance3D *base =
-					(DRAW_QuadInstance3D *)((uint8_t *)qch->instances.base + batch->instance_offset);
+				DRAW_QuadInstance *base =
+					(DRAW_QuadInstance *)((uint8_t *)qch->instances.base + batch->instance_offset);
 
 				for (uint32_t qi = 0; qi < batch->instance_count; ++qi) {
-					DRAW_QuadInstance3D *quad = base + qi;
+					DRAW_QuadInstance *quad = base + qi;
 					if (quad->imageid && quad->imageid != indexof(device->image_pool, state->white_texture)) {
 						int32_t found_index = -1;
 						for (uint32_t ii = 1; ii < image_count; ++ii)
@@ -458,7 +527,7 @@ bool tick(Arena *permanent, Arena *frame) {
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &fd, sizeof(fd)),
-					storage_data(1, base, batch->instance_count * sizeof(DRAW_QuadInstance3D)),
+					storage_data(1, base, batch->instance_count * sizeof(DRAW_QuadInstance)),
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->sampler_nearest) };
 				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));

@@ -4,10 +4,6 @@
 #include "core/debug.h"
 #include "core/geom.h"
 
-// ============================================================================
-// Data Formats
-// ============================================================================
-
 typedef enum {
 	DATA_FORMAT_NONE = 0,
 
@@ -55,10 +51,6 @@ extern uint32_t data_format_sizes[DATA_FORMAT_MAX];
 INLINE uint32_t data_format_to_size(DataFormat format) {
 	return ((uint32_t)format < DATA_FORMAT_MAX) ? data_format_sizes[format] : 0;
 }
-
-// ============================================================================
-// Vertex Semantics & Layout
-// ============================================================================
 
 typedef enum {
 	VERTEX_SEMANTIC_POSITION,
@@ -111,10 +103,6 @@ INLINE bool vertex_layout_has(const VertexLayout *layout, VertexSemantic semanti
 	return vertex_layout_find(layout, semantic) >= 0;
 }
 
-// ============================================================================
-// Index Formats
-// ============================================================================
-
 typedef enum {
 	INDEX_FORMAT_NONE = 0,
 
@@ -134,10 +122,6 @@ INLINE uint32_t index_format_to_size(IndexFormat format) {
 			return 0;
 	}
 }
-
-// ============================================================================
-// Mesh Structures & Functions
-// ============================================================================
 
 typedef struct {
 	uint32_t vertex_offset, vertex_count;
@@ -189,7 +173,6 @@ INLINE IndexFormat mesh_index_format(const Mesh *mesh) {
 	return (mesh->index_format != INDEX_FORMAT_NONE) ? mesh->index_format : INDEX_FORMAT32;
 }
 
-// size-based interleave.
 bool mesh_pack_into(const Mesh *mesh, const VertexLayout *layout, void *output, uint64_t output_size);
 
 Mesh mesh_ellipsoid(Arena *arena, float3 origin, float3 radius, uint32_t segments, uint32_t rings);

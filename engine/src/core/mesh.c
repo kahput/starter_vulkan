@@ -199,35 +199,37 @@ Mesh mesh_capsule(Arena *arena, float3 origin, float height, float radius, uint3
 		float3 *normals = arena_push_count(arena, float3, vertex_count);
 		float2 *uvs = arena_push_count(arena, float2, vertex_count);
 
-		float half_height = (height - radius * 2.0f) * 0.5f;
+		float shaft_half_height = (height - radius * 2.0f) * 0.5f;
+		float capsule_half_height = height * 0.5f;
 		for (uint32_t ring = 0; ring < rings; ++ring) {
-			float ty = (float)ring / (rings - 1); // 0.0f -> 1.0f
-			float ay = ty * (PI * 0.5f); // 0.0f -> π/2
-			float cy = cosf(ay), sy = sinf(ay);
+			float t = (float)ring / (rings - 1);
+			float polar = t * (PI * 0.5f);
+			float sp = sinf(polar), cp = cosf(polar);
 
 			for (uint32_t segment = 0; segment < segments; ++segment) {
-				float tx = (float)segment / (segments - 1); // 0.0f -> 1.0f
-				float ax = tx * TAU; // 0.0f -> 2π
+				float u = (float)segment / (segments - 1);
+				float azimuth = u * TAU;
+				float3 disk = { sinf(azimuth), 0.0f, cosf(azimuth) };
 
-				float3 disk = { sinf(ax), 0.0f, cosf(ax) };
-				float3 sphere = { sy * disk.x, cy, sy * disk.z };
+				float3 normal[3] = {
+					{ sp * disk.x, cp, sp * disk.z }, // top cap
+					{ disk.x, 0.0f, disk.z }, // shaft
+					{ cp * disk.x, -sp, cp * disk.z }, // bottom cap
+				};
+				float yoffset[3] = { shaft_half_height, shaft_half_height * (1.0f - 2.0f * t), -shaft_half_height };
 
-				float3 side = scale3(disk, radius);
-				side.y += (ty * 2.0f - 1.0f) * half_height;
+				for (uint32_t section = 0; section < 3; ++section) {
+					float3 point = scale3(normal[section], radius);
+					point.y += yoffset[section];
 
-				float3 cap = scale3(sphere, radius);
-				cap.y += half_height;
 
-				aabb3_expand(&bounds, side);
-				aabb3_expand(&bounds, cap);
-				aabb3_expand(&bounds, float3(cap.x, -cap.y, cap.z));
+					uint32_t vertex_index = segment + ring * segments + section * section_vertex_count;
+					positions[vertex_index] = add3(origin, point);
+					normals[vertex_index] = normal[section];
+					uvs[vertex_index] = float2(u, (point.y + capsule_half_height) / height);
 
-				uint32_t i = segment + ring * segments, j = i + section_vertex_count, k = j + section_vertex_count;
-				positions[i] = add3(origin, cap), normals[i] = sphere, uvs[i] = float2(tx, (cap.y + half_height) / height);
-				positions[j] = add3(origin, side), normals[j] = disk, uvs[j] = float2(tx, (side.y + half_height) / height);
-
-				cap.y *= -1.0f, sphere.y *= -1.0f;
-				positions[k] = add3(origin, cap), normals[k] = sphere, uvs[k] = float2(tx, (cap.y + half_height) / height);
+					aabb3_expand(&bounds, positions[vertex_index]);
+				}
 			}
 		}
 

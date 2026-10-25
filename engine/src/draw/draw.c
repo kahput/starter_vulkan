@@ -21,12 +21,12 @@ DRAW_List *drawlist_make(Arena *arena, RES_AssetID default_quad2d, RES_AssetID d
 		CURRENT_DRAWLIST->arena = arena;
 
 		CURRENT_DRAWLIST->line3d.instances = (Arena){
-			.base = arena_push_count(arena, DRAW_LineInstance3D, DRAW_LINE_INSTANCE_MAX),
-			.capacity = sizeof(DRAW_LineInstance3D) * DRAW_LINE_INSTANCE_MAX,
+			.base = arena_push_count(arena, DRAW_LineInstance, DRAW_LINE_INSTANCE_MAX),
+			.capacity = sizeof(DRAW_LineInstance) * DRAW_LINE_INSTANCE_MAX,
 		};
 		CURRENT_DRAWLIST->quad2d.instances = (Arena){
-			.base = arena_push_count(arena, DRAW_QuadInstance3D, DRAW_QUAD_INSTANCE_MAX),
-			.capacity = sizeof(DRAW_QuadInstance3D) * DRAW_QUAD_INSTANCE_MAX,
+			.base = arena_push_count(arena, DRAW_QuadInstance, DRAW_QUAD_INSTANCE_MAX),
+			.capacity = sizeof(DRAW_QuadInstance) * DRAW_QUAD_INSTANCE_MAX,
 		};
 
 		CURRENT_DRAWLIST->quad2d.default_shader = default_quad2d;
@@ -105,7 +105,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 		uint32_t imageid = style.texture ? style.texture->handle->imageid : 0;
 
 		float rad = style.rotation * DEG2RAD;
-		DRAW_QuadInstance3D quad = {
+		DRAW_QuadInstance quad = {
 			.position = position,
 			.size = size,
 			.radii = style.radii,
@@ -124,7 +124,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 			.border_width = style.border_width,
 		};
 
-		memory_copy(draw__channel_push_instance(CURRENT_DRAWLIST->arena, &CURRENT_DRAWLIST->quad2d, DRAW_QuadInstance3D), &quad, sizeof(quad));
+		memory_copy(draw__channel_push_instance(CURRENT_DRAWLIST->arena, &CURRENT_DRAWLIST->quad2d, DRAW_QuadInstance), &quad, sizeof(quad));
 	}
 }
 
@@ -281,14 +281,14 @@ void draw3d_capsule_outline(float3 a, float3 b, float radius, uint8_t segments, 
 	direction = orthobasis3(direction, &right, &up);
 
 	uint32_t packed_color = rgba8_as_uint32(color);
-	DRAW_LineInstance3D spine[] = {
+	DRAW_LineInstance spine[] = {
 		{ make4_from3(add3(a, scale3(right, -radius)), thickness), make4_from3(add3(b, scale3(right, -radius)), thickness), packed_color, splat3(0.0f) },
 		{ make4_from3(add3(a, scale3(right, radius)), thickness), make4_from3(add3(b, scale3(right, radius)), thickness), packed_color, splat3(0.0f) },
 
 		{ make4_from3(add3(a, scale3(up, -radius)), thickness), make4_from3(add3(b, scale3(up, -radius)), thickness), packed_color, splat3(0.0f) },
 		{ make4_from3(add3(a, scale3(up, radius)), thickness), make4_from3(add3(b, scale3(up, radius)), thickness), packed_color, splat3(0.0f) },
 	};
-	memory_copy_array(arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, countof(spine)), spine);
+	memory_copy_array(arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance, countof(spine)), spine);
 
 	for (uint32_t end = 0; end < 2; ++end) {
 		float3 c = end == 0 ? a : b;
@@ -305,7 +305,7 @@ void draw3d_aabb_outline(AABB3 aabb3, float thickness, rgba8 color) {
 	float3 max = aabb3.max;
 	float3 bounding_box_size = sub3(max, min);
 
-	DRAW_LineInstance3D outline[] = {
+	DRAW_LineInstance outline[] = {
 		{ { min.x, min.y, min.z, thickness }, { min.x, max.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
 		{ { min.x, min.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
 		{ { max.x, min.y, min.z, thickness }, { max.x, max.y, min.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
@@ -320,12 +320,12 @@ void draw3d_aabb_outline(AABB3 aabb3, float thickness, rgba8 color) {
 		{ { max.x, max.y, max.z, thickness }, { min.x, max.y, max.z, thickness }, rgba8_as_uint32(color), splat3(0.0f) },
 	};
 
-	DRAW_LineInstance3D *points = arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, countof(outline));
+	DRAW_LineInstance *points = arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance, countof(outline));
 	memory_copy_array(points, outline);
 }
 
 void draw3d_line(float3 start, float3 end, float thickness, rgba8 color) {
-	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
+	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance, 1) = (DRAW_LineInstance){
 		.a = make4_from3(start, thickness),
 		.b = make4_from3(end, thickness),
 		.color = rgba8_as_uint32(color),
@@ -354,7 +354,7 @@ void draw3d_arrow(float3 origin, float3 delta, float thickness, rgba8 color,
 	float3 shaft_end = sub3(tip, scale3(direction, world_head_length));
 
 	draw3d_line(origin, shaft_end, thickness, color);
-	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance3D, 1) = (DRAW_LineInstance3D){
+	*arena_push_count(&CURRENT_DRAWLIST->line3d.instances, DRAW_LineInstance, 1) = (DRAW_LineInstance){
 		.a = make4_from3(shaft_end, thickness * 4.0f),
 		.b = make4_from3(tip, 0.0f),
 		.color = rgba8_as_uint32(color),

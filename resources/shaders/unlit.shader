@@ -1,6 +1,5 @@
 shader Unlit {
-    pipeline default ( cull = none )
-    pipeline wireframe ( cull = none, polygon_mode = line )
+    pipeline default ( cull = back )
 
     shared {
         #include "lib/frame.glsl"
@@ -41,4 +40,3 @@ shader Unlit {
         }
     }
 }
-

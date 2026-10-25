@@ -59,3 +59,27 @@ bool imsave(string8 path, const Image *image) {
 	return ok;
 }
 
+Image imfliter(Arena *arena, Image target, int32_t kernel[], uint32_t kw, uint32_t kh) {
+	Image result = impush(arena, target.width, target.height, target.channels);
+
+	for (int32_t y = 0; y < (int32_t)target.height; ++y) {
+		for (int32_t x = 0; x < (int32_t)target.width; ++x) {
+			int32_t sum = 0;
+
+			for (uint32_t j = 0; j < kh; ++j) {
+				for (uint32_t i = 0; i < kw; ++i) {
+					int32_t px = clamp1s((int32_t)x + i - 1, 0, target.width - 1);
+					int32_t py = clamp1s((int32_t)y + j - 1, 0, target.height - 1);
+
+					int32_t index = px + py * target.width;
+
+					sum += kernel[i + j * kw] * target.pixels[index];
+				}
+			}
+
+			result.pixels[x + y * target.width] = (uint8_t)sum;
+		}
+	}
+
+    return result;
+}
