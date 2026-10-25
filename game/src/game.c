@@ -118,73 +118,84 @@ bool tick(Arena *permanent, Arena *frame) {
 		os_cursor_capture(state->surface, false);
 		scene_camera_orbit(camera, mouse_delta);
 	} else {
+		Player *player = &gstate->player;
+		Transform3 *transform = &gstate->player.transform;
 		os_cursor_capture(state->surface, true);
 
-		Player *player = &gstate->player;
+		// :settings
+		float sensitivity = 1.0f, spring_arm_length = 10.f;
+		float accel_speed = 32.0f, max_walk_speed = 3.0f, max_run_speed = 6.0f;
+		float xz_apex = 2.0f, t_down = 0.3f, h_apex = 1.5f;
 
-		{ // :controller
-			Transform3 *transform = &gstate->player.transform;
+		// derived settings
+		float t_up = xz_apex / max_run_speed;
+		float jump_speed = 2.0f * h_apex / t_up;
+		float g_up = -2.0f * h_apex / (t_up * t_up);
+		float g_down = -2.0f * h_apex / (t_down * t_down);
 
-			// :input
-			float2 input = {
-				input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
-				input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
-			};
-			bool jump_requested = input_key_down(KEY_CODE_SPACE);
+		// :input
+		float2 look = scale2(mouse_delta, sensitivity);
+		float2 move = {
+			input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
+			input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
+		};
+		bool jump_held = input_key_down(KEY_CODE_SPACE);
+		/* bool sprint_held = input_key_down(KEY_CODE_LEFTSHIFT); */
+		bool moving = lensq2(move) > EPSILON * EPSILON;
+		if (moving) move = normalize2(move);
 
-			// :settings
-			float speed = 5.0f; // m/s
-			float x_apex = 2.0f, t_down = 0.3f, h_apex = 2.0f;
-
-			{ // :jump
-				float t_up = x_apex / speed;
-
-				float initial_velocity = 2.0f * h_apex / t_up;
-				float g_up = -2.0f * h_apex / (t_up * t_up);
-				float g_down = -2.0f * h_apex / (t_down * t_down);
-
-				if (jump_requested && player->transform.translation.y <= 0.0f)
-					player->velocity.y = initial_velocity;
-
-				transform->translation.y += player->velocity.y * dt;
-				if (player->transform.translation.y > EPSILON) {
-					bool heavy = jump_requested == false || player->velocity.y <= 0.0f;
-					player->velocity.y += heavy ? g_down * dt : g_up * dt;
-				} else {
-					player->transform.translation.y = 0.0f;
-					player->velocity.y = 0.0f;
-				}
-			}
-
-			float input_length_sq = lensq2(input);
-			if (input_length_sq > EPSILON * EPSILON) { // :move
-				input = normalize2(input);
-
+		{ // :movement
+			float3 forward, right;
+			{
 				float3 camera_position = camera->position;
 				float3 camera_target = camera->target;
 
 				camera_position.y = 0.0f;
 				camera_target.y = 0.0f;
 
-				float3 fwd = normalize3(sub3(camera_target, camera_position));
-				float3 right = normalize3(cross3(fwd, camera->up));
+				forward = normalize3(sub3(camera_target, camera_position));
+				right = normalize3(cross3(forward, camera->up));
+			}
+			float3 wish = add3(
+				scale3(right, move.x),
+				scale3(forward, move.y) //
+			);
 
-				float3 move = add3(scale3(right, input.x * speed * dt), scale3(fwd, input.y * speed * dt));
+			bool was_grounded = transform->translation.y <= EPSILON;
 
-				transform->translation = add3(transform->translation, move);
+			transform->scale = lerp3(transform->scale, float3(1.0f), 1.0f - expf(-10.0f * dt));
+			if (moving) {
+				quat4 face = axisangle4q(FLOAT3_UP, atan2f(wish.x, wish.z));
+				transform->rotation = slerp4q(transform->rotation, face, 1.0f - expf(-15.0f * dt));
+			}
 
-				float3 camera_offset = sub3(camera->position, transform->translation);
-				float current_theta = acosf(camera_offset.y / len3(camera_offset));
-				float current_azimuth = atan2f(camera_offset.z, camera_offset.x); // [-pi, pi]
-																				  //
-				float target_angle = -current_azimuth - PIf * 0.5f + atan2f(-input.x, input.y);
-				quat4 target_rotation = axisangle4q(FLOAT3_UP, target_angle);
+			if (jump_held && was_grounded) {
+				player->velocity.y = jump_speed;
+				player->transform.scale = float3(0.5, 1.5, 0.5);
+			}
 
-				float t = 1.0f - expf(-15.0f * dt);
-				transform->rotation = slerp4q(transform->rotation, target_rotation, t);
+			// velocity
+			float3 old_velocity = player->velocity;
+			float3 velocity = { old_velocity.x, 0.0f, old_velocity.z };
+			velocity = approach3(velocity, scale3(wish, max_run_speed), accel_speed * dt);
+			velocity.y = old_velocity.y + (jump_held && old_velocity.y > 0.0f ? g_up : g_down) * dt;
+			player->velocity = velocity;
 
-				// :emitter
-				static float emit_accumulator = 0.0f;
+			// integration
+			transform->translation = add3(transform->translation, scale3(add3(old_velocity, velocity), 0.5f * dt));
+
+			if (transform->translation.y <= EPSILON) {
+				if (was_grounded == false && jump_held == false)
+					transform->scale = float3(1.25f, 0.75f, 1.25f);
+				transform->translation.y = 0.0f;
+				player->velocity.y = 0.0f;
+			}
+
+			// :emitter
+			static float emit_accumulator = 0.0f;
+
+			bool grounded = transform->translation.y <= EPSILON;
+			if (grounded && moving) {
 				emit_accumulator += dt * 24.0f;
 
 				while (gstate->particle_count < countof(gstate->particles) && emit_accumulator >= 1.0f) {
@@ -206,13 +217,12 @@ bool tick(Arena *permanent, Arena *frame) {
 					float3 spawn = { sinf(random_angle) * random_radius, 0.1f, cosf(random_angle) * random_radius };
 					particle->position = add3(transform->translation, spawn);
 
-					float3 particle_direction = neg3(normalize3(move));
+					float3 particle_direction = neg3(normalize3(player->velocity));
 					float3 right, up;
 					particle_direction = orthobasis3(particle_direction, &right, &up);
 
-					particle->velocity = scale3(particle_direction, randf_range(0.8f, 1.0f));
-					particle->velocity = sadd3(particle_direction, right, randf_range(0.1f, 0.3f));
-					particle->velocity = sadd3(particle_direction, up, randf_range(0.2f, 0.3f));
+					particle->velocity = scale3(particle->velocity, randf_range(0.8f, 1.0f));
+					particle->velocity = sadd3(particle->velocity, right, randf_range(-0.3f, 0.3f));
 
 					emit_accumulator -= 1.0f;
 				}
@@ -222,19 +232,17 @@ bool tick(Arena *permanent, Arena *frame) {
 		{ // :camera
 			static float azimuth = PIf * 3 / 2.f;
 			static float theta = PIf / 3.f;
-			static const float sensitivity = 1.0f;
-			static const float spring_arm_length = 10.f;
 
-			float yaw_delta = mouse_delta.x * sensitivity;
-			float pitch_delta = mouse_delta.y * sensitivity;
+			float yaw = look.x, pitch = look.y;
 
-			azimuth = fmodf(azimuth + yaw_delta, PIf * 2.f);
+			azimuth = fmodf(azimuth + yaw, PIf * 2.f);
 			if (azimuth < 0)
 				azimuth += PIf * 2.f;
 
-			theta = clampf(theta - pitch_delta, PIf / 8.f, PIf / 2.f);
+			theta = clampf(theta - pitch, PIf / 8.f, PIf / 2.f);
 
 			float3 target = player->transform.translation;
+			target.y = 2.5f;
 			float3 camera_offset = sub3(camera->position, target);
 
 			float r = len3(camera_offset);
@@ -258,17 +266,14 @@ bool tick(Arena *permanent, Arena *frame) {
 			current_azimuth += t * da;
 			current_theta += t * (theta - current_theta);
 
-			camera->position = (float3){
-				(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)) + target.x,
+			camera->target = target;
+			float3 spherical = {
+				(spring_arm_length * sinf(current_theta) * cosf(current_azimuth)),
 				spring_arm_length * cosf(current_theta),
-				(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)) + target.z,
+				(spring_arm_length * sinf(current_theta) * sinf(current_azimuth)),
 			};
 
-			camera->target.x = target.x;
-			camera->target.z = target.z;
-
-			camera->position.y += target.y;
-			camera->target.y = target.y + 1.5f;
+			camera->position = add3(spherical, camera->target);
 		}
 	}
 

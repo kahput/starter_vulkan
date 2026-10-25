@@ -40,7 +40,7 @@ INLINE int32_t abs1i(int32_t value) { return value < 0 ? -value : value; }
 
 INLINE float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
 INLINE float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
-INLINE float sqf(float v) { return v * v; }
+INLINE float squaref(float v) { return v * v; }
 INLINE float lerpf(float start, float end, float t) { return start + (end - start) * t; }
 INLINE bool eqf(float a, float b) {
 	if (a == b)
