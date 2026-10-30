@@ -6,7 +6,7 @@
 #include "core/strings.h"
 #include "utils/lexer.h"
 
-#include "os.h"
+#include "core/os.h"
 
 JSON_Node JSON_NIL = { 0 };
 
@@ -146,7 +146,7 @@ JSON_Node *json_append_field(Arena *arena, JSON_Node *parent, string8 key) {
 	bool ok = arena && json_valid(parent) && parent->value.type == JSON_TYPE_OBJECT;
 	if (ok) {
 		result = json_append(arena, &parent->value.as.children);
-		result->key = copy8(arena, key);
+		result->key = str8_copy(arena, key);
 	}
 
 	return result;
@@ -182,7 +182,7 @@ JSON_Value json_parse_object(Arena *arena, Lexer *lexer) {
 				lexer_expect(lexer, TOKEN_COLON);
 
 				JSON_Node *node = json_append(arena, &result.as.children);
-				node->key = copy8(arena, key.lexeme);
+				node->key = str8_copy(arena, key.lexeme);
 				node->value = json_parse_value(arena, lexer);
 
 			} while (lexer_match(lexer, TOKEN_COMMA, 0));
@@ -231,7 +231,7 @@ JSON_Node *json_find(JSON_Node *node, string8 key) {
 			JSON_Node *page = container->pages[slot.page_index];
 			if (page) {
 				JSON_Node *child = &page[slot.page_local_index];
-				if (eq8(child->key, key)) {
+				if (str8_match(child->key, key)) {
 					result = child;
 					break;
 				}
@@ -294,7 +294,7 @@ void push_text(Arena *arena, const char *fmt, ...) {
 	if (fmt && fmt[0] != '\0') {
 		va_list args;
 		va_start(args, fmt);
-		string8 result = fmtv8(arena, fmt, args);
+		string8 result = str8_fmtv(arena, fmt, args);
 		arena->offset -= 1; // remove null-terminator
 		va_end(args);
 	}
@@ -307,7 +307,7 @@ void json_write_children(Arena *arena, JSON_Container *children, string8 indent,
 			JSON_ContainerSlot slot = json__locate(index);
 			JSON_Node *child = &children->pages[slot.page_index][slot.page_local_index];
 
-			indent8(arena, indent, *depth);
+			str8_indent(arena, indent, *depth);
 			if (keyed)
 				push_text(arena, "\"%.*s\": ", arg8(child->key));
 
@@ -331,7 +331,7 @@ void json_write_children(Arena *arena, JSON_Container *children, string8 indent,
 						push_text(arena, "\n");
 					json_write_children(arena, child->value.as.children, indent, true, depth);
 					*depth -= 1;
-					indent8(arena, indent, *depth);
+					str8_indent(arena, indent, *depth);
 					push_text(arena, "}");
 				} break;
 				case JSON_TYPE_ARRAY: {
@@ -341,7 +341,7 @@ void json_write_children(Arena *arena, JSON_Container *children, string8 indent,
 						push_text(arena, "\n");
 					json_write_children(arena, child->value.as.children, indent, false, depth);
 					*depth -= 1;
-					indent8(arena, indent, *depth);
+					str8_indent(arena, indent, *depth);
 					push_text(arena, "]");
 				} break;
 

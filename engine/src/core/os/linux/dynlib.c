@@ -1,16 +1,19 @@
 #include "core/arena.h"
 #include "core/logger.h"
 #include "core/strings.h"
-#include "os.h"
+#include "core/os.h"
 #include <dlfcn.h>
 #include <stdlib.h>
 
-OS_Library os_library_load(string8 path) {
+OS_Library os_dlopen(string8 path) {
 	OS_Library result = NULL;
-	ArenaTemp scratch = arena_scratch_begin(NULL);
-	string8 cwd = os_current_directory(scratch.arena); // TODO: Internal header to get os__concat_cwd();
-	result = dlopen((char *)pathjoin8(scratch.arena, cwd, path).bytes, RTLD_NOW);
 
+	ArenaTemp scratch = arena_scratch_begin(NULL);
+
+	bool rel = path.bytes[0] != '/';
+	string8 fullpath = rel ? str8_pathjoin(scratch.arena, os_cwd(scratch.arena), path) : path;
+
+	result = dlopen((char *)fullpath.bytes, RTLD_NOW);
 	if (result == NULL) {
 		LOG_WARN("os_library_load - %s", dlerror());
 	}
@@ -19,16 +22,14 @@ OS_Library os_library_load(string8 path) {
 	return result;
 }
 
-void os_library_unload(OS_Library lib) {
-	if (os_library_valid(lib) == false)
-		return;
-
+void os_dlclose(OS_Library lib) {
+	if (os_library_valid(lib) == false) return;
 	if (dlclose(lib) != 0) {
 		LOG_WARN("os_library_unload - %s", dlerror());
 	}
 }
 
-bool os_library_symbol(OS_Library lib, string8 symbol, void *out_symbol) {
+bool os_dlsym(OS_Library lib, string8 symbol, void *out_symbol) {
 	void *result = 0;
 
 	bool ok = out_symbol;

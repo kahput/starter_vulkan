@@ -3,13 +3,47 @@
 #include "core/geom_types.h"
 #include "core/input_types.h"
 #include "draw.h"
+#include "res.h"
 #include "utils/anim.h"
 #include "utils/input.h"
+#include "wm.h"
 
 // image imfilter(image, kernel, boundary_condition);
 // rgb2gray(im
 // normxcorr2(onion, peppers);
 // image imedge(image, algorithm);
+
+float2 measure_text(RES_Font *font, string8 text) {
+	float2 result = { 0 };
+
+	bool ok = font != 0 && text.length;
+	if (ok) {
+		result.y = font->ascent + font->descent + font->line_gap;
+
+		float xcursor = { 0 };
+		for (uint32_t index = 0; index < text.length;) {
+			UTF8Result utf8 = utf8_decode(text, index);
+			index += utf8.length;
+
+			if (utf8.codepoint == '\n') {
+				result.x = maxf(result.x, xcursor);
+				result.y += font->ascent + font->descent + font->line_gap;
+
+				xcursor = 0.0f;
+				continue;
+			}
+			if (utf8.codepoint < font->first_codepoint || utf8.codepoint - font->first_codepoint >= font->glyph_count) utf8.codepoint = '?';
+
+			uint32_t cp = utf8.codepoint;
+			RES_Glyph *glyph = &font->glyphs[cp - font->first_codepoint];
+			xcursor += glyph->advance;
+		}
+
+		result.x = maxf(result.x, xcursor);
+	}
+
+	return result;
+}
 
 bool tick(Arena *permanent, Arena *frame) {
 	if (permanent->offset == 0) arena_push_count(permanent, State, 1); // reserve space for state
@@ -22,7 +56,7 @@ bool tick(Arena *permanent, Arena *frame) {
 
 		if (gfx_device_make(state->device) == false) return false;
 
-		state->surface = os_surface_open(1280, 720, str8z(named("game")), OS_SURFACE_FLAG_RESIZEABLE);
+		state->surface = wm_surface_open(1280, 720, str8z(named("game")), WM_SURFACE_FLAG_RESIZEABLE);
 		state->swapchain = gfx_swapchain_make(state->device, state->surface, named("main"));
 		state->depthbuffer = gfx_image_make(state->device, 1280, 720,
 			(ImageOptions){
@@ -68,46 +102,45 @@ bool tick(Arena *permanent, Arena *frame) {
 	float dt = time - state->last_frame;
 	state->last_frame = time;
 
-	input_update();
+	input_begin_frame();
 	uint2 resize = { 0 };
-	for (OS_Event event; os_event_poll(&event);) {
+	for (WM_Event event; wm_poll(&event);) {
 		switch (event.type) {
-			case OS_EVENT_TYPE_SURFACE_CLOSE:
+			case WM_EVENT_TYPE_SURFACE_CLOSE:
 				return false;
 				break;
-			case OS_EVENT_TYPE_SURFACE_RESIZE:
+			case WM_EVENT_TYPE_SURFACE_RESIZE:
 				resize.x = event.as.resize.width;
 				resize.y = event.as.resize.height;
 				break;
 
-			case OS_EVENT_TYPE_KEY_PRESS:
-			case OS_EVENT_TYPE_KEY_RELEASE:
-				input_feed_key(event.as.key.key_code, event.type == OS_EVENT_TYPE_KEY_PRESS);
-				break;
+			case WM_EVENT_TYPE_KEY_PRESS:
+			case WM_EVENT_TYPE_KEY_RELEASE: {
+				state->input.keys[event.as.key.key_code].curr = event.type == WM_EVENT_TYPE_KEY_PRESS;
+			} break;
 
-			case OS_EVENT_TYPE_MOUSE_MOVE:
-				input_feed_mouse_motion(event.as.mouse_move.x, event.as.mouse_move.y);
-				break;
+			case WM_EVENT_TYPE_MOUSE_MOTION: {
+				state->input.mouse.x = event.as.mouse_motion.x;
+				state->input.mouse.y = event.as.mouse_motion.y;
+				state->input.mouse.dx = event.as.mouse_motion.dx;
+				state->input.mouse.dy = event.as.mouse_motion.dy;
+			} break;
 
-			case OS_EVENT_TYPE_MOUSE_PRESS:
-			case OS_EVENT_TYPE_MOUSE_RELEASE:
-				if (event.type == OS_EVENT_TYPE_MOUSE_RELEASE) {
-					uint32_t x = 0;
-					(void)x;
-				}
-				input_feed_mouse_button(event.as.mouse_button.button, event.type == OS_EVENT_TYPE_MOUSE_PRESS);
-				break;
+			case WM_EVENT_TYPE_MOUSE_PRESS:
+			case WM_EVENT_TYPE_MOUSE_RELEASE: {
+				state->input.mouse.buttons[event.as.mouse_button.button].curr = event.type == WM_EVENT_TYPE_MOUSE_PRESS;
+			} break;
 
 			default:
 				break;
 		}
 	}
 
-	uint2 dims = os_surface_size(state->surface);
+	uint2 dims = wm_surface_size(state->surface);
 	Rectangle viewport = { .width = dims.x, .height = dims.y };
 
-	float2 mouse_delta = as2(input_mouse_delta(), float2);
-	float2 mouse_position = as2(input_mouse_position(), float2);
+	float2 mouse_delta = input_mouse_delta();
+	float2 mouse_position = input_mouse_position();
 	mouse_delta.x /= dims.x;
 	mouse_delta.y /= dims.y;
 
@@ -115,16 +148,16 @@ bool tick(Arena *permanent, Arena *frame) {
 	if (input_key_pressed(KEY_CODE_TAB)) gstate->viewport_state_editor = !gstate->viewport_state_editor;
 
 	if (gstate->viewport_state_editor) {
-		os_cursor_capture(state->surface, false);
+		wm_cursor_capture(state->surface, false);
 		scene_camera_orbit(camera, mouse_delta);
 	} else {
 		Player *player = &gstate->player;
 		Transform3 *transform = &gstate->player.transform;
-		os_cursor_capture(state->surface, true);
+		wm_cursor_capture(state->surface, true);
 
 		// :settings
-		float sensitivity = 1.0f, spring_arm_length = 10.f;
-		float accel_speed = 32.0f, max_walk_speed = 3.0f, max_run_speed = 6.0f;
+		float sensitivity = 2.0f, spring_arm_length = 10.f;
+		float accel_speed = 48.0f, max_walk_speed = 3.0f, max_run_speed = 6.0f;
 		float xz_apex = 2.0f, t_down = 0.3f, h_apex = 1.5f;
 
 		// derived settings
@@ -134,18 +167,19 @@ bool tick(Arena *permanent, Arena *frame) {
 		float g_down = -2.0f * h_apex / (t_down * t_down);
 
 		// :input
-		float2 look = scale2(mouse_delta, sensitivity);
-		float2 move = {
+		float2 look_input = scale2(mouse_delta, sensitivity);
+		float2 move_input = {
 			input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
 			input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
 		};
+		bool jump_requested = input_key_pressed(KEY_CODE_SPACE);
 		bool jump_held = input_key_down(KEY_CODE_SPACE);
 		/* bool sprint_held = input_key_down(KEY_CODE_LEFTSHIFT); */
-		bool moving = lensq2(move) > EPSILON * EPSILON;
-		if (moving) move = normalize2(move);
+		bool moving = lensq2(move_input) > EPSILON * EPSILON;
+		if (moving) move_input = limit2(move_input, 1.0f);
 
 		{ // :movement
-			float3 forward, right;
+			float3 desired;
 			{
 				float3 camera_position = camera->position;
 				float3 camera_target = camera->target;
@@ -153,23 +187,23 @@ bool tick(Arena *permanent, Arena *frame) {
 				camera_position.y = 0.0f;
 				camera_target.y = 0.0f;
 
-				forward = normalize3(sub3(camera_target, camera_position));
-				right = normalize3(cross3(forward, camera->up));
+				float3 forward = normalize3(sub3(camera_target, camera_position));
+				float3 right = normalize3(cross3(forward, camera->up));
+				desired = add3(
+					scale3(right, move_input.x),
+					scale3(forward, move_input.y) //
+				);
 			}
-			float3 wish = add3(
-				scale3(right, move.x),
-				scale3(forward, move.y) //
-			);
 
 			bool was_grounded = transform->translation.y <= EPSILON;
 
 			transform->scale = lerp3(transform->scale, float3(1.0f), 1.0f - expf(-10.0f * dt));
 			if (moving) {
-				quat4 face = axisangle4q(FLOAT3_UP, atan2f(wish.x, wish.z));
+				quat4 face = axisangle4q(FLOAT3_UP, atan2f(desired.x, desired.z));
 				transform->rotation = slerp4q(transform->rotation, face, 1.0f - expf(-15.0f * dt));
 			}
 
-			if (jump_held && was_grounded) {
+			if (jump_requested && was_grounded) {
 				player->velocity.y = jump_speed;
 				player->transform.scale = float3(0.5, 1.5, 0.5);
 			}
@@ -177,16 +211,15 @@ bool tick(Arena *permanent, Arena *frame) {
 			// velocity
 			float3 old_velocity = player->velocity;
 			float3 velocity = { old_velocity.x, 0.0f, old_velocity.z };
-			velocity = approach3(velocity, scale3(wish, max_run_speed), accel_speed * dt);
+			velocity = approach3(velocity, scale3(desired, max_run_speed), accel_speed * dt);
 			velocity.y = old_velocity.y + (jump_held && old_velocity.y > 0.0f ? g_up : g_down) * dt;
 			player->velocity = velocity;
 
-			// integration
+			// TODO: move_and_slide/move_and_collide goes here. E.g,
+			// SlideResult3 move_reuslt = move_and_slide(collision_world, player_collider, player->velocity, dt);
 			transform->translation = add3(transform->translation, scale3(add3(old_velocity, velocity), 0.5f * dt));
-
 			if (transform->translation.y <= EPSILON) {
-				if (was_grounded == false && jump_held == false)
-					transform->scale = float3(1.25f, 0.75f, 1.25f);
+				if (was_grounded == false) transform->scale = float3(1.25f, 0.75f, 1.25f);
 				transform->translation.y = 0.0f;
 				player->velocity.y = 0.0f;
 			}
@@ -230,16 +263,16 @@ bool tick(Arena *permanent, Arena *frame) {
 		}
 
 		{ // :camera
-			static float azimuth = PIf * 3 / 2.f;
-			static float theta = PIf / 3.f;
+			static float desired_azimuth = PIf * 3 / 2.f;
+			static float desired_theta = PIf / 3.f;
 
-			float yaw = look.x, pitch = look.y;
+			float yaw = look_input.x, pitch = look_input.y;
 
-			azimuth = fmodf(azimuth + yaw, PIf * 2.f);
-			if (azimuth < 0)
-				azimuth += PIf * 2.f;
+			desired_azimuth = fmodf(desired_azimuth + yaw, PIf * 2.f);
+			if (desired_azimuth < 0)
+				desired_azimuth += PIf * 2.f;
 
-			theta = clampf(theta - pitch, PIf / 8.f, PIf / 2.f);
+			desired_theta = clampf(desired_theta - pitch, PIf / 8.f, PIf - PIf / 4);
 
 			float3 target = player->transform.translation;
 			target.y = 2.5f;
@@ -255,7 +288,7 @@ bool tick(Arena *permanent, Arena *frame) {
 			if (current_azimuth < 0)
 				current_azimuth += PIf * 2.f;
 
-			float da = azimuth - current_azimuth;
+			float da = desired_azimuth - current_azimuth;
 			if (da > PIf)
 				da -= PIf * 2.f;
 			if (da < -PIf)
@@ -264,7 +297,7 @@ bool tick(Arena *permanent, Arena *frame) {
 			float t = 1.0f - expf(-15.0f * dt);
 
 			current_azimuth += t * da;
-			current_theta += t * (theta - current_theta);
+			current_theta += t * (desired_theta - current_theta);
 
 			camera->target = target;
 			float3 spherical = {
@@ -282,10 +315,7 @@ bool tick(Arena *permanent, Arena *frame) {
 	float3 camera_up = cross3(camera_right, camera_forward);
 
 	float3x3 camera_rotation = columns3x3(camera_right, camera_up, neg3(camera_forward));
-	float4x4 world_from_view = affine4x4(
-		camera_rotation,
-		camera->position //
-	);
+	float4x4 world_from_view = affine4x4(camera_rotation, camera->position);
 
 	float4x4 view_from_world = affine4x4(
 		transpose3x3(camera_rotation),
@@ -315,7 +345,9 @@ bool tick(Arena *permanent, Arena *frame) {
 	};
 
 	static Mesh gdbot = { 0 }, cloud;
-	static Skeleton gdbot_skeleton = { 0 };
+	static Skeleton gdbot_skeleton = {
+		0,
+	};
 	static AnimationClip gdbot_animations = { 0 };
 	if (gdbot.total_vertex_count == 0) gdbot = res_load_gltf(permanent, s("resources/models/gdbot.glb"));
 	if (cloud.total_vertex_count == 0) cloud = res_load_gltf(permanent, s("resources/models/cloud.glb"));
@@ -327,7 +359,6 @@ bool tick(Arena *permanent, Arena *frame) {
 		[MESH_CLOUD] = cloud,
 	};
 
-	typedef uint32_t RID;
 	typedef struct {
 		RID mesh;
 		Transform3 transform;
@@ -365,15 +396,34 @@ bool tick(Arena *permanent, Arena *frame) {
 			};
 	}
 
-	RES_Font *font = res_font(&state->cache, RES_FONT_IBM_PLEX_MONO, 16);
-	static uint32_t fps = 0, fps_sum = 0, frame_counter = 0;
-	frame_counter += 1, fps_sum += (int32_t)roundf(1.0f / dt);
-	if (frame_counter > 30) {
-		fps = fps_sum / frame_counter;
-		frame_counter = 0, fps_sum = 0;
-	}
+	draw2d_rect(viewport, hex(0x101010));
+	float2 origo = rect_center(viewport);
+	origo.x -= 240.f;
+	float2 scale = float2(1.0f, -1.0f);
 
-	draw2d_textf(font, float2(12.0f), WHITE, "FPS: %u", fps);
+	static float wave[512] = { 0 };
+	static uint32_t wave_count = 0;
+
+	float r = 128.0f;
+	float3x3 screen_from_world = affine3x3(diagonal2x2(scale), origo);
+	draw2d_circle_outline(xform2p(screen_from_world, float2(0.0f)), r, 4.0f, WHITE);
+
+	float2 p = { r * cosf(time * 4.0f), r * sinf(time * 4.0f) };
+	wave[wave_count] = p.y;
+	wave_count = (wave_count + 1) % countof(wave);
+
+	draw2d_line(xform2p(screen_from_world, float2(0.0f)), xform2p(screen_from_world, p), 4.0f, WHITE);
+	draw2d_circle(xform2p(screen_from_world, p), 8.0f, WHITE);
+
+#define wsub(x, N) (x - 1 + N) % N
+	uint32_t index = wsub(wave_count, countof(wave)), x = 0;
+	do {
+		float2 p = float2(x + 200.0f, wave[index]);
+		draw2d_circle(xform2p(screen_from_world, p), 2.0f, WHITE);
+
+		++x;
+		index = wsub(index, countof(wave));
+	} while (index != wsub(wave_count, countof(wave)));
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
@@ -534,7 +584,7 @@ bool tick(Arena *permanent, Arena *frame) {
 					uniform_data(0, &fd, sizeof(fd)),
 					storage_data(1, base, batch->instance_count * sizeof(DRAW_QuadInstance)),
 				};
-				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->sampler_nearest) };
+				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), state->sampler_linear) };
 				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
 				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 

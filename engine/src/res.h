@@ -195,6 +195,4 @@ ENGINE_API RES_ShaderMeta *res_shader_meta(RES_Cache *cache, RES_AssetID id);
 ENGINE_API RES_FontFamilyMeta *res_font_meta(RES_Cache *cache, RES_AssetID id);
 
 ENGINE_API void res_cache_tick(Arena *frame_arena, RES_Cache *cache);
-ENGINE_API float2 measure_text(RES_Font *font, string8 text);
-
 ENGINE_API Mesh res_load_gltf(Arena *arena, string8 path);

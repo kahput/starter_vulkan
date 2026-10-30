@@ -4,6 +4,7 @@
 
 typedef enum {
 	KEY_CODE_UNKOWN = 0,
+
 	KEY_CODE_SPACE = 32,
 	KEY_CODE_APOSTROPHE = 39,
 	KEY_CODE_COMMA = 44,
@@ -129,7 +130,7 @@ typedef enum {
 	KEY_CODE_KPEQUAL,
 
 	KEY_CODE_MAX = 256,
-} KeyboardKey;
+} KeyCode;
 
 typedef enum {
 	KEY_ACTION_RELEASE = 0,
@@ -150,12 +151,52 @@ typedef enum {
 	MOUSE_BUTTON_MAX
 } MouseButton;
 
-typedef enum {
+enum {
 	MOD_KEY_SHIFT = 1 << 0,
 	MOD_KEY_CONTROL = 1 << 1,
 	MOD_KEY_ALT = 1 << 2,
 	MOD_KEY_SUPER = 1 << 3,
 	MOD_KEY_CAPSLOCK = 1 << 4,
 	MOD_KEY_NUMLOCK = 1 << 5,
-} ModKeyFlagBits;
+};
 typedef uint32_t ModKeyFlags;
+
+typedef enum {
+	GAMEPAD_BUTTON_BACK,
+	GAMEPAD_BUTTON_GUIDE,
+	GAMEPAD_BUTTON_START,
+
+	GAMEPAD_BUTTON_SOUTH,
+	GAMEPAD_BUTTON_EAST,
+	GAMEPAD_BUTTON_WEST,
+	GAMEPAD_BUTTON_NORTH,
+
+	GAMEPAD_BUTTON_DOWN,
+	GAMEPAD_BUTTON_RIGHT,
+	GAMEPAD_BUTTON_UP,
+	GAMEPAD_BUTTON_LEFT,
+
+	GAMEPAD_BUTTON_LSTICK,
+	GAMEPAD_BUTTON_RSTICK,
+	GAMEPAD_BUTTON_LSHOULDER,
+	GAMEPAD_BUTTON_RSHOULDER,
+
+	GAMEPAD_BUTTON_MAX
+} GamepadButton;
+
+typedef enum GamepadAxis {
+	GAMEPAD_AXIS_LX,
+	GAMEPAD_AXIS_LY,
+	GAMEPAD_AXIS_RX,
+	GAMEPAD_AXIS_RY,
+
+	GAMEPAD_AXIS_LT,
+	GAMEPAD_AXIS_RT,
+
+	GAMEPAD_AXIS_MAX
+} GamepadAxis;
+
+typedef struct {
+	uint32_t buttons;
+	int16_t axes[6];
+} GamepadState;

@@ -5,6 +5,17 @@
 #include <string.h>
 #include <stdint.h>
 
+#if defined(__EMSCRIPTEN__) || defined(__wasm__)
+	#define WEB_BUILD
+#elif defined(_WIN32)
+	#define WINDOWS_BUILD
+#elif defined(__linux__)
+	#define LINUX_BUILD
+/* #elif defined(__APPLE__) && defined(__MACH__) */
+#else
+	#error Unsupported backend
+#endif
+
 #if defined(__linux__) || defined(__APPLE__)
 	#define ENGINE_API __attribute__((visibility("default")))
 #elif defined(_WIN32)
@@ -136,13 +147,23 @@ INLINE uint64_t hash64_combine(uint64_t lhs, uint64_t rhs) {
 
 // Types
 // clang-format off
-typedef struct { float x, y; } float32x2;
-typedef struct { float x, y, z; } float32x3;
-typedef struct alignas(16) { float x, y, z, w; } float32x4;
+typedef struct { float x, y; } float2;
+typedef struct { float x, y, z; } float3;
+typedef struct alignas(16) { float x, y, z, w; } float4;
 
-typedef float32x2 float2;
-typedef float32x3 float3;
-typedef float32x4 float4;
+typedef struct { double x, y; } double2;
+typedef struct { double x, y, z; } double3;
+typedef struct alignas(16) { double x, y, z, w; } double4;
+
+typedef struct { uint32_t x, y; } uint2;
+typedef struct { uint32_t x, y, z; } uint3;
+typedef struct { uint32_t x, y, z, w; } uint4;
+
+typedef struct { int16_t x, y; } short2;
+
+typedef struct { int32_t x, y; } int2;
+typedef struct { int32_t x, y, z; } int3;
+typedef struct { int32_t x, y, z, w; } int4;
 
 // make
 INLINE float2 splat2(float v) { return (float2){ v, v }; }
@@ -173,43 +194,11 @@ INLINE float2 xy3(float3 v) { return make2(v.x, v.y); }
 #define FLOAT3_FORWARD ((float3){0.0f, 0.0f, -1.0f})
 #define FLOAT3_BACKWARD ((float3){0.0f, 0.0f, 1.0f})
 
-typedef double float64;
-typedef struct { float64 x, y; } float64x2;
-typedef struct { float64 x, y, z; } float64x3;
-typedef struct alignas(16) { float64 x, y, z, w; } float64x4;
-
-typedef float64x2 double2;
-typedef float64x3 double3;
-typedef float64x4 double4;
-
-typedef uint32_t uint32;
-typedef struct { uint32 x, y; } uint32x2;
-typedef struct { uint32 x, y, z; } uint32x3;
-typedef struct { uint32 x, y, z, w; } uint32x4;
-
-typedef uint64_t uint64;
-typedef struct { uint64 x, y; } uint64x2;
-typedef struct { uint64 x, y, z; } uint64x3;
-typedef struct { uint64 x, y, z, w; } uint64x4;
-
-typedef uint32x2 uint2;
-typedef uint32x3 uint3;
-typedef uint32x4 uint4;
-
-typedef int32_t int32;
-typedef struct { int32 x, y; } int32x2;
-typedef struct { int32 x, y, z; } int32x3;
-typedef struct { int32 x, y, z, w; } int32x4;
-
-typedef int32x2 int2;
-typedef int32x3 int3;
-typedef int32x4 int4;
-
 typedef struct { float min, max; } Interval;
-typedef struct { float32x2 min, max; } Interval2;
-typedef struct { float32x3 min, max; } Interval3;
+typedef struct { float2 min, max; } Interval2;
+typedef struct { float3 min, max; } Interval3;
 
-typedef struct { void *elements; uint32_t element_count; uint16_t element_size, stride; } Buffer;
+typedef uint32_t RID;
 
 typedef struct {
 	float x, y, width, height;
@@ -231,7 +220,7 @@ INLINE rgba8 rgba8_color_alpha(uint8_t r, uint8_t g, uint8_t b, uint8_t a) { ret
 #define hex(u) (rgba8){ ((u) >> 16) & 0xFF, ((u) >> 8) & 0xFF, ((u) >> 0) & 0xFF, 0xFF }
 
 // clang-format on
-#define TRANSPARENT (rgba8){ 0 } 
+#define TRANSPARENT (rgba8){ 0 }
 
 #define RED hex(0xFF0000)
 #define ORANGE hex(0xFF7F00)

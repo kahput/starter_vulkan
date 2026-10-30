@@ -5,7 +5,7 @@
 
 #include "core/debug.h"
 #include "core/logger.h"
-#include "os.h"
+#include "core/os.h"
 #include <vulkan/vulkan_core.h>
 
 #ifndef VK_USE_PLATFORM_XCB_KHR
@@ -925,7 +925,7 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 	return result;
 }
 
-GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const char *debug_name) {
+GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, WM_Surface *surface, const char *debug_name) {
 	GFX_Swapchain *result = 0;
 	ArenaTemp scratch = arena_scratch_begin(0);
 
@@ -950,8 +950,8 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const
 	if (ok) { // create surface
 		VkXcbSurfaceCreateInfoKHR surface_create_info = {
 			.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
-			.connection = os_native_display_handle(),
-			.window = (uint32_t)(uint64_t)os_native_surface_handle(surface),
+			.connection = wm_native_display(),
+			.window = (uint32_t)(uint64_t)wm_native_surface(surface),
 		}; // TODO: Have os decide this
 
 		ok = vkCreateXcbSurfaceKHR(device->instance, &surface_create_info, 0, &result->surface) == VK_SUCCESS;
@@ -1028,8 +1028,8 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const
 				selected_present_mode = present_modes[mode_index];
 		}
 
-		uint32x2 surface_size = os_surface_size(surface);
-		float dpi = os_surface_dpi(surface);
+		uint2 surface_size = wm_surface_size(surface);
+		float dpi = wm_surface_dpi(surface);
 
 		VkExtent2D selected_extents =
 			capabilities.currentExtent.width != UINT32_MAX
@@ -1319,7 +1319,7 @@ bool gfx_swapchain_resize(GFX_Device *device, GFX_Swapchain *swapchain, uint32_t
 	bool ok = gfx_swapchain_valid(device, swapchain);
 	if (ok) {
 		vkDeviceWaitIdle(device->handle); // TODO: Queue free instead
-		OS_Surface *native = swapchain->native;
+		WM_Surface *native = swapchain->native;
 		const char *name = swapchain->wrapper.options.debug_name;
 
 		gfx_swapchain_destroy(device, swapchain);
@@ -1535,7 +1535,7 @@ GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device) {
 		vkResetDescriptorPool(device->handle, result->descriptor_pool, 0);
 
 		result->transient_buffer = device->frame_staging_buffer;
-		result->transient_arena[0] = arena_wrap(device->frame_staging_buffer->mapped, device->frame_staging_buffer->size);
+		result->transient_arena[0] = arena_from_buffer(device->frame_staging_buffer->mapped, device->frame_staging_buffer->size);
 		result->transient_arena->offset = device->current_frame_index * device->frame_staging_buffer_slice_size;
 
 		// Begin command recording
@@ -1631,7 +1631,7 @@ GFX_CommandEncoder *gfx_transfer_cmd(GFX_Device *device) {
 		vkResetFences(device->handle, 1, &result->in_flight_fence);
 
 		result->transient_buffer = device->transfer_staging_buffer;
-		result->transient_arena[0] = arena_wrap(device->transfer_staging_buffer->mapped, device->transfer_staging_buffer->size);
+		result->transient_arena[0] = arena_from_buffer(device->transfer_staging_buffer->mapped, device->transfer_staging_buffer->size);
 		result->transient_arena->offset = device->current_transfer_index * device->transfer_staging_buffer_slice_size;
 
 		// Begin command recording
@@ -2261,7 +2261,7 @@ bool gfx__instance_make(GFX_Device *device) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	uint32_t required_extension_count = 0;
-	const char **required_extensions = os_surface_vulkan_extensions(&required_extension_count);
+	const char **required_extensions = wm_vulkan_surface_extensions(&required_extension_count);
 
 	bool ok = true;
 	if (ok) { // validate if required extensions are present

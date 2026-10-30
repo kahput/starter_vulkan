@@ -396,7 +396,9 @@ typedef struct {
 	#define MAX_TRANSFERS_IN_FLIGHT 2
 
 	#include <vulkan/vulkan_core.h>
-	#include "os.h"
+
+	#include "wm.h"
+	#include "core/os.h"
 
 struct GFX_Buffer {
 	GFX_Buffer *next;
@@ -575,7 +577,7 @@ struct GFX_Shader {
 struct Swapchain {
 	GFX_Swapchain *next;
 
-	OS_Surface *native;
+	WM_Surface *native;
 
 	VkSwapchainKHR handle;
 	VkSurfaceKHR surface;

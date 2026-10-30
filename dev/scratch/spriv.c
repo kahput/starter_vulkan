@@ -1,6 +1,6 @@
 #include "core/debug.h"
 #include "core/strings.h"
-#include "os.h"
+#include "core/os.h"
 #include "core/arena.h"
 #include "core/logger.h"
 #include <stdlib.h>
@@ -60,7 +60,7 @@ int main(void) {
 
 	/* String8 shader = s("assets/shaders/vertex/bin/batch3d.vertex.spv"); */
 	string8 shader = s("assets/shaders/fragment/bin/phong.fragment.spv");
-	int result = system((char *)concat8(scratch.arena, s("spirv-dis "), shader).bytes);
+	int result = system((char *)str8_concat(scratch.arena, s("spirv-dis "), shader).bytes);
 
 	LOG_INFO("#%.*s", arg8(os_file_read(scratch.arena, s("dis.test"))));
 

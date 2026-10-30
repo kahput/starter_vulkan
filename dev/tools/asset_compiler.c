@@ -1,7 +1,7 @@
 #include "core/arena.h"
 #include "core/debug.h"
 #include "core/strings.h"
-#include "os.h"
+#include "core/os.h"
 #include <core.h>
 #include <stdio.h>
 #include <utils/lexer.h>
@@ -176,7 +176,7 @@ AST_Node *ast_parse_expr_primary(Arena *arena, Lexer *lexer) {
 			} break;
 			default: {
 				Token tok = lexer_peek(lexer);
-				string8 message = fmt8(
+				string8 message = str8_fmt(
 					scratch.arena,
 					"Unexpected token '%.*s'",
 					arg8(tok.lexeme));
@@ -339,7 +339,7 @@ AST_Node *ast_parse_block_decl(Arena *arena, Lexer *lexer, AST_BlockKind kind) {
 			result->block_kind = kind;
 			result->identifier = identifier;
 		} else {
-			string8 message = fmt8(scratch.arena, "Expected block or shader reference, got '%.s'.", arg8(token_type_to_string[tok.type]));
+			string8 message = str8_fmt(scratch.arena, "Expected block or shader reference, got '%.s'.", arg8(token_type_to_string[tok.type]));
 			report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 			lexer_advance(lexer);
 		}
@@ -493,7 +493,7 @@ int32_t eval_pipeline_state(const string8 *state_table, uint32_t table_count, st
 	bool ok = state_table && table_count;
 	if (ok) {
 		for (uint32_t index = 0; index < table_count; ++index) {
-			if (eq8(state_table[index], needle)) {
+			if (str8_match(state_table[index], needle)) {
 				result = index;
 				break;
 			}
@@ -506,7 +506,7 @@ int32_t eval_pipeline_state(const string8 *state_table, uint32_t table_count, st
 		ArenaTemp scratch = arena_scratch_begin(0);
 		va_list args;
 		va_start(args, fmt);
-		string8 err = fmtv8(scratch.arena, fmt, args);
+		string8 err = str8_fmtv(scratch.arena, fmt, args);
 		va_end(args);
 
 		LOG_ERROR("%.*s", arg8(err));
@@ -540,15 +540,15 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 			Token tok = assign->first_child->identifier;
 			string8 key = tok.lexeme;
 
-			bool is_blend = eq8(key, s("blend"));
-			bool is_color = is_blend || eq8(key, s("blend_color"));
-			bool is_alpha = is_blend || eq8(key, s("blend_alpha"));
+			bool is_blend = str8_match(key, s("blend"));
+			bool is_color = is_blend || str8_match(key, s("blend_color"));
+			bool is_alpha = is_blend || str8_match(key, s("blend_alpha"));
 
 			if (is_color || is_alpha) {
 				AST_Node *call = assign->last_child;
 				ok = call && call->type == AST_NODE_EXPR_CALL;
 				if (ok == false) {
-					string8 message = fmt8(scratch.arena,
+					string8 message = str8_fmt(scratch.arena,
 						"Expect function call value for '%.*s'",
 						arg8(key));
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
@@ -564,7 +564,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok &= src_node && dst_node && src_node != dst_node;
 				if (ok == false) {
-					string8 message = fmt8(
+					string8 message = str8_fmt(
 						scratch.arena,
 						"Expect two arguments for blend operation '%.*s'.",
 						arg8(key));
@@ -596,7 +596,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 						opts->dst_alpha_factor = (BlendFactor)dst;
 					}
 				}
-			} else if (eq8(key, s("cull")) || eq8(key, s("cull_mode"))) {
+			} else if (str8_match(key, s("cull")) || str8_match(key, s("cull_mode"))) {
 				AST_Node *value_node = assign->last_child;
 
 				ok = value_node;
@@ -608,7 +608,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 				CullMode value = CULL_MODE_MAX;
 
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
-					if (eq8(cull_mode_table[index], value_node->identifier.lexeme)) {
+					if (str8_match(cull_mode_table[index], value_node->identifier.lexeme)) {
 						value = (CullMode)index;
 						break;
 					}
@@ -621,7 +621,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 				}
 
 				opts->cull_mode = value;
-			} else if (eq8(key, s("depth_test")) || eq8(key, s("depth_write"))) {
+			} else if (str8_match(key, s("depth_test")) || str8_match(key, s("depth_write"))) {
 				AST_Node *value_node = assign->last_child;
 
 				ok = value_node;
@@ -642,7 +642,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				int32_t found = -1;
 				for (uint32_t index = 0; index < countof(depth_table); ++index) {
-					if (eq8(depth_table[index].key, value_node->identifier.lexeme)) {
+					if (str8_match(depth_table[index].key, value_node->identifier.lexeme)) {
 						found = index;
 						break;
 					}
@@ -650,7 +650,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok = found != -1;
 				if (ok == false) {
-					string8 message = fmt8(
+					string8 message = str8_fmt(
 						scratch.arena,
 						"Expect boolean for '%.*s', got '%.*s'",
 						arg8(key),
@@ -661,11 +661,11 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 					break;
 				}
 
-				if (eq8(key, s("depth_test")))
+				if (str8_match(key, s("depth_test")))
 					opts->disable_depth_test = !depth_table[found].value;
 				else
 					opts->disable_depth_write = !depth_table[found].value;
-			} else if (eq8(key, s("polygon")) || eq8(key, s("polygon_mode"))) {
+			} else if (str8_match(key, s("polygon")) || str8_match(key, s("polygon_mode"))) {
 				AST_Node *value_node = assign->last_child;
 
 				ok = value_node;
@@ -676,7 +676,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				PolygonMode value = POLYGON_MODE_MAX;
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
-					if (eq8(polygon_mode_table[index], value_node->identifier.lexeme)) {
+					if (str8_match(polygon_mode_table[index], value_node->identifier.lexeme)) {
 						value = (PolygonMode)index;
 						break;
 					}
@@ -690,7 +690,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				opts->polygon_mode = value;
 			} else {
-				string8 message = fmt8(
+				string8 message = str8_fmt(
 					scratch.arena,
 					"Unknown pipeline property '%.*s'.",
 					arg8(tok.lexeme));
@@ -714,7 +714,7 @@ static AST_Node *ast_lookup_shader(string8 name) {
 	for (AST_NodeList *it = shader_symbol_list; it; it = it->next) {
 		AST_Node *shader = it->node;
 
-		if (eq8(shader->identifier.lexeme, name)) {
+		if (str8_match(shader->identifier.lexeme, name)) {
 			result = shader;
 			break;
 		}
@@ -783,12 +783,12 @@ bool ast_resolve_ref(AST_Node *node, AST_NodeList *explored) {
 						string8 shader_name = shader->identifier.lexeme;
 
 						if (cycle.length)
-							cycle = fmt8(scratch.arena, "%.*s -> %.*s", arg8(cycle), arg8(shader_name));
+							cycle = str8_fmt(scratch.arena, "%.*s -> %.*s", arg8(cycle), arg8(shader_name));
 						else
 							cycle = shader_name;
 					}
 
-					string8 message = fmt8(
+					string8 message = str8_fmt(
 						scratch.arena,
 						"Cyclic dependency detected in stage %.*s for shader '%.*s'. %.*s",
 						arg8(ast_block_kind_to_display_string[node->block_kind]),
@@ -801,7 +801,7 @@ bool ast_resolve_ref(AST_Node *node, AST_NodeList *explored) {
 				AST_Node *target_shader = ast_lookup_shader(ref_name);
 				ok = target_shader != 0;
 				if (ok == false) {
-					string8 message = fmt8(scratch.arena, "Referenced shader '%.*s' was not declared.", arg8(ref_name));
+					string8 message = str8_fmt(scratch.arena, "Referenced shader '%.*s' was not declared.", arg8(ref_name));
 					report(tok.line, tok.column, lexer_error_location_string(scratch.arena, tok), message);
 					break;
 				}
@@ -809,7 +809,7 @@ bool ast_resolve_ref(AST_Node *node, AST_NodeList *explored) {
 				AST_Node *target_stage = ast_find_stage_in_shader(target_shader, node->block_kind);
 				ok = target_stage != 0;
 				if (ok == false) {
-					string8 message = fmt8(
+					string8 message = str8_fmt(
 						scratch.arena,
 						"Shader '%.*s' does not define referenced stage %.*s.\n",
 						arg8(ref_name),
@@ -847,17 +847,17 @@ int main(int32_t argc, char **argv) {
 	Arena arena[] = { arena_make(MiB(32)) };
 
 	string8 ref_directory = argc > 1 ? str8z(argv[1]) : s("./");
-	string8 shader_directory = pathjoin8(arena, ref_directory, s("resources/shaders/"));
+	string8 shader_directory = str8_pathjoin(arena, ref_directory, s("resources/shaders/"));
 
 	uint32_t file_count;
-	string8 *files = os_directory_files(arena, shader_directory, &file_count);
+	string8 *files = os_listdir(arena, shader_directory, &file_count);
 
 	bool had_error = false;
 
 	AST_Node *program = ast_make(arena, AST_NODE_PROGRAM);
 	for (uint32_t index = 0; index < file_count; ++index) {
-		if (eq8(pathext8(files[index]), s("shader")) == false) continue;
-		string8 file = concat8(arena, shader_directory, files[index]);
+		if (str8_match(str8_pathext(files[index]), s("shader")) == false) continue;
+		string8 file = str8_concat(arena, shader_directory, files[index]);
 
 		Lexer lexer[] = { lexer_make(os_file_read(arena, file), keyword_to_string, countof(keyword_to_string)) };
 		while (lexer_at_end(lexer) == false) {
@@ -885,19 +885,19 @@ int main(int32_t argc, char **argv) {
 	 * emit_source();
 	 */
 
-	string8 code_output_directory = pathjoin8(arena, ref_directory, s("game/src/generated"));
+	string8 code_output_directory = str8_pathjoin(arena, ref_directory, s("game/src/generated"));
 	if (os_directory_exists(code_output_directory) == false)
-		os_directory_make(code_output_directory);
+		os_mkdir(code_output_directory);
 
 	string8 header_file = s("resources.h"), source_file = s("resources.c");
-	FILE *header = fopen((char *)pathjoin8(arena, code_output_directory, header_file).bytes, "w");
-	FILE *source = fopen((char *)pathjoin8(arena, code_output_directory, source_file).bytes, "w");
+	FILE *header = fopen((char *)str8_pathjoin(arena, code_output_directory, header_file).bytes, "w");
+	FILE *source = fopen((char *)str8_pathjoin(arena, code_output_directory, source_file).bytes, "w");
 
 	if (header == 0 || source == 0) return -1;
 
-	string8 output_directory = pathjoin8(arena, ref_directory, s("resources/shaders/generated"));
+	string8 output_directory = str8_pathjoin(arena, ref_directory, s("resources/shaders/generated"));
 	if (os_directory_exists(output_directory) == false)
-		if (os_directory_make(output_directory) == false) return -1;
+		if (os_mkdir(output_directory) == false) return -1;
 
 	fprintf(header, "#pragma once\n");
 	fprintf(header, "#include \"res.h\"\n");
@@ -906,19 +906,19 @@ int main(int32_t argc, char **argv) {
 	AST_Node *shader = program->first_child;
 	if (shader) do {
 			string8 name = shader->identifier.lexeme;
-			string8 name_upper = upper8(arena, name);
+			string8 name_upper = str8_upper(arena, name);
 			fprintf(header, "    RES_SHADER_%.*s,\n", arg8(name_upper));
 
 			string8 glsl_paths[SHADER_STAGE_MAX] = {
-				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.glsl", arg8(output_directory), arg8(name)),
-				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.glsl", arg8(output_directory), arg8(name)),
-				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.glsl", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_VERTEX] = str8_fmt(arena, "%.*s/v_%.*s.glsl", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_FRAGMENT] = str8_fmt(arena, "%.*s/f_%.*s.glsl", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_COMPUTE] = str8_fmt(arena, "%.*s/c_%.*s.glsl", arg8(output_directory), arg8(name)),
 			};
 
 			string8 spv_paths[SHADER_STAGE_MAX] = {
-				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.spv", arg8(output_directory), arg8(name)),
-				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.spv", arg8(output_directory), arg8(name)),
-				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_VERTEX] = str8_fmt(arena, "%.*s/v_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_FRAGMENT] = str8_fmt(arena, "%.*s/f_%.*s.spv", arg8(output_directory), arg8(name)),
+				[SHADER_STAGE_COMPUTE] = str8_fmt(arena, "%.*s/c_%.*s.spv", arg8(output_directory), arg8(name)),
 			};
 
 			string8 blocks[AST_BLOCK_KIND_MAX] = { 0 };
@@ -928,10 +928,10 @@ int main(int32_t argc, char **argv) {
 			AST_Node *decl = shader->first_child;
 			if (decl) do {
 					if (decl->type == AST_NODE_SOURCE_DECL) {
-						blocks[decl->block_kind] = concat8(arena, blocks[decl->block_kind], decl->glsl);
+						blocks[decl->block_kind] = str8_concat(arena, blocks[decl->block_kind], decl->glsl);
 					} else if (decl->type == AST_NODE_PIPELINE_DECL) {
 						string8 pipeline_name = decl->identifier.lexeme;
-						string8 pipeline_name_upper = upper8(arena, pipeline_name);
+						string8 pipeline_name_upper = str8_upper(arena, pipeline_name);
 						fprintf(header, "#define PIPELINE_%.*s_%.*s %u\n", arg8(name_upper), arg8(pipeline_name_upper), pipeline_count++);
 					}
 
@@ -951,18 +951,18 @@ int main(int32_t argc, char **argv) {
 					"#define INOUT in\n"),
 				[SHADER_STAGE_COMPUTE] = s("#pragma shader_stage(compute)"),
 			};
-			string8 include_dir = pathjoin8(arena, ref_directory, s("resources/shaders/"));
-			string8 cleaned_shared = dedent8(arena, blocks[AST_BLOCK_KIND_SHARED]);
+			string8 include_dir = str8_pathjoin(arena, ref_directory, s("resources/shaders/"));
+			string8 cleaned_shared = str8_dedent(arena, blocks[AST_BLOCK_KIND_SHARED]);
 
 			for (AST_BlockKind block_index = 0; block_index < AST_BLOCK_KIND_MAX; ++block_index) {
 				if (block_index == AST_BLOCK_KIND_SHARED) continue;
 				if (blocks[block_index].length == 0) continue;
-				string8 cleaned_source = dedent8(arena, blocks[block_index]);
+				string8 cleaned_source = str8_dedent(arena, blocks[block_index]);
 
 				string8 glsl_path = glsl_paths[stage_index(block_index)];
 				string8 spv_path = spv_paths[stage_index(block_index)];
 
-				string8 glsl = fmt8(arena,
+				string8 glsl = str8_fmt(arena,
 					"%.*s%.*s\n// --- shared_start ---\n%.*s\n\n// --- shared_end ---\n\n// --- source_start ---\n%.*s\n\n// --- source_end ---",
 					arg8(version_header),
 					arg8(stage_info[stage_index(block_index)]),
@@ -974,15 +974,15 @@ int main(int32_t argc, char **argv) {
 				if (os_file_exists(glsl_path)) {
 					string8 existing = os_file_read(arena, glsl_path);
 
-					if (eq8(existing, glsl))
+					if (str8_match(existing, glsl))
 						glsl_modified = false;
 				}
 
 				if (glsl_modified || os_file_exists(spv_path) == false) {
-					string8 tmp_path = fmt8(arena, "%.*s.tmp.vert", arg8(glsl_path));
-					os_file_write(tmp_path, glsl.bytes, glsl.length);
+					string8 tmp_path = str8_fmt(arena, "%.*s.tmp.vert", arg8(glsl_path));
+					os_file_write(tmp_path, glsl);
 
-					string8 cmd = fmt8(
+					string8 cmd = str8_fmt(
 						arena,
 						"glslc -I %.*s %.*s -o %.*s",
 						arg8(include_dir),
@@ -991,9 +991,9 @@ int main(int32_t argc, char **argv) {
 
 					LOG_INFO("#Generating %.*s", arg8(spv_path));
 					if (os_execute_command(cmd) == 0)
-						os_file_write(glsl_path, glsl.bytes, glsl.length);
+						os_file_write(glsl_path, glsl);
 
-					os_file_delete(tmp_path);
+					os_unlink(tmp_path);
 				}
 			}
 
@@ -1008,13 +1008,13 @@ int main(int32_t argc, char **argv) {
 	fprintf(source, "RES_ShaderMeta res_shader_metadata[RES_SHADER_MAX] = {\n");
 	if (shader) do {
 			string8 name = shader->identifier.lexeme;
-			string8 upper = upper8(arena, name);
+			string8 upper = str8_upper(arena, name);
 
-            string8 relative_path = skip8(output_directory, ref_directory.length ? ref_directory.length + 1 : 0);
+            string8 relative_path = str8_skip(output_directory, ref_directory.length ? ref_directory.length + 1 : 0);
 			string8 filepaths[SHADER_STAGE_MAX] = {
-				[SHADER_STAGE_VERTEX] = fmt8(arena, "%.*s/v_%.*s.spv", arg8(relative_path), arg8(name)),
-				[SHADER_STAGE_FRAGMENT] = fmt8(arena, "%.*s/f_%.*s.spv", arg8(relative_path), arg8(name)),
-				[SHADER_STAGE_COMPUTE] = fmt8(arena, "%.*s/c_%.*s.spv", arg8(relative_path), arg8(name)),
+				[SHADER_STAGE_VERTEX] = str8_fmt(arena, "%.*s/v_%.*s.spv", arg8(relative_path), arg8(name)),
+				[SHADER_STAGE_FRAGMENT] = str8_fmt(arena, "%.*s/f_%.*s.spv", arg8(relative_path), arg8(name)),
+				[SHADER_STAGE_COMPUTE] = str8_fmt(arena, "%.*s/c_%.*s.spv", arg8(relative_path), arg8(name)),
 			};
 
 			bool is_compute = false;
@@ -1032,7 +1032,7 @@ int main(int32_t argc, char **argv) {
 			ASSERT_FORMAT((is_compute && pipeline_count) == false && pipeline_count < 8, "Shader '%.*s': compute and graphics pipeline defined together.", arg8(shader->identifier.lexeme));
 
 			fprintf(source, "    [RES_SHADER_%.*s] = {\n", arg8(upper));
-			fprintf(source, "      .uuid = { %" PRIu64 "ULL },\n", hash8(name));
+			fprintf(source, "      .uuid = { %" PRIu64 "ULL },\n", str8_hash(name));
 			fprintf(source, "      .name = comp8(\"%.*s\"),\n", arg8(name));
 			fprintf(source, "      .filepaths = {\n");
 			if (is_compute)
@@ -1055,7 +1055,7 @@ int main(int32_t argc, char **argv) {
 							ast_pipeline_eval(decl, &options);
 
 							string8 pipeline_name = decl->identifier.lexeme;
-							string8 pipeline_upper = upper8(arena, pipeline_name);
+							string8 pipeline_upper = str8_upper(arena, pipeline_name);
 
 							fprintf(source, "          [PIPELINE_%.*s_%.*s] = {\n", arg8(upper), arg8(pipeline_upper)); // TODO: PipelineID
 							fprintf(source, "              .cull_mode = %.*s,\n", arg8(cull_mode_to_string[options.cull_mode]));

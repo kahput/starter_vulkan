@@ -1,6 +1,6 @@
 #include "core/arena.h"
 #include "core/image.h"
-#include "os.h"
+#include "core/os.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
@@ -23,7 +23,7 @@ int main(int32_t argc, const char *argv[]) {
 
 		gray.pixels[pixel_index] = (uint8_t)roundf(rgb[0] + rgb[1] + rgb[2]);
 	}
-	imsave(s("resources/images/duck_grayscale.png"), &gray);
+	imsave(s("resources/images/duck_grayscale.png"), gray);
 
 	rgba8 top = hex(0xF7EF81);
 	rgba8 bot = hex(0xDD1C1A);
@@ -40,7 +40,7 @@ int main(int32_t argc, const char *argv[]) {
 				gradient.pixels[pixel_index * gradient.channels + channel] = output[channel];
 		}
 	}
-	imsave(s("resources/images/gradient.png"), &gradient);
+	imsave(s("resources/images/gradient.png"), gradient);
 
 	// clang-format off
     const uint32_t kw = 3, kh = 3;
@@ -64,8 +64,8 @@ int main(int32_t argc, const char *argv[]) {
 			int32_t gx = 0, gy = 0;
 			for (uint32_t j = 0; j < kh; ++j) {
 				for (uint32_t i = 0; i < kw; ++i) {
-					int32_t px = clamp1s((int32_t)x + i - 1, 0, gray.width - 1);
-					int32_t py = clamp1s((int32_t)y + j - 1, 0, gray.height - 1);
+					int32_t px = clamp1i((int32_t)x + i - 1, 0, gray.width - 1);
+					int32_t py = clamp1i((int32_t)y + j - 1, 0, gray.height - 1);
 
 					int32_t index = px + py * gray.width;
 					gx += sobelx[i + j * kw] * gray.pixels[index];
@@ -77,7 +77,7 @@ int main(int32_t argc, const char *argv[]) {
 			edges.pixels[x + y * gray.width] = CLAMP(roundf(magnitude), 0, 255);
 		}
 	}
-	imsave(s("resources/images/duck_sobel.png"), &edges);
+	imsave(s("resources/images/duck_sobel.png"), edges);
 
 	return 0;
 }

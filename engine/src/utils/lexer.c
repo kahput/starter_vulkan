@@ -89,7 +89,7 @@ void lexer__skip_whitespace_and_comments(Lexer *lexer) {
 
 TokenType lexer__match_keyword(Lexer *lexer, Token *token) {
 	for (uint32_t index = 0; index < lexer->keyword_count; ++index)
-		if (eq8(lexer->keywords[index], token->lexeme))
+		if (str8_match(lexer->keywords[index], token->lexeme))
 			return TOKEN_KEYWORD_0 + index;
 
 	/* switch (token->string.chars[0]) { */
@@ -417,18 +417,18 @@ string8 lexer_error_location_string(Arena *arena, Token token) {
 		while (line.bytes[line.length] != '\n' && line.bytes[line.length] != '\0')
 			line.length++;
 
-		string8 err_top = fmt8(arena, "    %d | %.*s\n", token.line, arg8(line));
+		string8 err_top = str8_fmt(arena, "    %d | %.*s\n", token.line, arg8(line));
 		uint32_t error_offset = 0;
 		while (err_top.bytes[error_offset] != '|')
 			error_offset++;
 		error_offset++;
 
 		error_offset += col + 1;
-		string8 indent = indent8(arena, s(" "), error_offset);
+		string8 indent = str8_indent(arena, s(" "), error_offset);
 		string8 arrow = s("^-- here");
-		string8 err_bottom = fmt8(arena, "%.*s%.*s", arg8(indent), arg8(arrow));
+		string8 err_bottom = str8_fmt(arena, "%.*s%.*s", arg8(indent), arg8(arrow));
 
-		result = concat8(arena, err_top, err_bottom);
+		result = str8_concat(arena, err_top, err_bottom);
 	}
 
 	return result;

@@ -1,7 +1,4 @@
-#define _POSIX_C_SOURCE 200809L
-#define _DEFAULT_SOURCE
-
-#include "os.h"
+#include "core/os.h"
 #include <sys/mman.h>
 #include "core/debug.h"
 

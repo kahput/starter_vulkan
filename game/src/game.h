@@ -17,10 +17,11 @@
 #include "generated/res_generated.c"
 
 #include <common.h>
+#include <core/os.h>
 #include <core/arena.h>
 #include <core/logger.h>
 
-#include <os.h>
+#include <wm.h>
 
 #include <gfx.h>
 
@@ -55,7 +56,7 @@ typedef struct {
 
 	GFX_Device device[1];
 
-	OS_Surface *surface;
+	WM_Surface *surface;
 	GFX_Swapchain *swapchain;
 	GFX_Image *depthbuffer;
 
@@ -78,7 +79,7 @@ typedef struct {
 State *state = 0;
 
 static inline char *named(const char *name) {
-	return (char *)fmt8(state->permanent, name).bytes;
+	return (char *)str8_fmt(state->permanent, name).bytes;
 }
 
 typedef struct {

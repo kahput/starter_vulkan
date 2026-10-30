@@ -12,17 +12,22 @@ bool str8__ispathdelim(char c) {
 	return c == '/' || c == '\\';
 }
 
-bool has8(string8 haystack, string8 needle) {
+bool str8_startswith(string8 haystack, string8 needle) {
+	if (haystack.length < needle.length || needle.length == 0) return false;
+	return memory_equals(haystack.bytes, needle.bytes, needle.length);
+}
+
+bool str8_contains(string8 haystack, string8 needle) {
 	if (haystack.length < needle.length) return false;
 
 	for (uint64_t index = 0; index <= haystack.length - needle.length; ++index)
-		if (eq8(str8(haystack.bytes + index, needle.length), needle))
+		if (str8_match(str8(haystack.bytes + index, needle.length), needle))
 			return true;
 
 	return false;
 }
 
-string8 concat8(Arena *arena, string8 a, string8 b) {
+string8 str8_concat(Arena *arena, string8 a, string8 b) {
 	if (a.length == 0)
 		return b;
 	if (b.length == 0)
@@ -42,7 +47,7 @@ string8 concat8(Arena *arena, string8 a, string8 b) {
 	return result;
 }
 
-string8 indent8(Arena *arena, string8 indent, uint32_t depth) {
+string8 str8_indent(Arena *arena, string8 indent, uint32_t depth) {
 	string8 result = { 0 };
 
 	bool ok = arena && indent.length;
@@ -57,8 +62,8 @@ string8 indent8(Arena *arena, string8 indent, uint32_t depth) {
 	return result;
 }
 
-string8 upper8(Arena *arena, string8 s) {
-	string8 result = copy8(arena, s);
+string8 str8_upper(Arena *arena, string8 s) {
+	string8 result = str8_copy(arena, s);
 
 	for (uint32_t index = 0; index < result.length; ++index)
 		result.bytes[index] = toupper(result.bytes[index]);
@@ -66,8 +71,8 @@ string8 upper8(Arena *arena, string8 s) {
 	return result;
 }
 
-string8 lower8(Arena *arena, string8 s) {
-	string8 result = copy8(arena, s);
+string8 str8_lower(Arena *arena, string8 s) {
+	string8 result = str8_copy(arena, s);
 
 	for (uint32_t index = 0; index < result.length; ++index)
 		result.bytes[index] = tolower(result.bytes[index]);
@@ -75,7 +80,7 @@ string8 lower8(Arena *arena, string8 s) {
 	return result;
 }
 
-string8 dedent8(Arena *arena, string8 str) {
+string8 str8_dedent(Arena *arena, string8 str) {
 	string8 result = { 0 };
 	uint64_t min_indent = UINT64_MAX;
 
@@ -137,7 +142,7 @@ string8 dedent8(Arena *arena, string8 str) {
 	return result;
 }
 
-string8 pathjoin8(Arena *arena, string8 head, string8 tail) {
+string8 str8_pathjoin(Arena *arena, string8 head, string8 tail) {
 	if (head.length == 0)
 		return tail;
 	if (tail.length == 0)
@@ -147,9 +152,9 @@ string8 pathjoin8(Arena *arena, string8 head, string8 tail) {
 
 	if (str8__ispathdelim(head.bytes[head.length - 1]) && str8__ispathdelim(tail.bytes[0])) {
 		head.length -= 1;
-		result = concat8(arena, head, tail);
+		result = str8_concat(arena, head, tail);
 	} else if (str8__ispathdelim(head.bytes[head.length - 1]) || str8__ispathdelim(tail.bytes[0])) {
-		result = concat8(arena, head, tail);
+		result = str8_concat(arena, head, tail);
 	} else {
 		result.length = head.length + tail.length + 1; // + path delimiter
 		result.bytes = arena_push(arena, result.length + 1, 1, false); // + null terminator
@@ -162,7 +167,7 @@ string8 pathjoin8(Arena *arena, string8 head, string8 tail) {
 	return result;
 }
 
-string8 copy8(Arena *arena, string8 src) {
+string8 str8_copy(Arena *arena, string8 src) {
 	string8 result = { 0 };
 
 	bool ok = arena && src.length;
@@ -177,7 +182,7 @@ string8 copy8(Arena *arena, string8 src) {
 	return result;
 }
 
-string8 fmtv8(Arena *arena, const char *fmt, va_list args) {
+string8 str8_fmtv(Arena *arena, const char *fmt, va_list args) {
 	string8 result = { 0 };
 
 	bool ok = arena;
@@ -202,16 +207,16 @@ string8 fmtv8(Arena *arena, const char *fmt, va_list args) {
 
 	return result;
 }
-string8 fmt8(Arena *arena, const char *fmt, ...) {
+string8 str8_fmt(Arena *arena, const char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
-	string8 result = fmtv8(arena, fmt, args);
+	string8 result = str8_fmtv(arena, fmt, args);
 	va_end(args);
 
 	return result;
 }
 
-string8 pathfile8(string8 path) {
+string8 str8_pathfile(string8 path) {
 	if (path.length == 0)
 		return path;
 
@@ -227,7 +232,7 @@ string8 pathfile8(string8 path) {
 	return result;
 }
 
-string8 pathext8(string8 file) {
+string8 str8_pathext(string8 file) {
 	string8 result = { 0 };
 
 	bool ok = file.length;
@@ -249,7 +254,7 @@ string8 pathext8(string8 file) {
 	return result;
 }
 
-string8 pathdir8(string8 path) {
+string8 str8_pathdir(string8 path) {
 	if (path.length == 0)
 		return path;
 

@@ -1,7 +1,7 @@
 #include "core/arena.h"
 #include "core/debug.h"
 #include "core/strings.h"
-#include "os.h"
+#include "core/os.h"
 #include "utils/lexer.h"
 #include <core.h>
 #include <stdio.h>

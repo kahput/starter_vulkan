@@ -2,15 +2,8 @@
 #include "core/logger.h"
 #include <stdlib.h>
 
-float randf_range(float min, float max) {
-	return min + ((float)rand() / RAND_MAX) * (max - min);
-}
-uint32_t randu_range(uint32_t min, uint32_t max) {
-	return min + (rand() % (max - min + 1));
-}
-int32_t randi_range(int32_t min, int32_t max) {
-	return min + (rand() % (max - min + 1));
-}
+float randf(void) { return (float)rand() / RAND_MAX; }
+int32_t randi(void) { return rand(); }
 
 float3 euler4q(quat4 q) {
 	float3 result = { 0 };

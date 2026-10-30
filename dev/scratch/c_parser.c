@@ -1,7 +1,8 @@
 #include "common.h"
 #include "core/arena.h"
 #include "core/strings.h"
-#include "os.h"
+
+#include "core/os.h"
 #include <core.h>
 
 #include <stdio.h>
@@ -296,7 +297,7 @@ AST_Node *ast_find_global_symbol(string8 symbol) {
 	AST_Node *result = 0;
 
 	for (uint32_t index = 0; index < global_symbol_count; ++index) {
-		if (eq8(symbol, global_symbol_table[index]->name.lexeme)) {
+		if (str8_match(symbol, global_symbol_table[index]->name.lexeme)) {
 			result = global_symbol_table[index];
 			break;
 		}
@@ -309,7 +310,7 @@ AST_Node *ast_find_tag_symbol(string8 symbol) {
 	AST_Node *result = 0;
 
 	for (uint32_t index = 0; index < tag_symbol_count; ++index) {
-		if (eq8(symbol, tag_symbol_table[index]->name.lexeme)) {
+		if (str8_match(symbol, tag_symbol_table[index]->name.lexeme)) {
 			result = tag_symbol_table[index];
 			break;
 		}

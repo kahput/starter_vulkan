@@ -6,6 +6,7 @@
 
 #include "core/geom.h"
 #include "core/geom_types.h"
+#include "core/strings.h"
 #include "gfx.h"
 #include "gfx/gfx_types.h"
 
@@ -47,6 +48,18 @@ static void draw_pop_shader(DRAW_Channel *ch) {
 
 void draw2d_push_shader(RES_AssetID s) { draw_push_shader(&CURRENT_DRAWLIST->quad2d, s); }
 void draw2d_pop_shader(void) { draw_pop_shader(&CURRENT_DRAWLIST->quad2d); }
+
+void draw2d_push_transform(float2 translation, float rotation, float2 scale) {
+	DRAW_Channel *ch = &CURRENT_DRAWLIST->quad2d;
+	ASSERT(ch->transform_stack_count < DRAW_SHADER_STACK_MAX);
+	ch->transforms[ch->transform_stack_count++] = affine3x3(diagonal2x2(scale), translation);
+}
+
+void draw2d_pop_transform(void) {
+	DRAW_Channel *ch = &CURRENT_DRAWLIST->quad2d;
+	ASSERT(ch->transform_stack_count > 0);
+	ch->transform_stack_count--;
+}
 
 void draw2d_push_uniforms(uint32_t uniform_count, Uniform uniforms[]) {
 	bool ok = CURRENT_DRAWLIST && uniform_count && uniforms;
@@ -93,20 +106,22 @@ static void *draw__channel_push(Arena *arena, DRAW_Channel *ch, uint64_t size) {
 void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 	bool ok = CURRENT_DRAWLIST;
 	if (ok) {
+		DRAW_Channel *ch = &CURRENT_DRAWLIST->quad2d;
+
 		float2 position = { rect.x, rect.y };
 		float2 size = { rect.width, rect.height };
 
-		float2 uv0 = splat2(0.0f);
-		float2 uv1 = splat2(1.0f);
+		float2 uv0 = float2(0.0f);
+		float2 uv1 = float2(1.0f);
 		if (style.texture && style.uv.width != 0.0f && style.uv.height != 0.0f) {
-			uv0 = make2(style.uv.x / style.texture->width, style.uv.y / style.texture->height);
-			uv1 = make2((style.uv.x + style.uv.width) / style.texture->width, (style.uv.y + style.uv.height) / style.texture->height);
+			uv0 = float2(style.uv.x / style.texture->width, style.uv.y / style.texture->height);
+			uv1 = float2((style.uv.x + style.uv.width) / style.texture->width, (style.uv.y + style.uv.height) / style.texture->height);
 		}
 		uint32_t imageid = style.texture ? style.texture->handle->imageid : 0;
 
 		float rad = style.rotation * DEG2RAD;
 		DRAW_QuadInstance quad = {
-			.position = position,
+			.position = ch->transform_stack_count ? xform2p(ch->transforms[ch->transform_stack_count - 1], position) : position,
 			.size = size,
 			.radii = style.radii,
 			.rotation = { cosf(rad), sinf(rad) },
@@ -133,16 +148,17 @@ void draw2d_text(RES_Font *font, float2 position, rgba8 color, string8 text) {
 	if (ok) {
 		float2 cursor = float2(position.x, position.y + font->ascent);
 
-		for (uint32_t index = 0; index < text.length; ++index) {
-			uint8_t c = text.bytes[index];
-			if (c == '\n' || c == '\r') {
+		for (uint32_t index = 0; index < text.length;) {
+			UTF8Result utf8 = utf8_decode(text, index);
+			index += utf8.length;
+			if (utf8.codepoint == '\n' || utf8.codepoint == '\r') {
 				cursor.x = position.x;
 				cursor.y += font->ascent + font->descent + font->line_gap;
 				continue;
 			}
-			if (c < ' ' || c - font->first_codepoint >= font->glyph_count) c = '?';
+			if (utf8.codepoint < font->first_codepoint || utf8.codepoint - font->first_codepoint >= font->glyph_count) utf8.codepoint = '?';
 
-			RES_Glyph *glyph = &font->glyphs[c - font->first_codepoint];
+			RES_Glyph *glyph = &font->glyphs[utf8.codepoint - font->first_codepoint];
 			Rectangle rect = {
 				.x = cursor.x + glyph->bearing.x,
 				.y = cursor.y + glyph->bearing.y,
@@ -161,7 +177,7 @@ void draw2d_textf(RES_Font *font, float2 position, rgba8 color, const char *form
 
 	va_list args;
 	va_start(args, format);
-	string8 text = fmtv8(scratch.arena, format, args);
+	string8 text = str8_fmtv(scratch.arena, format, args);
 	draw2d_text(font, position, color, text);
 	va_end(args);
 

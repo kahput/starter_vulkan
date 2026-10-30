@@ -11,7 +11,7 @@ typedef struct {
 } ArenaTemp;
 
 Arena arena_make(size_t size);
-static inline Arena arena_wrap(void *buffer, size_t size) { return (Arena){ .base = buffer, .capacity = size }; }
+static inline Arena arena_from_buffer(void *buffer, size_t size) { return (Arena){ .base = buffer, .capacity = size }; }
 void arena_destroy(Arena *arena);
 
 void *arena_push(Arena *arena, size_t size, size_t align, bool zero);
@@ -29,3 +29,4 @@ static inline void arena_scratch_end(ArenaTemp scratch) { arena_temp_end(scratch
 
 #define arena_push_count(a, T, count) (T *)arena_push((a), sizeof(T) * (count), alignof(T), true)
 #define arena_push_copy(a, src, count) memory_copy(arena_push((a), sizeof((src)[0]) * (count), alignof((src)[0]), false), (src), sizeof((src)[0]) * (count))
+#define arena_from_array(arr) (Arena){ 0, sizeof(arr), (arr) }

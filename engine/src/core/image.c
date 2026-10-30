@@ -34,7 +34,7 @@ Image imload(Arena *arena, string8 path) {
 		result.pixels = arena_push_copy(arena, pixels, result.width * result.height * result.channels);
 		stbi_image_free(pixels);
 
-		string8 filename = pathfile8(path);
+		string8 filename = str8_pathfile(path);
 		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", arg8(filename), result.width, result.height, result.channels == 4 ? "RGBA8" : "RGB8");
 	}
 	if (ok == false) result = (Image){ 0 };
@@ -44,19 +44,23 @@ Image imload(Arena *arena, string8 path) {
 }
 
 #include <stb/stb_image_write.h>
-bool imsave(string8 path, const Image *image) {
-	string8 ext = pathext8(path);
+bool imsave(string8 path, Image image) {
+	string8 ext = str8_pathext(path);
 
-	bool ok = image != 0 && image->width > 0 && image->height > 0 && ext.length;
+	bool ok = image.width > 0 && image.height > 0 && ext.length;
 	if (ok) {
-		if (eq8(s("png"), ext)) {
-			stbi_write_png((char *)path.bytes, image->width, image->height, image->channels, image->pixels, image->channels * image->width);
-		} else if (eq8(s("jpg"), ext) || eq8(s("jpeg"), ext)) {
-			stbi_write_jpg((char *)path.bytes, image->width, image->height, image->channels, image->pixels, 100);
-		}
+		if (str8_match(s("png"), ext))
+			stbi_write_png((char *)path.bytes, image.width, image.height, image.channels, image.pixels, image.channels * image.width);
+		else if (str8_match(s("jpg"), ext) || str8_match(s("jpeg"), ext))
+			stbi_write_jpg((char *)path.bytes, image.width, image.height, image.channels, image.pixels, 100);
+		else
+			ok = false;
 	}
 
 	return ok;
+}
+
+void imclear() {
 }
 
 Image imfliter(Arena *arena, Image target, int32_t kernel[], uint32_t kw, uint32_t kh) {
@@ -68,8 +72,8 @@ Image imfliter(Arena *arena, Image target, int32_t kernel[], uint32_t kw, uint32
 
 			for (uint32_t j = 0; j < kh; ++j) {
 				for (uint32_t i = 0; i < kw; ++i) {
-					int32_t px = clamp1s((int32_t)x + i - 1, 0, target.width - 1);
-					int32_t py = clamp1s((int32_t)y + j - 1, 0, target.height - 1);
+					int32_t px = clamp1i((int32_t)x + i - 1, 0, target.width - 1);
+					int32_t py = clamp1i((int32_t)y + j - 1, 0, target.height - 1);
 
 					int32_t index = px + py * target.width;
 
@@ -81,5 +85,5 @@ Image imfliter(Arena *arena, Image target, int32_t kernel[], uint32_t kw, uint32
 		}
 	}
 
-    return result;
+	return result;
 }

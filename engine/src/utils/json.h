@@ -26,7 +26,7 @@ typedef struct {
 typedef struct JSON_Value {
 	JSON_Type type;
 	union {
-		float64 number;
+		double number;
 		string8 string;
 		bool boolean;
 		JSON_Container *children;
@@ -41,7 +41,7 @@ struct JSON_Node {
 #define json_object() ((JSON_Value){ .type = JSON_TYPE_OBJECT })
 #define json_array() ((JSON_Value){ .type = JSON_TYPE_ARRAY })
 #define json_number(v) ((JSON_Value){ .type = JSON_TYPE_NUMBER, .as.number = (v) })
-#define json_string(a, s) ((JSON_Value){ .type = JSON_TYPE_STRING, .as.string = copy8((a), (s)) })
+#define json_string(a, s) ((JSON_Value){ .type = JSON_TYPE_STRING, .as.string = str8_copy((a), (s)) })
 #define json_bool(v) ((JSON_Value){ .type = JSON_TYPE_BOOLEAN, .as.boolean = (v) })
 #define json_null() ((JSON_Value){ .type = JSON_TYPE_NULL })
 
@@ -64,7 +64,7 @@ static inline uint32_t json_count(JSON_Node *node) {
 	return json_is_container(node) && node->value.as.children ? node->value.as.children->count : 0;
 }
 
-static inline float64 json_num_or(JSON_Node *n, float64 fallback) {
+static inline double json_num_or(JSON_Node *n, double fallback) {
 	return json_valid(n) && n->value.type == JSON_TYPE_NUMBER ? n->value.as.number : fallback;
 }
 static inline string8 json_str_or(JSON_Node *n, string8 fallback) {

@@ -1,4 +1,4 @@
-#include "os.h"
+#include "core/os.h"
 #include <core.h>
 #include <stdio.h>
 
@@ -68,14 +68,14 @@ string8 pretty_error_string(Arena *arena, Token token) {
 		while (line.bytes[line.length] != '\n' && line.bytes[line.length] != '\0')
 			line.length++;
 
-		string8 prefix = fmt8(arena, "    %u | ", token.line);
-		string8 top = fmt8(arena, "%.*s%.*s\n", arg8(prefix), arg8(line));
+		string8 prefix = str8_fmt(arena, "    %u | ", token.line);
+		string8 top = str8_fmt(arena, "%.*s%.*s\n", arg8(prefix), arg8(line));
 
 		uint32_t arrow_offset = prefix.length + col;
-		string8 indent = indent8(arena, s(" "), arrow_offset);
+		string8 indent = str8_indent(arena, s(" "), arrow_offset);
 
-		string8 bottom = fmt8(arena, "%.*s^-- here", arg8(indent));
-		result = concat8(arena, top, bottom);
+		string8 bottom = str8_fmt(arena, "%.*s^-- here", arg8(indent));
+		result = str8_concat(arena, top, bottom);
 	}
 
 	return result;
@@ -108,9 +108,9 @@ int main(int argc, const char **argv) {
 					break;
 
 				string8 line = str8z(buffer);
-				if (line.length && line.bytes[line.length - 1] == '\n') line = chop8(line, 1);
+				if (line.length && line.bytes[line.length - 1] == '\n') line = str8_chop(line, 1);
 
-				if (eq8(line, s("exit"))) break;
+				if (str8_match(line, s("exit"))) break;
 				run(line);
 			}
 		}

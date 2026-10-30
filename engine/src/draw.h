@@ -71,14 +71,16 @@ struct DRAW_Batch {
 };
 
 #define DRAW_SHADER_STACK_MAX 8
+#define DRAW_TRANSFORM_STACK_MAX 8
 
 typedef struct {
 	Arena instances;
 	DRAW_Batch *first_batch, *last_batch;
 
 	RES_AssetID default_shader;
+	float3x3 transforms[DRAW_TRANSFORM_STACK_MAX];
 	RES_AssetID shader_stack[DRAW_SHADER_STACK_MAX];
-	uint32_t shader_stack_count;
+	uint32_t transform_stack_count, shader_stack_count;
 } DRAW_Channel;
 
 typedef struct {
@@ -94,6 +96,9 @@ DRAW_List *drawlist_make(Arena *arena, RES_AssetID default_quad2d, RES_AssetID d
 void draw2d_push_shader(RES_AssetID s);
 void draw2d_push_uniforms(uint32_t uniform_count, Uniform uniforms[]);
 void draw2d_pop_shader(void);
+
+void draw2d_push_transform(float2 translation, float rotation, float2 scale);
+void draw2d_pop_transform(void);
 
 void draw2d_quad(Rectangle rect, DRAW_QuadStyle style);
 INLINE void draw2d_rect(Rectangle rect, rgba8 color) { draw2d_quad(rect, (DRAW_QuadStyle){ .fill_color = color }); }

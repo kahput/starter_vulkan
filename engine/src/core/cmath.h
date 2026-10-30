@@ -30,12 +30,13 @@ typedef float4 quat4;
 INLINE float radians(float degree) { return degree * DEG2RAD; }
 INLINE float degrees(float radians) { return radians * RAD2DEG; }
 
-float randf_range(float min, float max);
-uint32_t randu_range(uint32_t min, uint32_t max);
-int32_t randi_range(int32_t min, int32_t max);
+float randf(void);
+int32_t randi(void);
+INLINE float randf_range(float min, float max) { return min + randf() * (max - min); }
+INLINE int32_t randi_range(int32_t min, int32_t max) { return min + randi() % (max - min + 1); }
 
 INLINE uint32_t clamp1u(uint32_t value, uint32_t lo, uint32_t hi) { return value < lo ? lo : (value > hi ? hi : value); }
-INLINE int32_t clamp1s(int32_t value, int32_t lo, int32_t hi) { return value < lo ? lo : (value > hi ? hi : value); }
+INLINE int32_t clamp1i(int32_t value, int32_t lo, int32_t hi) { return value < lo ? lo : (value > hi ? hi : value); }
 INLINE int32_t abs1i(int32_t value) { return value < 0 ? -value : value; }
 
 INLINE float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
@@ -107,6 +108,12 @@ INLINE float hmax2(float2 v) { return maxf(v.x, v.y); }
 INLINE float2 abs2(float2 v) { return (float2){ fabsf(v.x), fabsf(v.y) }; }
 INLINE int2 ifloor2(float2 v) { return (int2){ (int32_t)v.x, (int32_t)v.y }; }
 INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
+INLINE float2 limit2(float2 v, float limit_length) {
+	float l = len2(v);
+	if (l > 0 && limit_length < l)
+		v = scale2(scale2(v, 1.0f / l), limit_length);
+	return v;
+}
 
 INLINE float2 normalize2(float2 v) {
 	float lengthsq = lensq2(v);
@@ -141,7 +148,7 @@ INLINE float3 sub3(float3 a, float3 b) { return (float3){ a.x - b.x, a.y - b.y, 
 INLINE float3 mul3(float3 a, float3 b) { return (float3){ a.x * b.x, a.y * b.y, a.z * b.z }; }
 INLINE float3 scale3(float3 v, float s) { return (float3){ v.x * s, v.y * s, v.z * s }; }
 INLINE float dot3(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-INLINE float3 madd3(float3 a, float3 b, float3 c) { return (float3){ fmaf(b.x, c.x, a.x), fmaf(b.y, c.x, a.y), fmaf(b.z, c.x, a.z) }; }
+INLINE float3 madd3(float3 a, float3 b, float3 c) { return (float3){ fmaf(b.x, c.x, a.x), fmaf(b.y, c.y, a.y), fmaf(b.z, c.z, a.z) }; }
 INLINE float3 sadd3(float3 a, float3 b, float c) { return madd3(a, b, float3(c)); }
 
 INLINE float3 cross3(float3 a, float3 b) { return (float3){ a.y * b.z - b.y * a.z, a.z * b.x - b.z * a.x, a.x * b.y - b.x * a.y }; }
@@ -165,6 +172,12 @@ INLINE float hmax3(float3 v) { return maxf(v.x, maxf(v.y, v.z)); }
 
 INLINE float3 abs3(float3 v) { return (float3){ fabsf(v.x), fabsf(v.y), fabsf(v.z) }; }
 INLINE float3 clamp3(float3 v, float min, float max) { return (float3){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max) }; }
+INLINE float3 limit3(float3 v, float limit_length) {
+	float l = len3(v);
+	if (l > 0 && limit_length < l)
+		v = scale3(scale3(v, 1.0f / l), limit_length);
+	return v;
+}
 INLINE float3 approach3(float3 start, float3 end, float step) {
 	float3 vd = sub3(end, start);
 	float len = len3(vd);
@@ -245,6 +258,13 @@ INLINE float2x2 rot2x2(float rad) {
         [1] = s, [3] = c,
     }};
 }
+INLINE float2x2 mul2x2(float2x2 lhs, float2x2 rhs) {
+	return (float2x2){{
+	  [0] = lhs.elements[0] * rhs.elements[0] + lhs.elements[2] * rhs.elements[1], [2] = lhs.elements[0] * rhs.elements[2] + lhs.elements[2] * rhs.elements[3],
+	  [1] = lhs.elements[1] * rhs.elements[0] + lhs.elements[3] * rhs.elements[1], [3] = lhs.elements[1] * rhs.elements[2] + lhs.elements[3] * rhs.elements[3],
+	}};
+}
+
 // clang-format on
 INLINE float2 mul2x2v(float2x2 m, float2 v) { return (float2){ m.elements[0] * v.x + m.elements[2] * v.y, m.elements[1] * v.x + m.elements[3] * v.y }; }
 INLINE float det2x2(float2x2 m) { return m.elements[0] * m.elements[3] - m.elements[2] * m.elements[1]; }

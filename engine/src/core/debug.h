@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdlib.h>
 #include "logger.h"
+#include "os.h"
 
 #if defined(_MSC_VER)
 	#define debug_break() __debugbreak()
@@ -24,7 +24,7 @@
 			if (!(condition)) {                                  \
 				LOG_ERROR("ASSERT [%s]", #condition); \
 				debug_break();                                   \
-				abort();                                         \
+				os_abort();                                         \
 			}                                                    \
 		} while (0)
 	#define ASSERT_MESSAGE(condition, message)                                 \
@@ -32,7 +32,7 @@
 			if (!(condition)) {                                                \
 				LOG_ERROR("ASSERT [%s]\n%s", #condition, message); \
 				debug_break();                                                 \
-				abort();                                                       \
+				os_abort();                                                       \
 			}                                                                  \
 		} while (0)
 	#define ASSERT_FORMAT(condition, fmt, ...)             \
@@ -41,7 +41,7 @@
 				LOG_ERROR("ASSERT [%s]\n" fmt, \
 					#condition, __VA_ARGS__);              \
 				debug_break();                             \
-				abort();                                   \
+				os_abort();                                   \
 			}                                              \
 		} while (0)
 

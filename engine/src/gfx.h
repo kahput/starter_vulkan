@@ -46,7 +46,7 @@ bool gfx_transfer_flush(GFX_Device *device);
 GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions options);
 GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, ImageOptions options);
 GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions opt);
-GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, OS_Surface *surface, const char *debug_name);
+GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, WM_Surface *surface, const char *debug_name);
 
 bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet out_sets[GFX_LIMIT_UNIFORM_SETS]);
 GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *debug_name);

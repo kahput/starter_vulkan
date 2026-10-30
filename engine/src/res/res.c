@@ -51,7 +51,7 @@ static bool res__loader_texture(RES_Cache *cache, RES_AssetID id, RES_Key key, R
 	RES_ImageMeta *meta = &cache->catalog.images[id];
 	out->handle = gfx_image_make(cache->device, image->width, image->height,
 		(ImageOptions){
-		  .debug_name = (char *)fmt8(cache->arena, "%.*s[format=%.*s]", arg8(meta->name), arg8(pixel_format_to_display_string[(PixelFormat)key.variant])).bytes,
+		  .debug_name = (char *)str8_fmt(cache->arena, "%.*s[format=%.*s]", arg8(meta->name), arg8(pixel_format_to_display_string[(PixelFormat)key.variant])).bytes,
 		  .format = (PixelFormat)key.variant,
 		  .pixels = image->pixels,
 		});
@@ -109,7 +109,7 @@ static bool res__loader_font(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_
 		font.tex_atlas = (RES_Texture2D){
 			.handle = gfx_image_make(cache->device, font.img_atlas.width, font.img_atlas.height,
 				(ImageOptions){
-				  .debug_name = (char *)fmt8(cache->arena, "%.*s[weight=%u, style=%.*s, size=%u]", arg8(meta->name), weight, arg8(res_font_style_to_display_string[style]), font_size).bytes,
+				  .debug_name = (char *)str8_fmt(cache->arena, "%.*s[weight=%u, style=%.*s, size=%u]", arg8(meta->name), weight, arg8(res_font_style_to_display_string[style]), font_size).bytes,
 				  .format = PIXEL_FORMAT_R8_UNORM,
 				  .pixels = font.img_atlas.pixels,
 				  .swizzle = {
@@ -234,37 +234,6 @@ void res_cache_tick(Arena *frame_arena, RES_Cache *cache) {
 	}
 }
 
-float2 measure_text(RES_Font *font, string8 text) {
-	float2 result = { 0.0f, 0.0f };
-	float x_offset = 0.0f;
-
-	bool ok = font && font->glyphs && text.bytes && text.length;
-	/* if (ok) { */
-	/* 	for (uint32_t index = 0; index < text.length; ++index) { */
-	/* 		uint8_t codepoint = text.bytes[index]; */
-
-	/* 		if (codepoint == '\n') { */
-	/* 			result.x = maxf(result.x, x_offset); */
-	/* 			result.y += font->bake_size; */
-	/* 			x_offset = 0.0f; */
-	/* 			continue; */
-	/* 		} */
-
-	/* 		uint32_t first = font->first_codepoint; */
-	/* 		uint32_t last = first + font->glyph_count; */
-	/* 		if (codepoint < first || codepoint >= last) */
-	/* 			codepoint = '?'; */
-
-	/* 		RES_Glyph *glyph = &font->glyphs[codepoint - first]; */
-	/* 		x_offset += glyph->advance; */
-	/* 	} */
-
-	/* 	result.x = maxf(result.x, x_offset); */
-	/* 	result.y += font->greatest_top_y + font->greatest_bottom_y; */
-	/* } */
-	return result;
-}
-
 #include <stb/stb_truetype.h>
 #define RES_FONT_ATLAS_MAX 1024
 RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint32_t font_size) {
@@ -377,9 +346,9 @@ static RES_Catalog res__catalog_deep_copy(Arena *arena, const RES_Catalog *catal
 			RES_ImageMeta *image_src = &catalog->images[image_index];
 
 			image_dst->uuid = image_src->uuid;
-			image_dst->name = copy8(arena, image_src->name);
-			image_dst->description = copy8(arena, image_src->description);
-			image_dst->filepath = copy8(arena, image_src->filepath);
+			image_dst->name = str8_copy(arena, image_src->name);
+			image_dst->description = str8_copy(arena, image_src->description);
+			image_dst->filepath = str8_copy(arena, image_src->filepath);
 		}
 	}
 
@@ -391,7 +360,7 @@ static RES_Catalog res__catalog_deep_copy(Arena *arena, const RES_Catalog *catal
 			RES_FontFamilyMeta *family_src = &catalog->fonts[family_index];
 
 			family_dst->uuid = family_src->uuid;
-			family_dst->name = copy8(arena, family_src->name);
+			family_dst->name = str8_copy(arena, family_src->name);
 			family_dst->face_count = family_src->face_count;
 
 			if (family_dst->face_count) {
@@ -401,7 +370,7 @@ static RES_Catalog res__catalog_deep_copy(Arena *arena, const RES_Catalog *catal
 					RES_FontFaceMeta *face_dst = &family_dst->faces[face_index];
 					RES_FontFaceMeta *face_src = &family_src->faces[face_index];
 
-					face_dst->filepath = copy8(arena, face_src->filepath);
+					face_dst->filepath = str8_copy(arena, face_src->filepath);
 					face_dst->style = face_src->style;
 					face_dst->min_weight = face_src->min_weight;
 					face_dst->max_weight = face_src->max_weight;
@@ -418,9 +387,9 @@ static RES_Catalog res__catalog_deep_copy(Arena *arena, const RES_Catalog *catal
 			RES_ShaderMeta *shader_src = &catalog->shaders[shader_index];
 
 			shader_dst->uuid = shader_src->uuid;
-			shader_dst->name = copy8(arena, shader_src->name);
+			shader_dst->name = str8_copy(arena, shader_src->name);
 			for (uint32_t stage_index = 0; stage_index < SHADER_STAGE_MAX; ++stage_index)
-				shader_dst->filepaths[stage_index] = copy8(arena, shader_src->filepaths[stage_index]);
+				shader_dst->filepaths[stage_index] = str8_copy(arena, shader_src->filepaths[stage_index]);
 
 			shader_dst->pipeline_count = shader_src->pipeline_count;
 			memory_copy_count(shader_dst->pipelines, shader_src->pipelines, shader_dst->pipeline_count);
@@ -583,7 +552,7 @@ Mesh res_load_gltf(Arena *arena, string8 path) {
 		ok = ok && cgltf_validate(data) == cgltf_result_success;
 	}
 
-	string8 directory = pathdir8(path);
+	string8 directory = str8_pathdir(path);
 
 	if (ok) { // load geometry
 		VertexLayout layout = { 0 };

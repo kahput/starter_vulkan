@@ -28,15 +28,13 @@ add_custom_target(compile_shaders ALL DEPENDS ${GENERATED_FILES})
 set(WEB_SCRATCHES web_scratch)
 set(NATIVE_SCRATCHES 
     scratch 
-    xcb_scratch 
     # skinning 
-    material_scratch 
     spriv 
     c_parser 
     table_generator
-    multi_surface
     asset_compiler
     lang
+    ca_sound
 )
 
 # Web build
@@ -57,11 +55,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/strings.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/image.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/os/os.c"
 
-            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_canvas.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_file.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_memory.c"
-            "${CMAKE_SOURCE_DIR}/engine/src/os/web/web_time.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/wm/wm.c"
 
             "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
             "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
@@ -116,12 +112,9 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/core/camera.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/mesh.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/image.c"
-
-        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_xcb.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_file.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_time.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_memory.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/os/linux/linux_dynlib.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/os/os.c"
+        
+        "${CMAKE_SOURCE_DIR}/engine/src/wm/wm.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/utils/anim.c"
         "${CMAKE_SOURCE_DIR}/engine/src/utils/json.c"
@@ -133,7 +126,6 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/draw/imgui.c"
     )
     add_library(engine
         ${VENDOR_SOURCES}
@@ -142,9 +134,6 @@ else()
     target_include_directories(engine PUBLIC
         "${CMAKE_SOURCE_DIR}/engine/src"
         "${CMAKE_SOURCE_DIR}/engine/vendor/"
-    )
-    target_compile_definitions(engine PUBLIC
-        -DLINUX_BUILD
     )
     target_link_options(engine PUBLIC
         -Wl,--export-dynamic
@@ -170,9 +159,6 @@ else()
     target_compile_options(game PRIVATE 
         -Wall -pedantic -Wextra -Werror
         -Wno-unused-parameter -Wno-unused-variable -Wno-override-init
-    )
-    target_compile_definitions(game PRIVATE
-        -DLINUX_BUILD
     )
 
     find_package(Vulkan REQUIRED)
@@ -204,7 +190,6 @@ else()
         )
 
         target_link_libraries(${PROJECT_NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
-        target_compile_definitions(${PROJECT_NAME} PRIVATE LINUX_BUILD)
     else()
         message(FATAL_ERROR "Windows and Linux only supported platforms")
     endif()
@@ -224,7 +209,7 @@ else()
             "${CMAKE_SOURCE_DIR}/engine/vendor"
         )
         target_link_libraries(${NAME} dl xcb xcb-xkb xcb-icccm Vulkan::Vulkan m)
-        target_compile_definitions(${NAME} PRIVATE LINUX_BUILD VK_USE_PLATFORM_XCB_KHR)
+        target_compile_definitions(${NAME} PRIVATE VK_USE_PLATFORM_XCB_KHR)
         set_target_properties(${NAME} PROPERTIES SUFFIX ".exe")
         target_compile_options(
             ${NAME}

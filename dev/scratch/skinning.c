@@ -149,7 +149,7 @@ static const string8 meshid_to_string[MESH_MAX] = {
 	ENUM_STRING_TABLE_ENTRY(MESH, GRASS_BILLBOARD),
 	ENUM_STRING_TABLE_ENTRY(MESH, CYLINDER),
 	ENUM_STRING_TABLE_ENTRY(MESH, SPHERE),
-	ENUM_STRING_TABLE_ENTRY(MESH, GIZMOS_ARROW),
+	ENUM_STRING_TABLE_ENTRY(MESH, GIZMWM_ARROW),
 };
 
 static const string8 meshid_to_display_string[MESH_MAX] = {
@@ -276,7 +276,7 @@ AnimationClip *load_gltf_animations(Arena *arena, string8 path, uint32_t *count)
 
 uint32_t find_animation(AnimationClip *clips, uint32_t count, string8 target) {
 	for (uint32_t anim_index = 0; anim_index < count; ++anim_index)
-		if (eq8(str8z(clips[anim_index].name), target))
+		if (match8(str8z(clips[anim_index].name), target))
 			return anim_index;
 
 	return 0;
@@ -488,7 +488,7 @@ bool json_to_world(JSON_Node *root, World *world) {
 			string8 meshid = json_str_or(json_find(entity_node, s("meshid")), s(""));
 			if (meshid.length)
 				for (uint32_t index = 0; index < MESH_MAX; ++index) {
-					if (eq8(meshid, meshid_to_string[index])) {
+					if (match8(meshid, meshid_to_string[index])) {
 						entity->meshid = index;
 						break;
 					}
@@ -500,7 +500,7 @@ bool json_to_world(JSON_Node *root, World *world) {
 
 				if (kind.length)
 					for (uint32_t index = 0; index < SHAPE_KIND_MAX; ++index) {
-						if (eq8(kind, shape_kind_to_string[index])) {
+						if (match8(kind, shape_kind_to_string[index])) {
 							entity->shape.kind = index;
 							break;
 						}
@@ -661,8 +661,8 @@ int main(void) {
 	logger_set_level(LOG_LEVEL_DEBUG);
 
 	os_display_startup();
-	OS_Surface *main_render = os_surface_open(1280, 720, s("main_render"), OS_SURFACE_FLAG_RESIZEABLE);
-	OS_Surface *popup_compute = os_surface_open(640, 360, s("popup_compute"), 0);
+	WM_Surface *main_render = os_surface_open(1280, 720, s("main_render"), WM_SURFACE_FLAG_RESIZEABLE);
+	WM_Surface *popup_compute = os_surface_open(640, 360, s("popup_compute"), 0);
 
 	uint64_t start_time = os_time_ns();
 
@@ -837,7 +837,7 @@ int main(void) {
 		  .pixels = &(uint32_t){ 0xFFFFFFFF },
 		});
 
-	OS_Timestamp shader_ts[RES_SHADER_MAX] = { 0 };
+	WM_Timestamp shader_ts[RES_SHADER_MAX] = { 0 };
 	GFX_Shader *shaders[RES_SHADER_MAX] = { 0 };
 	for (RES_ShaderID id = 0; id < RES_SHADER_MAX; ++id) { // :shaders
 		RES_ShaderMeta *metadata = &res_shader_metadata[id];
@@ -856,8 +856,8 @@ int main(void) {
 			string8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 			string8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
 
-			OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-			OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
+			WM_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+			WM_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 			shader_ts[id] = MAX(fs_ts, vs_ts);
 			shaders[id] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
@@ -1136,18 +1136,18 @@ int main(void) {
 		dt = time - last_frame;
 		last_frame = time;
 
-		input_update();
-		OS_Event event = { 0 };
-		for (OS_Event event; os_event_poll(&event);) {
+		input_begin_frame();
+		WM_Event event = { 0 };
+		for (WM_Event event; os_event_poll(&event);) {
 			switch (event.type) {
-				case OS_EVENT_TYPE_SURFACE_CLOSE:
+				case WM_EVENT_TYPE_SURFACE_CLOSE:
 					if (event.surface == main_render)
 						is_open = false;
 					else
 						os_surface_close(popup_compute);
 					break;
 
-				case OS_EVENT_TYPE_SURFACE_RESIZE: {
+				case WM_EVENT_TYPE_SURFACE_RESIZE: {
 					uint2 dims = { event.as.resize.width, event.as.resize.height };
 					if (event.surface == main_render) {
 						gfx_swapchain_resize(device, main_swapchain, dims.x, dims.y);
@@ -1162,23 +1162,23 @@ int main(void) {
 					}
 				} break;
 
-				case OS_EVENT_TYPE_KEY_PRESS:
-				case OS_EVENT_TYPE_KEY_RELEASE:
-					input_feed_key(event.as.key.key_code, event.type == OS_EVENT_TYPE_KEY_PRESS);
+				case WM_EVENT_TYPE_KEY_PRESS:
+				case WM_EVENT_TYPE_KEY_RELEASE:
+					input_feed_key(event.as.key.key_code, event.type == WM_EVENT_TYPE_KEY_PRESS);
 					break;
 
-				case OS_EVENT_TYPE_MOUSE_PRESS:
-				case OS_EVENT_TYPE_MOUSE_RELEASE:
+				case WM_EVENT_TYPE_MOUSE_PRESS:
+				case WM_EVENT_TYPE_MOUSE_RELEASE:
 					if (event.surface == main_render)
-						input_feed_mouse_button(event.as.mouse_button.button, event.type == OS_EVENT_TYPE_MOUSE_PRESS);
+						input_feed_mouse_button(event.as.mouse_button.button, event.type == WM_EVENT_TYPE_MOUSE_PRESS);
 					break;
 
-				case OS_EVENT_TYPE_MOUSE_MOVE:
+				case WM_EVENT_TYPE_MOUSE_MOTION:
 					if (event.surface == main_render)
-						input_feed_mouse_motion((double)event.as.mouse_move.x, (double)event.as.mouse_move.y);
+						input_feed_mouse_motion((double)event.as.mouse_motion.x, (double)event.as.mouse_motion.y);
 					else {
-						compute_mouse.x = event.as.mouse_move.x;
-						compute_mouse.y = event.as.mouse_move.y;
+						compute_mouse.x = event.as.mouse_motion.x;
+						compute_mouse.y = event.as.mouse_motion.y;
 					}
 					break;
 				default:
@@ -2577,7 +2577,7 @@ int main(void) {
 
 			bool is_compute = metadata->filepaths[SHADER_STAGE_COMPUTE].length > 0;
 			if (is_compute) {
-				OS_Timestamp now = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
+				WM_Timestamp now = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 
 				if (now != shader_ts[shaderid]) {
 					ArenaTemp scratch = arena_scratch_begin(NULL);
@@ -2593,10 +2593,10 @@ int main(void) {
 					arena_scratch_end(scratch);
 				}
 			} else {
-				OS_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-				OS_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
+				WM_Timestamp fs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_FRAGMENT]);
+				WM_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
-				OS_Timestamp now = MAX(fs_ts, vs_ts);
+				WM_Timestamp now = MAX(fs_ts, vs_ts);
 				if (now != shader_ts[shaderid]) {
 					LOG_INFO("hot-reloading %s...", shaders[shaderid]->debug_name);
 					gfx_device_wait_idle(device);

@@ -1,7 +1,9 @@
 #include "core/arena.h"
 
-#include "os.h"
+#include "core/os.h"
+
 #include "gfx.h"
+#include "wm.h"
 #include "gfx/gfx_types.h"
 
 #include "core/debug.h"
@@ -21,7 +23,7 @@ int main(void) {
 	Tick tick = 0;
 	OS_Timestamp ts = 0;
 
-	os_display_startup();
+	wm_startup();
 
 	Arena permanenet = arena_make(MiB(128));
 	Arena frame = arena_make(MiB(16));
@@ -33,11 +35,11 @@ int main(void) {
 				os_sleep_ms(100);
 
 			ts = now;
-			os_library_unload(lib);
+			os_dlclose(lib);
 			os_file_copy(src, dst);
-			lib = os_library_load(dst);
+			lib = os_dlopen(dst);
 			if (lib == 0) break;
-			os_library_symbol(lib, s("tick"), &tick);
+			os_dlsym(lib, s("tick"), &tick);
 			if (tick == 0) break;
 		}
 
@@ -47,8 +49,8 @@ int main(void) {
 		arena_reset(&frame);
 	}
 
-	os_library_unload(lib);
-	os_display_shutdown();
+	os_dlclose(lib);
+	wm_shutdown();
 
 	arena_destroy(&permanenet);
 	arena_destroy(&frame);

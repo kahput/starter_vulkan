@@ -10,7 +10,9 @@
 
 #include "core/geom.h"
 #include "utils/input.h"
+
 #include "os.h"
+#include "wm.h"
 
 #include <stb/stb_image.h>
 
