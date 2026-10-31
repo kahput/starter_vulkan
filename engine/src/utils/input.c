@@ -15,6 +15,9 @@ void input_begin_frame(void) {
 		struct Button *button = &state->mouse.buttons[button_index];
 		button->prev = button->curr;
 	}
+
+	state->mouse.dx = 0.0f;
+	state->mouse.dy = 0.0f;
 }
 
 bool input_key_released(KeyCode key) { return state->keys[key].curr == false && state->keys[key].prev == true; }

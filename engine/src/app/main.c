@@ -24,6 +24,7 @@ int main(void) {
 	OS_Timestamp ts = 0;
 
 	wm_startup();
+    gp_startup();
 
 	Arena permanenet = arena_make(MiB(128));
 	Arena frame = arena_make(MiB(16));

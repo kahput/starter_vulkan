@@ -177,7 +177,7 @@ void draw2d_textf(RES_Font *font, float2 position, rgba8 color, const char *form
 
 	va_list args;
 	va_start(args, format);
-	string8 text = str8_fmtv(scratch.arena, format, args);
+	string8 text = str8fv(scratch.arena, format, args);
 	draw2d_text(font, position, color, text);
 	va_end(args);
 

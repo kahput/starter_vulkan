@@ -32,4 +32,4 @@ void logger_set_quiet(bool enable);
 ENGINE_API void logger_indent(void);
 ENGINE_API void logger_dedent(void);
 
-ENGINE_API void logger_log(LogLevel level, const char *file, uint64_t line, const char *fmt, ...);
+ENGINE_API void logger_log(LogLevel level, const char *file, uint64_t line, const char *fmt, ...) FORMAT_ATTRIBUTE(4);

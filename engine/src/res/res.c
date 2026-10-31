@@ -51,7 +51,7 @@ static bool res__loader_texture(RES_Cache *cache, RES_AssetID id, RES_Key key, R
 	RES_ImageMeta *meta = &cache->catalog.images[id];
 	out->handle = gfx_image_make(cache->device, image->width, image->height,
 		(ImageOptions){
-		  .debug_name = (char *)str8_fmt(cache->arena, "%.*s[format=%.*s]", arg8(meta->name), arg8(pixel_format_to_display_string[(PixelFormat)key.variant])).bytes,
+		  .debug_name = (char *)str8f(cache->arena, "%.*s[format=%.*s]", arg8(meta->name), arg8(pixel_format_to_display_string[(PixelFormat)key.variant])).bytes,
 		  .format = (PixelFormat)key.variant,
 		  .pixels = image->pixels,
 		});
@@ -109,7 +109,7 @@ static bool res__loader_font(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_
 		font.tex_atlas = (RES_Texture2D){
 			.handle = gfx_image_make(cache->device, font.img_atlas.width, font.img_atlas.height,
 				(ImageOptions){
-				  .debug_name = (char *)str8_fmt(cache->arena, "%.*s[weight=%u, style=%.*s, size=%u]", arg8(meta->name), weight, arg8(res_font_style_to_display_string[style]), font_size).bytes,
+				  .debug_name = (char *)str8f(cache->arena, "%.*s[weight=%u, style=%.*s, size=%u]", arg8(meta->name), weight, arg8(res_font_style_to_display_string[style]), font_size).bytes,
 				  .format = PIXEL_FORMAT_R8_UNORM,
 				  .pixels = font.img_atlas.pixels,
 				  .swizzle = {

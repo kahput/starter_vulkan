@@ -68,13 +68,13 @@ string8 pretty_error_string(Arena *arena, Token token) {
 		while (line.bytes[line.length] != '\n' && line.bytes[line.length] != '\0')
 			line.length++;
 
-		string8 prefix = str8_fmt(arena, "    %u | ", token.line);
-		string8 top = str8_fmt(arena, "%.*s%.*s\n", arg8(prefix), arg8(line));
+		string8 prefix = str8f(arena, "    %u | ", token.line);
+		string8 top = str8f(arena, "%.*s%.*s\n", arg8(prefix), arg8(line));
 
 		uint32_t arrow_offset = prefix.length + col;
 		string8 indent = str8_indent(arena, s(" "), arrow_offset);
 
-		string8 bottom = str8_fmt(arena, "%.*s^-- here", arg8(indent));
+		string8 bottom = str8f(arena, "%.*s^-- here", arg8(indent));
 		result = str8_concat(arena, top, bottom);
 	}
 

@@ -79,7 +79,7 @@ typedef struct {
 State *state = 0;
 
 static inline char *named(const char *name) {
-	return (char *)str8_fmt(state->permanent, name).bytes;
+	return (char *)str8f(state->permanent, name).bytes;
 }
 
 typedef struct {

@@ -32,8 +32,8 @@ string8 str8_upper(Arena *arena, string8 s);
 string8 str8_lower(Arena *arena, string8 s);
 string8 str8_copy(Arena *arena, string8 src);
 
-string8 str8_fmtv(Arena *arena, const char *fmt, va_list list);
-string8 str8_fmt(Arena *arena, const char *fmt, ...);
+string8 str8fv(Arena *arena, const char *fmt, va_list list);
+string8 str8f(Arena *arena, const char *fmt, ...) FORMAT_ATTRIBUTE(2);
 
 string8 str8_pathfile(string8 path);
 string8 str8_pathext(string8 file);

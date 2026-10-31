@@ -202,7 +202,7 @@ AST_Node *ast_parse_literal(Arena *arena, Lexer *lexer) {
 			break;
 
 		default:
-			ASSERT_FORMAT("Invalid literal in table 'TODO' at %d:%d", , lit_token.line, lit_token.column);
+			ASSERT_FORMAT(0, "Invalid literal in table 'TODO' at %d:%d", lit_token.line, lit_token.column);
 			break;
 	}
 

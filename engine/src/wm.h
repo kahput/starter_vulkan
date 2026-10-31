@@ -69,3 +69,15 @@ void wm_cursor_show(WM_Surface *surface, bool show);
 void wm_cursor_capture(WM_Surface *surface, bool capture);
 bool wm_cursor_captured(WM_Surface *surface);
 void wm_cursor_set_position(WM_Surface *surface, int32_t x, int32_t y);
+
+typedef struct {
+	bool connected;
+	uint32_t buttons;
+	int16_t axes[GAMEPAD_AXIS_MAX];
+} GP_Slot;
+
+void gp_startup(void);
+void gp_shutdown(void);
+
+#define GP_SLOT_MAX 8
+void gp_poll(GP_Slot slots[GP_SLOT_MAX]);

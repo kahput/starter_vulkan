@@ -182,7 +182,7 @@ string8 str8_copy(Arena *arena, string8 src) {
 	return result;
 }
 
-string8 str8_fmtv(Arena *arena, const char *fmt, va_list args) {
+string8 str8fv(Arena *arena, const char *fmt, va_list args) {
 	string8 result = { 0 };
 
 	bool ok = arena;
@@ -207,10 +207,10 @@ string8 str8_fmtv(Arena *arena, const char *fmt, va_list args) {
 
 	return result;
 }
-string8 str8_fmt(Arena *arena, const char *fmt, ...) {
+string8 str8f(Arena *arena, const char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
-	string8 result = str8_fmtv(arena, fmt, args);
+	string8 result = str8fv(arena, fmt, args);
 	va_end(args);
 
 	return result;

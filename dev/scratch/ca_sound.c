@@ -135,7 +135,7 @@ int main(void) {
 		}
 	}
 
-	string8 header = str8_fmt(arena, "P6\n%d %d\n255 255 255 255\n", draw.width, draw.height);
+	string8 header = str8f(arena, "P6\n%d %d\n255 255 255 255\n", draw.width, draw.height);
 	OS_File fd = os_open(s("output.ppm"), OS_CREAT | OS_WRONLY);
 	os_write(fd, header.bytes, header.length);
 	os_write(fd, draw.pixels, imbytes(draw));

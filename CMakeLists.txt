@@ -35,6 +35,7 @@ set(NATIVE_SCRATCHES
     asset_compiler
     lang
     ca_sound
+    gamepad
 )
 
 # Web build

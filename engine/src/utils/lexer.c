@@ -417,7 +417,7 @@ string8 lexer_error_location_string(Arena *arena, Token token) {
 		while (line.bytes[line.length] != '\n' && line.bytes[line.length] != '\0')
 			line.length++;
 
-		string8 err_top = str8_fmt(arena, "    %d | %.*s\n", token.line, arg8(line));
+		string8 err_top = str8f(arena, "    %d | %.*s\n", token.line, arg8(line));
 		uint32_t error_offset = 0;
 		while (err_top.bytes[error_offset] != '|')
 			error_offset++;
@@ -426,7 +426,7 @@ string8 lexer_error_location_string(Arena *arena, Token token) {
 		error_offset += col + 1;
 		string8 indent = str8_indent(arena, s(" "), error_offset);
 		string8 arrow = s("^-- here");
-		string8 err_bottom = str8_fmt(arena, "%.*s%.*s", arg8(indent), arg8(arrow));
+		string8 err_bottom = str8f(arena, "%.*s%.*s", arg8(indent), arg8(arrow));
 
 		result = str8_concat(arena, err_top, err_bottom);
 	}
@@ -435,7 +435,7 @@ string8 lexer_error_location_string(Arena *arena, Token token) {
 }
 
 void report(uint64_t line, uint64_t column, string8 where, string8 message) {
-	LOG_ERROR("#error[%d:%d]: %.*s\n%.*s", line, column, arg8(message), arg8(where));
+	LOG_ERROR("#error[%lu:%lu]: %.*s\n%.*s", line, column, arg8(message), arg8(where));
 }
 
 Token lexer_consume(Lexer *lexer, TokenType type, string8 message) {

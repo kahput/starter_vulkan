@@ -52,10 +52,12 @@
 	#define INLINE static __forceinline
 	#define PACK_BEGIN(gran) __pragma(pack(push, (gran)))
 	#define PACK_END __pragma(pack(pop))
+#define FORMAT_ATTRIBUTE
 #else
 	#define INLINE static inline __attribute((always_inline))
 	#define PACK_BEGIN(gran) __attribute__((__packed__))
 	#define PACK_END
+#define FORMAT_ATTRIBUTE(fmt_index) __attribute__((format(printf, fmt_index, fmt_index + 1)))
 #endif
 
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))

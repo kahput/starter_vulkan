@@ -355,7 +355,7 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 		vkGetPhysicalDeviceFormatProperties(device->gpu, vk_format, &format_properties);
 		bool blit_support = format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 		if (blit_support == false) {
-			LOG_WARN("pixel format (%s) does not support linear blitting.", pixel_format_to_string[options.format]);
+			LOG_WARN("pixel format (%.*s) does not support linear blitting.", arg8(pixel_format_to_string[options.format]));
 		}
 
 		if (result->miplevels > 1 && blit_support) {
@@ -1737,8 +1737,8 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 			Uniform *reflected_uniform = &reflected_sets->uniforms[found_index];
 
 			ASSERT_FORMAT(uniform->type == reflected_uniform->type,
-				"uniform binding '%s' (set = %u, binding = %u) of shader '%s' supplied as: %s, expected: %s.",
-				reflected_uniform->name, set_index, reflected_uniform->binding, shader->debug_name, uniform_type_to_string[uniform->type], uniform_type_to_string[reflected_sets->uniforms[found_index].type]);
+				"uniform binding '%s' (set = %u, binding = %u) of shader '%s' supplied as: %.*s, expected: %.*s.",
+				reflected_uniform->name, set_index, reflected_uniform->binding, shader->debug_name, arg8(uniform_type_to_string[uniform->type]), arg8(uniform_type_to_string[reflected_sets->uniforms[found_index].type]));
 
 			switch (uniform->type) {
 				case UNIFORM_TYPE_STORAGE_IMAGE:
@@ -1856,7 +1856,6 @@ uint64_t gfx_cmd_put(GFX_CommandEncoder *cmd, uint64_t size, void *src) {
 void gfx_cmd_buffer_to_buffer(GFX_CommandEncoder *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
-		LOG_TRACE("Copying region of %llu from %p to %p", size, src, dst);
 		VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
 		vkCmdCopyBuffer(cmd->handle, src->handle, dst->handle, 1, &copy_region);
 	}

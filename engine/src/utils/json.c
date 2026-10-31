@@ -294,7 +294,7 @@ void push_text(Arena *arena, const char *fmt, ...) {
 	if (fmt && fmt[0] != '\0') {
 		va_list args;
 		va_start(args, fmt);
-		string8 result = str8_fmtv(arena, fmt, args);
+		string8 result = str8fv(arena, fmt, args);
 		arena->offset -= 1; // remove null-terminator
 		va_end(args);
 	}

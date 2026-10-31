@@ -162,7 +162,7 @@ enum {
 typedef uint32_t ModKeyFlags;
 
 typedef enum {
-	GAMEPAD_BUTTON_BACK,
+	GAMEPAD_BUTTON_SELECT,
 	GAMEPAD_BUTTON_GUIDE,
 	GAMEPAD_BUTTON_START,
 

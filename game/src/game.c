@@ -13,6 +13,14 @@
 // normxcorr2(onion, peppers);
 // image imedge(image, algorithm);
 
+typedef enum {
+	MAPPING_RIGHT,
+	MAPPING_LEFT,
+	MAPPING_UP,
+	MAPPING_DOWN,
+	MAPPING_JUMP,
+} GameMapping;
+
 float2 measure_text(RES_Font *font, string8 text) {
 	float2 result = { 0 };
 
@@ -122,8 +130,8 @@ bool tick(Arena *permanent, Arena *frame) {
 			case WM_EVENT_TYPE_MOUSE_MOTION: {
 				state->input.mouse.x = event.as.mouse_motion.x;
 				state->input.mouse.y = event.as.mouse_motion.y;
-				state->input.mouse.dx = event.as.mouse_motion.dx;
-				state->input.mouse.dy = event.as.mouse_motion.dy;
+				state->input.mouse.dx += event.as.mouse_motion.dx;
+				state->input.mouse.dy += event.as.mouse_motion.dy;
 			} break;
 
 			case WM_EVENT_TYPE_MOUSE_PRESS:
@@ -135,6 +143,10 @@ bool tick(Arena *permanent, Arena *frame) {
 				break;
 		}
 	}
+
+	static GP_Slot gp_now[GP_SLOT_MAX], gp_was[GP_SLOT_MAX];
+	memory_copy(gp_was, gp_now, sizeof(gp_now));
+	gp_poll(gp_now);
 
 	uint2 dims = wm_surface_size(state->surface);
 	Rectangle viewport = { .width = dims.x, .height = dims.y };
@@ -156,7 +168,7 @@ bool tick(Arena *permanent, Arena *frame) {
 		wm_cursor_capture(state->surface, true);
 
 		// :settings
-		float sensitivity = 2.0f, spring_arm_length = 10.f;
+		float sensitivity = 0.5f, spring_arm_length = 8.f;
 		float accel_speed = 48.0f, max_walk_speed = 3.0f, max_run_speed = 6.0f;
 		float xz_apex = 2.0f, t_down = 0.3f, h_apex = 1.5f;
 
@@ -167,13 +179,20 @@ bool tick(Arena *permanent, Arena *frame) {
 		float g_down = -2.0f * h_apex / (t_down * t_down);
 
 		// :input
+		float2 lstick = { gp_now[0].axes[GAMEPAD_AXIS_LX] / 32060.0f, gp_now[0].axes[GAMEPAD_AXIS_LY] / 32060.0f };
+		float2 rstick = { gp_now[0].axes[GAMEPAD_AXIS_RX] / 32060.0f, gp_now[0].axes[GAMEPAD_AXIS_RY] / 32060.0f };
+
+		lstick.x = fabsf(lstick.x) <= 0.2f ? 0.0f : (lstick.x - signf(lstick.x) * 0.2f) / 0.8f;
+		lstick.y = fabsf(lstick.y) <= 0.2f ? 0.0f : (lstick.y - signf(lstick.y) * 0.2f) / 0.8f;
+
 		float2 look_input = scale2(mouse_delta, sensitivity);
-		float2 move_input = {
-			input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A),
-			input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S),
-		};
-		bool jump_requested = input_key_pressed(KEY_CODE_SPACE);
-		bool jump_held = input_key_down(KEY_CODE_SPACE);
+		/* float2 move_input = { */
+		/* 	input_key_down(KEY_CODE_D) - input_key_down(KEY_CODE_A), */
+		/* 	input_key_down(KEY_CODE_W) - input_key_down(KEY_CODE_S), */
+		/* }; */
+		float2 move_input = lstick;
+		bool jump_requested = (gp_now[0].buttons & (1 << GAMEPAD_BUTTON_SOUTH)) && (gp_was[0].buttons & (1 << GAMEPAD_BUTTON_SOUTH)) == 0;
+		bool jump_held = gp_now[0].buttons & (1 << GAMEPAD_BUTTON_SOUTH);
 		/* bool sprint_held = input_key_down(KEY_CODE_LEFTSHIFT); */
 		bool moving = lensq2(move_input) > EPSILON * EPSILON;
 		if (moving) move_input = limit2(move_input, 1.0f);
@@ -395,35 +414,6 @@ bool tick(Arena *permanent, Arena *frame) {
 				transform3(particle->position, identity4q(), float3(scale))
 			};
 	}
-
-	draw2d_rect(viewport, hex(0x101010));
-	float2 origo = rect_center(viewport);
-	origo.x -= 240.f;
-	float2 scale = float2(1.0f, -1.0f);
-
-	static float wave[512] = { 0 };
-	static uint32_t wave_count = 0;
-
-	float r = 128.0f;
-	float3x3 screen_from_world = affine3x3(diagonal2x2(scale), origo);
-	draw2d_circle_outline(xform2p(screen_from_world, float2(0.0f)), r, 4.0f, WHITE);
-
-	float2 p = { r * cosf(time * 4.0f), r * sinf(time * 4.0f) };
-	wave[wave_count] = p.y;
-	wave_count = (wave_count + 1) % countof(wave);
-
-	draw2d_line(xform2p(screen_from_world, float2(0.0f)), xform2p(screen_from_world, p), 4.0f, WHITE);
-	draw2d_circle(xform2p(screen_from_world, p), 8.0f, WHITE);
-
-#define wsub(x, N) (x - 1 + N) % N
-	uint32_t index = wsub(wave_count, countof(wave)), x = 0;
-	do {
-		float2 p = float2(x + 200.0f, wave[index]);
-		draw2d_circle(xform2p(screen_from_world, p), 2.0f, WHITE);
-
-		++x;
-		index = wsub(index, countof(wave));
-	} while (index != wsub(wave_count, countof(wave)));
 
 	GFX_Device *device = state->device;
 	GFX_Swapchain *swapchain = state->swapchain;
