@@ -344,7 +344,7 @@ bool gjk_overlap(const Shape3 *shape_a, const Shape3 *shape_b) {
 		}
 
 	} else
-		LOG_WARN("%s - null parameter passed, skipping.", __func__);
+		log_warn("%s - null parameter passed, skipping.", __func__);
 
 	return result;
 }
@@ -406,6 +406,26 @@ CastResult3 raycast_aabb3(Ray3 r, AABB3 a) {
 	return result;
 }
 
+CastResult3 raycast_sphere(Ray3 r, Sphere s) {
+	CastResult3 result = CAST3_NO_HIT;
+
+	float t = dot3(sub3(s.center, r.origin), r.direction);
+	float3 p = sadd3(r.origin, r.direction, t);
+	float y = len3(sub3(p, s.center));
+	if (y < s.radius && t >= 0.0) {
+		float x = sqrtf(s.radius * s.radius - y * y);
+		float t1 = t - x;
+		float t2 = t + x;
+
+		result.hit = true;
+		result.t = minf(t1, t2);
+		result.point = sadd3(r.origin, r.direction, result.t);
+		result.normal = normalize3(sub3(result.point, s.center));
+	}
+
+	return result;
+}
+
 bool lowest_root(float a, float b, float c, float maxR, float *root) {
 	float determinant = b * b - 4.0f * a * c;
 
@@ -449,7 +469,7 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 
 	bool ok = dot3(velocity, velocity) > EPSILON && ndotv <= 0.0f;
 	if (ok) {
-		signed_dist = plane_signed_distance(tp, center);
+		signed_dist = distance_plane_signed(tp, center);
 
 		embedded = fabsf(signed_dist) < 1.0f;
 		if (embedded) {
@@ -457,7 +477,7 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 			t1 = 1.0f;
 		}
 
-		if (eqf(ndotv, 0.0f))
+		if (eq(ndotv, 0.0f))
 			ok = embedded;
 		else {
 			t0 = (-1.0f - signed_dist) / ndotv;
@@ -470,8 +490,8 @@ CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triang
 	}
 
 	if (ok) { // collision between t0 - t1
-		t0 = clampf(t0, 0.0f, 1.0f);
-		t1 = clampf(t1, 0.0f, 1.0f);
+		t0 = clamp(t0, 0.0f, 1.0f);
+		t1 = clamp(t1, 0.0f, 1.0f);
 
 		if (embedded == false) {
 			float3 plane_intersect_point = add3(sub3(center, tp.normal), scale3(velocity, t0));

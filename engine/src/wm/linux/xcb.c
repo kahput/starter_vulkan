@@ -184,7 +184,7 @@ bool wm_startup(void) {
 		wm_state->conn = xcb_connect(0, 0);
 		ok = xcb_connection_has_error(wm_state->conn) == 0;
 		if (ok == false)
-			LOG_ERROR("%s - connection request to X server failed.", __func__);
+			log_error("%s - connection request to X server failed.", __func__);
 	}
 
 	xcb_intern_atom_reply_t *proto_reply = 0;
@@ -231,7 +231,7 @@ bool wm_startup(void) {
 
 		ok = proto_reply && close_reply && transient_reply && type_reply && state_reply;
 		if (ok == false)
-			LOG_INFO("failed to aquire X server protocol.");
+			log_info("failed to aquire X server protocol.");
 	}
 
 	if (ok) {
@@ -272,7 +272,7 @@ WM_Surface *wm_surface_open(uint32_t width, uint32_t height, string8 title, WM_S
 WM_Surface *wm_surface_open_with_parent(WM_Surface *parent, uint32_t width, uint32_t height, string8 title, WM_SurfaceFlags flags) {
 	bool ok = wm_state->initialized;
 	if (ok == false)
-		LOG_WARN("%s - X server uninitialized, call wm_startup first.", __func__);
+		log_warn("%s - X server uninitialized, call wm_startup first.", __func__);
 
 	WM_Surface *surface = 0;
 	ok = parent && wm_state->surface_count < countof(wm_state->surfaces);
@@ -490,8 +490,8 @@ bool wm_poll(WM_Event *out) {
 				surface->virtual_cursor.y = motion->event_y;
 			}
 
-			out->as.mouse_motion.x = surface->virtual_cursor.y;
-			out->as.mouse_motion.y = surface->virtual_cursor.x;
+			out->as.mouse_motion.x = surface->virtual_cursor.x;
+			out->as.mouse_motion.y = surface->virtual_cursor.y;
 			out->as.mouse_motion.dx = delta.x;
 			out->as.mouse_motion.dy = delta.y;
 

@@ -1,12 +1,12 @@
 #pragma once
-#include "gfx.h"
+#include "gpu.h"
 
 extern const VkDescriptorType uniform_type_to_vulkan_descriptor_type[UNIFORM_TYPE_MAX];
 extern const UniformType uniform_type_from_vulkan_descriptor_type[VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT];
 extern const VkPipelineStageFlags resource_usage_to_vulkan_pipeline_stage[RESOURCE_USAGE_MAX];
 extern const VkAccessFlags resource_usage_to_vulkan_access_flags[RESOURCE_USAGE_MAX];
 extern const VkImageLayout resource_usage_to_vulkan_image_layout[RESOURCE_USAGE_MAX];
-extern const VkMemoryPropertyFlags memory_type_to_vulkan_memory_flags[MEMORY_TYPE_MAX];
+extern const VkMemoryPropertyFlags memory_kind_to_vulkan_memory_flags[MEMORY_KIND_MAX];
 extern const VkFormat pixel_format_to_vulkan_format[PIXEL_FORMAT_MAX];
 extern const VkImageViewType image_type_to_vulkan_image_view_type[IMAGE_TYPE_MAX];
 

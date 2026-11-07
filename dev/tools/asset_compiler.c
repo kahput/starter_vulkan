@@ -7,7 +7,7 @@
 #include <utils/lexer.h>
 #include <inttypes.h>
 
-#include <gfx/gfx_types.h>
+#include <gpu/gpu_types.h>
 
 #define KEYWORD_LIST        \
 	X(SHADER, "shader")     \
@@ -244,7 +244,7 @@ AST_Node *ast_parse_expr_assignment(Arena *arena, Lexer *lexer) {
 				left = assign;
 			} else {
 				string8 where = lexer_error_location_string(arena, s);
-				LOG_ERROR("#Invalid l-value for assignment\n%.*s", arg8(where));
+				log_error("#Invalid l-value for assignment\n%.*s", arg8(where));
 			}
 		}
 	}
@@ -375,7 +375,7 @@ AST_Node *ast_parse_shader_decl(Arena *arena, Lexer *lexer) {
 			else if (lexer_match(lexer, keyword_token(KEYWORD_COMPUTE), 0))
 				ast_pushback(result, ast_parse_block_decl(arena, lexer, AST_BLOCK_KIND_COMPUTE));
 			else {
-				LOG_ERROR("#Unexpected token '%.*s'.\n%.*s", arg8(lexer_peek(lexer).lexeme), arg8(lexer_error_location_string(arena, lexer_peek(lexer))));
+				log_error("#Unexpected token '%.*s'.\n%.*s", arg8(lexer_peek(lexer).lexeme), arg8(lexer_error_location_string(arena, lexer_peek(lexer))));
 				lexer_advance(lexer);
 			}
 		}
@@ -509,7 +509,7 @@ int32_t eval_pipeline_state(const string8 *state_table, uint32_t table_count, st
 		string8 err = str8fv(scratch.arena, fmt, args);
 		va_end(args);
 
-		LOG_ERROR("%.*s", arg8(err));
+		log_error("%.*s", arg8(err));
 		arena_scratch_end(scratch);
 	}
 
@@ -601,22 +601,22 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok = value_node;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': cull requires a value", arg8(name));
+					log_error("Pipeline '%.*s': cull requires a value", arg8(name));
 					break;
 				}
 
-				CullMode value = CULL_MODE_MAX;
+				GPU_CullMode value = CULL_MODE_MAX;
 
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
 					if (str8_match(cull_mode_table[index], value_node->identifier.lexeme)) {
-						value = (CullMode)index;
+						value = (GPU_CullMode)index;
 						break;
 					}
 				}
 
 				ok = value != CULL_MODE_MAX;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': unknown cull mode '%.*s'", arg8(name), arg8(value_node->identifier.lexeme));
+					log_error("Pipeline '%.*s': unknown cull mode '%.*s'", arg8(name), arg8(value_node->identifier.lexeme));
 					break;
 				}
 
@@ -626,7 +626,7 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok = value_node;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': depth_test requires a value", arg8(name));
+					log_error("Pipeline '%.*s': depth_test requires a value", arg8(name));
 					break;
 				}
 
@@ -670,21 +670,21 @@ bool ast_pipeline_eval(AST_Node *pipeline, PipelineOptions *opts) {
 
 				ok = value_node;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': polygon requires a value", arg8(name));
+					log_error("Pipeline '%.*s': polygon requires a value", arg8(name));
 					break;
 				}
 
-				PolygonMode value = POLYGON_MODE_MAX;
+				GPU_PolygonMode value = POLYGON_MODE_MAX;
 				for (uint32_t index = 0; index < countof(cull_mode_table); ++index) {
 					if (str8_match(polygon_mode_table[index], value_node->identifier.lexeme)) {
-						value = (PolygonMode)index;
+						value = (GPU_PolygonMode)index;
 						break;
 					}
 				}
 
 				ok = value != POLYGON_MODE_MAX;
 				if (ok == false) {
-					LOG_ERROR("Pipeline '%.*s': unknown polygon mode '%.*s'", arg8(name), arg8(value_node->identifier.lexeme));
+					log_error("Pipeline '%.*s': unknown polygon mode '%.*s'", arg8(name), arg8(value_node->identifier.lexeme));
 					break;
 				}
 
@@ -989,7 +989,7 @@ int main(int32_t argc, char **argv) {
 						arg8(tmp_path),
 						arg8(spv_path));
 
-					LOG_INFO("#Generating %.*s", arg8(spv_path));
+					log_info("#Generating %.*s", arg8(spv_path));
 					if (os_execute_command(cmd) == 0)
 						os_file_write(glsl_path, glsl);
 

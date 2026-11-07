@@ -15,7 +15,7 @@ OS_Library os_dlopen(string8 path) {
 
 	result = dlopen((char *)fullpath.bytes, RTLD_NOW);
 	if (result == NULL) {
-		LOG_WARN("os_library_load - %s", dlerror());
+		log_warn("os_library_load - %s", dlerror());
 	}
 
 	arena_scratch_end(scratch);
@@ -25,7 +25,7 @@ OS_Library os_dlopen(string8 path) {
 void os_dlclose(OS_Library lib) {
 	if (os_library_valid(lib) == false) return;
 	if (dlclose(lib) != 0) {
-		LOG_WARN("os_library_unload - %s", dlerror());
+		log_warn("os_library_unload - %s", dlerror());
 	}
 }
 
@@ -34,18 +34,18 @@ bool os_dlsym(OS_Library lib, string8 symbol, void *out_symbol) {
 
 	bool ok = out_symbol;
 	if (ok == false)
-		LOG_WARN("os_library_symbol - invalid out parameter passed.");
+		log_warn("%s - invalid out parameter passed.", __func__);
 
-	ok &= os_library_valid(lib);
+	ok = ok && os_library_valid(lib);
 	if (ok == false)
-		LOG_WARN("os_library_symbol - invalid library handle passed.");
+		log_warn("%s - invalid library handle passed.", __func__);
 
 	if (ok) {
 		result = dlsym(lib, (char *)symbol.bytes);
 
 		ok = result;
 		if (ok == false)
-			LOG_WARN("os_library_symbol - %s", dlerror());
+			log_warn("os_library_symbol - %s", dlerror());
 	}
 
 	if (ok)

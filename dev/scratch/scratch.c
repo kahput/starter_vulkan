@@ -5,12 +5,24 @@
 #include "core/debug.h"
 #include "core/logger.h"
 
+#include "core/strings.h"
 #include "utils/input.h"
+#include <wctype.h>
 
-typedef bool (*TickFn)(Arena *arena, InputState *input);
+typedef bool (*TickFn)(Arena *arena, Input *input);
 
 int main(int32_t argc, const char *argv[]) {
 	Arena arena[] = { arena_make(MiB(32)) };
+
+	uint32_t cp = utf8_decode(s("æ"), 0).codepoint;
+
+	string8 message = s("øæå日本語で書いてもオーケーですमिस्टा ज़ोज़िन");
+	for (uint32_t index = 0; index < message.length;) {
+		UTF8Result utf8 = utf8_decode(message, index);
+		log_info("%.*s => %u", arg8(str8(message.bytes + index, utf8.length)), utf8.length);
+		index += utf8.length;
+	}
+	return 0;
 
 	Image duck = imload(arena, s("resources/images/duck.jpeg"));
 	Image gray = impush(arena, duck.width, duck.height, 1);

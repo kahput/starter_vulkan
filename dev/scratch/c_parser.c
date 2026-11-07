@@ -787,7 +787,7 @@ int main(void) {
 		/* os_file_read_entire(arena, s("engine/src/core/geom_types.h")), */
 		/* os_file_read_entire(arena, s("engine/src/utils/anim.h")), */
 		/* os_file_read_entire(arena, s("engine/scratch/skinning.c")), */
-		/* os_file_read_entire(arena, s("engine/src/gfx/gfx_types.h")), */
+		/* os_file_read_entire(arena, s("engine/src/gfx/gpu_types.h")), */
 		/* os_file_read_entire(arena, s("engine/src/meta.h")), */
 		/* os_file_read_entire(arena, s("engine/scratch/c_parser.c")), */
 	};

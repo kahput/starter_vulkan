@@ -8,11 +8,9 @@
 
 typedef struct {
 	LogLevel level;
-	bool quiet;
-	uint32_t indent;
 } Logger;
 
-static Logger g_logger = { LOG_LEVEL_TRACE, false, 0 };
+static Logger g_logger = { LOG_TRACE };
 static const char *g_level_strings[] = {
 	"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"
 };
@@ -20,28 +18,14 @@ static const char *g_log_level_colors[] = {
 	"\x1b[94m", "\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[35m"
 };
 
-const char *logger_level_to_string(LogLevel level) {
+const char *log_level_to_string(LogLevel level) {
 	return g_level_strings[level];
 }
-void logger_set_level(LogLevel level) {
+void log_level(LogLevel level) {
 	g_logger.level = level;
 }
-void logger_set_quiet(bool enable) {
-	g_logger.quiet = enable;
-}
 
-void logger_indent(void) {
-	g_logger.indent++;
-}
-void logger_dedent(void) {
-	if (g_logger.indent > 0)
-		g_logger.indent--;
-}
-
-ENGINE_API void logger_log_va(LogLevel level, const char *fmt, va_list list) {
-}
-
-void logger_log(LogLevel level, const char *file, uint64_t line, const char *fmt, ...) {
+void log_write(LogLevel level, const char *file, uint64_t line, const char *fmt, ...) {
 	if (level < g_logger.level) {
 		return;
 	}
@@ -59,11 +43,10 @@ void logger_log(LogLevel level, const char *file, uint64_t line, const char *fmt
 
 	if (decorate) {
 		printf(
-			"%s[%-5s]\x1b[0m ", // color, indent, log level
-			g_log_level_colors[level], // Start color for the level
-			g_level_strings[level] // Log level string
-		);
-		if (level >= LOG_LEVEL_ERROR)
+			"%s[%-5s]\x1b[0m ",
+			g_log_level_colors[level],
+			g_level_strings[level]);
+		if (level >= LOG_ERROR)
 			printf("%s", g_log_level_colors[level]);
 	} else
 		fmt += 1;

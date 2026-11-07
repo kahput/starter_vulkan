@@ -110,7 +110,7 @@ typedef enum {
 	KEY_CODE_RIGHTMETA,
 	KEY_CODE_MENU,
 
-	// _CODEKeypad keys
+	// Keypad
 	KEY_CODE_KP0,
 	KEY_CODE_KP1,
 	KEY_CODE_KP2,
@@ -131,12 +131,6 @@ typedef enum {
 
 	KEY_CODE_MAX = 256,
 } KeyCode;
-
-typedef enum {
-	KEY_ACTION_RELEASE = 0,
-	KEY_ACTION_PRESS = 1,
-	KEY_ACTION_REPEAT = 2,
-} KeyboardAction;
 
 typedef enum {
 	MOUSE_BUTTON_LEFT = 0,
@@ -196,7 +190,9 @@ typedef enum GamepadAxis {
 	GAMEPAD_AXIS_MAX
 } GamepadAxis;
 
+#define GAMEPAD_SLOT_MAX 8
 typedef struct {
+	bool connected;
 	uint32_t buttons;
-	int16_t axes[6];
-} GamepadState;
+	int16_t axes[GAMEPAD_AXIS_MAX];
+} Gamepad;

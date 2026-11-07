@@ -187,7 +187,7 @@ string8 str8fv(Arena *arena, const char *fmt, va_list args) {
 
 	bool ok = arena;
 	if (ok == false)
-		LOG_WARN("%s - invalid parameters", __func__);
+		log_warn("%s - invalid parameters", __func__);
 
 	int32_t length = 0;
 	if (ok) {
@@ -292,7 +292,7 @@ UTF8Result utf8_decode(string8 message, uint64_t at) {
 		uint8_t leading_byte = message.bytes[at];
 
 		// clang-format off
-        switch (leading_byte & 0xF0) {
+        switch (leading_byte & 0xF0) { // lb & '0b11110000' 
             case 0xF0: result.codepoint = leading_byte & 0x07; result.length = 4; break;
             case 0xE0: result.codepoint = leading_byte & 0xF;  result.length = 3; break;
             case 0xD0: 

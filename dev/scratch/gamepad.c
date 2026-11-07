@@ -90,12 +90,6 @@ typedef struct {
 	struct input_absinfo info[ABS_HAT3Y + 1];
 } GP_Joystick;
 
-typedef struct {
-	bool connected;
-	uint32_t buttons;
-	int16_t axes[GAMEPAD_AXIS_MAX];
-} Gamepad;
-
 struct {
 	int inotify;
 	GP_Joystick joysticks[8];
@@ -305,13 +299,13 @@ int main(void) {
 		if (pad) {
 			for (GamepadButton button = 0; button < GAMEPAD_BUTTON_MAX; ++button) {
 				if (pad->buttons & (1 << button))
-					LOG_INFO("%.*s down.", arg8(gamepad_button_to_display_string[button]));
+					log_info("%.*s down.", arg8(gamepad_button_to_display_string[button]));
 			}
 
-			if (abs1i(pad->axes[0]) >= 128 || abs1i(pad->axes[1]) >= 128) LOG_INFO("LStick { %d, %d }", pad->axes[0], pad->axes[1]);
-			if (abs1i(pad->axes[2]) >= 128 || abs1i(pad->axes[3]) >= 128) LOG_INFO("RStick { %d, %d }", pad->axes[2], pad->axes[3]);
-			if (abs1i(pad->axes[4]) >= 128) LOG_INFO("LT %d", pad->axes[4]);
-			if (abs1i(pad->axes[5]) >= 128) LOG_INFO("RT %d", pad->axes[5]);
+			if (abs1i(pad->axes[0]) >= 128 || abs1i(pad->axes[1]) >= 128) log_info("LStick { %d, %d }", pad->axes[0], pad->axes[1]);
+			if (abs1i(pad->axes[2]) >= 128 || abs1i(pad->axes[3]) >= 128) log_info("RStick { %d, %d }", pad->axes[2], pad->axes[3]);
+			if (abs1i(pad->axes[4]) >= 128) log_info("LT %d", pad->axes[4]);
+			if (abs1i(pad->axes[5]) >= 128) log_info("RT %d", pad->axes[5]);
 		}
 	}
 

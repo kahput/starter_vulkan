@@ -397,7 +397,7 @@ bool lexer_match(Lexer *lexer, TokenType type, Token *out) {
 Token lexer_expect(Lexer *lexer, TokenType type) {
 	Token t = lexer_advance(lexer);
 	if (t.type != type) {
-		LOG_WARN("expected '%.*s' got '%.*s' (%.*s) at %d:%d",
+		log_warn("expected '%.*s' got '%.*s' (%.*s) at %d:%d",
 			arg8(token_type_to_string[type]),
 			arg8(token_type_to_string[t.type]),
 			arg8(t.lexeme),
@@ -435,7 +435,7 @@ string8 lexer_error_location_string(Arena *arena, Token token) {
 }
 
 void report(uint64_t line, uint64_t column, string8 where, string8 message) {
-	LOG_ERROR("#error[%lu:%lu]: %.*s\n%.*s", line, column, arg8(message), arg8(where));
+	log_error("#error[%lu:%lu]: %.*s\n%.*s", line, column, arg8(message), arg8(where));
 }
 
 Token lexer_consume(Lexer *lexer, TokenType type, string8 message) {
@@ -484,7 +484,7 @@ Token lexer_expect_multiple(Lexer *lexer, TokenType *types, uint32_t type_count)
 			}
 		}
 
-		LOG_WARN("Lexer: expected '%.*s' got '%.*s' (%.*s) at %d:%d",
+		log_warn("Lexer: expected '%.*s' got '%.*s' (%.*s) at %d:%d",
 			arg8(types_string),
 			arg8(token_type_to_string[t.type]),
 			arg8(t.lexeme),

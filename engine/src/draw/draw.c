@@ -7,8 +7,8 @@
 #include "core/geom.h"
 #include "core/geom_types.h"
 #include "core/strings.h"
-#include "gfx.h"
-#include "gfx/gfx_types.h"
+#include "gpu.h"
+#include "gpu/gpu_types.h"
 
 #define DRAW_QUAD_INSTANCE_MAX 8192
 #define DRAW_LINE_INSTANCE_MAX 8192
@@ -117,7 +117,7 @@ void draw2d_quad(Rectangle rect, DRAW_QuadStyle style) {
 			uv0 = float2(style.uv.x / style.texture->width, style.uv.y / style.texture->height);
 			uv1 = float2((style.uv.x + style.uv.width) / style.texture->width, (style.uv.y + style.uv.height) / style.texture->height);
 		}
-		uint32_t imageid = style.texture ? style.texture->handle->imageid : 0;
+		uint32_t imageid = style.texture ? style.texture->handle : 0;
 
 		float rad = style.rotation * DEG2RAD;
 		DRAW_QuadInstance quad = {

@@ -19,7 +19,7 @@ Image imload(Arena *arena, string8 path) {
 
 		ok = file_content.length != 0;
 		if (ok == false)
-			LOG_WARN("[%.*s] failed to load", arg8(path));
+			log_warn("[%.*s] failed to load", arg8(path));
 	}
 
 	if (ok) {
@@ -27,7 +27,7 @@ Image imload(Arena *arena, string8 path) {
 
 		ok = pixels != 0;
 		if (ok == false)
-			LOG_WARN("[%.*s] failed to decode image payload", arg8(path));
+			log_warn("[%.*s] failed to decode image payload", arg8(path));
 	}
 
 	if (ok) {
@@ -35,7 +35,7 @@ Image imload(Arena *arena, string8 path) {
 		stbi_image_free(pixels);
 
 		string8 filename = str8_pathfile(path);
-		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", arg8(filename), result.width, result.height, result.channels == 4 ? "RGBA8" : "RGB8");
+		log_info("'%.*s' loaded sucessfully (%ux%u, %s)", arg8(filename), result.width, result.height, result.channels == 4 ? "RGBA8" : "RGB8");
 	}
 	if (ok == false) result = (Image){ 0 };
 

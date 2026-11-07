@@ -39,11 +39,13 @@ INLINE uint32_t clamp1u(uint32_t value, uint32_t lo, uint32_t hi) { return value
 INLINE int32_t clamp1i(int32_t value, int32_t lo, int32_t hi) { return value < lo ? lo : (value > hi ? hi : value); }
 INLINE int32_t abs1i(int32_t value) { return value < 0 ? -value : value; }
 
-INLINE float clampf(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
-INLINE float signf(float value) { return (value > 0.0f) - (value < 0.0f); }
-INLINE float squaref(float v) { return v * v; }
-INLINE float lerpf(float start, float end, float t) { return start + (end - start) * t; }
-INLINE bool eqf(float a, float b) {
+INLINE float clamp(float value, float min, float max) { return value < min ? min : (value > max ? max : value); }
+INLINE float saturate(float value) { return clamp(value, 0.0f, 1.0f); }
+INLINE float sign(float value) { return (value > 0.0f) - (value < 0.0f); }
+INLINE float square(float v) { return v * v; }
+INLINE float lerp(float start, float end, float t) { return start + (end - start) * t; }
+INLINE float invlerp(float start, float end, float v) { return (v - start) / (end - start); }
+INLINE bool eq(float a, float b) {
 	if (a == b)
 		return true;
 
@@ -53,27 +55,27 @@ INLINE bool eqf(float a, float b) {
 
 	return fabsf(a - b) < tolerance;
 }
-INLINE bool zerof(float v) { return fabsf(v) < (float)EPSILON; }
-INLINE float wrapf(float value, float min, float max) {
+INLINE bool zero(float v) { return fabsf(v) < (float)EPSILON; }
+INLINE float wrap(float value, float min, float max) {
 	float range = max - min;
-	if (zerof(range))
+	if (zero(range))
 		return min;
 
 	float result = value - (range * floorf((value - min) / range));
-	if (eqf(result, max))
+	if (eq(result, max))
 		return min;
 
 	return result;
 }
-INLINE float fractf(float v) { return v - floorf(v); }
+INLINE float fract(float v) { return v - floorf(v); }
 INLINE float minf(float a, float b) { return a < b ? a : b; }
 INLINE float maxf(float a, float b) { return a > b ? a : b; }
 
 INLINE int32_t min1i(int32_t a, int32_t b) { return a < b ? a : b; }
 INLINE int32_t max1i(int32_t a, int32_t b) { return a > b ? a : b; }
 
-INLINE float smoothstepf(float edge0, float edge1, float v) {
-	v = clampf((v - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+INLINE float smoothstep(float edge0, float edge1, float v) {
+	v = clamp((v - edge0) / (edge1 - edge0), 0.0f, 1.0f);
 	return v * v * (3.0f - 2.0f * v);
 }
 
@@ -83,15 +85,16 @@ INLINE float2 load2(const float v[2]) { return (float2){ v[0], v[1] }; }
 #define spread2(v) v.x, v.y
 #define as2(v, T) ((T){ v.x, v.y })
 
-INLINE bool eq2(float2 a, float2 b) { return eqf(a.x, b.x) && eqf(a.y, b.y); }
+INLINE bool eq2(float2 a, float2 b) { return eq(a.x, b.x) && eq(a.y, b.y); }
 INLINE float2 neg2(float2 v) { return (float2){ -v.x, -v.y }; }
 
 INLINE float2 add2(float2 a, float2 b) { return (float2){ a.x + b.x, a.y + b.y }; }
 INLINE float2 sub2(float2 a, float2 b) { return (float2){ a.x - b.x, a.y - b.y }; }
 INLINE float2 mul2(float2 a, float2 b) { return (float2){ a.x * b.x, a.y * b.y }; }
+INLINE float2 div2(float2 a, float2 b) { return (float2){ a.x / b.x, a.y / b.y }; }
 INLINE float2 scale2(float2 v, float s) { return (float2){ v.x * s, v.y * s }; }
 INLINE float dot2(float2 a, float2 b) { return a.x * b.x + a.y * b.y; }
-INLINE float2 madd2(float2 a, float2 b, float2 c) { return (float2){ fmaf(b.x, c.x, a.x), fmaf(b.y, c.x, a.y) }; }
+INLINE float2 madd2(float2 a, float2 b, float2 c) { return (float2){ fmaf(b.x, c.x, a.x), fmaf(b.y, c.y, a.y) }; }
 INLINE float2 sadd2(float2 a, float2 b, float c) { return (float2){ fmaf(b.x, c, a.x), fmaf(b.y, c, a.y) }; }
 INLINE float2 inverse2(float2 v) { return (float2){ 1.0f / v.x, 1.0f / v.y }; }
 
@@ -107,7 +110,7 @@ INLINE float hmax2(float2 v) { return maxf(v.x, v.y); }
 
 INLINE float2 abs2(float2 v) { return (float2){ fabsf(v.x), fabsf(v.y) }; }
 INLINE int2 ifloor2(float2 v) { return (int2){ (int32_t)v.x, (int32_t)v.y }; }
-INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clampf(v.x, min, max), clampf(v.y, min, max) }; }
+INLINE float2 clamp2(float2 v, float min, float max) { return (float2){ clamp(v.x, min, max), clamp(v.y, min, max) }; }
 INLINE float2 limit2(float2 v, float limit_length) {
 	float l = len2(v);
 	if (l > 0 && limit_length < l)
@@ -123,7 +126,7 @@ INLINE float2 normalize2(float2 v) {
 	return scale2(v, 1.0f / sqrtf(lengthsq));
 }
 INLINE float2 proj2(float2 v, float2 axis) { return scale2(axis, dot2(axis, v)); }
-INLINE float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerpf(start.x, end.x, t), lerpf(start.y, end.y, t) }; }
+INLINE float2 lerp2(float2 start, float2 end, float t) { return (float2){ lerp(start.x, end.x, t), lerp(start.y, end.y, t) }; }
 INLINE float2 center2(float2 a, float2 b) { return scale2(add2(a, b), 0.5f); }
 INLINE float2 rotate2(float2 v, float rad) {
 	float c = cosf(rad);
@@ -140,7 +143,7 @@ INLINE float3 store3(float dst[3], float3 src) { return dst[0] = src.x, dst[1] =
 #define spread3(v) (v).x, (v).y, (v).z
 #define as3(v, T) ((T){ (v).x, (v).y, (v).z })
 
-INLINE bool eq3(float3 a, float3 b) { return eqf(a.x, b.x) && eqf(a.y, b.y) && eqf(a.z, b.z); }
+INLINE bool eq3(float3 a, float3 b) { return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z); }
 INLINE float3 neg3(float3 v) { return (float3){ -v.x, -v.y, -v.z }; }
 
 INLINE float3 add3(float3 a, float3 b) { return (float3){ a.x + b.x, a.y + b.y, a.z + b.z }; }
@@ -171,7 +174,7 @@ INLINE float hmin3(float3 v) { return minf(v.x, minf(v.y, v.z)); }
 INLINE float hmax3(float3 v) { return maxf(v.x, maxf(v.y, v.z)); }
 
 INLINE float3 abs3(float3 v) { return (float3){ fabsf(v.x), fabsf(v.y), fabsf(v.z) }; }
-INLINE float3 clamp3(float3 v, float min, float max) { return (float3){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max) }; }
+INLINE float3 clamp3(float3 v, float min, float max) { return (float3){ clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max) }; }
 INLINE float3 limit3(float3 v, float limit_length) {
 	float l = len3(v);
 	if (l > 0 && limit_length < l)
@@ -187,7 +190,8 @@ INLINE float3 approach3(float3 start, float3 end, float step) {
 
 	return add3(start, scale3(vd, step / len));
 }
-INLINE float3 lerp3(float3 start, float3 end, float t) { return madd3(start, sub3(end, start), float3(t)); }
+INLINE float3 lerp3(float3 start, float3 end, float t) { return sadd3(start, sub3(end, start), t); }
+
 INLINE float3 orthobasis3(float3 normal, float3 *right, float3 *up) {
 	normal = normalize3(normal);
 	*right = normalize3(cross3(normal, fabsf(dot3(FLOAT3_UP, normal)) >= 0.99f ? FLOAT3_BACKWARD : FLOAT3_UP));
@@ -195,7 +199,7 @@ INLINE float3 orthobasis3(float3 normal, float3 *right, float3 *up) {
 	return normal;
 }
 
-INLINE float angle3(float3 a, float3 b) { return acosf(clampf(dot3(normalize3(a), normalize3(b)), -1.0f, 1.0f)); }
+INLINE float angle3(float3 a, float3 b) { return acosf(clamp(dot3(normalize3(a), normalize3(b)), -1.0f, 1.0f)); }
 
 // --- float4 & quaternions ---
 INLINE void store4(float dst[4], float4 src) { dst[0] = src.x, dst[1] = src.y, dst[2] = src.z, dst[3] = src.w; }
@@ -203,7 +207,7 @@ INLINE float4 load4(const float v[4]) { return (float4){ .x = v[0], .y = v[1], .
 #define spread4(v) v.x, v.y, v.z, v.w
 #define as4(v, T) ((T){ v.x, v.y, v.z, v.w })
 
-INLINE bool eq4(float4 a, float4 b) { return eqf(a.x, b.x) && eqf(a.y, b.y) && eqf(a.z, b.z) && eqf(a.w, b.w); }
+INLINE bool eq4(float4 a, float4 b) { return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z) && eq(a.w, b.w); }
 
 INLINE float4 add4(float4 a, float4 b) { return (float4){ a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w }; }
 INLINE float4 sub4(float4 a, float4 b) { return (float4){ a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w }; }
@@ -214,7 +218,7 @@ INLINE float4 neg4(float4 v) { return (float4){ -v.x, -v.y, -v.z, -v.w }; }
 
 INLINE float lensq4(float4 v) { return dot4(v, v); }
 INLINE float len4(float4 v) { return sqrtf(dot4(v, v)); }
-INLINE float4 clamp4(float4 v, float min, float max) { return (float4){ clampf(v.x, min, max), clampf(v.y, min, max), clampf(v.z, min, max), clampf(v.z, min, max) }; }
+INLINE float4 clamp4(float4 v, float min, float max) { return (float4){ clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max), clamp(v.z, min, max) }; }
 
 INLINE float4 normalize4(float4 v) {
 	float length = len4(v);
@@ -225,8 +229,11 @@ INLINE float4 normalize4(float4 v) {
 }
 
 INLINE quat4 identity4q(void) { return (quat4){ 0.0f, 0.0f, 0.0f, 1.0f }; }
-float3 euler4q(quat4 quat);
-quat4 axisangle4q(float3 axis, float angle);
+INLINE quat4 axisangle4q(float3 axis, float angle) {
+	angle *= 0.5f;
+	float s = sinf(angle), c = cosf(angle);
+	return float4(scale3(normalize3(axis), s), c);
+}
 quat4 slerp4q(quat4 q, quat4 p, float t);
 
 // clang-format off
@@ -276,11 +283,9 @@ INLINE float2x2 diagonal2x2(float2 d) { return (float2x2){ { d.x, 0.0f, 0.0, d.y
 // clang-format off
 INLINE float3x3 mul3x3(float3x3 lhs, float3x3 rhs) {
 #define DOT(row, col) (                                     \
-                                                            \
 	lhs.elements[row + 0 * 3] * rhs.elements[col * 3 + 0] + \
 	lhs.elements[row + 1 * 3] * rhs.elements[col * 3 + 1] + \
 	lhs.elements[row + 2 * 3] * rhs.elements[col * 3 + 2]   \
-                                                            \
 )
 	return (float3x3){{
           [0] = DOT(0, 0), [3] = DOT(0, 1), [6] = DOT(0, 2),
@@ -297,6 +302,7 @@ INLINE float3 mul3x3v(float3x3 m, float3 v) {
 		m.elements[2] * v.x + m.elements[5] * v.y + m.elements[8] * v.z,
 	};
 }
+
 INLINE float det3x3(float3x3 m) {
 	return (
 		m.elements[0] * det2x2((float2x2){ { m.elements[4], m.elements[5], m.elements[7], m.elements[8] } }) -
@@ -305,11 +311,11 @@ INLINE float det3x3(float3x3 m) {
 	);
 }
 
-INLINE float3x3 affine3x3(float2x2 m, float2 t) {
+INLINE float3x3 affine3x3(float2x2 linear, float2 translation) {
     return (float3x3){{
-        [0] = m.elements[0], [3] = m.elements[2], [6] = t.x,
-        [1] = m.elements[1], [4] = m.elements[3], [7] = t.y,
-        [2] = 0.0,           [5] = 0.0,           [8] = 1.0,
+        [0] = linear.elements[0], [3] = linear.elements[2], [6] = translation.x,
+        [1] = linear.elements[1], [4] = linear.elements[3], [7] = translation.y,
+        [2] = 0.0,                [5] = 0.0,                [8] = 1.0,
     }};
 }
 
@@ -329,6 +335,21 @@ INLINE float3x3 rows3x3(float3 r, float3 u, float3 f) {
 	}};
 }
 
+// https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation#Quaternion-derived_rotation_matrix
+INLINE float3x3 quat3x3(quat4 q) {
+	float x = q.x, y = q.y, z = q.z, w = q.w;
+	float xx = x * x, yy = y * y, zz = z * z;
+	float xy = x * y, xz = x * z, yz = y * z;
+	float wx = w * x, wy = w * y, wz = w * z;
+	float s = 1.0f; // NOTE: assumes q is normalized
+
+	return (float3x3){{
+	  [0]  = 1.0f-2.0f*s*(yy+zz), [3]  = 2.0f*s*(xy-wz),      [6] = 2.0f*s*(xz+wy),      
+	  [1]  = 2.0f*s*(xy+wz),      [4]  = 1.0f-2.0f*s*(xx+zz), [7] = 2.0f*s*(yz-wx),      
+	  [2]  = 2.0f*s*(xz-wy),      [5]  = 2.0f*s*(yz+wx),      [8] = 1.0f-2.0f*s*(xx+yy), 
+	}};
+}
+
 INLINE float3x3 transpose3x3(float3x3 m) {
     return (float3x3){{
         [0] = m.elements[0], [3] = m.elements[1], [6] = m.elements[2],
@@ -336,9 +357,18 @@ INLINE float3x3 transpose3x3(float3x3 m) {
         [2] = m.elements[6], [5] = m.elements[7], [8] = m.elements[8]
     }};
 }
-// clang-format on
 
-float3x3 axisangle3x3(float3 axis, float angle);
+INLINE float3x3 axisangle3x3(float3 axis, float angle) {
+	axis = normalize3(axis);
+	float c = cosf(angle), s = sinf(angle), t = 1.0f - c;
+	float x = axis.x, y = axis.y, z = axis.z;
+	return (float3x3){{
+	  [0] = c + x*x*t,   [3] = x*y*t - z*s, [6] = x*z*t + y*s, 
+	  [1] = y*x*t + z*s, [4] = y*y*t + c,   [7] = y*z*t - x*s,
+	  [2] = z*x*t - y*s, [5] = z*y*t + x*s, [8] = c + z*z*t,  
+	}};
+}
+// clang-format on
 
 INLINE float2 xform2p(float3x3 m, float2 p) { return xy3(mul3x3v(m, make3_from2(p, 1.0f))); }
 INLINE float2 xform2v(float3x3 m, float2 d) { return xy3(mul3x3v(m, make3_from2(d, 0.0f))); }
@@ -349,12 +379,6 @@ INLINE float3x3 diagonal3x3(float3 v) {
 INLINE float3x3 identity3x3(void) { return diagonal3x3(splat3(1.0f)); }
 
 // --- float4x4 ---
-bool eq4x4(float4x4 lhs, float4x4 rhs);
-float4x4 mul4x4(float4x4 lhs, float4x4 rhs);
-float4 mul4x4v(float4x4 m, float4 v);
-
-INLINE float3 xform3p(float4x4 m, float3 p) { return xyz4(mul4x4v(m, make4_from3(p, 1.0f))); }
-INLINE float3 xform3v(float4x4 m, float3 d) { return xyz4(mul4x4v(m, make4_from3(d, 0.0f))); }
 
 INLINE float4x4 diagonal4x4(float4 v) {
 	return (float4x4){ .elements[0] = v.x, .elements[5] = v.y, .elements[10] = v.z, .elements[15] = v.w };
@@ -364,53 +388,63 @@ INLINE float4x4 diagonal4x4(float4 v) {
 INLINE float4x4 identity4x4(void) { return diagonal4x4(splat4(1.0f)); }
 
 // clang-format off
-// https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation#Quaternion-derived_rotation_matrix
-INLINE float4x4 rot4x4(quat4 q) {
-	float x = q.x, y = q.y, z = q.z, w = q.w;
-	float xx = x * x, yy = y * y, zz = z * z;
-	float xy = x * y, xz = x * z, yz = y * z;
-	float wx = w * x, wy = w * y, wz = w * z;
-	float s = 1.0f; // NOTE: assumes q is normalized
+INLINE bool eq4x4(float4x4 lhs, float4x4 rhs) {
+	return 
+        eq(lhs.elements[0 ], rhs.elements[0 ]) &&
+		eq(lhs.elements[1 ], rhs.elements[1 ]) &&
+		eq(lhs.elements[2 ], rhs.elements[2 ]) &&
+		eq(lhs.elements[3 ], rhs.elements[3 ]) &&
+		eq(lhs.elements[4 ], rhs.elements[4 ]) &&
+		eq(lhs.elements[5 ], rhs.elements[5 ]) &&
+		eq(lhs.elements[6 ], rhs.elements[6 ]) &&
+		eq(lhs.elements[7 ], rhs.elements[7 ]) &&
+		eq(lhs.elements[8 ], rhs.elements[8 ]) &&
+		eq(lhs.elements[9 ], rhs.elements[9 ]) &&
+		eq(lhs.elements[10], rhs.elements[10]) &&
+		eq(lhs.elements[11], rhs.elements[11]) &&
+		eq(lhs.elements[12], rhs.elements[12]) &&
+		eq(lhs.elements[13], rhs.elements[13]) &&
+		eq(lhs.elements[14], rhs.elements[14]) &&
+		eq(lhs.elements[15], rhs.elements[15]);
+}
+
+INLINE float4x4 mul4x4(float4x4 lhs, float4x4 rhs) {
+#define DOT(row, col) (                                     \
+	lhs.elements[row + 0 * 4] * rhs.elements[col * 4 + 0] + \
+	lhs.elements[row + 1 * 4] * rhs.elements[col * 4 + 1] + \
+	lhs.elements[row + 2 * 4] * rhs.elements[col * 4 + 2] + \
+	lhs.elements[row + 3 * 4] * rhs.elements[col * 4 + 3]   \
+)
 
 	return (float4x4){{
-	  [0]  = 1.0f-2.0f*s*(yy+zz), [4]  = 2.0f*s*(xy-wz),      [8 ] = 2.0f*s*(xz+wy),      [12] = 0.0f,
-	  [1]  = 2.0f*s*(xy+wz),      [5]  = 1.0f-2.0f*s*(xx+zz), [9 ] = 2.0f*s*(yz-wx),      [13] = 0.0f,
-	  [2]  = 2.0f*s*(xz-wy),      [6]  = 2.0f*s*(yz+wx),      [10] = 1.0f-2.0f*s*(xx+yy), [14] = 0.0f,
-	  [3]  = 0.0f,                [7]  = 0.0f,                [11] = 0.0f,                [15] = 1.0f
+          [0] = DOT(0, 0), [4] = DOT(0, 1), [8 ] = DOT(0, 2), [12] = DOT(0, 3),
+          [1] = DOT(1, 0), [5] = DOT(1, 1), [9 ] = DOT(1, 2), [13] = DOT(1, 3),
+          [2] = DOT(2, 0), [6] = DOT(2, 1), [10] = DOT(2, 2), [14] = DOT(2, 3),
+          [3] = DOT(3, 0), [7] = DOT(3, 1), [11] = DOT(3, 2), [15] = DOT(3, 3),
 	}};
-}
-INLINE float4x4 translation4x4(float3 translation) {
-    return (float4x4){{
-	  [0] = 1.0f, [4] = 0.0f, [8] =  0.0f, [12] = translation.x,
-	  [1] = 0.0f, [5] = 1.0f, [9] =  0.0f, [13] = translation.y,
-	  [2] = 0.0f, [6] = 0.0f, [10] = 1.0f, [14] = translation.z,
-	  [3] = 0.0f, [7] = 0.0f, [11] = 0.0f, [15] = 1.0f
-	}};
-}
-INLINE float4x4 scaling4x4(float3 scale) {
-    return (float4x4){{
-	  [0] = scale.x, [4] = 0.0f,    [8] =  0.0f,    [12] = 0.0f,
-	  [1] = 0.0f,    [5] = scale.y, [9] =  0.0f,    [13] = 0.0f,
-	  [2] = 0.0f,    [6] = 0.0f,    [10] = scale.z, [14] = 0.0f,
-	  [3] = 0.0f,    [7] = 0.0f,    [11] = 0.0f,    [15] = 1.0f
-	}};
+#undef DOT
 }
 
-INLINE float4x4 affine4x4(float3x3 m, float3 translation) {
+INLINE float4 mul4x4v(float4x4 m, float4 v) {
+    return (float4){
+        m.elements[0] * v.x + m.elements[4] * v.y + m.elements[8 ] * v.z + m.elements[12] * v.w,
+        m.elements[1] * v.x + m.elements[5] * v.y + m.elements[9 ] * v.z + m.elements[13] * v.w,
+        m.elements[2] * v.x + m.elements[6] * v.y + m.elements[10] * v.z + m.elements[14] * v.w,
+        m.elements[3] * v.x + m.elements[7] * v.y + m.elements[11] * v.z + m.elements[15] * v.w
+    };
+}
+INLINE float3 xform3p(float4x4 m, float3 p) { return xyz4(mul4x4v(m, make4_from3(p, 1.0f))); }
+INLINE float3 xform3v(float4x4 m, float3 d) { return xyz4(mul4x4v(m, make4_from3(d, 0.0f))); }
+
+INLINE float4x4 affine4x4(float3x3 linear, float3 translation) {
 	return (float4x4){{
-	  [0] = m.elements[0], [4] = m.elements[3], [8] =  m.elements[6], [12] = translation.x,
-	  [1] = m.elements[1], [5] = m.elements[4], [9] =  m.elements[7], [13] = translation.y,
-	  [2] = m.elements[2], [6] = m.elements[5], [10] = m.elements[8], [14] = translation.z,
-	  [3] = 0.0f,          [7] = 0.0f,          [11] = 0.0f,          [15] = 1.0f
+	  [0] = linear.elements[0], [4] = linear.elements[3], [8] =  linear.elements[6], [12] = translation.x,
+	  [1] = linear.elements[1], [5] = linear.elements[4], [9] =  linear.elements[7], [13] = translation.y,
+	  [2] = linear.elements[2], [6] = linear.elements[5], [10] = linear.elements[8], [14] = translation.z,
+	  [3] = 0.0f,               [7] = 0.0f,               [11] = 0.0f,               [15] = 1.0f
 	}};
 }
 
-INLINE float4x4 trs4x4_quat(float3 translation, quat4 rotation, float3 scale) {
-	return mul4x4(
-		translation4x4(translation),
-		mul4x4(rot4x4(rotation), scaling4x4(scale)) //
-	);
-}
 INLINE float4x4 columns4x4(float4 a, float4 b, float4 c, float4 d) {
 	return (float4x4){{
 	  [0] = a.x,  [4] = b.x,  [8 ] = c.x, [12] = d.x,
@@ -438,12 +472,17 @@ INLINE float4x4 transpose4x4(float4x4 m) {
     }};
 }
 
-// clang-format on
-float4x4 trs4x4_euler(float3 position, float3 rotation, float3 scale);
+INLINE float4x4 perspective(float fovy_radians, float aspect, float near, float far) {
+    float halfh = tanf(fovy_radians * 0.5f), halfw = aspect * halfh;
+	float range = far - near;
 
-float4x4 perspective(float radians_fovy, float aspect, float near_z, float far_z);
-float4x4 orthographic(float left, float right, float top, float bottom, float near, float far);
-
+	return (float4x4){{
+        [0] = 1.0f/halfw, [4] =  0.0f,       [8 ] = 0.0f,       [12] = 0.0f,
+        [1] = 0.0f,       [5] = -1.0f/halfh, [9 ] = 0.0f,       [13] = 0.0f,
+        [2] = 0.0f,       [6] =  0.0f,       [10] = -far/range, [14] = -(far * near)/range,
+        [3] = 0.0f,       [7] =  0.0f,       [11] = -1.0f,      [15] = 0.0f,
+    }};
+}
 INLINE float4x4 lookat(float3 eye, float3 center, float3 up) {
 	float3 camera_forward = normalize3(sub3(center, eye));
 	float3 camera_right = normalize3(cross3(camera_forward, up));
@@ -454,6 +493,10 @@ INLINE float4x4 lookat(float3 eye, float3 center, float3 up) {
 		float3(-dot3(camera_right, eye), -dot3(camera_up, eye), dot3(camera_forward, eye)) //
 	);
 }
+
+// clang-format on
+
+float4x4 orthographic(float left, float right, float top, float bottom, float near, float far);
 
 INLINE float4 rgba_from_hsv(float h, float s, float v) {
 	h = fmodf(maxf(h, 0.0f), 360.0) / 360.0, s = CLAMP(s, 0.0, 1.0), v = CLAMP(v, 0.0, 1.0);
@@ -466,9 +509,9 @@ INLINE float4 rgba_from_hsv(float h, float s, float v) {
 	float b = 2.0f - fabsf(h * 6.0f - 4.0f);
 
 	return (float4){
-		.x = clampf(r, 0.0f, 1.0f) * range_rgb + min_rgb,
-		.y = clampf(g, 0.0f, 1.0f) * range_rgb + min_rgb,
-		.z = clampf(b, 0.0f, 1.0f) * range_rgb + min_rgb,
+		.x = clamp(r, 0.0f, 1.0f) * range_rgb + min_rgb,
+		.y = clamp(g, 0.0f, 1.0f) * range_rgb + min_rgb,
+		.z = clamp(b, 0.0f, 1.0f) * range_rgb + min_rgb,
 		.w = 1.0f
 	};
 }

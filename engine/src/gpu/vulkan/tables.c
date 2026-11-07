@@ -1,5 +1,5 @@
 #include "tables.h"
-#include "gfx/gfx_types.h"
+#include "gpu/gpu_types.h"
 #include <vulkan/vulkan_core.h>
 
 const VkDescriptorType uniform_type_to_vulkan_descriptor_type[UNIFORM_TYPE_MAX] = {
@@ -99,9 +99,9 @@ const VkImageLayout resource_usage_to_vulkan_image_layout[RESOURCE_USAGE_MAX] = 
 	[RESOURCE_USAGE_DEPTH_STENCIL_ATTACHMENT] = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 };
 
-const VkMemoryPropertyFlags memory_type_to_vulkan_memory_flags[MEMORY_TYPE_MAX] = {
-	[MEMORY_TYPE_GPU] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	[MEMORY_TYPE_CPU] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+const VkMemoryPropertyFlags memory_kind_to_vulkan_memory_flags[MEMORY_KIND_MAX] = {
+	[MEMORY_KIND_DEVICE] = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	[MEMORY_KIND_HOST] = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 };
 
 const VkFormat pixel_format_to_vulkan_format[PIXEL_FORMAT_MAX] = {

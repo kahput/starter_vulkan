@@ -5,6 +5,10 @@
 #include <string.h>
 #include <stdint.h>
 
+#ifndef NDEBUG
+	#define DEBUG_BUILD
+#endif
+
 #if defined(__EMSCRIPTEN__) || defined(__wasm__)
 	#define WEB_BUILD
 #elif defined(_WIN32)
@@ -52,12 +56,12 @@
 	#define INLINE static __forceinline
 	#define PACK_BEGIN(gran) __pragma(pack(push, (gran)))
 	#define PACK_END __pragma(pack(pop))
-#define FORMAT_ATTRIBUTE
+	#define FORMAT_ATTRIBUTE
 #else
 	#define INLINE static inline __attribute((always_inline))
 	#define PACK_BEGIN(gran) __attribute__((__packed__))
 	#define PACK_END
-#define FORMAT_ATTRIBUTE(fmt_index) __attribute__((format(printf, fmt_index, fmt_index + 1)))
+	#define FORMAT_ATTRIBUTE(fmt_index) __attribute__((format(printf, fmt_index, fmt_index + 1)))
 #endif
 
 #define sizeof_member(type, member) (sizeof(((type *)0)->member))
@@ -199,8 +203,6 @@ INLINE float2 xy3(float3 v) { return make2(v.x, v.y); }
 typedef struct { float min, max; } Interval;
 typedef struct { float2 min, max; } Interval2;
 typedef struct { float3 min, max; } Interval3;
-
-typedef uint32_t RID;
 
 typedef struct {
 	float x, y, width, height;

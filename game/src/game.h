@@ -10,7 +10,7 @@
 #include "core/strings.h"
 #include "generated/resources.h"
 #include "generated/res_generated.h"
-#include "gfx/gfx_types.h"
+#include "gpu/gpu_types.h"
 
 #include "res.h"
 #include "generated/resources.c"
@@ -23,7 +23,7 @@
 
 #include <wm.h>
 
-#include <gfx.h>
+#include <gpu.h>
 
 #include <draw.h>
 
@@ -54,18 +54,16 @@ typedef struct {
 typedef struct {
 	Arena *permanent, *frame;
 
-	GFX_Device device[1];
-
 	WM_Surface *surface;
-	GFX_Swapchain *swapchain;
-	GFX_Image *depthbuffer;
+	GPU_Swapchain *swapchain;
+	GPU_Image *depthbuffer;
 
-	InputState input;
-	GFX_Image *white_texture;
+	Input input;
+	GPU_Image *white_texture;
 	RES_Cache cache;
 
-	GFX_Sampler *sampler_nearest;
-	GFX_Sampler *sampler_linear;
+	GPU_Sampler *sampler_nearest;
+	GPU_Sampler *sampler_linear;
 
 	Camera camera;
 
@@ -79,13 +77,14 @@ typedef struct {
 State *state = 0;
 
 static inline char *named(const char *name) {
-	return (char *)str8f(state->permanent, name).bytes;
+	return (char *)str8f(state->permanent, "%s", name).bytes;
 }
 
 typedef struct {
-	float2 position;
+	float2 position, grab_offset;
 	bool active, hovered, initialized;
 } Drag2D;
+
 Rectangle drag2d_point(Drag2D *drag, float2 initial_position, float radius, float2 mouse) {
 	Rectangle result = { 0 };
 
@@ -96,16 +95,18 @@ Rectangle drag2d_point(Drag2D *drag, float2 initial_position, float radius, floa
 			drag->initialized = true;
 		}
 
-		Rectangle handle = rect_from_center(drag->position, splat2(radius));
+		Rectangle handle = rect_from_center(drag->position, float2(radius));
 		drag->hovered = rect_contains_point(handle, mouse);
 
-		if (drag->hovered && input_mouse_pressed(MOUSE_BUTTON_LEFT))
+		if (drag->hovered && input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
 			drag->active = true;
+            drag->grab_offset = sub2(drag->position, mouse);
+        }
 
-		if (drag->active) drag->position = mouse;
+		if (drag->active) drag->position = add2(drag->grab_offset, mouse);
 		if (input_mouse_released(MOUSE_BUTTON_LEFT)) drag->active = false;
 
-		result = rect_from_center(drag->position, splat2(radius));
+		result = rect_from_center(drag->position, float2(radius));
 	}
 
 	return result;
@@ -116,7 +117,7 @@ Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, fl
 
 	bool ok = drag && t;
 	if (ok) {
-		*t = clampf(*t, min, max);
+		*t = clamp(*t, min, max);
 		float2 mouse = as2(input_mouse_position(), float2);
 
 		float thumb_h = bounds.height;
@@ -130,7 +131,7 @@ Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, fl
 
 		if (drag->active) {
 			float local_x = mouse.x - bounds.x - thumb_w * 0.5f;
-			local_x = clampf(local_x, 0.0f, travel);
+			local_x = clamp(local_x, 0.0f, travel);
 
 			float mouse_ratio = (travel != 0.0f) ? (local_x / travel) : 0.0f;
 			*t = min + (mouse_ratio * (max - min));
@@ -143,6 +144,28 @@ Rectangle drag2d_slider(Drag2D *drag, Rectangle bounds, float min, float max, fl
 	}
 
 	return result;
+}
+
+typedef struct {
+	float3 position, grab_offset;
+	bool active, hovered;
+} Drag3D;
+
+void drag3d_point(Drag3D *drag, float radius, Camera *camera, Rectangle viewport, float2 mouse) {
+	Ray3 mouse_ray = camera_mouse_ray(camera, viewport, mouse);
+	float3 forward = normalize3(sub3(camera->target, camera->position));
+
+	float depth = dot3(sub3(drag->position, camera->position), forward);
+	float a = depth / dot3(mouse_ray.direction, forward);
+	float3 point = sadd3(mouse_ray.origin, mouse_ray.direction, a);
+
+	drag->hovered = drag->active || raycast_sphere(mouse_ray, (Sphere){ drag->position, radius }).hit;
+	if (drag->hovered && input_mouse_pressed(MOUSE_BUTTON_LEFT)) {
+		drag->active = true;
+		drag->grab_offset = sub3(drag->position, point);
+	}
+	if (drag->active) drag->position = add3(point, drag->grab_offset);
+	if (input_mouse_released(MOUSE_BUTTON_LEFT)) drag->active = false;
 }
 
 const RES_Catalog registry = {

@@ -1,21 +1,34 @@
 #pragma once
 
 #include "common.h"
+#include "core/rid.h"
 #include "core/strings.h"
 
-typedef struct GFX_Buffer GFX_Buffer;
-typedef struct GFX_Image GFX_Image;
-typedef struct GFX_Sampler GFX_Sampler;
-typedef struct GFX_Pipeline GFX_Pipeline;
-typedef struct GFX_Shader GFX_Shader;
-typedef struct Swapchain GFX_Swapchain;
+typedef enum {
+	GPU_RESOURCE_NONE = 0,
+
+	GPU_RESOURCE_BUFFER,
+	GPU_RESOURCE_IMAGE,
+	GPU_RESOURCE_SAMPLER,
+
+	GPU_RESOURCE_SWAPCHAIN,
+
+	GPU_RESOURCE_MAX,
+} GPU_ResourceType;
+
+typedef struct GPU_Buffer GPU_Buffer;
+typedef struct GPU_Image GPU_Image;
+typedef struct GPU_Sampler GPU_Sampler;
+typedef struct GPU_Pipeline GPU_Pipeline;
+typedef struct GPU_Shader GPU_Shader;
+typedef struct GPU_Swapchain GPU_Swapchain;
 
 typedef enum {
-	GFX_LIMIT_UNIFORM_SETS = 4,
-	GFX_LIMIT_UNIFORMS_PER_SET = 32,
-	GFX_LIMIT_COLOR_ATTACHMENTS = 4,
-	GFX_LIMIT_PIPELINE_PERMUTATIONS = 8,
-} GfxLimits;
+	GPU_LIMIT_UNIFORM_SETS = 4,
+	GPU_LIMIT_UNIFORMS_PER_SET = 32,
+	GPU_LIMIT_COLOR_ATTACHMENTS = 4,
+	GPU_LIMIT_PIPELINE_PERMUTATIONS = 8,
+} GPU_Limits;
 
 typedef enum {
 	UNIFORM_TYPE_IMAGE,
@@ -42,12 +55,6 @@ static string8 uniform_type_to_string[UNIFORM_TYPE_MAX] = {
 	[UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC] = comp8("UNIFORM_TYPE_UNIFORM_BUFFER_DYNAMIC"),
 	[UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC] = comp8("UNIFORM_TYPE_STORAGE_BUFFER_DYNAMIC"),
 };
-
-typedef struct {
-	UniformType type;
-	uint32_t binding;
-	uint32_t count;
-} ShaderBinding;
 
 typedef enum {
 	PIXEL_FORMAT_RGBA8_UNORM,
@@ -144,11 +151,11 @@ typedef enum {
 } BufferUsage;
 
 typedef enum {
-	MEMORY_TYPE_GPU,
-	MEMORY_TYPE_CPU,
+	MEMORY_KIND_DEVICE,
+	MEMORY_KIND_HOST,
 
-	MEMORY_TYPE_MAX,
-} MemoryType;
+	MEMORY_KIND_MAX,
+} GPU_MemoryKind;
 
 typedef enum {
 	SHADER_STAGE_VERTEX,
@@ -159,34 +166,34 @@ typedef enum {
 } ShaderStage;
 
 typedef enum {
-	SADER_TYPE_GRAPHICS,
-	SADER_TYPE_COMPUTE,
+	SADER_KIND_RASTER,
+	SHADER_KIND_COMPUTE,
 
-	SHADER_TYPE_MAX,
-} ShaderType;
+	SHADER_KIND_MAX,
+} GPU_ShaderKind;
 
-typedef enum sampler_filter {
+typedef enum {
 	FILTER_NEAREST = 0,
 	FILTER_LINEAR = 1
-} FilterMode;
+} GPU_FilterMode;
 
-typedef enum sampler_address_mode {
+typedef enum {
 	WRAP_MODE_REPEAT = 0,
 	WRAP_MODE_REPEAT_MIRROR = 1,
 	WRAP_MODE_CLAMP = 2,
 	WRAP_MODE_CLAMP_BORDER = 3,
 
 	WRAP_MODE_MAX,
-} WrapMode;
+} GPU_WrapMode;
 
-typedef enum cull_mode {
+typedef enum {
 	CULL_MODE_NONE = 0,
 	CULL_MODE_FRONT = 1,
 	CULL_MODE_BACK = 2,
 	CULL_MODE_FRONT_AND_BACK = 3,
 
 	CULL_MODE_MAX,
-} CullMode;
+} GPU_CullMode;
 static const string8 cull_mode_to_string[CULL_MODE_MAX] = {
 	[CULL_MODE_NONE] = comp8("CULL_MODE_NONE"),
 	[CULL_MODE_FRONT] = comp8("CULL_MODE_FRONT"),
@@ -200,7 +207,7 @@ typedef enum {
 	POLYGON_MODE_POINT = 2,
 
 	POLYGON_MODE_MAX,
-} PolygonMode;
+} GPU_PolygonMode;
 static const string8 polygon_mode_to_string[POLYGON_MODE_MAX] = {
 	[POLYGON_MODE_FILL] = comp8("POLYGON_MODE_FILL"),
 	[POLYGON_MODE_LINE] = comp8("POLYGON_MODE_LINE"),
@@ -288,25 +295,25 @@ typedef enum {
 	RESOURCE_USAGE_MAX,
 } ResourceUsage;
 
+typedef enum {
+	GPU_SWIZZLE_IDENTITY = 0,
+	GPU_SWIZZLE_ZERO = 1,
+	GPU_SWIZZLE_ONE = 2,
+	GPU_SWIZZLE_R = 3,
+	GPU_SWIZZLE_G = 4,
+	GPU_SWIZZLE_B = 5,
+	GPU_SWIZZLE_A = 6,
+
+} GPU_Swizzle;
+
 typedef struct {
 	const char *debug_name;
 
 	BufferUsage usage;
-	MemoryType memory;
+	GPU_MemoryKind memory;
 
 	void *data;
 } BufferOptions;
-
-typedef enum {
-	GFX_SWIZZLE_IDENTITY = 0,
-	GFX_SWIZZLE_ZERO = 1,
-	GFX_SWIZZLE_ONE = 2,
-	GFX_SWIZZLE_R = 3,
-	GFX_SWIZZLE_G = 4,
-	GFX_SWIZZLE_B = 5,
-	GFX_SWIZZLE_A = 6,
-
-} GFX_Swizzle;
 
 typedef struct {
 	const char *debug_name;
@@ -316,7 +323,7 @@ typedef struct {
 	PixelFormat format;
 	ImageUsageFlags usage; // zero initializes to IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER
 	ImageSampleCount sample; // zero initializes to SAMPLE_COUNT_1
-	GFX_Swizzle swizzle[4];
+	GPU_Swizzle swizzle[4];
 
 	void *pixels;
 } ImageOptions;
@@ -324,14 +331,14 @@ typedef struct {
 typedef struct {
 	const char *debug_name;
 
-	FilterMode min_filter;
-	FilterMode mag_filter;
+	GPU_FilterMode min_filter;
+	GPU_FilterMode mag_filter;
 
-	FilterMode mipmap_filter;
+	GPU_FilterMode mipmap_filter;
 
-	WrapMode address_mode_u;
-	WrapMode address_mode_v;
-	WrapMode address_mode_w;
+	GPU_WrapMode address_mode_u;
+	GPU_WrapMode address_mode_v;
+	GPU_WrapMode address_mode_w;
 
 	bool compare_enable;
 } SamplerOptions;
@@ -348,8 +355,8 @@ typedef struct {
 	}
 
 typedef struct {
-	CullMode cull_mode;
-	PolygonMode polygon_mode;
+	GPU_CullMode cull_mode;
+	GPU_PolygonMode polygon_mode;
 
 	bool disable_depth_test, disable_depth_write;
 	bool blend_enable, enable_stencil_test;
@@ -360,32 +367,32 @@ typedef struct {
 } PipelineOptions;
 
 typedef struct {
-	PixelFormat color_formats[GFX_LIMIT_COLOR_ATTACHMENTS];
+	PixelFormat color_formats[GPU_LIMIT_COLOR_ATTACHMENTS];
 	uint32_t color_count;
 
 	PixelFormat depth_format;
 	ImageSampleCount sample_count;
-} GFX_DrawTargetLayout;
+} GPU_DrawTargetLayout;
 
 typedef struct {
 	const char *debug_name;
 
 	struct {
-		GFX_Image *target;
-		GFX_Image *resolve;
+		GPU_Image *target;
+		GPU_Image *resolve;
 		LoadOp load;
 		StoreOp store;
 		rgba8 clear;
-	} colors[GFX_LIMIT_COLOR_ATTACHMENTS];
+	} colors[GPU_LIMIT_COLOR_ATTACHMENTS];
 	struct {
-		GFX_Image *target;
+		GPU_Image *target;
 		LoadOp load;
 		StoreOp store;
 		float clear;
 	} depth;
 
 	Rectangle area;
-} GFX_DrawPassInfo;
+} GPU_DrawPassInfo;
 
 // ============================================================
 // ========================= TEMPORARY =========================
@@ -398,10 +405,9 @@ typedef struct {
 	#include <vulkan/vulkan_core.h>
 
 	#include "wm.h"
-	#include "core/os.h"
 
-struct GFX_Buffer {
-	GFX_Buffer *next;
+struct GPU_Buffer {
+	RID id;
 
 	VkBuffer handle;
 	VkDeviceMemory memory;
@@ -414,12 +420,8 @@ struct GFX_Buffer {
 	BufferOptions options;
 };
 
-struct GFX_Image {
-	GFX_Image *next;
-
-	// TEMP_START
-	uint32_t imageid;
-	// TEMP_END
+struct GPU_Image {
+	RID id;
 
 	VkImage handle;
 	VkImageView view;
@@ -431,46 +433,43 @@ struct GFX_Image {
 	ResourceUsage res_usage;
 };
 
-struct GFX_Sampler {
-	GFX_Sampler *next;
+struct GPU_Sampler {
+	RID id;
 
 	VkSampler handle;
 	VkSamplerCreateInfo info;
 };
 
 typedef struct {
-	uint32_t binding;
-
-	uint64_t *ids;
-	uint32_t count;
-} GFX_Binding;
-	#define GFX_BIND(b, c, p) { .binding = (b), .ids = (p), .count = (c) }
-
-typedef struct {
 	char name[128];
-
 	UniformType type;
 
 	uint32_t binding, count;
-
 	union {
 		struct {
-			GFX_Buffer *handle;
+			GPU_Buffer *handle;
 			uint64_t offset, size;
 			void *data;
 		} buffer;
 
 		struct {
-			GFX_Image **images;
-			GFX_Sampler *sampler;
+			GPU_Image **images;
+			GPU_Sampler *sampler;
 		} sampler_with_textures;
 	} resource;
 } Uniform;
 
 typedef struct {
-	Uniform uniforms[GFX_LIMIT_UNIFORMS_PER_SET];
+	Uniform uniforms[GPU_LIMIT_UNIFORMS_PER_SET];
 	uint32_t uniform_count;
 } UniformSet;
+
+// TODO: Move to this
+/* static inline Uniform uniform_data(uint32_t binding, void *data, uint64_t size) { return (Uniform){ .type = UNIFORM_TYPE_UNIFORM_BUFFER, .binding = binding, .size = size, .data = data }; } */
+/* static inline Uniform storage_data(uint32_t binding, void *data, uint64_t size) { return (Uniform){ .type = UNIFORM_TYPE_STORAGE_BUFFER, .binding = binding, .size = size, .data = data }; } */
+/* static inline Uniform storage_image(uint32_t binding, uint32_t array_index, RID image) { return (Uniform){ .type = UNIFORM_TYPE_STORAGE_IMAGE, .binding = binding, .array_index = array_index, .resource = image }; } */
+/* static inline Uniform storage_buffer(uint32_t binding, RID buffer, uint64_t offset, uint64_t size) { return (Uniform){ .type = UNIFORM_TYPE_STORAGE_BUFFER, .binding = binding, .resource = buffer, .offset = offset, .size = size }; } */
+/* static inline Uniform sampled_texture(uint32_t binding, RID sampler, RID image, uint32_t array_index) { return (Uniform){ .type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE, .binding = binding, .resource = image, .sampler = sampler, .array_index = array_index }; } */
 
 static inline Uniform uniform_data(uint32_t binding, void *data, uint64_t size) {
 	Uniform result = {
@@ -498,7 +497,7 @@ static inline Uniform storage_data(uint32_t binding, void *data, uint64_t size) 
 	return result;
 }
 
-static inline Uniform storage_images(uint32_t binding, GFX_Image **images, uint32_t image_count) {
+static inline Uniform storage_images(uint32_t binding, GPU_Image **images, uint32_t image_count) {
 	Uniform result = {
 		.name = { 0 },
 		.type = UNIFORM_TYPE_STORAGE_IMAGE,
@@ -511,11 +510,11 @@ static inline Uniform storage_images(uint32_t binding, GFX_Image **images, uint3
 	return result;
 }
 
-/* static inline Uniform uniform_buffer(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) { */
+/* static inline Uniform uniform_buffer(uint32_t binding, GPU_Buffer *buffer, uint64_t offset, uint64_t size) { */
 /* 	return (Uniform){ .type = UNIFORM_TYPE_UNIFORM_BUFFER, .binding = binding, .count = 1, .as.buffer = { .handle = buffer, .offset = offset, .size = size } }; */
 /* } */
 
-static inline Uniform storage_buffers(uint32_t binding, GFX_Buffer *buffer, uint64_t offset, uint64_t size) {
+static inline Uniform storage_buffers(uint32_t binding, GPU_Buffer *buffer, uint64_t offset, uint64_t size) {
 	Uniform result = {
 		.name = { 0 },
 		.type = UNIFORM_TYPE_STORAGE_BUFFER,
@@ -528,7 +527,7 @@ static inline Uniform storage_buffers(uint32_t binding, GFX_Buffer *buffer, uint
 	return result;
 }
 
-static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images, uint32_t image_count, GFX_Sampler *sampler) {
+static inline Uniform sampler_with_textures(uint32_t binding, GPU_Image **images, uint32_t image_count, GPU_Sampler *sampler) {
 	Uniform result = {
 		.name = { 0 },
 		.type = UNIFORM_TYPE_SAMPLER_WITH_IMAGE,
@@ -541,24 +540,24 @@ static inline Uniform sampler_with_textures(uint32_t binding, GFX_Image **images
 	return result;
 }
 
-struct GFX_Pipeline {
-	GFX_Pipeline *next;
-	GFX_Shader *shader;
+struct GPU_Pipeline {
+	GPU_Pipeline *next;
+	GPU_Shader *shader;
 
-	GFX_DrawTargetLayout layout;
+	GPU_DrawTargetLayout layout;
 	VkPipeline handle;
 };
 
-struct GFX_Shader {
-	GFX_Shader *next;
+struct GPU_Shader {
+	GPU_Shader *next;
 	const char *debug_name;
 
 	VkShaderModule modules[SHADER_STAGE_MAX];
 
 	VkPipelineLayout layout;
-	VkDescriptorSetLayout layouts[GFX_LIMIT_UNIFORM_SETS];
+	VkDescriptorSetLayout layouts[GPU_LIMIT_UNIFORM_SETS];
 	struct {
-		UniformSet sets[GFX_LIMIT_UNIFORM_SETS];
+		UniformSet sets[GPU_LIMIT_UNIFORM_SETS];
 		uint32_t set_count;
 	} reflection;
 
@@ -566,16 +565,16 @@ struct GFX_Shader {
 		uint64_t hash;
 		PipelineOptions options;
 
-		GFX_Pipeline *first_pipeline;
-	} pipelines[GFX_LIMIT_PIPELINE_PERMUTATIONS];
+		GPU_Pipeline *first_pipeline;
+	} pipelines[GPU_LIMIT_PIPELINE_PERMUTATIONS];
 	uint32_t pipeline_count;
 
-	GFX_Pipeline *compute;
+	GPU_Pipeline *compute;
 };
 
 	#define SWAPCHAIN_IMAGE_COUNT 3
-struct Swapchain {
-	GFX_Swapchain *next;
+struct GPU_Swapchain {
+	RID id;
 
 	WM_Surface *native;
 
@@ -589,18 +588,11 @@ struct Swapchain {
 	VkImageViewCreateInfo view_infos[SWAPCHAIN_IMAGE_COUNT];
 	uint32_t image_count;
 
-	GFX_Image wrapper;
+	GPU_Image wrapper;
 
 	VkSemaphore image_available_semaphores[MAX_FRAMES_IN_FLIGHT]; // has to be MAX_FRAMES_IN_FLIGHT, as you need one for each frame index
 	VkSemaphore render_done_semaphores[SWAPCHAIN_IMAGE_COUNT]; // has to be SWAPCHAIN_IMAGE_COUNT, as you need one for each swapchain image
 };
-
-typedef struct {
-	GFX_Image *colors[GFX_LIMIT_COLOR_ATTACHMENTS];
-	uint32_t color_count;
-
-	GFX_Image *depth;
-} GFX_Framebuffer;
 
 	#define MAX_BUFFERS 1024
 	#define MAX_IMAGES 512
@@ -616,21 +608,24 @@ typedef struct {
 	VkDescriptorPool descriptor_pool;
 	uint32_t descriptor_count;
 
-	GFX_Swapchain *swapchains[MAX_SWAPCHAINS];
+	GPU_Swapchain *swapchains[MAX_SWAPCHAINS];
 	uint32_t swapchain_image_indices[MAX_SWAPCHAINS];
 	uint32_t swapchain_count;
 
-	GFX_Shader *current_shader;
 	struct {
-		bool active;
-		GFX_DrawTargetLayout layout;
-	} current_pass;
+		struct {
+			bool active;
+			GPU_DrawTargetLayout layout;
+		} pass;
+		GPU_Shader *shader;
+	} bound;
 
-	GFX_Buffer *transient_buffer;
+	GPU_Buffer *transient_buffer;
 	Arena transient_arena[1];
 
-	uint32_t frame_index, recording;
-} GFX_CommandEncoder;
+	bool recording;
+	uint32_t label_count;
+} GPU_CommandList;
 
 typedef struct {
 	Arena arena[1];
@@ -647,10 +642,10 @@ typedef struct {
 	VkCommandPool graphics_command_pool;
 	VkPushConstantRange global_range;
 
-	GFX_Buffer *frame_staging_buffer;
+	GPU_Buffer *frame_staging_buffer;
 	uint64_t frame_staging_buffer_slice_size;
 
-	GFX_Buffer *transfer_staging_buffer;
+	GPU_Buffer *transfer_staging_buffer;
 	uint64_t transfer_staging_buffer_slice_size;
 
 	VkQueue graphics_queue, present_queue;
@@ -660,53 +655,31 @@ typedef struct {
 	int32_t transfer_index, compute_index;
 
 	// Transfer
-	GFX_CommandEncoder transfer_commands[2];
+	GPU_CommandList transfer_commands[2];
 	uint32_t current_transfer_index;
 
 	// Frame
-	GFX_CommandEncoder frame_commands[MAX_FRAMES_IN_FLIGHT];
+	GPU_CommandList frame_commands[MAX_FRAMES_IN_FLIGHT];
 	uint32_t current_frame_index;
 
 	// Resources
-	GFX_Buffer *buffer_pool;
-	uint32_t buffer_count;
+	GPU_Buffer *buffers;
+	GPU_Image *images;
+	GPU_Sampler *samplers;
+	GPU_Swapchain *swapchains;
+	RID_Pool pools[GPU_RESOURCE_MAX];
 
-	GFX_Image *image_pool;
-	uint32_t image_count;
-
-	GFX_Sampler *sampler_pool;
-	uint32_t sampler_count;
-
-	GFX_Shader *shader_pool;
+	GPU_Shader *shader_pool;
 	uint32_t shader_count;
 
-	GFX_Pipeline *pipeline_pool;
+	GPU_Pipeline *pipeline_pool;
 	uint32_t pipeline_count;
 
-	GFX_Swapchain *swapchain_pool;
-	uint32_t swapchain_count;
-
-	GFX_Buffer *first_free_buffer;
-	GFX_Image *first_free_image;
-	GFX_Sampler *first_free_sampler;
-	GFX_Shader *first_free_shader;
-	GFX_Pipeline *first_free_pipeline;
-	GFX_Swapchain *first_free_swapchain;
+	GPU_Shader *first_free_shader;
+	GPU_Pipeline *first_free_pipeline;
 
 	bool initialized;
-	#ifdef DEV_BUILD
 	VkDebugUtilsMessengerEXT debug_messenger;
-	#endif
-} GFX_Device;
-
-typedef struct Image2D {
-	GFX_Image *handle;
-	uint8_t *pixels;
-
-	// METADATA
-	ImageType type;
-	PixelFormat format;
-	uint32_t width, height;
-} Image2D;
+} GPU_Device;
 
 #endif

@@ -23,7 +23,6 @@ Convex2 convex_hull(Arena *arena, float2 *points, uint32_t point_count);
 INLINE float3 ray_at(Ray3 r, float t) { return add3(r.origin, scale3(r.direction, t)); }
 
 INLINE Triangle3 triangle3_move(Triangle3 t, float3 offset) { return (Triangle3){ add3(offset, t.a), add3(offset, t.b), add3(offset, t.c) }; }
-float3 barycentric(Triangle3 t, float3 p); // uvw
 
 INLINE AABB3 aabb3_from_center(float3 center, float3 half_extent) { return (AABB3){ .min = sub3(center, half_extent), .max = add3(center, half_extent) }; }
 INLINE float3 aabb3_center(AABB3 a) { return scale3(add3(a.min, a.max), 0.5f); }
@@ -50,8 +49,6 @@ INLINE bool sphere_contains_point(Sphere s, float3 p) { return lensq3(sub3(p, s.
 
 INLINE Plane plane_from_point_normal(float3 point, float3 normal) { return (Plane){ normal, dot3(point, normal) }; }
 INLINE float3 plane_center(Plane p) { return scale3(p.normal, p.distance); }
-INLINE float plane_signed_distance(Plane p, float3 point) { return dot3(p.normal, point) - p.distance; }
-INLINE float3 plane_project_point(Plane p, float3 point) { return sub3(point, scale3(p.normal, plane_signed_distance(p, point))); }
 INLINE Plane plane_from_triangle(Triangle3 t) {
 	Plane result = { 0 };
 
@@ -90,10 +87,42 @@ bool gjk_overlap(const Shape3 *a, const Shape3 *b);
 
 CastResult3 raycast_plane(Ray3 r, Plane p);
 CastResult3 raycast_aabb3(Ray3 r, AABB3 a);
+CastResult3 raycast_sphere(Ray3 r, Sphere s);
 CastResult3 spherecast_triangle(float3 center, float3 velocity, Triangle3 triangle);
 
-bool project_to_viewport(float4x4 view_proj, Rectangle viewport, float3 point, float2 *screen);
+INLINE float distance_plane_signed(Plane p, float3 q) { return dot3(p.normal, q) - p.distance; }
+INLINE float distance_segment_squared(Segment3 s, float3 p) {
+	float3 ab = sub3(s.b, s.a), ap = sub3(p, s.a), bp = sub3(p, s.b);
+	float e = dot3(ap, ab);
+	if (e <= 0.0f) return dot3(ab, ab);
+	float denom = dot3(ab, ab);
+	if (e >= denom) return dot3(bp, bp);
+	return dot3(bp, bp) - (e * e / denom);
+}
+INLINE float distance_aabb_squared(AABB3 b, float3 p) {
+	float3 closest = max3(b.min, min3(b.max, p));
+	float3 d = sub3(p, closest);
+	return dot3(d, d);
+}
 
+INLINE float project_line_t(float3 a, float3 b, float3 p) {
+	float3 ab = sub3(b, a), ap = sub3(p, a);
+	float denom = dot3(ab, ab);
+	return denom > 0.0f ? dot3(ab, ap) / denom : 0.0f;
+}
+
+INLINE float3 project_point_plane(Plane p, float3 point) { return sub3(point, scale3(p.normal, distance_plane_signed(p, point))); }
+
+float3 barycentric(Triangle3 t, float3 p); // uvw
+INLINE float3 closest_point_plane(Plane p, float3 point) { return project_point_plane(p, point); }
+INLINE float3 closest_point_aabb(AABB3 b, float3 p) { return min3(b.max, max3(b.min, p)); }
+INLINE float3 closest_point_line(float3 a, float3 b, float3 p) { return lerp3(a, b, project_line_t(a, b, p)); }
+INLINE float3 closest_point_segment(Segment3 s, float3 p) { return lerp3(s.a, s.b, saturate(project_line_t(s.a, s.b, p))); }
+INLINE float3 closest_point_ray(Ray3 r, float3 p) { return sadd3(r.origin, r.direction, maxf(0.0f, dot3(r.direction, sub3(p, r.origin)))); }
+
+float3 closest_segment_plane(Plane p, Segment3 seg);
+
+bool project_to_viewport(float4x4 view_proj, Rectangle viewport, float3 point, float2 *screen);
 // :3d
 
 #endif

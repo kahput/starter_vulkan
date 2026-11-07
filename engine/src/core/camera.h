@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "core/cmath.h"
+#include "core/geom.h"
 
 typedef enum {
 	CAMERA_PROJECTION_PERSPECTIVE,
@@ -17,3 +18,5 @@ typedef struct {
 float4x4 camera_view(Camera *camera);
 float4x4 camera_proj(Camera *camera, float aspect);
 float4x4 camera_view_proj(Camera *camera, float aspect);
+
+Ray3 camera_mouse_ray(Camera *camera, Rectangle viewport, float2 mouse);

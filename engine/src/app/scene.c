@@ -15,7 +15,7 @@ void scene_camera_orbit(Camera *camera, float2 mouse_delta) {
 
 	float yaw_delta = mouse_delta.x * turn_rate;
 	float pitch_delta = mouse_delta.y * turn_rate;
-	if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTSHIFT)) {
+	if (input_mouse_held(MOUSE_BUTTON_MIDDLE) && input_key_held(KEY_CODE_LEFTSHIFT)) {
 		float2 shift = scale2(mouse_delta, pan_speed);
 		shift.y *= -1;
 
@@ -24,11 +24,11 @@ void scene_camera_orbit(Camera *camera, float2 mouse_delta) {
 
 		camera->target = add3(camera->position, camera_target_offset);
 
-	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE) && input_key_down(KEY_CODE_LEFTCTRL)) {
+	} else if (input_mouse_held(MOUSE_BUTTON_MIDDLE) && input_key_held(KEY_CODE_LEFTCTRL)) {
 		float zoom = mouse_delta.y * zoom_speed;
 		float3 camera_forward = normalize3(sub3(camera->target, camera->position));
 		camera->position = add3(camera->position, scale3(camera_forward, -zoom));
-	} else if (input_mouse_down(MOUSE_BUTTON_MIDDLE)) {
+	} else if (input_mouse_held(MOUSE_BUTTON_MIDDLE)) {
 		float yaw_delta = mouse_delta.x * turn_rate;
 		float pitch_delta = mouse_delta.y * turn_rate;
 		/*

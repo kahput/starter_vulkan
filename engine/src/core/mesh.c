@@ -183,7 +183,7 @@ Mesh mesh_capsule(Arena *arena, float3 origin, float height, float radius, uint3
 	Mesh result = { 0 };
 
 	height = MAX(radius * 2.0f, height);
-	if (eqf(height, radius * 2.0f)) // draw a sphere instead if there is no middle section
+	if (eq(height, radius * 2.0f)) // draw a sphere instead if there is no middle section
 		return mesh_sphere(arena, origin, radius, segments, rings);
 
 	bool ok = arena;

@@ -3,33 +3,31 @@
 #include "common.h"
 
 typedef enum {
-	LOG_LEVEL_TRACE = 0,
-	LOG_LEVEL_DEBUG,
-	LOG_LEVEL_INFO,
-	LOG_LEVEL_WARN,
-	LOG_LEVEL_ERROR,
-	LOG_LEVEL_FATAL
+	LOG_TRACE = 0,
+	LOG_DEBUG,
+	LOG_INFO,
+	LOG_WARN,
+	LOG_ERROR,
+	LOG_FATAL,
+
+	LOG_MAX,
 } LogLevel;
 
-#ifndef NDEBUG
-	#define LOG_TRACE(...) logger_log(LOG_LEVEL_TRACE, __FILE__, __LINE__, __VA_ARGS__)
-	#define LOG_DEBUG(...) logger_log(LOG_LEVEL_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-	#define LOG_INFO(...) logger_log(LOG_LEVEL_INFO, __FILE__, __LINE__, __VA_ARGS__)
-	#define LOG_WARN(...) logger_log(LOG_LEVEL_WARN, __FILE__, __LINE__, __VA_ARGS__)
+#ifdef DEBUG_BUILD
+	#define log_trace(...) log_write(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__)
+	#define log_debug(...) log_write(LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+	#define log_info(...) log_write(LOG_INFO, __FILE__, __LINE__, __VA_ARGS__)
+	#define log_warn(...) log_write(LOG_WARN, __FILE__, __LINE__, __VA_ARGS__)
 #else
-	#define LOG_TRACE(...)
-	#define LOG_DEBUG(...)
-	#define LOG_INFO(...)
-	#define LOG_WARN(...)
+	#define log_trace(...)
+	#define log_debug(...)
+	#define log_info(...)
+	#define log_warn(...)
 #endif
-#define LOG_ERROR(...) logger_log(LOG_LEVEL_ERROR, __FILE__, __LINE__, __VA_ARGS__)
-#define LOG_FATAL(...) logger_log(LOG_LEVEL_FATAL, __FILE__, __LINE__, __VA_ARGS__)
+#define log_error(...) log_write(LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
+#define log_fatal(...) log_write(LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__)
 
-const char *logger_level_to_string(LogLevel level);
-void logger_set_level(LogLevel level);
-void logger_set_quiet(bool enable);
+const char *log_level_to_string(LogLevel level);
+void log_level(LogLevel level);
 
-ENGINE_API void logger_indent(void);
-ENGINE_API void logger_dedent(void);
-
-ENGINE_API void logger_log(LogLevel level, const char *file, uint64_t line, const char *fmt, ...) FORMAT_ATTRIBUTE(4);
+ENGINE_API void log_write(LogLevel level, const char *file, uint64_t line, const char *fmt, ...) FORMAT_ATTRIBUTE(4);

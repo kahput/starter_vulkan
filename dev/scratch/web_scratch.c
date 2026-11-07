@@ -190,7 +190,7 @@ void main_loop(void) {
     draw_sprite(&batch, make2(256, 256), textures[2], WHITE);
 
 	if (input_key_down(KEY_CODE_A)) {
-		LOG_INFO("A");
+		log_info("A");
 	}
 
 	glBindVertexArray(vao);
@@ -201,7 +201,7 @@ void main_loop(void) {
 	GLint samplers[16] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
 	glUniform1iv(glGetUniformLocation(shaderProgram, "u_textures"), 16, samplers);
 
-	LOG_INFO("#count = %d", batch.indices_count);
+	log_info("#count = %d", batch.indices_count);
 	for (uint32_t index = 0; index < batch.indices_count; ++index) {
 		glActiveTexture(GL_TEXTURE0 + index);
 		glBindTexture(GL_TEXTURE_2D, batch.image_indices[index]);
@@ -311,7 +311,7 @@ int main(void) {
 		GLsizei log_length = 0;
 		GLchar message[1024];
 		glGetShaderInfoLog(vertexShader, 1024, &log_length, message);
-		LOG_ERROR("#shader_compile_error: %s", message);
+		log_error("#shader_compile_error: %s", message);
 
 		return -1;
 	}
@@ -326,7 +326,7 @@ int main(void) {
 		GLchar message[1024];
 		glGetShaderInfoLog(fragmentShader, 1024, &log_length, message);
 
-		LOG_ERROR("#shader_compile_error: %s", message);
+		log_error("#shader_compile_error: %s", message);
 		return -1;
 	}
 

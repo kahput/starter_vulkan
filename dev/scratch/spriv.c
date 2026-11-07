@@ -62,7 +62,7 @@ int main(void) {
 	string8 shader = s("assets/shaders/fragment/bin/phong.fragment.spv");
 	int result = system((char *)str8_concat(scratch.arena, s("spirv-dis "), shader).bytes);
 
-	LOG_INFO("#%.*s", arg8(os_file_read(scratch.arena, s("dis.test"))));
+	log_info("#%.*s", arg8(os_file_read(scratch.arena, s("dis.test"))));
 
 	string8 binary = os_file_read(scratch.arena, shader);
 
@@ -101,7 +101,6 @@ int main(void) {
 	SpvIdentifier *ids = arena_push_count(scratch.arena, SpvIdentifier, id_bound);
 
 	VkShaderStageFlagBits stage = 0;
-
 	uint32_t word_index = 5;
 	while (word_index < spv_word_count) {
 		SpvOp op = data[word_index] & 0xFF;
@@ -113,7 +112,7 @@ int main(void) {
 				stage = model_to_shader_stage[model];
 
 				ASSERT_FORMAT(stage, "Unsupported shader type %s", SpvExecutionModelToString(model));
-				LOG_INFO("Shader stage %s", SpvExecutionModelToString(model));
+				log_info("Shader stage %s", SpvExecutionModelToString(model));
 			} break;
 
 			case SpvOpDecorate: {
@@ -228,7 +227,7 @@ int main(void) {
 				case SpvStorageClassUniform: {
 					SpvIdentifier uniform_type = ids[ids[id->type_index].type_index];
 
-					LOG_INFO("set = %u, binding = %u", id->set, id->binding);
+					log_info("set = %u, binding = %u", id->set, id->binding);
 
 					VkDescriptorSetLayoutBinding *binding = &sets[id->set].bindings[sets[id->set].binding_count++];
 					binding->binding = id->binding;
@@ -237,14 +236,14 @@ int main(void) {
 					switch (uniform_type.op) {
 						case SpvOpTypeStruct: {
 							binding->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-							LOG_INFO("%s", uniform_type.name.bytes);
+							log_info("%s", uniform_type.name.bytes);
 							/* for (uint32_t member_index = 0; member_index < uniform_type.member_count; ++member_index) { */
-							/* LOG_INFO("    %s", ids[uniform_type.members[); */
+							/* log_info("    %s", ids[uniform_type.members[); */
 							/* } */
 						} break;
 						case SpvOpTypeSampledImage: {
 							binding->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-							LOG_INFO("%s", uniform_type.name.bytes);
+							log_info("%s", uniform_type.name.bytes);
 						} break;
 						case SpvOpNop:
 							break;

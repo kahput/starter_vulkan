@@ -1,7 +1,7 @@
 #include "common.h"
-#include "gfx.h"
-#include "gfx/gfx_types.h"
-#include "gfx/vulkan/tables.h"
+#include "gpu.h"
+#include "gpu/gpu_types.h"
+#include "gpu/vulkan/tables.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
@@ -15,10 +15,22 @@
 
 #include <spirv_reflect/spirv_reflect.h>
 
-static inline GFX_Pipeline *gfx__pipeline_alloc(GFX_Device *device) {
-	GFX_Pipeline *result = 0;
+static inline bool gpu_device_valid(GPU_Device *device) {
+	return device && device->handle;
+}
 
-	bool ok = gfx_device_valid(device) && (device->pipeline_count < MAX_PIPELINES || device->first_free_pipeline);
+static inline bool gpu_shader_valid(GPU_Device *device, GPU_Shader *shader) {
+	return gpu_device_valid(device) && shader && shader > device->shader_pool && shader < device->shader_pool + MAX_SHADERS;
+}
+
+static inline bool gpu_pipeline_valid(GPU_Device *device, GPU_Pipeline *pipeline) {
+	return gpu_device_valid(device) && pipeline && pipeline > device->pipeline_pool && pipeline < device->pipeline_pool + MAX_PIPELINES;
+}
+
+static inline GPU_Pipeline *gpu__pipeline_alloc(GPU_Device *device) {
+	GPU_Pipeline *result = 0;
+
+	bool ok = gpu_device_valid(device) && (device->pipeline_count < MAX_PIPELINES || device->first_free_pipeline);
 	ASSERT(ok);
 
 	if (ok) {
@@ -38,15 +50,15 @@ static inline GFX_Pipeline *gfx__pipeline_alloc(GFX_Device *device) {
 }
 
 // :helper
-static bool gfx__validate_extensions(const char *required[], uint32_t required_count, VkExtensionProperties *available, uint32_t available_count);
+static bool gpu__validate_extensions(const char *required[], uint32_t required_count, VkExtensionProperties *available, uint32_t available_count);
 
-static bool gfx__instance_make(GFX_Device *device);
-static bool gfx__device_make(GFX_Device *device);
-static bool gfx__frame_resources_make(GFX_Device *device);
-static void gfx__load_debug_extensions(GFX_Device *device);
+static bool gpu__instance_make(GPU_Device *device);
+static bool gpu__device_make(GPU_Device *device);
+static bool gpu__allocate_persistent_resources(GPU_Device *device);
+static void gpu__load_debug_extensions(GPU_Device *device);
 
-static inline uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
-static inline VKAPI_ATTR VkBool32 VKAPI_CALL gfx__debug_callback(
+static inline uint32_t gpu__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties);
+static inline VKAPI_ATTR VkBool32 VKAPI_CALL gpu__debug_callback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT messageType,
 	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
@@ -62,7 +74,7 @@ VkDebugUtilsMessengerCreateInfoEXT debug_utils_create_info = {
 	.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
 	.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
 	.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-	.pfnUserCallback = gfx__debug_callback,
+	.pfnUserCallback = gpu__debug_callback,
 	.pUserData = 0
 };
 
@@ -71,7 +83,7 @@ static const char *required_device_extensions[] = {
 };
 
 // :res
-bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GFX_LIMIT_UNIFORM_SETS]) {
+bool gpu_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GPU_LIMIT_UNIFORM_SETS]) {
 	uint32_t set_count = 0;
 	SpvReflectShaderModule module = { 0 };
 	SpvReflectDescriptorSet **reflect_sets = 0;
@@ -82,7 +94,7 @@ bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 		ok = spvReflectCreateShaderModule(bytecode.length, bytecode.bytes, &module) == SPV_REFLECT_RESULT_SUCCESS;
 
 		if (ok == false)
-			LOG_ERROR("%s - failed to reflect shader bytecode.", __func__);
+			log_error("%s - failed to reflect shader bytecode.", __func__);
 	}
 
 	if (ok) { // enumerate descriptor sets
@@ -95,9 +107,9 @@ bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 	}
 
 	if (ok) { // populate uniform metadata
-		ASSERT(set_count <= GFX_LIMIT_UNIFORM_SETS);
+		ASSERT(set_count <= GPU_LIMIT_UNIFORM_SETS);
 
-		for (uint32_t set_index = 0; set_index < MIN(set_count, GFX_LIMIT_UNIFORM_SETS); ++set_index) {
+		for (uint32_t set_index = 0; set_index < MIN(set_count, GPU_LIMIT_UNIFORM_SETS); ++set_index) {
 			SpvReflectDescriptorSet *spv_set = reflect_sets[set_index];
 			UniformSet *set = &sets[spv_set->set];
 
@@ -133,7 +145,7 @@ bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 	}
 
 	if (ok == false)
-		memory_zero(sets, sizeof(UniformSet[GFX_LIMIT_UNIFORM_SETS]));
+		memory_zero(sets, sizeof(UniformSet[GPU_LIMIT_UNIFORM_SETS]));
 
 	arena_scratch_end(scratch);
 	spvReflectDestroyShaderModule(&module);
@@ -141,24 +153,18 @@ bool gfx_reflect_shader_uniforms(string8 bytecode, UniformSet sets[GFX_LIMIT_UNI
 	return ok;
 }
 
-GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions options) {
-	GFX_Buffer *result = 0;
+GPU_Buffer *gpu_buffer_make(GPU_Device *device, uint64_t size, BufferOptions options) {
+	GPU_Buffer *result = 0;
 
-	bool ok = gfx_device_valid(device) && (device->buffer_count < MAX_BUFFERS || device->first_free_buffer);
 	const char *name = options.debug_name ? options.debug_name : "<unnamed>";
+	log_debug("creating '%s' buffer.", name);
 
-	LOG_DEBUG("creating '%s' buffer.", name);
+	bool ok = gpu_device_valid(device);
 	if (ok) { // acquire new buffer
-		if (device->first_free_buffer) {
-			result = device->first_free_buffer;
-			device->first_free_buffer = result->next;
-			result->next = 0;
-
-			memory_zero(result, sizeof(*result));
-		} else
-			result = &device->buffer_pool[device->buffer_count];
-
-		device->buffer_count++;
+		RID id = rid_pool_add(device->pools + GPU_RESOURCE_BUFFER);
+		ASSERT(id != RID_INVALID);
+		result = device->buffers + rid_index(id);
+		result->id = id;
 	}
 
 	VkBufferUsageFlags vk_usage = 0;
@@ -167,11 +173,11 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 		result->options = options;
 
 		vk_usage = buffer_options_to_vulkan_buffer_usage_flags(options);
-		memory_flags = memory_type_to_vulkan_memory_flags[options.memory];
+		memory_flags = memory_kind_to_vulkan_memory_flags[options.memory];
 
 		ok = vk_usage && memory_flags;
 		if (ok == false) {
-			LOG_WARN("invalid properties passed, aborting creation of %s", name);
+			log_warn("invalid properties passed, aborting creation of %s", name);
 		}
 	}
 
@@ -192,7 +198,7 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 		VkMemoryRequirements memory_requirements;
 		vkGetBufferMemoryRequirements(device->handle, result->handle, &memory_requirements);
 
-		uint32_t memory_type_index = gfx__find_memory_type(device->gpu, memory_requirements.memoryTypeBits, memory_flags);
+		uint32_t memory_type_index = gpu__find_memory_type(device->gpu, memory_requirements.memoryTypeBits, memory_flags);
 		size_t allocation_size = memory_requirements.size;
 
 		VkMemoryAllocateFlagsInfo allocate_flag_info = {
@@ -223,8 +229,8 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 	}
 
 	if (ok && options.data) { // upload
-		GFX_CommandEncoder *cmd = gfx_transfer_cmd(device);
-		gfx_cmd_buffer_upload(cmd, result, 0, size, options.data);
+		GPU_CommandList *cmd = gpu_transfer_cmd(device);
+		gpu_cmd_buffer_upload(cmd, result, 0, size, options.data);
 	}
 
 #if DEV_BUILD
@@ -241,30 +247,23 @@ GFX_Buffer *gfx_buffer_make(GFX_Device *device, uint64_t size, BufferOptions opt
 #endif
 
 	if (ok == false) // remove half-made resources on error
-		gfx_buffer_destroy(device, result);
+		gpu_buffer_destroy(device, result);
 
 	return result;
 }
 
-GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, ImageOptions options) {
-	GFX_Image *result = 0;
+GPU_Image *gpu_image_make(GPU_Device *device, uint32_t width, uint32_t height, ImageOptions options) {
+	GPU_Image *result = 0;
 
-	bool ok = gfx_device_valid(device) && device->image_count < MAX_IMAGES;
 	const char *name = options.debug_name ? options.debug_name : "<unnamed>";
+	log_debug("creating '%s' image.", name);
 
-	LOG_DEBUG("creating '%s' image.", name);
+	bool ok = gpu_device_valid(device);
 	if (ok) { // acquire new image
-		if (device->first_free_image) {
-			result = device->first_free_image;
-			device->first_free_image = result->next;
-			result->next = 0;
-
-			memory_zero(result, sizeof(*result));
-		} else
-			result = &device->image_pool[device->image_count];
-
-		result->imageid = indexof(device->image_pool, result);
-		device->image_count++;
+		RID id = rid_pool_add(device->pools + GPU_RESOURCE_IMAGE);
+		ASSERT(id != RID_INVALID);
+		result = device->images + rid_index(id);
+		result->id = id;
 	}
 
 	uint32_t layer_count = image_options_to_vulkan_layer_count(options);
@@ -307,10 +306,11 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 		VkMemoryRequirements memory_requirements;
 		vkGetImageMemoryRequirements(device->handle, result->handle, &memory_requirements);
 
+		uint32_t memory_type_index = gpu__find_memory_type(device->gpu, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		VkMemoryAllocateInfo allocate_info = {
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 			.allocationSize = memory_requirements.size,
-			.memoryTypeIndex = gfx__find_memory_type(device->gpu, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+			.memoryTypeIndex = gpu__find_memory_type(device->gpu, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
 		};
 
 		ok = vkAllocateMemory(device->handle, &allocate_info, 0, &result->memory) == VK_SUCCESS;
@@ -347,15 +347,15 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 	}
 
 	if (ok && options.pixels) { // upload
-		GFX_CommandEncoder *cmd = gfx_transfer_cmd(device);
+		GPU_CommandList *cmd = gpu_transfer_cmd(device);
 
-		gfx_cmd_image_upload(cmd, result, result->width, result->height, options.pixels);
+		gpu_cmd_image_upload(cmd, result, result->width, result->height, options.pixels);
 
 		VkFormatProperties format_properties;
 		vkGetPhysicalDeviceFormatProperties(device->gpu, vk_format, &format_properties);
 		bool blit_support = format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 		if (blit_support == false) {
-			LOG_WARN("pixel format (%.*s) does not support linear blitting.", arg8(pixel_format_to_string[options.format]));
+			log_warn("pixel format (%.*s) does not support linear blitting.", arg8(pixel_format_to_string[options.format]));
 		}
 
 		if (result->miplevels > 1 && blit_support) {
@@ -363,7 +363,7 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 			VkImageAspectFlags aspect = image_options_to_vulkan_aspect_flags(options);
 
 			for (uint32_t level = 1; level < result->miplevels; ++level) {
-				gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_TRANSFER_SRC, level - 1, 1, result);
+				gpu_cmd_image_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_TRANSFER_SRC, level - 1, 1, result);
 
 				VkImageBlit blit = { 0 };
 
@@ -403,8 +403,8 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 					mip_height /= 2;
 			}
 		}
-		gfx_cmd_image_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_TRANSFER_SRC, result->miplevels - 1, 1, result);
-		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, result);
+		gpu_cmd_image_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_TRANSFER_SRC, result->miplevels - 1, 1, result);
+		gpu_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, result);
 	}
 
 #if DEV_BUILD
@@ -421,30 +421,25 @@ GFX_Image *gfx_image_make(GFX_Device *device, uint32_t width, uint32_t height, I
 #endif
 
 	if (ok == false) // remove half-made resources on error
-		gfx_image_destroy(device, result);
+		gpu_image_destroy(device, result);
 
-	/* LOG_INFO("image loaded successfuly (%ux%u | %s)", indexof(device->image_pool, image), width, height, image_format_to_string[format]); */
+	/* log_info("image loaded successfuly (%ux%u | %s)", indexof(device->image_pool, image), width, height, image_format_to_string[format]); */
 	return result;
 }
 
-GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
-	GFX_Sampler *result = 0;
+GPU_Sampler *gpu_sampler_make(GPU_Device *device, SamplerOptions options) {
+	GPU_Sampler *result = 0;
 
-	bool ok = gfx_device_valid(device) && (device->sampler_count < MAX_SAMPLERS || device->first_free_sampler);
 	const char *name = options.debug_name ? options.debug_name : "<unnamed>";
+	log_debug("creating '%s' sampler.", name);
 
-	LOG_DEBUG("creating '%s' sampler.", name);
+	bool ok = gpu_device_valid(device);
+
 	if (ok) { // acquire new sampler
-		if (device->first_free_sampler) {
-			result = device->first_free_sampler;
-			device->first_free_sampler = result->next;
-			result->next = 0;
-
-			memory_zero(result, sizeof(*result));
-		} else
-			result = &device->sampler_pool[device->sampler_count];
-
-		device->sampler_count++;
+		RID id = rid_pool_add(device->pools + GPU_RESOURCE_SAMPLER);
+		ASSERT(id != RID_INVALID);
+		result = device->samplers + rid_index(id);
+		result->id = id;
 	}
 
 	if (ok) {
@@ -466,7 +461,7 @@ GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 
 		ok = vkCreateSampler(device->handle, &result->info, NULL, &result->handle) == VK_SUCCESS;
 		if (ok == false) {
-			LOG_WARN("failed to create vulkan sampler.");
+			log_warn("failed to create vulkan sampler.");
 		}
 	}
 
@@ -484,19 +479,19 @@ GFX_Sampler *gfx_sampler_make(GFX_Device *device, SamplerOptions options) {
 #endif
 
 	if (ok == false) // remove half-made resources on error
-		gfx_sampler_destroy(device, result);
+		gpu_sampler_destroy(device, result);
 
 	return result;
 }
 
-GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *debug_name) {
-	GFX_Shader *result = 0;
-	GFX_Pipeline *pipeline = 0;
+GPU_Shader *gpu_compute_make(GPU_Device *device, string8 bytecode, const char *debug_name) {
+	GPU_Shader *result = 0;
+	GPU_Pipeline *pipeline = 0;
 
-	bool ok = gfx_device_valid(device) && (device->shader_count < MAX_SHADERS || device->first_free_shader);
+	bool ok = gpu_device_valid(device) && (device->shader_count < MAX_SHADERS || device->first_free_shader);
 	const char *name = debug_name ? debug_name : "<unnamed>";
 
-	LOG_DEBUG("creating '%s' compute shader.", name);
+	log_debug("creating '%s' compute shader.", name);
 	if (ok) { // acquire new shader
 		if (device->first_free_shader) {
 			result = device->first_free_shader;
@@ -512,7 +507,7 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *d
 
 		ok = bytecode.bytes && bytecode.length > 0;
 		if (ok == false)
-			LOG_WARN("%s - invalid shader bytecode passed.", __func__);
+			log_warn("%s - invalid shader bytecode passed.", __func__);
 	}
 
 	if (ok) { // create shader module
@@ -524,14 +519,14 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *d
 
 		ok = vkCreateShaderModule(device->handle, &csm_create_info, NULL, &result->modules[SHADER_STAGE_COMPUTE]) == VK_SUCCESS;
 		if (ok == false)
-			LOG_WARN("failed to create '%s' module.", name);
+			log_warn("failed to create '%s' module.", name);
 	}
 
 	if (ok) { // create descriptor set layouts
-		ok = gfx_reflect_shader_uniforms(bytecode, result->reflection.sets);
+		ok = gpu_reflect_shader_uniforms(bytecode, result->reflection.sets);
 
 		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
-		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS && ok; ++set_index) {
+		for (uint32_t set_index = 0; set_index < GPU_LIMIT_UNIFORM_SETS && ok; ++set_index) {
 			UniformSet *set = &result->reflection.sets[set_index];
 			if (set->uniform_count == 0)
 				continue;
@@ -559,12 +554,12 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *d
 
 		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result->layout) == VK_SUCCESS;
 		if (ok == false) {
-			LOG_WARN("failed to create compute pipeline layout.");
+			log_warn("failed to create compute pipeline layout.");
 		}
 	}
 
 	if (ok) { // create compute pipeline
-		pipeline = gfx__pipeline_alloc(device);
+		pipeline = gpu__pipeline_alloc(device);
 		ok = pipeline != 0;
 	}
 
@@ -587,32 +582,32 @@ GFX_Shader *gfx_compute_make(GFX_Device *device, string8 bytecode, const char *d
 
 		ok = vkCreateComputePipelines(device->handle, 0, 1, &cp_create_info, NULL, &pipeline->handle) == VK_SUCCESS;
 		if (ok == false) {
-			LOG_WARN("failed to create compute pipeline.");
+			log_warn("failed to create compute pipeline.");
 		}
 	}
 
 	if (ok == false) // remove half-made resources on error
-		gfx_shader_destroy(device, result);
+		gpu_shader_destroy(device, result);
 
 	return result;
 }
 
-GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_bytecode, const char *debug_name) {
-	GFX_Shader *result = 0;
+GPU_Shader *gpu_shader_make(GPU_Device *device, string8 vs_bytecode, string8 fs_bytecode, const char *debug_name) {
+	GPU_Shader *result = 0;
 	const char *name = debug_name ? debug_name : "<unnamed>";
 
-	bool ok = gfx_device_valid(device);
+	bool ok = gpu_device_valid(device);
 	if (ok) { // check validitiy of shader code
 		ok &= vs_bytecode.bytes && vs_bytecode.length > 0;
 		ok &= fs_bytecode.bytes && fs_bytecode.length > 0;
 
 		if (ok == false) {
-			LOG_WARN("invalid shader bytecode passed.");
+			log_warn("invalid shader bytecode passed.");
 		}
 	}
 
 	if (ok) { // acquire new shader
-		LOG_DEBUG("creating '%s' grahpics shader.", name);
+		log_debug("creating '%s' grahpics shader.", name);
 
 		if (device->first_free_shader) {
 			result = device->first_free_shader;
@@ -640,22 +635,21 @@ GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_
 			.codeSize = fs_bytecode.length,
 		};
 
-		ok &= vkCreateShaderModule(device->handle, &vsm_create_info, NULL, &result->modules[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
-		ok &= vkCreateShaderModule(device->handle, &fsm_create_info, NULL, &result->modules[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
+		ok = ok && vkCreateShaderModule(device->handle, &vsm_create_info, NULL, &result->modules[SHADER_STAGE_VERTEX]) == VK_SUCCESS;
+		ok = ok && vkCreateShaderModule(device->handle, &fsm_create_info, NULL, &result->modules[SHADER_STAGE_FRAGMENT]) == VK_SUCCESS;
 		if (ok == false) {
-			LOG_WARN("failed to create vertex/fragment shader module.");
+			log_warn("failed to create vertex/fragment shader module.");
 		}
 	}
 
 	if (ok) { // create descriptor set layouts
-		gfx_reflect_shader_uniforms(fs_bytecode, result->reflection.sets);
-		gfx_reflect_shader_uniforms(vs_bytecode, result->reflection.sets);
+		gpu_reflect_shader_uniforms(fs_bytecode, result->reflection.sets);
+		gpu_reflect_shader_uniforms(vs_bytecode, result->reflection.sets);
 
 		VkDescriptorSetLayoutBinding bindings[32] = { 0 };
-		for (uint32_t set_index = 0; set_index < GFX_LIMIT_UNIFORM_SETS; ++set_index) {
+		for (uint32_t set_index = 0; set_index < GPU_LIMIT_UNIFORM_SETS; ++set_index) {
 			UniformSet *set = &result->reflection.sets[set_index];
-			if (set->uniform_count == 0)
-				continue;
+			if (set->uniform_count == 0) continue;
 			uniforms_to_vulkan_descriptor_bindings(set->uniforms, set->uniform_count, bindings, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT);
 
 			VkDescriptorSetLayoutCreateInfo dsl_create_info = {
@@ -663,8 +657,8 @@ GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_
 				.bindingCount = set->uniform_count,
 				.pBindings = bindings,
 			};
-			ok = ok && vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[result->reflection.set_count]) == VK_SUCCESS;
 
+			ok = ok && vkCreateDescriptorSetLayout(device->handle, &dsl_create_info, 0, &result->layouts[result->reflection.set_count]) == VK_SUCCESS;
 			result->reflection.set_count = ok ? result->reflection.set_count + 1 : result->reflection.set_count;
 		}
 	}
@@ -680,20 +674,20 @@ GFX_Shader *gfx_shader_make(GFX_Device *device, string8 vs_bytecode, string8 fs_
 
 		ok = vkCreatePipelineLayout(device->handle, &pl_create_info, NULL, &result->layout) == VK_SUCCESS;
 		if (ok == false) {
-			LOG_WARN("failed to create shader '%s' pipeline layout.", name);
+			log_warn("failed to create shader '%s' pipeline layout.", name);
 		}
 	}
 
 	if (ok == false) // remove half-made resources on error
-		gfx_shader_destroy(device, result);
+		gpu_shader_destroy(device, result);
 
 	return result;
 }
 
-int32_t gfx_pipeline_register(GFX_Device *device, GFX_Shader *shader, PipelineOptions options) {
+int32_t gpu_pipeline_register(GPU_Device *device, GPU_Shader *shader, PipelineOptions options) {
 	int32_t result = -1;
 
-	bool ok = gfx_shader_valid(device, shader);
+	bool ok = gpu_shader_valid(device, shader);
 	if (ok) {
 		for (uint32_t index = 0; index < shader->pipeline_count; ++index) {
 			if (shader->pipelines[index].hash == hash64(&options, sizeof(options))) {
@@ -703,9 +697,9 @@ int32_t gfx_pipeline_register(GFX_Device *device, GFX_Shader *shader, PipelineOp
 		}
 
 		if (result == -1) {
-			ASSERT(shader->pipeline_count < GFX_LIMIT_PIPELINE_PERMUTATIONS);
+			ASSERT(shader->pipeline_count < GPU_LIMIT_PIPELINE_PERMUTATIONS);
 
-			shader->pipelines[shader->pipeline_count].hash = hash64(&options, sizeof(options));
+			shader->pipelines[shader->pipeline_count].hash = hash64(&options, sizeof options);
 			shader->pipelines[shader->pipeline_count].options = options;
 
 			result = shader->pipeline_count++;
@@ -715,8 +709,8 @@ int32_t gfx_pipeline_register(GFX_Device *device, GFX_Shader *shader, PipelineOp
 	return result;
 }
 
-GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, PipelineOptions opt, GFX_DrawTargetLayout layout) {
-	GFX_Pipeline *result = 0;
+GPU_Pipeline *gpu_pipeline_ensure(GPU_Device *device, GPU_Shader *shader, PipelineOptions opt, GPU_DrawTargetLayout layout) {
+	GPU_Pipeline *result = 0;
 	const char *name = 0;
 	uint32_t set_count = 0;
 	bool match_found = false;
@@ -725,7 +719,7 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 	// normalize
 	layout.sample_count = MAX(1, layout.sample_count);
 
-	bool ok = gfx_shader_valid(device, shader);
+	bool ok = gpu_shader_valid(device, shader);
 	if (ok) {
 		name = shader->debug_name ? shader->debug_name : "<unnamed>";
 
@@ -739,11 +733,8 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 		}
 
 		if (opt_index != -1) {
-			for (
-				GFX_Pipeline *pipeline = shader->pipelines[opt_index].first_pipeline;
-				pipeline && pipeline != device->pipeline_pool;
-				pipeline = pipeline->next) {
-				if (memory_equals(&layout, &pipeline->layout, sizeof(GFX_DrawTargetLayout))) {
+			for (GPU_Pipeline *pipeline = shader->pipelines[opt_index].first_pipeline; pipeline && pipeline != device->pipeline_pool; pipeline = pipeline->next) {
+				if (memory_equals(&layout, &pipeline->layout, sizeof(GPU_DrawTargetLayout))) {
 					result = pipeline;
 					match_found = true;
 					break;
@@ -752,10 +743,9 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 		}
 	}
 
-	if (ok && match_found == false) { // acquire new shader
-		result = gfx__pipeline_alloc(device);
-
-		ok = result;
+	if (ok && match_found == false) { // acquire new pipeline
+		result = gpu__pipeline_alloc(device);
+		ok = result != 0;
 	}
 
 	if (ok && match_found == false) { // create graphics pipeline
@@ -832,10 +822,10 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 			.maxDepthBounds = 1.0f
 		};
 
-		VkPipelineColorBlendAttachmentState color_attachment_blends[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
+		VkPipelineColorBlendAttachmentState color_attachment_blends[GPU_LIMIT_COLOR_ATTACHMENTS] = { 0 };
 		VkPipelineColorBlendStateCreateInfo cbs_create_info = { 0 };
 
-		VkFormat color_attachment_formats[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
+		VkFormat color_attachment_formats[GPU_LIMIT_COLOR_ATTACHMENTS] = { 0 };
 		VkPipelineRenderingCreateInfo r_create_info = { 0 };
 
 		{ // attachment state
@@ -895,11 +885,11 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 
 		ok = vkCreateGraphicsPipelines(device->handle, 0, 1, &gp_create_info, NULL, &result->handle) == VK_SUCCESS;
 		if (ok == false)
-			LOG_WARN("failed to create compute pipeline.");
+			log_warn("failed to create compute pipeline.");
 	}
 
 	if (ok && match_found == false) { // attach to shader
-		if (opt_index == -1) opt_index = gfx_pipeline_register(device, shader, opt);
+		if (opt_index == -1) opt_index = gpu_pipeline_register(device, shader, opt);
 
 		result->next = shader->pipelines[opt_index].first_pipeline;
 		shader->pipelines[opt_index].first_pipeline = result;
@@ -919,32 +909,26 @@ GFX_Pipeline *gfx_pipeline_ensure(GFX_Device *device, GFX_Shader *shader, Pipeli
 #endif
 
 	if (ok == false) { // remove half-made resources on error
-		gfx_pipeline_destroy(device, result);
+		gpu_pipeline_destroy(device, result);
 	}
 
 	return result;
 }
 
-GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, WM_Surface *surface, const char *debug_name) {
-	GFX_Swapchain *result = 0;
+GPU_Swapchain *gpu_swapchain_make(GPU_Device *device, WM_Surface *surface, const char *debug_name) {
+	GPU_Swapchain *result = 0;
 	ArenaTemp scratch = arena_scratch_begin(0);
 
-	bool ok = gfx_device_valid(device) && (device->swapchain_count < MAX_SWAPCHAINS || device->first_free_swapchain);
 	const char *name = debug_name ? debug_name : "<unnamed>";
+	log_debug("creating '%s' swapchain.", name);
 
-	LOG_DEBUG("creating '%s' swapchain.", name);
+	bool ok = gpu_device_valid(device);
 	if (ok) { // acquire new swapchain
-		if (device->first_free_swapchain) {
-			result = device->first_free_swapchain;
-			device->first_free_swapchain = result->next;
-			result->next = 0;
-
-			memory_zero(result, sizeof(*result));
-		} else
-			result = &device->swapchain_pool[device->swapchain_count];
-
+		RID id = rid_pool_add(device->pools + GPU_RESOURCE_SWAPCHAIN);
+		ASSERT(id != RID_INVALID);
+		result = device->swapchains + rid_index(id);
 		result->native = surface;
-		device->swapchain_count++;
+		result->id = id;
 	}
 
 	if (ok) { // create surface
@@ -956,7 +940,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, WM_Surface *surface, const
 
 		ok = vkCreateXcbSurfaceKHR(device->instance, &surface_create_info, 0, &result->surface) == VK_SUCCESS;
 		if (ok == false) {
-			LOG_WARN("failed to create vulkan surface.");
+			log_warn("failed to create vulkan surface.");
 		}
 	}
 
@@ -1099,7 +1083,7 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, WM_Surface *surface, const
 	}
 
 	if (ok) { // fill in defaults for wrapper
-		GFX_Image *wrapper = &result->wrapper;
+		GPU_Image *wrapper = &result->wrapper;
 
 		wrapper->options = (ImageOptions){
 			.debug_name = name,
@@ -1138,71 +1122,72 @@ GFX_Swapchain *gfx_swapchain_make(GFX_Device *device, WM_Surface *surface, const
 #endif
 
 	if (ok == false) { // remove half-made resources on error
-		gfx_swapchain_destroy(device, result);
-		LOG_ERROR("failed to create graphics surface.");
+		gpu_swapchain_destroy(device, result);
+		log_error("failed to create graphics surface.");
 	}
 
 	arena_scratch_end(scratch);
 	return result;
 }
 
-bool gfx_buffer_destroy(GFX_Device *device, GFX_Buffer *buffer) {
-	bool ok = gfx_buffer_valid(device, buffer) && buffer->handle;
+bool gpu_destroy(GPU_Device *device, RID id) {
+	GPU_ResourceType rtype = rid_type(id);
+
+	bool ok =
+		gpu_device_valid(device) &&
+		rtype > GPU_RESOURCE_NONE && rtype < GPU_RESOURCE_MAX &&
+		rid_pool_has(device->pools + rtype, id);
+
 	if (ok) {
-		if (buffer->memory) {
-			if (buffer->mapped)
-				vkUnmapMemory(device->handle, buffer->memory);
-			vkFreeMemory(device->handle, buffer->memory, 0);
+		RID_Pool *pool = device->pools + rtype;
+		VkDevice d = device->handle;
+
+		switch (rtype) {
+			case GPU_RESOURCE_BUFFER: {
+				GPU_Buffer *buffer = rid_pool_find(pool, device->buffers, id);
+				vkDestroyBuffer(d, buffer->handle, 0);
+				vkFreeMemory(d, buffer->memory, 0);
+				memory_zero(buffer, sizeof *buffer);
+			} break;
+			case GPU_RESOURCE_IMAGE: {
+				GPU_Image *image = rid_pool_find(pool, device->images, id);
+				vkDestroyImageView(d, image->view, 0);
+				vkDestroyImage(d, image->handle, 0);
+				vkFreeMemory(d, image->memory, 0);
+				memory_zero(image, sizeof *image);
+			} break;
+			case GPU_RESOURCE_SAMPLER: {
+				GPU_Sampler *sampler = rid_pool_find(pool, device->samplers, id);
+				vkDestroySampler(d, sampler->handle, 0);
+				memory_zero(sampler, sizeof *sampler);
+			} break;
+			case GPU_RESOURCE_SWAPCHAIN: {
+				GPU_Swapchain *swapchain = rid_pool_find(pool, device->swapchains, id);
+
+				for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->image_available_semaphores); ++semaphore_index)
+					vkDestroySemaphore(device->handle, swapchain->image_available_semaphores[semaphore_index], NULL);
+				for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->render_done_semaphores); ++semaphore_index)
+					vkDestroySemaphore(device->handle, swapchain->render_done_semaphores[semaphore_index], NULL);
+				for (uint32_t image_index = 0; image_index < swapchain->image_count; ++image_index)
+					vkDestroyImageView(device->handle, swapchain->views[image_index], NULL);
+				vkDestroySwapchainKHR(device->handle, swapchain->handle, NULL);
+				vkDestroySurfaceKHR(device->instance, swapchain->surface, NULL);
+
+				memory_zero(swapchain, sizeof *swapchain);
+			} break;
+			default:
+				ASSERT(false);
+				return false;
 		}
-		vkDestroyBuffer(device->handle, buffer->handle, 0);
 
-		device->buffer_count--;
-		memory_zero(buffer, sizeof(*buffer));
-
-		buffer->next = device->first_free_buffer;
-		device->first_free_buffer = buffer;
+		rid_pool_remove(device->pools + rtype, id);
 	}
 
 	return ok;
 }
 
-bool gfx_image_destroy(GFX_Device *device, GFX_Image *image) {
-	bool ok = gfx_image_valid(device, image) && image->handle;
-	if (ok) {
-		if (image->view)
-			vkDestroyImageView(device->handle, image->view, 0);
-		if (image->memory)
-			vkFreeMemory(device->handle, image->memory, 0);
-		if (image->handle)
-			vkDestroyImage(device->handle, image->handle, 0);
-
-		device->image_count--;
-		memory_zero(image, sizeof(*image));
-
-		image->next = device->first_free_image;
-		device->first_free_image = image;
-	}
-
-	return ok;
-}
-
-bool gfx_sampler_destroy(GFX_Device *device, GFX_Sampler *sampler) {
-	bool ok = gfx_sampler_valid(device, sampler) && sampler->handle;
-	if (ok) {
-		if (sampler->handle)
-			vkDestroySampler(device->handle, sampler->handle, NULL);
-		device->sampler_count--;
-		memory_zero(sampler, sizeof(*sampler));
-
-		sampler->next = device->first_free_sampler;
-		device->first_free_sampler = sampler;
-	}
-
-	return ok;
-}
-
-bool gfx_shader_destroy(GFX_Device *device, GFX_Shader *shader) {
-	bool ok = gfx_shader_valid(device, shader) && (shader->modules[0] || shader->modules[1] || shader->modules[2]);
+bool gpu_shader_destroy(GPU_Device *device, GPU_Shader *shader) {
+	bool ok = gpu_shader_valid(device, shader) && (shader->modules[0] || shader->modules[1] || shader->modules[2]);
 	if (ok) {
 		for (uint32_t index = 0; index < countof(shader->modules); ++index)
 			if (shader->modules[index])
@@ -1215,11 +1200,11 @@ bool gfx_shader_destroy(GFX_Device *device, GFX_Shader *shader) {
 			vkDestroyPipelineLayout(device->handle, shader->layout, NULL);
 
 		for (uint32_t index = 0; index < shader->pipeline_count; ++index) {
-			for (GFX_Pipeline *pipeline = shader->pipelines[index].first_pipeline; pipeline && pipeline != device->pipeline_pool;) {
-				GFX_Pipeline *curr = pipeline;
+			for (GPU_Pipeline *pipeline = shader->pipelines[index].first_pipeline; pipeline && pipeline != device->pipeline_pool;) {
+				GPU_Pipeline *curr = pipeline;
 				pipeline = curr->next;
 
-				gfx_pipeline_destroy(device, curr);
+				gpu_pipeline_destroy(device, curr);
 			}
 		}
 
@@ -1233,8 +1218,8 @@ bool gfx_shader_destroy(GFX_Device *device, GFX_Shader *shader) {
 	return ok;
 }
 
-bool gfx_pipeline_destroy(GFX_Device *device, GFX_Pipeline *pipeline) {
-	bool ok = gfx_pipeline_valid(device, pipeline) && pipeline->handle;
+bool gpu_pipeline_destroy(GPU_Device *device, GPU_Pipeline *pipeline) {
+	bool ok = gpu_pipeline_valid(device, pipeline) && pipeline->handle;
 	if (ok) {
 		if (pipeline->handle)
 			vkDestroyPipeline(device->handle, pipeline->handle, NULL);
@@ -1249,41 +1234,12 @@ bool gfx_pipeline_destroy(GFX_Device *device, GFX_Pipeline *pipeline) {
 	return ok;
 }
 
-bool gfx_swapchain_destroy(GFX_Device *device, GFX_Swapchain *swapchain) {
-	bool ok = gfx_swapchain_valid(device, swapchain) && swapchain->handle;
-	if (ok) {
-		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->image_available_semaphores); ++semaphore_index)
-			if (swapchain->image_available_semaphores[semaphore_index])
-				vkDestroySemaphore(device->handle, swapchain->image_available_semaphores[semaphore_index], NULL);
-		for (uint32_t semaphore_index = 0; semaphore_index < countof(swapchain->render_done_semaphores); ++semaphore_index)
-			if (swapchain->render_done_semaphores[semaphore_index])
-				vkDestroySemaphore(device->handle, swapchain->render_done_semaphores[semaphore_index], NULL);
-
-		for (uint32_t image_index = 0; image_index < swapchain->image_count; ++image_index)
-			if (swapchain->views[image_index])
-				vkDestroyImageView(device->handle, swapchain->views[image_index], NULL);
-
-		if (swapchain->handle)
-			vkDestroySwapchainKHR(device->handle, swapchain->handle, NULL);
-		if (swapchain->surface)
-			vkDestroySurfaceKHR(device->instance, swapchain->surface, NULL);
-
-		device->swapchain_count--;
-		memory_zero(swapchain, sizeof(*swapchain));
-
-		swapchain->next = device->first_free_swapchain;
-		device->first_free_swapchain = swapchain;
-	}
-
-	return ok;
-}
-
-GFX_Image *gfx_swapchain_backbuffer(GFX_Device *device, GFX_CommandEncoder *cmd, GFX_Swapchain *swapchain) {
-	GFX_Image *result = 0;
+GPU_Image *gpu_swapchain_backbuffer(GPU_Device *device, GPU_CommandList *cmd, GPU_Swapchain *swapchain) {
+	GPU_Image *result = 0;
 	uint32_t swapchain_index = cmd->swapchain_count;
 	uint32_t image_index = -1;
 
-	bool ok = cmd && cmd->handle && gfx_swapchain_valid(device, swapchain);
+	bool ok = cmd && cmd->handle && swapchain && rid_pool_has(device->pools + GPU_RESOURCE_SWAPCHAIN, swapchain->id);
 	if (ok) { // acquire swapchain image
 		VkResult result = vkAcquireNextImageKHR(
 			device->handle,
@@ -1315,68 +1271,87 @@ GFX_Image *gfx_swapchain_backbuffer(GFX_Device *device, GFX_CommandEncoder *cmd,
 	return result;
 }
 
-bool gfx_swapchain_resize(GFX_Device *device, GFX_Swapchain *swapchain, uint32_t new_width, uint32_t new_height) {
-	bool ok = gfx_swapchain_valid(device, swapchain);
+bool gpu_swapchain_resize(GPU_Device *device, GPU_Swapchain *swapchain, uint32_t new_width, uint32_t new_height) {
+	bool ok = swapchain && rid_pool_has(device->pools + GPU_RESOURCE_SWAPCHAIN, swapchain->id);
 	if (ok) {
 		vkDeviceWaitIdle(device->handle); // TODO: Queue free instead
 		WM_Surface *native = swapchain->native;
 		const char *name = swapchain->wrapper.options.debug_name;
 
-		gfx_swapchain_destroy(device, swapchain);
-		gfx_swapchain_make(device, native, name);
+		gpu_swapchain_destroy(device, swapchain);
+		gpu_swapchain_make(device, native, name);
 	}
 
 	return ok;
 }
 
-bool gfx_image_resize(GFX_Device *device, GFX_Image *image, uint32_t new_width, uint32_t new_height) {
+bool gpu_image_resize(GPU_Device *device, GPU_Image *image, uint32_t new_width, uint32_t new_height) {
 	ImageOptions options = { 0 };
 
-	bool ok = gfx_image_valid(device, image);
+	bool ok = gpu_device_valid(device) && image && rid_pool_has(device->pools + GPU_RESOURCE_IMAGE, image->id);
 	if (ok) {
 		options = image->options;
-		ok = gfx_image_destroy(device, image);
+		ok = gpu_image_destroy(device, image);
 		if (ok == false)
-			LOG_ERROR("failed to destroy image for resizing.");
+			log_error("failed to destroy image for resizing.");
 	}
 
 	if (ok) {
-		ok = gfx_image_make(device, new_width, new_height, options);
+		ok = gpu_image_make(device, new_width, new_height, options);
 		if (ok == false)
-			LOG_ERROR("failed to recreate image for resizing.");
+			log_error("failed to recreate image for resizing.");
 	}
 
 	return ok;
 }
 
 // :device
-bool gfx_device_make(GFX_Device *device) {
+// clang-format off
+INLINE uint32_t gpu_resource_type_limit(GPU_ResourceType type ){
+    uint32_t result = 0;
+    switch(type) {
+
+        case GPU_RESOURCE_BUFFER: result = MAX_BUFFERS; break;
+        case GPU_RESOURCE_IMAGE: result = MAX_IMAGES; break;
+        case GPU_RESOURCE_SAMPLER: result = MAX_SAMPLERS; break;
+
+        case GPU_RESOURCE_SWAPCHAIN: result = MAX_SWAPCHAINS; break;
+
+        case GPU_RESOURCE_MAX:
+        case GPU_RESOURCE_NONE: break;
+    }
+    return result;
+}
+// clang-format on
+bool gpu_device_make(GPU_Device *device) {
 	bool ok = device;
-	if (ok)
-		ok = gfx__instance_make(device);
+	if (ok) {
+		memory_zero(device, sizeof device[0]);
+		ok = gpu__instance_make(device);
+	}
 
 	if (ok)
-		ok = gfx__device_make(device);
+		ok = gpu__device_make(device);
 
 	if (ok)
-		ok = gfx__frame_resources_make(device);
+		ok = gpu__allocate_persistent_resources(device);
 
 	if (ok) {
 		device->arena[0] = arena_make(MiB(32));
-		device->buffer_pool = arena_push_count(device->arena, GFX_Buffer, MAX_BUFFERS);
-		device->image_pool = arena_push_count(device->arena, GFX_Image, MAX_IMAGES);
-		device->sampler_pool = arena_push_count(device->arena, GFX_Sampler, MAX_SAMPLERS);
-		device->shader_pool = arena_push_count(device->arena, GFX_Shader, MAX_SHADERS);
-		device->pipeline_pool = arena_push_count(device->arena, GFX_Pipeline, MAX_PIPELINES);
-		device->swapchain_pool = arena_push_count(device->arena, GFX_Swapchain, MAX_SWAPCHAINS);
+
+		device->buffers = arena_push_count(device->arena, GPU_Buffer, MAX_BUFFERS);
+		device->images = arena_push_count(device->arena, GPU_Image, MAX_IMAGES);
+		device->samplers = arena_push_count(device->arena, GPU_Sampler, MAX_SAMPLERS);
+		device->swapchains = arena_push_count(device->arena, GPU_Swapchain, MAX_SWAPCHAINS);
+		for (uint8_t rtype = 1; rtype < GPU_RESOURCE_MAX; ++rtype)
+			device->pools[rtype] = rid_pool_make(device->arena, rtype, gpu_resource_type_limit(rtype));
+
+		device->shader_pool = arena_push_count(device->arena, GPU_Shader, MAX_SHADERS);
+		device->pipeline_pool = arena_push_count(device->arena, GPU_Pipeline, MAX_PIPELINES);
 
 		// 0 == invalid
-		device->buffer_count += 1;
-		device->image_count += 1;
-		device->sampler_count += 1;
 		device->shader_count += 1;
 		device->pipeline_count += 1;
-		device->swapchain_count += 1;
 	}
 
 	if (ok)
@@ -1389,12 +1364,12 @@ bool gfx_device_make(GFX_Device *device) {
 	if (ok) {
 		device->frame_staging_buffer_slice_size = MiB(64);
 		device->frame_staging_buffer =
-			gfx_buffer_make(
+			gpu_buffer_make(
 				device,
 				device->frame_staging_buffer_slice_size * MAX_FRAMES_IN_FLIGHT,
 				(BufferOptions){
 				  .debug_name = "engine:frame_staging_buffer",
-				  .memory = MEMORY_TYPE_CPU,
+				  .memory = MEMORY_KIND_HOST,
 				  .usage = BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
 
@@ -1402,18 +1377,18 @@ bool gfx_device_make(GFX_Device *device) {
 
 		device->transfer_staging_buffer_slice_size = MiB(256);
 		device->transfer_staging_buffer =
-			gfx_buffer_make(
+			gpu_buffer_make(
 				device,
 				device->transfer_staging_buffer_slice_size * MAX_TRANSFERS_IN_FLIGHT,
 				(BufferOptions){
 				  .debug_name = "engine:transfer_staging_buffer",
-				  .memory = MEMORY_TYPE_CPU,
+				  .memory = MEMORY_KIND_HOST,
 				  .usage = BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_STORAGE,
 				});
 		ok = device->transfer_staging_buffer;
 
 		if (ok == false) {
-			LOG_ERROR("failed to create device staging buffers.");
+			log_error("failed to create device staging buffers.");
 		}
 	}
 	if (ok) {
@@ -1424,54 +1399,50 @@ bool gfx_device_make(GFX_Device *device) {
 	if (ok) {
 		device->initialized = true;
 	} else {
-		LOG_WARN("failed to initialize vulkan device.");
+		log_warn("failed to initialize vulkan device.");
 	}
 
 	return ok;
 }
 
-void gfx_device_destroy(GFX_Device *device) {
-	bool ok = gfx_device_valid(device);
+void gpu_device_destroy(GPU_Device *device) {
+	bool ok = gpu_device_valid(device);
 	if (ok) {
 		vkDeviceWaitIdle(device->handle);
 		for (uint32_t index = 0; index < MAX_BUFFERS; ++index) {
-			gfx_buffer_destroy(device, &device->buffer_pool[index]);
-			if (device->buffer_count == 0)
-				break;
+			gpu_buffer_destroy(device, device->buffers + index);
+			if (device->pools[GPU_RESOURCE_BUFFER].count == 0) break;
 		}
 
 		for (uint32_t index = 0; index < MAX_IMAGES; ++index) {
-			gfx_image_destroy(device, &device->image_pool[index]);
-			if (device->image_count == 0)
-				break;
+			gpu_image_destroy(device, device->images + index);
+			if (device->pools[GPU_RESOURCE_IMAGE].count == 0) break;
 		}
 
 		for (uint32_t index = 0; index < MAX_SAMPLERS; ++index) {
-			gfx_sampler_destroy(device, &device->sampler_pool[index]);
-			if (device->sampler_count == 0)
-				break;
+			gpu_sampler_destroy(device, device->samplers + index);
+			if (device->pools[GPU_RESOURCE_SAMPLER].count == 0) break;
+		}
+
+		for (uint32_t index = 0; index < MAX_SWAPCHAINS; ++index) {
+			gpu_swapchain_destroy(device, device->swapchains + index);
+			if (device->pools[GPU_RESOURCE_SWAPCHAIN].capacity == 0) break;
 		}
 
 		for (uint32_t index = 0; index < MAX_PIPELINES; ++index) {
-			gfx_pipeline_destroy(device, &device->pipeline_pool[index]);
+			gpu_pipeline_destroy(device, &device->pipeline_pool[index]);
 			if (device->pipeline_count == 0)
 				break;
 		}
 
 		for (uint32_t index = 0; index < MAX_SHADERS; ++index) {
-			gfx_shader_destroy(device, &device->shader_pool[index]);
+			gpu_shader_destroy(device, &device->shader_pool[index]);
 			if (device->shader_count == 0)
 				break;
 		}
 
-		for (uint32_t index = 0; index < MAX_SWAPCHAINS; ++index) {
-			gfx_swapchain_destroy(device, &device->swapchain_pool[index]);
-			if (device->swapchain_count == 0)
-				break;
-		}
-
 		for (uint32_t index = 0; index < countof(device->frame_commands); ++index) {
-			GFX_CommandEncoder *cmd_buffer = &device->frame_commands[index];
+			GPU_CommandList *cmd_buffer = &device->frame_commands[index];
 
 			if (cmd_buffer->descriptor_pool)
 				vkDestroyDescriptorPool(device->handle, cmd_buffer->descriptor_pool, 0);
@@ -1480,7 +1451,7 @@ void gfx_device_destroy(GFX_Device *device) {
 		}
 
 		for (uint32_t index = 0; index < countof(device->transfer_commands); ++index) {
-			GFX_CommandEncoder *cmd_buffer = &device->transfer_commands[index];
+			GPU_CommandList *cmd_buffer = &device->transfer_commands[index];
 
 			if (cmd_buffer->in_flight_fence)
 				vkDestroyFence(device->handle, cmd_buffer->in_flight_fence, 0);
@@ -1501,27 +1472,24 @@ void gfx_device_destroy(GFX_Device *device) {
 		if (device->instance)
 			vkDestroyInstance(device->instance, 0);
 
-		memory_zero(device, sizeof(GFX_Device));
+		memory_zero(device, sizeof(GPU_Device));
 	}
 }
 
-void gfx_device_wait_idle(GFX_Device *device) {
-	bool ok = gfx_device_valid(device);
-	if (ok)
-		vkDeviceWaitIdle(device->handle);
+void gpu_device_wait_idle(GPU_Device *device) {
+	if (gpu_device_valid(device)) vkDeviceWaitIdle(device->handle);
 }
 
 // :cmd
-GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device) {
-	GFX_CommandEncoder *result = 0;
+GPU_CommandList *gpu_frame_begin(GPU_Device *device) {
+	GPU_CommandList *result = 0;
 
-	bool ok = gfx_device_valid(device);
+	bool ok = gpu_device_valid(device);
 	if (ok) {
 		result = &device->frame_commands[device->current_frame_index];
-		result->frame_index = device->current_frame_index;
 		memory_zero_array(result->swapchains);
 		memory_zero_array(result->swapchain_image_indices);
-		result->current_shader = 0;
+		result->bound.shader = 0;
 		result->swapchain_count = 0;
 
 		// Wait for frame resource availability
@@ -1545,11 +1513,11 @@ GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device) {
 
 		ok = vkBeginCommandBuffer(result->handle, &cb_begin_info) == VK_SUCCESS;
 		if (ok == false)
-			LOG_WARN("failed to begin command buffer recording.");
+			log_warn("failed to begin command buffer recording.");
 	}
 
 	if (ok) // submit transfer batch
-		gfx_transfer_flush(device);
+		gpu_transfer_flush(device);
 
 	if (ok == false)
 		result = 0;
@@ -1557,12 +1525,11 @@ GFX_CommandEncoder *gfx_frame_begin(GFX_Device *device) {
 	return result;
 }
 
-bool gfx_frame_end(GFX_Device *device, GFX_CommandEncoder *cmd) {
-	bool ok = gfx_device_valid(device) && cmd && cmd->handle;
+bool gpu_frame_end(GPU_Device *device, GPU_CommandList *cmd) {
+	bool ok = gpu_device_valid(device) && cmd && cmd->handle;
 	if (ok) {
 		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
-			// transition swapchain images if it hasn't already been done
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &cmd->swapchains[swapchain_index]->wrapper);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_PRESENT, &cmd->swapchains[swapchain_index]->wrapper);
 		}
 
 		ok = vkEndCommandBuffer(cmd->handle) == VK_SUCCESS;
@@ -1576,7 +1543,7 @@ bool gfx_frame_end(GFX_Device *device, GFX_CommandEncoder *cmd) {
 
 		for (uint32_t swapchain_index = 0; swapchain_index < cmd->swapchain_count; ++swapchain_index) {
 			handles[swapchain_index] = cmd->swapchains[swapchain_index]->handle;
-			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[cmd->frame_index];
+			wait_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->image_available_semaphores[device->current_frame_index];
 			signal_semaphores[swapchain_index] = cmd->swapchains[swapchain_index]->render_done_semaphores[cmd->swapchain_image_indices[swapchain_index]];
 			wait_stages[swapchain_index] = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		}
@@ -1593,8 +1560,7 @@ bool gfx_frame_end(GFX_Device *device, GFX_CommandEncoder *cmd) {
 		};
 
 		ok = vkQueueSubmit(device->graphics_queue, 1, &submit_info, device->frame_commands[device->current_frame_index].in_flight_fence) == VK_SUCCESS;
-		if (ok == false)
-			LOG_ERROR("failed to submit command buffer to queue.");
+		if (ok == false) log_error("failed to submit command buffer to queue.");
 
 		if (cmd->swapchain_count) {
 			VkPresentInfoKHR present_info = {
@@ -1614,10 +1580,28 @@ bool gfx_frame_end(GFX_Device *device, GFX_CommandEncoder *cmd) {
 	return ok;
 }
 
-GFX_CommandEncoder *gfx_transfer_cmd(GFX_Device *device) {
-	GFX_CommandEncoder *result = 0;
+void gpu_cmd_label(GPU_CommandList *cmd, const char *name) {
+	bool ok = cmd != 0;
+	if (ok) {
+		if (name) {
+			VkDebugUtilsLabelEXT label_info = {
+				.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+				.pLabelName = name,
+				.color = { 1.0f, 1.0f, 1.0f, 1.0f },
+			};
+			vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
+			cmd->label_count++;
+		} else if (cmd->label_count > 0) {
+			vkCmdEndDebugUtilsLabel(cmd->handle);
+			cmd->label_count--;
+		}
+	}
+}
 
-	bool ok = gfx_device_valid(device);
+GPU_CommandList *gpu_transfer_cmd(GPU_Device *device) {
+	GPU_CommandList *result = 0;
+
+	bool ok = gpu_device_valid(device);
 	if (ok) {
 		result = &device->transfer_commands[device->current_transfer_index];
 
@@ -1641,7 +1625,7 @@ GFX_CommandEncoder *gfx_transfer_cmd(GFX_Device *device) {
 		ok = vkBeginCommandBuffer(result->handle, &cb_begin_info) == VK_SUCCESS;
 
 		if (ok == false) {
-			LOG_WARN("failed to begin command buffer recording.");
+			log_warn("failed to begin command buffer recording.");
 		}
 	}
 
@@ -1654,20 +1638,19 @@ GFX_CommandEncoder *gfx_transfer_cmd(GFX_Device *device) {
 	return result;
 }
 
-bool gfx_transfer_flush(GFX_Device *device) {
-	bool ok = gfx_device_valid(device);
+bool gpu_transfer_flush(GPU_Device *device) {
+	bool ok = gpu_device_valid(device);
 
-	GFX_CommandEncoder *cmd = 0;
+	GPU_CommandList *cmd = 0;
 	if (ok) { // check if recording
 		cmd = &device->transfer_commands[device->current_transfer_index];
-
 		ok = cmd->recording;
 	}
 
 	if (ok) { // end recording
 		ok = vkEndCommandBuffer(cmd->handle) == VK_SUCCESS;
 		if (ok == false) {
-			LOG_INFO("failed to record transfer command buffer.");
+			log_info("failed to record transfer command buffer.");
 		}
 
 		cmd->recording = 0;
@@ -1682,7 +1665,7 @@ bool gfx_transfer_flush(GFX_Device *device) {
 
 		ok = vkQueueSubmit(device->graphics_queue, 1, &submit_info, cmd->in_flight_fence) == VK_SUCCESS;
 		if (ok == false)
-			LOG_ERROR("failed to submit transfer command buffer to queue.");
+			log_error("failed to submit transfer command buffer to queue.");
 
 		device->current_transfer_index = (device->current_transfer_index + 1) % MAX_TRANSFERS_IN_FLIGHT;
 	}
@@ -1690,20 +1673,20 @@ bool gfx_transfer_flush(GFX_Device *device) {
 	return ok;
 }
 
-bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
-	GFX_Shader *shader = 0;
-	GFX_CommandEncoder *cmd = 0;
+bool gpu_cmd_bind(GPU_Device *device, uint32_t set_index, Uniform *uniforms, uint32_t uniform_count) {
+	GPU_Shader *shader = 0;
+	GPU_CommandList *cmd = 0;
 	VkDescriptorSet set = 0;
 
-	bool ok = gfx_device_valid(device) && uniforms && uniform_count > 0;
+	bool ok = gpu_device_valid(device) && uniforms && uniform_count > 0;
 	if (ok == false)
-		LOG_ERROR("%s - invalid parameters.", __func__);
+		log_error("%s - invalid parameters.", __func__);
 
 	if (ok) {
 		cmd = &device->frame_commands[device->current_frame_index];
-		shader = cmd->current_shader;
+		shader = cmd->bound.shader;
 
-		ok = gfx_shader_valid(device, shader);
+		ok = gpu_shader_valid(device, shader);
 	}
 
 	if (ok) { // TODO: cache descriptor sets instead?
@@ -1731,7 +1714,7 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 			}
 
 			if (found_index == -1) {
-				LOG_ERROR("shader '%s' has no uniform at set = %u, binding = %u.", shader->debug_name, set_index, uniform->binding);
+				log_error("shader '%s' has no uniform at set = %u, binding = %u.", shader->debug_name, set_index, uniform->binding);
 				ASSERT(false);
 			}
 			Uniform *reflected_uniform = &reflected_sets->uniforms[found_index];
@@ -1751,9 +1734,9 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 					if (uniform->type == UNIFORM_TYPE_STORAGE_IMAGE)
 						layout = VK_IMAGE_LAYOUT_GENERAL;
 
-					GFX_Sampler *sampler = uniform->resource.sampler_with_textures.sampler;
+					GPU_Sampler *sampler = uniform->resource.sampler_with_textures.sampler;
 					for (uint32_t image_index = 0; image_index < uniform->count; ++image_index) {
-						GFX_Image *image = uniform->resource.sampler_with_textures.images[image_index];
+						GPU_Image *image = uniform->resource.sampler_with_textures.images[image_index];
 
 						image_infos[image_index] = (VkDescriptorImageInfo){
 							.imageLayout = image ? layout : 0,
@@ -1775,7 +1758,7 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 
 				case UNIFORM_TYPE_STORAGE_BUFFER:
 				case UNIFORM_TYPE_UNIFORM_BUFFER: {
-					GFX_Buffer *buffer = 0;
+					GPU_Buffer *buffer = 0;
 					uint64_t offset = 0;
 					uint64_t size = 0;
 					if (uniform->resource.buffer.handle) {
@@ -1827,19 +1810,19 @@ bool gfx_cmd_bind(GFX_Device *device, uint32_t set_index, Uniform *uniforms, uin
 	return ok;
 }
 
-void gfx_cmd_bind_index_buffer16(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t offset) {
+void gpu_cmd_bind_index_buffer16(GPU_CommandList *cmd, GPU_Buffer *buffer, uint64_t offset) {
 	bool ok = cmd && buffer && cmd->handle && buffer->handle;
 	if (ok)
 		vkCmdBindIndexBuffer(cmd->handle, buffer->handle, offset, VK_INDEX_TYPE_UINT16);
 }
 
-void gfx_cmd_bind_index_buffer32(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t offset) {
+void gpu_cmd_bind_index_buffer32(GPU_CommandList *cmd, GPU_Buffer *buffer, uint64_t offset) {
 	bool ok = cmd && buffer && cmd->handle && buffer->handle;
 	if (ok)
 		vkCmdBindIndexBuffer(cmd->handle, buffer->handle, offset, VK_INDEX_TYPE_UINT32);
 }
 
-uint64_t gfx_cmd_put(GFX_CommandEncoder *cmd, uint64_t size, void *src) {
+uint64_t gpu_cmd_put(GPU_CommandList *cmd, uint64_t size, void *src) {
 	uint64_t result = 0;
 
 	bool ok = cmd && cmd->handle;
@@ -1853,7 +1836,7 @@ uint64_t gfx_cmd_put(GFX_CommandEncoder *cmd, uint64_t size, void *src) {
 	return result;
 }
 
-void gfx_cmd_buffer_to_buffer(GFX_CommandEncoder *cmd, GFX_Buffer *dst, GFX_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
+void gpu_cmd_buffer_to_buffer(GPU_CommandList *cmd, GPU_Buffer *dst, GPU_Buffer *src, uint64_t dst_offset, uint64_t src_offset, uint64_t size) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
 		VkBufferCopy copy_region = { .srcOffset = src_offset, .dstOffset = dst_offset, .size = size };
@@ -1861,14 +1844,14 @@ void gfx_cmd_buffer_to_buffer(GFX_CommandEncoder *cmd, GFX_Buffer *dst, GFX_Buff
 	}
 }
 
-void gfx_cmd_buffer_to_image(GFX_CommandEncoder *cmd, GFX_Image *dst, GFX_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
+void gpu_cmd_buffer_to_image(GPU_CommandList *cmd, GPU_Image *dst, GPU_Buffer *src, uint64_t src_offset, uint32_t width, uint32_t height) {
 	ArenaTemp scratch = arena_scratch_begin(NULL);
 	bool ok = cmd && cmd->handle && dst && dst->handle;
 	if (ok == false)
-		LOG_WARN("%s - invalid parameter '%s' passed", __func__, cmd == 0 || cmd->handle == 0 ? "GFX_CommandContext" : "GFX_Image");
+		log_warn("%s - invalid parameter '%s' passed", __func__, cmd == 0 || cmd->handle == 0 ? "GPU_CommandContext" : "GPU_Image");
 
 	if (ok) {
-		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
+		gpu_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, dst);
 
 		uint32_t layer_count = image_options_to_vulkan_layer_count(dst->options);
 		VkBufferImageCopy *regions = arena_push_count(scratch.arena, VkBufferImageCopy, layer_count);
@@ -1894,7 +1877,7 @@ void gfx_cmd_buffer_to_image(GFX_CommandEncoder *cmd, GFX_Image *dst, GFX_Buffer
 	arena_scratch_end(scratch);
 }
 
-void gfx_cmd_buffer_barrier(GFX_CommandEncoder *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GFX_Buffer *target) {
+void gpu_cmd_buffer_barrier(GPU_CommandList *cmd, ResourceUsage src, ResourceUsage dst, uint64_t offset, uint64_t size, GPU_Buffer *target) {
 	bool ok = cmd && target;
 	if (ok) {
 		VkPipelineStageFlags src_stage = resource_usage_to_vulkan_pipeline_stage[src];
@@ -1916,7 +1899,7 @@ void gfx_cmd_buffer_barrier(GFX_CommandEncoder *cmd, ResourceUsage src, Resource
 	}
 }
 
-bool gfx_cmd_image_barrier(GFX_CommandEncoder *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GFX_Image *target) {
+bool gpu_cmd_image_barrier(GPU_CommandList *cmd, ResourceUsage src, ResourceUsage dst, uint32_t base_miplevel, uint32_t level_count, GPU_Image *target) {
 	bool ok = cmd && target;
 	if (ok) {
 		target->res_usage = dst;
@@ -1962,25 +1945,25 @@ bool gfx_cmd_image_barrier(GFX_CommandEncoder *cmd, ResourceUsage src, ResourceU
 	return ok;
 }
 
-bool gfx_cmd_image_transition(GFX_CommandEncoder *cmd, ResourceUsage dst, GFX_Image *target) {
+bool gpu_cmd_image_transition(GPU_CommandList *cmd, ResourceUsage dst, GPU_Image *target) {
 	bool ok = cmd && cmd->handle && target && target->handle;
 	if (ok) {
 		if (target->res_usage == dst)
 			return true;
 
-		return gfx_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
+		return gpu_cmd_image_barrier(cmd, target->res_usage, dst, 0, target->miplevels, target);
 	}
 
 	return ok;
 }
 
-void gfx_cmd_image_blit(GFX_CommandEncoder *cmd, Rectangle source_rect, GFX_Image *source, Rectangle target_rect, GFX_Image *target) {
+void gpu_cmd_image_blit(GPU_CommandList *cmd, Rectangle source_rect, GPU_Image *source, Rectangle target_rect, GPU_Image *target) {
 	bool ok = cmd && source && target;
 	if (ok) {
 		if (source->res_usage != RESOURCE_USAGE_TRANSFER_SRC)
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, source);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, source);
 		if (target->res_usage != RESOURCE_USAGE_TRANSFER_DST)
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, target);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, target);
 		if (source_rect.width == 0.0f)
 			source_rect.width = source->width;
 		if (source_rect.height == 0.0f)
@@ -2021,11 +2004,11 @@ void gfx_cmd_image_blit(GFX_CommandEncoder *cmd, Rectangle source_rect, GFX_Imag
 	}
 }
 
-void gfx_cmd_image_clear(GFX_CommandEncoder *cmd, Rectangle rect, rgba8 color, GFX_Image *image) {
+void gpu_cmd_image_clear(GPU_CommandList *cmd, Rectangle rect, rgba8 color, GPU_Image *image) {
 	bool ok = cmd && cmd->handle && image && image->handle;
 	if (ok) {
 		if (image->res_usage != RESOURCE_USAGE_TRANSFER_DST)
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, image);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, image);
 		if (rect.width == 0.0f)
 			rect.width = image->width;
 		if (rect.height == 0.0f)
@@ -2046,37 +2029,37 @@ void gfx_cmd_image_clear(GFX_CommandEncoder *cmd, Rectangle rect, rgba8 color, G
 	}
 }
 
-void gfx_cmd_image_upload(GFX_CommandEncoder *cmd, GFX_Image *image, uint32_t width, uint32_t height, void *pixels) {
+void gpu_cmd_image_upload(GPU_CommandList *cmd, GPU_Image *image, uint32_t width, uint32_t height, void *pixels) {
 	bool ok = cmd && cmd->handle && image && image->handle;
 	if (ok) {
 		uint32_t stride = pixel_format_to_stride[image->options.format];
 		uint64_t size = width * height * stride * image_options_to_vulkan_layer_count(image->options);
-		uint64_t start_offset = gfx_cmd_put(cmd, size, pixels);
-		gfx_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
+		uint64_t start_offset = gpu_cmd_put(cmd, size, pixels);
+		gpu_cmd_buffer_to_image(cmd, image, cmd->transient_buffer, start_offset, width, height);
 	}
 }
 
-void gfx_cmd_buffer_upload(GFX_CommandEncoder *cmd, GFX_Buffer *buffer, uint64_t offset, uint64_t size, void *data) {
+void gpu_cmd_buffer_upload(GPU_CommandList *cmd, GPU_Buffer *buffer, uint64_t offset, uint64_t size, void *data) {
 	bool ok = cmd && cmd->handle && buffer && buffer->handle;
 	if (ok) {
-		uint64_t staging_offset = gfx_cmd_put(cmd, size, data);
-		gfx_cmd_buffer_to_buffer(cmd, buffer, cmd->transient_buffer, offset, staging_offset, size);
+		uint64_t staging_offset = gpu_cmd_put(cmd, size, data);
+		gpu_cmd_buffer_to_buffer(cmd, buffer, cmd->transient_buffer, offset, staging_offset, size);
 	}
 }
 
-void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
-	ASSERT(cmd->current_pass.active == false);
+void gpu_pass_begin(GPU_CommandList *cmd, GPU_DrawPassInfo info) {
+	ASSERT(cmd->bound.pass.active == false);
 
-	VkRenderingAttachmentInfo color_attachments[GFX_LIMIT_COLOR_ATTACHMENTS] = { 0 };
-	cmd->current_pass.active = true;
+	VkRenderingAttachmentInfo color_attachments[GPU_LIMIT_COLOR_ATTACHMENTS] = { 0 };
+	cmd->bound.pass.active = true;
 
 	uint32_t color_count = 0;
 	for (uint32_t index = 0; index < countof(color_attachments); ++index) {
 		if (info.colors[index].target == 0) break;
 
-		cmd->current_pass.layout.color_formats[index] = info.colors[index].target->options.format;
-		cmd->current_pass.layout.sample_count = MAX(cmd->current_pass.layout.sample_count, info.colors[index].target->options.sample);
-		cmd->current_pass.layout.color_count++;
+		cmd->bound.pass.layout.color_formats[index] = info.colors[index].target->options.format;
+		cmd->bound.pass.layout.sample_count = MAX(cmd->bound.pass.layout.sample_count, info.colors[index].target->options.sample);
+		cmd->bound.pass.layout.color_count++;
 
 		color_attachments[index] = (VkRenderingAttachmentInfo){
 			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -2086,13 +2069,13 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 			.storeOp = (VkAttachmentStoreOp)info.colors[index].store,
 		};
 		store4(color_attachments[index].clearValue.color.float32, color_to_float4(info.colors[index].clear));
-		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, info.colors[index].target);
+		gpu_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, info.colors[index].target);
 
 		if (info.colors[index].resolve) {
 			color_attachments[index].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			color_attachments[index].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 			color_attachments[index].resolveImageView = info.colors[index].resolve->view;
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, info.colors[index].resolve);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, info.colors[index].resolve);
 		}
 
 		color_count++;
@@ -2100,11 +2083,11 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 
 	VkRenderingAttachmentInfo depth_attachment = { 0 };
 	if (info.depth.target) {
-		gfx_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_STENCIL_ATTACHMENT, info.depth.target);
+		gpu_cmd_image_transition(cmd, RESOURCE_USAGE_DEPTH_STENCIL_ATTACHMENT, info.depth.target);
 		bool is_depth_stencil = info.depth.target->options.format == PIXEL_FORMAT_DEPTHSTENCIL;
 
-		cmd->current_pass.layout.depth_format = info.depth.target->options.format;
-		cmd->current_pass.layout.sample_count = MAX(cmd->current_pass.layout.sample_count, info.depth.target->options.sample);
+		cmd->bound.pass.layout.depth_format = info.depth.target->options.format;
+		cmd->bound.pass.layout.sample_count = MAX(cmd->bound.pass.layout.sample_count, info.depth.target->options.sample);
 
 		depth_attachment = (VkRenderingAttachmentInfo){
 			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -2117,9 +2100,9 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 	}
 
 	if (info.area.width == 0.0f && info.colors[0].target)
-		info.area.width = clampf(info.colors[0].target->width - info.area.x, 0.0f, info.colors[0].target->width);
+		info.area.width = clamp(info.colors[0].target->width - info.area.x, 0.0f, info.colors[0].target->width);
 	if (info.area.height == 0.0f && info.colors[0].target)
-		info.area.height = clampf(info.colors[0].target->height - info.area.y, 0.0f, info.colors[0].target->height);
+		info.area.height = clamp(info.colors[0].target->height - info.area.y, 0.0f, info.colors[0].target->height);
 
 	VkRect2D area = { { info.area.x, info.area.y }, { info.area.width, info.area.height } };
 	VkRenderingInfo renderpass_info = {
@@ -2131,12 +2114,7 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 		.pDepthAttachment = info.depth.target ? &depth_attachment : 0,
 	};
 
-	VkDebugUtilsLabelEXT label_info = {
-		.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-		.pLabelName = info.debug_name ? info.debug_name : "<unnamed>",
-		.color = { 1.0f, 1.0f, 1.0f, 1.0f },
-	};
-	vkCmdBeginDebugUtilsLabel(cmd->handle, &label_info);
+	gpu_cmd_label(cmd, info.debug_name ? info.debug_name : "<unnamed>");
 	vkCmdBeginRendering(cmd->handle, &renderpass_info);
 
 	VkViewport viewport = {
@@ -2149,100 +2127,99 @@ void gfx_cmd_draw_begin(GFX_CommandEncoder *cmd, GFX_DrawPassInfo info) {
 	vkCmdSetScissor(cmd->handle, 0, 1, &area);
 }
 
-void gfx_cmd_draw_end(GFX_CommandEncoder *cmd) {
-	vkCmdEndRendering(cmd->handle);
-	vkCmdEndDebugUtilsLabel(cmd->handle);
+void gpu_pass_end(GPU_CommandList *cmd) {
+	if (cmd->bound.pass.active) {
+		vkCmdEndRendering(cmd->handle);
 
-	memory_zero_struct(cmd->current_pass);
+		gpu_cmd_label(cmd, 0);
+	}
+
+	memory_zero_struct(cmd->bound.pass);
 }
 
-GFX_DrawTargetLayout gfx_cmd_active_layout(GFX_CommandEncoder *cmd) {
-	return cmd->current_pass.layout;
+GPU_DrawTargetLayout gpu_cmd_active_layout(GPU_CommandList *cmd) {
+	return cmd->bound.pass.layout;
 }
 
-void gfx_cmd_viewport(GFX_CommandEncoder *cmd, Rectangle area) {
+void gpu_cmd_viewport(GPU_CommandList *cmd, Rectangle area) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
-		VkViewport viewports[] = {
-			[0] = {
-			  .x = area.x,
-			  .y = area.y,
-			  .width = area.width,
-			  .height = area.height,
-			}
-		};
+		VkViewport viewports[] = { {
+		  .x = area.x,
+		  .y = area.y,
+		  .width = area.width,
+		  .height = area.height,
+		} };
 		vkCmdSetViewport(cmd->handle, 0, 1, viewports);
 	}
 }
-void gfx_cmd_scissor(GFX_CommandEncoder *cmd, Rectangle area) {
+void gpu_cmd_scissor(GPU_CommandList *cmd, Rectangle area) {
 	bool ok = cmd && cmd->handle;
 	if (ok) {
-		VkRect2D scissors[] = {
-			[0] = {
-			  { .x = area.x, .y = area.y },
-			  { .width = area.width, .height = area.height } //
-			}
-		};
+		VkRect2D scissors[] = { {
+		  { .x = area.x, .y = area.y },
+		  { .width = area.width, .height = area.height },
+		} };
 		vkCmdSetScissor(cmd->handle, 0, 1, scissors);
 	}
 }
 
-void gfx_cmd_shader_bind(GFX_Device *device, GFX_Shader *shader, uint32_t pipeline_index) {
-	bool ok = gfx_shader_valid(device, shader);
+void gpu_cmd_shader_bind(GPU_Device *device, GPU_Shader *shader, uint32_t pipeline_index) {
+	bool ok = gpu_shader_valid(device, shader);
 	if (ok) {
-		GFX_CommandEncoder *cmd = &device->frame_commands[device->current_frame_index];
+		GPU_CommandList *cmd = &device->frame_commands[device->current_frame_index];
 		if (shader->compute)
-			gfx_cmd_pipeline_bind(cmd, shader->compute);
+			gpu_cmd_pipeline_bind(cmd, shader->compute);
 		else {
 			ASSERT(pipeline_index < shader->pipeline_count);
-			GFX_Pipeline *pipeline = gfx_pipeline_ensure(device, shader, shader->pipelines[pipeline_index].options, gfx_cmd_active_layout(cmd));
-			gfx_cmd_pipeline_bind(cmd, pipeline);
+			GPU_Pipeline *pipeline = gpu_pipeline_ensure(device, shader, shader->pipelines[pipeline_index].options, gpu_cmd_active_layout(cmd));
+			gpu_cmd_pipeline_bind(cmd, pipeline);
 		}
 	}
 }
 
-void gfx_cmd_pipeline_bind(GFX_CommandEncoder *cmd, GFX_Pipeline *pipeline) {
+void gpu_cmd_pipeline_bind(GPU_CommandList *cmd, GPU_Pipeline *pipeline) {
 	bool ok = cmd && cmd->handle && pipeline && pipeline->handle;
 	if (ok) {
 		VkPipelineBindPoint bind_point = pipeline->shader->modules[SHADER_STAGE_COMPUTE] ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
 		vkCmdBindPipeline(cmd->handle, bind_point, pipeline->handle);
 
-		cmd->current_shader = pipeline->shader;
+		cmd->bound.shader = pipeline->shader;
 	}
 }
 
-void gfx_cmd_push_constant(GFX_CommandEncoder *cmd, uint64_t size, void *data) {
-	vkCmdPushConstants(cmd->handle, cmd->current_shader->layout, VK_SHADER_STAGE_ALL, 0, size, data);
+void gpu_cmd_push_constant(GPU_CommandList *cmd, uint64_t size, void *data) {
+	vkCmdPushConstants(cmd->handle, cmd->bound.shader->layout, VK_SHADER_STAGE_ALL, 0, size, data);
 }
 
-void gfx_cmd_dispatch(GFX_CommandEncoder *cmd, uint32_t x, uint32_t y, uint32_t z) {
+void gpu_cmd_dispatch(GPU_CommandList *cmd, uint32_t x, uint32_t y, uint32_t z) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
 		vkCmdDispatch(cmd->handle, x, y, z);
 }
 
-void gfx_cmd_draw(GFX_CommandEncoder *cmd, uint32_t vertex_offset, uint32_t vertex_count) {
-	gfx_cmd_draw_instanced(cmd, vertex_offset, vertex_count, 0, 1);
+void gpu_cmd_draw(GPU_CommandList *cmd, uint32_t vertex_offset, uint32_t vertex_count) {
+	gpu_cmd_draw_instanced(cmd, vertex_offset, vertex_count, 0, 1);
 }
 
-void gfx_cmd_draw_instanced(GFX_CommandEncoder *cmd, uint32_t vertex_offset, uint32_t vertex_count, uint32_t instance_offset, uint32_t instance_count) {
+void gpu_cmd_draw_instanced(GPU_CommandList *cmd, uint32_t vertex_offset, uint32_t vertex_count, uint32_t instance_offset, uint32_t instance_count) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
 		vkCmdDraw(cmd->handle, vertex_count, instance_count, vertex_offset, instance_offset);
 }
 
-void gfx_cmd_draw_indexed(GFX_CommandEncoder *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset) {
-	gfx_cmd_draw_indexed_instanced(cmd, index_offset, index_count, vertex_offset, 0, 1);
+void gpu_cmd_draw_indexed(GPU_CommandList *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset) {
+	gpu_cmd_draw_indexed_instanced(cmd, index_offset, index_count, vertex_offset, 0, 1);
 }
 
-void gfx_cmd_draw_indexed_instanced(GFX_CommandEncoder *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset, uint32_t instance_offset, uint32_t instance_count) {
+void gpu_cmd_draw_indexed_instanced(GPU_CommandList *cmd, uint32_t index_offset, uint32_t index_count, uint32_t vertex_offset, uint32_t instance_offset, uint32_t instance_count) {
 	bool ok = cmd && cmd->handle;
 	if (ok)
 		vkCmdDrawIndexed(cmd->handle, index_count, instance_count, index_offset, vertex_offset, instance_offset);
 }
 
 // :body
-uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
+uint32_t gpu__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
 	VkPhysicalDeviceMemoryProperties memory_properties;
 	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 
@@ -2250,13 +2227,13 @@ uint32_t gfx__find_memory_type(VkPhysicalDevice physical_device, uint32_t type_f
 		if ((type_filter & (1 << index)) && (memory_properties.memoryTypes[index].propertyFlags & properties) == properties)
 			return index;
 
-	LOG_ERROR("Failed to find suitable memory type!");
+	log_error("Failed to find suitable memory type!");
 	ASSERT(false);
 	return 0;
 }
 
-bool gfx__instance_make(GFX_Device *device) {
-	LOG_DEBUG("initializing vulkan instance.");
+bool gpu__instance_make(GPU_Device *device) {
+	log_debug("initializing vulkan instance.");
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	uint32_t required_extension_count = 0;
@@ -2276,7 +2253,7 @@ bool gfx__instance_make(GFX_Device *device) {
 
 		VkExtensionProperties *available_extensions = arena_push_count(scratch.arena, VkExtensionProperties, available_extension_count);
 		vkEnumerateInstanceExtensionProperties(0, &available_extension_count, available_extensions);
-		ok = gfx__validate_extensions(required_extensions, required_extension_count, available_extensions, available_extension_count);
+		ok = gpu__validate_extensions(required_extensions, required_extension_count, available_extensions, available_extension_count);
 	}
 	static const char *requested_layers[] = {
 #ifdef DEV_BUILD
@@ -2302,7 +2279,7 @@ bool gfx__instance_make(GFX_Device *device) {
 			}
 
 			if (found == false) {
-				LOG_ERROR("layer '%s' not found, aborting", requested_layers[request_index]);
+				log_error("layer '%s' not found, aborting", requested_layers[request_index]);
 				ok = false;
 			}
 		}
@@ -2336,7 +2313,7 @@ bool gfx__instance_make(GFX_Device *device) {
 
 	if (ok) { // load debug extension pointers & craete debug util
 #ifdef DEV_BUILD
-		gfx__load_debug_extensions(device);
+		gpu__load_debug_extensions(device);
 		vkCreateDebugUtilsMessenger(device->instance, &debug_utils_create_info, 0, &device->debug_messenger);
 #endif
 	}
@@ -2345,7 +2322,7 @@ bool gfx__instance_make(GFX_Device *device) {
 	return ok;
 }
 
-bool gfx__device_suitable(GFX_Device *device, VkPhysicalDevice gpu) {
+bool gpu__device_suitable(GPU_Device *device, VkPhysicalDevice gpu) {
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	bool ok = true;
@@ -2382,7 +2359,7 @@ bool gfx__device_suitable(GFX_Device *device, VkPhysicalDevice gpu) {
 		VkExtensionProperties *available_extensions = arena_push_count(scratch.arena, VkExtensionProperties, available_extension_count);
 		vkEnumerateDeviceExtensionProperties(gpu, 0, &available_extension_count, available_extensions);
 
-		ok = gfx__validate_extensions(required_device_extensions, countof(required_device_extensions), available_extensions, available_extension_count);
+		ok = gpu__validate_extensions(required_device_extensions, countof(required_device_extensions), available_extensions, available_extension_count);
 	}
 
 	if (ok) { // validate if desired features are present
@@ -2407,13 +2384,13 @@ bool gfx__device_suitable(GFX_Device *device, VkPhysicalDevice gpu) {
 	return ok;
 }
 
-bool gfx__device_make(GFX_Device *device) {
-	LOG_DEBUG("initializing vulkan device.");
+bool gpu__device_make(GPU_Device *device) {
+	log_debug("initializing vulkan device.");
 	ArenaTemp scratch = arena_scratch_begin(0);
 
 	bool ok = device;
 	if (ok) { // select physical device
-		LOG_DEBUG("finding suitable device...");
+		log_debug("finding suitable device...");
 		uint32_t physical_device_count = 0;
 		vkEnumeratePhysicalDevices(device->instance, &physical_device_count, 0);
 
@@ -2421,7 +2398,7 @@ bool gfx__device_make(GFX_Device *device) {
 		vkEnumeratePhysicalDevices(device->instance, &physical_device_count, physical_devices);
 
 		for (uint32_t physical_device_index = 0; physical_device_index < physical_device_count; ++physical_device_index) {
-			if (gfx__device_suitable(device, physical_devices[physical_device_index])) {
+			if (gpu__device_suitable(device, physical_devices[physical_device_index])) {
 				device->gpu = physical_devices[physical_device_index];
 				break;
 			}
@@ -2429,11 +2406,11 @@ bool gfx__device_make(GFX_Device *device) {
 
 		ok = device->gpu != 0;
 		if (ok == false)
-			LOG_ERROR("failed to find suitable graphics card with Vulkan 1.3 support.");
+			log_error("failed to find suitable graphics card with Vulkan 1.3 support.");
 	}
 
 	if (ok) { // find queue indices
-		LOG_INFO("Device: %s", device->info.properties.deviceName);
+		log_info("Device: %s", device->info.properties.deviceName);
 
 		uint32_t queue_family_count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(device->gpu, &queue_family_count, 0);
@@ -2466,7 +2443,7 @@ bool gfx__device_make(GFX_Device *device) {
 		}
 
 		if (device->graphics_index == -1) {
-			LOG_ERROR("failed to find graphics queue.");
+			log_error("failed to find graphics queue.");
 			ok = false;
 		}
 	}
@@ -2546,10 +2523,10 @@ bool gfx__device_make(GFX_Device *device) {
 	return ok;
 }
 
-bool gfx__frame_resources_make(GFX_Device *device) {
-	LOG_DEBUG("initializing vulkan frame resources.");
+bool gpu__allocate_persistent_resources(GPU_Device *device) {
+	log_debug("initializing persistent resources.");
 
-	bool ok = gfx_device_valid(device);
+	bool ok = gpu_device_valid(device);
 	if (ok) { // make graphics command pool
 		VkCommandPoolCreateInfo cp_create_info = {
 			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -2640,7 +2617,7 @@ bool gfx__frame_resources_make(GFX_Device *device) {
 	return ok;
 }
 
-bool gfx__validate_extensions(const char *required[], uint32_t required_count, VkExtensionProperties *available, uint32_t available_count) {
+bool gpu__validate_extensions(const char *required[], uint32_t required_count, VkExtensionProperties *available, uint32_t available_count) {
 	bool result = true;
 
 	for (uint32_t required_index = 0; required_index < required_count; ++required_index) {
@@ -2652,7 +2629,7 @@ bool gfx__validate_extensions(const char *required[], uint32_t required_count, V
 			}
 		}
 		if (found == false) {
-			LOG_ERROR("required extension '%s' not found, aborting", required[required_index]);
+			log_error("required extension '%s' not found, aborting", required[required_index]);
 			result = false;
 			break;
 		}
@@ -2661,11 +2638,11 @@ bool gfx__validate_extensions(const char *required[], uint32_t required_count, V
 	return result;
 }
 
-void gfx__load_debug_extensions(GFX_Device *device) {
+void gpu__load_debug_extensions(GPU_Device *device) {
 #define LOAD_EXTENSION(instance, name)                                    \
 	name = (PFN_##name##EXT)vkGetInstanceProcAddr(instance, #name "EXT"); \
 	if (!name) {                                                          \
-		LOG_ERROR("Failed to load extension: " #name "EXT");              \
+		log_error("Failed to load extension: " #name "EXT");              \
 		name = STUB_##name;                                               \
 	}
 	LOAD_EXTENSION(device->instance, vkCreateDebugUtilsMessenger);
@@ -2677,26 +2654,26 @@ void gfx__load_debug_extensions(GFX_Device *device) {
 #undef LOAD_EXTENSION
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL gfx__debug_callback(
+VKAPI_ATTR VkBool32 VKAPI_CALL gpu__debug_callback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
 	VkDebugUtilsMessageTypeFlagsEXT message_type,
 	const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
 	void *pUserData) {
 	switch (message_severity) {
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: {
-			LOG_TRACE("%s", callback_data->pMessage);
+			log_trace("%s", callback_data->pMessage);
 			return VK_FALSE;
 		} break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: {
-			LOG_INFO("%s", callback_data->pMessage);
+			log_info("%s", callback_data->pMessage);
 			return VK_FALSE;
 		} break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: {
-			LOG_WARN("%s", callback_data->pMessage);
+			log_warn("%s", callback_data->pMessage);
 			return VK_FALSE;
 		} break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: {
-			LOG_ERROR("%s", callback_data->pMessage);
+			log_error("%s", callback_data->pMessage);
 			return VK_FALSE;
 		} break;
 		default: {

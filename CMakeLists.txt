@@ -35,6 +35,8 @@ set(NATIVE_SCRATCHES
     asset_compiler
     lang
     ca_sound
+    ca_compute
+    ca_font
     gamepad
 )
 
@@ -51,6 +53,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             "${CMAKE_SOURCE_DIR}/engine/src/app/scene.c"
 
             "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
+            "${CMAKE_SOURCE_DIR}/engine/src/core/rid.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
             "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
@@ -106,6 +109,7 @@ else()
 
         "${CMAKE_SOURCE_DIR}/engine/src/core/arena.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/logger.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/core/rid.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/err.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/cmath.c"
         "${CMAKE_SOURCE_DIR}/engine/src/core/geom.c"
@@ -123,22 +127,21 @@ else()
         "${CMAKE_SOURCE_DIR}/engine/src/utils/input.c"
         "${CMAKE_SOURCE_DIR}/engine/src/res/res.c"
 
-        "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/tables.c"
-        "${CMAKE_SOURCE_DIR}/engine/src/gfx/vulkan/gfx_vulkan.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/gpu/vulkan/tables.c"
+        "${CMAKE_SOURCE_DIR}/engine/src/gpu/vulkan/vulkan.c"
 
         "${CMAKE_SOURCE_DIR}/engine/src/draw/draw.c"
     )
-    add_library(engine
-        ${VENDOR_SOURCES}
-        ${ENGINE_FILES}
-    )
+
+    add_library(vendor ${VENDOR_SOURCES})
+    add_library(engine ${ENGINE_FILES})
+    target_link_libraries(engine vendor)
+
     target_include_directories(engine PUBLIC
         "${CMAKE_SOURCE_DIR}/engine/src"
         "${CMAKE_SOURCE_DIR}/engine/vendor/"
     )
-    target_link_options(engine PUBLIC
-        -Wl,--export-dynamic
-    )
+    target_link_options(engine PUBLIC -Wl,--export-dynamic)
 
     add_executable(${PROJECT_NAME} 
         "${CMAKE_SOURCE_DIR}/engine/src/app/main.c"

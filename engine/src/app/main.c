@@ -2,9 +2,9 @@
 
 #include "core/os.h"
 
-#include "gfx.h"
+#include "gpu.h"
 #include "wm.h"
-#include "gfx/gfx_types.h"
+#include "gpu/gpu_types.h"
 
 #include "core/debug.h"
 #include "core/logger.h"
@@ -12,10 +12,10 @@
 
 #include "utils/input.h"
 
-typedef bool (*Tick)(Arena *permanent, Arena *frame);
+typedef bool (*Tick)(GPU_Device *device, Arena *permanent, Arena *frame);
 
 int main(void) {
-	logger_set_level(LOG_LEVEL_DEBUG);
+	log_level(LOG_DEBUG);
 
 	string8 src = s("libgame.so"), dst = s("libgame_loaded.so");
 
@@ -23,8 +23,10 @@ int main(void) {
 	Tick tick = 0;
 	OS_Timestamp ts = 0;
 
-	wm_startup();
-    gp_startup();
+	GPU_Device device;
+	if (gpu_device_make(&device) == false) return -1;
+	if (wm_startup() == false) return -1;
+	gp_startup();
 
 	Arena permanenet = arena_make(MiB(128));
 	Arena frame = arena_make(MiB(16));
@@ -44,12 +46,12 @@ int main(void) {
 			if (tick == 0) break;
 		}
 
-		if (tick)
-			is_open &= tick(&permanenet, &frame);
+		if (tick) is_open = tick(&device, &permanenet, &frame);
 
 		arena_reset(&frame);
 	}
 
+	gpu_device_destroy(&device);
 	os_dlclose(lib);
 	wm_shutdown();
 

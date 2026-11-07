@@ -448,7 +448,7 @@ bool ast_validate_table(AST_Node *table) {
 					} while (entry != row->first_child);
 
 				if (row_entry_count != column_count) {
-					LOG_ERROR("table '%.*s' invalid entry at row %d", arg8(table->name), row_index);
+					log_error("table '%.*s' invalid entry at row %d", arg8(table->name), row_index);
 					ok = false;
 					break;
 				}

@@ -67,7 +67,7 @@ bool bitset_has(uint8_t *bitset, uint32_t bit) {
 
 static void js_close(GP_Joystick *js) {
 	if (js->fd >= 0) {
-		LOG_INFO("'%s' disconnected", js->name);
+		log_info("'%s' disconnected", js->name);
 		close(js->fd);
 	}
 
@@ -103,7 +103,7 @@ static bool js_open(const char *path) {
 		ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), absbits) < 0 ||
 		ioctl(fd, EVIOCGID, &id) < 0 //
 	) {
-		LOG_ERROR("Failed to query input device: %s\n", strerror(errno));
+		log_error("Failed to query input device: %s\n", strerror(errno));
 		js_close(js);
 		return false;
 	}
@@ -131,7 +131,7 @@ static bool js_open(const char *path) {
 	js->fd = fd;
 	ioctl(fd, EVIOCGNAME(sizeof(js->name)), js->name);
 
-	LOG_INFO("'%s' connected", js->name);
+	log_info("'%s' connected", js->name);
 	return true;
 }
 
@@ -153,14 +153,15 @@ void gp_startup(void) {
 		js_open(path);
 	}
 }
+
 void gp_shutdown(void) {
-	for (uint32_t jid = 0; jid < GP_SLOT_MAX; ++jid)
+	for (uint32_t jid = 0; jid < GAMEPAD_SLOT_MAX; ++jid)
 		js_close(gp_state->joysticks + jid);
 	if (gp_state->inotify >= 0) close(gp_state->inotify);
 	gp_state->inotify = -1;
 }
 
-void gp_poll(GP_Slot slots[GP_SLOT_MAX]) {
+void gp_poll(Gamepad slots[GAMEPAD_SLOT_MAX]) {
 	if (gp_state->inotify >= 0) {
 		// NOTE: Limits to 64 events per frame
 		char buffer[(sizeof(struct inotify_event) + NAME_MAX + 1) * 64];
@@ -193,7 +194,7 @@ void gp_poll(GP_Slot slots[GP_SLOT_MAX]) {
 
 	for (uint32_t jid = 0; jid < countof(gp_state->joysticks); ++jid) {
 		GP_Joystick *js = gp_state->joysticks + jid;
-		GP_Slot *pad = slots + jid;
+		Gamepad *pad = slots + jid;
 
 		if (js->fd < 0) {
 			memory_zero(pad, sizeof(pad[0]));
@@ -219,7 +220,7 @@ void gp_poll(GP_Slot slots[GP_SLOT_MAX]) {
 				case EV_SYN: // TODO: Handle this
 					break;
 				case EV_ABS: {
-					if (ev->code >= ABS_HAT0X && ev->code <= ABS_HAT3Y) {
+					if (ev->code >= ABS_HAT0X && ev->code <= ABS_HAT3Y) { // DPAD
 						bool flip = mapping_8bitdo_ultimate_2c.flip_axis[ev->code];
 						int32_t value = flip ? -ev->value : ev->value;
 

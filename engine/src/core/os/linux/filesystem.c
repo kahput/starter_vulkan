@@ -29,7 +29,7 @@ string8 os_cwd(Arena *arena) {
 
 	uint8_t buffer[PATH_MAX];
 	if (getcwd((void *)buffer, PATH_MAX) == 0)
-		LOG_ERROR("%s - %s", __func__, strerror(errno));
+		log_error("%s - %s", __func__, strerror(errno));
 	else {
 		string8 cwd = str8z((char *)buffer);
 		result = str8_copy(arena, cwd);
@@ -41,28 +41,28 @@ string8 os_cwd(Arena *arena) {
 
 OS_File os_open(string8 filepath, OS_FileOpenFlags flags) {
 	OS_File result = os__open(filepath, os__file_open_flags_to_oflags(flags), 0666);
-	if (os_file_valid(result) == false) LOG_WARN("%s(\"%.*s\") - %s", __func__, arg8(filepath), strerror(errno));
+	if (os_file_valid(result) == false) log_warn("%s(\"%.*s\") - %s", __func__, arg8(filepath), strerror(errno));
 	return result;
 }
 
 bool os_close(OS_File fd) {
 	bool ok = os_file_valid(fd) && close(fd) >= 0;
 	if (os_file_valid(fd) && ok == false)
-		LOG_WARN("%s(%ld) - %s", __func__, fd, strerror(errno));
+		log_warn("%s(%ld) - %s", __func__, fd, strerror(errno));
 
 	return ok;
 }
 
 OS_Directory os_opendir(string8 path) {
 	OS_Directory result = os__opendir(path);
-	if (os_directory_valid(result) == false) LOG_WARN("%s(\"%.*s\") - %s", __func__, arg8(path), strerror(errno));
+	if (os_directory_valid(result) == false) log_warn("%s(\"%.*s\") - %s", __func__, arg8(path), strerror(errno));
 	return result;
 }
 
 bool os_closedir(OS_Directory dp) {
 	bool ok = os_directory_valid(dp) && closedir(dp) >= 0;
 	if (os_directory_valid(dp) && ok == false)
-		LOG_WARN("%s(%p) - %s", __func__, dp, strerror(errno));
+		log_warn("%s(%p) - %s", __func__, dp, strerror(errno));
 
 	return ok;
 }
@@ -83,7 +83,7 @@ uint64_t os_read(OS_File file, void *buffer, uint64_t size) {
 			running_offset += read_bytes;
 			size -= read_bytes;
 		}
-		if (read_bytes == -1) LOG_WARN("%s - %s", __func__, strerror(errno));
+		if (read_bytes == -1) log_warn("%s - %s", __func__, strerror(errno));
 
 		result = read_bytes > 0 ? read_bytes : 0;
 	}
@@ -103,7 +103,7 @@ uint64_t os_write(OS_File file, const void *buffer, uint64_t size) {
 			size -= written_bytes;
 			running_offset += written_bytes;
 		}
-		if (written_bytes == -1) LOG_WARN("%s - %s", __func__, strerror(errno));
+		if (written_bytes == -1) log_warn("%s - %s", __func__, strerror(errno));
 
 		result = written_bytes > 0 ? written_bytes : 0;
 	}
@@ -114,7 +114,7 @@ uint64_t os_write(OS_File file, const void *buffer, uint64_t size) {
 /* OS_File os_file_open_async(string8 path, OS_FileMode mode) { */
 /* 	OS_File result = os__open_fulllpath(path, os__mode_to_flags(mode), 0666); */
 /* 	if (os_file_valid(result) == false) { */
-/* 		LOG_WARN("failed to read '%.*s' - %s", arg8(path), strerror(errno)); */
+/* 		log_warn("failed to read '%.*s' - %s", arg8(path), strerror(errno)); */
 /* 	} */
 
 /* 	return result; */
@@ -168,7 +168,7 @@ bool os_file_exists(string8 filepath) {
 	if (result) os_close(fd);
 
 	if (result == false && errno != ENOENT) {
-		LOG_WARN("%s - %s", __func__, strerror(errno));
+		log_warn("%s - %s", __func__, strerror(errno));
 	}
 
 	return result;
@@ -181,7 +181,7 @@ bool os_unlink(string8 path) {
 	string8 fullpath = relative ? str8_pathjoin(scratch.arena, os_cwd(scratch.arena), path) : str8_copy(scratch.arena, path);
 
 	int32_t result = unlink((char *)fullpath.bytes);
-	if (result < 0) LOG_WARN("%s(\"%.*s\") - %s", __func__, arg8(path), strerror(errno));
+	if (result < 0) log_warn("%s(\"%.*s\") - %s", __func__, arg8(path), strerror(errno));
 
 	arena_scratch_end(scratch);
 	return result == 0;
@@ -197,7 +197,7 @@ bool os_rename(string8 from, string8 to) {
 	string8 newpath = relative ? str8_pathjoin(scratch.arena, os_cwd(scratch.arena), to) : str8_copy(scratch.arena, to);
 
 	int result = rename((char *)oldpath.bytes, (char *)newpath.bytes);
-	if (result < 0) LOG_WARN("%s(from = \"%.*s\", to = \"%.*s\") - %s", __func__, arg8(from), arg8(to), strerror(errno));
+	if (result < 0) log_warn("%s(from = \"%.*s\", to = \"%.*s\") - %s", __func__, arg8(from), arg8(to), strerror(errno));
 
 	arena_scratch_end(scratch);
 	return result == 0;
@@ -221,7 +221,7 @@ bool os_directory_exists(string8 path) {
 		result = true;
 		closedir(dir);
 	} else if (errno != ENOENT) {
-		LOG_WARN("os_directory_exists - %s", strerror(errno));
+		log_warn("os_directory_exists - %s", strerror(errno));
 	}
 
 	return result;
@@ -236,7 +236,7 @@ bool os_mkdir(string8 path) {
 
 		int32_t result = mkdir((char *)fullpath.bytes, 0755);
 		if (result == -1) {
-			LOG_WARN("os_directory_make(%.*s) - %s", arg8(fullpath), strerror(errno));
+			log_warn("os_directory_make(%.*s) - %s", arg8(fullpath), strerror(errno));
 		}
 		arena_scratch_end(scratch);
 
@@ -258,7 +258,7 @@ bool os_rmdir(string8 path) {
 
 		ok = result != -1;
 		if (ok == false)
-			LOG_WARN("os_directory_make - %s", strerror(errno));
+			log_warn("os_directory_make - %s", strerror(errno));
 	}
 
 	arena_scratch_end(scratch);

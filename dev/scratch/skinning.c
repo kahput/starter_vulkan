@@ -26,7 +26,7 @@
 #include "os.h"
 
 #include "gfx.h"
-#include "gfx/gfx_types.h"
+#include "gfx/gpu_types.h"
 #include "gfx/vulkan/tables.h"
 
 #include <draw.h>
@@ -97,7 +97,7 @@ typedef struct {
 	uint32_t *indices;
 
 	// GPU
-	GFX_Buffer *buffer;
+	GPU_Buffer *buffer;
 	uint64_t buffer_vertex_byte_offset;
 	uint64_t buffer_index_byte_offset;
 	uint64_t buffer_skinning_data_byte_offset;
@@ -658,7 +658,7 @@ SlideResult3 move_and_slide(float3 position, float3 direction, float max_dist, u
 }
 
 int main(void) {
-	logger_set_level(LOG_LEVEL_DEBUG);
+	logger_set_level(LOG_DEBUG);
 
 	os_display_startup();
 	WM_Surface *main_render = os_surface_open(1280, 720, s("main_render"), WM_SURFACE_FLAG_RESIZEABLE);
@@ -670,31 +670,31 @@ int main(void) {
 	input_set_context(&input_state);
 
 	Arena permanent[] = { arena_make(MiB(256)) };
-	GFX_Device device[] = { 0 };
+	GPU_Device device[] = { 0 };
 
-	if (gfx_device_make(device) == false)
+	if (gpu_device_make(device) == false)
 		return 0;
 
-	GFX_Swapchain *main_swapchain = gfx_swapchain_make(device, main_render, "main");
-	GFX_Swapchain *popup_swapchain = gfx_swapchain_make(device, popup_compute, "popup");
+	GPU_Swapchain *main_swapchain = gpu_swapchain_make(device, main_render, "main");
+	GPU_Swapchain *popup_swapchain = gpu_swapchain_make(device, popup_compute, "popup");
 	os_surface_close(popup_compute);
 
 	// :targets
-	GFX_Image *compute_image = gfx_image_make(device, 640, 360,
+	GPU_Image *compute_image = gpu_image_make(device, 640, 360,
 		(ImageOptions){
 		  .debug_name = "target:compute",
 		  .format = PIXEL_FORMAT_RGBA16_FLOAT,
 		  .usage = IMAGE_USAGE_STORAGE | IMAGE_USAGE_TRANSFER,
 		});
 
-	GFX_Image *msaa_target = gfx_image_make(device, 1280, 720,
+	GPU_Image *msaa_target = gpu_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:scratch_msaa",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
 		  .usage = IMAGE_USAGE_RENDER,
 		  .sample = SAMPLE_COUNT_8,
 		});
-	GFX_Image *spatial_target = gfx_image_make(device, 1280, 720,
+	GPU_Image *spatial_target = gpu_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:main_color",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -702,21 +702,21 @@ int main(void) {
 		  .sample = SAMPLE_COUNT_1,
 		});
 
-	GFX_Image *ui_target = gfx_image_make(device, 1280, 720,
+	GPU_Image *ui_target = gpu_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:ui",
 		  .format = PIXEL_FORMAT_RGBA8_UNORM,
 		  .usage = IMAGE_USAGE_RENDER | IMAGE_USAGE_SAMPLE | IMAGE_USAGE_TRANSFER,
 		  .sample = SAMPLE_COUNT_1,
 		});
-	GFX_Image *depthbuffer = gfx_image_make(device, 1280, 720,
+	GPU_Image *depthbuffer = gpu_image_make(device, 1280, 720,
 		(ImageOptions){
 		  .debug_name = "target:main_depth",
 		  .format = PIXEL_FORMAT_DEPTH,
 		  .usage = IMAGE_USAGE_RENDER,
 		  .sample = SAMPLE_COUNT_8,
 		});
-	GFX_Image *shadow_depthbuffer = gfx_image_make(device, 2048, 2048,
+	GPU_Image *shadow_depthbuffer = gpu_image_make(device, 2048, 2048,
 		(ImageOptions){
 		  .debug_name = "target:shadow",
 		  .format = PIXEL_FORMAT_DEPTH,
@@ -734,7 +734,7 @@ int main(void) {
 			s("assets/images/skybox_mc/dayBack.png") //
 			) //
 	);
-	skybox.handle = gfx_image_make(device, skybox.width, skybox.height,
+	skybox.handle = gpu_image_make(device, skybox.width, skybox.height,
 		(ImageOptions){
 		  .debug_name = "skybox",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -759,7 +759,7 @@ int main(void) {
 				memory_copy(font_size->glyphs, glyphs, sizeof(Glyph) * font_size->glyph_count);
 
 				Image2D *atlas = &font_size->atlas;
-				atlas->handle = gfx_image_make(device, atlas->width, atlas->height,
+				atlas->handle = gpu_image_make(device, atlas->width, atlas->height,
 					(ImageOptions){
 					  .debug_name = (char *)fmt8(scratch.arena, "%.*s:%d", arg8(font_to_string[id]), font_bake_size_to_value[bake_size_index]).bytes,
 					  .format = PIXEL_FORMAT_RGBA8_UNORM,
@@ -778,7 +778,7 @@ int main(void) {
 			icons[index] = load_image(scratch.arena, iconid_to_filepath[index]);
 
 			Image2D *icon = &icons[index];
-			icon->handle = gfx_image_make(device, icon->width, icon->height,
+			icon->handle = gpu_image_make(device, icon->width, icon->height,
 				(ImageOptions){
 				  .debug_name = (char *)iconid_to_string[index].bytes,
 				  .format = PIXEL_FORMAT_RGBA8_UNORM,
@@ -789,14 +789,14 @@ int main(void) {
 	}
 	Image2D terrain_texture = load_image(permanent, s("assets/images/base_grass.png"));
 	Image2D grid_texture = load_image(permanent, s("assets/images/prototype/texture_09.png"));
-	grid_texture.handle = gfx_image_make(device, grid_texture.width, grid_texture.height,
+	grid_texture.handle = gpu_image_make(device, grid_texture.width, grid_texture.height,
 		(ImageOptions){
 		  .debug_name = "grid",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
 		  .pixels = grid_texture.pixels,
 		});
 	Image2D window_texture = load_image(permanent, s("assets/images/blending_transparent_window.png"));
-	window_texture.handle = gfx_image_make(device, window_texture.width, window_texture.height,
+	window_texture.handle = gpu_image_make(device, window_texture.width, window_texture.height,
 		(ImageOptions){
 		  .debug_name = "window",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -804,7 +804,7 @@ int main(void) {
 		});
 
 	Image2D noise_image = load_image(permanent, s("assets/images/heightmap.png"));
-	noise_image.handle = gfx_image_make(device, noise_image.width, noise_image.height,
+	noise_image.handle = gpu_image_make(device, noise_image.width, noise_image.height,
 		(ImageOptions){
 		  .debug_name = "noise",
 		  .format = PIXEL_FORMAT_RGBA8_UNORM,
@@ -812,25 +812,25 @@ int main(void) {
 		});
 
 	Image2D heart_image = load_image(permanent, s("assets/images/heart.png"));
-	heart_image.handle = gfx_image_make(device, heart_image.width, heart_image.height,
+	heart_image.handle = gpu_image_make(device, heart_image.width, heart_image.height,
 		(ImageOptions){
 		  .debug_name = "heart",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
 		  .pixels = heart_image.pixels,
 		});
 
-	GFX_Sampler *linear_sampler[WRAP_MODE_MAX] = {
-		[WRAP_MODE_REPEAT] = gfx_sampler_make(device, sampler_opt("default:linear_repeat", FILTER_LINEAR, WRAP_MODE_REPEAT)),
-		[WRAP_MODE_CLAMP] = gfx_sampler_make(device, sampler_opt("default:linear_clamp", FILTER_LINEAR, WRAP_MODE_CLAMP))
+	GPU_Sampler *linear_sampler[WRAP_MODE_MAX] = {
+		[WRAP_MODE_REPEAT] = gpu_sampler_make(device, sampler_opt("default:linear_repeat", FILTER_LINEAR, WRAP_MODE_REPEAT)),
+		[WRAP_MODE_CLAMP] = gpu_sampler_make(device, sampler_opt("default:linear_clamp", FILTER_LINEAR, WRAP_MODE_CLAMP))
 	};
-	GFX_Sampler *nearest_sampler[WRAP_MODE_MAX] = {
-		[WRAP_MODE_CLAMP] = gfx_sampler_make(device, sampler_opt("default:nearest_clamp", FILTER_NEAREST, WRAP_MODE_CLAMP)),
-		[WRAP_MODE_CLAMP_BORDER] = gfx_sampler_make(device, sampler_opt("default:nearest_clamp_border", FILTER_NEAREST, WRAP_MODE_CLAMP_BORDER))
+	GPU_Sampler *nearest_sampler[WRAP_MODE_MAX] = {
+		[WRAP_MODE_CLAMP] = gpu_sampler_make(device, sampler_opt("default:nearest_clamp", FILTER_NEAREST, WRAP_MODE_CLAMP)),
+		[WRAP_MODE_CLAMP_BORDER] = gpu_sampler_make(device, sampler_opt("default:nearest_clamp_border", FILTER_NEAREST, WRAP_MODE_CLAMP_BORDER))
 	};
 	SamplerOptions shadow_opt = sampler_opt("default:shadow", FILTER_LINEAR, WRAP_MODE_CLAMP_BORDER);
 	/* shadow_opt.compare_enable = true; */
-	GFX_Sampler *shadow_sampler = gfx_sampler_make(device, shadow_opt);
-	GFX_Image *white_texture = gfx_image_make(device, 1, 1,
+	GPU_Sampler *shadow_sampler = gpu_sampler_make(device, shadow_opt);
+	GPU_Image *white_texture = gpu_image_make(device, 1, 1,
 		(ImageOptions){
 		  .debug_name = "default:white",
 		  .format = PIXEL_FORMAT_RGBA8_SRGB,
@@ -838,7 +838,7 @@ int main(void) {
 		});
 
 	WM_Timestamp shader_ts[RES_SHADER_MAX] = { 0 };
-	GFX_Shader *shaders[RES_SHADER_MAX] = { 0 };
+	GPU_Shader *shaders[RES_SHADER_MAX] = { 0 };
 	for (RES_ShaderID id = 0; id < RES_SHADER_MAX; ++id) { // :shaders
 		RES_ShaderMeta *metadata = &res_shader_metadata[id];
 		if (metadata->filepaths[SHADER_STAGE_VERTEX].length == 0 &&
@@ -851,7 +851,7 @@ int main(void) {
 		if (is_compute) {
 			shader_ts[id] = os_file_mtime(metadata->filepaths[SHADER_STAGE_COMPUTE]);
 			string8 bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-			shaders[id] = gfx_compute_make(device, bytecode, (char *)metadata->name.bytes);
+			shaders[id] = gpu_compute_make(device, bytecode, (char *)metadata->name.bytes);
 		} else {
 			string8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 			string8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
@@ -860,21 +860,21 @@ int main(void) {
 			WM_Timestamp vs_ts = os_file_mtime(metadata->filepaths[SHADER_STAGE_VERTEX]);
 
 			shader_ts[id] = MAX(fs_ts, vs_ts);
-			shaders[id] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
+			shaders[id] = gpu_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
 			for (uint32_t index = 0; index < metadata->pipeline_count; ++index)
-				gfx_pipeline_register(device, shaders[id], metadata->pipelines[index]);
+				gpu_pipeline_register(device, shaders[id], metadata->pipelines[index]);
 		}
 
 		arena_scratch_end(scratch);
 	}
 
-	GFX_Buffer *geometry = gfx_buffer_make(device, MiB(256),
+	GPU_Buffer *geometry = gpu_buffer_make(device, MiB(256),
 		(BufferOptions){
 		  .debug_name = "geometry",
 		  .memory = MEMORY_TYPE_GPU,
 		  .usage = BUFFER_USAGE_STORAGE | BUFFER_USAGE_INDEX | BUFFER_USAGE_TRANSFER,
 		});
-	GFX_Buffer *grass_instancing_buffer = gfx_buffer_make(device, MiB(128),
+	GPU_Buffer *grass_instancing_buffer = gpu_buffer_make(device, MiB(128),
 		(BufferOptions){
 		  .debug_name = "grass_instancing",
 		  .memory = MEMORY_TYPE_GPU,
@@ -937,10 +937,10 @@ int main(void) {
 		animations[meshid] = load_gltf_animations(permanent, meshid_to_metadata[meshid], &animation_counts[meshid]);
 	}
 
-	GFX_CommandEncoder *cmd = gfx_transfer_cmd(device);
+	GPU_CommandEncoder *cmd = gpu_transfer_cmd(device);
 	if (cmd->handle) { // :upload
-		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, geometry->size, geometry);
-		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, grass_instancing_buffer->size, grass_instancing_buffer);
+		gpu_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, geometry->size, geometry);
+		gpu_cmd_buffer_barrier(cmd, RESOURCE_USAGE_UNDEFINED, RESOURCE_USAGE_TRANSFER_DST, 0, grass_instancing_buffer->size, grass_instancing_buffer);
 
 		for (uint32_t mesh_index = 0; mesh_index < countof(meshes); ++mesh_index) {
 			Mesh *mesh = &meshes[mesh_index];
@@ -972,7 +972,7 @@ int main(void) {
 						memory_copy(name.bytes + cursor, tail.bytes, tail.length);
 						cursor += tail.length;
 
-						img->handle = gfx_image_make(device, img->width, img->height,
+						img->handle = gpu_image_make(device, img->width, img->height,
 							(ImageOptions){
 							  .debug_name = (char *)name.bytes,
 							  .pixels = img->pixels,
@@ -1001,8 +1001,8 @@ int main(void) {
 				*arena_push_count(cmd->transient_arena, float4x4, 1) = mul4x4(axisangle4x4(FLOAT3_UP, randf_range(0, TAU)), translation4x4(pos));
 			}
 		}
-		gfx_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
-		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float4x4) * map_width * map_depth, grass_instancing_buffer);
+		gpu_cmd_buffer_to_buffer(cmd, grass_instancing_buffer, cmd->transient_buffer, 0, grass_upload_offset, sizeof(float4x4) * map_width * map_depth);
+		gpu_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, sizeof(float4x4) * map_width * map_depth, grass_instancing_buffer);
 
 		uint64_t transient_upload_start_offset = cmd->transient_arena->offset;
 		uint64_t geometry_upload_cursor = 0;
@@ -1033,10 +1033,10 @@ int main(void) {
 			}
 		}
 
-		gfx_cmd_buffer_to_buffer(cmd, geometry, cmd->transient_buffer, 0, transient_upload_start_offset, geometry_upload_cursor);
+		gpu_cmd_buffer_to_buffer(cmd, geometry, cmd->transient_buffer, 0, transient_upload_start_offset, geometry_upload_cursor);
 
-		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, geometry_upload_cursor, geometry);
-		gfx_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, geometry);
+		gpu_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_SHADER_READ, 0, geometry_upload_cursor, geometry);
+		gpu_cmd_buffer_barrier(cmd, RESOURCE_USAGE_TRANSFER_DST, RESOURCE_USAGE_INDEX_BUFFER, 0, geometry_upload_cursor, geometry);
 	}
 
 	float dt = 0.0f;
@@ -1150,15 +1150,15 @@ int main(void) {
 				case WM_EVENT_TYPE_SURFACE_RESIZE: {
 					uint2 dims = { event.as.resize.width, event.as.resize.height };
 					if (event.surface == main_render) {
-						gfx_swapchain_resize(device, main_swapchain, dims.x, dims.y);
-						gfx_image_resize(device, depthbuffer, dims.x, dims.y);
-						gfx_image_resize(device, msaa_target, dims.x, dims.y);
-						gfx_image_resize(device, spatial_target, dims.x, dims.y);
-						gfx_image_resize(device, ui_target, dims.x, dims.y);
+						gpu_swapchain_resize(device, main_swapchain, dims.x, dims.y);
+						gpu_image_resize(device, depthbuffer, dims.x, dims.y);
+						gpu_image_resize(device, msaa_target, dims.x, dims.y);
+						gpu_image_resize(device, spatial_target, dims.x, dims.y);
+						gpu_image_resize(device, ui_target, dims.x, dims.y);
 
 					} else {
-						gfx_swapchain_resize(device, popup_swapchain, dims.x, dims.y);
-						gfx_image_resize(device, compute_image, dims.x, dims.y);
+						gpu_swapchain_resize(device, popup_swapchain, dims.x, dims.y);
+						gpu_image_resize(device, compute_image, dims.x, dims.y);
 					}
 				} break;
 
@@ -1314,8 +1314,8 @@ int main(void) {
 
 						imgui_spacer();
 						if (imgui_button_image(&icons[ICON_PLAY], 0.5f).released) { state = (state + 1) % VIEWPORT_STATE_COUNT; }
-						if (imgui_button_image(&icons[ICON_PAUSE], 0.5f).released) { LOG_INFO("Pause"); }
-						if (imgui_button_image(&icons[ICON_STOP], 0.5f).released) { LOG_INFO("Stop"); }
+						if (imgui_button_image(&icons[ICON_PAUSE], 0.5f).released) { log_info("Pause"); }
+						if (imgui_button_image(&icons[ICON_STOP], 0.5f).released) { log_info("Stop"); }
 						imgui_pop_style(1);
 
 						imgui_pop_parent();
@@ -1698,10 +1698,10 @@ int main(void) {
 						imgui_push_style(btn_style);
 
 						if (imgui_button_label(s("Heal VFX")).pressed) {
-							LOG_INFO("Heal");
+							log_info("Heal");
 						}
 						if (imgui_button_label(s("Hurt VFX")).pressed) {
-							LOG_INFO("Hurt");
+							log_info("Hurt");
 						}
 
 						imgui_pop_style(1);
@@ -2041,7 +2041,7 @@ int main(void) {
 					}
 
 					if (target && input_key_pressed(KEY_CODE_F))
-						LOG_INFO("interaction with entity %u (%s)!", indexof(scene->entities, target), pathfile8(meshid_to_metadata[target->meshid]).bytes);
+						log_info("interaction with entity %u (%s)!", indexof(scene->entities, target), pathfile8(meshid_to_metadata[target->meshid]).bytes);
 				}
 			} break;
 			default:
@@ -2093,19 +2093,19 @@ int main(void) {
 			}
 		}
 
-		GFX_CommandEncoder *cmd = gfx_frame_begin(device);
+		GPU_CommandEncoder *cmd = gpu_frame_begin(device);
 		if (cmd == 0) continue;
 
 		// Swapchain image acquisition
-		GFX_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gfx_swapchain_backbuffer(device, cmd, popup_swapchain) : 0;
+		GPU_Image *compute_blit_target = os_surface_drawable(popup_compute) ? gpu_swapchain_backbuffer(device, cmd, popup_swapchain) : 0;
 		if (compute_blit_target) {
 			ASSERT(compute_blit_target->width == compute_image->width && compute_blit_target->height == compute_image->height);
 			// transition swapchain target & blit src compute image
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, compute_blit_target);
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_DST, compute_blit_target);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_COMPUTE_SHADER_WRITE, compute_image);
 
-			gfx_cmd_shader_bind(device, shaders[RES_SHADER_TESTCOMPUTE], 0);
-			gfx_cmd_bind(device, 0, arr(Uniform, storage_images(0, (GFX_Image *[]){ compute_image }, 1)));
+			gpu_cmd_shader_bind(device, shaders[RES_SHADER_TESTCOMPUTE], 0);
+			gpu_cmd_bind(device, 0, arr(Uniform, storage_images(0, (GPU_Image *[]){ compute_image }, 1)));
 
 			// Dispatch compute & Blit to main window surface
 			struct {
@@ -2116,19 +2116,19 @@ int main(void) {
 				.time = (float)time,
 			};
 
-			gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
-			gfx_cmd_dispatch(cmd, (compute_blit_target->width / 16) + 1, (compute_blit_target->height / 16) + 1, 1);
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
+			gpu_cmd_push_constant(cmd, sizeof(pc), &pc);
+			gpu_cmd_dispatch(cmd, (compute_blit_target->width / 16) + 1, (compute_blit_target->height / 16) + 1, 1);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_TRANSFER_SRC, compute_image);
 			Rectangle area = rect(0, 0, compute_blit_target->width, compute_blit_target->height);
-			gfx_cmd_image_blit(cmd, area, compute_image, area, compute_blit_target);
+			gpu_cmd_image_blit(cmd, area, compute_image, area, compute_blit_target);
 		}
 
-		GFX_Image *main_target = gfx_swapchain_backbuffer(device, cmd, main_swapchain);
+		GPU_Image *main_target = gpu_swapchain_backbuffer(device, cmd, main_swapchain);
 		if (main_target) {
 			// transition swapchain & offscren targets for drawing
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, main_target);
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, msaa_target);
-			gfx_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, spatial_target);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, main_target);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, msaa_target);
+			gpu_cmd_image_transition(cmd, RESOURCE_USAGE_COLOR_ATTACHMENT, spatial_target);
 
 			static float blink_timer = 0.0f;
 
@@ -2143,12 +2143,12 @@ int main(void) {
 				Mesh *mesh = &meshes[instance->meshid];
 
 				uint64_t matrices_size = mesh->skeleton.bone_count * sizeof(float4x4);
-				uint64_t matrices_offset = gfx_cmd_put(cmd, matrices_size, instance->skin_matrices);
+				uint64_t matrices_offset = gpu_cmd_put(cmd, matrices_size, instance->skin_matrices);
 
 				uint64_t skinned_vertices_size = alignup(mesh->total_vertex_count * sizeof(DRAW_Vertex3D), 256);
-				instance->skinned_vertices_offset = gfx_cmd_put(cmd, skinned_vertices_size, 0);
+				instance->skinned_vertices_offset = gpu_cmd_put(cmd, skinned_vertices_size, 0);
 
-				gfx_cmd_shader_bind(device, shaders[RES_SHADER_SKINNING], 0);
+				gpu_cmd_shader_bind(device, shaders[RES_SHADER_SKINNING], 0);
 				struct {
 					uint32_t vertex_count;
 					uint32_t _pad0;
@@ -2163,10 +2163,10 @@ int main(void) {
 					.skinning_address = mesh->buffer->address + mesh->buffer_skinning_data_byte_offset,
 					.output_address = cmd->transient_buffer->address + instance->skinned_vertices_offset,
 				};
-				gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
+				gpu_cmd_push_constant(cmd, sizeof(pc), &pc);
 
-				gfx_cmd_dispatch(cmd, (mesh->total_vertex_count + 255) / 256, 1, 1);
-				gfx_cmd_buffer_barrier(
+				gpu_cmd_dispatch(cmd, (mesh->total_vertex_count + 255) / 256, 1, 1);
+				gpu_cmd_buffer_barrier(
 					cmd,
 					RESOURCE_USAGE_COMPUTE_SHADER_WRITE,
 					RESOURCE_USAGE_VERTEX_SHADER_READ,
@@ -2199,8 +2199,8 @@ int main(void) {
 			};
 
 			{ // :shadow
-				gfx_cmd_draw_begin(cmd,
-					(GFX_DrawPassInfo){
+				gpu_cmd_draw_begin(cmd,
+					(GPU_DrawPassInfo){
 					  .debug_name = "SHADOW_PASS",
 					  .depth = { shadow_depthbuffer, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = 1.0f },
 					  .area = { 0.0f, 0.0f, shadow_depthbuffer->width, shadow_depthbuffer->height },
@@ -2211,8 +2211,8 @@ int main(void) {
 				frame_data.camera_position = lights[light_index].position;
 				frame_data.proj.elements[5] *= -1;
 
-				gfx_cmd_shader_bind(device, shaders[RES_SHADER_SHADOW], 0);
-				gfx_cmd_bind(device, 0, arr(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
+				gpu_cmd_shader_bind(device, shaders[RES_SHADER_SHADOW], 0);
+				gpu_cmd_bind(device, 0, arr(Uniform, uniform_data(0, &frame_data, sizeof(frame_data))));
 
 				// :shadow
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
@@ -2222,7 +2222,7 @@ int main(void) {
 
 					Mesh *mesh = &meshes[entity->meshid];
 
-					gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
+					gpu_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
@@ -2231,7 +2231,7 @@ int main(void) {
 							float4x4 model;
 						} pc = { .model = transform4x4(entity->transform) };
 
-						GFX_Buffer *buffer = mesh->buffer;
+						GPU_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
 						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
@@ -2239,20 +2239,20 @@ int main(void) {
 							offset = entity->skinned_vertices_offset;
 						}
 
-						gfx_cmd_bind(device, 1, arr(Uniform, storage_buffers(0, buffer, offset, size)));
+						gpu_cmd_bind(device, 1, arr(Uniform, storage_buffers(0, buffer, offset, size)));
 
-						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
-						gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
+						gpu_cmd_push_constant(cmd, sizeof(pc), &pc);
+						gpu_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
 					}
 				}
 
-				gfx_cmd_draw_end(cmd);
+				gpu_cmd_draw_end(cmd);
 			}
 
 			{ // :spatial
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, shadow_depthbuffer);
-				gfx_cmd_draw_begin(cmd,
-					(GFX_DrawPassInfo){
+				gpu_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, shadow_depthbuffer);
+				gpu_cmd_draw_begin(cmd,
+					(GPU_DrawPassInfo){
 					  .debug_name = "SPATIAL_PASS",
 					  .colors[0] = { msaa_target, spatial_target, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = RED },
 					  .depth = { depthbuffer, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = 1.0f },
@@ -2265,13 +2265,13 @@ int main(void) {
 				Uniform uniforms[] = {
 					uniform_data(0, &frame_data, sizeof(frame_data)),
 					storage_data(1, lights + light_index, sizeof(lights[0])),
-					sampler_with_textures(2, (GFX_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
-					sampler_with_textures(3, (GFX_Image *[]){ skybox.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
+					sampler_with_textures(2, (GPU_Image *[]){ shadow_depthbuffer }, 1, shadow_sampler),
+					sampler_with_textures(3, (GPU_Image *[]){ skybox.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 				};
-				gfx_cmd_bind(device, 0, uniforms, countof(uniforms));
+				gpu_cmd_bind(device, 0, uniforms, countof(uniforms));
 
 				// :scene
-				gfx_cmd_shader_bind(device, shaders[RES_SHADER_SPATIAL], 0);
+				gpu_cmd_shader_bind(device, shaders[RES_SHADER_SPATIAL], 0);
 				for (uint32_t instance_index = 0; instance_index < scene->entity_count; ++instance_index) {
 					Entity *entity = &scene->entities[instance_index];
 					if (entity_has(entity, ENTITY_FEATURE_DRAW_MESH) == false || entity_has(entity, ENTITY_FEATURE_TRANSPARENT))
@@ -2279,7 +2279,7 @@ int main(void) {
 
 					Mesh *mesh = &meshes[entity->meshid];
 
-					gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
+					gpu_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
@@ -2313,7 +2313,7 @@ int main(void) {
 							}
 						}
 
-						GFX_Buffer *buffer = mesh->buffer;
+						GPU_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
 						if (entity_has(entity, ENTITY_FEATURE_ANIMATE) && animation_counts[entity->meshid] && entity->skin_matrices) {
@@ -2321,7 +2321,7 @@ int main(void) {
 							offset = entity->skinned_vertices_offset;
 						}
 
-						GFX_Image *images[] = {
+						GPU_Image *images[] = {
 							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].handle,
 							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].handle,
 							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].handle,
@@ -2333,19 +2333,19 @@ int main(void) {
 							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
-						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
+						gpu_cmd_bind(device, 1, uniforms, countof(uniforms));
 
-						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
-						gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
+						gpu_cmd_push_constant(cmd, sizeof(pc), &pc);
+						gpu_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
 					}
 				}
 
 				// :grass
 				if (draw_grass) {
 					Mesh *mesh = &meshes[MESH_GRASS_BILLBOARD];
-					gfx_cmd_shader_bind(device, shaders[RES_SHADER_GRASS], 0);
+					gpu_cmd_shader_bind(device, shaders[RES_SHADER_GRASS], 0);
 
-					gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
+					gpu_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 					for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 						MeshPart *part = &mesh->parts[part_index];
 						Material *material = &mesh->materials[part->material_id];
@@ -2364,10 +2364,10 @@ int main(void) {
 							.material_flags = use_heightmap << 0,
 						};
 
-						GFX_Buffer *buffer = mesh->buffer;
+						GPU_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
-						GFX_Image *images[] = {
+						GPU_Image *images[] = {
 							[TEXTURE_SLOT_ALBEDO] = material->textures[TEXTURE_SLOT_ALBEDO].handle,
 							[TEXTURE_SLOT_METAL_ROUGHNESS] = material->textures[TEXTURE_SLOT_METAL_ROUGHNESS].handle,
 							[TEXTURE_SLOT_NORMAL] = material->textures[TEXTURE_SLOT_NORMAL].handle,
@@ -2379,18 +2379,18 @@ int main(void) {
 							storage_buffers(0, buffer, offset, size),
 							sampler_with_textures(1, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]),
 							storage_buffers(2, grass_instancing_buffer, 0, grass_instancing_buffer->size),
-							sampler_with_textures(3, (GFX_Image *[]){ noise_image.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
+							sampler_with_textures(3, (GPU_Image *[]){ noise_image.handle }, 1, linear_sampler[WRAP_MODE_CLAMP]),
 						};
-						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
+						gpu_cmd_bind(device, 1, uniforms, countof(uniforms));
 
-						gfx_cmd_push_constant(cmd, sizeof(pc), &pc);
-						gfx_cmd_draw_indexed_instanced(cmd, part->index_offset, part->index_count, part->vertex_offset, 0, map_width * map_depth);
+						gpu_cmd_push_constant(cmd, sizeof(pc), &pc);
+						gpu_cmd_draw_indexed_instanced(cmd, part->index_offset, part->index_count, part->vertex_offset, 0, map_width * map_depth);
 					}
 				}
 
 				if (draw_skybox) { // :skybox
-					gfx_cmd_shader_bind(device, shaders[RES_SHADER_SKYBOX], 0);
-					gfx_cmd_draw(cmd, 36, 0);
+					gpu_cmd_shader_bind(device, shaders[RES_SHADER_SKYBOX], 0);
+					gpu_cmd_draw(cmd, 36, 0);
 				}
 
 				{ // :transparent
@@ -2420,13 +2420,13 @@ int main(void) {
 					qsort(transparent_meshes, transparent_mesh_count, sizeof(MeshSort), cmp_mesh_sort);
 
 					if (transparent_mesh_count)
-						gfx_cmd_shader_bind(device, shaders[RES_SHADER_TRANSPARENT], 0);
+						gpu_cmd_shader_bind(device, shaders[RES_SHADER_TRANSPARENT], 0);
 
 					for (uint32_t index = 0; index < transparent_mesh_count; ++index) {
 						Entity *e = transparent_meshes[index].entity;
 						Mesh *mesh = &meshes[e->meshid];
 
-						GFX_Buffer *buffer = mesh->buffer;
+						GPU_Buffer *buffer = mesh->buffer;
 						uint64_t offset = mesh->buffer_vertex_byte_offset;
 						uint64_t size = mesh->total_vertex_count * sizeof(DRAW_Vertex3D);
 						if (entity_has(e, ENTITY_FEATURE_ANIMATE) && animation_counts[e->meshid] && e->skin_matrices) {
@@ -2434,7 +2434,7 @@ int main(void) {
 							offset = e->skinned_vertices_offset;
 						}
 
-						GFX_Image *images[] = {
+						GPU_Image *images[] = {
 							[TEXTURE_SLOT_ALBEDO] = window_texture.handle,
 							[TEXTURE_SLOT_METAL_ROUGHNESS] = white_texture,
 							[TEXTURE_SLOT_NORMAL] = white_texture,
@@ -2447,32 +2447,32 @@ int main(void) {
 							sampler_with_textures(1, images, countof(images), linear_sampler[WRAP_MODE_REPEAT])
 						};
 
-						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
+						gpu_cmd_bind(device, 1, uniforms, countof(uniforms));
 
-						gfx_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
+						gpu_cmd_bind_index_buffer32(cmd, geometry, mesh->buffer_index_byte_offset);
 						for (uint32_t part_index = 0; part_index < mesh->part_count; ++part_index) {
 							MeshPart *part = &mesh->parts[part_index];
 
 							float4x4 world_from_object = transform4x4(e->transform);
-							gfx_cmd_push_constant(cmd, sizeof(world_from_object), world_from_object.elements);
+							gpu_cmd_push_constant(cmd, sizeof(world_from_object), world_from_object.elements);
 
-							gfx_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
+							gpu_cmd_draw_indexed(cmd, part->index_offset, part->index_count, part->vertex_offset);
 						}
 					}
 				}
 
 				{ // :overlay
 					if (draw->line3d.instances.offset) {
-						gfx_cmd_shader_bind(device, shaders[RES_SHADER_LINE3D], 0);
+						gpu_cmd_shader_bind(device, shaders[RES_SHADER_LINE3D], 0);
 						Uniform uniforms[] = {
 							storage_data(0, draw->line3d.instances.base, draw->line3d.instances.offset),
 						};
-						gfx_cmd_bind(device, 1, uniforms, countof(uniforms));
-						gfx_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance));
+						gpu_cmd_bind(device, 1, uniforms, countof(uniforms));
+						gpu_cmd_draw_instanced(cmd, 0, 6, 0, draw->line3d.instances.offset / sizeof(DRAW_LineInstance));
 					}
 				}
 
-				gfx_cmd_draw_end(cmd);
+				gpu_cmd_draw_end(cmd);
 			}
 
 			if (draw->quad2d.instances.offset) { // :canvas
@@ -2485,7 +2485,7 @@ int main(void) {
 				};
 				uint32_t quad_count = draw->quad2d.instances.offset / sizeof(DRAW_QuadInstance);
 
-				GFX_Image *images[32] = { 0 };
+				GPU_Image *images[32] = { 0 };
 				uint32_t image_count = 1;
 				for (uint32_t texture_id = 0; texture_id < 32; ++texture_id)
 					images[texture_id] = white_texture;
@@ -2506,15 +2506,15 @@ int main(void) {
 							ASSERT(image_count < countof(images) && "Extend sprite batching to support beyond 32 distinct images");
 							found_index = image_count++;
 							images[found_index] = &device->image_pool[quad->imageid];
-							gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, device->image_pool + quad->imageid);
+							gpu_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, device->image_pool + quad->imageid);
 						}
 
 						quad->imageid = found_index;
 					}
 				}
 
-				gfx_cmd_draw_begin(cmd,
-					(GFX_DrawPassInfo){
+				gpu_cmd_draw_begin(cmd,
+					(GPU_DrawPassInfo){
 					  .debug_name = "UI_PASS",
 					  .colors[0] = {
 						.target = ui_target,
@@ -2524,7 +2524,7 @@ int main(void) {
 					  },
 					});
 
-				gfx_cmd_shader_bind(device, shaders[RES_SHADER_QUAD2D], 0);
+				gpu_cmd_shader_bind(device, shaders[RES_SHADER_QUAD2D], 0);
 
 				Uniform uniforms0[] = {
 					uniform_data(0, &frame_2d, sizeof(frame_2d)),
@@ -2532,26 +2532,26 @@ int main(void) {
 				};
 				Uniform uniforms1[] = { sampler_with_textures(0, images, countof(images), nearest_sampler[WRAP_MODE_CLAMP]) };
 
-				gfx_cmd_bind(device, 0, uniforms0, countof(uniforms0));
-				gfx_cmd_bind(device, 1, uniforms1, countof(uniforms1));
+				gpu_cmd_bind(device, 0, uniforms0, countof(uniforms0));
+				gpu_cmd_bind(device, 1, uniforms1, countof(uniforms1));
 
-				gfx_cmd_draw_instanced(cmd, 0, 6, 0, quad_count);
-				gfx_cmd_draw_end(cmd);
+				gpu_cmd_draw_instanced(cmd, 0, 6, 0, quad_count);
+				gpu_cmd_draw_end(cmd);
 			} else
-				gfx_cmd_image_clear(cmd, (Rectangle){ 0 }, TRANSPARENT, ui_target);
+				gpu_cmd_image_clear(cmd, (Rectangle){ 0 }, TRANSPARENT, ui_target);
 
 			{ // :composite
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, spatial_target);
-				gfx_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, ui_target);
+				gpu_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, spatial_target);
+				gpu_cmd_image_transition(cmd, RESOURCE_USAGE_SHADER_READ, ui_target);
 
-				gfx_cmd_draw_begin(cmd,
-					(GFX_DrawPassInfo){
+				gpu_cmd_draw_begin(cmd,
+					(GPU_DrawPassInfo){
 					  .debug_name = "COMPOSITE_PASS",
 					  .colors[0] = { main_target, 0, LOAD_OP_CLEAR, STORE_OP_STORE, .clear = RED },
 					});
-				gfx_cmd_shader_bind(device, shaders[RES_SHADER_COMPOSITE], 0);
+				gpu_cmd_shader_bind(device, shaders[RES_SHADER_COMPOSITE], 0);
 
-				GFX_Image *images[] = {
+				GPU_Image *images[] = {
 					spatial_target,
 					ui_target,
 				};
@@ -2560,13 +2560,13 @@ int main(void) {
 					sampler_with_textures(0, images, countof(images), linear_sampler[WRAP_MODE_CLAMP]),
 				};
 
-				gfx_cmd_bind(device, 0, uniforms, countof(uniforms));
+				gpu_cmd_bind(device, 0, uniforms, countof(uniforms));
 
-				gfx_cmd_draw(cmd, 6, 0);
-				gfx_cmd_draw_end(cmd);
+				gpu_cmd_draw(cmd, 6, 0);
+				gpu_cmd_draw_end(cmd);
 			}
 		}
-		gfx_frame_end(device, cmd);
+		gpu_frame_end(device, cmd);
 
 		for (RES_ShaderID shaderid = 0; shaderid < RES_SHADER_MAX; ++shaderid) { // :hot-reload
 			RES_ShaderMeta *metadata = &res_shader_metadata[shaderid];
@@ -2582,12 +2582,12 @@ int main(void) {
 				if (now != shader_ts[shaderid]) {
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
-					LOG_INFO("hot-reloading %s...", shaders[shaderid]->debug_name);
-					gfx_device_wait_idle(device);
+					log_info("hot-reloading %s...", shaders[shaderid]->debug_name);
+					gpu_device_wait_idle(device);
 
-					gfx_shader_destroy(device, shaders[shaderid]);
+					gpu_shader_destroy(device, shaders[shaderid]);
 					string8 bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_COMPUTE]);
-					shaders[shaderid] = gfx_compute_make(device, bytecode, (char *)metadata->name.bytes);
+					shaders[shaderid] = gpu_compute_make(device, bytecode, (char *)metadata->name.bytes);
 
 					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);
@@ -2598,17 +2598,17 @@ int main(void) {
 
 				WM_Timestamp now = MAX(fs_ts, vs_ts);
 				if (now != shader_ts[shaderid]) {
-					LOG_INFO("hot-reloading %s...", shaders[shaderid]->debug_name);
-					gfx_device_wait_idle(device);
+					log_info("hot-reloading %s...", shaders[shaderid]->debug_name);
+					gpu_device_wait_idle(device);
 
-					gfx_shader_destroy(device, shaders[shaderid]);
+					gpu_shader_destroy(device, shaders[shaderid]);
 					ArenaTemp scratch = arena_scratch_begin(NULL);
 
 					string8 vs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_VERTEX]);
 					string8 fs_bytecode = os_file_read(scratch.arena, metadata->filepaths[SHADER_STAGE_FRAGMENT]);
-					shaders[shaderid] = gfx_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
+					shaders[shaderid] = gpu_shader_make(device, vs_bytecode, fs_bytecode, (char *)metadata->name.bytes);
 					for (uint32_t index = 0; index < metadata->pipeline_count; ++index)
-						gfx_pipeline_register(device, shaders[shaderid], metadata->pipelines[index]);
+						gpu_pipeline_register(device, shaders[shaderid], metadata->pipelines[index]);
 
 					shader_ts[shaderid] = now;
 					arena_scratch_end(scratch);
@@ -2619,7 +2619,7 @@ int main(void) {
 		arena_reset(frame_arena);
 	}
 
-	gfx_device_destroy(device);
+	gpu_device_destroy(device);
 	os_display_shutdown();
 
 	return 0;
@@ -2639,7 +2639,7 @@ Image2D load_image(Arena *arena, string8 path) {
 
 		ok = pixels != 0;
 		if (ok == false) {
-			LOG_WARN("[%s] failed to load", path.bytes);
+			log_warn("[%s] failed to load", path.bytes);
 			static uint8_t magenta[] = { 255, 0, 255, 255 };
 			result.width = result.height = 1;
 			result.pixels = magenta;
@@ -2655,7 +2655,7 @@ Image2D load_image(Arena *arena, string8 path) {
 
 	if (ok) {
 		string8 filename = pathfile8(path);
-		LOG_INFO("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.bytes, result.width, result.height, channels == 4 ? "RGBA8" : "RGB8");
+		log_info("'%.*s' loaded sucessfully (%ux%u, %s)", filename.length, filename.bytes, result.width, result.height, channels == 4 ? "RGBA8" : "RGB8");
 	}
 
 	arena_scratch_end(scratch);
@@ -2707,7 +2707,7 @@ Image2D load_gltf_image(Arena *arena, string8 directory, cgltf_image *image) {
 }
 
 Mesh load_gltf(Arena *arena, string8 path) {
-	LOG_INFO("loading [%s] geometry.", path.bytes);
+	log_info("loading [%s] geometry.", path.bytes);
 
 	Mesh result = { 0 };
 	cgltf_options options = { 0 };
@@ -2715,7 +2715,7 @@ Mesh load_gltf(Arena *arena, string8 path) {
 
 	bool ok = cgltf_parse_file(&options, (char *)path.bytes, &data) == cgltf_result_success;
 	if (ok == false)
-		LOG_ERROR("%s - failed to open file", path.bytes);
+		log_error("%s - failed to open file", path.bytes);
 
 	if (ok) {
 		ok &= cgltf_load_buffers(&options, data, (char *)path.bytes) == cgltf_result_success;
@@ -2962,7 +2962,7 @@ Mesh load_gltf(Arena *arena, string8 path) {
 }
 
 AnimationClip *load_gltf_animations(Arena *arena, string8 path, uint32_t *count) {
-	LOG_INFO("loading [%s] animations.", path.bytes);
+	log_info("loading [%s] animations.", path.bytes);
 
 	AnimationClip *result = 0;
 	cgltf_options options = { 0 };
@@ -2970,7 +2970,7 @@ AnimationClip *load_gltf_animations(Arena *arena, string8 path, uint32_t *count)
 
 	bool ok = cgltf_parse_file(&options, (char *)path.bytes, &data) == cgltf_result_success;
 	if (ok == false)
-		LOG_ERROR("%s - failed to open file", path.bytes);
+		log_error("%s - failed to open file", path.bytes);
 
 	if (ok) {
 		ok &= cgltf_load_buffers(&options, data, (char *)path.bytes) == cgltf_result_success;

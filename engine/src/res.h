@@ -3,9 +3,9 @@
 #include "common.h"
 #include "core/image.h"
 #include "core/mesh.h"
-#include "gfx.h"
+#include "gpu.h"
 #include "core/strings.h"
-#include "gfx/gfx_types.h"
+#include "gpu/gpu_types.h"
 
 // clang-format off
 typedef uint32_t RES_AssetID; // catalog specific index
@@ -67,7 +67,7 @@ typedef struct {
 } RES_ShaderMeta;
 
 typedef struct {
-	GFX_Image *handle;
+	RID handle;
 	uint32_t width, height;
 } RES_Texture2D;
 INLINE Rectangle texture_rect(RES_Texture2D texture) { return (Rectangle){ 0, 0, texture.width, texture.height }; }
@@ -94,7 +94,7 @@ typedef struct {
 } RES_Font;
 
 typedef struct {
-	GFX_Shader *handle;
+	GPU_Shader *handle;
 } RES_Shader;
 
 typedef struct {
@@ -168,7 +168,7 @@ typedef struct {
 
 typedef struct {
 	Arena *arena;
-	GFX_Device *device;
+	GPU_Device *device;
 
 	RES_Catalog catalog;
 	RES_Record *records[RES_ASSET_TYPE_MAX];
@@ -182,7 +182,7 @@ typedef struct {
 		RES_Shader shader;
 	} fallback;
 } RES_Cache;
-ENGINE_API RES_Cache res_cache_make(Arena *arena, GFX_Device *device, const RES_Catalog *catalog);
+ENGINE_API RES_Cache res_cache_make(Arena *arena, GPU_Device *device, const RES_Catalog *catalog);
 
 ENGINE_API Image *res_image(RES_Cache *cache, RES_AssetID id);
 ENGINE_API RES_Texture2D *res_texture(RES_Cache *cache, RES_AssetID id, PixelFormat fmt);

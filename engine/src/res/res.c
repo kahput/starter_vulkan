@@ -1,8 +1,8 @@
 #include "res.h"
 #include "common.h"
 #include "core/mesh.h"
-#include "gfx.h"
-#include "gfx/gfx_types.h"
+#include "gpu.h"
+#include "gpu/gpu_types.h"
 
 #include "core/arena.h"
 #include "core/debug.h"
@@ -49,29 +49,29 @@ static bool res__loader_texture(RES_Cache *cache, RES_AssetID id, RES_Key key, R
 	if (image == 0) return false;
 
 	RES_ImageMeta *meta = &cache->catalog.images[id];
-	out->handle = gfx_image_make(cache->device, image->width, image->height,
+	out->handle = gpu_image_make(cache->device, image->width, image->height,
 		(ImageOptions){
 		  .debug_name = (char *)str8f(cache->arena, "%.*s[format=%.*s]", arg8(meta->name), arg8(pixel_format_to_display_string[(PixelFormat)key.variant])).bytes,
 		  .format = (PixelFormat)key.variant,
 		  .pixels = image->pixels,
-		});
+		})->id;
 	out->width = image->width, out->height = image->height;
 	return out->handle != 0;
 }
 
-static GFX_Shader *res__shader_make(Arena *arena, RES_Cache *cache, RES_ShaderMeta *meta) {
+static GPU_Shader *res__shader_make(Arena *arena, RES_Cache *cache, RES_ShaderMeta *meta) {
 	string8 *path = meta->filepaths;
 	char *name = (char *)meta->name.bytes;
 
 	if (path[SHADER_STAGE_COMPUTE].length) {
 		string8 bytecode = os_file_read(arena, path[SHADER_STAGE_COMPUTE]);
-		return bytecode.length ? gfx_compute_make(cache->device, bytecode, name) : 0;
+		return bytecode.length ? gpu_compute_make(cache->device, bytecode, name) : 0;
 	}
 
 	if (path[SHADER_STAGE_VERTEX].length && path[SHADER_STAGE_FRAGMENT].length) {
 		string8 vs = os_file_read(arena, path[SHADER_STAGE_VERTEX]);
 		string8 fs = os_file_read(arena, path[SHADER_STAGE_FRAGMENT]);
-		return vs.length && fs.length ? gfx_shader_make(cache->device, vs, fs, name) : 0;
+		return vs.length && fs.length ? gpu_shader_make(cache->device, vs, fs, name) : 0;
 	}
 
 	return 0;
@@ -87,7 +87,7 @@ static bool res__loader_shader(RES_Cache *cache, RES_AssetID id, RES_Key key, RE
 	bool is_compute = meta->filepaths[SHADER_STAGE_COMPUTE].length > 0;
 	if (out->handle && is_compute == false) {
 		for (uint32_t index = 0; index < meta->pipeline_count; ++index)
-			gfx_pipeline_register(cache->device, out->handle, meta->pipelines[index]);
+			gpu_pipeline_register(cache->device, out->handle, meta->pipelines[index]);
 	}
 	return out->handle != 0;
 }
@@ -107,18 +107,18 @@ static bool res__loader_font(RES_Cache *cache, RES_AssetID id, RES_Key key, RES_
 	if (font.img_atlas.pixels) {
 		font.glyphs = arena_push_copy(cache->arena, font.glyphs, font.glyph_count);
 		font.tex_atlas = (RES_Texture2D){
-			.handle = gfx_image_make(cache->device, font.img_atlas.width, font.img_atlas.height,
+			.handle = gpu_image_make(cache->device, font.img_atlas.width, font.img_atlas.height,
 				(ImageOptions){
 				  .debug_name = (char *)str8f(cache->arena, "%.*s[weight=%u, style=%.*s, size=%u]", arg8(meta->name), weight, arg8(res_font_style_to_display_string[style]), font_size).bytes,
 				  .format = PIXEL_FORMAT_R8_UNORM,
 				  .pixels = font.img_atlas.pixels,
 				  .swizzle = {
-					[0] = GFX_SWIZZLE_ONE,
-					[1] = GFX_SWIZZLE_ONE,
-					[2] = GFX_SWIZZLE_ONE,
-					[3] = GFX_SWIZZLE_R,
+					[0] = GPU_SWIZZLE_ONE,
+					[1] = GPU_SWIZZLE_ONE,
+					[2] = GPU_SWIZZLE_ONE,
+					[3] = GPU_SWIZZLE_R,
 				  },
-				}),
+				})->id,
 			.width = font.img_atlas.width,
 			.height = font.img_atlas.height,
 		};
@@ -145,7 +145,7 @@ static bool res__load(RES_Cache *cache, RES_AssetID id, RES_Key key, void *out) 
 	}
 }
 
-RES_Cache res_cache_make(Arena *arena, GFX_Device *device, const RES_Catalog *catalog) {
+RES_Cache res_cache_make(Arena *arena, GPU_Device *device, const RES_Catalog *catalog) {
 	ASSERT(arena && device && catalog && catalog->fonts && catalog->images && catalog->shaders);
 	RES_Cache result = { .arena = arena, .device = device };
 
@@ -216,21 +216,21 @@ void res_cache_tick(Arena *frame_arena, RES_Cache *cache) {
 
 		RES_Shader *shader = res__instance_at(cache, RES_INSTANCE_TYPE_SHADER, record->first_instance->index);
 
-		LOG_INFO("hot-reloading %.*s...", arg8(meta->name));
+		log_info("hot-reloading %.*s...", arg8(meta->name));
 		record->mtime = mtime;
 
-		GFX_Shader *new_handle = res__shader_make(frame_arena, cache, meta);
+		GPU_Shader *new_handle = res__shader_make(frame_arena, cache, meta);
 		if (new_handle == 0) {
-			LOG_WARN("failed to hot-reload %.*s; keeping previous shader", arg8(meta->name));
+			log_warn("failed to hot-reload %.*s; keeping previous shader", arg8(meta->name));
 			continue;
 		}
 
-		gfx_device_wait_idle(cache->device);
-		gfx_shader_destroy(cache->device, shader->handle);
+		gpu_device_wait_idle(cache->device);
+		gpu_shader_destroy(cache->device, shader->handle);
 		shader->handle = new_handle;
 
 		for (uint32_t pipline_index = 0; pipline_index < meta->pipeline_count; ++pipline_index)
-			gfx_pipeline_register(cache->device, shader->handle, meta->pipelines[pipline_index]);
+			gpu_pipeline_register(cache->device, shader->handle, meta->pipelines[pipline_index]);
 	}
 }
 
@@ -248,7 +248,7 @@ RES_Font res__load_font(Arena *arena, string8 path, RES_FontWeight weight, uint3
 		ok = stbtt_InitFont(&font_info, file_content.bytes, 0);
 
 		if (ok == false)
-			LOG_WARN("%s - failed to process font data", __func__);
+			log_warn("%s - failed to process font data", __func__);
 	}
 
 	if (ok) {
@@ -537,7 +537,7 @@ INLINE DataFormat cgltf_type_to_data_format(cgltf_type type, cgltf_component_typ
 // clang-format on
 
 Mesh res_load_gltf(Arena *arena, string8 path) {
-	LOG_INFO("loading [%s] geometry.", path.bytes);
+	log_info("loading [%s] geometry.", path.bytes);
 
 	Mesh result = { 0 };
 	cgltf_options options = { 0 };
@@ -545,7 +545,7 @@ Mesh res_load_gltf(Arena *arena, string8 path) {
 
 	bool ok = cgltf_parse_file(&options, (char *)path.bytes, &data) == cgltf_result_success;
 	if (ok == false)
-		LOG_ERROR("%s - failed to open file", path.bytes);
+		log_error("%s - failed to open file", path.bytes);
 
 	if (ok) {
 		ok = ok && cgltf_load_buffers(&options, data, (char *)path.bytes) == cgltf_result_success;
@@ -678,7 +678,7 @@ Mesh res_load_gltf(Arena *arena, string8 path) {
 								cgltf_float tmp[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 								cgltf_bool ok = cgltf_accessor_read_float(accessor, vertex_index, tmp, component_count);
 								for (uint32_t comp = 0; comp < countof(tmp); ++comp)
-									tmp[comp] = clampf(tmp[comp] * 255.0f + 0.5f, 0.0f, 255.0f);
+									tmp[comp] = clamp(tmp[comp] * 255.0f + 0.5f, 0.0f, 255.0f);
 								uint8_t color[4] = { tmp[0], tmp[1], tmp[2], tmp[3] };
 								memory_copy(element, color, sizeof(color));
 

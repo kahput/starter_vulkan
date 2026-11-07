@@ -1,8 +1,11 @@
 #pragma once
 
+#include <core/os.h>
+#include <core/rid.h>
 #include <core/arena.h>
 #include <core/cmath.h>
 #include <core/debug.h>
+#include <core/bytes.h>
 #include <core/logger.h>
 #include <core/strings.h>
 
